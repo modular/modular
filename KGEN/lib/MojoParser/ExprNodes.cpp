@@ -1718,7 +1718,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
       eltTypes.push_back(ParameterizedTypeConstantAttr::get(eltType));
     }
 
-    // Get the pack parameter from the TupleLiteral type.
+    // Get the pack parameter from the Tuple type.
     ASTDecl &tupleLiteralDecl = *type.getDecl(emitter.shared);
     auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
     assert(tupleLiteralStruct.getInputParams().size() == 1);
@@ -1746,8 +1746,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 }
 
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // Lookup the builtin TupleLiteral type, in order to call its constructor.
-  ASTType type = emitter.shared.getBuiltinTupleLiteralType(getLoc());
+  // Lookup the builtin Tuple type, in order to call its constructor.
+  ASTType type = emitter.shared.getBuiltinTupleType(getLoc());
   return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 

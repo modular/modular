@@ -1522,7 +1522,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   //   ValueRrror: too many values to unpack (expected 2)
   //   ValueError: not enough values to unpack (expected 2, got 1)
   //
-  // We currently require the input be a TupleLiteral.
+  // We currently require the input be a Tuple.
   if (srcRValueType.getDecl(emitter.shared) != &tupleLiteralDecl) {
     emitError() << "cannot unpack value of type " << srcRValueType
                 << " into a tuple";
@@ -1530,7 +1530,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   assert(srcRValueType.getParamBindings().size() == 1 &&
-         "TupleLiteral has one pack parameter");
+         "Tuple has one pack parameter");
   ParamBindAttr packAttr = srcRValueType.getParamBindings()[0];
   auto packVariadic = dyn_cast<VariadicAttr>(packAttr.getValue());
   if (!packVariadic) {
@@ -1546,20 +1546,20 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     return;
   }
 
-  // TupleLiteral has a get method with a signature of:
+  // Tuple has a get method with a signature of:
   //    get[i: Int, T: AnyType](self)
-  // FIXME(Issue #14946): The TupleLiteral.get's T parameter shouldn't exist!
+  // FIXME(Issue #14946): The Tuple.get's T parameter shouldn't exist!
   //   https://github.com/modularml/modular/issues/14946
   // For the dynamic case we'd use __get_item__.
   OverloadSet getDecl(elementType, "get", expr, CallSyntax::kTupleGetItem,
                       emitter.shared, /*errorHandler*/ {});
 
   if (getDecl.isNull()) {
-    emitError() << "expected TupleLiteral to have one get method";
+    emitError() << "expected Tuple to have one get method";
     return;
   }
 
-  // Bind the TupleLiteral type parameters.
+  // Bind the Tuple type parameters.
   getDecl.inputParamBindings.addPrechecked(packVariadic);
 
   // Ok, we have a tuple with the right number of elements, extract each element

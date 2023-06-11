@@ -207,7 +207,7 @@ public:
 
   /// Get a builtin type, or emit an error and return null if invalid.
   ASTType getBuiltinBoolType(llvm::SMLoc loc);
-  ASTType getBuiltinTupleLiteralType(llvm::SMLoc loc);
+  ASTType getBuiltinTupleType(llvm::SMLoc loc);
   ASTType getBuiltinErrorType(llvm::SMLoc loc);
   ASTType getBuiltinIntType(llvm::SMLoc loc);
   ASTType getBuiltinStringLiteralType(llvm::SMLoc loc);
