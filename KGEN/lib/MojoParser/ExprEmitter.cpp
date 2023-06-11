@@ -1176,15 +1176,19 @@ LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
 /// "Int" into the type for it.  This emits an error and returns null on
 /// failure.
 ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
+  // We have two ambiguous expressions that can either be types or dynamic
+  // values: an empty tuple () and None.  In a type context, we want to treat
+  // these as types, and not dynamic values.  Sniff these out to see if we have
+  // them.
+  const ExprNode *innerExpr = expr->getWithoutParens();
+  if (innerExpr->kind == ExprNode::kNoneLiteral)
+    return shared.getNoneType();
+  if (innerExpr->isEmptyTuple())
+    return shared.getBuiltinTupleInstantion(expr->getLoc(), {});
+
   auto value = emitExprPValue(expr, EC_Type);
   if (!value)
     return {};
-
-  // If we emitted a NoneAttr then convert it to a NoneType.  This is a
-  // special case because "None" is both a value and a type, and defaults to a
-  // value.
-  if (isa<NoneAttr>(value.get()))
-    return shared.getNoneType();
 
   ASTType type = value.getIfTypeValue();
   if (!type) {

@@ -648,6 +648,32 @@ ASTType SharedState::getBuiltinDoubleType(llvm::SMLoc loc) {
                                   *this);
 }
 
+/// This returns an instance of Tuple[...] with the specified element types
+/// installed.
+ASTType SharedState::getBuiltinTupleInstantion(llvm::SMLoc loc,
+                                               ArrayRef<Type> elements) {
+  auto tupleType = getBuiltinTupleType(loc);
+  if (!tupleType)
+    return {};
+
+  // Bind the correct element types for the tuple to the tuple type.
+  SmallVector<TypedAttr> eltTypes;
+  for (auto elt : elements)
+    eltTypes.push_back(ParameterizedTypeConstantAttr::get(elt));
+
+  // Get the pack parameter from the Tuple type.
+  ASTDecl &tupleLiteralDecl = *tupleType.getDecl(*this);
+  auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
+  assert(tupleLiteralStruct.getInputParams().size() == 1);
+  ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
+
+  // Bind it to a VariadicAttr of the right elements.
+  auto packAttr =
+      VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
+  auto packBind = ParamBindAttr::get(tupleParam.getName(), packAttr);
+  return DeclRefType::get(tupleLiteralDecl.getSymbolRef(), packBind);
+}
+
 void SharedState::loadModulesFromCache(
     MutableArrayRef<ModuleState *> moduleStates) {
   // If we don't have a valid cache, we can't do anything.

@@ -215,6 +215,10 @@ public:
   ASTType getBuiltinListLiteralType(llvm::SMLoc loc);
   ASTType getBuiltinDoubleType(llvm::SMLoc loc);
 
+  /// This returns an instance of Tuple[...] with the specified element types
+  /// installed.
+  ASTType getBuiltinTupleInstantion(llvm::SMLoc loc, ArrayRef<Type> elements);
+
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
