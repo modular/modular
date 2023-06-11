@@ -198,15 +198,15 @@ fn bad_tuple(a: Int):
 
   var c: Int
   var d: Int
-  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int, Int, Int]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int, Int]' value to 'Tuple[Int, Int]' in assignment}}
   (c, d) = (a, a, a)
-  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int]' value to 'Tuple[Int, Int]' in assignment}}
   (c, d) = (a,)
-  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'TupleLiteral[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Tuple[Int, Int]' in assignment}}
   (c, d) = a
 
-  var iTup : TupleLiteral[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'TupleLiteral[Int, FloatLiteral]' value to 'TupleLiteral[Int, Int]' in assignment}}
+  var iTup : Tuple[Int, Int]
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, FloatLiteral]' value to 'Tuple[Int, Int]' in assignment}}
   iTup = (1, 2.0)
 
 

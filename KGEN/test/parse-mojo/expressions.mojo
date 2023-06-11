@@ -787,13 +787,13 @@ world"
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: Float32):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK0]])
+    # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
     _ = ()
     # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK1]])
+    # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = (a, b)
     # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
-    # CHECK: kgen.call @"{{.*}}@TupleLiteral::@"__init__({{.*}}([[PACK2]])
+    # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = (a,)
 
 # CHECK-LABEL: lit.func @"tuples_lv
@@ -802,19 +802,19 @@ fn tuples_lv(i0: Int, f0: Float32):
    var i2 = 2
 
    # CHECK: %iTup = lit.varlet.decl "iTup"
-   var iTup : TupleLiteral[Int, Int]
+   var iTup : Tuple[Int, Int]
 
    # Tuple Rvalue
-   # CHECK: [[TUP:%.*]] = kgen.call {{.*}}@TupleLiteral::@"__init__
+   # CHECK: [[TUP:%.*]] = kgen.call {{.*}}@Tuple::@"__init__
    # CHECK: pop.store [[TUP]], %iTup
    iTup = (i1, i2)
 
    # Tuple LValue
    # CHECK: [[TUP:%.*]] = pop.load %iTup
    # CHECK: [[TUP2:%.*]] = kgen.call {{.*}}@"__copyinit__{{.*}}([[TUP]])
-   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}TupleLiteral::@"get{{.*}}([[TUP2]])
+   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
    # CHECK-NEXT: pop.store [[ELT]], %i1
-   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}TupleLiteral::@"get{{.*}}([[TUP2]])
+   # CHECK: [[ELT:%.*]] = kgen.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
    # CHECK-NEXT: pop.store [[ELT]], %i2
    (i1, i2) = iTup
 

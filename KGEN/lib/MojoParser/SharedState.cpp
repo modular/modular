@@ -617,9 +617,8 @@ ASTType SharedState::getBuiltinBoolType(llvm::SMLoc loc) {
   return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "Bool", *this);
 }
 
-ASTType SharedState::getBuiltinTupleLiteralType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "TupleLiteral",
-                                  *this);
+ASTType SharedState::getBuiltinTupleType(llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "Tuple", *this);
 }
 
 ASTType SharedState::getBuiltinErrorType(llvm::SMLoc loc) {
