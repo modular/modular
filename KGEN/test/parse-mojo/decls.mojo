@@ -1102,9 +1102,60 @@ struct SomeParamStruct[c_param: Int]:
 
 
 ##===----------------------------------------------------------------------===##
+# Tuple Types
+##===----------------------------------------------------------------------===##
+
+# FIXME: Empty tuple `Tuple[]` cannot be spelled.
+
+# CHECK-LABEL: lit.func @"returnTup0
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
+fn returnTup0() -> Tuple:
+  # FIXME: Why isn't this a kgen.param.constant for the whole call?
+  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
+  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: lit.return
+  return ()
+
+# CHECK-LABEL: lit.func @"returnTup0a
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = []>>
+fn returnTup0a() -> ():
+  # FIXME: Why isn't this a kgen.param.constant for the whole call?
+  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
+  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: lit.return
+  return ()
+
+# CHECK-LABEL: lit.func @"returnTup1
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+fn returnTup1() -> Tuple[Int]:
+  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>]>
+  # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
+  # CHECK-NEXT: lit.return
+  return (4,)
+
+# CHECK-LABEL: lit.func @"returnTup1
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>]>>
+fn returnTup1a() -> (Int,):
+  return (4,)
+
+# CHECK-LABEL: lit.func @"returnTup2
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]>>
+fn returnTup2() -> Tuple[Int, FloatLiteral]:
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]> = <<#lit.struct<{value: scalar<index> = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  return (4, 2.0)
+
+# CHECK-LABEL: lit.func @"returnTup2a
+# CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]>>
+fn returnTup2a() -> (Int, FloatLiteral):
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]> = <<#lit.struct<{value: scalar<index> = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  return (4, 2.0)
+
+##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##
 
+# NOTE: Exports are put at the end of the MLIR file so this must be the end of
+# this testcase.
 
 @export("my_named_export")
 # CHECK: kgen.export @"$decls"::@"export_me()" to C as @my_named_export

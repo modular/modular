@@ -145,6 +145,16 @@ public:
   llvm::SMLoc getRangeStart() const;
   llvm::SMLoc getRangeEnd() const;
 
+  /// Recursively dig through noop paren nodes (if present) to find what is
+  /// inside of them.
+  ExprNode *getWithoutParens();
+  const ExprNode *getWithoutParens() const {
+    return const_cast<ExprNode *>(this)->getWithoutParens();
+  }
+
+  /// Return true if this is a TupleNode with no subexpressions.
+  bool isEmptyTuple() const;
+
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
   /// ValueDest indicates information about where to emit the expression result
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the

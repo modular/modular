@@ -286,6 +286,20 @@ llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 Location ExprNode::getLocation(ExprEmitter &emitter) const {
   return emitter.translateLocation(getLoc());
 }
+/// Recursively dig through noop paren nodes (if present) to find what is
+/// inside of them.
+ExprNode *ExprNode::getWithoutParens() {
+  if (auto *paren = dyn_cast<ParenNode>(this))
+    return paren->subExpr->getWithoutParens();
+  return this;
+}
+
+/// Return true if this is a TupleNode with no subexpressions.
+bool ExprNode::isEmptyTuple() const {
+  if (auto *tuple = dyn_cast<TupleNode>(this))
+    return tuple->exprs.empty();
+  return false;
+}
 
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
@@ -1398,12 +1412,8 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
                                            ExprEmitter &emitter) {
   // If the indices are a single () expression, then we treat this as having
   // no parameters.  This is used with arrow expressions to allow `f[() -> x]`.
-  if (indices.size() == 1) {
-    if (auto *paren = dyn_cast<ParenNode>(indices[0]))
-      if (auto *tuple = dyn_cast<TupleNode>(paren->subExpr))
-        if (tuple->exprs.empty())
-          return value;
-  }
+  if (indices.size() == 1 && indices[0]->getWithoutParens()->isEmptyTuple())
+    return value;
 
   // Process each subscript entry as a binding.
   // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
@@ -1699,40 +1709,41 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
   bool allEltsLValue = true;
+  bool allEltsTypes = true;
   for (ExprNode *expr : exprs) {
-    elements.push_back({emitter.emitExpr(expr, EC_TupleElement), expr});
-    if (!elements.back())
+    auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
+    if (!exprVal)
       return {};
+    allEltsLValue &= !exprVal.getIfLValue().isNull();
+    allEltsTypes &= !exprVal.getIfTypeValue().isNull();
 
-    allEltsLValue &= !elements.back().ir.getIfLValue().isNull();
+    elements.push_back({std::move(exprVal), expr});
   }
 
   // If this is a tuple with all LValue elements, return a DLValue since we can
   // assign into this expression.
   // TODO: Add support for list LValues as well.
   if (allEltsLValue && isa<TupleNode>(node)) {
-    // Bind the correct element types for the tuple to the tuple type.
-    SmallVector<TypedAttr> eltTypes;
-    for (auto elt : elements) {
-      Type eltType = elt.ir.getIfLValue().getRValueType();
-      eltTypes.push_back(ParameterizedTypeConstantAttr::get(eltType));
-    }
-
-    // Get the pack parameter from the Tuple type.
-    ASTDecl &tupleLiteralDecl = *type.getDecl(emitter.shared);
-    auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
-    assert(tupleLiteralStruct.getInputParams().size() == 1);
-    ParamDeclAttr tupleParam = tupleLiteralStruct.getInputParams()[0];
-
-    // Bind it to a VariadicAttr of the right elements.
-    auto packAttr =
-        VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
-    auto packBind = ParamBindAttr::get(tupleParam.getName(), packAttr);
-    type = DeclRefType::get(type.getDecl(emitter.shared)->getSymbolRef(),
-                            packBind);
+    SmallVector<Type> typeElts;
+    for (auto elt : elements)
+      typeElts.push_back(elt.ir.getIfLValue().getRValueType());
+    type = emitter.shared.getBuiltinTupleInstantion(node->getLoc(), typeElts);
 
     DLValue result(LLCL::RCRef<TupleDLValue>::create(elements, type, node));
     return emitter.emitResult(std::move(result), node, dest);
+  }
+
+  // If this tuple has all type elements (and is not empty) then we can form a
+  // tuple type.  Note that we do not treat () as a type here, it is considered
+  // a value, and the ambiguity is handled in emitExprType.
+  if (allEltsTypes && isa<TupleNode>(node) && !elements.empty()) {
+    SmallVector<Type> typeElts;
+    for (auto elt : elements)
+      typeElts.push_back(elt.ir.getIfTypeValue());
+
+    auto result =
+        emitter.shared.getBuiltinTupleInstantion(node->getLoc(), typeElts);
+    return emitter.emitResult(PValue(result), node, dest);
   }
 
   // The ASTType will carry around parameters bound, we want to unbind them so
