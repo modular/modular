@@ -12,7 +12,6 @@
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 using namespace M;
@@ -32,9 +31,7 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
 
   // And finally canonicalize again.
-  mlir::GreedyRewriteConfig cannConfig;
-  cannConfig.enableRegionSimplification = false;
-  pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
   // If requested, generate debug info at the LLVM level.
