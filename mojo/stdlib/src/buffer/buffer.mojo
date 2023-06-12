@@ -15,6 +15,7 @@ from LLCL import OutputChainPtr
 from Math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import Pointer, DTypePointer
+from Range import range
 from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
@@ -1793,6 +1794,46 @@ struct DynamicRankBuffer:
         unroll[rank, _fill]()
 
         return result
+
+
+fn _collapse_batch_dim(input: DynamicRankBuffer) -> DynamicRankBuffer:
+    """Collapse the batch so that the tensor has rank of at most 3. The output
+    shape will therefore be
+    [input.shape[0] * ... * input.shape[input.rank-2],
+     input.shape[rank-2],
+     input.shape[rank-1],
+     0, ..., 0
+    ]
+
+    Args:
+      input: The input DynamicRankBuffer.
+
+    Returns:
+      The DynamicRankBuffer where the batch dim has been flattened.
+    """
+    var batch_size = 1
+    for i in range(0, input.rank - 2):
+        batch_size *= input.shape[i]
+    var collapsed_shape = StaticIntTuple[_MAX_RANK]()
+    collapsed_shape[0] = batch_size
+    collapsed_shape[1] = input.shape[input.rank - 2]
+    collapsed_shape[2] = input.shape[input.rank - 1]
+    return DynamicRankBuffer(input.data, 3, collapsed_shape, input.type)
+
+
+fn _collapse_shape_to_rank(
+    shape: StaticIntTuple[_MAX_RANK], rank: Int, target_rank: Int
+) -> StaticIntTuple[_MAX_RANK]:
+    if rank <= target_rank:
+        return shape
+
+    var collapsed_shape = StaticIntTuple[_MAX_RANK]()
+    collapsed_shape[0] = 1
+    for i in range(rank - target_rank - 1):
+        collapsed_shape[0] *= shape[i]
+    for i in range(1, target_rank - 1):
+        collapsed_shape[i] = shape[rank - i - 1]
+    return collapsed_shape
 
 
 @always_inline
