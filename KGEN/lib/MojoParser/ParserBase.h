@@ -136,23 +136,17 @@ public:
   ParseResult parseListUntil(Token::Kind stopToken,
                              const function_ref<ParseResult()> &parseElement);
 
-  /// Parse a list of elements continued with a separator token, like a comma.
-  /// The list ends either with a terminator, which is not consumed, or a new
-  /// line. hadTrailingSep is set to true if a trailing separator was found.
+  /// Parse a list of elements continued with commas.  The list ends either with
+  /// a terminator, which is not consumed, or a new line. firstCommaLoc is set
+  /// to the location of the first comma that is parsed, which is meaningful
+  /// when there is a trailing comma.
   ///
-  /// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
+  /// separated_list ::= (element (',' element)* [','] TERMINATOR
   ///
-  ParseResult
-  parseSeparatedList(Token::Kind separator,
-                     const function_ref<ParseResult()> &parseElement,
-                     ArrayRef<Token::Kind> terminators, SMLoc *firstCommaLoc);
   ParseResult
   parseCommaSeparatedList(const function_ref<ParseResult()> &parseElement,
                           ArrayRef<Token::Kind> terminators,
-                          SMLoc *firstCommaLoc = nullptr) {
-    return parseSeparatedList(Token::comma, parseElement, terminators,
-                              firstCommaLoc);
-  }
+                          SMLoc *firstCommaLoc = nullptr);
 
   /// Skip tokens until we get to a token at start of line that has indentation
   /// that is equal or less than the specified indentation.  This is used for
@@ -194,11 +188,17 @@ public:
   /// expression on the next line - when it is more indented than the start of
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
-  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  std::optional<size_t> stmtIndent,
-                                  SMLoc *firstCommaLoc);
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
+
+  /// Parse an expression_list production, returning a single expression or a
+  /// tuple expression if there are commas.  If 'terminators' is specified,
+  /// (e.g. in a subscript expression) then parsing ignores indentation and
+  /// looks for the specified terminator.
+  ParseResult parseExpressionList(SMLoc emptyLoc, ExprNode *&result,
+                                  std::optional<size_t> stmtIndent,
+                                  ArrayRef<Token::Kind> terminators = {});
+
   ParseResult parseStarredItem(ExprNode *&expr);
   /// Parse an expression, allowing `=`, and `+=`.
   ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,

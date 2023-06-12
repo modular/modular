@@ -75,16 +75,9 @@ public:
   ~ExprParser() {}
 
   // Expressions.
-  ParseResult parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                  ArrayRef<Token::Kind> terminators,
-                                  bool allowStarredItem,
-                                  SMLoc *firstCommaLoc = nullptr);
   ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
                                ArrayRef<Token::Kind> terminators,
-                               SMLoc *firstCommaLoc = nullptr) {
-    return parseExpressionList(results, terminators, /*allowStartedItem=*/true,
-                               firstCommaLoc);
-  }
+                               SMLoc *firstCommaLoc = nullptr);
 
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kExpression);
@@ -94,7 +87,6 @@ public:
     return alloc<SimpleLiteralNode>(ExprNode::kNoneLiteral, loc);
   };
 
-private:
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
     return shared.allocPersistent<T>(std::forward<Args>(args)...);
@@ -105,6 +97,7 @@ private:
     return shared.getPersistentCopy(elements);
   }
 
+private:
   /// Return true if the current token is the start of another statement, false
   /// if it is part of this one.
   bool isTokenStartOfNextStatement();
@@ -154,22 +147,13 @@ bool ExprParser::isTokenStartOfNextStatement() {
 // Parsing rules
 //===----------------------------------------------------------------------===//
 
-/// If 'allowStarredItem' is true, this parses a starred_list, otherwise an
-/// expression_list.
-///
-/// expression_list ::= expression ("," expression)* [","]
 /// starred_list       ::=  starred_item ("," starred_item)* [","]
 /// starred_item       ::=  assignment_expression | "*" or_expr
-ParseResult
-ExprParser::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                ArrayRef<Token::Kind> terminators,
-                                bool allowStarredItem, SMLoc *firstCommaLoc) {
+ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
+                                         ArrayRef<Token::Kind> terminators,
+                                         SMLoc *firstCommaLoc) {
   auto parseItem = [&]() -> ParseResult {
-    ExprNode *&result = results.emplace_back(nullptr);
-
-    if (allowStarredItem)
-      return parseStarredItem(result);
-    return parseExpression(result, Precedence::kExpression);
+    return parseStarredItem(results.emplace_back(nullptr));
   };
 
   return parseCommaSeparatedList(parseItem, terminators, firstCommaLoc);
@@ -1024,13 +1008,41 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
 // ExprParser implementation
 //===----------------------------------------------------------------------===//
 
-ParseResult
-ParserBase::parseExpressionList(SmallVectorImpl<ExprNode *> &results,
-                                std::optional<size_t> stmtIndent,
-                                SMLoc *firstCommaLoc) {
-  return ExprParser(getLexer(), stmtIndent)
-      .parseExpressionList(results, Token::Kind::eof,
-                           /*allowStarredList=*/false, firstCommaLoc);
+/// Parse an expression_list production, returning a single expression or a
+/// tuple expression if there are commas.  If 'terminators' is specified,
+/// (e.g. in a subscript expression) then parsing ignores indentation and
+/// looks for the specified terminator.
+ParseResult ParserBase::parseExpressionList(SMLoc emptyLoc, ExprNode *&result,
+                                            std::optional<size_t> stmtIndent,
+                                            ArrayRef<Token::Kind> terminators) {
+  // If this expression_list has no terminator (e.g. not in a subscript list
+  // terminated with ], and if it is empty, then produce a None value.  This
+  // makes return statements happy.
+  if (terminators.empty() && getToken().getIndentation().has_value() &&
+      stmtIndent.has_value() && *getToken().getIndentation() <= *stmtIndent) {
+    result = getNoneExpr(emptyLoc);
+    return success();
+  }
+
+  ExprParser parser(getLexer(), stmtIndent);
+  SmallVector<ExprNode *> exprs;
+  auto parseItem = [&]() -> ParseResult {
+    return parser.parseExpression(exprs.emplace_back(nullptr),
+                                  Precedence::kExpression);
+  };
+
+  SMLoc firstCommaLoc;
+  if (parser.parseCommaSeparatedList(parseItem, terminators, &firstCommaLoc))
+    return failure();
+
+  // If we parsed multiple items or have a comma, then this is actually a tuple.
+  // If there was a tuple inside the parens, form it.
+  if (exprs.size() != 1 || firstCommaLoc.isValid())
+    result = parser.alloc<TupleNode>(firstCommaLoc,
+                                     parser.copyArrayRef<ExprNode *>(exprs));
+  else
+    result = exprs[0];
+  return success();
 }
 
 /// Expression parsing.  Each of these take a `stmtIndent` specifier that

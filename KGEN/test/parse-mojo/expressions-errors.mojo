@@ -211,7 +211,7 @@ fn bad_tuple(a: Int):
 
 
 def tuple_return():
-  return 32, 17 # expected-error {{tuple return not supported yet}}
+  return 32, 17 # expected-error {{cannot implicitly convert 'Tuple[Int, Int]' value to 'object' in return value}}
 
 
 ##===----------------------------------------------------------------------===##
