@@ -269,45 +269,9 @@ fn gather[
     )
 
 
-# gather_2D_input_1D_indices_axis_1
-@adaptive
-fn gather[
-    output_rank: Int,
-    output_shape: DimList,
-    input_rank: Int,
-    input_shape: DimList,
-    indices_rank: Int,
-    indices_shape: DimList,
-    type: DType,
-    indices_type: DType,
-    axis: Int,
-    simd_width: Int,
-](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[indices_rank, indices_shape, indices_type],
-    out_chain: OutputChainPtr,
-):
-    """Computes output[i, j] = input[i, indices[j]]"""
-    assert_param[output_rank == 2]()
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 1]()
-    assert_param[axis == 1]()
-
-    @always_inline
-    @parameter
-    fn task_func(task_id: Int):
-        for i in range(output.dim[0]()):
-            for j in range(output.dim[1]()):
-                let idx: Int = indices[j].to_int()
-                output[StaticIntTuple[output_rank](i, j)] = input[i, idx]
-
-    async_parallelize[task_func](out_chain, 1)
-
-
 # gather_ND_input_MD_indices
 @adaptive
-fn gather_nd[
+fn gather[
     output_rank: Int,
     output_shape: DimList,
     input_rank: Int,
@@ -330,6 +294,7 @@ fn gather_nd[
 ):
     """Computes output[d0, d1, ..., s0, s1, ..., sm, ..., dn-1, dn] =
     input[d0, d1, ..., indices[s0, s1, ..., sm], ..., dn-1, dn]"""
+    assert_param[axis == input_rank - 1]()
 
     let outer_dynamic = prod_dims[0, axis](input)
     let indices_size = indices.size()

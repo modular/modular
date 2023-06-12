@@ -13,7 +13,7 @@
 from Buffer import NDBuffer
 from DType import DType
 from SIMD import Float32
-from Gather import gather, gather_nd
+from Gather import gather
 from Index import StaticIntTuple
 from IO import print
 from List import DimList
@@ -141,7 +141,7 @@ fn test_gather_3d():
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
-            gather_nd[
+            gather[
                 4,
                 DimList(num_indices, 1, row_size, 1),
                 3,
