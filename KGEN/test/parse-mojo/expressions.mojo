@@ -546,13 +546,13 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: parameterExprs
-fn parameterExprs[a: __mlir_type.index, a2: __mlir_type.index]():
-  # CHECK: kgen.param.declare b = <0>
+fn parameterExprs[a: Int, a2: Int]():
+  # CHECK: kgen.param.declare b: {{.*}}@Int = <apply({{.*}}__sub__{{.*}}, a, a)>
   alias b = a-a
-  # CHECK: kgen.param.declare c = <add(a, -42)>
-  alias c = a-(42).__as_mlir_index()
-  # CHECK: kgen.param.declare d = <add(mul(a2, -1), a)>
-  alias d = a-a2
+  # CHECK: kgen.param.declare c: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, a, {{.*}}42{{.*}})>
+  alias c = a+42
+  # CHECK: kgen.param.declare d: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, a, a2)>
+  alias d = a*a2
 
 ##===----------------------------------------------------------------------===##
 # Patterns, LValues and RValues
