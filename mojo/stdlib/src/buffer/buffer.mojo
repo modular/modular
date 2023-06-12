@@ -1443,6 +1443,18 @@ struct NDBuffer[
         """
         self._offset(VariadicList[Int](idx)).prefetch[params]()
 
+    @always_inline
+    fn prefetch[params: PrefetchOptions](self, indices: StaticIntTuple[rank]):
+        """Prefetches the data at the given index.
+
+        Parameters:
+            params: The prefetch configuration.
+
+        Args:
+            indices: The N-D index of the prefetched location.
+        """
+        self._offset(indices).prefetch[params]()
+
 
 fn partial_simd_load[
     type: DType, width: Int
