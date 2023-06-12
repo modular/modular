@@ -668,58 +668,50 @@ struct MatmulInnerLoopBPacked[
             + self.global_offset.N
             + tile_idx[1]
         )
-        # TODO: Remove after #15007 fixed.
-        alias value_type2 = value_type
 
         @always_inline
         @parameter
-        fn outer_body[idx0: Int]():
-            # TODO: Remove after #15007 fixed.
-            alias value_type = value_type2
-
-            @always_inline
-            @parameter
-            fn inner_body[idx1: Int]():
-                # Load data from original matrix C.
-                var c_data: SIMD[accum_type, simd_size] = 0
-                if skip_boundary_check or (
-                    Index(idx0, idx1 * simd_size + simd_size)
-                    <= (self.c_bound - tile_idx)
-                ):
-                    # Use simd load if all within bound
-                    @parameter
-                    if is_row_aligned:
-                        c_data = c_ptr.offset(
-                            idx1 * simd_size
-                        ).aligned_simd_load[simd_size, alignment]()
-                    else:
-                        c_data = c_ptr.offset(idx1 * simd_size).simd_load[
-                            simd_size
-                        ]()
-                elif (idx0 + tile_idx[0]) < self.c_bound[
-                    0
-                ] and idx1 * simd_size <= self.c_bound[1]:
-                    # Use partial load if row inbound but col not
-                    #  in simd bound.
-                    c_data = partial_simd_load[accum_type, simd_size](
-                        c_ptr.offset(idx1 * simd_size),
-                        0,
-                        self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
-                        0,
-                    )
+        fn body[idx0: Int, idx1: Int]():
+            var c_data: SIMD[accum_type, simd_size] = 0
+            if skip_boundary_check or (
+                Index(idx0, idx1 * simd_size + simd_size)
+                <= (self.c_bound - tile_idx)
+            ):
+                # Use simd load if all within bound
+                @parameter
+                if is_row_aligned:
+                    c_data = c_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                        simd_size, alignment
+                    ]()
                 else:
-                    # Fill zero if row out of bound
-                    c_data = SIMD[accum_type, simd_size](0)
-
-                # Store data to local buffer.
-                c_local.aligned_simd_store[simd_size, alignment](
-                    Index(idx0, idx1 * simd_size), c_data
+                    c_data = c_ptr.offset(idx1 * simd_size).simd_load[
+                        simd_size
+                    ]()
+            elif (idx0 + tile_idx[0]) < self.c_bound[
+                0
+            ] and idx1 * simd_size <= self.c_bound[1]:
+                # Use partial load if row inbound but col not
+                #  in simd bound.
+                c_data = partial_simd_load[accum_type, simd_size](
+                    c_ptr.offset(idx1 * simd_size),
+                    0,
+                    self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
+                    0,
                 )
+            else:
+                # Fill zero if row out of bound
+                c_data = SIMD[accum_type, simd_size](0)
 
-            unroll[pack_inner_size // simd_size, inner_body]()
-            c_ptr = c_ptr.offset(N)
+            # Store data to local buffer.
+            c_local.aligned_simd_store[simd_size, alignment](
+                Index(idx0, idx1 * simd_size), c_data
+            )
 
-        unroll[a_row_size, outer_body]()
+            @parameter
+            if idx1 == pack_inner_size // simd_size - 1:
+                c_ptr = c_ptr.offset(N)
+
+        unroll2[a_row_size, pack_inner_size // simd_size, body]()
 
     @always_inline
     fn _store_c_tile(
@@ -749,52 +741,43 @@ struct MatmulInnerLoopBPacked[
             + self.global_offset.N
             + tile_idx[1]
         )
-        # TODO: Remove after #15007 fixed.
-        alias value_type2 = value_type
 
         @always_inline
         @parameter
-        fn outer_body[idx0: Int]():
-            # TODO: Remove after #15007 fixed.
-            alias value_type = value_type2
-
-            @always_inline
-            @parameter
-            fn inner_body[idx1: Int]():
-                let c_data = c_local.aligned_simd_load[simd_size, alignment](
-                    Index(idx0, idx1 * simd_size)
+        fn body[idx0: Int, idx1: Int]():
+            let c_data = c_local.aligned_simd_load[simd_size, alignment](
+                Index(idx0, idx1 * simd_size)
+            )
+            if skip_boundary_check or (
+                Index(idx0, idx1 * simd_size + simd_size)
+                <= (self.c_bound - tile_idx)
+            ):
+                # Use simd store if all within bound
+                @parameter
+                if is_row_aligned:
+                    c_ptr.offset(idx1 * simd_size).aligned_simd_store[
+                        simd_size, alignment
+                    ](c_data)
+                else:
+                    c_ptr.offset(idx1 * simd_size).simd_store[simd_size](c_data)
+            elif (
+                idx0 < (self.c_bound[0] - tile_idx[0])
+                and idx1 * simd_size <= self.c_bound[1]
+            ):
+                # Use partial store if row in bound but col not
+                #  in simd bound.
+                partial_simd_store(
+                    c_ptr.offset(idx1 * simd_size),
+                    0,
+                    self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
+                    c_data,
                 )
-                if skip_boundary_check or (
-                    Index(idx0, idx1 * simd_size + simd_size)
-                    <= (self.c_bound - tile_idx)
-                ):
-                    # Use simd store if all within bound
-                    @parameter
-                    if is_row_aligned:
-                        c_ptr.offset(idx1 * simd_size).aligned_simd_store[
-                            simd_size, alignment
-                        ](c_data)
-                    else:
-                        c_ptr.offset(idx1 * simd_size).simd_store[simd_size](
-                            c_data
-                        )
-                elif (
-                    idx0 < (self.c_bound[0] - tile_idx[0])
-                    and idx1 * simd_size <= self.c_bound[1]
-                ):
-                    # Use partial store if row in bound but col not
-                    #  in simd bound.
-                    partial_simd_store(
-                        c_ptr.offset(idx1 * simd_size),
-                        0,
-                        self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
-                        c_data,
-                    )
 
-            unroll[pack_inner_size // simd_size, inner_body]()
-            c_ptr = c_ptr.offset(N)
+            @parameter
+            if idx1 == pack_inner_size // simd_size - 1:
+                c_ptr = c_ptr.offset(N)
 
-        unroll[a_row_size, outer_body]()
+        unroll2[a_row_size, pack_inner_size // simd_size, body]()
 
     @adaptive
     fn _accumulate[
@@ -926,28 +909,18 @@ struct MatmulInnerLoopBPacked[
         # Loop over local accumulator tiles.
         @parameter
         @always_inline
-        fn outer_body[idx0: Int]():
+        fn body[idx0: Int, idx1: Int]():
             let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[accum_type]()
+            alias alignment = alignof[SIMD[accum_type, simd_size]]()
+            let c_idx = Index(idx0, idx1 * simd_size)
+            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
+            let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                simd_size, alignment
+            ]().cast[accum_type]()
+            c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
+            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-            @parameter
-            @always_inline
-            fn inner_body[idx1: Int]():
-                alias alignment = alignof[SIMD[accum_type, simd_size]]()
-                let c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
-                    c_idx
-                )
-                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                    simd_size, alignment
-                ]().cast[accum_type]()
-
-                c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
-
-                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
-
-            unroll[pack_inner_size // simd_size, inner_body]()
-
-        unroll[a_row_size, outer_body]()
+        unroll2[a_row_size, pack_inner_size // simd_size, body]()
 
     @adaptive
     fn _run_inner_loop(self):
