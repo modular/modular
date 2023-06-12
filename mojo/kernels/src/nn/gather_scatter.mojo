@@ -7,7 +7,13 @@
 from Assert import assert_param
 from Buffer import NDBuffer, prod_dims
 from DType import DType
-from Functional import vectorize, vectorize_unroll, async_parallelize
+from Functional import (
+    vectorize,
+    vectorize_unroll,
+    async_parallelize,
+    unroll,
+    elementwise,
+)
 from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
@@ -159,7 +165,6 @@ fn gather_reduce[
     async_parallelize[task_func](out_chain, num_tasks)
 
 
-# gather_2D_input_1D_indices_axis_0
 @adaptive
 fn gather[
     output_rank: Int,
@@ -178,11 +183,14 @@ fn gather[
     indices: NDBuffer[indices_rank, indices_shape, indices_type],
     out_chain: OutputChainPtr,
 ):
-    """Computes output[i, j] = input[indices[i], j]"""
-    assert_param[output_rank == 2]()
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 1]()
-    assert_param[axis == 0]()
+    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
+
+    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
+    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+    """
+
+    # Gathers contiguous rows of the input
+    assert_param[axis != input_rank - 1]()
 
     let indices_len = indices.size()
     # Short-circuit for trivial cases, and to avoid divide-by-zero
@@ -191,70 +199,74 @@ fn gather[
         out_chain.mark_ready()
         return
 
-    # This sets the min copy size per task because it's inefficient to copy
-    # small volume in parallel.
-    # TODO: find a heuristic to replace the magic number.
-    alias MIN_TASK_COPY_SIZE = 256 * 1024  # Bytes
+    alias prefetch_offset = 12  # TODO: search
 
-    # Decide number of tasks.
-    # Each task consists of several rows and we don't split rows. This will
-    # need to be refactored if the input has only a few but very long rows.
-    let min_task_num_rows = div_ceil(
-        MIN_TASK_COPY_SIZE, input.dim[1]() * dtype_sizeof[type]()
-    )
-    let num_threads = out_chain.get_runtime().parallelism_level()
-    let num_tasks = min(div_ceil(indices_len, min_task_num_rows), num_threads)
-
-    let num_chunks_per_task = div_ceil(indices_len, num_tasks)
-    let output_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
-        output
-    )
-    let input_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
-        input
-    )
+    let end_indices_ptr = indices.flatten().data.offset(indices.size())
 
     @always_inline
     @parameter
-    fn task_func(task_id: Int):
-        let output = output_bind
-        let input = input_bind
+    fn gather_fn[width: Int, rank: Int](out_coords: StaticIntTuple[rank]):
+        # out_coords consists of 3 chunks:
+        #   out_coords[0:axis] = input coords[0:axis]
+        #   out_coords[axis:axis+indices_rank] = indices_coords
+        #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+        # and input_coords[axis] = indices[indices_coords]
+        var indices_coords = StaticIntTuple[indices_rank]()
+        var input_coords = StaticIntTuple[input_rank]()
 
-        let start_offset = task_id * num_chunks_per_task
-        let end_offset = min(
-            (task_id + 1) * num_chunks_per_task, indices.size()
-        )
+        @always_inline
+        @parameter
+        fn _get_indices_coords[idx: Int]():
+            indices_coords[idx] = out_coords[axis + idx]
 
-        # TODO: Find a heuristic to remove magic number.
-        let prefetch_offset = 6
-        let row_size = input.dim[1]()
+        unroll[indices_rank, _get_indices_coords]()
 
-        for i in range(start_offset, end_offset):
-            # min so that we don't read beyond end of indices
-            let clamped_prefetch_offset = min(
-                prefetch_offset, indices_len - i - 1
+        let idx = indices[indices_coords]
+
+        @always_inline
+        @parameter
+        fn _get_input_coords_before_ax[idx: Int]():
+            input_coords[idx] = out_coords[idx]
+
+        unroll[axis, _get_input_coords_before_ax]()
+
+        @always_inline
+        @parameter
+        fn _get_input_coords_after_ax[idx: Int]():
+            input_coords[idx + axis + 1] = out_coords[idx + axis + indices_rank]
+
+        unroll[output_rank - axis - 1, _get_input_coords_after_ax]()
+
+        @parameter
+        if prefetch_offset > 0:
+            let indices_ptr = indices._offset(indices_coords)
+            let indices_remaining = (
+                end_indices_ptr.__as_index() - indices_ptr.__as_index()
+            ) // dtype_sizeof[type]()
+            # assumes that indices are layed out in row major order
+            let next_idx_ptr = indices._offset(indices_coords) + min(
+                indices_remaining, prefetch_offset
             )
-            let next_idx_ptr = indices._offset(
-                StaticIntTuple[indices_rank](i)
-            ) + clamped_prefetch_offset
+            input_coords[axis] = next_idx_ptr.load().to_int()
             input.prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](next_idx_ptr.load().to_int(), 0)
+            ](input_coords)
 
-            let output_row_ptr = output.data.offset(i * row_size)
-            let input_row_ptr = input.data.offset(
-                indices[i].to_int() * row_size
-            )
+        input_coords[axis] = idx.to_int()
 
-            @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
-                output_row_ptr.simd_store[simd_width](
-                    idx, input_row_ptr.simd_load[simd_width](idx)
-                )
+        let input_val = input.simd_load[width](input_coords)
+        output.simd_store[width](
+            rebind[StaticIntTuple[output_rank]](out_coords), input_val
+        )
 
-            vectorize_unroll[simd_width, 2, func_wrapper](row_size)
-
-    async_parallelize[task_func](out_chain, num_tasks)
+    alias unroll_factor = 1
+    # Elementwise generator calls gather_fn on all coords in output.
+    # We can determine the input element to gather using the information
+    # in the output coords only.
+    # This also enables vectorization since we are gather rows of the input.
+    elementwise[output_rank, simd_width, unroll_factor, gather_fn](
+        output.get_shape(), out_chain
+    )
 
 
 # gather_2D_input_1D_indices_axis_1
