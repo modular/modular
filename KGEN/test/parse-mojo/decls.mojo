@@ -1138,6 +1138,9 @@ fn returnTup1() -> Tuple[Int]:
 fn returnTup1a() -> (Int,):
   return (4,)
 
+fn returnTup1b() -> (Int,):
+  return 4,
+
 # CHECK-LABEL: lit.func @"returnTup2
 # CHECK-SAME: -> !kgen.declref<@"$Tuple"::@Tuple<Ts: variadic<!kgen.mlirtype> = [!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]>>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
@@ -1149,6 +1152,11 @@ fn returnTup2() -> Tuple[Int, FloatLiteral]:
 fn returnTup2a() -> (Int, FloatLiteral):
   # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<@"$Int"::@Int>, !kgen.declref<@"$FloatLiteral"::@FloatLiteral>]> = <<#lit.struct<{value: scalar<index> = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (4, 2.0)
+
+# CHECK-LABEL: lit.func @"returnTup2b
+fn returnTup2b() -> (Int, FloatLiteral):
+  return 4, 2.0
+
 
 ##===----------------------------------------------------------------------===##
 # Exported Functions

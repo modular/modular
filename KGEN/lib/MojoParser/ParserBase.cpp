@@ -74,21 +74,22 @@ ParserBase::parseListUntil(Token::Kind rightToken,
   return success();
 }
 
-/// Parse a list of elements continued with a separator token, like a comma.
-/// The list ends either with a terminator, which is not consumed, or a new
-/// line. hadTrailingSep is set to true if a trailing separator was found.
+/// Parse a list of elements continued with commas.  The list ends either with
+/// a terminator, which is not consumed, or a new line. firstCommaLoc is set
+/// to the location of the first comma that is parsed, which is meaningful
+/// when there is a trailing comma.
 ///
-/// separated_list ::= (element (SEPARATOR element)* [SEPARATOR] TERMINATOR
+/// separated_list ::= (element (',' element)* [','] TERMINATOR
 ///
-ParseResult ParserBase::parseSeparatedList(
-    Token::Kind separator, const function_ref<ParseResult()> &parseElement,
+ParseResult ParserBase::parseCommaSeparatedList(
+    const function_ref<ParseResult()> &parseElement,
     ArrayRef<Token::Kind> terminators, SMLoc *firstCommaLoc) {
   if (firstCommaLoc)
     *firstCommaLoc = SMLoc();
   if (parseElement())
     return failure();
 
-  while (consumeIf(separator, firstCommaLoc)) {
+  while (consumeIf(Token::comma, firstCommaLoc)) {
     // Get the location of the first comma, not subsequent ones.
     firstCommaLoc = nullptr;
 

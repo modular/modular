@@ -486,27 +486,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   auto loc = consumeToken(Token::kw_return).getLoc();
 
   // If there is an expression list present, parse it.
-  SmallVector<ExprNode *> operandExprs;
-  if (!getToken().getIndentation().has_value() ||
-      *getToken().getIndentation() > returnIndent) {
-    // TODO use hadTrailingSep to return a singleton tuple ex. `return 1,`
-    if (parseExpressionList(operandExprs, returnIndent,
-                            /*firstCommaLoc=*/nullptr))
-      return failure();
-  } else {
-    // If there was no returned value, then default to "return std::nullopt".
-    // This allows type inference to uniformly support all the things that the
-    // None literal coerces to (e.g. an std::optional type).
-    operandExprs.push_back(getNoneExpr(loc));
-  }
-
-  // We don't support formation of tuples / multiple result values yet.
-  if (operandExprs.size() != 1) {
-    emitError(loc, "tuple return not supported yet")
-        << SourceRange(operandExprs.front()->getRangeStart(),
-                       operandExprs.back()->getRangeEnd());
-    return success();
-  }
+  ExprNode *operandExpr = nullptr;
+  if (parseExpressionList(loc, operandExpr, returnIndent))
+    return failure();
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.
@@ -523,16 +505,16 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
-    if (!operandExprs[0]->emitIR(resultDest, emitter)) {
+    if (!operandExpr->emitIR(resultDest, emitter)) {
       resultDest.resetForError();
       return success();
     }
     resultValue = emitter.emitSRValue(
-        {PValue(shared.getNoneAttr()), operandExprs[0]}, EC_ReturnValue);
+        {PValue(shared.getNoneAttr()), operandExpr}, EC_ReturnValue);
 
   } else {
     // Convert the returned value to the returned type of the function.
-    resultValue = emitter.emitExprSRValue(operandExprs[0], EC_ReturnValue,
+    resultValue = emitter.emitExprSRValue(operandExpr, EC_ReturnValue,
                                           decl.getUserResultType());
   }
 
@@ -551,7 +533,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   return success();
 }
 
-/// param_return_stmt ::= "param_return" "[" expression ("," expression)* "]"
+/// param_return_stmt ::= "param_return" "[" expression_list "]"
 ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
   SMLoc loc = consumeToken(Token::kw_param_return).getLoc();
   auto decl = dyn_cast<LIT::FuncOp>(getParentDecl());
@@ -565,16 +547,18 @@ ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
   if (parseToken(Token::l_square, "expected '[' to begin parameter list",
                  &startLoc))
     return success();
-  SmallVector<ExprNode *> exprs;
-  if (!consumeIf(Token::r_square, &endLoc)) {
-    // TODO use firstCommaLoc to return a singleton tuple ex. `return 1,`
-    if (parseExpressionList(exprs, returnIndent,
-                            /*firstCommaLoc=*/nullptr))
-      return failure();
-    if (parseToken(Token::r_square, "expected ']' at end of parameter list",
-                   &endLoc))
-      return success();
-  }
+
+  ExprNode *expr = nullptr;
+  if (parseExpressionList(startLoc, expr, returnIndent, Token::r_square) ||
+      parseToken(Token::r_square, "expected ']' at end of parameter list",
+                 &endLoc))
+    return failure();
+
+  // We treat each comma separated value as a separate parameter, not the whole
+  // thing as a tuple value.
+  ArrayRef<ExprNode *> exprs = expr;
+  if (auto *tuple = dyn_cast<TupleNode>(expr))
+    exprs = tuple->exprs;
 
   // Check the number of result parameters.
   size_t numResultParams = decl.getResultParams().size();
