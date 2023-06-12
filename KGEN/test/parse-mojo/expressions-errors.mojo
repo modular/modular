@@ -293,10 +293,6 @@ fn bad_exprs(cond: Bool, Float32: Float32, c1: Conv1, c2: Conv2):
   # expected-note @below {{or cast the right value to 'Conv1'}}
   _ = c1 if cond else c2
 
-  alias idx : __mlir_type.index = (4).__as_mlir_index()
-  # expected-error @+1 {{cannot emit this binary operator in parameter context yet}}
-  _ = idx/idx
-
 def bad_assignment0(a: Int, b: Int):
    # expected-error @+1 {{expression must be mutable for in-place operator destination}}
    a = b += b
