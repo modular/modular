@@ -38,7 +38,7 @@ fn testMLIR():
 
   # expected-error @+1 {{'index.constant' op MLIR verification error: 'index.constant' op requires attribute 'value'}}
   var c42e = __mlir_op.`index.constant`[value : 42.0]()
-  var c42 = __mlir_op.`index.constant`[value : (42).__as_mlir_index()]() # Good
+  var c42 = __mlir_op.`index.constant`[value : (42).value]() # Good
 
   # expected-error @+1 {{invalid MLIR attribute:}}
   __mlir_attr.`#index<cmp_predicate xeq>`

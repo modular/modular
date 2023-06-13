@@ -60,7 +60,7 @@ struct StringRef:
     fn empty() -> StringRef:
         let nullptr = __mlir_op.`pop.cast_from_builtin`[
             _type : __mlir_type.`!pop.scalar<index>`
-        ]((0).__as_mlir_index())
+        ]((0).value)
         let size = 0
         return StringRef(
             __mlir_op.`pop.index_to_pointer`[

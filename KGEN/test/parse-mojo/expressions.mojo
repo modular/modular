@@ -229,7 +229,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value = 1}>
   # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
-  z = (1).__as_mlir_index() + z
+  z = (1).value + z
 
   # div tests
   # CHECK: kgen.call {{.*}}__truediv__
@@ -241,40 +241,40 @@ fn precedence_associativity(a: Int):
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
   # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"
-  var z = (1).__as_mlir_index() + a
+  var z = (1).value + a
 
   # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rsub__($Int::Int,$Int::Int)"
-  z = (2).__as_mlir_index() - z
+  z = (2).value - z
 
   # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rmul__($Int::Int,$Int::Int)"
-  z = (3).__as_mlir_index() * z
+  z = (3).value * z
 
   # div tests
   # CHECK: kgen.call {{.*}}__rtruediv__
   # CHECK: kgen.call @"$Int"::@Int::@"__rfloordiv__($Int::Int,$Int::Int)"
   var r1 = 33.0 / Float32(42.0)
-  z = (33).__as_mlir_index() // z
+  z = (33).value // z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rmod__($Int::Int,$Int::Int)"
-  var i0 = (10).__as_mlir_index() % z
+  var i0 = (10).value % z
 
 # CHECK: kgen.call @"$Int"::@Int::@"__rpow__($Int::Int,$Int::Int)"
-  var i1 = (3).__as_mlir_index() ** z
+  var i1 = (3).value ** z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rlshift__($Int::Int,$Int::Int)"
-  var i2 = (1).__as_mlir_index() << z
+  var i2 = (1).value << z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rrshift__($Int::Int,$Int::Int)"
-  var i3 = (1).__as_mlir_index() >> z
+  var i3 = (1).value >> z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rand__($Int::Int,$Int::Int)"
-  z = (1).__as_mlir_index() & z
+  z = (1).value & z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__ror__($Int::Int,$Int::Int)"
-  z = (2).__as_mlir_index() | z
+  z = (2).value | z
 
   # CHECK: kgen.call @"$Int"::@Int::@"__rxor__($Int::Int,$Int::Int)"
-  z = (3).__as_mlir_index() ^ z
+  z = (3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
@@ -952,8 +952,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
   # CHECK: %1 = kgen.param.constant: {{.*}} = 0
   # CHECK: %2 = kgen.call {{.*}}__getitem__{{.*}}(%0, %1)
   # CHECK: %3 = lit.struct.extract %2[value]
-  # CHECK: %4 = kgen.rebind %3
-  # CHECK: lit.return %4
+  # CHECK: lit.return %3
   return a[0].value
 
 

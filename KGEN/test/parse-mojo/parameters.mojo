@@ -204,7 +204,7 @@ fn fnToCall[size: __mlir_type.index, array: __mlir_type[`!pop.array<`, size, `, 
 # CHECK: lit.func @"fnWithCall
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK:  kgen.call @"$parameters"::@"fnToCall()"<10, :array<10, f32> array>()
-   fnToCall[(10).__as_mlir_index(), array]()
+   fnToCall[(10).value, array]()
 
 # CHECK-LABEL: lit.func @"meta_str()"<type: {{.*}}@StringLiteral>() -> !lit.none
 fn meta_str[type: StringLiteral]():
@@ -243,7 +243,7 @@ fn parametric_result_params[T: AnyType, input: T -> out: T]():
 # CHECK-LABEL: lit.func @"just_result_params()"<() -> a>()
 fn just_result_params[() -> a: __mlir_type.index]():
   # CHECK: lit.param_return<42>
-  param_return[(42).__as_mlir_index()]
+  param_return[(42).value]
 
 
 # A bit grotty, but effective way to provide a kgen.param.fork over three
@@ -399,12 +399,12 @@ struct MyDType:
   fn __eq__(self, rhs: MyDType) -> Bool:
      return True  # TODO: buggy impl :-)
 
-  alias ui8 = MyDType((1).__as_mlir_index())
-  alias float32 = MyDType((2).__as_mlir_index())
-  alias float64 = MyDType((3).__as_mlir_index())
+  alias ui8 = MyDType((1).value)
+  alias float32 = MyDType((2).value)
+  alias float64 = MyDType((3).value)
 
   # CHECK: kgen.param.declare *"ui16": @"$parameters"::@MyDType = <#lit.struct<{state = 7}>>
-  alias ui16 = MyDType{state: (7).__as_mlir_index()}
+  alias ui16 = MyDType{state: (7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
   pass
@@ -492,11 +492,11 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.__as_mlir_index(), `, `, type, `>`]) -> StaticVec[size]:
+  fn __init__[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]) -> StaticVec[size]:
       return Self{}
 
   @staticmethod
-  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.__as_mlir_index(), `, `, type, `>`]):
+  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
       return
 
 fn callee1[size: Int](v: StaticVec[size]): pass
@@ -526,7 +526,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 
 @register_passable
 struct Abstraction[a: Int]:
-  alias val = a.__as_mlir_index()
+  alias val = a.value
 
   fn __init__() -> Self:
       return Self{}
@@ -543,10 +543,10 @@ struct Abstraction[a: Int]:
       return
 
 # CHECK-LABEL: lit.func @"testDependentType()"
-# CHECK-SAME: shape: array<apply{{.*}}@Int::@"__as_mlir_index
+# CHECK-SAME: shape: array<#lit.struct.extract<:@"$Int"::@Int rank, "value">
 fn testDependentType[
     rank: Int,
-    shape: __mlir_type[`!pop.array<`, rank.__as_mlir_index(), `, index>`],
+    shape: __mlir_type[`!pop.array<`, rank.value, `, index>`],
 ]():
     pass
 
@@ -561,7 +561,7 @@ fn testParameterEvaluator():
   # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} = 3}
   # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
   Abstraction[1].pull[2](y)
-  # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<:{{.*}} = 1{{.*}}, :array<apply{{.*}}__as_mlir_index{{.*}} rebind(:array<1, index>
+  # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<:{{.*}} = 1{{.*}}, :array<1, index>
   testDependentType[1, __mlir_attr.`#pop.array<0> : !pop.array<1, index>`]()
 
 

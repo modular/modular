@@ -315,7 +315,7 @@ fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
-  examplePack[Int, Float32](1, (2).__as_mlir_index())
+  examplePack[Int, Float32](1, (2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
@@ -514,7 +514,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(inout self, elem: BadInit[(1).__as_mlir_index()]):
+  fn __init__(inout self, elem: BadInit[(1).value]):
     var x : __mlir_type[`!pop.simd<`, size, `, Float32>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, Float32>' value to 'BadInit[size]' in assignment}}
     self = x
