@@ -344,7 +344,7 @@ struct Parameterized[level: Int]:
 fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
-  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:@"$Int"::@Int #lit.struct<{value: scalar<index> = 4}>>(%x)
+  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:@"$Int"::@Int #lit.struct<{value = 4}>>(%x)
 
 struct Complicated:
   var a: MemExample

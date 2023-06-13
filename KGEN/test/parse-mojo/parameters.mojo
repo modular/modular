@@ -62,7 +62,7 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[TMP:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn($Int::Int)"<:@"$DType"::@DType dt, :@"$Int"::@Int #lit.struct<{value: scalar<index> = 13}>, :type !kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = #lit.struct<{value: scalar<index> = 4}>, dt: @"$DType"::@DType = dt>>>(%2) : (!kgen.declref<@"$Int"::@Int> borrow) -> !lit.none
+  # CHECK: kgen.call @"$parameters"::@"generic_fn($Int::Int)"<:@"$DType"::@DType dt, :@"$Int"::@Int #lit.struct<{value = 13}>, :type !kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = #lit.struct<{value = 4}>, dt: @"$DType"::@DType = dt>>>(%2) : (!kgen.declref<@"$Int"::@Int> borrow) -> !lit.none
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<A: {{.*}}@Int>
@@ -91,7 +91,7 @@ struct TestParamStruct[A: Int]:
     # CHECK: %temp = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<A: {{.*}}@Int = C>>
     var temp: TestParamStruct[C]
 
-    # CHECK: kgen.param.declare intVal: @"$Int"::@Int = <#lit.struct<{value: scalar<index> = 42}>>
+    # CHECK: kgen.param.declare intVal: @"$Int"::@Int = <#lit.struct<{value = 42}>>
     alias intVal : Int = 42
 
     # CHECK:  %temp2 = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<A: {{.*}}@Int = apply({{.*}}__mul__{{.*}}, A, A)
@@ -157,7 +157,7 @@ struct Pair[dt: DType]:
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: @"$Int"::@Int {{.*}} 4
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = #lit.struct<{value: scalar<index> = 42}>, dt: @"$DType"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<size: @"$Int"::@Int = #lit.struct<{value = 42}>, dt: @"$DType"::@DType = dt>>, !kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<dt: @"$DType"::@DType = dt>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -443,9 +443,9 @@ fn useParamVariadics():
   # CHECK-NEXT: kgen.call @"$parameters"::@"fnWithVariadics()"<:variadic<@"$Int"::@Int> []>()
   fnWithVariadics()
 
-  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 1}>]>()
+  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<:variadic<@"$Int"::@Int> [#lit.struct<{value = 1}>]>()
   fnWithVariadics[1]()
-  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>]>()
+  # CHECK: kgen.call @"$parameters"::@"fnWithVariadics()"<:variadic<@"$Int"::@Int> [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>()
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
@@ -459,12 +459,12 @@ fn useParamVariadics():
 
   # CHECK-NEXT: %a = lit.varlet.decl {{.*}} <@"{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = []>>
   var a: StructWithVariadics
-  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>]>>
+  # CHECK-NEXT: %b = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value = 1}>]>>
   var b: StructWithVariadics[1]
-  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value: scalar<index> = 1}>, #lit.struct<{value: scalar<index> = 2}>]>>
+  # CHECK-NEXT: %c = lit.varlet.decl {{.*}} : <@{{.*}}::@StructWithVariadics<b: variadic<@"$Int"::@Int> = [#lit.struct<{value = 1}>, #lit.struct<{value = 2}>]>>
   var c: StructWithVariadics[1, 2]
 
-  # CHECK: kgen.call {{.*}}@StructWithVariadics::@"__init__(${{.*}}::StructWithVariadics[b]=&,$Int::Int)"<:variadic<@"$Int"::@Int> [#lit.struct<{value: scalar<index> = 1}>]>
+  # CHECK: kgen.call {{.*}}@StructWithVariadics::@"__init__(${{.*}}::StructWithVariadics[b]=&,$Int::Int)"<:variadic<@"$Int"::@Int> [#lit.struct<{value = 1}>]>
   var d = StructWithVariadics[1](2)
   # CHECK: kgen.call {{.*}}@StructWithVariadics::@"__init__(${{.*}}::StructWithVariadics[b]=&,$Int::Int)"<:variadic<@"$Int"::@Int> []>
   var e = StructWithVariadics(3)
@@ -554,11 +554,11 @@ fn testDependentType[
 fn testParameterEvaluator():
   # CHECK-NEXT: declare x = <1>
   alias x = Abstraction[1].val
-  # CHECK-NEXT: %0 = kgen.call @"$parameters"::@Abstraction::@"push()"<:{{.*}} scalar<index> = 1{{.*}}, :{{.*}} scalar<index> = 2{{.*}}>()
-  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
+  # CHECK-NEXT: %0 = kgen.call @"$parameters"::@Abstraction::@"push()"<:{{.*}} = 1{{.*}}, :{{.*}} = 2{{.*}}>()
+  # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<a: {{.*}} = 3}
   # CHECK-NEXT: %y = lit.letreg.decl "y" = %1
   let y : Abstraction[3] = Abstraction[1].push[2]()
-  # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} scalar<index> = 3}
+  # CHECK-NEXT: %2 = kgen.rebind %y : {{.*}}@Abstraction<a: {{.*}} = 3}
   # CHECK-NEXT: kgen.call {{.*}}@Abstraction::@"pull{{.*}}"<{{.*}}>(%2)
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: kgen.call {{.*}}@"testDependentType()"<:{{.*}} = 1{{.*}}, :array<apply{{.*}}__as_mlir_index{{.*}} rebind(:array<1, index>

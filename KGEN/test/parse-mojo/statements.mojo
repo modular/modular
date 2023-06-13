@@ -167,14 +167,14 @@ fn param_if_and[a: Bool, b: Bool]():
 # CHECK:         hlcf.if
 # CHECK-NEXT:     hlcf.yield
 # CHECK-NEXT:    } else {
-# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 2}>>
+# CHECK-NEXT:     kgen.param.constant: {{.*}} = <#lit.struct<{value = 2}>>
 # CHECK-NEXT:     pop.store {{.+}}, %inside_else
 # CHECK-NEXT:     hlcf.break
 # CHECK-NEXT:    }
-# CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 0}>>
+# CHECK-NEXT:    kgen.param.constant: {{.*}} = <#lit.struct<{value = 0}>>
 # CHECK-NEXT:    pop.store {{.+}}, %inside_a
 # CHECK:         hlcf.if
-# CHECK-NEXT:      kgen.param.constant: {{.*}} = <#lit.struct<{value: scalar<index> = 1}>>
+# CHECK-NEXT:      kgen.param.constant: {{.*}} = <#lit.struct<{value = 1}>>
 # CHECK-NEXT:      pop.store {{.+}}, %inside_b
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } else {

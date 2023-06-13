@@ -103,11 +103,11 @@ static bool moduleExportsMain(ModuleOp theModule, SymbolTable &symtab,
     auto variantElementTys = variantTy.getTypes();
     if (variantElementTys.size() != 2)
       return false;
-    // The Error type is "!pop.struct<pointer<scalar<si8>>,scalar<index>>"
-    Type errorType = POP::StructType::get(ArrayRef<Type>{
-        POP::PointerType::get(
-            POP::SIMDType::get(1, DTypeConstantAttr::get(ctx, KGENDType::si8))),
-        POP::SIMDType::get(1, DTypeConstantAttr::get(ctx, KGENDType::index))});
+    // The Error type is "!pop.struct<pointer<scalar<si8>>, index>"
+    Type errorType = POP::StructType::get(
+        ArrayRef<Type>{POP::PointerType::get(POP::SIMDType::get(
+                           1, DTypeConstantAttr::get(ctx, KGENDType::si8))),
+                       IndexType::get(ctx)});
     if (variantElementTys[0] != ConcreteTypeConstantAttr::get(errorType))
       return false;
     if (variantElementTys[1] == ConcreteTypeConstantAttr::get(noneType)) {
