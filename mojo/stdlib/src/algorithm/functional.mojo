@@ -164,7 +164,7 @@ fn _variadic_get(
     a: __mlir_type[`!kgen.variadic<`, fn (Int) capturing -> NoneType, `>`],
     idx: Int,
 ) -> fn (Int) capturing -> NoneType:
-    return __mlir_op.`pop.variadic.get`(a, idx.__as_mlir_index())
+    return __mlir_op.`pop.variadic.get`(a, idx.value)
 
 
 @always_inline
