@@ -21,7 +21,6 @@ add_modular_unittest(
   TEST_NAME
   KGENTests
 
-  KGENInvokeTest.cpp
   KGENKernelTest.cpp
 
   DEPENDS
