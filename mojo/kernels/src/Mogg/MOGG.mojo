@@ -332,9 +332,7 @@ fn simd_load_splat[
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     # Last dimension will be 0 for splats so don't compute last dim.
-    let flat_index = _compute_flat_index[
-        type, rank, rank - (1).__as_mlir_index()
-    ](buffer, index)
+    let flat_index = _compute_flat_index[type, rank, rank - 1](buffer, index)
 
     return buffer.data.load(flat_index)
 
@@ -499,7 +497,7 @@ fn broadcast_to_tensor[
 # This involves applying parameter expressions to this result which must be
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
 fn get_target_simd[type: DType]() -> __mlir_type.index:
-    return dtype_simd_width[type]().__as_mlir_index()
+    return dtype_simd_width[type]().value
 
 
 fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
