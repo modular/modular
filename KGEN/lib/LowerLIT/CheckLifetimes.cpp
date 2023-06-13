@@ -1134,6 +1134,9 @@ private:
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
 
+  void checkIfLikeOp(Operation &operation,
+                     BitVector &expectedConsumptionInThenNotElse);
+
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
 
@@ -1166,6 +1169,53 @@ private:
   SignatureType functionSignature;
 };
 } // namespace
+
+void DestructorInsertion::checkIfLikeOp(
+    Operation &ifElseOp, BitVector &expectedConsumptionInThenNotElse) {
+  assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
+         ifElseOp.getRegion(1).hasOneBlock() &&
+         "if-like op should have two single-block regions");
+  BitVector thenConsumedValues = consumedValues;
+  scanBlock(ifElseOp.getRegion(0).front());
+
+  // Scan 'else' block.
+  thenConsumedValues.swap(consumedValues);
+  scanBlock(ifElseOp.getRegion(1).front());
+  // At this point, 'thenConsumedValues' is the set of upwardly consumed
+  // values from the 'then' block and 'consumedValues' is the set of upwardly
+  // consumed values from the else branch.  See if they disagree.
+  BitVector disagreements = consumedValues;
+  disagreements ^= thenConsumedValues;
+  // If they agree, then we're done if not, we'll have to destroy fields to
+  // make them agree.
+  if (disagreements.none())
+    return;
+
+  // If we are in a dryrun, just compute the union of the two sets.
+  if (dryRun) {
+    consumedValues |= disagreements;
+    return;
+  }
+
+  // Otherwise we have to emit destructors to get the branches to line up.
+  // If the true branch consumed values that the false branch didn't, then
+  // we need to destroy those corresponding values in the false branch.
+  BitVector consumedInElseButNotThen = consumedValues;
+  consumedInElseButNotThen &= disagreements;
+  destroyValuesAtEntry(consumedInElseButNotThen, ifElseOp.getRegion(0).front(),
+                       ifElseOp.getLoc());
+
+  BitVector consumedInThenButNotElse = thenConsumedValues;
+  consumedInThenButNotElse &= disagreements;
+  BitVector &inverse = expectedConsumptionInThenNotElse.flip();
+  consumedInThenButNotElse &= inverse;
+  destroyValuesAtEntry(consumedInThenButNotElse, ifElseOp.getRegion(1).front(),
+                       ifElseOp.getLoc());
+
+  // Restore consumedValues to the merged set.
+  consumedValues = thenConsumedValues;
+  consumedValues |= consumedInElseButNotThen;
+}
 
 void DestructorInsertion::dump() const {
   auto &os = llvm::errs();
@@ -1373,6 +1423,24 @@ void DestructorInsertion::checkOp(Operation &op) {
     return;
   }
 
+  if (auto handleVariantOp = dyn_cast<HandleVariantOp>(op)) {
+    BitVector expectedConsumptionInThenNotElse;
+    expectedConsumptionInThenNotElse.resize(consumedValues.size());
+    for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
+      // For each of the initialized values, is this the last reference?
+      // If so, generate a destructor call after this op.
+      checkUse(maybeInitValue, op);
+
+      // To prevent destructor calls from being generated for uninitialized
+      // values in the else block, we mark the exempt values in an expectation
+      // bit vector.
+      ValueRef uninitValueRef = valueSet.getValueRef(maybeInitValue);
+      uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
+    }
+    checkIfLikeOp(op, expectedConsumptionInThenNotElse);
+    return;
+  }
+
   // 'if' operations propagate the consume sets into each branch, and use the
   // resulting consume sets to make sure the upward propagated set of consumed
   // values is consistent.
@@ -1380,43 +1448,9 @@ void DestructorInsertion::checkOp(Operation &op) {
     assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
            op.getRegion(1).hasOneBlock() &&
            "if-like op should have two single-block regions");
-    BitVector thenConsumedValues = consumedValues;
-    scanBlock(op.getRegion(0).front());
-    thenConsumedValues.swap(consumedValues);
-    scanBlock(op.getRegion(1).front());
-    // At this point, 'thenConsumedValues' is the set of upwardly consumed
-    // values from the 'then' block and 'consumedValues' is the set of upwardly
-    // consumed values from the else branch.  See if they disagree.
-    BitVector disagreements = consumedValues;
-    disagreements ^= thenConsumedValues;
-
-    // If they agree, then we're done if not, we'll have to destroy fields to
-    // make them agree.
-    if (disagreements.none())
-      return;
-
-    // If we are in a dryrun, just compute the union of the two sets.
-    if (dryRun) {
-      consumedValues |= disagreements;
-      return;
-    }
-
-    // Otherwise we have to emit destructors to get the branches to line up.
-    // If the true branch consumed values that the false branch didn't, then
-    // we need to destroy those corresponding values in the false branch.
-    BitVector consumedInElseButNotThen = consumedValues;
-    consumedInElseButNotThen &= disagreements;
-    destroyValuesAtEntry(consumedInElseButNotThen, op.getRegion(0).front(),
-                         op.getLoc());
-
-    BitVector consumedInThenButNotElse = thenConsumedValues;
-    consumedInThenButNotElse &= disagreements;
-    destroyValuesAtEntry(consumedInThenButNotElse, op.getRegion(1).front(),
-                         op.getLoc());
-
-    // Restore consumedValues to the merged set.
-    consumedValues = thenConsumedValues;
-    consumedValues |= consumedInElseButNotThen;
+    BitVector expectedConsumptionInThenNotElse;
+    expectedConsumptionInThenNotElse.resize(consumedValues.size());
+    checkIfLikeOp(op, expectedConsumptionInThenNotElse);
     return;
   }
 
