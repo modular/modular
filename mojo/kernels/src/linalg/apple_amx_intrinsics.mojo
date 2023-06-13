@@ -40,9 +40,7 @@ struct amx_detail:
 
     @staticmethod
     fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
-        let gpr = __mlir_op.`index.castu`[_type : __mlir_type.ui64](
-            gpr0.__as_mlir_index()
-        )
+        let gpr = __mlir_op.`index.castu`[_type : __mlir_type.ui64](gpr0.value)
         __mlir_op.`pop.inline_asm`[
             _type:None,
             assembly : (
@@ -414,8 +412,8 @@ struct amx_detail:
 
         # TODO: We can elide the copy if the data is already is already aligned.
 
-        alias c256 = (256).__as_mlir_index()
-        alias c128 = (128).__as_mlir_index()
+        alias c256 = (256).value
+        alias c128 = (128).value
         let a_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
