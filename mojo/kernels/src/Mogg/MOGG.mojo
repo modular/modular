@@ -167,10 +167,6 @@ fn to_buffer[
     shape: __mlir_type.`!pop.pointer<index>`,
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
 
-    let shape_scalar = __mlir_op.`pop.pointer.bitcast`[
-        _type : __mlir_type.`!pop.pointer<!pop.scalar<index>>`
-    ](shape)
-
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
