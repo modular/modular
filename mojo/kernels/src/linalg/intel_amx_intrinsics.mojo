@@ -15,7 +15,7 @@ from List import DimList
 from Matmul import Matrix
 from Pointer import DTypePointer
 from Range import range
-from SIMD import SIMD
+from SIMD import SIMD, Int8, Int32
 from StaticTuple import StaticTuple
 
 alias void = DType.invalid.value
@@ -25,17 +25,8 @@ struct __tile:
     """An AMX tile representation"""
 
     var buf: __mlir_type[`!pop.array<1024, si32>`]
-    var rows: SIMD[DType.int32, 1]
-    var cols: SIMD[DType.int32, 1]
-
-
-fn to_si8(
-    val: Int,
-) -> SIMD[DType.int8, 1]:
-    """Converts an input integer to an si8 value"""
-    return __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
-        val.value
-    )
+    var rows: Int32
+    var cols: Int32
 
 
 fn _tile_dpbssd[dst: Int, a: Int, b: Int]():
@@ -48,11 +39,7 @@ fn _tile_dpbssd[dst: Int, a: Int, b: Int]():
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_dpbssd
     """
-    llvm_intrinsic["llvm.x86.tdpbssd", NoneType](
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](a.value),
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](b.value),
-    )
+    llvm_intrinsic["llvm.x86.tdpbssd", NoneType](Int8(dst), Int8(a), Int8(b))
 
 
 fn _tile_release():
@@ -76,11 +63,7 @@ fn _tile_zero[tdest: Int]():
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_zero
     """
 
-    llvm_intrinsic["llvm.x86.tilezero", NoneType](
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](
-            tdest.value
-        )
-    )
+    llvm_intrinsic["llvm.x86.tilezero", NoneType](Int8(tdest))
 
 
 fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
@@ -90,9 +73,7 @@ fn _tile_loadd[dst: Int](base: DTypePointer[void], stride: Int):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadd
     """
     llvm_intrinsic["llvm.x86.tileloadd64", NoneType](
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](dst.value),
-        base,
-        stride.value,
+        Int8(dst), base, stride.value
     )
 
 
@@ -102,11 +83,7 @@ fn _tile_stored[src: Int](base: DTypePointer[void], stride: Int):
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_stored
     """
-    llvm_intrinsic["llvm.x86.tilestored64", NoneType](
-        __mlir_op.`pop.cast`[_type : __mlir_type.`!pop.scalar<si8>`](src.value),
-        base,
-        stride,
-    )
+    llvm_intrinsic["llvm.x86.tilestored64", NoneType](Int8(src), base, stride)
 
 
 fn _tile_loadconfig(mem_addr: DTypePointer[void]):
