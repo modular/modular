@@ -6,7 +6,7 @@
 
 """The module contains implementations of activation functions."""
 
-from Assert import assert_param_msg, debug_assert
+from Assert import assert_param_msg
 from Bit import _is_neg
 from DType import DType
 from Math import abs, copysign, erf, exp, clamp, max, min, identity, tanh, fma
