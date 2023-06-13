@@ -420,12 +420,9 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
       // If the parameter decl is a variadic parameter list, and do not have
       // pack operands that could be used to infer those parameters, then we can
       // fulfill it with an empty list.  We know it must be the last parameter
-      // decl.
-      if (isVararg && !isPackVararg) {
-        // If this isn't actually a variadic type, then we simply reached the
-        // end of the parameter list.
-        if (!isa<VariadicType>(type))
-          continue;
+      // decl. If this isn't actually a variadic type, then we simply reached
+      // the end of the parameter list.
+      if (isVararg && !isPackVararg && isa<VariadicType>(type)) {
         auto emptyVariadic =
             VariadicAttr::get(ArrayRef<TypedAttr>(), cast<VariadicType>(type));
         setParamValue(emptyVariadic);

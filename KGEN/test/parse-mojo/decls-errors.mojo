@@ -226,6 +226,12 @@ struct ParameterizedStruct[T: __mlir_type.`!kgen.mlirtype`]:
     def __init__(inout self, *args: T):
         pass
 
+@value
+struct TestTuple[*Ts: AnyType]:
+    # expected-note @+1 {{function declared here}}
+    fn test[i: Int, j: Int](self):
+        pass
+
 fn badCalls(arg: Int):
   # expected-error @+1 {{argument #1 cannot be converted from 'FloatLiteral' to 'Int'}}
   exampleVariadic(1.0, 1.0)
@@ -250,6 +256,9 @@ fn badCalls(arg: Int):
   # We can't infer `T` with two arguments of different types.
   # expected-error @+1 {{callee expects 1 input parameter but 0 were provided}}
   parameterizedVariadic(1, 2.0)
+
+  # expected-error @below {{callee expects 3 input parameters but 2 were provided}}
+  TestTuple[Int, Float32]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'let' initializer}}
