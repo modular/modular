@@ -541,11 +541,11 @@ fn cast[
 # Call pow, needed as it has multiple overloads which can't be aliased
 @always_inline
 fn pow_wrapped[
-    type: DType, simd_width: Int
-](value: SIMD[type, simd_width], power: SIMD[type, simd_width]) -> SIMD[
+    type: DType, power_type: DType, simd_width: Int
+](value: SIMD[type, simd_width], power: SIMD[power_type, simd_width]) -> SIMD[
     type, simd_width
 ]:
-    return pow[type, type, simd_width](value, power)
+    return pow[type, power_type, simd_width](value, power)
 
 
 # ===----------------------------------------------------------------------===#
