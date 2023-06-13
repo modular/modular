@@ -651,44 +651,6 @@ kgen.generator @stack_allocation<size, type: type>() {
   kgen.return
 }
 
-// CHECK-LABEL: @memcpy
-// CHECK-SAME: %[[A:.*]]: !pop.pointer<type>
-// CHECK-SAME: %[[B:.*]]: !pop.pointer<scalar<f32>>
-// CHECK-SAME: %[[C:.*]]: !pop.pointer<scalar<si32>>
-kgen.generator @memcpy<type: type, dtype: dtype>(%a: !pop.pointer<type>,
-                                                 %b: !pop.pointer<scalar<f32>>,
-                                                 %c: !pop.pointer<scalar<si32>>) {
-  // CHECK: %[[SIZE:.*]] = index.constant 1
-  %one = index.constant 1
-  // CHECK: pop.memcpy %[[A]], %[[A]], %[[SIZE]] : !pop.pointer<type>
-  pop.memcpy %a, %a, %one : !pop.pointer<type>
-  // CHECK: pop.memcpy inline %[[B]], %[[B]], %[[SIZE]] : !pop.pointer<scalar<f32>>
-  pop.memcpy inline %b, %b, %one : !pop.pointer<scalar<f32>>
-  // CHECK: pop.memcpy inline volatile %[[C]], %[[C]], %[[SIZE]] : !pop.pointer<scalar<si32>>
-  pop.memcpy inline volatile %c, %c, %one : !pop.pointer<scalar<si32>>
-  kgen.return
-}
-
-// CHECK-LABEL: @memset
-// CHECK-SAME: %[[A:.*]]: !pop.pointer<type>
-// CHECK-SAME: %[[B:.*]]: !pop.pointer<scalar<f32>>
-// CHECK-SAME: %[[C:.*]]: !pop.pointer<scalar<si32>>
-kgen.generator @memset<type: type, dtype: dtype>(%a: !pop.pointer<type>,
-                                                 %b: !pop.pointer<scalar<f32>>,
-                                                 %c: !pop.pointer<scalar<si32>>) {
-  // CHECK: %[[SIZE:.*]] = index.constant 1
-  %one = index.constant 1
-  // CHECK: %[[VAL:.*]] = kgen.param.constant
-  %val = kgen.param.constant: scalar<ui8> = <<0>>
-  // CHECK: pop.memset %[[A]], %[[VAL]], %[[SIZE]] : !pop.pointer<type>
-  pop.memset %a, %val, %one : !pop.pointer<type>
-  // CHECK: pop.memset %[[B]], %[[VAL]], %[[SIZE]] : !pop.pointer<scalar<f32>>
-  pop.memset %b, %val, %one : !pop.pointer<scalar<f32>>
-  // CHECK: pop.memset volatile %[[C]], %[[VAL]], %[[SIZE]] : !pop.pointer<scalar<si32>>
-  pop.memset volatile %c, %val, %one : !pop.pointer<scalar<si32>>
-  kgen.return
-}
-
 kgen.link "some.lib" as @somelib
 
 // CHECK-LABEL: @external_call
