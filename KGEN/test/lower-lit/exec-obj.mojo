@@ -12,7 +12,7 @@ struct SomeStructWithSize[size: __mlir_type.index]:
 
 
 fn getSize() -> __mlir_type.index:
-    return (0).__as_mlir_index()
+    return (0).value
 
 
 # COM: Check that the mangled function name doesn't contain "@"
