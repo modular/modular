@@ -1096,49 +1096,6 @@ struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPMemcpy
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto isVolatile = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile()));
-    if (op.getIsInlined()) {
-      rewriter.replaceOpWithNewOp<LLVM::MemcpyInlineOp>(
-          op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(),
-          isVolatile);
-      return success();
-    }
-    rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
-        op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(), isVolatile);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// ConvertPOPMemset
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPMemset : ConvertPOPToLLVMPattern<MemsetOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MemsetOp op, MemsetOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto isVolatile = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getBoolAttr(adaptor.getIsVolatile()));
-    rewriter.replaceOpWithNewOp<LLVM::MemsetOp>(op, adaptor.getDest(),
-                                                adaptor.getValue(),
-                                                adaptor.getSize(), isVolatile);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPInlineAsm
 //===----------------------------------------------------------------------===//
 
@@ -1387,8 +1344,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,
-      ConvertPOPMemcpy,
-      ConvertPOPMemset,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
@@ -1515,7 +1470,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   // If this function has debug info, update any unresolved pop types.
   if (DebugInfo::extractScope(*func)) {
-    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter,
+                                                       targetInfo);
     debugTypeConverter.applyRecursively(*func);
   }
 }
