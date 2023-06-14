@@ -343,7 +343,7 @@ kgen.func @select() -> !pop.simd<2, si4> {
   %0 = kgen.param.constant: simd<2, si4> = <<1, 3>>
   %1 = kgen.param.constant: simd<2, si4> = <<2, 4>>
   %2 = kgen.param.constant: simd<2, bool> = <<true, false>>
-  %3 = pop.select %2, %0, %1 : !pop.simd<2, si4>
+  %3 = pop.simd.select %2, %0, %1 : !pop.simd<2, si4>
   kgen.return %3 : !pop.simd<2, si4>
 }
 

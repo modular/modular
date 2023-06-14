@@ -466,24 +466,6 @@ OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// SelectOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
-  auto operands = adaptor.getOperands();
-  auto condVals = dyn_cast_or_null<SIMDAttr>(operands[0]);
-  auto trueVals = dyn_cast_or_null<SIMDAttr>(operands[1]);
-  auto falseVals = dyn_cast_or_null<SIMDAttr>(operands[2]);
-  if (!condVals || !trueVals || !falseVals)
-    return {};
-  SmallVector<DTypeValue> results;
-  for (auto [cond, trueVal, falseVal] : llvm::zip(
-           condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
-    results.push_back(cond.getBoolVal() ? trueVal : falseVal);
-  return SIMDAttr::get(results, getType());
-}
-
-//===----------------------------------------------------------------------===//
 // BitcastOp
 //===----------------------------------------------------------------------===//
 
@@ -634,6 +616,24 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   SmallVector<DTypeValue> values(vec.getValues());
   values[idx.getInt()] = val.getValues().front();
   return SIMDAttr::get(values, getType());
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDSelectOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SIMDSelectOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
+  auto condVals = dyn_cast_or_null<SIMDAttr>(operands[0]);
+  auto trueVals = dyn_cast_or_null<SIMDAttr>(operands[1]);
+  auto falseVals = dyn_cast_or_null<SIMDAttr>(operands[2]);
+  if (!condVals || !trueVals || !falseVals)
+    return {};
+  SmallVector<DTypeValue> results;
+  for (auto [cond, trueVal, falseVal] : llvm::zip(
+           condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
+    results.push_back(cond.getBoolVal() ? trueVal : falseVal);
+  return SIMDAttr::get(results, getType());
 }
 
 //===----------------------------------------------------------------------===//

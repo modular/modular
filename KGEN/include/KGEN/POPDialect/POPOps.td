@@ -442,40 +442,6 @@ def POP_XOrOp : POP_BitwiseOp<"xor"> {
 }
 
 //===----------------------------------------------------------------------===//
-// SelectOp
-//===----------------------------------------------------------------------===//
-
-def POP_SelectOp : POPOp<"select", [Pure,
-    AllTypesMatch<["trueValue", "falseValue", "result"]>,
-    TypesMatchWith<"bool of same branch type", "result", "condition",
-                   "getBoolOfSameParentType($_self)">]> {
-  let summary = "select";
-  let description = [{
-    The `pop.select` operation takes a condition predicate and two `!pop.scalar`
-    or `!pop.simd` types (`then` and `else`) and chooses one value based on a
-    condition, without IR-level branching.
-
-    When the condition is a SIMD vector, then the result is a SIMD vector
-    where the value of each element is chosen (aka blended) from the `trueVal`
-    and `falseVal` operands based on the condition's element value.
-
-    Example:
-
-    ```mlir
-    %a = pop.select %cond, %trueVal, %falseVal : !pop.scalar<type>
-    %b = pop.select %cond, %trueVal, %falseVal : !pop.simd<size, type>
-    ```
-  }];
-
-  let arguments = (ins BoolSIMD:$condition, POP_SIMDType:$trueValue,
-                       POP_SIMDType:$falseValue);
-  let results = (outs POP_SIMDType:$result);
-
-  let assemblyFormat = "operands attr-dict `:` type($result)";
-  let hasFolder = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // BitCastOp
 //===----------------------------------------------------------------------===//
 
@@ -667,6 +633,40 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     custom<ShuffleMask>($mask, ref(type($result))) attr-dict
   }];
   let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDSelectOp
+//===----------------------------------------------------------------------===//
+
+def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
+    AllTypesMatch<["trueValue", "falseValue", "result"]>,
+    TypesMatchWith<"bool of same branch type", "result", "condition",
+                   "getBoolOfSameParentType($_self)">]> {
+  let summary = "SIMD select";
+  let description = [{
+    The `pop.simd.select` operation takes a SIMD condition predicate and two
+    `!pop.scalar` or `!pop.simd` types (`then` and `else`) and chooses one value
+    based on a condition, without IR-level branching.
+
+    When the condition is a SIMD vector, then the result is a SIMD vector
+    where the value of each element is chosen (aka blended) from the `trueVal`
+    and `falseVal` operands based on the condition's element value.
+
+    Example:
+
+    ```mlir
+    %a = pop.simd.select %cond, %trueVal, %falseVal : !pop.scalar<type>
+    %b = pop.simd.select %cond, %trueVal, %falseVal : !pop.simd<size, type>
+    ```
+  }];
+
+  let arguments = (ins BoolSIMD:$condition, POP_SIMDType:$trueValue,
+                       POP_SIMDType:$falseValue);
+  let results = (outs POP_SIMDType:$result);
+
+  let assemblyFormat = "operands attr-dict `:` type($result)";
   let hasFolder = 1;
 }
 
