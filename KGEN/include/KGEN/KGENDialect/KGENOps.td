@@ -578,7 +578,6 @@ def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
     ```
   }];
 
-  let arguments = (ins);
   let assemblyFormat = "attr-dict";
 }
 
@@ -780,47 +779,6 @@ def KGEN_UndefOp : KGENOp<"undef", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// ExportOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExportOp : KGENOp<"export", [
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Declare an exported symbol.";
-  let description = [{
-    The `kgen.export` operation specifies an exported symbol from a
-    given module. The provided alias name will be used as the actual
-    symbol name during code generation. If `isCExport` is set, the
-    symbol will be exported as a C symbol, and its arguments and results will
-    be changed to conform to C calling convention.
-
-    Example:
-
-    ```mlir
-    kgen.export @foo as @my_foo
-
-    // The two examples below are equivalent.
-    kgen.export @foo as @foo
-    kgen.export @foo
-
-    // Export using C linkage and calling convention rules.
-    kgen.export @foo to C
-    kgen.export @foo to C as @foo
-    ```
-  }];
-
-  let arguments = (ins
-    SymbolRefAttr:$exported,
-    SymbolNameAttr:$alias,
-    UnitAttr:$isCExport
-  );
-  let assemblyFormat = [{
-    $exported (`to` `C` $isCExport^)? custom<ExportOp>(ref($exported), $alias)
-    attr-dict
-  }];
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // CallSignatureOp
 //===----------------------------------------------------------------------===//
 
@@ -917,6 +875,47 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
     OpBuilder<(ins "Type":$type, "TypedAttr":$callee, "ValueRange":$captures)>
   ];
 
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ExportOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ExportOp : KGENOp<"export", [
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Declare an exported symbol.";
+  let description = [{
+    The `kgen.export` operation specifies an exported symbol from a
+    given module. The provided alias name will be used as the actual
+    symbol name during code generation. If `isCExport` is set, the
+    symbol will be exported as a C symbol, and its arguments and results will
+    be changed to conform to C calling convention.
+
+    Example:
+
+    ```mlir
+    kgen.export @foo as @my_foo
+
+    // The two examples below are equivalent.
+    kgen.export @foo as @foo
+    kgen.export @foo
+
+    // Export using C linkage and calling convention rules.
+    kgen.export @foo to C
+    kgen.export @foo to C as @foo
+    ```
+  }];
+
+  let arguments = (ins
+    SymbolRefAttr:$exported,
+    SymbolNameAttr:$alias,
+    UnitAttr:$isCExport
+  );
+  let assemblyFormat = [{
+    $exported (`to` `C` $isCExport^)? custom<ExportOp>(ref($exported), $alias)
+    attr-dict
+  }];
   let hasVerifier = 1;
 }
 
