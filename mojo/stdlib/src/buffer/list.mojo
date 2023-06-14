@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides utilities for working with static and variadic lists."""
 
-from Assert import assert_param, assert_param_msg
+from Assert import assert_param
 from TypeUtilities import rebind
 from Pointer import Pointer
 
@@ -193,7 +193,7 @@ struct DimList:
         Returns:
             The dimension at the specified index.
         """
-        assert_param_msg[i >= 0, "negative index"]()
+        assert_param[i >= 0, "negative index"]()
         return self.value[i]
 
     @always_inline
@@ -283,7 +283,7 @@ struct DimList:
         Returns:
             A list of all dynamic dimension values.
         """
-        assert_param_msg[length > 0, "length must be positive"]()
+        assert_param[length > 0, "length must be positive"]()
         alias u = Dim()
 
         @parameter

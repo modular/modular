@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the Buffer class."""
 
-from Assert import assert_param, debug_assert, assert_param_msg
+from Assert import assert_param, debug_assert, assert_param
 from DType import DType
 from Functional import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
@@ -108,7 +108,7 @@ struct Buffer[size: Dim, type: DType]:
             The buffer object.
         """
         # Construct a Buffer type with statically known size
-        assert_param_msg[size.has_value(), "must have known size"]()
+        assert_param[size.has_value(), "must have known size"]()
         return Self {data: ptr.address, dynamic_size: size.get(), dtype: type}
 
     @always_inline
@@ -125,7 +125,7 @@ struct Buffer[size: Dim, type: DType]:
             The buffer object.
         """
         # Construct a Buffer type with statically known size
-        assert_param_msg[size.has_value(), "must have known size"]()
+        assert_param[size.has_value(), "must have known size"]()
         return Self {data: ptr, dynamic_size: size.get(), dtype: type}
 
     @always_inline
@@ -388,7 +388,7 @@ struct Buffer[size: Dim, type: DType]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        assert_param_msg[size.has_value(), "must have known size"]()
+        assert_param[size.has_value(), "must have known size"]()
         let data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
         return Self(data_pointer)
 
@@ -654,7 +654,7 @@ struct NDBuffer[
         Returns:
             The NDBuffer object.
         """
-        assert_param_msg[
+        assert_param[
             shape.all_known[rank](),
             "dimensions must all be known",
         ]()
@@ -684,7 +684,7 @@ struct NDBuffer[
         Returns:
             The NDBuffer object.
         """
-        assert_param_msg[
+        assert_param[
             shape.all_known[rank](),
             "dimensions must all be known",
         ]()
