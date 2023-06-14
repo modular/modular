@@ -317,16 +317,17 @@ void M::Detail::timeTraceProfilerWriteTrace(llvm::raw_pwrite_stream &os) {
 
   // Emit the host machine info, if we can retrieve it.
   auto hostMachineInfoOr = getHostMachineInfo();
-  if (hostMachineInfoOr.isError())
+  if (hostMachineInfoOr.isError()) {
     reportError("warning: time-profiler failed to "
                 "retrieve system-info for tracefile");
-  else {
+  } else {
     jsonOS.attributeBegin("hostMachineInfo");
     hostMachineInfoOr.takeValue().print(jsonOS);
     jsonOS.attributeEnd();
   }
 
   jsonOS.objectEnd();
+  os.flush();
 }
 
 //===----------------------------------------------------------------------===//
@@ -403,6 +404,7 @@ void M::Detail::timeTraceProfilerWriteEventStream(llvm::raw_pwrite_stream &os) {
   os << "------  ----------  ---  ----------  ------------------------------\n";
   for (const auto &event : events)
     event.write(os);
+  os.flush();
 }
 
 //===----------------------------------------------------------------------===//

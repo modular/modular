@@ -102,7 +102,6 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
     registerLLCL(compilerRTFunctions);
     registerPython(compilerRTFunctions);
     registerMemory(compilerRTFunctions);
-    registerPrint(compilerRTFunctions);
     registerRandom(compilerRTFunctions);
     registerSystem(compilerRTFunctions);
     registerTracing(compilerRTFunctions);

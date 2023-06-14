@@ -221,7 +221,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     registerLLCL(compilerRTFunctions);
     registerPython(compilerRTFunctions);
     registerMemory(compilerRTFunctions);
-    registerPrint(compilerRTFunctions);
     registerRandom(compilerRTFunctions);
     registerSystem(compilerRTFunctions);
     registerTracing(compilerRTFunctions);
