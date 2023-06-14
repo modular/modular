@@ -1311,9 +1311,9 @@ development and iteration over time.
 
 ## "Value Lifecycle": Birth, life and death of a value {#value-lifecycle}
 
-Now that we have an understanding of the different ingredients that can go into
-building functions and the types system, we can look at how to put them
-together to model important types that you may want to express in Mojo.
+At this point, you should understand the core semantics and features for Mojo
+functions and types, so we can now discuss how they fit together to express
+new types in Mojo.
 
 Many existing languages express design points with different tradeoffs: C++, for
 example, is very powerful but often accused of
@@ -1325,8 +1325,8 @@ movable, which makes it challenging to express custom move constructors and
 can put a lot of stress on `memcpy` performance. In Python, everything is a
 reference to a class, so it never really faces issues with types.
 
-For Mojo, we benefit from learning from these existing systems, and aim to
-provide a model that is very powerful while still easy to learn and understand.
+For Mojo, we've learned from these existing systems, and we aim to
+provide a model that's very powerful while still easy to learn and understand.
 We also don't want to require "best effort" and difficult-to-predict
 optimization passes built into a "sufficiently smart" compiler.
 
@@ -1490,7 +1490,7 @@ predictable programming model around what the compiler is able to track, and
 static analysis in a compiler is inherently limited.  For example, while it is
 possible for a compiler to understand that the two array accesses in the
 first example below are to different array elements, it is (in general)
-impossible to reason about the second example:
+impossible to reason about the second example (this is C++ code):
 
 ```c++
 std::pair<T, T> getValues1(MutableArray<T> &array) {
@@ -1708,11 +1708,18 @@ fn __moveinit__(inout self, owned existing: Self):
     self.age = existing.age
 ```
 
-If your type contains any move-only fields, it cannot (and therefore will not)
-generate a copy constructor for you of course.  Mojo only synthesizes these for
-you when they don't exist, so it is ok to override its behavior by defining your
-own version of these.  For example, it is fairly common to want to define a
-custom copy constructor but use the default memberwise and move constructor.
+Mojo synthesizes each of these only when it doesn't exist, so it's okay to
+override its behavior by defining your own version for just one or more. For
+example, it is fairly common to want a custom copy constructor but use the
+default member-wise and move constructor.
+
+:::{.callout-note}
+
+**Note:** If your type contains any [move-only](#unique-move-only-types)
+fields, Mojo will not generate a copy constructor because it cannot copy those
+fields.
+
+:::
 
 There is no way to suppress the generation of specific methods or customize
 generation at this time, but we can add arguments to the `@value` generator to
@@ -1724,13 +1731,15 @@ probably isn't a value type, and you don't want these members anyway.
 
 ## Behavior of destructors
 
-Any struct in Mojo can have a destructor, which is automatically run when the
-values lifetime ends. For example, a simple string might look like this (in
+Any struct in Mojo can have a destructor (a `__del__()` method), which is
+automatically run when the value's lifetime ends (typically the point at which
+the value is last used). For example, a simple string might look like this (in
 pseudo code):
 
 ```mojo
+@value
 struct MyString:
-    var data: Pointer[UI8]
+    var data: Pointer[UInt8]
 
     def __init__(inout self, input: StringRef): ...
     def __add__(self, rhs: MyString) -> MyString: ...
@@ -1738,7 +1747,14 @@ struct MyString:
         free(self.data.address)
 ```
 
-The Mojo compiler automatically invokes the destructor when the value is dead
+Mojo destroys values like `MyString` (it calls the `__del__()` destructor)
+using an **"As Soon As Possible"** (ASAP) policy that runs after every call.
+Mojo does *not* wait until the end of the code block to destroy unused values.
+Even in an expression like `a+b+c+d`, Mojo destroys the intermediate
+expressions eagerly, as soon as they are no longer needed—it does not wait
+until the end of the statement.
+
+The Mojo compiler automatically invokes the destructor when a value is dead
 and provides strong guarantees about when the destructor is run. Mojo uses
 static compiler analysis to reason about your code and decide when to insert
 calls to the destructor. For example:
@@ -1748,93 +1764,84 @@ fn use_strings():
     var a = MyString("hello a")
     var b = MyString("hello b")
     print(a)
-    # a.__del__() runs here
+    # a.__del__() runs here for "hello a"
 
 
     print(b)
     # b.__del__() runs here
 
     a = MyString("temporary a")
-    # a.__del__() runs here
+    # a.__del__() runs here because "temporary a" is never used
 
     other_stuff()
 
     a = MyString("final a")
     print(a)
-    # a.__del__() runs here
+    # a.__del__() runs again here for "final a"
 ```
 
 In the code above, you’ll see that the `a` and `b` values are created early on,
 and each initialization of a value is matched with a call to a destructor.
-Notice also where the calls are happening: in the `b` variable. For example,
-Mojo keeps the value live across the (unrelated) print of the `a` variable
-until the print of the `b` variable and destroys it immediately after that
-call. The `a` value is destroyed immediately after its first print, and
-immediately after reassigning it a new (unused) temporary value, and after its
-final print.
+Notice that `a` is destroyed multiple times—once for each time it receives a
+new value.
 
-Mojo destroys values using an **"As Soon As Possible"** (ASAP) policy, behaving
-like
-a hyper-active garbage collector that is run after every call - and when we say
-every call, we mean it!  Code that uses internal expressions (like `a+b+c+d`)
-will destroy the intermediate expressions eagerly when they are not needed -
-destruction is not deferred to the end of the statement like in C++. Mojo
-fully understands control flow, including loops, ifs, and try/except of course.
+Now, this might be surprising to a C++ programmer, because it's different from
+the [RAII pattern](https://en.cppreference.com/w/cpp/language/raii) in which
+C++ destroys values at the end of a scope. Mojo also follows the principle
+that values acquire resources in a constructor and release resources in a
+destructor, but eager destruction in Mojo has a number of strong advantages
+over scope-based destruction in C++:
 
-Now, this may be surprising to a C++ programmer: this invalidates the use of the
-[RAII pattern](https://en.cppreference.com/w/cpp/language/raii) that C++
-programmers use widely.  So, why does Mojo destroy things so eagerly instead of
-using C++-style scoped destruction?  Well I’m glad you asked, there are many
-good reasons!
+- The Mojo approach eliminates the need for types to implement re-assignment
+  operators, like `operator=(const T&)` and `operator=(T&&)` in C++, making it
+  easier to define types and eliminating a concept.
 
-The Mojo design has a number of strong advantages over the C++ model:
+- Mojo does not allow mutable references to overlap with other mutable
+  references or with immutable borrows. One major way that it provides a
+  predictable programming model is by making sure that references to objects die
+  as soon as possible, avoiding confusing situations where the compiler thinks a
+  value could still be alive and interfere with another value, but that isn’t
+  clear to the user.
 
-1. Recall that Python doesn’t really have scopes beyond the whole function, and
-Mojo needs to provide a workable model that behaves correctly in the presence
-of Python-style ‘def’s.
+- Destroying values at last-use composes nicely with "move" optimization, which
+  transforms a "copy+del" pair into a "move" operation, a generalization of
+  C++ move optimizations like NRVO (named return value optimization).
 
-2. Because Python doesn’t provide strong guarantees on object destruction, it
-doesn’t encourage the RAII pattern. To solve for the RAII pattern, Mojo (and
-Python) provides a [`with`
-statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement)
-that provides scoped access to resources, which is more deliberate and more
-syntactically clear than RAII.
+- Destroying values at end-of-scope in C++ is problematic for some common
+  patterns like tail recursion because the destructor calls happen after the
+  tail call. This can be a significant performance and memory problem for
+  certain functional programming patterns.
 
-3. The Mojo approach eliminates the need for types to implement re-assignment
-operators, like `operator=(const T&)` and `operator=(T&&)` in C++, making it
-easier to define types and eliminating a concept.
+Importantly, Mojo's eager destruction also works well within Python-style `def`
+functions to provide destruction guarantees (without a garbage collector) at a
+fine-grain level—recall that Python doesn’t really provide scopes beyond a
+function, so C++-style destruction in Mojo would be a lot less useful.
 
-4. Mojo does not allow mutable references to overlap with other mutable
-references or with immutable borrows. One major way that it provides a
-predictable programming model is by making sure that references to objects die
-as soon as possible, avoiding confusing situations where the compiler thinks a
-value could still be alive and interfere with another value, but that isn’t
-clear to the user.
+:::{.callout-note}
 
-5. Destroying values at last-use composes nicely with "move" optimization,
-which transforms a "copy+del" pair into a "move" operation, a generalization of
-C++ move optimizations like NRVO.
+**Note:** Mojo also supports the Python-style [`with`
+statement](https://docs.python.org/3/reference/compound_stmts.html#the-with-statement),
+which provides more deliberately-scoped access to resources.
 
-6. Destroying values at end-of-scope in C++ is problematic for some common
-patterns like tail recursion because the destructor calls happen after the tail
-call. This can be a significant performance and memory problem for certain
-functional programming patterns.
+:::
 
 The Mojo approach is more similar to how Rust and Swift work, because they both
 have strong value ownership tracking and provide memory safety.  One difference
-is that their implementation requires the use of a [dynamic "drop
-flag"](https://doc.rust-lang.org/nomicon/drop-flags.html) - they maintain hidden
+is that their implementations require the use of a [dynamic "drop
+flag"](https://doc.rust-lang.org/nomicon/drop-flags.html)—they maintain hidden
 shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-### Field sensitive lifetime management
+### Field-sensitive lifetime management
 
-In addition to Mojo’s lifetime analysis being fully control flow aware, it is
-also fully field sensitive (each field of a structure is tracked independently).
-It separately keeps track of whether a "whole object" is initialized with an
-initializer or destroyed with a whole object destructor.  For example, consider
-this code:
+In addition to Mojo’s lifetime analysis being fully control-flow aware, it is
+also fully field-sensitive (each field of a structure is tracked
+independently). That is, Mojo separately keeps track of whether a "whole
+object" is fully or only partially initialized/destroyed.
+
+For example, building upon the `MyString` struct defined above,
+consider this code:
 
 ```mojo
 struct TwoStrings:
@@ -1862,8 +1869,9 @@ this when using the [transfer operator](#owned-arguments), for example:
 fn consume_and_use_two_strings():
     var ts = TwoStrings()
     consume(ts.str1^)
+    # ts.str1.__moveinit__() runs here
 
-    # ts is partially initialized here!
+    # ts is now only partially initialized here!
     other_stuff()
 
     ts.str1 = MyString()  # All together now
@@ -1871,35 +1879,36 @@ fn consume_and_use_two_strings():
     # ts.__del__() runs here
 ```
 
-Notice that the code transfers ownership of one of the fields: for the duration
+Notice that the code transfers ownership of the `str1` field: for the duration
 of `other_stuff()`, the `str1` field is completely uninitialized because
-ownership was transferred to `consume()`. Fortunately for the code above,
-`str1` is reinitialized before it is used by the `use()` function - and if it
-weren’t, Mojo would reject the code with an uninitialized field error.
+ownership was transferred to `consume()`. Then
+`str1` is reinitialized before it is used by the `use()` function (if it
+weren’t, Mojo would reject the code with an uninitialized field error).
 
 Mojo's rule on this is powerful and intentionally straight-forward: fields can
 be temporarily transferred, but the "whole object" must be constructed with the
 aggregate type’s initializer and destroyed with the aggregate destructor. This
-means that it isn’t possible to create an object by initializing its fields,
-nor is it possible to tear down an object by destroying its fields:
+means that it isn’t possible to create an object by initializing only its
+fields, nor is it possible to tear down an object by destroying only its
+fields. For example, this code does not compile:
 
 ```mojo
 fn consume_and_use_two_strings():
-    var ts = TwoStrings()
+    var ts = TwoStrings() # ts is initialized
     consume(ts.str1^)
-    consume(ts.str2^)
-    # Error: cannot run the 'ts' destructor without initialized fields.
+    consume(ts.str2^) # Both members are transferred/destroyed
+    # Error: cannot run the 'ts' destructor without initialized fields
 
-    var ts2 : TwoStrings
-    ts2.str1 = MyString()  # All together now
-    ts2.str2 = MyString()  # All together now
+    var ts2 : TwoStrings # ts2 type is declared but not initialized
+    ts2.str1 = MyString()
+    ts2.str2 = MyString()  # Both the member are initalized
     use(ts2) # Error: 'ts2' isn't fully initialized
 ```
 
-While we could allow patterns like this to happen, we reject this because "a
-value is more than a sum of its parts".  Consider a `FileDescriptor` that
-contains a POSIX file descriptor as an integer value. For example - there is a
-big difference between destroying the integer (a no-op!) and destroying the
+While we could allow patterns like this to happen, we reject this because a
+value is more than a sum of its parts.  Consider a `FileDescriptor` that
+contains a POSIX file descriptor as an integer value: there is a
+big difference between destroying the integer (a no-op) and destroying the
 `FileDescriptor` (it might call the `close()` system call).  Because of this, we
 require all full-value initialization to go through initializers and be
 destroyed with their full-value destructor.
@@ -1915,7 +1924,7 @@ point.
 The behavior of an `__init__` method works almost like any other method - there
 is a small bit of magic: it knows that the fields of an object
 are uninitialized, but it believes the full object is initialized.  This means
-that you can use ‘self’ as a whole object as soon as all the fields are
+that you can use `self` as a whole object as soon as all the fields are
 initialized:
 
 ```mojo
@@ -1934,8 +1943,8 @@ struct TwoStrings:
         use(self)  # Safe to use immediately!
 ```
 
-Similarly, it is completely safe for initializers in Mojo to completely
-overwrite `self`, e.g. by delegating to other initializers:
+Similarly, it is safe for initializers in Mojo to completely
+overwrite `self`, such as by delegating to other initializers:
 
 ```mojo
 struct TwoStrings:
@@ -1950,8 +1959,8 @@ struct TwoStrings:
 
 ### Field lifetimes of `owned` arguments in `__del__` and `__moveinit__`
 
-A final bit of magic exists for the ‘owned’ arguments of a destructor and move
-initializer.  To recap, these methods are defined like this:
+A final bit of magic exists for the `owned` arguments of a move
+initializer and a destructor.  To recap, these methods are defined like this:
 
 ```mojo
 struct TwoStrings:
@@ -1963,14 +1972,14 @@ struct TwoStrings:
     fn __del__(owned self): ...
 ```
 
-These methods face an interesting but obscure problem: both of these methods
-are in charge of dismantling the `owned existing`/`self` value, either in
-destroying sub-elements that have to do with them, or using them to implement
-deletion logic for their own type. The move constructor wants to create a new
-`self` instance by stealing parts from an existing instance. As such, they both
-want to own and transform elements of the `owned` value and definitely
-don’t want the owned value's destructor to run. The most egregious example of
-this is the `__del__` method, which would turn into an infinite loop.
+These methods face an interesting but obscure problem: both methods
+are in charge of dismantling the `owned` `existing`/`self` value. That is,
+`__moveinit__()` destroys sub-elements of `existing` in order to transfer
+ownership to a new instance, while `__del__()` implements the
+deletion logic for its `self`. As such, they both
+want to own and transform elements of the `owned` value, and they definitely
+don’t want the `owned` value's destructor to run (in the case of the `__del__()`
+method, that would turn into an infinite loop).
 
 To solve this problem, Mojo handles these two methods specially by assuming
 that their whole values are destroyed upon reaching any return from the method.
@@ -1995,7 +2004,7 @@ struct TwoStrings:
 You should not generally have to think about this, but if you have logic with
 inner pointers into members, you may need to keep them alive for some logic
 within the destructor or move initializer itself.  You can do this by assigning
-to the discard pattern:
+to the `_` "discard" pattern:
 
 ```mojo
 fn __del__(owned self):
@@ -2008,7 +2017,7 @@ fn __del__(owned self):
 
 In this case, if `consume()` implicitly refers to some value in `str2` somehow,
 this will ensure that `str2` isn’t destroyed until the last use when it is
-accessed by the `_` pattern.
+accessed by the `_` discard pattern.
 
 ## Lifetimes
 
