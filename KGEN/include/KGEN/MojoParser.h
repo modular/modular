@@ -200,7 +200,8 @@ protected:
 OwningOpRef<ModuleOp>
 importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                mlir::TimingScope &ts,
-               SmallVectorImpl<std::string> *includedFiles = nullptr);
+               SmallVectorImpl<std::string> *includedFiles = nullptr,
+               bool enableCaching = true);
 
 /// Parse a single .mojo file and produce an appropriate document detailing the
 /// API within the module. The generated documentation is piped into the

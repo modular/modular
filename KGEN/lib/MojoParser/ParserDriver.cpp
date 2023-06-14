@@ -174,11 +174,10 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
   return {std::move(module), &moduleDecl};
 }
 
-OwningOpRef<mlir::ModuleOp>
-M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                  mlir::TimingScope &ts,
-                  SmallVectorImpl<std::string> *includedFiles) {
-  SharedState sharedState(sourceMgr, config);
+OwningOpRef<mlir::ModuleOp> M::importMojoFile(
+    llvm::SourceMgr &sourceMgr, MojoParserConfig &config, mlir::TimingScope &ts,
+    SmallVectorImpl<std::string> *includedFiles, bool enableCaching) {
+  SharedState sharedState(sourceMgr, config, enableCaching);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
