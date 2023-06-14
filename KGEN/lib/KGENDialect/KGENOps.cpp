@@ -299,6 +299,20 @@ void ParamApplyOp::concretizeCallee(mlir::IRRewriter &b,
 }
 
 //===----------------------------------------------------------------------===//
+// CostOfOp
+//===----------------------------------------------------------------------===//
+
+void CostOfOp::concretizeCallee(mlir::IRRewriter &b,
+                                SymbolConstantAttr callee) {
+  setCalleeAttr(callee);
+}
+
+ErrorTreeOr<SuccessType> CostOfOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return ErrorTree(getLoc(), "TODO: not implemented");
+}
+
+//===----------------------------------------------------------------------===//
 // ParamEvaluateOp
 //===----------------------------------------------------------------------===//
 
