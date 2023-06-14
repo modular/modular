@@ -484,7 +484,7 @@ private:
       return Error("Failed to load library " + libPath + ": " + errorMsg);
     }
 
-    using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime * runtime);
+    using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime *runtime);
     auto allocFunc = reinterpret_cast<allocType>(
         dylib.getAddressOfSymbol("M_CAS_allocateBackend"));
     if (!allocFunc) {
