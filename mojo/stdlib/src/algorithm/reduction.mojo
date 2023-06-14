@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements SIMD reductions."""
 
-from Assert import assert_param_msg, debug_assert
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
 from Functional import vectorize
@@ -247,7 +247,7 @@ fn _reduce_3D[
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
         alias cache_line_size = 64
         alias unroll_factor = cache_line_size // (simd_width * dtype_size)
-        assert_param_msg[unroll_factor > 0, "unroll_factor must be > 0"]()
+        assert_param[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
     alias unroll_factor = get_unroll_factor[simd_width, dtype_sizeof[type]()]()
