@@ -18,7 +18,7 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 int State::reportError(Twine errorMessage) const {
-  llvm::errs() << programName << ": " << errorMessage << "\n";
+  llvm::errs() << programName << ": error: " << errorMessage << "\n";
   return EXIT_FAILURE;
 }
 
