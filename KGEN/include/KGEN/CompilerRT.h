@@ -59,21 +59,6 @@ COMPILERRT_EXPORT LLVM_ATTRIBUTE_USED void *
 KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size);
 
 //===----------------------------------------------------------------------===//
-// Print.cpp
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-/// Register the Print functions.
-void registerPrint(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
-} // namespace M::KGEN
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLVM_ATTRIBUTE_USED void
-KGEN_CompilerRT_PrintFormat(const char *fmt, ...);
-
-COMPILERRT_EXPORT LLVM_ATTRIBUTE_USED void
-KGEN_CompilerRT_PrintToStdErr(const char *data, ssize_t size);
-
-//===----------------------------------------------------------------------===//
 // Random.cpp
 //===----------------------------------------------------------------------===//
 
@@ -136,8 +121,6 @@ KGEN_CompilerRT_dummylinkageinit() {
   KGEN_CompilerRT_Init_Intel_AMX();
 #endif
   KGEN_CompilerRT_LLCL_Dummy();
-  KGEN_CompilerRT_PrintFormat(nullptr);
-  KGEN_CompilerRT_PrintToStdErr(nullptr, 0);
   KGEN_CompilerRT_RandomDouble(0, 0);
   KGEN_CompilerRT_CoreCount();
   KGEN_CompilerRT_TimeTraceProfilerEnd();
