@@ -119,9 +119,10 @@ protected:
   void delegateClear(LLCL::AsyncValueRef<LLCL::Chain> result,
                      std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
-private:
   /// The LLCL runtime we should use for managing asynchrony.
   LLCL::Runtime &runtime;
+
+private:
   /// The next backend in the list. The public APIs handle nullptr here
   /// correctly, and the protected APIs (for the subclasses) should ignore the
   /// presence of this delegate entirely.
@@ -259,9 +260,10 @@ getFilesystemBackend(LLCL::Runtime &runtime,
 
 class S3BackendConfig : public DylibBackendConfig {
 public:
-  S3BackendConfig(std::string bucket, std::string prefix)
+  S3BackendConfig(std::string bucket, std::string prefix,
+                  size_t numIOThreads = 0)
       : DylibBackendConfig(ConfigKind::kS3), bucket(std::move(bucket)),
-        prefix(std::move(prefix)) {}
+        prefix(std::move(prefix)), numIOThreads(numIOThreads) {}
   static bool classof(const DylibBackendConfig *config) {
     return config->getKind() == ConfigKind::kS3;
   }
@@ -271,6 +273,10 @@ public:
   std::string region;
   /// Prefix in S3 bucket for cache.
   std::string prefix;
+  /// AWS thread pool size (number of threads to use for S3 IO). If 0,
+  /// the S3 backend will decide (right now it will pick double the
+  /// number of LLCL threads).
+  size_t numIOThreads;
 };
 
 /// Returns a BlobCacheBackend that uses S3 for storage. This accepts the S3
