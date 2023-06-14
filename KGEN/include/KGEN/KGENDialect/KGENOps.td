@@ -14,6 +14,7 @@ include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -455,6 +456,38 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
   }];
 
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// CostOfOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_CostOfOp : KGEN_CallOpBase<"cost_of",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Return the 'cost' of the function.";
+  let description = [{
+    The `kgen.cost_of` operation takes a parametric callee and returns
+    characteristics of the function that can be used to develop heuristics for
+    the cost of the function. This operation must be resolved at compile time.
+
+    Currently, `kgen.cost_of` returns the number of operations in the callee.
+    Specifically, the cost is evaluated on the function at the output of
+    elaboration, without running any post-elaboration passes.
+
+    Example:
+
+    ```mlir
+    %numOps = kgen.cost_of[(index) -> index: @evaluateMe]
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee,
+                       KGEN_ParamDeclArrayAttr:$paramDecls);
+  let results = (outs Index:$result);
+
+  let assemblyFormat = [{
+    `` custom<ParametricCallee>($callee, $paramDecls) attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
