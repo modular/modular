@@ -505,7 +505,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       InputParamBindings paramBindings;
       ssize_t incorrectBindingNo = 0;
       ASTType incorrectBindingExpectedType;
-      auto bindingAttr = paramBindings.verifyBindings(
+      auto [bindingAttr, _] = paramBindings.verifyBindings(
           signature.getInputParamTypes(), {},
           /*baseName=*/"<<UNUSED>>", expr->getLoc(), incorrectBindingNo,
           incorrectBindingExpectedType, *this,
@@ -1217,7 +1217,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structDecl.getInputParams())
     paramTypes.push_back(decl.getType());
-  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
       paramTypes, structDecl.getInputParamsAttr(), structDecl.getName(),
       expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
       structDecl, structDecl.getParamVarargs());

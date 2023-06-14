@@ -515,7 +515,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT:  %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <i>
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv($Int::Int)"<callable: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"callable_mv[fn($Int::Int) -> $Int::Int]($Int::Int)"<callable: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
   # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: callable](%a)
   return callable(a)
@@ -525,7 +525,7 @@ fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
   # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> callable, b)](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.func @"takeIndexParam()"<a: @"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<a: @"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>
 fn takeIndexParam[a: Int]() -> Int:
   return a + 1
 
@@ -535,13 +535,13 @@ fn returnIndex() -> Int:
 
 # CHECK-LABEL: lit.func @"returnIndex2()"() -> !kgen.declref<@"$Int"::@Int>
 fn returnIndex2() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<:@"$Int"::@Int apply(:() -> !kgen.declref<@"$Int"::@Int> @"$expressions"::@"returnIndex()")>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}"<:@"$Int"::@Int apply(:() -> !kgen.declref<@"$Int"::@Int> @"$expressions"::@"returnIndex()")>() : () -> !kgen.declref<@"$Int"::@Int>
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam()"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"callInParam[fn[$Int::Int]($Int::Int) -> $Int::Int]()"<callable: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>() -> !kgen.declref<@"$Int"::@Int>
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam()"<:@"$Int"::@Int apply(:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:@"$Int"::@Int apply(:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> callable, #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>() : () -> !kgen.declref<@"$Int"::@Int>
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
@@ -825,9 +825,9 @@ fn tuples_lv(i0: Int, f0: Float32):
    # CHECK-NEXT: [[I1VAL:%.*]] = pop.load %i1
    # CHECK-NEXT: [[PACK:%.*]] = pop.pack.create([[I2VAL]], [[I1VAL]])
    # CHECK-NEXT: [[TUPRV:%.*]] = kgen.call {{.*}}__init__{{.*}}([[PACK]])
-   # CHECK-NEXT: [[I1VAL:%.*]] =  kgen.call{{.*}}get({{.*}} = 0{{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[I1VAL:%.*]] =  kgen.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 0{{.*}}([[TUPRV]])
    # CHECK-NEXT: pop.store [[I1VAL]], %i1
-   # CHECK-NEXT: [[I2VAL:%.*]] =  kgen.call{{.*}}get({{.*}} = 1{{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[I2VAL:%.*]] =  kgen.call {{.*}}Tuple::@"get{{.*}}({{.*}} = 1{{.*}}([[TUPRV]])
    # CHECK-NEXT: pop.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
 
@@ -1084,12 +1084,12 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
     res = a < b < c and d < e
 
-# CHECK-LABEL: lit.func @"foo_adaptive(){{.*}} {isAdaptive
+# CHECK-LABEL: lit.func @"foo_adaptive[$Int::Int](){{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
    return 0
 
-# CHECK-LABEL: lit.func @"foo_adaptive()_0{{.*}} {isAdaptive
+# CHECK-LABEL: lit.func @"foo_adaptive[$Int::Int]()_0{{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
   return 1
@@ -1097,10 +1097,10 @@ fn foo_adaptive[x: Int]() -> Int:
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
     # CHECK: kgen.param.declare not_bound: variadic<!kgen.signature<<@"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>>> =
-    # CHECK-SAME: <[@"{{.*}}foo_adaptive()", @"{{.*}}foo_adaptive()_0"]>
+    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[$Int::Int]()", @"$expressions"::@"foo_adaptive[$Int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
     # CHECK-NEXT: kgen.param.declare bound: variadic<!kgen.signature<() -> !kgen.declref<@"$Int"::@Int>>> =
-    # CHECK-SAME: <[@"{{.*}}foo_adaptive()"<:@"$Int"::@Int {{.*}}1{{.*}}>, @"{{.*}}foo_adaptive()_0"<:@"$Int"::@Int {{.*}}1{{.*}}>]>
+    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[$Int::Int]()"<:@"$Int"::@Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[$Int::Int]()_0"<:@"$Int"::@Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
 fn lvalue_utilities(inout a: Int):

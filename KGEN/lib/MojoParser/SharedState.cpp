@@ -797,7 +797,9 @@ void SharedState::loadModulesFromCache(
         };
 
         if (auto funcOp = dyn_cast<LIT::FuncOp>(&op)) {
-          StringRef baseFuncName = funcOp.getName().split('(').first;
+          // The mangled name may include the input parameter signature.
+          StringRef baseFuncName =
+              funcOp.getName().split('(').first.split('[').first;
           auto &decl = declResolver->addFullyResolvedDecl(
               DeclIRValue(funcOp), StringAttr::get(getContext(), baseFuncName),
               container->getLoc(), container);

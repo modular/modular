@@ -285,6 +285,10 @@ function behaves just like Python with dynamic types. As soon as you define a
 single argument type, Mojo will look for overload candidates and resolve
 function calls as described above.
 
+Functions and methods can be overloaded on both argument and parameter
+signatures. See [Overloading on parameters](#overloading-on-parameters) for more
+information and the description on overload resolution rules.
+
 ### `fn` definitions
 
 The extensions above are the cornerstone that provides low-level programming
@@ -987,6 +991,59 @@ carries those parameters—the full type name is `SIMD[type, size]`. Although
 it's valid to write this out (as shown in the return type of `splat()`), this
 can be verbose, so we recommend using the `Self` type (from
 [PEP673](https://peps.python.org/pep-0673/)) like the `__add__` example does.
+
+### Overloading on parameters
+
+Functions and methods can be overloaded on their parameter signatures. The
+overload resolution logic filters for candidates according to the following
+rules, in order of precedence:
+
+1) Candidates with the minimal number of implicit conversions (in both arguments
+and parameters).
+2) Candidates without variadic arguments.
+3) Candidates without variadic parameters.
+4) Candidates with the shortest parameter signature.
+
+If there is more than one candidate after applying these rules, the overload
+resolution fails. For example:
+
+```mojo
+@register_passable("trivial")
+struct MyInt:
+    """A type that is implicitly convertible to `Int`."""
+    var value: Int
+
+    @always_inline("nodebug")
+    fn __init__(_a: Int) -> Self:
+        return Self {value: _a}
+
+fn foo[x: MyInt, a: Int](): pass
+
+fn foo[x: MyInt, y: MyInt](): pass
+
+fn bar[a: Int](b: Int): pass
+
+fn bar[a: Int](*b: Int): pass
+
+fn bar[*a: Int](b: Int): pass
+
+fn waldo[a: Int](b: Int): pass
+
+fn waldo[a: Int, T: AnyType](y: T): pass
+
+fn parameterOverloads[a: Int, b: Int, x: MyInt]():
+    # `foo[x: MyInt, a: Int]()` is called because it requires no implicit
+    # conversions, whereas `foo[x: MyInt, y: MyInt]()` requires one.
+    foo[x, a]()
+
+    # `bar[x: Int](y: Int)` is called because it does not have variadic
+    # arguments or parameters.
+    bar[a](b)
+
+    # `waldo[x: Int](y: Int)` is called because it has a shorter parameter
+    # signature than `waldo[x: Int, T: AnyType](y: T)`.
+    waldo[a](b)
+```
 
 ### Using parameterized types and functions
 

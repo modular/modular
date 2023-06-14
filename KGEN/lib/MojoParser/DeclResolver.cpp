@@ -1485,6 +1485,15 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
+  llvm::raw_svector_ostream os(mangledName);
+  TypeArrayAttr inputParams = signature.getInputParamTypes();
+  if (!inputParams.empty()) {
+    os << '[';
+    llvm::interleave(
+        inputParams, os, [&](ASTType type) { os << type.getAsString(); }, ",");
+    os << ']';
+  }
+
   mangledName += '(';
   size_t argNo = 0;
   for (auto [convention, argType] : llvm::zip(

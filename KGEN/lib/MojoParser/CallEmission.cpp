@@ -329,14 +329,16 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 //===----------------------------------------------------------------------===//
 
 /// Check that our set of parameter bindings work with the specified input
-/// parameters and call operands (if any), returning a checked
-/// ParamBindArrayAttr if so.  If the parameters do not work, this emits an
+/// parameters and call operands (if any). If so, return a checked
+/// ParamBindArrayAttr, along with information on how closely the bindings fit
+/// the input parameters. If the parameters do not work, this emits an
 /// diagnostic (if `declOp` is non-null) and sets
 /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
 /// count mismatch).
 ///
 /// This rejects the signature list if all the parameters are not bound.
-ParameterExprArrayAttr InputParamBindings::verifyBindings(
+std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
+InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
     StringRef baseName, SMLoc loc, ssize_t &incorrectBindingNo,
     ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
@@ -380,6 +382,7 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
   size_t nextBinding = 0;
   bool isPackVararg = packVarargs && !callOperands.empty();
+  InputParamBindings::Fitness fitness{0, false};
   for (auto [idx, typeX] : llvm::enumerate(actualParamTypes)) {
     Type type = typeX;
     size_t index = idx;
@@ -464,6 +467,7 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
         auto argValue = emitter.emitPValue({bindingPVal, binding.expr},
                                            EC_CallParamValue, expectedType);
         assert(argValue && "Already checked this would succeed");
+        ++fitness.numImplicitConversions;
         return argValue;
       }
 
@@ -495,16 +499,19 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
 
     // If the parameter is a variadic list, it may consume many values, and they
     // all get packed up into a VariadicAttr.
+    fitness.hasVariadicParams = true;
     SmallVector<TypedAttr> elements;
     Type expectedType = ASTType(type).getVariadicElementType();
-    elements.push_back(handleSingleParameterValue(binding, expectedType));
-    if (!elements.back())
+    PValue pValue = handleSingleParameterValue(binding, expectedType);
+    if (!pValue)
       return {};
+    elements.emplace_back(pValue);
     while (nextBinding != bindings.size()) {
       binding = bindings[nextBinding++];
-      elements.push_back(handleSingleParameterValue(binding, expectedType));
-      if (!elements.back())
+      PValue pValue = handleSingleParameterValue(binding, expectedType);
+      if (!pValue)
         return {};
+      elements.emplace_back(pValue);
     }
     setParamValue(VariadicAttr::get(
         elements, VariadicType::get(evaluator.getReboundType(expectedType))));
@@ -516,7 +523,8 @@ ParameterExprArrayAttr InputParamBindings::verifyBindings(
     return {};
   }
 
-  return ParameterExprArrayAttr::get(emitter.getContext(), newBindings);
+  return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
+          fitness};
 }
 
 /// Given a candidate that may or may not be compatible with the given
@@ -646,18 +654,21 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
-  ParameterExprArrayAttr newBindings =
-      callable.inputParamBindings.verifyBindings(
-          signature.getInputParamTypes(), {}, callable.baseName,
-          callExpr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
-          emitter,
-          /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
-          signature.hasPackVarargs(), operands,
-          [&](size_t index, Type type, ASTType expectedParamType,
-              ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
-            return ParameterInferenceState(emitter.shared, index, type)
-                .infer(signature, bindingsSoFar, operands);
-          });
+  TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
+  auto [newBindings, fitness] = callable.inputParamBindings.verifyBindings(
+      inputParamTypes, {}, callable.baseName, callExpr->getLoc(),
+      incorrectBindingNo, incorrectBindingExpectedType, emitter,
+      /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
+      signature.hasPackVarargs(), operands,
+      [&](size_t index, Type type, ASTType expectedParamType,
+          ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
+        return ParameterInferenceState(emitter.shared, index, type)
+            .infer(signature, bindingsSoFar, operands);
+      });
+
+  // We will accumulate the implicit conversion in arguments to those counted
+  // for the parameter bindings.
+  size_t numImplicitConversions = fitness.numImplicitConversions;
 
   // If there is an error, return the problem.
   if (!newBindings) {
@@ -733,10 +744,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   }
 
   // As we walk through the values provided as part of the argument list, we
-  // match them up against arguments expected by the signature of the callee and
-  // count how many implicit conversions are required for a match.
+  // match them up against arguments expected by the signature of the callee,
+  // take note if variadic arguments are passed, and accumulate implicit
+  // conversions required for a match.
   size_t providedValueIdx = 0;
-  size_t numImplicitConversions = 0;
   bool passesVarargArgument = false;
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
@@ -787,7 +798,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     // of varargs or packs) of the provided values. This reports any problems
     // with the operand type, or otherwise continues on to the next expected
     // argument to check.
-    auto checkOneOperand = [&](ASTType expectedType) -> OverloadFitness {
+    auto checkOneOperand = [&, newBindings = std::ref(newBindings)](
+                               ASTType expectedType) -> OverloadFitness {
       // We'll bind the next provided value.
       auto operand = operands[providedValueIdx];
       assert(!signature.isKWVararg(expectedArgIdx) &&
@@ -905,9 +917,12 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
   // Otherwise we succeeded!  For our payload, indicate the number of implicit
   // conversions and whether anything was passed through varargs.  We consider
-  // exact matches of concrete types to be more specific than varargs matches.
-  return {kValid, numImplicitConversions * 2 + (passesVarargArgument ? 1 : 0),
-          ASTType(), newBindings};
+  // exact matches of concrete types to be more specific than varargs matches,
+  // and both of these more specific than matches with variadic parameters.
+  size_t payload = numImplicitConversions * 4;
+  payload += (passesVarargArgument ? 2 : 0);
+  payload += (fitness.hasVariadicParams ? 1 : 0);
+  return {kValid, payload, ASTType(), newBindings};
 }
 
 /// Attach extra type conversion error detail or hints to the user.
@@ -1115,19 +1130,31 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
   }
 
   // Ok, we have at least one valid candidate, filter the list to the ones with
-  // the lowest number of implicit conversions required.
+  // the lowest number of implicit conversions required. If there is more than
+  // one candidate with minimal implicit conversions, we filter for the ones
+  // with the fewest number of parameter bindings.
   size_t minConversions = std::numeric_limits<size_t>::max();
+  size_t minBindings = std::numeric_limits<size_t>::max();
   SmallVector<ASTDecl *, 1> newFnDecls;
   OverloadFitness oneFitness = evaluations[0];
   for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
     // Ignore failures or candidates that have more conversions.
-    if (eval.kind != OverloadFitness::kValid || eval.payload > minConversions)
+    size_t numConversions = eval.payload;
+    if (eval.kind != OverloadFitness::kValid || numConversions > minConversions)
       continue;
 
-    // If we found a new floor to the # conversions needed, clear the list.
-    if (eval.payload < minConversions) {
+    // Ignore candidates that have too many bindings.
+    size_t numBindings = eval.paramBindings.size();
+    if ((numConversions == minConversions) && (numBindings > minBindings))
+      continue;
+
+    // If we found a new floor to the number of conversions needed, or a new
+    // candidate with minimal conversions with a new floor for the number of
+    // bindings, clear the list.
+    if (numConversions < minConversions || numBindings < minBindings) {
       newFnDecls.clear();
-      minConversions = eval.payload;
+      minConversions = numConversions;
+      minBindings = numBindings;
     }
     newFnDecls.push_back(candidate);
     oneFitness = eval;
@@ -1169,13 +1196,14 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
       }
     } else {
       // The numConversions field computed for kValue includes the number of
-      // implicit conversions required but also uses the low bit to track the
-      // whether a varargs conversion was used.  This allows us to treat varargs
-      // as a less-specific match than an exact signature match (for example,
-      // when overloading a `foo(Int)` and `foo(Int*)` we should pick the former
-      // if both work.  That said, when we get here we don't want to complain
-      // about the wrong number.
-      size_t numConversions = minConversions >> 1;
+      // implicit conversions required but also uses the two lowest bits to
+      // track the whether a variadic conversion was used in the parameters and
+      // arguments. This allows us to treat varargs as a less-specific match
+      // than an exact signature match (for example, when overloading a
+      // `foo(Int)` and `foo(Int*)` we should pick the former if both work. That
+      // said, when we get here we don't want to complain about the wrong
+      // number.
+      size_t numConversions = minConversions / 4;
 
       auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
                   << baseName << "', each candidate requires " << numConversions
@@ -1225,10 +1253,12 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // TODO: Parameter inference.
     ssize_t incorrectBindingNo = 0;
     ASTType incorrectBindingExpectedType;
-    return inputParamBindings.verifyBindings(
-        candidateType.getInputParamTypes(), {}, baseName, expr->getLoc(),
-        incorrectBindingNo, incorrectBindingExpectedType, emitter,
-        /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs());
+    return inputParamBindings
+        .verifyBindings(
+            candidateType.getInputParamTypes(), {}, baseName, expr->getLoc(),
+            incorrectBindingNo, incorrectBindingExpectedType, emitter,
+            /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs())
+        .first;
   };
 
   auto isValidCandidate = [&](SignatureType candidateType) -> bool {
@@ -1323,7 +1353,7 @@ static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
 
-  auto newBindings = inputParamBindings.verifyBindings(
+  auto [newBindings, _] = inputParamBindings.verifyBindings(
       funcOp.getFullSignature().getInputParamTypes(), {}, baseName,
       expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, emitter,
       /*emit diagnostics*/ funcOp, funcOp.getSignature().hasParamVarargs());
