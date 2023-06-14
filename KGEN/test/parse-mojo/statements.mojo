@@ -128,7 +128,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK:   kgen.param.yield
   # CHECK: }
 
-#CHECK-LABEL: lit.func @"param_if_andor_i1()"<a: i1, b: i1>()
+#CHECK-LABEL: lit.func @"param_if_andor_i1[__mlir_type.i1,__mlir_type.i1]()"<a: i1, b: i1>()
 fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
   # CHECK: kgen.param.if <cond(a, b, a)>
   @parameter
@@ -143,7 +143,7 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     var w: Int
 
 
-#CHECK-LABEL: lit.func @"param_if_and()"<a: @"$Bool"::@Bool, b: @"$Bool"::@Bool>()
+#CHECK-LABEL: lit.func @"param_if_and[$Bool::Bool,$Bool::Bool]()"<a: @"$Bool"::@Bool, b: @"$Bool"::@Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
   # CHECK-SAME:   :<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)",

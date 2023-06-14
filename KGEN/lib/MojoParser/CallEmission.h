@@ -78,15 +78,26 @@ public:
       std::function<PValue(size_t index, Type type, ASTType expectedType,
                            ArrayRef<TypedAttr> bindings)>;
 
+  /// Describe how closely the given parameter bindings match the specified
+  /// input parameters and call operands.
+  struct Fitness {
+    /// The number of implicit conversion in the parameter bindings.
+    size_t numImplicitConversions;
+
+    /// Whether the bindings include variadic parameters.
+    bool hasVariadicParams;
+  };
+
   /// Check that our set of parameter bindings work with the specified input
-  /// parameters and call operands (if any), returning a checked
-  /// ParamBindArrayAttr if so.  If the parameters do not work, this emits an
+  /// parameters and call operands (if any). If so, return a checked
+  /// ParamBindArrayAttr, along with information on how closely the bindings fit
+  /// the input parameters. If the parameters do not work, this emits an
   /// diagnostic (if `declOp` is non-null) and sets
   /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
   /// count mismatch).
   ///
   /// This rejects the signature list if all the parameters are not bound.
-  ParameterExprArrayAttr
+  std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> actualParamTypes,
                  ParamDeclArrayAttr actualParamDecls, StringRef baseName,
                  SMLoc loc, ssize_t &incorrectBindingNo,

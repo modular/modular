@@ -1387,7 +1387,7 @@ static PValue substituteParametersIntoUserDefinedType(
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structOp.getInputParams())
     paramTypes.push_back(decl.getType());
-  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
+  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
       paramTypes, structOp.getInputParamsAttr(), structOp.getName(),
       subscript.getLoc(), incorrectBindingNo, incorrectBindingExpectedType,
       emitter, structOp, structOp.getParamVarargs());

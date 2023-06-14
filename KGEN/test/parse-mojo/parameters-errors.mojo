@@ -90,7 +90,7 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
   # expected-error @+1 {{cannot pass 'scalar<f32>' value, parameter expected 'scalar<f64>'}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
-fn partialBindSignature[callable: __mlir_type.`!kgen.signature<<index, index>() -> ()>`, a: __mlir_type.index]():
+fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.index]():
   # expected-error @below {{parametric callable expected 2 parameters}}
   return callable[a]
 
@@ -209,7 +209,7 @@ fn add_param_arg[x: Int](y: Int) -> Int:
     return x + y
 
 fn pass_simd():
-    # expected-error @below {{cannot be converted from 'SIMD[f32, add_param_arg[8](8)]' to 'SIMD[f32, 8]'}}
+    # expected-error @below {{cannot be converted from 'SIMD[f32, add_param_arg[$Int::Int][8](8)]' to 'SIMD[f32, 8]'}}
     take_simd8(SIMD[DType.float32, add_param_arg[8](8)]())
     alias bar = add_param_arg
     # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
