@@ -84,8 +84,8 @@ ValueRange LoopOp::getEntryArguments(std::optional<unsigned> target) {
   return getBody().getArguments();
 }
 
-ErrorTreeOr<SuccessType> LoopOp::interpret(ArrayRef<Attribute> operands,
-                                           InterpreterState &state) {
+ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
   state.transferControlFlowTo(&getBody().front(), operands);
   return success();
 }
@@ -112,8 +112,8 @@ ValueRange IfOp::getEntryArguments(std::optional<unsigned> target) {
   return {};
 }
 
-ErrorTreeOr<SuccessType> IfOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
+ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
   auto cond = dyn_cast_if_present<BoolAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
@@ -194,8 +194,8 @@ ValueRange SwitchOp::getEntryArguments(std::optional<unsigned> target) {
   return {};
 }
 
-ErrorTreeOr<SuccessType> SwitchOp::interpret(ArrayRef<Attribute> operands,
-                                             InterpreterState &state) {
+ErrorTreeOrSuccess SwitchOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
   auto cond = dyn_cast_if_present<IntegerAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant switch index");
@@ -242,8 +242,8 @@ void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(0, getOperands());
 }
 
-ErrorTreeOr<SuccessType> ContinueOp::interpret(ArrayRef<Attribute> operands,
-                                               InterpreterState &state) {
+ErrorTreeOrSuccess ContinueOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
   state.transferControlFlowTo(&loop.getBody().front(), operands);
   return success();
@@ -276,8 +276,8 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(std::nullopt, getOperands());
 }
 
-ErrorTreeOr<SuccessType> BreakOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
   state.setReturnValues(operands);
   state.transferControlFlowTo(loop);
@@ -297,8 +297,8 @@ void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
   targets.emplace_back(std::nullopt, getOperands());
 }
 
-ErrorTreeOr<SuccessType> YieldOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   state.setReturnValues(operands);
   state.transferControlFlowTo((*this)->getParentOp());
   return success();

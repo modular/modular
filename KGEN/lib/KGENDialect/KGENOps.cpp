@@ -307,8 +307,8 @@ void CostOfOp::concretizeCallee(mlir::IRRewriter &b,
   setCalleeAttr(callee);
 }
 
-ErrorTreeOr<SuccessType> CostOfOp::interpret(ArrayRef<Attribute> operands,
-                                             InterpreterState &state) {
+ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
   return ErrorTree(getLoc(), "TODO: not implemented");
 }
 

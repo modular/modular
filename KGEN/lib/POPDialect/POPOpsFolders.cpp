@@ -360,8 +360,8 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType> LoadOp::interpret(ArrayRef<Attribute> operands,
-                                           InterpreterState &state) {
+ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   if (!ptr)
     return ErrorTree(getLoc(), Error("non-constant inputs"));
@@ -686,8 +686,8 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 // StoreOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType> StoreOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
@@ -703,8 +703,8 @@ ErrorTreeOr<SuccessType> StoreOp::interpret(ArrayRef<Attribute> operands,
 // OffsetOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType> OffsetOp::interpret(ArrayRef<Attribute> operands,
-                                             InterpreterState &state) {
+ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
@@ -733,9 +733,8 @@ OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
 // StackAllocationOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType>
-StackAllocationOp::interpret(ArrayRef<Attribute> operands,
-                             InterpreterState &state) {
+ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
   auto count = dyn_cast<IntegerAttr>(getCount());
   if (!count)
     return ErrorTree(getLoc(), "not concrete");
@@ -797,9 +796,8 @@ OpFoldResult StructReplaceOp::fold(FoldAdaptor adaptor) {
 // StructGEPOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType>
-POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
-                            InterpreterState &state) {
+ErrorTreeOrSuccess POP::StructGEPOp::interpret(ArrayRef<Attribute> operands,
+                                               InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
   if (!ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
@@ -899,8 +897,8 @@ OpFoldResult ArrayReplaceOp::fold(FoldAdaptor adaptor) {
 // ArrayGEPOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<SuccessType> ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
-                                               InterpreterState &state) {
+ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
   auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!ptr || !index)

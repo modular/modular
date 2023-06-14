@@ -30,8 +30,8 @@ void DebugInfoDialect::registerOperations() {
 
 /// Implement the interpret hook for this operation. Since the operation has no
 /// results, we cannot use the fold hook.
-ErrorTreeOr<SuccessType> ValueOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess ValueOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   return success();
 }
 

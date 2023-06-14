@@ -122,9 +122,9 @@ static ErrorTree reportFoldError(Operation *op, ArrayRef<Attribute> operands,
 }
 
 /// Interpret a call operation.
-static ErrorTreeOr<SuccessType> interpretCallOp(mlir::CallOpInterface op,
-                                                ArrayRef<Attribute> operands,
-                                                InterpreterState &state) {
+static ErrorTreeOrSuccess interpretCallOp(mlir::CallOpInterface op,
+                                          ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
   auto callee = op.getCallableForCallee().get<SymbolRefAttr>();
   auto bodyOr = state.lookupFunctionBody(callee);
   if (bodyOr.isError())
@@ -150,9 +150,9 @@ static void interpretReturnOp(Operation *op, ArrayRef<Attribute> operands,
 }
 
 /// Interpreter a generic operation by trying to use its operation folder.
-static ErrorTreeOr<SuccessType>
-interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands,
-                      InterpreterState &state) {
+static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
+                                                ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
   SmallVector<OpFoldResult> results;
   if (failed(op->fold(operands, results)))
     return reportFoldError(op, operands, "failed to fold operation ");
@@ -216,15 +216,14 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
 
       // Check for an interpreter interface implementation.
     } else if (auto interpItf = dyn_cast<InterpreterOpInterface>(pc)) {
-      ErrorTreeOr<SuccessType> err = interpItf.interpret(operands, *this);
+      ErrorTreeOrSuccess err = interpItf.interpret(operands, *this);
       if (err.isError())
         return reportFoldError(pc, operands, "failed to interpret operation ")
             .addCause(err.takeError());
 
       // Otherwise, try to use the operation folder.
     } else {
-      ErrorTreeOr<SuccessType> result =
-          interpretOpWithFolder(pc, operands, *this);
+      ErrorTreeOrSuccess result = interpretOpWithFolder(pc, operands, *this);
       if (result.isError())
         return result.takeError();
     }
