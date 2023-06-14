@@ -26,8 +26,8 @@ fn test_tracing[level: TraceLevel]():
 
     @parameter
     async fn test_tracing_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        var t0 = rt.create_task[Int](test_tracing_add[1](a))
-        var t1 = rt.create_task[Int](test_tracing_add[2](b))
+        let t0 = rt.create_task[Int](test_tracing_add[1](a))
+        let t1 = rt.create_task[Int](test_tracing_add[2](b))
         return await t0 + await t1
 
     with Runtime(4, "-") as rt:
