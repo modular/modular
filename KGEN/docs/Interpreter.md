@@ -121,8 +121,8 @@ block in a CFG region. For example, this is the `interpret` method for
 `HLCF::IfOp`:
 
 ```C++
-ErrorTreeOr<SuccessType> IfOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
+ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
   auto cond = dyn_cast_if_present<BoolAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
@@ -141,8 +141,8 @@ program counter advances to the operation after the target operation. For
 example, this is the `interpret` method for `HLCF::BreakOp`:
 
 ```C++
-ErrorTreeOr<SuccessType> BreakOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
   auto loop = getOperation()->getParentOfType<LoopOp>();
   state.setReturnValues(operands);
   state.transferControlFlowTo(loop);
