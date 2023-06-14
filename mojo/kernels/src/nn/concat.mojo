@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param_msg, debug_assert
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
 from Functional import async_parallelize
@@ -251,7 +251,7 @@ fn _concat[
 fn _concat_inner[
     type: DType, axis: Int
 ](output: Buffer[Dim(), type], inputs: VariadicList[DynamicRankBuffer],):
-    assert_param_msg[axis == 0, "_concat_inner only supports axis 0"]()
+    assert_param[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(inputs.__len__()):
         let input_buf = inputs[i].to_buffer[type]()

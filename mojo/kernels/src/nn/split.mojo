@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param_msg, debug_assert
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
 from DType import DType
 from Index import product
@@ -68,7 +68,7 @@ fn _split[
 fn _split_inner[
     type: DType, axis: Int
 ](input: Buffer[Dim(), type], outputs: VariadicList[DynamicRankBuffer],):
-    assert_param_msg[axis == 0, "_split_inner only supports axis 0"]()
+    assert_param[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(outputs.__len__()):
         let output_buf = outputs[i].to_buffer[type]()
