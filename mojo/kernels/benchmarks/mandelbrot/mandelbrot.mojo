@@ -25,7 +25,7 @@ from Functional import parallelize
 from Math import iota
 from Complex import ComplexSIMD
 from Benchmark import Benchmark
-from Assert import assert_param_msg
+from Assert import assert_param
 from Pointer import Pointer, DTypePointer
 
 alias float_type = DType.float64
@@ -112,7 +112,7 @@ fn main():
 
     alias width = 4096
     # using simd_width=16
-    assert_param_msg[width % 16 == 0, "must be a multiple of 16"]()
+    assert_param[width % 16 == 0, "must be a multiple of 16"]()
     alias height = 4096
     alias iter = 1000
 
