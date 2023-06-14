@@ -316,13 +316,9 @@ struct ConvertPOPSIMDSelect : public ConvertPOPToLLVMPattern<SIMDSelectOp> {
   LogicalResult
   matchAndRewrite(SIMDSelectOp op, SIMDSelectOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto select = rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
+    rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
         op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue());
-    // FIXME: Pass this attribute through the builder once
-    // https://reviews.llvm.org/D145829 lands.
-    select->setAttr("fastmathFlags", LLVM::FastmathFlagsAttr::get(
-                                         op.getContext(), LLVM_FASTMATH_FLAGS));
+        adaptor.getFalseValue(), LLVM_FASTMATH_FLAGS);
     return success();
   }
 };
