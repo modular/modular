@@ -9,7 +9,7 @@ kgen.func @pop_select_simd(
     %arg2: !pop.simd<4, si32>
   ) -> !pop.simd<4, si32> {
   // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!pop.simd<4, bool>' vs '!pop.scalar<bool>'}}
-  %0 = pop.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
+  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
   kgen.return %0 : !pop.simd<4, si32>
 }
 
@@ -22,7 +22,7 @@ kgen.func @pop_select_simd(
     %arg2: !pop.simd<4, si32>
   ) -> !pop.simd<4, si32> {
   // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!pop.simd<4, bool>' vs '!pop.simd<8, bool>'}}
-  %0 = pop.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
+  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
   kgen.return %0 : !pop.simd<4, si32>
 }
 

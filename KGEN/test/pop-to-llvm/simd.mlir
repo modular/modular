@@ -16,7 +16,7 @@ kgen.func @trivial_conversions(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>, %c:
   // CHECK: llvm.intr.fma
   %4 = pop.fma %a, %b, %c : !pop.simd<4, f32>
   // CHECK: llvm.select
-  %5 = pop.select %d, %a, %b : !pop.simd<4, f32>
+  %5 = pop.simd.select %d, %a, %b : !pop.simd<4, f32>
   kgen.return
 }
 
@@ -230,7 +230,7 @@ kgen.func @select_simd_si32(%arg0: !pop.simd<4, bool>,
                     %arg1: !pop.simd<4, si32>,
                     %arg2: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
   // CHECK: llvm.select
-  %0 = pop.select %arg0, %arg1, %arg2: !pop.simd<4, si32>
+  %0 = pop.simd.select %arg0, %arg1, %arg2: !pop.simd<4, si32>
   kgen.return %0 : !pop.simd<4, si32>
 }
 
@@ -240,7 +240,7 @@ kgen.func @select_simd_f32(%arg0: !pop.simd<4, bool>,
                     %arg1: !pop.simd<4, f32>,
                     %arg2: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   // CHECK: llvm.select
-  %0 = pop.select %arg0, %arg1, %arg2: !pop.simd<4, f32>
+  %0 = pop.simd.select %arg0, %arg1, %arg2: !pop.simd<4, f32>
   kgen.return %0 : !pop.simd<4, f32>
 }
 

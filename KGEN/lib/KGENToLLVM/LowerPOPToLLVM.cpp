@@ -156,27 +156,6 @@ struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPSelect
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(SelectOp op, SelectOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto select = rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
-        op, adaptor.getCondition(), adaptor.getTrueValue(),
-        adaptor.getFalseValue());
-    // FIXME: Pass this attribute through the builder once
-    // https://reviews.llvm.org/D145829 lands.
-    select->setAttr("fastmathFlags", LLVM::FastmathFlagsAttr::get(
-                                         op.getContext(), LLVM_FASTMATH_FLAGS));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPCmp
 //===----------------------------------------------------------------------===//
 
@@ -324,6 +303,27 @@ private:
     if (dtype.isIndex())
       return getTypeConverter()->getIndexTypeBitwidth() / CHAR_BIT;
     return dtype.getSizeInBytes();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPSIMDSelect
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSIMDSelect : public ConvertPOPToLLVMPattern<SIMDSelectOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SIMDSelectOp op, SIMDSelectOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto select = rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
+        op, adaptor.getCondition(), adaptor.getTrueValue(),
+        adaptor.getFalseValue());
+    // FIXME: Pass this attribute through the builder once
+    // https://reviews.llvm.org/D145829 lands.
+    select->setAttr("fastmathFlags", LLVM::FastmathFlagsAttr::get(
+                                         op.getContext(), LLVM_FASTMATH_FLAGS));
+    return success();
   }
 };
 
@@ -1355,11 +1355,11 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPRem,
-      ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,
       ConvertPOPSIMDInsertElement,
+      ConvertPOPSIMDSelect,
       ConvertPOPSIMDShuffle,
       ConvertPOPSIMDSplat,
       ConvertPOPStore,
