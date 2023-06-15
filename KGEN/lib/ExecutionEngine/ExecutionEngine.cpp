@@ -19,6 +19,7 @@
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
+#include "llvm/ExecutionEngine/Orc/MapperJITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -301,10 +302,17 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     auto pageSize = llvm::sys::Process::getPageSize();
     if (!pageSize)
       return Error(toString(pageSize.takeError()));
+
+    uint64_t slabSize = 1024 * 1024 * 1024;
+    auto managerOr = llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
+        llvm::orc::InProcessMemoryMapper>(slabSize);
+    if (!managerOr)
+      return Error(toString(managerOr.takeError()));
+
     epc = std::make_unique<llvm::orc::SelfExecutorProcessControl>(
         std::make_shared<llvm::orc::SymbolStringPool>(),
         std::make_unique<llvm::orc::DynamicThreadPoolTaskDispatcher>(), tt,
-        *pageSize, /*MemMgr=*/nullptr);
+        *pageSize, /*MemMgr=*/std::move(*managerOr));
   }
   auto sessionPtr =
       std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
