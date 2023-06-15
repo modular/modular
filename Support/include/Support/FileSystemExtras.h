@@ -18,7 +18,8 @@ namespace M {
 /// This function searches for an existing subdirectory in the list of
 /// directories in a PATH like environment variable, and returns the first
 /// subdirectory found according to the order of the entries in the PATH like
-/// environment variable.
+/// environment variable. The defaults hold for Unix-like systems but break for
+/// Windows.
 std::optional<std::string> findDirInEnvPath(StringRef subdirName,
                                             StringRef envName = "PATH",
                                             char separator = ':');
