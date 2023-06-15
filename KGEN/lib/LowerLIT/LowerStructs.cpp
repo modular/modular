@@ -62,6 +62,12 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 
   /// Replace a KGEN struct with a POP struct or an arbitrary type if it is was
   /// a single-element type that got flattened.
+  /// This function returns PointerUnion<POP::StructType, Type> to
+  /// distinguish between a flatten single-element struct and a struct that has
+  /// multiple elements.
+  /// Using PointerUnion<POP::StructType, Type> instead of Type because
+  /// the single-element itself can also be a struct.
+  /// PointerUnion doesn't know Type's RTTI.
   PointerUnion<POP::StructType, Type> substituteStructRef(DeclRefType ref);
 
   /// Try to build debug information for the given struct ref.
