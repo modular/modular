@@ -195,6 +195,7 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
     either a function or generator. The callee is resolved by the KGEN
     elaborator, and operations that implement this interface indicate that they
     can be multi-versioned if the referenced declaration is multi-versioned.
+
     Generator references must also declare result parameters that are bound to
     the resolved result parameters of the referenced declaration.
   }];
@@ -226,9 +227,9 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
   ];
 
   let extraSharedClassDeclaration = [{
-    /// Get the signature type of the callee.
+    /// Get the signature type of the callee, if it is known.
     SignatureType getCalleeSignature() {
-      return cast<SignatureType>($_op.getCallee().getType());
+      return dyn_cast<SignatureType>($_op.getCallee().getType());
     }
   }];
 
