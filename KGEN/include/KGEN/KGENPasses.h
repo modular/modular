@@ -7,8 +7,7 @@
 #ifndef KGEN_KGENPASSES_H
 #define KGEN_KGENPASSES_H
 
-#include "CompilationOptions.h"
-#include "KGEN/Elaborator.h"
+#include "KGEN/CompilationOptions.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
@@ -116,6 +115,23 @@ void registerLowerToLLVMPipeline();
 //===----------------------------------------------------------------------===//
 // Elaborator
 //===----------------------------------------------------------------------===//
+
+/// This function kind represents a callback to invoke a compiled evaluator
+/// function with the compiled candidate functions. This function performs the
+/// actual benchmarking of search and must be invoked in isolation. The
+/// elaborator ensures that the compiler process is quiet before invoking this
+/// function, which is required for stable and accurate results.
+using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
+
+/// This function kind represents a callback given the IR for an evaluator
+/// function and a list of candidate functions and should perform all necessary
+/// JIT compilation on those functions, in preparation for search. The function
+/// should return a search execute function, which the elaborator then
+/// guarantees executes in isolation.
+using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
+    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
+using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
+    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

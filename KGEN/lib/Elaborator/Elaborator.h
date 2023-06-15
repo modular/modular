@@ -9,7 +9,6 @@
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "IREvaluator.h"
-#include "KGEN/Elaborator.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "LLCL/CompilerSupport/AsyncSideEffectMap.h"

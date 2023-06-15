@@ -9,9 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Elaborator.h"
-#include "Cache/CacheDialect/CachedTransform.h"
 #include "Elaborator.h"
+#include "Cache/CacheDialect/CachedTransform.h"
 #include "IREvaluator.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
@@ -650,7 +649,8 @@ public:
   ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
                  TargetInfoAttr target,
                  EvaluatorExecutorFnRef evaluatorExecutorFn,
-                 LLCL::Runtime &runtime, const ElaboratorConfig &config)
+                 LLCL::Runtime &runtime,
+                 const ElaborateGeneratorsOptions &config)
       : Elaborator(symtab, target), config(config), g(runtime),
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         evaluatorExecutorFn(evaluatorExecutorFn), runtime(runtime) {}
@@ -833,7 +833,7 @@ private:
       knownGraphs;
 
   /// The elaborator config.
-  ElaboratorConfig config;
+  ElaborateGeneratorsOptions config;
 
   /// The callgraph being expanded.
   ExpansionGraph g;
@@ -2484,16 +2484,15 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 }
 
 //===----------------------------------------------------------------------===//
-// M::KGEN::elaborateGenerators
+// elaborateGenerators
 //===----------------------------------------------------------------------===//
 
-LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
-                                     ParameterCollector::Analysis &paramCache,
-                                     LLCL::Runtime &runtime,
-                                     TargetInfoAttr target,
-                                     ArrayRef<GeneratorOp> primaryGenerators,
-                                     EvaluatorExecutorFnRef evaluatorExecutorFn,
-                                     const ElaboratorConfig &config) {
+LogicalResult elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
+                                  ParameterCollector::Analysis &paramCache,
+                                  LLCL::Runtime &runtime, TargetInfoAttr target,
+                                  ArrayRef<GeneratorOp> primaryGenerators,
+                                  EvaluatorExecutorFnRef evaluatorExecutorFn,
+                                  const ElaborateGeneratorsOptions &config) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
@@ -2605,10 +2604,11 @@ public:
       setBuildInfo(theModule, build);
     }
 
-    if (failed(elaborateGenerators(
-            analysis, paramCache, *rt, target, primaryGenerators,
-            evaluatorExecutorFn,
-            ElaboratorConfig{shouldDoSearch, testDiagnostics, maxDepth})))
+    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
+                                   primaryGenerators, evaluatorExecutorFn,
+                                   ElaborateGeneratorsOptions{enableSearch,
+                                                              testDiagnostics,
+                                                              maxDepth})))
       return signalPassFailure();
   }
 
