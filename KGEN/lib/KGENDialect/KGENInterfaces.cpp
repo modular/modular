@@ -22,16 +22,18 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
 
   // Disallow calls from within a concrete function from calling anything with
   // input or output parameters.
-  auto func = op->getParentOfType<FuncOp>();
-  if (func && !op.getParamValues().empty()) {
-    return op.emitOpError("cannot reference generator with input parameters "
-                          "from within a concrete 'kgen.func'")
-               .attachNote(func.getLoc())
-           << "within 'kgen.func' @" << func.getName();
-  }
+  if (auto func = op->getParentOfType<FuncOp>()) {
+    auto symbolCst = dyn_cast<SymbolConstantAttr>(op.getCallee());
+    if (!symbolCst || !symbolCst.getParamValues().empty()) {
+      return op.emitOpError("cannot reference generator with input parameters "
+                            "from within a concrete 'kgen.func'")
+                 .attachNote(func.getLoc())
+             << "within 'kgen.func' @" << func.getName();
+    }
 
-  if (!op.isAllowedInFunc() && func)
-    return op.emitOpError("is only allowed in generators pre-elaboration");
+    if (!op.isAllowedInFunc())
+      return op.emitOpError("is only allowed in generators pre-elaboration");
+  }
 
   ArrayRef<Type> types = op.getCalleeType().getResultParamTypes();
   if (op.getParamDecls().size() != types.size()) {
