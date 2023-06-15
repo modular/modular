@@ -2421,6 +2421,16 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       failed = true;
       err.takeError().emit([](Location loc) { return mlir::emitError(loc); });
     }
+    if (!config.testDiagnostics &&
+        llvm::count_if(genNode->impls,
+                       [](auto &impl) { return !impl->error; }) > 1) {
+      InFlightDiagnostic diag = mlir::emitError(
+          genNode->gen.getLoc(),
+          "primary generator with more than one successful implementation");
+      diag.attachNote() << "select one implementation using search or remove "
+                           "forks in the implementation";
+      failed = true;
+    }
   }
   if (failed)
     return failure();
@@ -2486,24 +2496,6 @@ LogicalResult M::elaborateGenerators(mlir::SymbolTableAnalysis &symtab,
                                      const ElaboratorConfig &config) {
   TimeTraceScope<> traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
-
-  AsyncSideEffectMap asyncMap(runtime);
-
-  auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
-      runtime, ".kgen_cache/transform", KGEN_VERSION_STRING);
-  if (failed(transformCacheBackendOr))
-    return theModule->emitError() << transformCacheBackendOr.getError();
-  auto regionCacheBackendOr = Cache::getLocalDefaultBackendChain(
-      runtime, ".kgen_cache/region", KGEN_VERSION_STRING);
-  if (failed(regionCacheBackendOr))
-    return theModule->emitError() << regionCacheBackendOr.getError();
-
-  auto transformCache =
-      LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
-          transformCacheBackendOr.takeValue());
-  auto regionCache =
-      LLCL::RCRef<Cache::BlobCache<Cache::RegionCacheKey>>::create(
-          regionCacheBackendOr.takeValue());
 
   // Now, construct and run the elaborator.
   ElaboratorImpl impl(
