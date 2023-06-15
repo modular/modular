@@ -485,7 +485,7 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee,
+  let arguments = (ins TypedAttrInterface:$callee,
                        KGEN_ParamDeclArrayAttr:$paramDecls);
   let results = (outs Index:$result);
 

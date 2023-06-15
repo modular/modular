@@ -1566,7 +1566,7 @@ ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
     paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
   }
 
-  if (!isa<SignatureType>(callee.getType()))
+  if (!isa<ParamRefType, SignatureType>(callee.getType()))
     return p.emitError(loc, "callee parameter type must be a signature type");
   return success();
 }
