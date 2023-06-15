@@ -309,7 +309,15 @@ void CostOfOp::concretizeCallee(mlir::IRRewriter &b,
 
 ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
-  return ErrorTree(getLoc(), "TODO: not implemented");
+  ErrorOr<Region *> body = state.lookupFunctionBody(
+      cast<SymbolConstantAttr>(getCallee()).getSymbol());
+  if (body.isError())
+    return ErrorTree(getLoc(), body.takeError());
+  // Count the number of ops in the body, including parents of regions.
+  int64_t numOps = 0;
+  body.get()->walk([&numOps](Operation *) { ++numOps; });
+  state.mapResults(Builder(getContext()).getIndexAttr(numOps));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

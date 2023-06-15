@@ -2536,3 +2536,29 @@ kgen.generator @foo() {
   kgen.call @foo() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @count_ops(%arg0: i1) -> index {
+  %0 = hlcf.if %arg0 -> index {
+    %idx0 = index.constant 0
+    hlcf.yield %idx0 : index
+  } else {
+    %idx1 = index.constant 1
+    hlcf.yield %idx1 : index
+  }
+  kgen.return %0 : index
+}
+
+kgen.generator @cost_of<fn: (i1) -> index>() -> index {
+  %0 = kgen.cost_of[(i1) -> index: fn]
+  kgen.return %0 : index
+}
+
+kgen.export @main
+// CHECK-LABEL: kgen.func @main
+kgen.generator @main() {
+  // CHECK-NEXT: <6>
+  %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
+  kgen.return
+}
