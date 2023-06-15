@@ -205,10 +205,6 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
       $_op.setCalleeAttr(callee);
     }]>,
     InterfaceMethod<[{
-      Get the values of the parameters passed to the callee's input parameters.
-    }], "ArrayRef<TypedAttr>", "getParamValues", (ins), [{}],
-    [{ return {}; }]>,
-    InterfaceMethod<[{
       Returns whether this call flavour is allowed to exist post-elaboration as
       a child of a `kgen.func` operation. If so, its callee's signature must
       have no input and output parameters.
