@@ -484,7 +484,7 @@ private:
       return Error("Failed to load library " + libPath + ": " + errorMsg);
     }
 
-    using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime *runtime);
+    using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime * runtime);
     auto allocFunc = reinterpret_cast<allocType>(
         dylib.getAddressOfSymbol("M_CAS_allocateBackend"));
     if (!allocFunc) {
@@ -542,7 +542,11 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
                      ec.message());
     } else { // this branch is taken by external users using the C API
              // package.
+#ifdef _WIN32
+      auto dirPath = findDirInEnvPath(cacheDir.string(), "PATH", ";");
+#else
       auto dirPath = findDirInEnvPath(cacheDir.string());
+#endif
       if (dirPath) {
         base = std::filesystem::absolute(*dirPath, ec) / cacheDir;
       }
