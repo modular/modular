@@ -513,8 +513,8 @@ static ElaborationState processGenericOp(ImplNode *inode, Operation *op) {
 /// callee into the caller, it replaces the call's uses with the inlined values,
 /// and it erases the call. This also handles async calls correctly by creating
 /// an AsyncExecuteOp and inlining the body into that.
-static void inlineCallToConcreteRegion(KGENCallOpInterface call, Region *callee,
-                                       IRMapping &map,
+static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
+                                       Region *callee, IRMapping &map,
                                        AlwaysInlineLevel alwaysInlineLevel) {
   assert(callee->hasOneBlock() &&
          "callee region must resolve to a single block");
@@ -703,7 +703,8 @@ private:
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
-  ElaborationState processCallOp(ImplNode *parent, KGENCallOpInterface call);
+  ElaborationState processCallOp(ImplNode *parent,
+                                 GeneratorUserOpInterface call);
 
   /// Process an evaluate operation by concretizing the evaluator function and
   /// the function candidates.
@@ -723,14 +724,14 @@ private:
 
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
-  ElaborationState processGeneratorUser(KGENCallOpInterface user,
+  ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
                                         SymbolConstantAttr calleeSymbol,
                                         ImplNode *parent);
 
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.
-  ElaborationState completeCallProcessing(KGENCallOpInterface user,
+  ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
                                           ArrayRef<ParamDeclAttr> decls,
                                           ImplNode *thisNode, ImplNode *node);
 
@@ -738,8 +739,9 @@ private:
   /// implementations with consistent bindings. Multi-version the currente node
   /// if required.
   ElaborationState completeGeneratorUserProcessing(
-      KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *parent,
-      ArrayAttr inputParamKey, GeneratorOp gen, ArrayRef<ImplNode *> concrete);
+      GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
+      ImplNode *parent, ArrayAttr inputParamKey, GeneratorOp gen,
+      ArrayRef<ImplNode *> concrete);
 
   /// Given a user of a completed parameter node, collect concrete
   /// implementations whose bindings are consistent with the current node.
@@ -916,7 +918,7 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   result->numDependencies = 1;
   for (auto [call, genNode] : cur->dependencies) {
     result->dependencies.emplace_back(
-        cast<KGENCallOpInterface>(map.lookup(&*call)), genNode);
+        cast<GeneratorUserOpInterface>(map.lookup(&*call)), genNode);
     // Add a new dependent on the callee node. If it is already complete, it
     // will immediately decrement `numDependencies`.
     if (genNode->state.addWaiter()) {
@@ -1290,7 +1292,7 @@ LogicalResult ElaboratorImpl::collectConcreteImplementations(
 //===----------------------------------------------------------------------===//
 
 ElaborationState
-ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
+ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
                                      SymbolConstantAttr calleeSymbol,
                                      ImplNode *parent) {
   auto _ = logger.scope("Processing Generator User");
@@ -1347,8 +1349,9 @@ ElaboratorImpl::processGeneratorUser(KGENCallOpInterface user,
 //===----------------------------------------------------------------------===//
 
 ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
-    KGENCallOpInterface user, ArrayRef<ParamDeclAttr> decls, ImplNode *parent,
-    ArrayAttr inputParamKey, GeneratorOp gen, ArrayRef<ImplNode *> concrete) {
+    GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
+    ImplNode *parent, ArrayAttr inputParamKey, GeneratorOp gen,
+    ArrayRef<ImplNode *> concrete) {
   // There are more concrete things, we have to multi-version the parent!
   for (auto *c : llvm::drop_begin(concrete)) {
     // Clone the parent.
@@ -1372,8 +1375,8 @@ ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
     }
 
     ElaborationState result = completeCallProcessing(
-        cast<KGENCallOpInterface>(map.lookup(user.getOperation())), decls, c,
-        newNode);
+        cast<GeneratorUserOpInterface>(map.lookup(user.getOperation())), decls,
+        c, newNode);
     if (result.isError()) {
       // If call processing completion failed, then don't enqueue this node.
       assert(newNode->error && "expected an error on new node");
@@ -1431,7 +1434,7 @@ static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
 }
 
 ElaborationState
-ElaboratorImpl::completeCallProcessing(KGENCallOpInterface user,
+ElaboratorImpl::completeCallProcessing(GeneratorUserOpInterface user,
                                        ArrayRef<ParamDeclAttr> decls,
                                        ImplNode *thisNode, ImplNode *node) {
   // Add the callee's bindings to the parent of the call. This ensures that we
@@ -1494,7 +1497,7 @@ ElaboratorImpl::completeCallProcessing(KGENCallOpInterface user,
 
 /// Process a call_param op.
 ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
-                                               KGENCallOpInterface call) {
+                                               GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   if (auto sym = dyn_cast<SymbolConstantAttr>(symbol))
@@ -1942,7 +1945,7 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
   } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
     TimeTraceScope<EnableTracing> traceScope("processParamIfOp");
     return processParamIfOp(node, ifOp);
-  } else if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
+  } else if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
     TimeTraceScope<EnableTracing> traceScope("processCallOp");
     return processCallOp(node, call);
   } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
@@ -2266,7 +2269,7 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
     }
     if (anyBroken) {
       // Complete the broken dependencies and reschedule the node.
-      std::vector<std::pair<KGENCallOpInterface, ParamNode *>> newDeps;
+      std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> newDeps;
       for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
         if (!completed.test(idx))
           newDeps.push_back(dep);
@@ -2282,8 +2285,8 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
     if (inode->stack.empty())
       return;
     if (auto call =
-            dyn_cast<KGENCallOpInterface>(inode->stack.back().ops.back());
-        call && !call.getCalleeType().getResultParamTypes().empty()) {
+            dyn_cast<GeneratorUserOpInterface>(inode->stack.back().ops.back());
+        call && !call.getCalleeSignature().getResultParamTypes().empty()) {
       // We should be able to lookup to concrete callee in the evaluator cache.
       ParameterEvaluator &eval = inode->getEvaluator();
       auto callee =
@@ -2456,7 +2459,7 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // Perform any renaming at the end.  We cannot use the
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
-  theModule->walk([&](KGENCallOpInterface call) {
+  theModule->walk([&](GeneratorUserOpInterface call) {
     // If this is a reference to a function that got renamed, update its
     // target.
     auto callee = cast<SymbolConstantAttr>(call.getCallee());

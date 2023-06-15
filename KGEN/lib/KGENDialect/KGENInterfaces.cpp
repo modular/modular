@@ -16,7 +16,7 @@ using namespace KGEN;
 // Verification
 //===----------------------------------------------------------------------===//
 
-LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
+LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
   if (!op.getCallee())
     return success();
 
@@ -35,7 +35,7 @@ LogicalResult impl::verifyCallOp(KGENCallOpInterface op) {
       return op.emitOpError("is only allowed in generators pre-elaboration");
   }
 
-  ArrayRef<Type> types = op.getCalleeType().getResultParamTypes();
+  ArrayRef<Type> types = op.getCalleeSignature().getResultParamTypes();
   if (op.getParamDecls().size() != types.size()) {
     return op->emitOpError("declares ")
            << op.getParamDecls().size() << " result parameters, but callee has "

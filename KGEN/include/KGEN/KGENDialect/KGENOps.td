@@ -138,6 +138,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
     : KGENOp<mnemonic, traits # [
         DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+        DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
         DeclareOpInterfaceMethods<ParamOpInterface,
                                   ["isImplicitlyParametric"]>]>,
       CallLikeOperation;
@@ -425,7 +426,7 @@ def KGEN_ParamForkOp : KGENOp<"param.fork",
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParamApplyOp : KGENOp<"param.apply",
-    [DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    [DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
      DeclareOpInterfaceMethods<ParamOpInterface>]> {
   let summary = "Function call in parameter domain.";
   let description = [{
@@ -462,8 +463,11 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
 // CostOfOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CostOfOp : KGEN_CallOpBase<"cost_of",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def KGEN_CostOfOp : KGENOp<"cost_of", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>,
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>
+  ]>, CallLikeOperation {
   let summary = "Return the 'cost' of the function.";
   let description = [{
     The `kgen.cost_of` operation takes a parametric callee and returns

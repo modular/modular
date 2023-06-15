@@ -568,6 +568,7 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 
 def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     TypesMatchWith<"coroutine of callee result types", "callee", "coroutine",
                     "getCoroutineOfResultTypes($_self)">]>, CallLikeOperation {

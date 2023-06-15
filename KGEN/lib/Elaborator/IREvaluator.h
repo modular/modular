@@ -186,7 +186,7 @@ struct ImplNode {
   /// This is the list of deferred generator instantiations via calls that need
   /// to be handled when the implementation node is complete and all its
   /// dependencies are ready.
-  std::vector<std::pair<KGENCallOpInterface, ParamNode *>> dependencies;
+  std::vector<std::pair<GeneratorUserOpInterface, ParamNode *>> dependencies;
   /// This flag is set when the implementation node is done processing. A
   /// separate flag is needed because an error state can cause the node to
   /// complete early. This flag prevents double-completion.

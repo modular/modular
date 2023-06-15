@@ -869,18 +869,14 @@ void UninitializedValueScan::checkOp(Operation &op) {
   // argument convention effects.
   if (isa<CallSignatureOp, KGENCallOpInterface>(op)) {
     SignatureType signature;
-    if (auto directCall = dyn_cast<KGENCallOpInterface>(op))
-      signature = directCall.getCalleeType();
-    else
-      signature = cast<CallSignatureOp>(op).getCallee().getType();
     ValueRange operands;
-    if (isa<CallOp, CallParamOp, AsyncCallOp, CreateClosureOp>(op)) {
-      operands = op.getOperands();
-    } else if (isa<CallSignatureOp>(op)) {
-      operands = cast<CallSignatureOp>(op).getArguments();
+    if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
+      signature = directCall.getCalleeType();
+      operands = directCall.getArguments();
     } else {
-      llvm::report_fatal_error("unknown call operation: " +
-                               op.getName().getStringRef());
+      auto callSig = cast<CallSignatureOp>(op);
+      signature = callSig.getCallee().getType();
+      operands = callSig.getArguments();
     }
 
     assert(isa<CreateClosureOp>(op) ||

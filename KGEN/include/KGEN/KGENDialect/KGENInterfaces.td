@@ -189,10 +189,14 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let dependentTraits = [DeclInterface];
 }
 
-def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
+def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
   let description = [{
-    This interface represents a call to a parametric KGEN declaration: either a
-    function or generator.
+    This interface represents a reference to a parametric KGEN declaration:
+    either a function or generator. The callee is resolved by the KGEN
+    elaborator, and operations that implement this interface indicate that they
+    can be multi-versioned if the referenced declaration is multi-versioned.
+    Generator references must also declare result parameters that are bound to
+    the resolved result parameters of the referenced declaration.
   }];
   let cppNamespace = "::M::KGEN";
 
@@ -206,8 +210,7 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
     }]>,
     InterfaceMethod<[{
       Returns whether this call flavour is allowed to exist post-elaboration as
-      a child of a `kgen.func` operation. If so, its callee's signature must
-      have no input and output parameters.
+      a child of a `kgen.func` operation.
     }], "bool", "isAllowedInFunc", (ins), [{}], [{ return true; }]>,
     InterfaceMethod<[{
       Return the declarations of the result parameters bound to the result
@@ -224,13 +227,43 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee.
-    SignatureType getCalleeType() {
+    SignatureType getCalleeSignature() {
       return cast<SignatureType>($_op.getCallee().getType());
     }
   }];
 
-  let verify = [{ return impl::verifyCallOp(cast<KGENCallOpInterface>($_op)); }];
-  let verifyWithRegions = 1;
+  let verify = [{
+    return impl::verifyGeneratorUser(cast<GeneratorUserOpInterface>($_op));
+  }];
+}
+
+def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
+  let description = [{
+    This interface represents a direct function call to a signature-typed
+    callee, transferring the call arguments via some memory mechanism: stack,
+    frame, or something else. The callee can be parametric, but the call itself
+    is always direct.  Call operations that implement this interface could
+    conceptually be inlined, unlike indirect calls.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Get the parameter expression of the operation's callee.
+    }], "TypedAttr", "getCallee", (ins)>,
+    InterfaceMethod<[{
+      Get the call arguments.
+    }], "ValueRange", "getArguments", (ins), [{}], [{
+      return $_op.getOperands();
+    }]>,
+  ];
+
+  let extraSharedClassDeclaration = [{
+    /// Get the signature type of the callee.
+    SignatureType getCalleeType() {
+      return cast<SignatureType>($_op.getCallee().getType());
+    }
+  }];
 }
 
 def ParamOpInterface : OpInterface<"ParamOpInterface"> {
