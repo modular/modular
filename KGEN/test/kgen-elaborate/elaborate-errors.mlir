@@ -299,3 +299,14 @@ kgen.export @export_constraint
 kgen.generator @pass(%arg0: i1) -> i1 {
   kgen.return %arg0: i1
 }
+
+// -----
+
+kgen.export @multiversioned
+
+// expected-error @below {{primary generator with more than one successful implementation}}
+// expected-note @below {{select one implementation using search or remove forks in the implementation}}
+kgen.generator @multiversioned() {
+  kgen.param.fork N = <[1, 2]>
+  kgen.return
+}

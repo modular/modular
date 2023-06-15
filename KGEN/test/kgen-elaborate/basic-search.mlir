@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true test-diagnostics=true" -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.func @"even_only,param=16"()
 // CHECK-NOT: @"even_only,
@@ -120,7 +120,8 @@ kgen.generator @pickSecondB() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: @test
+kgen.export @test
+// CHECK-LABEL: kgen.func @test
 kgen.generator @test() {
   // CHECK-NEXT: kgen.call @pickSecond
   %0 = kgen.call @pickSecond() : () -> index
