@@ -27,22 +27,23 @@ from Complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
 from Pointer import Pointer, DTypePointer
+from TargetInfo import dtype_simd_width
 
 alias float_type = DType.float64
 alias int_type = DType.int64
 
 
-fn draw_mandelbrot[
-    h: __mlir_type.index, w: __mlir_type.index
-](out: Matrix[DimList(h, w), int_type, False]):
-    let sr = StringRef(".,c8M@jawrpogOQEPGJ")
-    let charset = Buffer[Dim(), DType.int8](sr.data.address, sr.length)
+fn draw_mandelbrot[h: Int, w: Int](out: Matrix[DimList(h, w), int_type, False]):
+    alias sr = ".,c8M@jawrpogOQEPGJ"
+    let charset = Buffer[Dim(), DType.int8](
+        DTypePointer[DType.int8](sr.data()), sr.__len__()
+    )
     for row in range(h):
         for col in range(w):
             let v: Int = out[row, col].value
             if v > 0:
-                let p = charset[v % sr.length]
-                _printf[DType.int8]("%c", p.value)
+                let p = charset[v % sr.__len__()]
+                print(p)
             else:
                 print("0")
         print("\n")
@@ -67,11 +68,7 @@ fn mandelbrot_kernel[
 
 
 fn mandelbrot[
-    simd_width: Int,
-    h: __mlir_type.index,
-    w: __mlir_type.index,
-    iter: Int,
-    parallel: Bool,
+    simd_width: Int, h: Int, w: Int, iter: Int, parallel: Bool
 ](
     out: Matrix[DimList(h, w), int_type, False],
     rows_per_worker: Int,
@@ -79,10 +76,10 @@ fn mandelbrot[
     max_x: SIMD[float_type, simd_width],
     min_y: SIMD[float_type, simd_width],
     max_y: SIMD[float_type, simd_width],
-    rt: Runtime,
 ):
     # Each task gets a row
     @always_inline
+    @parameter
     fn worker(row: Int):
         let rowv: SIMD[float_type, simd_width] = row
         let simd_val = iota[float_type, simd_width]()
@@ -93,23 +90,20 @@ fn mandelbrot[
             colv = colv + simd_val
             let cx = min_x + colv * scalex
             let cy = min_y + rowv * scaley
-            let c = ComplexSIMD[simd_width, float_type](cx, cy)
+            let c = ComplexSIMD[float_type, simd_width](cx, cy)
             out.simd_store[simd_width](
                 row, col * simd_width, mandelbrot_kernel[simd_width](c, iter)
             )
 
     @parameter
     if parallel:
-        parallelize[worker](rt, h)
+        parallelize[worker](h)
     else:
         for row in range(h):
             worker(row)
 
 
-@export
 fn main():
-    let rt = Runtime()
-
     alias width = 4096
     # using simd_width=16
     assert_param[width % 16 == 0, "must be a multiple of 16"]()
@@ -123,20 +117,21 @@ fn main():
     let m: Matrix[DimList(height, width), int_type, False] = vec.data
 
     @always_inline
-    fn bench_parallel[simd_width: __mlir_type.index]():
+    @parameter
+    fn bench_parallel[simd_width: Int]():
         let min_x = -2.0
         let max_x = 0.47
         let min_y = -1.12
         let max_y = 1.12
 
         mandelbrot[simd_width, height, width, iter, True](
-            m, 1, min_x, max_x, min_y, max_y, rt
+            m, 1, min_x, max_x, min_y, max_y
         )
 
     var time: Float32
     let ns_per_second: Int = 1_000_000_000
 
-    bench_parallel[16]()
+    bench_parallel[dtype_simd_width[DType.float32]()]()
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
