@@ -130,8 +130,7 @@ struct Buffer[size: Dim, type: DType]:
 
     @always_inline
     fn __init__(
-        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
-        in_size: Int,
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]], in_size: Int
     ) -> Self:
         """Constructs a Buffer with statically known type.
 
@@ -155,10 +154,7 @@ struct Buffer[size: Dim, type: DType]:
         return Self {data: ptr.address, dynamic_size: in_size, dtype: type}
 
     @always_inline
-    fn __init__(
-        ptr: DTypePointer[type],
-        in_size: Int,
-    ) -> Self:
+    fn __init__(ptr: DTypePointer[type], in_size: Int) -> Self:
         """Constructs a Buffer with statically known type.
 
         Constraints:
