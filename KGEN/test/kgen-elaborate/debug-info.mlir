@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators -mlir-print-debuginfo
+// RUN: kgen-elaborate-opt %s -elaborate-generators -mlir-print-debuginfo
 
 // Check that debug info gets resolved during elaboration.
 

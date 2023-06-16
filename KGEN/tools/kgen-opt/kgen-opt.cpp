@@ -8,14 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Cache/CacheDialect/CacheDialect.h"
-#include "KGEN/CompilerRT.h"
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENPasses.h"
-#include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
@@ -23,11 +19,8 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 
@@ -73,41 +66,46 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  mlir::index::IndexDialect, mlir::LLVM::LLVMDialect>();
-  // The elaborator requires LLVM lowering to run the generated functions.
-  mlir::registerBuiltinDialectTranslation(registry);
-  mlir::registerLLVMDialectTranslation(registry);
+  registry.insert<DebugInfo::DebugInfoDialect, mlir::index::IndexDialect,
+                  mlir::LLVM::LLVMDialect>();
 
   // Register the standard passes we want.
   mlir::registerCSEPass();
-  mlir::registerSCCPPass();
-  mlir::registerInlinerPass();
   mlir::registerCanonicalizerPass();
-  mlir::registerReconcileUnrealizedCasts();
   mlir::registerConvertIndexToLLVMPass();
 
   // Register test passes.
   mlir::PassRegistration<TestDataFlowPass>{};
 
-  // Initialize the host target.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
-
-  LLCL::Runtime runtime(
-      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
-      LLCL::createSingleThreadWorkQueue());
-
-  // Register the elaborator with the provided runtime.
-  mlir::registerPass(
-      [&]() { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
-
-  KGEN::registerPasses();
+  // Register opt passes.
+  KGEN::registerAlwaysInlineParametric();
+  KGEN::registerCheckLifetimes();
+  KGEN::registerCleanupCompilerGlobals();
+  KGEN::registerConstraintReduction();
+  KGEN::registerEliminateDeadSymbols();
+  KGEN::registerFoldGlobalConstLoads();
+  KGEN::registerForceInline();
+  KGEN::registerHoistTrivialInvariants();
+  KGEN::registerLiftAndFoldApply();
+  KGEN::registerLowerClosures();
+  KGEN::registerLowerControlFlow();
+  KGEN::registerLowerGlobalPOPToLLVM();
+  KGEN::registerLowerKGENCoroutinesAsync();
+  KGEN::registerLowerKGENToLLVM();
+  KGEN::registerLowerLIT();
+  KGEN::registerLowerPOPToLLVM();
+  KGEN::registerLowerRuntimeClosures();
+  KGEN::registerLowerSemanticCF();
+  KGEN::registerLowerStructs();
+  KGEN::registerMem2Reg();
+  KGEN::registerOutlineClosures();
+  KGEN::registerPruneImpossibleVariants();
+  KGEN::registerSROA();
+  KGEN::registerSimplifyCF();
+  KGEN::registerSynthesizeDebugInfo();
+  KGEN::registerTweakSpilledAllocas();
+  KGEN::registerVerifyParameters();
   KGEN::registerLowerToLLVMPipeline();
-
-  // Init CompilerRT.
-  KGEN_CompilerRT_Initialize();
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));

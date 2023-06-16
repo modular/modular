@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -split-input-file -verify-parameters -elaborate-generators="enable-search=true test-diagnostics=true" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-elaborate-opt %s -split-input-file -elaborate-generators="enable-search=true test-diagnostics=true" -allow-unregistered-dialect | FileCheck %s
 
 // This is left untouched.
 // CHECK-LABEL: kgen.func @test0() -> index {
