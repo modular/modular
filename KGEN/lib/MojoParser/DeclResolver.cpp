@@ -373,9 +373,23 @@ LogicalResult DeclResolver::aliasDeclsImpl(
         SignatureType existingSignature = existingOp.getFullSignature();
         // If the value input types match exactly *and* the input parameter
         // types match exactly, then we don't want to merge this decl into the
-        // set.
-        if (declSignature.getValueInputs() ==
-                existingSignature.getValueInputs() &&
+        // set. We also need to remove the by-ref result type from the
+        // input types, so that aliasing is strictly based on the actual
+        // inputs.
+        auto getActualValueInputs =
+            [](SignatureType signature) -> ArrayRef<mlir::Type> {
+          auto inputTypes = signature.getValueInputs();
+          auto inputConventions = signature.getValueInputConventions();
+          // If there's a by-ref result type, it'll be the first argument.
+          if (!inputConventions.empty() &&
+              inputConventions.front() == ValueInputConvention::ByRefResult) {
+            inputTypes = inputTypes.drop_front();
+          }
+          return inputTypes;
+        };
+
+        if (getActualValueInputs(declSignature) ==
+                getActualValueInputs(existingSignature) &&
             declSignature.getInputParamTypes() ==
                 existingSignature.getInputParamTypes())
           return false;

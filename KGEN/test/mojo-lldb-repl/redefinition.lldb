@@ -15,3 +15,21 @@ let value = 10
 # Check that we can redefine this in a followup expression.
 let value = True
 # CHECK: ($Bool::Bool) value
+
+# Check that we can redefine a function that has a return type defined in the
+# same expression.
+struct Struct:
+    fn __init__(inout self):
+        pass
+fn xoo() -> Struct:
+    return Struct()
+let abc = xoo()
+# CHECK: (Struct) abc =
+
+struct Struct:
+    fn __init__(inout self):
+        pass
+fn xoo() -> Struct:
+    return Struct()
+let abc = xoo()
+# CHECK: (Struct) abc =
