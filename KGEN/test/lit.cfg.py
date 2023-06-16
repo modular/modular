@@ -51,6 +51,7 @@ tool_dirs = [
 tools = [
     "llvm-objdump",
     "kgen",
+    "kgen-elaborate-opt",
     "kgen-opt",
     "kgen-translate",
     "mojo",

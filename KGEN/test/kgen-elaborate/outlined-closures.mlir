@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters -elaborate-generators -force-inline -eliminate-dead-symbols -cleanup-compiler-globals | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters | kgen-elaborate-opt -elaborate-generators | kgen-opt -force-inline -eliminate-dead-symbols -cleanup-compiler-globals | FileCheck %s
 
 kgen.generator @call_region<fn: <index -> index>() -> index -> E>() -> index always_inline {
   kgen.param.declare BoundFn: <[] -> index>() -> index = <bind_signature(:<index -> index>() -> index fn, 2)>

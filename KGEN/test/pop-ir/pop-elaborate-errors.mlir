@@ -1,4 +1,4 @@
-// RUN: kgen-opt -elaborate-generators %s -verify-diagnostics -split-input-file
+// RUN: kgen-elaborate-opt -elaborate-generators %s -verify-diagnostics -split-input-file
 
 // expected-error @below {{no viable expansions found}}
 kgen.generator @impl(%a: !pop.simd<4, f32>) {
