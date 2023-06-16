@@ -30,6 +30,9 @@ class bar:
 
 # Expressions that don't declare symbols shouldn't fail and shouldn't produce
 # output variables.
+
 %%python
 print(420)
+
+# CHECK: 420
 # CHECK-NOT: ($PythonObject::PythonObject)
