@@ -574,7 +574,7 @@ public:
   }
 
   uint32_t GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
-                                   const char *name,
+                                   StringRef name,
                                    bool omitEmptyBaseClasses) override {
     return 0;
   }

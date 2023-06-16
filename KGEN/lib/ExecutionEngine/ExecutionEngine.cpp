@@ -233,7 +233,7 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
     // Windows needs some help to load dylibs, apparently.
     auto loadDynamicLibrary = [&session](llvm::orc::JITDylib &jd,
                                          StringRef dllName) -> llvm::Error {
-      if (!dllName.endswith_insensitive(".dll"))
+      if (!dllName.ends_with_insensitive(".dll"))
         return llvm::make_error<llvm::StringError>(
             "DLLName not ending with .dll", llvm::inconvertibleErrorCode());
 

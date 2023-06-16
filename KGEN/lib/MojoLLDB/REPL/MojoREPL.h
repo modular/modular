@@ -45,7 +45,7 @@ protected:
   // Utilities
   //===--------------------------------------------------------------------===//
 
-  lldb_private::ConstString GetSourceFileBasename() override {
+  StringRef GetSourceFileBasename() override {
     return lldb_private::ConstString("repl.mojo");
   }
 
