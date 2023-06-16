@@ -661,7 +661,7 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
   if (result.isError()) {
     // Swallow the error.
     DEBUG_WITH_TYPE("lit-parameter-evaluator",
-                    result.getError().emit(
+                    result.takeError().emit(
                         (InFlightDiagnostic(*)(Location))mlir::emitError));
     return failure();
   }

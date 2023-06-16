@@ -41,7 +41,7 @@ public:
   Error takeError() { return std::move(error); }
 
   /// Get the causes of the main error.
-  ArrayRef<ErrorTree> getCauses() const { return causes; }
+  std::vector<ErrorTree> &getCauses() { return causes; }
 
   /// Get the main error message.
   StringRef getMessage() const { return error.get(); }
@@ -83,7 +83,7 @@ public:
 
   /// Emit this error to an MLIR diagnostic. The main error is emitted as a
   /// diagnostic error. Any causes are emitted as notes.
-  void emit(function_ref<InFlightDiagnostic(Location)> emitError) const;
+  void emit(function_ref<InFlightDiagnostic(Location)> emitError) &&;
 
 private:
   /// Emit nested errors to an MLIR diagnostic as notes.

@@ -28,11 +28,105 @@ ErrorTree ErrorTree::copy() const {
   return copy;
 }
 
-void ErrorTree::emit(
-    function_ref<InFlightDiagnostic(Location)> emitError) const {
+/// This function attempts detect recursive errors along a single-element branch
+/// of the error tree and collapse them to make the errors more digestible.
+/// Specifically, the function looks at single-element segments of the error
+/// tree and runs repeating subsequence detection.
+///
+/// Given a finite sequence, find the largest non-overlapping subsequences that
+/// are repeats of smaller subsequences.
+static void bundleRecursiveErrors(
+    std::vector<ErrorTree *> &path,
+    DenseMap<std::pair<Location, StringRef>, ErrorTree *> &seen, ErrorTree *cur,
+    ErrorTree *parent, int last, int prog, int start) {
+  // Run cycle detection.
+  if (last == -1 &&
+      !seen.try_emplace({cur->getLoc(), cur->getMessage()}, parent).second) {
+    // Backtrack the path to find the last matching error in the path.
+    for (int i = path.size() - 1; i >= 0; --i) {
+      ErrorTree *prev = path[i];
+      if (prev->getLoc() != cur->getLoc() ||
+          prev->getMessage() != cur->getMessage())
+        continue;
+      last = i;
+      prog = i;
+      break;
+    }
+    assert(last != -1 && "no matching previous?");
+    start = path.size();
+  }
+
+  // Iterate to the next element in the sequence.
+  path.push_back(cur);
+
+  if (last != -1) {
+    // Attempt to progress.
+    ErrorTree *tentative = path[prog];
+    if (tentative->getLoc() != cur->getLoc() ||
+        tentative->getMessage() != cur->getMessage()) {
+      // TODO: The algorithm could continue to backtrack here, allowing it to
+      // detect repeated subsequences like `*, A, B, A, D, A, B, A, D, *`.
+
+      // Compute the period and the offset from the start of the cycle.
+      int period = start - last;
+      int curDiff = ((prog - last) + start) - last;
+      // Round down to the nearest multiple of the period.
+      curDiff = curDiff / period * period;
+
+      // We have the subsequence that is comprised of a repeated subsequence.
+      // Bundle up the errors in that sequence.
+      int reps = curDiff / period;
+      ErrorTree *base = path[last];
+      ErrorTree *tip = path[last + curDiff];
+      auto it = seen.find({base->getLoc(), base->getMessage()});
+      ErrorTree *parent = it->second;
+      ErrorTree bundle(
+          base->getLoc(),
+          "error recurses " + Twine(reps) + " times:", std::move(*base));
+      ErrorTree rest(base->getLoc(),
+                     "remaining errors after:", std::move(*tip));
+      path[last + period - 1]->getCauses().clear();
+      parent->getCauses().clear();
+      parent->addCause(std::move(bundle));
+      parent->addCause(std::move(rest));
+
+      // Reset cycle detection state.
+      seen.erase(it);
+      path.erase(path.begin(), path.begin() + last + curDiff);
+      last = -1;
+      prog = -1;
+      start = -1;
+    } else {
+      ++prog;
+    }
+  }
+
+  if (cur->getCauses().size() == 1) {
+    // Continue iterating.
+    bundleRecursiveErrors(path, seen, &cur->getCauses().front(), cur, last,
+                          prog, start);
+  } else {
+    // Reset recursion and visit the new single-element segments.
+    for (ErrorTree &err : cur->getCauses()) {
+      std::vector<ErrorTree *> newPath;
+      DenseMap<std::pair<Location, StringRef>, ErrorTree *> newSeen;
+      bundleRecursiveErrors(newPath, newSeen, &err, cur, -1, -1, -1);
+    }
+  }
+}
+
+void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError) && {
+  // Try to compress recursive errors. To provide a root, start iterating from
+  // the first child.
+  for (ErrorTree &cause : causes) {
+    std::vector<ErrorTree *> path;
+    DenseMap<std::pair<Location, StringRef>, ErrorTree *> seen;
+    bundleRecursiveErrors(path, seen, &cause, this, -1, -1, -1);
+  }
+
   // Emit the main error.
   InFlightDiagnostic diag = emitError(loc) << getMessage();
-  // Emit the causes
+  // Emit the causes.
   emit(diag, causes, /*indentDepth=*/2);
 }
 
