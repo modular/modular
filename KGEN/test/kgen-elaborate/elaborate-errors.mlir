@@ -19,6 +19,8 @@ kgen.generator @local_verif_error() {
 
 // expected-note @below {{no viable expansions found}}
 // expected-note-re @below {{elaborator expansion is {{[0-9]+}} levels deep - infinite recursion?}}
+// expected-note-re @below {{error recurses {{[0-9]+}} times}}
+// expected-note @below {{remaining errors after}}
 kgen.generator @genItf3<x>() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<add(x, 1)>() : () -> ()
