@@ -528,31 +528,30 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
     // Default to the .derived directory.
-    auto derivedOr = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
-    auto installOr = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR");
-    if (derivedOr.has_value()) {
-      base = std::filesystem::absolute(*derivedOr, ec) / cacheDir;
+    if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
       if (ec)
         return Error("failed to get absolute path to derived dir: " +
                      ec.message());
-    } else if (installOr.has_value()) {
-      base = std::filesystem::absolute(*installOr, ec) / cacheDir;
+    } else if (auto path = llvm::sys::Process::GetEnv("MODULAR_INSTALL_DIR")) {
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
       if (ec)
         return Error("failed to get absolute path to installed dir: " +
                      ec.message());
-    } else { // this branch is taken by external users using the C API
-             // package.
 #ifdef _WIN32
-      auto dirPath = findDirInEnvPath(cacheDir.string(), "PATH", ";");
+    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ";")) {
 #else
-      auto dirPath = findDirInEnvPath(cacheDir.string());
+    } else if (auto path = findDirInEnvPath(cacheDir.string())) {
 #endif
-      if (dirPath) {
-        base = std::filesystem::absolute(*dirPath, ec) / cacheDir;
-      }
+      base = std::filesystem::absolute(*path, ec) / cacheDir;
       if (ec)
         return Error("failed to get absolute path to directory specified by " +
-                     *dirPath + ec.message());
+                     *path + ec.message());
+    } else {
+      base = std::filesystem::absolute(MODULAR_DERIVED_DIR, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to derived dir: " +
+                     ec.message());
     }
   }
 
