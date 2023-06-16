@@ -20,8 +20,6 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/IR/Matchers.h"
-#include "mlir/Target/LLVMIR/TypeToLLVM.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -730,17 +728,14 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
 // getAlignment
 //===----------------------------------------------------------------------===//
 
-static unsigned getAlignment(const llvm::DataLayout &dataLayout, Type ptrType,
-                             std::optional<TypedAttr> alignmentAttr = {}) {
+static unsigned getAlignment(POPToLLVMTypeConverter *tc, Type ptrType,
+                             TypedAttr alignmentAttr = {}) {
   // If we have the alignment attribute, use it.
   if (alignmentAttr)
-    return alignmentAttr->cast<IntegerAttr>().getInt();
+    return cast<IntegerAttr>(alignmentAttr).getInt();
 
-  // Otherwise, get the preferred alignment for the type.
-  llvm::LLVMContext llvmContext;
-  return LLVM::TypeToLLVMIRTranslator(llvmContext)
-      .getPreferredAlignment(
-          ptrType.cast<LLVM::LLVMPointerType>().getElementType(), dataLayout);
+  return tc->getTypeABIAlign(
+      cast<LLVM::LLVMPointerType>(ptrType).getElementType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -755,8 +750,8 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, adaptor.getPtr(),
-        getAlignment(getTypeConverter()->getDataLayout(),
-                     adaptor.getPtr().getType(), adaptor.getAlignment()));
+        getAlignment(getTypeConverter(), adaptor.getPtr().getType(),
+                     adaptor.getAlignmentAttr()));
     return success();
   }
 };
@@ -773,8 +768,8 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(),
-        getAlignment(getTypeConverter()->getDataLayout(),
-                     adaptor.getPtr().getType(), adaptor.getAlignment()),
+        getAlignment(getTypeConverter(), adaptor.getPtr().getType(),
+                     adaptor.getAlignmentAttr()),
         /*isVolatile=*/false, adaptor.getNonTemporal());
     return success();
   }
