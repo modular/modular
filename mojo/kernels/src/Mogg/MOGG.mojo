@@ -67,6 +67,7 @@ fn MOGGExport():
     alias _erf = erf
     alias _exp = exp
     alias _equal = equal
+    alias _gather = _gather_with_lambdas
     alias _gelu = gelu
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -612,6 +613,120 @@ fn transpose[
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
         input.data, new_shape, input.dynamic_dtype, new_stride
     )
+
+
+# ===----------------------------------------------------------------------===#
+# Gather
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _gather_with_lambdas[
+    type: DType,
+    in_rank: Int,
+    indices_type: DType,
+    indices_rank: Int,
+    axis_type: DType,
+    output_rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    input_2_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    # Look through the lambda to pull the index out.
+    let zero_idx = StaticIntTuple[1]()
+    let axis = input_2_fn[axis_type, 1, 1](zero_idx).to_int()
+
+    @parameter
+    @always_inline
+    fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        # Get the gather indices.
+        var indices_index = StaticIntTuple[indices_rank]()
+
+        # The gather can be in the form of:
+        # InTensor = <10, 20, 30, 40>
+        # Indices = <3, 6, 9>
+        # Axis = 1
+        # In this case we are inserting 3 new dimensions so the output shape is:
+        # InTensor<10, 3, 6, 9, 30, 40>
+        #
+
+        # So the index that we access the indices tensor at should be the sub
+        # indices over the input within the range of axis -> indices rank.
+        # Accessing the output at indices <1, 2, 3, 8, 4, 6>
+        # Would access the indices at <2, 3, 8>
+
+        # Get the indices of the index.
+        @always_inline
+        @parameter
+        fn indices_get[unrolled_i: Int]():
+            indices_index[unrolled_i] = idx[unrolled_i + axis]
+
+        unroll[indices_rank, indices_get]()
+
+        # The index we are gathering.
+        let data_index = input_1_fn[indices_type, 1, indices_rank](
+            indices_index
+        ).to_int()
+
+        # Update the indices with the new data index.
+        var data_indices = StaticIntTuple[in_rank]()
+
+        let skip_factor = indices_rank - 1
+
+        # Build the indices for the input. We have replaced in index in 'axis'
+        # with an index from the indices tensor.
+        @always_inline
+        @parameter
+        fn input_indices_get[unrolled_i: Int]():
+            indices_index[unrolled_i] = idx[unrolled_i + axis]
+            if unrolled_i == axis:
+                data_indices[unrolled_i] = data_index
+            elif unrolled_i > axis:
+                # Skip over any extra indices dimensions. These are essentially new dimensions.
+                data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
+            else:
+                data_indices[unrolled_i] = idx[unrolled_i]
+
+        unroll[in_rank, input_indices_get]()
+
+        # Load the the data.
+        let data = input_0_fn[type, simd_width, in_rank](data_indices)
+
+        # Store it to the original index.
+        output_0_fn[type, simd_width, rank](idx, data)
+
+    alias unroll_factor = 1
+
+    # If we are gathering on the last dimension then we have to be scalar.
+    if axis == in_rank - 1:
+        elementwise[output_rank, 1, unroll_factor, gather_lambda](
+            output.dynamic_shape,
+            out_chain,
+        )
+    else:
+        # We can be simd if the gather is along the other dimensions.
+        elementwise[output_rank, simd_width, unroll_factor, gather_lambda](
+            output.dynamic_shape,
+            out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#
