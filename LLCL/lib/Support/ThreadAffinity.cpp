@@ -18,10 +18,15 @@
 
 #include <vector>
 
+#ifdef _MSC_VER
+#include "llvm/Support/WindowsError.h"
+#include <windows.h>
+#endif
+
 #define DEBUG_TYPE "llcl"
 
-std::vector<size_t> M::LLCL::getThreadAffinityCpuIds(size_t numThreads,
-                                                     size_t maxWorkers) {
+M::ErrorOr<std::vector<size_t>>
+M::LLCL::getThreadAffinityCpuIds(size_t numThreads, size_t maxWorkers) {
   if constexpr (kUseThreadAffinity) {
     if (haveThreadAffinity()) {
       ErrorOr<CPUSystemInfo> errOrSystemInfo = CPUSystemInfo::get();
@@ -62,7 +67,10 @@ std::vector<size_t> M::LLCL::getThreadAffinityCpuIds(size_t numThreads,
 
   // Fallback case.
   if (numThreads == 0) {
-    numThreads = llvm::get_physical_cores();
+    auto numThreadsOr = M::getNumPhysicalCores();
+    if (numThreadsOr.isError())
+      return numThreadsOr.takeError();
+    numThreads = *numThreadsOr;
     LLVM_DEBUG(llvm::dbgs() << "getThreadAffinityCpuIds: Defaulting "
                                "number of threads to number of physical cores "
                             << numThreads << "\n");

@@ -144,11 +144,48 @@ ErrorOr<CPUSystemInfo> M::Detail::getLinuxX86CPUSystemInfo() {
 }
 #endif
 
+#if defined(_MSC_VER)
+ErrorOr<size_t> Detail::getNumPhysicalCoresWindows() {
+  std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer{};
+  DWORD bufferSize = 0;
+  DWORD result = GetLogicalProcessorInformation(buffer.data(), &bufferSize);
+  if (result == FALSE) {
+    DWORD lastError = GetLastError();
+    if (lastError == ERROR_INSUFFICIENT_BUFFER) {
+      DWORD numInfo = bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+      buffer.resize(numInfo);
+    } else {
+      std::error_code ec = llvm::mapWindowsError(lastError);
+      return M::Error(ec.message());
+    }
+  }
+  result = GetLogicalProcessorInformation(buffer.data(), &bufferSize);
+  if (result == FALSE) {
+    std::error_code ec = llvm::mapWindowsError(GetLastError());
+    return M::Error(ec.message());
+  }
+
+  DWORD processorCoreCount = 0;
+  for (const auto &processorInfo : buffer) {
+    if (processorInfo.Relationship == RelationProcessorCore)
+      ++processorCoreCount;
+  }
+  return processorCoreCount;
+}
+#endif
+
 ErrorOr<CPUSystemInfo> CPUSystemInfo::get() {
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
   return Detail::getLinuxX86CPUSystemInfo();
 #endif
   return Error("CPUSystemInfo is not supported by this build");
+}
+
+M::ErrorOr<size_t> M::getNumPhysicalCores() {
+#ifdef _MSC_VER
+  return Detail::getNumPhysicalCoresWindows();
+#endif
+  return llvm::get_physical_cores();
 }
 
 void CPUSystemInfo::print(raw_ostream &os) const {
@@ -629,7 +666,10 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
       machineInfo.cpuFeatures.push_back(feature.getKey().str());
   llvm::sort(machineInfo.cpuFeatures);
 
-  machineInfo.numPhysicalCores = llvm::get_physical_cores();
+  auto physicalCoresOr = M::getNumPhysicalCores();
+  if (physicalCoresOr.isError())
+    return physicalCoresOr.takeError();
+  machineInfo.numPhysicalCores = physicalCoresOr.takeValue();
 
   UNWRAP_ERROR(l1CacheSize, getHostCPUCacheSize(1));
   machineInfo.l1CacheSize = l1CacheSize;

@@ -122,6 +122,9 @@ ErrorOr<std::string> getHostCPUModelName();
 // the cache level does not exist, 0 is returned.
 ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
 
+/// Get the number of physical cores of in processor.
+M::ErrorOr<size_t> getNumPhysicalCores();
+
 //===----------------------------------------------------------------------===//
 // HostMachineInfo
 //===----------------------------------------------------------------------===//
@@ -196,6 +199,10 @@ ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();
 ErrorOrSuccess setThreadAffinityLinux(size_t cpuID);
 ErrorOrSuccess runWithThreadAffinityLinux(size_t cpuID,
                                           llvm::function_ref<void()> &workFn);
+#endif
+
+#if defined(_MSC_VER)
+M::ErrorOr<size_t> getNumPhysicalCoresWindows();
 #endif
 } // namespace Detail
 

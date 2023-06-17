@@ -142,8 +142,12 @@ void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue> M::LLCL::createSingleThreadWorkQueue() {
-  std::vector<size_t> cpuIDs =
-      getThreadAffinityCpuIds(/*numThreads=*/1, /*maxWorkers=*/1);
+  auto cpuIDOr = getThreadAffinityCpuIds(/*numThreads=*/1, /*maxWorkers=*/1);
+
+  // TODO: This function should return the error back to caller.
+  if (cpuIDOr.isError())
+    llvm::report_fatal_error(cpuIDOr.getError());
+  std::vector<size_t> cpuIDs = *cpuIDOr;
   assert(cpuIDs.size() == 1);
   return std::make_unique<SingleThreadWorkQueue>(cpuIDs[0]);
 }
