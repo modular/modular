@@ -796,6 +796,32 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
 }
 
 //===----------------------------------------------------------------------===//
+// SelectOp
+//===----------------------------------------------------------------------===//
+
+def POP_SelectOp : POPOp<"select", [Pure,
+    AllTypesMatch<["trueVal", "falseVal", "result"]>]> {
+  let summary = "conditional select";
+  let description = [{
+    The `pop.select` operation is used to choose one value based on a condition,
+    without IR-level branching.
+
+    Example:
+
+    ```mlir
+    %0 = pop.select %cond, %arg0, %arg1 : !pop.struct<f32>
+    ```
+  }];
+
+  let arguments = (ins I1:$cond, AnyType:$trueVal, AnyType:$falseVal);
+  let results = (outs AnyType:$result);
+
+  let assemblyFormat = [{
+    $cond `,` $trueVal `,` $falseVal attr-dict `:` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 

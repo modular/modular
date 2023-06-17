@@ -353,10 +353,10 @@ kgen.generator @pop_xor_parametric<size, type: dtype>(
 }
 
 // CHECK-LABEL: @pop_select
-kgen.func @pop_select(%arg0 : !pop.scalar<bool>, %arg1: !pop.scalar<f32>, %arg2: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  // CHECK: pop.simd.select %{{.*}}, %{{.*}}, %{{.*}} :
-  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
+kgen.func @pop_select(%arg0: i1, %arg1: !pop.struct<f32>, %arg2: !pop.struct<f32>) -> !pop.struct<f32> {
+  // CHECK: pop.select %arg0, %arg1, %arg2 : !pop.struct<f32>
+  %0 = pop.select %arg0, %arg1, %arg2 : !pop.struct<f32>
+  kgen.return %0 : !pop.struct<f32>
 }
 
 // CHECK-LABEL: @pop_select_simd
