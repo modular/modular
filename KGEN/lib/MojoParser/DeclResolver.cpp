@@ -991,9 +991,11 @@ void ParsedArgument::processParameterArgs(
 /// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
 /// meta_param_list   ::= argument_list | "(" ")"
 /// meta_result_types ::= expression ("," expression)*
-static ParseResult parseOptionalParameterSignature(
-    ParserBase &p, ASTDecl &declScope, SmallVector<ParamDeclAttr> &inputParams,
-    SmallVector<ParamDeclAttr> &resultParams, bool &paramVararg) {
+static ParseResult
+parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
+                                SmallVectorImpl<ParamDeclAttr> &inputParams,
+                                SmallVectorImpl<ParamDeclAttr> &resultParams,
+                                bool &paramVararg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
@@ -1730,7 +1732,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (inAStruct) {
     auto structDecl = cast<StructDeclOp>(*decl.getParentDecl());
     auto parentLoc = decl.getParentDecl()->getLoc();
-    for (auto param : structDecl.getInputParams()) {
+    for (ParamDeclAttr param : structDecl.getInputParams()) {
       auto paramRef = ParamDeclRefAttr::get(param);
       addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc, &decl);
     }

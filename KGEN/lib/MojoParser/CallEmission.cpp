@@ -1423,10 +1423,7 @@ PValue OverloadSet::getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
   // If the callee is a list, create a param.fork op and create a
   // CallParam on that. Mangle the declared parameter name with the line and
   // column number to ensure uniqueness.
-  unsigned bufferID =
-      emitter.getSourceMgr().FindBufferContainingLoc(expr->getLoc());
-  auto [line, col] =
-      emitter.getSourceMgr().getLineAndColumn(expr->getLoc(), bufferID);
+  auto [line, col] = emitter.getSourceMgr().getLineAndColumn(expr->getLoc());
 
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(

@@ -75,8 +75,8 @@ struct LValueInitializerType {
 /// write it back yet.
 struct LValueBufferTaken {};
 
-/// This class represents the destination context than an expression is being
-/// emitted, when it may produce an RValue.  Example destinations include:
+/// This class represents the destination context that an expression is being
+/// emitted in, when it may produce an RValue.  Example destinations include:
 ///   - an LValue:
 ///       This handles cases like `a.b = 42` or `var x: Int = 42`, as well as
 ///       a return slot with memory-only results in `return x()`.  In this
