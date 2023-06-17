@@ -134,13 +134,13 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
   // same key string and use that to generate the next unique ID.
   llvm::StringMap<ssize_t> maxIds;
   auto getId = [&](StringRef name) {
-    size_t splitIdx = llvm::count_if(llvm::reverse(name),
-                                     [](char c) { return std::isdigit(c); });
-    splitIdx = name.size() - splitIdx;
+    StringRef key = name.rtrim("0123456789");
+    size_t splitIdx = key.size();
+
     // -1 means no number suffix.
     ssize_t id = -1;
     name.substr(splitIdx).getAsInteger(/*Radix=*/10, id);
-    return std::make_pair(name.substr(0, splitIdx), id);
+    return std::make_pair(key, id);
   };
 
   bool needsMangling = false;
