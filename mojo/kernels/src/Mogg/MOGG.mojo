@@ -7,7 +7,7 @@
 from Activations import relu, gelu, sigmoid
 from Buffer import NDBuffer
 from DType import DType
-from Functional import elementwise, unroll, vectorize
+from Functional import elementwise, unroll, vectorize, async_parallelize
 from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print
@@ -41,6 +41,9 @@ from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
 from Tracing import Trace, TraceLevel
 from String import String
+from MatrixSolve import batch_matrix_solve
+from Index import Index
+
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
@@ -74,6 +77,7 @@ fn MOGGExport():
     alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
+    alias _matrix_solve = matrix_solve
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
     alias _mul = mul
@@ -182,7 +186,6 @@ fn to_buffer[
     data: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
     shape: __mlir_type.`!pop.pointer<index>`,
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
@@ -432,7 +435,6 @@ fn broadcast_to_tensor[
         target_rank, DimList.create_unknown[target_rank](), target_type
     ],
 ) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
-
     var shape = StaticIntTuple[output_rank]()
     var stride = StaticIntTuple[output_rank]()
 
@@ -524,6 +526,7 @@ fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
 # Abs wrapper op
 # ===----------------------------------------------------------------------===#
 
+
 # Call abs, needed as it has multiple overloads which can't be aliased
 @always_inline
 fn abs_wrapped[
@@ -536,6 +539,7 @@ fn abs_wrapped[
 # Cast op
 # ===----------------------------------------------------------------------===#
 
+
 # Cast a SIMD value to a new SIMD value of different type.
 @always_inline
 fn cast[
@@ -547,6 +551,7 @@ fn cast[
 # ===----------------------------------------------------------------------===#
 # Pow wrapper op
 # ===----------------------------------------------------------------------===#
+
 
 # Call pow, needed as it has multiple overloads which can't be aliased
 @always_inline
@@ -730,8 +735,52 @@ fn _gather_with_lambdas[
 
 
 # ===----------------------------------------------------------------------===#
+# Matrix Solve
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn matrix_solve[
+    type: DType, a_rank: Int, b_rank: Int, x_rank: Int
+](
+    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
+    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
+    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    """A specialized matrix solver for Nx3x3 matrix and Nx3x2 RHS"""
+    out_chain.trace[TraceLevel.OP]("mogg.matrix_solve")
+
+    @parameter
+    if not type.is_floating_point():
+        return out_chain.mark_error("Only floating point types are supported.")
+
+    @parameter
+    if a_rank > 2:
+        if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
+            return out_chain.mark_error(
+                "input and output batch sizes must match"
+            )
+
+    alias row_dim = a_rank - 2
+    alias col_dim = a_rank - 1
+
+    if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
+        return out_chain.mark_error("The matrix's shape must be (3,2)")
+    if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
+        return out_chain.mark_error("The matrix's shape must be (3,3)")
+    if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
+        return out_chain.mark_error("The matrix's shape must be (3,2)")
+
+    batch_matrix_solve[type, x_rank, a_rank, b_rank](x, a, b)
+
+    out_chain.mark_ready()
+
+
+# ===----------------------------------------------------------------------===#
 # Helpers
 # ===----------------------------------------------------------------------===#
+
 
 # Helper function to mark the output chain as ready in tests.
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
