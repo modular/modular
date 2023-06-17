@@ -341,10 +341,8 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
         auto val = PValue(bind.getValue());
 
         if (ASTType type = val.getIfTypeValue())
-          if (!isa<ParamRefType>(type.mlirType)) {
-            type.print(os, forDiag);
-            return;
-          }
+          if (!isa<ParamRefType>(type.mlirType))
+            return type.print(os, forDiag);
 
         printParam(os, val, forDiag);
       });

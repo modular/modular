@@ -1565,7 +1565,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   if (parseIdentifier(name, "expected name for 'alias' declaration"))
     return failure();
 
-  // Before parsing the rest of the alias, the is unresolved and value is
+  // Before parsing the rest of the alias, the type is unresolved and value is
   // UnresolvedAliasValueAttr.
   auto type = UnresolvedType::get(getContext());
   auto value = UnresolvedAliasValueAttr::get(type);

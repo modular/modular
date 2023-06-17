@@ -514,7 +514,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       if (firstCandidate.getIsStatic())
         replacement = "Self.";
       // References /from/ static methods can only use capital Self.
-      if (auto curFn = dyn_cast<FuncOp>(emitter.declScope))
+      if (auto curFn = dyn_cast<FuncOp>(container))
         if (curFn.getIsStatic())
           replacement = "Self.";
 
