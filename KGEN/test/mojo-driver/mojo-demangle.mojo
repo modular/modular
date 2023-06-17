@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# Reject unknown options.
+# RUN: not mojo-driver demangle -one --two '$aModule::main()' 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN
+# CHECK-UNKNOWN: mojo-driver{{.*}}: error: unrecognized argument '-one'
+
 # RUN: mojo-driver demangle '$aModule::main()' | FileCheck -check-prefix="SIMPLE" %s
 # SIMPLE: Mangled: "$aModule::main()" - Module: aModule, Structs: [], Symbol: "main", Signature: () -> ()
 
@@ -40,9 +44,13 @@
 # RUN: mojo-driver demangle 'Mod::AStruct::foo($Int::Int)' | FileCheck -check-prefix=MANGLEDTYPE  %s
 # MANGLEDTYPE: Mangled: "Mod::AStruct::foo($Int::Int)" - Module: (none), Structs: ["Mod", "AStruct"], Symbol: "foo"
 
-# Failures are printed to stderr.
+# Demangling failures are printed to stderr.
 # RUN: not mojo-driver demangle '$aModule::AStruct::BStruct(!invalid.type)' 2>&1 | FileCheck -check-prefix="FAILURE" %s
 # FAILURE: demangling failed
+
+# Only one name at a time.
+# RUN: not mojo-driver demangle 'one' 'two' 2>&1 | FileCheck --check-prefix TOO-MANY %s
+# TOO-MANY: cannot demangle both 'one' and 'two'
 
 # An empty string can be demangled.
 # RUN: mojo-driver demangle "" | FileCheck %s --check-prefix EMPTY
