@@ -187,8 +187,6 @@ function(add_kgen_kernel target)
     OUTPUT ${header_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
-    $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
-    $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
