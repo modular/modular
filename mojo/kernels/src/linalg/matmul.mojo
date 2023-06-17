@@ -15,9 +15,17 @@ from Buffer import (
     partial_simd_store,
     _raw_stack_allocation,
 )
-from Functional import tile, unswitch, unroll, unroll2, vectorize
+from Functional import (
+    tile,
+    unswitch,
+    unroll,
+    unroll2,
+    vectorize,
+    async_parallelize,
+)
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
+from LLCL import OutputChainPtr
 from Math import min, fma, div_ceil, align_down
 from MatmulUtils import (
     get_packB_unroll_factor,
@@ -26,6 +34,12 @@ from MatmulUtils import (
     MatmulOperandLayout,
     GemmShape,
     calculate_tile_n_k,
+    get_min_task_size,
+    get_partitioned_matmul,
+    PartitionHeuristic,
+    search_mm_config,
+    elementwise_lambda_fn_sig_type,
+    dispatch_is_critical_stride,
 )
 from Matrix import Matrix
 from Pointer import DTypePointer
@@ -33,7 +47,8 @@ from Range import range
 from SIMD import SIMD
 from TargetInfo import has_neon, alignof, dtype_simd_width
 from Transpose import transpose_inplace
-from Intrinsics import PrefetchOptions
+from TypeUtilities import rebind
+from Intrinsics import PrefetchOptions, external_call
 from IO import print
 
 
@@ -1581,3 +1596,132 @@ struct BTileGenerator[
             )
 
         return packed_b
+
+
+fn matmul_parallel_async[
+    type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+](
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+    num_threads: Int = -1,
+):
+    @parameter
+    fn null_lambda[
+        val_type: DType, width: Int
+    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
+        pass
+
+    matmul_parallel_async[
+        type,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        False,
+        null_lambda,
+    ](c, a, b, out_chain, num_threads)
+
+
+fn matmul_parallel_async[
+    type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+](
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+    num_threads: Int = -1,
+):
+    assert_param[not transpose_a, "transpose_a not yet supported"]()
+
+    let shape = GemmShape.get[
+        False,
+        transpose_b,
+        DimList.create_unknown[2](),
+        DimList.create_unknown[2](),
+        DimList.create_unknown[2](),
+        type,
+        type,
+    ](c, a, b)
+
+    let m = shape.M
+    let n = shape.N
+    let k = shape.K
+    let complexity = m * n * k
+    let num_tasks = min(
+        div_ceil(complexity, get_min_task_size()),
+        num_threads if num_threads
+        > 0 else out_chain.get_runtime().parallelism_level(),
+    )
+
+    @parameter
+    fn dispatch_on_critical_stride[critical_stride: Bool]():
+        @always_inline
+        @parameter
+        fn task_func(task_id: Int):
+            let sub_matmul_config = get_partitioned_matmul[
+                PartitionHeuristic.MOJO, critical_stride
+            ](m, n, k, task_id, num_tasks)
+            if (
+                sub_matmul_config.shape[0] <= 0
+                or sub_matmul_config.shape[1] <= 0
+            ):
+                return
+            alias mm_config = search_mm_config[
+                type,
+                b_packed,
+                critical_stride,
+            ]()
+
+            fn elementwise_closure(offset: GemmShape, shape: GemmShape):
+                elementwise_epilogue_c_tile[
+                    mm_config.simd_size,
+                    type,
+                    mm_config.shape_c,
+                    elementwise_lambda_fn,
+                ](
+                    offset,
+                    shape,
+                    rebind[NDBuffer[2, mm_config.shape_c, type]](c),
+                )
+
+            TiledMatmul[
+                mm_config,
+                # accum_type
+                type,
+                # value_type
+                type,
+                # transpose_a
+                False,
+                transpose_b,
+                b_packed,
+                elementwise_epilogue_enabled,
+                # rowwise_epilogue_enabled,
+                False,
+                critical_stride,
+            ].run(
+                rebind[NDBuffer[2, mm_config.shape_c, type]](c),
+                rebind[NDBuffer[2, mm_config.shape_a, type]](a),
+                rebind[NDBuffer[2, mm_config.shape_b, type]](b),
+                elementwise_closure,
+                sub_matmul_config.shape,
+                sub_matmul_config.offset,
+            )
+
+        async_parallelize[task_func](out_chain, num_tasks)
+
+    dispatch_is_critical_stride[type, dispatch_on_critical_stride](k)
+
+    # TODO (#12624): Closure captures some state on the stack so this needs
+    # to be synchronous in order to keep that state alive
+    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+        out_chain.ptr
+    )

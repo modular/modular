@@ -586,3 +586,80 @@ fn get_pack_data_size[type: DType]() -> Int:
         return 512 * KB // dtype_sizeof[type]()
 
     return 256 * KB // dtype_sizeof[type]()
+
+
+@always_inline
+fn search_mm_config[
+    type: DType, b_packed: Bool, critical_stride: Bool
+]() -> MatmulConfig:
+    alias a_row_size = get_matmul_a_row_size[critical_stride]()
+    alias pack_inner_size = get_matmul_pack_inner_size[critical_stride]()
+
+    # We can fork on a_row_size and pack_inner_size independently to get a cross-product:
+    #     __mlir_op.`kgen.param.fork`[
+    #         paramDecl : __mlir_attr.`#kgen<param.decl result_hidden1 : index>`,
+    #         values : __mlir_attr[
+    #             `#kgen.variadic<4, 3, 5, 8> : !kgen.variadic<index>`
+    #         ],
+    #     ]()
+    #     alias a_row_size = (
+    #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden1"> : index`
+    #     )
+    #     __mlir_op.`kgen.param.fork`[
+    #         paramDecl : __mlir_attr.`#kgen<param.decl result_hidden2 : index>`,
+    #         values : __mlir_attr[
+    #             `#kgen.variadic<3, 4, 2> : !kgen.variadic<index>`
+    #         ],
+    #     ]()
+    #     alias pack_inner_size = (
+    #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden2"> : index`
+    #     )
+    alias mm_config1 = get_matmul_config[type, a_row_size, pack_inner_size]()
+    # FIXME: The 8,2 config is giving erroneous results.
+    # alias mm_config2 = get_matmul_config[8, 2]()
+
+    # alias mm_config = autotune(mm_config1, mm_config2)
+    return mm_config1
+
+
+fn get_matmul_config[
+    type: DType, a_row_size: Int, pack_inner_size: Int
+]() -> MatmulConfig:
+    """Utility function to extract matmul configuration parameters for exported
+    Functions.
+        TODO: Add target dependent configuration parameters.
+    """
+    alias simd_size = dtype_simd_width[type]()
+
+    # number of k iterations to prefetch ahead on the
+    #   inner micro kernel loop.
+    alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
+
+    return MatmulConfig {
+        shape_a: DimList.create_unknown[2](),
+        shape_b: DimList.create_unknown[2](),
+        shape_c: DimList.create_unknown[2](),
+        packed_shape: DimList.create_unknown[3](),
+        shape_bias: DimList.create_unknown[1](),
+        simd_size: simd_size,
+        a_row_size: a_row_size,
+        pack_inner_size: pack_inner_size * simd_size,
+        pack_data_size: get_pack_data_size[type](),
+        prefetch_b_distance_k: prefetch_b_distance_k,
+    }
+
+
+@always_inline
+fn is_critical_stride(k: Int) -> Bool:
+    return has_neon() and not os_is_macos() and ((k % 4096) == 0)
+
+
+@always_inline
+fn dispatch_is_critical_stride[
+    type: DType,
+    func: fn[x: Bool] () capturing -> None,
+](k: Int):
+    if is_critical_stride(k):
+        func[True]()
+    else:
+        func[False]()
