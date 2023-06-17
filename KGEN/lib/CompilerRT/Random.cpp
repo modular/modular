@@ -9,21 +9,22 @@
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
-COMPILERRT_EXPORT double KGEN_CompilerRT_RandomDouble(double min, double max) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT double
+KGEN_CompilerRT_RandomDouble(double min, double max) {
   static std::default_random_engine randEngine(/*seed=*/0);
   std::uniform_real_distribution<double> dist(min, max);
   return dist(randEngine);
 }
 
-COMPILERRT_EXPORT int64_t KGEN_CompilerRT_RandomSInt64(int64_t min,
-                                                       int64_t max) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT int64_t
+KGEN_CompilerRT_RandomSInt64(int64_t min, int64_t max) {
   static std::default_random_engine randEngine(/*seed=*/0);
   std::uniform_int_distribution<int64_t> dist(min, max);
   return dist(randEngine);
 }
 
-COMPILERRT_EXPORT uint64_t KGEN_CompilerRT_RandomUInt64(uint64_t min,
-                                                        uint64_t max) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
+KGEN_CompilerRT_RandomUInt64(uint64_t min, uint64_t max) {
   static std::default_random_engine randEngine(/*seed=*/0);
   std::uniform_int_distribution<uint64_t> dist(min, max);
   return dist(randEngine);

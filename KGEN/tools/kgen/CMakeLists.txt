@@ -16,7 +16,6 @@ add_modular_tool(kgen
   LINK_LIBS PRIVATE
   KGENCLOptions
   KGENCompiler
-  KGENCompilerRT
   KGENDialect
   KGENEmitObject
   KGENExecutionEngine

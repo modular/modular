@@ -10,7 +10,7 @@
 
 using namespace M;
 
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerBegin(const char *namePtr, size_t nameLen,
                                        const char *detailPtr,
                                        size_t detailLen) {
@@ -18,7 +18,8 @@ KGEN_CompilerRT_TimeTraceProfilerBegin(const char *namePtr, size_t nameLen,
                          StringRef(detailPtr, detailLen));
 }
 
-COMPILERRT_EXPORT void KGEN_CompilerRT_TimeTraceProfilerEnd() {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_TimeTraceProfilerEnd() {
   timeTraceProfilerEnd();
 }
 

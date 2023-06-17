@@ -56,6 +56,14 @@ if (NOT MODULAR_BUILD_ARCH)
   INPUTS ${ORC_LIB}
   INPUT_NAMES "kOrcRT"
   RELATIVE_INSTALL_DIR ".kgen_cache/orc")
-  
-  add_dependencies(KGENExecutionEngine orc-rt-cas)
+
+  cache_files(compiler-rt-cas
+    BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
+    HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/COMPILERRTCASID.h
+    INPUTS $<TARGET_FILE:KGENCompilerRTShared>
+    INPUT_NAMES "kCompilerRT"
+    RELATIVE_INSTALL_DIR ".kgen_cache/orc"
+  )
+
+  add_dependencies(KGENExecutionEngine orc-rt-cas compiler-rt-cas)
 endif()

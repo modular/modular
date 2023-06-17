@@ -110,7 +110,7 @@ public:
 
 protected:
   using AddToSearchOrderFn =
-      llvm::unique_function<void(StringRef, llvm::orc::JITDylib *)>;
+      llvm::unique_function<ErrorOrSuccess(StringRef, llvm::orc::JITDylib *)>;
 
   MaterializationLayer(llvm::orc::ExecutionSession &sess,
                        const llvm::DataLayout &dl, AddToSearchOrderFn add);
@@ -307,7 +307,7 @@ private:
   /// Add a JITDylib to the search order for symbol resolution. Asserts if the
   /// dylib already exists - users should generally be cautious about adding
   /// dylibs to the search order.
-  void addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
+  ErrorOrSuccess addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.

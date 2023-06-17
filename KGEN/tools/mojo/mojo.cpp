@@ -7,7 +7,6 @@
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "Config/Version.h"
 #include "KGEN/CLOptions.h"
-#include "KGEN/CompilerRT.h"
 #include "KGEN/EmitFuncHeader.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
@@ -214,21 +213,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError(engineOr.getError());
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
-  if (!clOptions.enableExplicitLinking) {
-    // TODO (8082): This should not be necessary.
-    std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-    registerIntelAMX(compilerRTFunctions);
-    registerLLCL(compilerRTFunctions);
-    registerPython(compilerRTFunctions);
-    registerMemory(compilerRTFunctions);
-    registerRandom(compilerRTFunctions);
-    registerSystem(compilerRTFunctions);
-    registerTracing(compilerRTFunctions);
-    for (auto [name, ptr] : compilerRTFunctions)
-      if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
-        return clOptions.reportError(err.getError());
-  }
-
   // Add the object compiler layer.
   auto compiler =
       ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
@@ -346,9 +330,6 @@ int main(int argc, char **argv) {
     // Print all registered targets.
     llvm::TargetRegistry::printRegisteredTargetsForVersion(os);
   });
-
-  // Initialize the compiler runtime.
-  KGEN_CompilerRT_Initialize();
 
   // Enable command line options for various MLIR internals.
   registerAsmPrinterCLOptions();

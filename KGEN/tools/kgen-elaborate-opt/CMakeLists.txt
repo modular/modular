@@ -16,7 +16,6 @@ add_modular_tool(kgen-elaborate-opt
   LITDialect
   KGENDialect
   KGENEmitObject
-  KGENCompilerRT
   KGENCompiler
   POPDialect
   KGENToLLVM

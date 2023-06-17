@@ -13,7 +13,7 @@ using namespace M;
 // Global PythonInterface Instance
 //===----------------------------------------------------------------------===//
 
-extern "C" void *
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_Python_GetGlobalPython(ssize_t objSize,
                                        void (*initFn)(void *)) {
   static void *globalPython = nullptr;
