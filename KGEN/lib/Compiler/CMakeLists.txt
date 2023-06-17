@@ -15,7 +15,6 @@ add_modular_mlir_library(KGENCompiler
   DebugInfoToLLVM
   DebugInfoTransforms
 
-  KGENCompilerRT
   KGENElaborator
   KGENEmitObject
   KGENTransforms

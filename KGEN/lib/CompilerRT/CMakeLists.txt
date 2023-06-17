@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENCompilerRT
+set(SOURCES
   InitIntelAMX.cpp
   Initialize.cpp
   LLCL.cpp
@@ -14,6 +14,11 @@ add_modular_library(KGENCompilerRT
   Random.cpp
   System.cpp
   Tracing.cpp
+)
+
+# A statically built CompilerRT library.
+add_modular_library(KGENCompilerRT
+  ${SOURCES}
 
   LINK_LIBS PUBLIC
   MSupport
@@ -21,3 +26,16 @@ add_modular_library(KGENCompilerRT
 )
 
 target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT)
+
+# A dynamically built CompilerRT library used when jitting.
+add_modular_library(KGENCompilerRTShared SHARED
+  ${SOURCES}
+
+  LINK_LIBS PRIVATE
+  MSupport
+  MSupportGlobals
+  LLCLRuntime
+  LLCLRuntimeGlobals
+)
+
+target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)

@@ -15,7 +15,6 @@ add_modular_tool(mojo
   LINK_LIBS PRIVATE
   KGENCLOptions
   KGENCompiler
-  KGENCompilerRT
   KGENDialect
   KGENEmitObject
   KGENExecutionEngine

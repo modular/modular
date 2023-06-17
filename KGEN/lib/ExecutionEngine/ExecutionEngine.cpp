@@ -7,6 +7,7 @@
 #include "KGEN/ExecutionEngine.h"
 #include "Cache/BlobCache.h"
 #include "Cache/Support/Keys.h"
+#include "KGEN/ExecutionEngine/COMPILERRTCASID.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
@@ -53,13 +54,9 @@ MaterializationLayer::getOrCreateDylib(StringRef libName) {
     return M::Error(toString(dylibOr.takeError()));
   llvm::orc::JITDylib &dylib = *dylibOr;
 
-  // Resolve symbols that are statically linked in the target process.
-  dylib.addGenerator(
-      cantFail(llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-          session, getTargetProcessSymbolFilter())));
-
   // Add the dylib to the search order.
-  addToSearchOrder(libName, &dylib);
+  if (auto err = addToSearchOrder(libName, &dylib))
+    return err.takeError();
 
   return &dylib;
 }
@@ -147,6 +144,7 @@ ErrorOrSuccess StaticArchiveLayer::add(StringRef libName,
 /// JITDylib to define platform-specific symbols we want to be in the JIT'ed
 /// address space.
 static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
+static constexpr StringLiteral compilerRTlibName = "$compilerrt-lib";
 
 //===----------------------------------------------------------------------===//
 // ExecutionEngine implementation
@@ -154,10 +152,9 @@ static constexpr StringLiteral platformStdlibName = "$platform-stdlib";
 
 using Keys::ReadOnlyKey;
 
-/// Write the orc_rt buffer to a temporary path so we can pass that path. This
-/// is a temporary work-around until COFF can be called with a memory buffer.
-/// See #10097.
-static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
+/// Write the rt buffer to a temporary path so we can pass that path.
+static ErrorOrSuccess writeRTToFile(StringRef prefix, BufferRef &buf,
+                                    std::string &outPath) {
   std::error_code ec;
   std::filesystem::path path = std::filesystem::temp_directory_path(ec);
   if (ec)
@@ -165,7 +162,7 @@ static ErrorOrSuccess writeORCRTToFile(BufferRef &buf, std::string &outPath) {
 
   // Write to a temporary file, but make it unique so that parallel running
   // processes don't overwrite and corrupt the file.
-  path = path / "liborc_rt-%%%%%%%.a";
+  path = path / (prefix + "_rt-%%%%%%%.a").str();
   outPath = path.string();
 
   auto tmpfileOr = TempFile::create(path.string());
@@ -204,8 +201,8 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
   // currently hit conflicts with symbols in the current COFF ORC runtime.
   if (!tt.isOSBinFormatCOFF()) {
     if (auto generator =
-            llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-                dataLayout.getGlobalPrefix()))
+            llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
+                session))
       platformStdlib.addGenerator(std::move(*generator));
     else
       return Error(toString(generator.takeError()));
@@ -261,7 +258,7 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
   return success();
 }
 
-static ErrorOr<std::optional<BufferRef>> getORCRT() {
+static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   // Create a BlobCache ref.
   std::filesystem::path base = ".kgen_cache";
   base /= "orc";
@@ -269,22 +266,43 @@ static ErrorOr<std::optional<BufferRef>> getORCRT() {
   if (auto err = runtimeAndCache.setup())
     return err.takeError();
 
-  BlobCache<ReadOnlyKey> &orcCache = runtimeAndCache.getCache();
+  BlobCache<ReadOnlyKey> &cache = runtimeAndCache.getCache();
 
   // Decode the base64 CAS ID to do the lookup with the raw bytes.
   std::vector<char> bytes;
   bytes.reserve(32);
-  llvm::cantFail(llvm::decodeBase64(M::CASID::kOrcRT, bytes));
-  AsyncValueRef<std::optional<BufferRef>> orcRTBuf =
-      orcCache.find(StringRef(bytes.data(), bytes.size()));
-  // Await the orc runtime buffer.
-  LLCL::await(orcRTBuf);
+  llvm::cantFail(llvm::decodeBase64(casID, bytes));
+  AsyncValueRef<std::optional<BufferRef>> rtBuf =
+      cache.find(StringRef(bytes.data(), bytes.size()));
+  // Await the runtime buffer.
+  LLCL::await(rtBuf);
 
   // Take the diagnostic.
-  if (orcRTBuf.isError())
-    return std::move(orcRTBuf.takeDiagnostic().getMessage());
+  if (rtBuf.isError())
+    return std::move(rtBuf.takeDiagnostic().getMessage());
 
-  return std::move(*orcRTBuf);
+  return std::move(*rtBuf);
+}
+
+/// Initialize the CompilerRT dylib.
+static ErrorOrSuccess
+initializeCompilerRT(llvm::orc::ExecutionSession &session) {
+  auto compilerRTBuf = extractRTFromCache(M::CASID::kCompilerRT);
+  if (compilerRTBuf.isError())
+    return compilerRTBuf.takeError();
+  std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
+
+  std::string compilerRTPath;
+  if (auto err = writeRTToFile("compilerrt", *rtBuf, compilerRTPath))
+    return err.takeError();
+
+  auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+      session, compilerRTPath.data());
+  if (!generatorOr)
+    return Error(toString(generatorOr.takeError()));
+  auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
+  libJD->addGenerator(std::move(*generatorOr));
+  return success();
 }
 
 M::ErrorOr<std::unique_ptr<ExecutionEngine>>
@@ -303,7 +321,11 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     if (!pageSize)
       return Error(toString(pageSize.takeError()));
 
-    uint64_t slabSize = 1024 * 1024 * 1024;
+#ifdef _WIN32
+    size_t slabSize = 1024 * 1024;
+#else
+    size_t slabSize = 1024 * 1024 * 1024;
+#endif
     auto managerOr = llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
         llvm::orc::InProcessMemoryMapper>(slabSize);
     if (!managerOr)
@@ -322,15 +344,17 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       new ExecutionEngine(std::move(sessionPtr), layout));
 
   // Get the ORC runtime binary.
-  auto orcRTBuf = getORCRT();
+  auto orcRTBuf = extractRTFromCache(M::CASID::kOrcRT);
   if (orcRTBuf.isError())
     return orcRTBuf.takeError();
 
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   std::string orcRTPath;
 
+  // TODO(#10097): Orc now supports passing in an archive, remove the usage of
+  // files for the orcrt.
   if (rtBuf.has_value())
-    if (auto err = writeORCRTToFile(*rtBuf, orcRTPath))
+    if (auto err = writeRTToFile("liborc", *rtBuf, orcRTPath))
       return err.takeError();
 
   // Windows *requires* the orc runtime.
@@ -398,7 +422,12 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   }
 
   // Add the platform dylib to the search order.
-  ee->addToSearchOrder(platformStdlibName, &platformStdlib);
+  if (auto err = ee->addToSearchOrder(platformStdlibName, &platformStdlib))
+    return err.takeError();
+
+  // Prepare the CompilerRT dylib.
+  if (auto err = initializeCompilerRT(*ee->executionSession))
+    return err.takeError();
 
   return std::move(ee);
 }
@@ -461,12 +490,19 @@ KGEN::ExecutionEngine::mangleAndIntern(StringRef name) {
   return executionSession->intern(mangledName);
 }
 
-void ExecutionEngine::addToSearchOrder(StringRef name,
-                                       llvm::orc::JITDylib *dylib) {
+ErrorOrSuccess ExecutionEngine::addToSearchOrder(StringRef name,
+                                                 llvm::orc::JITDylib *dylib) {
   auto [_, didInsert] = knownDylibs.insert(name);
   assert(didInsert && "must have uniquely-named dylibs");
+
+  // If this isn't the platform stdlib, setup CompilerRT.
+  if (name != platformStdlibName) {
+    dylib->addToLinkOrder(
+        *executionSession->getJITDylibByName(compilerRTlibName));
+  }
 
   // Use higher preference for newer dylibs.
   searchOrder.insert(searchOrder.begin(),
                      {dylib, llvm::orc::JITDylibLookupFlags::MatchAllSymbols});
+  return success();
 }

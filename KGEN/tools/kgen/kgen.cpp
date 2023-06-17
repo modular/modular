@@ -7,7 +7,6 @@
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "Config/Version.h"
 #include "KGEN/CLOptions.h"
-#include "KGEN/CompilerRT.h"
 #include "KGEN/EmitFuncHeader.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
@@ -277,21 +276,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
-  if (!clOptions.enableExplicitLinking) {
-    // TODO (8082): This should not be necessary.
-    std::vector<std::pair<StringLiteral, void *>> compilerRTFunctions;
-    registerIntelAMX(compilerRTFunctions);
-    registerLLCL(compilerRTFunctions);
-    registerPython(compilerRTFunctions);
-    registerMemory(compilerRTFunctions);
-    registerRandom(compilerRTFunctions);
-    registerSystem(compilerRTFunctions);
-    registerTracing(compilerRTFunctions);
-    for (auto [name, ptr] : compilerRTFunctions)
-      if (auto err = engine->add<StaticSymbolLayer>("exec", name, ptr))
-        return failure(clOptions.reportError(err.getError()));
-  }
-
   // Add the object compiler layer.
   auto compiler =
       ObjectCompiler::create(*runtime, pm, ".kgen_cache", compilationOptions);
@@ -480,9 +464,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
 int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
-
-  // Initialize the compiler runtime.
-  KGEN_CompilerRT_Initialize();
 
   // Initialize targets first, so that --version shows registered targets.
   llvm::InitializeAllTargets();

@@ -13,15 +13,16 @@ using namespace M;
 
 /// Returns an alignment allocated memory. If the alignment value is not
 /// positive, then the default alignment is used.
-COMPILERRT_EXPORT void *KGEN_CompilerRT_AlignedAlloc(ssize_t alignment,
-                                                     ssize_t size) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_AlignedAlloc(ssize_t alignment, ssize_t size) {
   if (alignment <= 0)
     alignment = kPreferredMemoryAlignment;
   return alignedAlloc(alignment, size);
 }
 
 /// Frees memory allocated via KGEN_CompilerRT_AlignedAlloc.
-COMPILERRT_EXPORT void KGEN_CompilerRT_AlignedFree(void *ptr) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AlignedFree(void *ptr) {
   return alignedFree(ptr);
 }
 

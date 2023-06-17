@@ -53,7 +53,7 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Dummy() {}
 
 /// Given the async context of a coroutine, initialize its token value. The
 /// runtime pointer must have already been set.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
                                      LLCLAsyncChainRef chain) {
   checkUniqueRuntime(unwrap(rt));
@@ -62,7 +62,7 @@ KGEN_CompilerRT_LLCL_InitializeChain(LLCLRuntimeRef rt,
 }
 
 /// Given the async context of a coroutine, destroy its token value.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_DestroyChain(LLCLAsyncChainRef chain) {
   unwrap(chain).~AsyncValueRef<Chain>();
 }
@@ -72,27 +72,28 @@ KGEN_CompilerRT_LLCL_DestroyChain(LLCLAsyncChainRef chain) {
 //===----------------------------------------------------------------------===//
 
 /// Execute a coroutine.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *),
-                                                    int8_t *hdl,
-                                                    LLCLRuntimeRef rt) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_Execute(void (*resume)(int8_t *), int8_t *hdl,
+                             LLCLRuntimeRef rt) {
   checkUniqueRuntime(unwrap(rt));
   unwrap(rt).getWorkQueue()->addTask([resume, hdl] { resume(hdl); });
 }
 
 /// Resume a coroutine when the current one completes.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *),
-                                                    LLCLAsyncChainRef chain,
-                                                    int8_t *hdl) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_AndThen(void (*resume)(int8_t *), LLCLAsyncChainRef chain,
+                             int8_t *hdl) {
   unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 /// Block until the coroutine is done.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
   await(unwrap(chain));
 }
 
 /// Execute a coroutine and block the current routine until it is complete.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
                                     LLCLRuntimeRef rt,
                                     LLCLAsyncChainRef chain) {
@@ -103,7 +104,7 @@ KGEN_CompilerRT_LLCL_ExecuteAndWait(void (*resume)(int8_t *), int8_t *hdl,
 
 /// Execute a coroutine. Register a completion handler to resume another
 /// coroutine when the scheduled coroutine completes.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
                                       LLCLAsyncChainRef chain,
                                       LLCLRuntimeRef rt, int8_t *resumeHdl) {
@@ -114,7 +115,8 @@ KGEN_CompilerRT_LLCL_ExecuteAndResume(void (*resume)(int8_t *), int8_t *execHdl,
 
 /// Given the async context of a coroutine, indicate that it is complete by
 /// setting its token value.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
   unwrap(chain).copy().emplace();
 }
 
@@ -123,9 +125,10 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
 //===----------------------------------------------------------------------===//
 
 /// Create an LLCL runtime and return it as a compact pointer.
-COMPILERRT_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
-    ssize_t numThreads, const char *profileFilenamePtr,
-    ssize_t profileFilenameLen) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
+KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(ssize_t numThreads,
+                                              const char *profileFilenamePtr,
+                                              ssize_t profileFilenameLen) {
   StringRef profileFilename{profileFilenamePtr,
                             static_cast<size_t>(profileFilenameLen)};
   auto *runtime =
@@ -135,18 +138,19 @@ COMPILERRT_EXPORT LLCLRuntimeRef KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(
 }
 
 /// Create an LLCL runtime and return it as a compact pointer.
-COMPILERRT_EXPORT LLCLRuntimeRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_CreateRuntime(ssize_t numThreads) {
   return KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile(numThreads, nullptr, 0);
 }
 
 /// Given a compact pointer to an LLCL runtime, destroy it.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef rt) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_DestroyRuntime(LLCLRuntimeRef rt) {
   delete &unwrap(rt);
 }
 
 /// Given a compact pointer to an LLCL runtime, get the number of threads in it.
-COMPILERRT_EXPORT uint32_t
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
 KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
   return unwrap(rt).getWorkQueue()->getParallelismLevel();
 }
@@ -156,26 +160,28 @@ KGEN_CompilerRT_LLCL_ParallelismLevel(LLCLRuntimeRef rt) {
 //===----------------------------------------------------------------------===//
 
 /// Returns outChains's runtime.
-COMPILERRT_EXPORT LLCLRuntimeRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLRuntimeRef
 KGEN_CompilerRT_LLCL_OutputChainPtr_GetRuntime(LLCLOutputChainRef outChain) {
   return wrap(unwrap(outChain).getRuntime().get());
 }
 
 /// Emplaces outChain.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_MarkReady(LLCLOutputChainRef outChain) {
   unwrap(outChain).markReady();
 }
 
 /// Sets an error message on outChain.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(
-    LLCLOutputChainRef outChain, const char *messagePtr, ssize_t messageLen) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError(LLCLOutputChainRef outChain,
+                                              const char *messagePtr,
+                                              ssize_t messageLen) {
   StringRef message(messagePtr, messageLen);
   unwrap(outChain).markError(message);
 }
 
 /// Returns an empty OutputChain, with empty chain and 'unknown' location.
-COMPILERRT_EXPORT LLCLOutputChainRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLOutputChainRef
 KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
   auto chain = AsyncValueRef<Chain>::allocate(unwrap(rt));
   EncodedLocation loc = LLCL::UnknownLocationDecoder::getEncodedLocation();
@@ -183,20 +189,20 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty(LLCLRuntimeRef rt) {
 }
 
 /// Returns a fresh OutputChain who's contents is copied from outChain.
-COMPILERRT_EXPORT LLCLOutputChainRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT LLCLOutputChainRef
 KGEN_CompilerRT_LLCL_OutputChainPtr_CreateFork(LLCLOutputChainRef outChain) {
   return wrap(new OutputChain(unwrap(outChain).fork()));
 }
 
 /// Destroys outChain, which must be the result of a CreateEmpty or
 /// CreateMoved.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy(LLCLOutputChainRef outChain) {
   delete &unwrap(outChain);
 }
 
 /// Processes work items until outChain is ready.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
   unwrap(outChain).await();
 }
@@ -204,9 +210,12 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
 /// Begins a profiling entry with name and detail when called, and ends it
 /// when outChain is completed. If an entry already exists, merge the name
 /// and details.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(
-    LLCLOutputChainRef outChain, const char *namePtr, ssize_t nameLen,
-    const char *detailPtr, ssize_t detailLen) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(LLCLOutputChainRef outChain,
+                                                  const char *namePtr,
+                                                  ssize_t nameLen,
+                                                  const char *detailPtr,
+                                                  ssize_t detailLen) {
   StringRef name(namePtr, nameLen);
   StringRef detail(detailPtr, detailLen);
   unwrap(outChain).trace(name, detail);
@@ -214,14 +223,16 @@ COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(
 
 /// Begins a profiling entry with name when called, and ends it when outChain
 /// is completed.
-COMPILERRT_EXPORT void KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(
-    LLCLOutputChainRef outChain, const char *namePtr, ssize_t nameLen) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(LLCLOutputChainRef outChain,
+                                          const char *namePtr,
+                                          ssize_t nameLen) {
   KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(outChain, namePtr, nameLen,
                                                     "", 0);
 }
 
 /// Execute a coroutine.
-COMPILERRT_EXPORT void
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask(LLCLOutputChainRef outChain,
                                                   void (*resume)(int8_t *),
                                                   int8_t *hdl, size_t taskId) {

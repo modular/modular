@@ -105,12 +105,6 @@ public:
   cl::list<std::string> linkPaths{
       "L", cl::desc("Path to use to search for linked libraries/objects.")};
 
-  cl::opt<bool> enableExplicitLinking{
-      "explicit-linking",
-      cl::desc(
-          "Force explicit linking (with kgen.link directives) of CompilerRT."),
-      cl::init(false)};
-
   cl::opt<bool> enableMLIRCrashReproducer{
       "enable-mlir-crash-repro",
       cl::desc("Enable MLIR pass manager crash reproducer generation."),
@@ -170,10 +164,10 @@ public:
     std::optional<CompilationOptions::DebugAtLevel> debugAt;
     if (debugAtLevel.getNumOccurrences())
       debugAt = debugAtLevel;
-    return CompilationOptions(
-        enableSearch, optLevel, debugInfoLevel, debugAt,
-        sanitizerOptions.getBits(), enableXRayInstrumentation, targetTriple,
-        targetCpu, targetFeatures, linkPaths, enableExplicitLinking);
+    return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
+                              sanitizerOptions.getBits(),
+                              enableXRayInstrumentation, targetTriple,
+                              targetCpu, targetFeatures, linkPaths);
   }
 
 private:
