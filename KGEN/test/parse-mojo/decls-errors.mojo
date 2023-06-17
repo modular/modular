@@ -357,7 +357,6 @@ def fn_redecl(): pass
 # expected-error @+1 {{redefinition of function 'fn_redecl' with identical signature}}
 def fn_redecl(): pass
 
-# Issue #13346
 # expected-note @+1 {{previous definition here}}
 def fn_redecl2() -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}

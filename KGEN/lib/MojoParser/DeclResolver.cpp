@@ -1509,9 +1509,12 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
   }
 
   mangledName += '(';
-  size_t argNo = 0;
-  for (auto [convention, argType] : llvm::zip(
+  for (auto [argNo, convention, argType] : llvm::enumerate(
            signature.getValueInputConventions(), signature.getValueInputs())) {
+    // We do not mangle byref results into the signature.
+    if (convention == ValueInputConvention::ByRefResult)
+      continue;
+
     // Update the mangled name for this argument.
     if (argNo != 0)
       mangledName += ",";
@@ -1538,15 +1541,15 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
     case ValueInputConvention::ByRef:
       mangledName += '&';
       break;
-    case ValueInputConvention::ByRefResult:
     case ValueInputConvention::InitSelf:
       mangledName += "=&";
       break;
+    case ValueInputConvention::ByRefResult:
+      llvm_unreachable("byref_result should be skipped");
     }
 
     if (signature.isVararg(argNo))
       mangledName += '*';
-    ++argNo;
   }
   mangledName += ')';
   return StringAttr::get(baseName.getContext(), mangledName);
@@ -1910,12 +1913,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (Operation *existing = finalizeFuncSignature(funcOp, decl)) {
     const char *errorMessage = nullptr;
     auto existingFunc = cast<LIT::FuncOp>(existing);
-    if (existingFunc.getMLIRResultType() != funcOp.getMLIRResultType()) {
+
+    // We need to compare the (name erased) user result types, since memory-only
+    // types may result in `!lit.none` in the mlir signature result.
+    auto resTy = ASTType(signature).getSignatureUserResultType();
+    auto existingResTy =
+        ASTType(existingFunc.getSignature()).getSignatureUserResultType();
+    if (!resTy.isEqualCanon(existingResTy)) {
       errorMessage = " cannot overload on return type only";
-    } else if (existingFunc.getIsAdaptive()) {
-      // If the thing is adaptive and exact matches, then we actually don't want
-      // to error.
-    } else {
+    } else if (!existingFunc.getIsAdaptive()) {
+      // If the results match, we only error if the function is not adaptive.
       errorMessage = " with identical signature";
     }
 
