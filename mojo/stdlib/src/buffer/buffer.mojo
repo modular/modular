@@ -1829,21 +1829,6 @@ fn _collapse_batch_dim(input: DynamicRankBuffer) -> DynamicRankBuffer:
     return DynamicRankBuffer(input.data, 3, collapsed_shape, input.type)
 
 
-fn _collapse_shape_to_rank(
-    shape: StaticIntTuple[_MAX_RANK], rank: Int, target_rank: Int
-) -> StaticIntTuple[_MAX_RANK]:
-    if rank <= target_rank:
-        return shape
-
-    var collapsed_shape = StaticIntTuple[_MAX_RANK]()
-    collapsed_shape[0] = 1
-    for i in range(rank - target_rank - 1):
-        collapsed_shape[0] *= shape[i]
-    for i in range(1, target_rank - 1):
-        collapsed_shape[i] = shape[rank - i - 1]
-    return collapsed_shape
-
-
 @always_inline
 fn prod_dims[
     start_dim: Int,
