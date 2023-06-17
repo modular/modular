@@ -82,7 +82,7 @@ fn unroll2[
     dim1: Int,
     func: fn[idx0: Int, idx1: Int] () capturing -> None,
 ]():
-    """Repeateadly evaluates a 2D nested loop.
+    """Repeatedly evaluates a 2D nested loop.
 
     Parameters:
         dim0: The first dimension size.
@@ -116,7 +116,7 @@ fn unroll3[
     dim2: Int,
     func: fn[idx0: Int, idx1: Int, idx2: Int] () capturing -> None,
 ]():
-    """Repeateadly evaluates a 3D nested loop.
+    """Repeatedly evaluates a 3D nested loop.
 
     Parameters:
         dim0: The first dimension size.
@@ -271,7 +271,7 @@ fn async_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    return imediatly.
+    return immediately.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     mark out_chain as ready when all functions have returned. This function
@@ -569,7 +569,7 @@ fn tile[
     are reached.
 
     Parameters:
-        workgroup_function: Funtion that is invoked for each tile and offset.
+        workgroup_function: Function that is invoked for each tile and offset.
         tile_sizes_x: List of tile sizes to use for the first parameter of workgroup_function.
         tile_sizes_y: List of tile sizes to use for the second parameter of workgroup_function.
 
@@ -648,9 +648,9 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
                         ...
         ```
 
-    This unswitch function genralizes that pattern with the help of meta parame-
-    ters and can be used to perform both loop unswitching and other tile predic-
-    ate lifting like in simd and amx.
+    This unswitch function generalizes that pattern with the help of meta
+    parameters and can be used to perform both loop unswitching and other
+    tile predicate lifting like in simd and amx.
 
     TODO: Generalize to support multiple predicates.
     TODO: Once nested lambdas compose well should make unswitch compose with
@@ -979,7 +979,7 @@ fn elementwise[
 
     assert_param[rank > 1, "Specialization for ND where N > 1"]()
 
-    # Stategy: we parallelize over all dimensions except the innermost and
+    # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
     # by a factor of unroll_factor.
 
