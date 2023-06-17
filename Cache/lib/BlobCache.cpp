@@ -539,7 +539,7 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
         return Error("failed to get absolute path to installed dir: " +
                      ec.message());
 #ifdef _WIN32
-    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ";")) {
+    } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
 #else
     } else if (auto path = findDirInEnvPath(cacheDir.string())) {
 #endif
