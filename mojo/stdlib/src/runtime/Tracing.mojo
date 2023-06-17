@@ -157,7 +157,7 @@ fn trace_range_push[
     Should be paired with calls to trace_range_pop().
 
     The modular stack needs to be configured with MODULAR_LLCL_MAX_PROFILING_LEVEL
-    specifing the profiling level to profile at.
+    specifying the profiling level to profile at.
 
     The trace events will be written to the profiling file passed to the
     LLCL Runtime ctor.
@@ -172,7 +172,7 @@ fn trace_range_push[
     if is_profiling_disabled[type, level]():
         return
 
-    # Pushe the trace range from the stack. This is only enabled if the LLCL
+    # Pushes the trace range from the stack. This is only enabled if the LLCL
     # profiling is enabled.
     __mlir_op.`pop.external_call`[
         func : "KGEN_CompilerRT_TimeTraceProfilerBegin".value,

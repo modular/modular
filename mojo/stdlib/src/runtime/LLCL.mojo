@@ -55,7 +55,7 @@ struct AsyncContext:
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
     opaque pointer. This struct is essentially a completion callback closure
-    that is invokved by a coroutine when it completes and its results are made
+    that is invoked by a coroutine when it completes and its results are made
     available.
 
     In async execution, a task's completion callback is to set its async token
@@ -173,7 +173,7 @@ struct Runtime:
         external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](self.ptr)
 
     fn parallelism_level(self) -> Int:
-        """Gets the parallism level of the Runtime."""
+        """Gets the parallelism level of the Runtime."""
         return external_call[
             "KGEN_CompilerRT_LLCL_ParallelismLevel",
             __mlir_type.`!pop.scalar<si32>`,
@@ -258,7 +258,7 @@ struct TaskGroupContext:
 struct TaskGroupTask[type: AnyType]:
     """A task that belongs to a taskgroup. This object retains ownership of the
     underlying coroutine handle, which can be used to query the results of the
-    task once the taskground completes.
+    task once the taskgroup completes.
     """
 
     var handle: Coroutine[type]
