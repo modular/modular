@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-demangle.h"
-#include "mojo-driver.h"
+#include "../mojo-driver.h"
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -13,44 +13,69 @@
 #include "Support/LLVMForwardDecls.h"
 
 #include "mlir/IR/DialectRegistry.h"
-#include "llvm/Support/CommandLine.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
+#include "llvm/Option/Option.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-namespace {
-/// Options that apply only to the `demangle` subcommand.
-struct DemangleOptions {
-  /// The `demangle` subcommand itself.
-  llvm::cl::SubCommand demangle{
-      "demangle", "Demangle the name provided on the command line."};
+#define MOJO_DRIVER_OPTIONS_PATH "Demangle/DemangleOptions.inc"
+#include "../OptTable.inc"
 
-  /// The user-provided name to demangle. This may be an empty string, as is the
-  /// case when no arguments are provided. In that case, the name is read from
-  /// stdin.
-  cl::opt<std::string> name{llvm::cl::Positional, cl::desc("<name>"),
-                            llvm::cl::sub(demangle)};
+namespace {
+struct DemangleOptTable : public llvm::opt::PrecomputedOptTable {
+  DemangleOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
 };
 } // namespace
-
-/// A global set of options for the `demangle` subcommand. This must be
-/// instantiated before parsing command-line arguments.
-static llvm::ManagedStatic<DemangleOptions> options;
 
 /// Given a user-provided string that could be a mangled symbol name, prints the
 /// demangled name to stdout. Returns an integer representing a successful exit
 /// code if demangling succeeded, otherwise returns a failure code.
 static int demangle(const State &state) {
+  // Parse command line arguments.
+  DemangleOptTable options;
+  unsigned missingIndex = 0;
+  unsigned missingCount = 0;
+  llvm::opt::InputArgList args =
+      options.ParseArgs(state.arguments, missingIndex, missingCount);
+
+  if (args.hasArg(options::OPT_help)) {
+    options.printHelp(
+        llvm::outs(),
+        (Twine(state.programName) + " demangle [options]").str().c_str(),
+        "Demangle the name provided on the command line.");
+    return 0;
+  }
+
+  if (args.hasArg(options::OPT_UNKNOWN)) {
+    int result = 1;
+    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
+      result = state.reportError("unrecognized argument '" +
+                                 arg->getSpelling() + "'\n");
+    return result;
+  }
+
+  if (args.hasMultipleArgs(options::OPT_INPUT)) {
+    std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
+    return state.reportError(
+        llvm::formatv("only one name can be demangled at a time; "
+                      "cannot demangle both '{0}' and '{1}'",
+                      inputs[0], inputs[1]));
+  }
+
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   mlir::MLIRContext context(registry);
 
   // If no name was provided on the command-line, read one from stdin.
-  std::string name = options->name;
-  if (options->name.getNumOccurrences() == 0) {
+  std::string name =
+      args.getLastArgValue(options::OPT_INPUT, /*Default=*/"").str();
+  if (!args.hasArg(options::OPT_INPUT)) {
     SmallString<llvm::sys::fs::DefaultReadChunkSize> buffer;
     if (llvm::Error err = llvm::sys::fs::readNativeFileToEOF(
             llvm::sys::fs::getStdinHandle(), buffer))
@@ -70,6 +95,6 @@ static int demangle(const State &state) {
   return EXIT_SUCCESS;
 }
 
-void M::registerDemangleSubCommand(SubCommandRegistry &registry) {
-  registry.addCallback(&options->demangle, demangle);
+void M::registerDemangleSubCommand(SubcommandRegistry &registry) {
+  registry.addCallback("demangle", demangle);
 }

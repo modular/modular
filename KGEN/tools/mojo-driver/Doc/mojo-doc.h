@@ -4,16 +4,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJO_DEMANGLE_H
-#define MOJO_DEMANGLE_H
+#ifndef MOJO_DOC_H
+#define MOJO_DOC_H
 
 namespace M {
 
-class SubCommandRegistry;
+class SubcommandRegistry;
 
-/// Initializes the `demangle` subcommand and its various options, and registers
+/// Initializes the `doc` subcommand and its various options, and registers
 /// its callback function with the registry.
-void registerDemangleSubCommand(SubCommandRegistry &registry);
+void registerDocSubCommand(SubcommandRegistry &registry);
+
 } // namespace M
 
-#endif // MOJO_DEMANGLE_H
+#endif // MOJO_DOC_H

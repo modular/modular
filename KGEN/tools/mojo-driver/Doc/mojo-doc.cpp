@@ -5,74 +5,79 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
+#include "../mojo-driver.h"
+
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/MojoParser.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
+
 #include <filesystem>
 
 using namespace M;
 using namespace M::KGEN;
 
+#define MOJO_DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
+#include "../OptTable.inc"
+
 namespace {
-/// Options that apply only to the `doc` subcommand.
-struct DocOptions {
-  /// The `doc` subcommand itself.
-  llvm::cl::SubCommand doc{
-      "doc",
-      "Translate source file doc strings into a structured output format."};
-
-  /// The user-provided path to a Mojo source file. The doc strings in this file
-  /// will be parsed and used to generate structured output representing those
-  /// doc strings.
-  cl::opt<std::string> inputFilename{llvm::cl::Positional,
-                                     cl::desc("<path to Mojo source file>"),
-                                     llvm::cl::sub(doc)};
-
-  /// The path to which output will be written.
-  cl::opt<std::string> outputFilename{
-      "o",
-      cl::desc("The path to which an output file will be written. If not "
-               "provided, output is written to stdout."),
-      cl::value_desc("path"), cl::init("-"), llvm::cl::sub(doc)};
-
-  /// Zero or more paths that are searched when the parser attempts to resolve
-  /// a Mojo source file import.
-  cl::list<std::string> includePaths{
-      "I",
-      cl::desc("Append the given path to the list of "
-               "directories to search for included Mojo files."),
-      cl::value_desc("path"), llvm::cl::sub(doc)};
-
-  /// Whether to validate doc strings.
-  cl::opt<bool> validate{
-      "validate",
-      cl::desc("Validate doc strings as they are parsed. When "
-               "enabled, warning diagnostics are emitted as invalid "
-               "doc strings are parsed."),
-      llvm::cl::sub(doc)};
+struct DocOptTable : public llvm::opt::PrecomputedOptTable {
+  DocOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
 };
 } // namespace
-
-/// A global set of options for the `doc` subcommand. This must be instantiated
-/// before parsing command-line arguments.
-static llvm::ManagedStatic<DocOptions> options;
 
 /// Given the path to a Mojo source file, opens and parses that file's doc
 /// strings in order to generate structured output (currently JSON). Returns an
 /// integer representing a successful exit code is documentation generation
 /// succeeded, otherwise returns a failure code.
 static int doc(const State &state) {
+  // Parse command line arguments.
+  DocOptTable options;
+  unsigned missingIndex = 0;
+  unsigned missingCount = 0;
+  llvm::opt::InputArgList args =
+      options.ParseArgs(state.arguments, missingIndex, missingCount);
+
+  if (args.hasArg(options::OPT_help)) {
+    options.printHelp(
+        llvm::outs(),
+        (Twine(state.programName) + " doc [options]").str().c_str(),
+        "Translate source file doc strings into a structured output format.");
+    return 0;
+  }
+
+  if (args.hasArg(options::OPT_UNKNOWN)) {
+    int result = 1;
+    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
+      result = state.reportError("unrecognized argument '" +
+                                 arg->getSpelling() + "'\n");
+    return result;
+  }
+
+  if (!args.hasArg(options::OPT_INPUT))
+    return state.reportError("no input file provided");
+  if (args.hasMultipleArgs(options::OPT_INPUT)) {
+    std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
+    return state.reportError(llvm::formatv(
+        "too many input files, cannot process both '{0}' and '{1}'", inputs[0],
+        inputs[1]));
+  }
+
   // Reject input files that do not appear to be Mojo files (this includes stdin
   // "-").
-  StringRef inputPath = options->inputFilename;
+  StringRef inputPath = args.getLastArgValue(options::OPT_INPUT);
   if (!inputPath.ends_with(".mojo") && !inputPath.ends_with(".🔥"))
     return state.reportError("cannot open '" + inputPath +
                              "', since it does not appear to be a Mojo file "
@@ -92,8 +97,8 @@ static int doc(const State &state) {
   // host filesystem. (Mojo's parser searches the source manager's include
   // directories when resolving imports.)
   std::vector<std::string> includeDirs;
-  includeDirs.reserve(options->includePaths.size());
-  for (auto &path : options->includePaths)
+  includeDirs.reserve(args.getAllArgValues(options::OPT_I).size());
+  for (auto &path : args.getAllArgValues(options::OPT_I))
     if (std::filesystem::is_directory(path))
       includeDirs.push_back(path);
   sourceManager.setIncludeDirs(includeDirs);
@@ -105,7 +110,7 @@ static int doc(const State &state) {
                         LLCL::createThreadPoolWorkQueue());
   CompilationOptions compilationOptions;
   MojoParserConfig parserConfig(&context, runtime, compilationOptions);
-  parserConfig.validateDocStrings = options->validate;
+  parserConfig.validateDocStrings = args.hasArg(options::OPT_validate);
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
@@ -113,8 +118,8 @@ static int doc(const State &state) {
 
   // Open the output file, or exit with an error.
   std::string outputError;
-  std::unique_ptr<llvm::ToolOutputFile> out =
-      mlir::openOutputFile(options->outputFilename, &outputError);
+  std::unique_ptr<llvm::ToolOutputFile> out = mlir::openOutputFile(
+      args.getLastArgValue(options::OPT_o, "-"), &outputError);
   if (!out)
     return state.reportError(outputError);
 
@@ -125,6 +130,6 @@ static int doc(const State &state) {
   return EXIT_SUCCESS;
 }
 
-void M::registerDocSubCommand(SubCommandRegistry &registry) {
-  registry.addCallback(&options->doc, doc);
+void M::registerDocSubCommand(SubcommandRegistry &registry) {
+  registry.addCallback("doc", doc);
 }
