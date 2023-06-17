@@ -851,7 +851,12 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate) {
   // Using numThreads as a hint, figure out a CPU for each worker thread
   // and the main thread. The CPU ids may end up as kNoAffinity, but the
   // vector size will still guide the construction of worker threads.
-  std::vector<size_t> cpuIDs = getThreadAffinityCpuIds(numThreads, kMaxWorkers);
+  auto cpuIDOr = getThreadAffinityCpuIds(numThreads, kMaxWorkers);
+
+  // TODO: This function should return the error back to caller.
+  if (cpuIDOr.isError())
+    llvm::report_fatal_error(cpuIDOr.getError());
+  std::vector<size_t> cpuIDs = *cpuIDOr;
   assert(!cpuIDs.empty());
   size_t numCores = std::thread::hardware_concurrency();
   if (cpuIDs.size() != numCores)
