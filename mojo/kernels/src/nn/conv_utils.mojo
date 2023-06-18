@@ -14,7 +14,7 @@ from Image import (
     Image2DLayout,
 )
 from Index import StaticIntTuple, Index
-from Math import min
+from Math import min, max, clamp
 from TargetInfo import (
     has_avx512f,
     has_neon,
@@ -174,3 +174,76 @@ fn get_conv2d_shape[
         pad_h: pad_h,
         pad_w: pad_w,
     }
+
+
+fn get_conv_tile_size[type: DType]() -> Int:
+    alias KB = 1024
+
+    # See MatmulUtils for context on tile size for debug built and macos.
+    @parameter
+    if is_relwithdebinfo_build() or is_debug_build():
+        return 4 * KB // dtype_sizeof[type]()
+
+    @parameter
+    if os_is_macos():
+        return 64 * KB // dtype_sizeof[type]()
+
+    @parameter
+    if has_neon() or has_avx512f():
+        # This should be 1/2 of L2 cache size. Graviton 2 and Skylake server
+        # have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache.
+        # Use 576 instead of 512 to accommodate important shapes in resnet.
+        return 576 * KB // dtype_sizeof[type]()
+
+    return 256 * KB // dtype_sizeof[type]()
+
+
+fn get_conv_tile_shape[
+    type: DType, micro_kernel_width: Int
+](conv_shape: ConvShape) -> StaticIntTuple[2]:
+    """Compute the (c, f) tile shape in L2.
+    Assume NHWC layout, the tile shape is (R, S, c_tile, f_tile). R and S are
+    by default fully covered. The heuristic tried to block in C as much as
+    possible. If C is small, it would start to block F.
+    """
+    alias simd_size = dtype_simd_width[type]()
+
+    # Number of elements in tile.
+    let tile_size = get_conv_tile_size[type]()
+    # Number of elements in micro kernel's f dimension.
+    let micro_kernel_f = micro_kernel_width * simd_size
+    # Max C tile size, assuming R, S, and micro_kernel_f are covered.
+    # Round up to multiple simd_size
+    let CF_tile_size = tile_size // (conv_shape.r * conv_shape.s)
+    let max_c_tile_size = (
+        CF_tile_size // micro_kernel_f // simd_size
+    ) * simd_size
+    # C tile size is bounded by the input channels.
+    let c_tile_size = min(max_c_tile_size, conv_shape.c)
+    # F tile size is rounded up to multiple micro_kernel_f.
+    let rounded_f_tile_size = (
+        CF_tile_size // c_tile_size // micro_kernel_f
+    ) * micro_kernel_f
+    let f_tile_size: Int = clamp[DType.int32, 1](
+        rounded_f_tile_size, conv_shape.f, micro_kernel_f
+    ).value
+
+    return Index(c_tile_size, f_tile_size)
+
+
+fn get_direct_conv_micro_kernel_height() -> Int:
+    @parameter
+    if has_avx512f():
+        return 6
+    elif has_neon():
+        return 8
+    return 4
+
+
+fn get_direct_conv_micro_kernel_width() -> Int:
+    @parameter
+    if has_avx512f():
+        return 4
+    elif has_neon():
+        return 2
+    return 3
