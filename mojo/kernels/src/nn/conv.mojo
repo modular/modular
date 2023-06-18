@@ -44,6 +44,7 @@ from Matmul import (
 from MatmulUtils import (
     get_matmul_prefetch_b_distance_k,
     get_partitioned_matmul,
+    get_partitioned_matmul_im2col,
     get_min_task_size,
     PartitionHeuristic,
 )
@@ -2491,19 +2492,50 @@ struct ConvDirectNHWC[
             "Only support F divisible by simd_size",
         )
 
-        let partition_offsets = Index(0, 0, 0)
-        let partition_sizes = Index(
-            conv_shape.n * conv_shape.out_h * conv_shape.out_w,
-            conv_shape.c,
-            conv_shape.f,
-        )
         let cf_tile_size = get_conv_tile_shape[
             type, get_direct_conv_micro_kernel_width()
         ](conv_shape)
 
+        # Reuse the im2col partition heuristic, which is based on matmul.
+        # Conver the problem dimension to matmul dimensions.
+        let matmul_M = conv_shape.n * conv_shape.out_h * conv_shape.out_w
+        let matmul_N = conv_shape.f
+        let matmul_K = conv_shape.r * conv_shape.s * conv_shape.c
+
+        let num_threads = out_chain.get_runtime().parallelism_level()
+        let complexity = matmul_M * matmul_N * matmul_K
+        let num_tasks = min(
+            div_ceil(complexity, get_min_task_size()), num_threads
+        )
+
         @parameter
         @always_inline
         fn task_func(task_id: Int):
+            alias micro_kernel_height = get_direct_conv_micro_kernel_height()
+            alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+            alias simd_size = dtype_simd_width[type]()
+
+            let sub_matmul_config = get_partitioned_matmul_im2col[
+                micro_kernel_height, micro_kernel_width * simd_size
+            ](matmul_M, matmul_N, matmul_K, task_id, num_tasks)
+
+            # The partition heuristic may reduce active tasks for better
+            # alignment with micro kernel size. Skip tasks without any work.
+            if (
+                sub_matmul_config.shape[0] <= 0
+                or sub_matmul_config.shape[1] <= 0
+            ):
+                return
+
+            let partition_offsets = Index(
+                sub_matmul_config.offset[0], 0, sub_matmul_config.offset[1]
+            )
+            let partition_sizes = Index(
+                sub_matmul_config.shape[0],
+                conv_shape.c,
+                sub_matmul_config.shape[1],
+            )
+
             let instance = ConvDirectNHWC[
                 shape_input, shape_filter, shape_output, type, filter_packed
             ](
@@ -2517,7 +2549,7 @@ struct ConvDirectNHWC[
             )
             instance.direct_conv()
 
-        async_parallelize[task_func](out_chain, 1)
+        async_parallelize[task_func](out_chain, num_tasks)
 
     fn direct_conv(self):
         self._c_tile_loop(self.cf_tile_size[0])
@@ -2540,6 +2572,7 @@ struct ConvDirectNHWC[
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
         alias simd_size = dtype_simd_width[type]()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
         @parameter
@@ -2554,13 +2587,17 @@ struct ConvDirectNHWC[
         # it's stepped by the micro kernel sizse in F. The rest is stepped
         # by simd_size. This assumes F is multiple of simd_size.
         tile[
-            VariadicList[Int](micro_kernel_width * simd_size, simd_size),
+            VariadicList[Int](
+                micro_kernel_f_size, micro_kernel_f_size, simd_size
+            ),
             simd_size,
             f_tile_iteration,
         ](
             self.partition_offsets[2],
-            self.partition_sizes[2],
-            VariadicList[Int](self.cf_tile_size[1], simd_size),
+            self.partition_offsets[2] + self.partition_sizes[2],
+            VariadicList[Int](
+                self.cf_tile_size[1], micro_kernel_f_size, simd_size
+            ),
             simd_size,
         )
 
@@ -2593,7 +2630,10 @@ struct ConvDirectNHWC[
         tile[
             n_ho_wo_iteration,
             VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
-        ](self.partition_offsets[0], self.partition_sizes[0])
+        ](
+            self.partition_offsets[0],
+            self.partition_offsets[0] + self.partition_sizes[0],
+        )
 
     fn _inner_loops[
         micro_kernel_height: Int,
@@ -2623,7 +2663,7 @@ struct ConvDirectNHWC[
             # Global wo, ho index.
             let ho = ho_wo // self.conv_shape.out_w
             let wo = ho_wo % self.conv_shape.out_w
-            # Translate ho, wo to hi, wi
+            # Translate ho, wo to hi, wi/range
             let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
             let w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[0]
             input_base_offsets.simd_store[1](
@@ -2685,7 +2725,6 @@ struct ConvDirectNHWC[
 
                     for c in range(c_tile_size):
                         # prefetch
-                        # TODO: Investigate why prefetching hurts perf.
                         alias prefetch_offset = 8 * micro_kernel_f_size
 
                         @always_inline
@@ -2902,6 +2941,15 @@ fn pack_filter_rscf_to_cfrscf[
             F    - F tiles
             R, S - original R, S
             c, f - c, f index with CF tile.
+
+    The buffer is padded so that F is multiple of micro_kernel_f_size.
+    The results from direct conv kernel will be incorrect if the original
+    F is not divisible over micro_kernel_f_size.
+
+    The above also assumes that the packed filter pointer must have been
+    proper allocated. We could pass in a NDBuffer of shape (C, F, R, S, c, f)
+    but it seems too complicated.
+    TODO: Address this when there is layout support.
     """
     var packed_filter_ptr = packed_filter
 
@@ -2912,7 +2960,7 @@ fn pack_filter_rscf_to_cfrscf[
             for r in range(conv_shape.r):
                 for s in range(conv_shape.s):
                     for c in range(
-                        0, min(conv_shape.c - c_tile_start, c_tile_size)
+                        min(conv_shape.c - c_tile_start, c_tile_size)
                     ):
                         let filter_ptr = filter.offset(
                             f_tile_start
@@ -2924,6 +2972,8 @@ fn pack_filter_rscf_to_cfrscf[
                             )
                         )
 
+                        # F dimension is padded with zeros to make the packed F
+                        # multiple of micro_kernelf_size.
                         @always_inline
                         @parameter
                         fn body[idx: Int]():

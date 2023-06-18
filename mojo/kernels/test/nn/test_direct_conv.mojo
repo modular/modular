@@ -192,6 +192,7 @@ fn test[
 fn main():
     """It only includes shapes where F is multiple simd_size."""
     with Runtime() as rt:
+        # likely partition in n_ho_wo
         test[DType.float32, False](
             1,  # N
             12,  # H
@@ -254,12 +255,43 @@ fn main():
 
         test[DType.float32, False](
             5,  # N
-            12,  # H
-            12,  # W
+            7,  # H
+            7,  # W
             8,  # C
             3,  # R
             3,  # S
             64,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        # likely partition in F or both
+        test[DType.float32, False](
+            1,  # N
+            7,  # H
+            7,  # W
+            7,  # C
+            3,  # R
+            3,  # S
+            256,  # F
+            Index(3, 3),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, False](
+            1,  # N
+            7,  # H
+            7,  # W
+            5,  # C
+            5,  # R
+            5,  # S
+            288,  # F
             Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
@@ -339,6 +371,37 @@ fn main():
             3,  # R
             3,  # S
             64,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        # likely partition in F or both
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            7,  # W
+            11,  # C
+            3,  # R
+            3,  # S
+            192,  # F
+            Index(3, 3),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            7,  # W
+            5,  # C
+            5,  # R
+            5,  # S
+            256,  # F
             Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
