@@ -1,0 +1,22 @@
+// REQUIRES: MODEL
+// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir
+// RUN: python3 -m %modeltool download --format tflite %modelsdir/resnet50-v1.5.yaml --weights-dir %multi_tenancy_api_models_dir
+// RUN: c-api-validator --paths=%multi_tenancy_api_models_dir/resnet50-v1.5 --paths=%multi_tenancy_api_models_dir/resnet50-v1.tflite --input-shapes=1x224x224x3 | FileCheck %s
+
+// CHECK: INFO: Compiling {{.*}}/resnet50-v1.5{{/?}}
+// CHECK: INFO: Compiling {{.*}}/resnet50-v1.tflite
+
+// CHECK: INFO: Initializing {{.*}}/resnet50-v1.5{{/?}}
+// CHECK: INFO: Initializing {{.*}}/resnet50-v1.tflite
+
+// CHECK: INFO: Executing {{.*}}/resnet50-v1.5{{/?}}
+// CHECK: NumInputs: 1
+// CHECK: NumOutputs: 1
+// CHECK: NumElements: 1001
+// CHECK: Output: [9.49{{.*}}, 9.10{{.*}} ... 1.29{{.*}}, 7.53{{.*}}]
+
+// CHECK: INFO: Executing {{.*}}/resnet50-v1.tflite
+// CHECK: NumInputs: 1
+// CHECK: NumOutputs: 1
+// CHECK: NumElements: 1001
+// CHECK: Output: [9.49{{.*}}, 9.10{{.*}} ... 1.29{{.*}}, 7.53{{.*}}]
