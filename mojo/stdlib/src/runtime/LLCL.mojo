@@ -455,7 +455,7 @@ struct OutputChainPtr:
         )
 
     @always_inline
-    fn trace_detail[
+    fn trace[
         level: TraceLevel, detail_fn: fn () capturing -> String
     ](self, label: StringRef):
         """If enabled, begin a time profile entry with label and detail which
