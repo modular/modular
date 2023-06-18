@@ -800,7 +800,7 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
 //===----------------------------------------------------------------------===//
 
 def POP_SelectOp : POPOp<"select", [Pure,
-    AllTypesMatch<["trueVal", "falseVal", "result"]>]> {
+    AllTypesMatch<["trueValue", "falseValue", "result"]>]> {
   let summary = "conditional select";
   let description = [{
     The `pop.select` operation is used to choose one value based on a condition,
@@ -813,11 +813,11 @@ def POP_SelectOp : POPOp<"select", [Pure,
     ```
   }];
 
-  let arguments = (ins I1:$cond, AnyType:$trueVal, AnyType:$falseVal);
+  let arguments = (ins I1:$condition, AnyType:$trueValue, AnyType:$falseValue);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    $cond `,` $trueVal `,` $falseVal attr-dict `:` type($result)
+    $condition `,` $trueValue `,` $falseValue attr-dict `:` type($result)
   }];
 }
 
