@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(KGENTransforms
+  Canonicalizer.cpp
   CleanupCompilerGlobals.cpp
   EliminateDeadSymbols.cpp
   FoldGlobalConstLoads.cpp

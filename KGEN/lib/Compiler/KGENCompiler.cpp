@@ -198,12 +198,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
-
-  // We use the canonicalizer, but disable region simplifications, since it is
-  // very CFG centric and we have region trees with a single block per region.
-  mlir::GreedyRewriteConfig cannConfig;
-  cannConfig.enableRegionSimplification = false;
-  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
 
 #if 0
   // TODO(Issue #7158): This pass is causing a compile time explosion and needs
@@ -215,14 +210,14 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
   pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass(cannConfig));
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
 
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
