@@ -7,6 +7,20 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// Canonicalizer
+//===----------------------------------------------------------------------===//
+
+def Canonicalizer : Pass<"canonicalizer"> {
+  let summary = "Canonicalize operations.";
+  let description = [{
+    The `canonicalizer` pass runs all registered canonicalization patterns in
+    addition to KGEN-specific canonicalization patterns that run on the hybrid
+    IR representation. This pass also disables the region simplifier, since KGEN
+    IR only has single-block regions.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // VerifyParameters
 //===----------------------------------------------------------------------===//
 
