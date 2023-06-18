@@ -51,7 +51,6 @@ from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_byte_width, dtype_simd_width, alignof
-from IO import print
 
 
 alias MAX_NUM_CHANNELS_TILE = 384
@@ -2667,22 +2666,9 @@ struct ConvDirectNHWC[
 
             for r in range(self.conv_shape.r):
                 for s in range(self.conv_shape.s):
-                    # Set up global offsets in the input.
-                    let input_offsets = Buffer[
-                        micro_kernel_height, DType.int32
-                    ].stack_allocation()
-
-                    @always_inline
-                    @parameter
-                    fn set_input_offsets[idx: Int]():
-                        input_offsets.simd_store[1](
-                            idx,
-                            input_base_offsets[idx]
-                            + self.conv_shape.c * (s + self.conv_shape.w * r),
-                        )
-
-                    unroll[micro_kernel_height, set_input_offsets]()
-
+                    var input_offset = self.conv_shape.c * (
+                        s + self.conv_shape.w * r
+                    )
                     # Unpacked version. For each (r, s), we first offset the
                     # filter pointer by (r, s) plus c_tile_offset. Later for
                     # each c, we access micro_kernel_f_size contiguous elements.
@@ -2700,26 +2686,31 @@ struct ConvDirectNHWC[
                     for c in range(c_tile_size):
                         # prefetch
                         # TODO: Investigate why prefetching hurts perf.
-                        # alias prefetch_offset = 8 * micro_kernel_f_size
+                        alias prefetch_offset = 8 * micro_kernel_f_size
 
-                        # @always_inline
-                        # @parameter
-                        # fn prefetch_body[idx: Int]():
-                        #     filter_ptr.offset(
-                        #         prefetch_offset + idx * simd_size
-                        #     ).prefetch[
-                        #         PrefetchOptions()
-                        #         .for_read()
-                        #         .high_locality()
-                        #         .to_data_cache()
-                        #     ]()
+                        @always_inline
+                        @parameter
+                        fn prefetch_body[idx: Int]():
+                            filter_ptr.offset(
+                                prefetch_offset + idx * simd_size
+                            ).prefetch[
+                                PrefetchOptions()
+                                .for_read()
+                                .high_locality()
+                                .to_data_cache()
+                            ]()
 
-                        # unroll[micro_kernel_width, prefetch_body]()
+                        unroll[micro_kernel_width, prefetch_body]()
 
                         # Accumulate with register blocking.
                         self._micro_kernel[
                             micro_kernel_height, micro_kernel_width, simd_size
-                        ](input_offsets, filter_ptr, output_micro_tile)
+                        ](
+                            input_base_offsets,
+                            input_offset,
+                            filter_ptr,
+                            output_micro_tile,
+                        )
 
                         # Packed Version: filter elements are accessed contiguously
                         # This assumption is violated when there is residual blocks
@@ -2734,12 +2725,7 @@ struct ConvDirectNHWC[
                         else:
                             filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
-                        @always_inline
-                        @parameter
-                        fn incr_input_offsets[idx: Int]():
-                            input_offsets[idx] += 1
-
-                        unroll[micro_kernel_height, incr_input_offsets]()
+                        input_offset += 1
 
             self._store_output_micro_tile[
                 micro_kernel_height, micro_kernel_width, simd_size
@@ -2816,7 +2802,8 @@ struct ConvDirectNHWC[
         simd_size: Int,
     ](
         self,
-        input_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_offset: Int,
         filter_ptr: DTypePointer[type],
         output_micro_tile: NDBuffer[
             2,
@@ -2832,7 +2819,7 @@ struct ConvDirectNHWC[
         fn body[idx0: Int, idx1: Int]():
             # Broadcast an scalar from inut to a simd vector.
             let input_val = self.input.data.offset(
-                input_offsets[idx0].value
+                input_base_offsets[idx0].value + input_offset
             ).simd_load[1]()
             let input_vec = SIMD[type, simd_size](input_val)
             # Load a simd vector from filter.
