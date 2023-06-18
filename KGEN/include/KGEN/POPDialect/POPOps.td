@@ -819,6 +819,8 @@ def POP_SelectOp : POPOp<"select", [Pure,
   let assemblyFormat = [{
     $condition `,` $trueValue `,` $falseValue attr-dict `:` type($result)
   }];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

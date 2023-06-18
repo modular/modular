@@ -719,7 +719,7 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
 }
 
 OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
-  IntegerAttr offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
+  auto offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
   if (!offset)
     return {};
 
@@ -727,6 +727,22 @@ OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
     return {};
 
   return getPtr();
+}
+
+//===----------------------------------------------------------------------===//
+// SelectOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
+  // Narrow to one of the conditional values.
+  if (auto cond = dyn_cast_if_present<BoolAttr>(adaptor.getCondition()))
+    return cond.getValue() ? getTrueValue() : getFalseValue();
+
+  // `x ? y : y -> y`.
+  if (getTrueValue() == getFalseValue())
+    return getTrueValue();
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

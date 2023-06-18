@@ -337,8 +337,8 @@ kgen.func @xor() -> !pop.scalar<ui4> {
   kgen.return %2 : !pop.scalar<ui4>
 }
 
-// CHECK-LABEL: @select
-kgen.func @select() -> !pop.simd<2, si4> {
+// CHECK-LABEL: @simd_select
+kgen.func @simd_select() -> !pop.simd<2, si4> {
   // CHECK-NEXT: <1, 4>
   %0 = kgen.param.constant: simd<2, si4> = <<1, 3>>
   %1 = kgen.param.constant: simd<2, si4> = <<2, 4>>
@@ -836,6 +836,15 @@ kgen.func @fold_offset(%arg0: !pop.pointer<index>) -> (!pop.pointer<index>) {
   %0 = kgen.param.constant = <0>
   %1 = pop.offset %arg0[%0] : !pop.pointer<index>
   kgen.return %1 : !pop.pointer<index>
+}
+
+// CHECK-LABEL: @select
+kgen.func @select(%arg0: i1, %arg1: i32, %arg2: i32) -> (i32, i32) {
+  // CHECK-NEXT: kgen.return %arg1, %arg2
+  %true = kgen.param.constant: i1 = <1>
+  %0 = pop.select %arg0, %arg1, %arg1 : i32
+  %1 = pop.select %true, %arg2, %arg1 : i32
+  kgen.return %0, %1 : i32, i32
 }
 
 // CHECK-LABEL: @string_ops
