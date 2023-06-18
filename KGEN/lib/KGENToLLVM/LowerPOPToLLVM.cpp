@@ -466,6 +466,23 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPSelect
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SelectOp op, SelectOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
+        op, adaptor.getCondition(), adaptor.getTrueValue(),
+        adaptor.getFalseValue(), LLVM_FASTMATH_FLAGS);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPStackAllocation
 //===----------------------------------------------------------------------===//
 
@@ -1346,6 +1363,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPRem,
+      ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,
       ConvertPOPSIMDExtractElement,

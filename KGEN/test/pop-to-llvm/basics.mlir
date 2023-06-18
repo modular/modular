@@ -210,11 +210,11 @@ kgen.func @fma_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.
   kgen.return %0 : !pop.scalar<si32>
 }
 
-// CHECK-LABEL: @select
-kgen.func @select(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<f32>, %arg2: !pop.scalar<f32>) -> !pop.scalar<f32> {
+// CHECK-LABEL: @simd_select
+kgen.func @simd_select(%arg0: !pop.simd<4, bool>, %arg1: !pop.simd<4, f32>, %arg2: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
   // CHECK: llvm.select %0, %1, %2 {fastmathFlags = #llvm.fastmath<contract>}
-  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.scalar<f32>
-  kgen.return %0 : !pop.scalar<f32>
+  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
 }
 
 // CHECK-LABEL: @load
@@ -267,6 +267,13 @@ kgen.func @offset(%p: !pop.pointer<scalar<f32>>, %i: index) -> !pop.pointer<scal
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
   %0 = pop.offset %p[%i] : !pop.pointer<scalar<f32>>
   kgen.return %0 : !pop.pointer<scalar<f32>>
+}
+
+// CHECK-LABEL: @pop_select
+kgen.func @pop_select(%arg0: i1, %arg1: !pop.struct<f32>, %arg2: !pop.struct<f32>) -> !pop.struct<f32> {
+  // CHECK: llvm.select %arg0, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
+  %0 = pop.select %arg0, %arg1, %arg2 : !pop.struct<f32>
+  kgen.return %0 : !pop.struct<f32>
 }
 
 // CHECK-LABEL: @shifts
