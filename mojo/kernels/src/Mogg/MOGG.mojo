@@ -238,7 +238,7 @@ fn elementwise_wrapper[
 
         return res
 
-    out_chain.trace_detail[TraceLevel.OP, description_fn]("mojo.elementwise")
+    out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
     elementwise[rank, simd_width, unroll_factor, func](
         buffer.dynamic_shape,
         out_chain,
