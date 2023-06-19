@@ -77,8 +77,6 @@ void ParamConstantOp::getAsmResultNames(
 }
 
 OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
-  auto constants = adaptor.getOperands();
-  assert(constants.empty() && "kgen.param.constant has no operands");
   return getValueAttr();
 }
 
