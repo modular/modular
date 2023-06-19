@@ -1774,7 +1774,9 @@ default member-wise and move constructor.
 
 **Note:** If your type contains any [move-only](#unique-move-only-types)
 fields, Mojo will not generate a copy constructor because it cannot copy those
-fields.
+fields.  Further, the `@value` decorator only works on types whose members are
+copyable and/or movable.  If you have something like `Atomic` in your struct,
+then it probably isn't a value type, and you don't want these members anyway.
 
 :::
 
@@ -1782,9 +1784,11 @@ There is no way to suppress the generation of specific methods or customize
 generation at this time, but we can add arguments to the `@value` generator to
 do this if there is demand.
 
-Note that the `@value` decorator only works on types whose members are copyable
-and/or movable.  If you have something like `Atomic` in your struct, then it
-probably isn't a value type, and you don't want these members anyway.
+The arguments to`__init__` are all passed as `owned` arguments since the struct
+takes ownership and stores the value.  This is a useful micro-optimization and
+enables the use of move-only types.  Trivial types like `Int` are also passed
+as owned values, but since that doesn't mean anything for them, we elide the
+marker and the transfer operator (`^`) for clarity.
 
 ## Behavior of destructors
 
