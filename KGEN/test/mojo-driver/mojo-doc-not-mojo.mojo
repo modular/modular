@@ -1,0 +1,10 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# We don't allow input files that don't end in '.mojo' or '.🔥',
+# including stdin.
+# RUN: echo "" | not mojo-driver doc - 2>&1 | FileCheck %s --check-prefix CHECK-NOT-MOJO
+# CHECK-NOT-MOJO: mojo-driver{{.*}}: error: cannot open '-', since it does not appear to be a Mojo file (it does not end in '.mojo' or '.🔥')
