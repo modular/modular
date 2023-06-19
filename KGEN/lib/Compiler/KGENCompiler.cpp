@@ -224,6 +224,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
 }
 
 //===----------------------------------------------------------------------===//
