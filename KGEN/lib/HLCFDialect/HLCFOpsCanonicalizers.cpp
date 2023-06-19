@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -373,18 +374,83 @@ void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
       context);
 }
 
+//===----------------------------------------------------------------------===//
+// LoopOp
+//===----------------------------------------------------------------------===//
+
+namespace {
 /// If the only operation in LoopOp is BreakOp, delete the loop.  Depending on
 /// whether the target of the BreakOp is this or outer loop, we might have to
 /// keep or delete it.
-LogicalResult LoopOp::canonicalize(LoopOp op, PatternRewriter &rewriter) {
-  Block &body = op.getBody().front();
-  if (auto br = dyn_cast<BreakOp>(body.getOperations().front())) {
-    if (br.getLabelAttr() == op.getLabelAttr())
-      rewriter.replaceOp(op, br.getOperands());
-    else
-      rewriter.inlineBlockBefore(&body, op);
+struct RemoveDeadLoop : OpRewritePattern<LoopOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(LoopOp op, PatternRewriter &b) const override {
+    Block &body = op.getBody().front();
+    if (auto br = dyn_cast<BreakOp>(body.getOperations().front())) {
+      StringAttr label = br.getLabelAttr();
+      if (!label || label == op.getLabelAttr()) {
+        b.replaceOp(op, br.getOperands());
+      } else {
+        b.inlineBlockBefore(&body, op);
+        eraseOpsAfter(b, op);
+        b.eraseOp(op);
+      }
+      return success();
+    }
+
+    return failure();
+  }
+};
+
+/// Remove unused results from a loop. This requires traversing the body to find
+/// matching `break` operations, but the cost is paid only when there is a
+/// match.
+struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(LoopOp loop,
+                                PatternRewriter &b) const override {
+    llvm::BitVector unused(loop.getNumResults());
+    SmallVector<Value> toReplace;
+    for (auto [i, result] : llvm::enumerate(loop.getResults())) {
+      if (result.use_empty())
+        unused.set(i);
+      else
+        toReplace.push_back(result);
+    }
+
+    if (unused.none())
+      return b.notifyMatchFailure(loop.getLoc(), "all results have uses");
+
+    // Find all matching break operations.
+    StringAttr label = loop.getLabelAttr();
+    loop.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      // Walk over loops with the same label.
+      if (auto inner = dyn_cast<LoopOp>(op);
+          inner && inner.getLabelAttr() == label)
+        return WalkResult::skip();
+
+      // If this is a matching break, remove the unused operands.
+      if (auto breakOp = dyn_cast<BreakOp>(op);
+          breakOp && getParentLoop(breakOp, breakOp.getLabelAttr()) == loop)
+        b.updateRootInPlace(breakOp, [&] { breakOp->eraseOperands(unused); });
+
+      return WalkResult::advance();
+    });
+
+    auto newLoop = b.create<LoopOp>(loop.getLoc(), TypeRange(toReplace),
+                                    loop.getOperands(), label);
+    b.replaceAllUsesWith(toReplace, newLoop.getResults());
+    b.inlineRegionBefore(loop.getBody(), newLoop.getBody(),
+                         newLoop.getBody().begin());
+    b.eraseOp(loop);
     return success();
   }
+};
+} // namespace
 
-  return failure();
+void LoopOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.insert<RemoveDeadLoop, RemoveUnusedLoopResults>(context);
 }

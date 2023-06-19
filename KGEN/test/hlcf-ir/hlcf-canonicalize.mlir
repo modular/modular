@@ -393,3 +393,46 @@ kgen.func @dead_loop_inner2(%arg0: index, %arg1: index, %arg2: index) -> index{
   %z = index.add %x, %arg2
   kgen.return %z: index
 }
+
+// CHECK-LABEL: @dead_loop_label
+kgen.func @dead_loop_label() {
+  // CHECK-NEXT: hlcf.loop {
+  hlcf.loop {
+    // CHECK-NEXT: hlcf.continue
+    hlcf.loop "inner" {
+      hlcf.break
+    }
+    hlcf.continue
+  }
+  // CHECK: hlcf.loop "outer"
+  hlcf.loop "outer" {
+    // CHECK-NEXT: some.op
+    "some.op"() : () -> ()
+    // CHECK-NEXT: hlcf.break "outer"
+    hlcf.loop {
+      hlcf.break "outer"
+    }
+    hlcf.continue
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @unused_loop_results
+kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
+  // CHECK-NEXT: %0 = hlcf.loop "outer" () -> i32
+  %0:2 = hlcf.loop "outer" () -> (i32, i32) {
+    hlcf.loop "inner" {
+      "some.op"() : () -> ()
+      hlcf.break
+    }
+    // CHECK: hlcf.loop {
+    hlcf.loop {
+      "some.op"() : () -> ()
+      // CHECK: break "outer" %arg1 : i32
+      hlcf.break "outer" %arg0, %arg1 : i32, i32
+    }
+    // CHECK: break %arg1 : i32
+    hlcf.break %arg0, %arg1 : i32, i32
+  }
+  kgen.return %0#1 : i32
+}
