@@ -354,8 +354,8 @@ struct IfRemoveUnusedResults : public OpRewritePattern<HLCF::IfOp> {
     if (elseYield)
       b.updateRootInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
 
-    auto newIf =
-        b.create<HLCF::IfOp>(op.getLoc(), TypeRange(toReplace), op.getCond());
+    auto newIf = b.create<HLCF::IfOp>(
+        op.getLoc(), TypeRange(ValueRange(toReplace)), op.getCond());
     b.replaceAllUsesWith(toReplace, newIf.getResults());
     b.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                          newIf.getThenRegion().begin());
@@ -439,8 +439,9 @@ struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
       return WalkResult::advance();
     });
 
-    auto newLoop = b.create<LoopOp>(loop.getLoc(), TypeRange(toReplace),
-                                    loop.getOperands(), label);
+    auto newLoop =
+        b.create<LoopOp>(loop.getLoc(), TypeRange(ValueRange(toReplace)),
+                         loop.getOperands(), label);
     b.replaceAllUsesWith(toReplace, newLoop.getResults());
     b.inlineRegionBefore(loop.getBody(), newLoop.getBody(),
                          newLoop.getBody().begin());
