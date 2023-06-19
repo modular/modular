@@ -1185,7 +1185,7 @@ Notice that the `type` parameter is used as the formal type for the
 allow the `DynamicVector` type to provide different APIs based on the different
 use-cases. There are many other cases that benefit from more advanced use
 cases. For example, the parallel processing library defines the
-`parallelForEachN` algorithm, which executes a closure N times in parallel,
+`parallel` algorithm, which executes a closure N times in parallel,
 feeding in a value from the context. That value can be of any type:
 
 ```mojo
