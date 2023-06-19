@@ -335,6 +335,21 @@ kgen.func @empty_if_partial(%cond: i1, %arg1: index, %arg2: index) -> index {
   kgen.return %r: index
 }
 
+// CHECK-LABEL: @remove_unused_if_results
+kgen.func @remove_unused_if_results(%arg0: i1, %arg1: i32, %arg2: i32) -> i32 {
+  // CHECK-NEXT: %0 = hlcf.if %arg0 -> i32 {
+  %0:2 = hlcf.if %arg0 -> i32, i32 {
+    "some.op"() : () -> ()
+    // CHECK: hlcf.yield %arg2 : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  // CHECK-NEXT: else
+  } else {
+    // CHECK-NEXT: hlcf.yield %arg2 : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  }
+  kgen.return %0#1 : i32
+}
+
 // CHECK-LABEL: @dead_loop
 kgen.func @dead_loop() {
   // CHECK-NOT:  hlcf.loop
