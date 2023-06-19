@@ -327,12 +327,50 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     return success();
   }
 };
+
+/// Remove unused results of the `if` and any yields.
+struct IfRemoveUnusedResults : public OpRewritePattern<HLCF::IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
+                                PatternRewriter &b) const override {
+    auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
+    auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
+    llvm::BitVector unused(op.getNumResults());
+    SmallVector<Value> toReplace;
+    for (auto [i, result] : llvm::enumerate(op.getResults())) {
+      if (result.use_empty())
+        unused.set(i);
+      else
+        toReplace.push_back(result);
+    }
+
+    if (unused.none())
+      return b.notifyMatchFailure(op.getLoc(), "all results have uses");
+
+    if (thenYield)
+      b.updateRootInPlace(thenYield, [&] { thenYield->eraseOperands(unused); });
+    if (elseYield)
+      b.updateRootInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
+
+    auto newIf =
+        b.create<HLCF::IfOp>(op.getLoc(), TypeRange(toReplace), op.getCond());
+    b.replaceAllUsesWith(toReplace, newIf.getResults());
+    b.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
+                         newIf.getThenRegion().begin());
+    b.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
+                         newIf.getElseRegion().begin());
+    b.eraseOp(op);
+    return success();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *context) {
   results.add<RemoveStaticCondition, HoistUnconditionalReturn,
-              HoistConditionalReturn, HoistYieldResults>(context);
+              HoistConditionalReturn, HoistYieldResults, IfRemoveUnusedResults>(
+      context);
 }
 
 /// If the only operation in LoopOp is BreakOp, delete the loop.  Depending on
