@@ -401,3 +401,14 @@ lit.func @caller_register() -> !lit.none attributes {isParametric} {
     %6 = kgen.param.constant: !lit.none = <#lit.none>
     kgen.return %6 : !lit.none
 }
+
+// -----
+
+lit.struct.decl @Error {}
+
+lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
+  %1 = lit.struct.create() : () -> !kgen.declref<@Error>
+  %2 = pop.variant.create %1 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+  // CHECK: lit.error_return %{{.*}} : <@Error, !lit.none>
+  lit.error_return %2 : !pop.variant<@Error, !lit.none>
+}

@@ -745,6 +745,34 @@ def LIT_ReturnOp : LITOp<"return",
 }
 
 //===----------------------------------------------------------------------===//
+// ErrorReturnOp
+//===----------------------------------------------------------------------===//
+
+def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator]> {
+  let summary = "Represents an early return due to failure.";
+  let description = [{
+    The `lit.error_return` operation is a terminator version
+    of `lit.raise` that represents exit from function call due
+    to failure.
+
+    Example:
+
+    ```mlir
+    lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
+      %1 = lit.struct.create(a=%0) : (index) -> !kgen.declref<@Error>
+      %2 = pop.variant.create %1 :
+        !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+      lit.error_return %2 : !pop.variant<@Error, !lit.none>
+    }
+    ```
+  }];
+
+  let arguments = (ins POP_VariantType:$variant);
+  let assemblyFormat = "$variant attr-dict `:` type($variant)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RaiseOp
 //===----------------------------------------------------------------------===//
 

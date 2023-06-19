@@ -1159,6 +1159,17 @@ void YieldOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
+// ErrorReturnOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ErrorReturnOp::verify() {
+  if (getVariant().getType().getNumTypes() != 2)
+    return emitOpError(
+        "expected two types in the variant: an error type and a success type.");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
