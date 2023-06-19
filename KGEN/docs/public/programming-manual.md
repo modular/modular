@@ -2054,7 +2054,7 @@ struct TwoStrings:
         log(self)       # Self is still whole
         # self.str2.__del__(): Mojo destroys str2 since it isn't used
 
-        consume(str1^)
+        consume(self.str1^)
         # Everything has now been transferred, no destructor is run on self.
 ```
 
@@ -2067,7 +2067,7 @@ to the `_` "discard" pattern:
 fn __del__(owned self):
     log(self) # Self is still whole
 
-    consume(str1^)
+    consume(self.str1^)
     _ = self.str2
     # self.str2.__del__(): Mojo destroys str2 after its last use.
 ```
