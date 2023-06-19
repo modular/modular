@@ -79,6 +79,7 @@ int main(int argc, char **argv) {
 
   // Register opt passes.
   KGEN::registerAlwaysInlineParametric();
+  KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerCleanupCompilerGlobals();
   KGEN::registerConstraintReduction();
