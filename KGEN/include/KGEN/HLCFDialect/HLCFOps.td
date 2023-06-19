@@ -105,7 +105,7 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}, {}); }]>];
 
-  let hasCanonicalizeMethod = 1;
+  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 
