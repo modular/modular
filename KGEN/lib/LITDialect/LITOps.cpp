@@ -74,19 +74,6 @@ LIT::getUnboundSpecializedSignature(SignatureType type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
 
-bool LIT::findTryBlock(Block *currentBlock) {
-  while (Operation *parentOp = currentBlock->getParentOp()) {
-    if (isa<LIT::FuncOp>(parentOp))
-      break;
-    TryOp tryOp = dyn_cast<TryOp>(parentOp);
-    if (tryOp)
-      if (&tryOp.getTryRegion().front() == currentBlock)
-        return true;
-    currentBlock = parentOp->getBlock();
-  }
-  return false;
-}
-
 //===----------------------------------------------------------------------===//
 // LIT::MangledSymbol
 //===----------------------------------------------------------------------===//
@@ -1091,15 +1078,13 @@ LogicalResult RaiseOp::verify() {
         return success();
     }
 
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(parentOp)) {
-      if (funcOp.isThrows())
-        return success();
-    }
+    if (isa<LIT::FuncOp>(parentOp))
+      break;
     op = parentOp;
   }
 
   return emitOpError("must be nested inside the 'try' region of a `lit.try` "
-                     "operation or a throwing function");
+                     "operation");
 }
 
 //===----------------------------------------------------------------------===//

@@ -780,7 +780,7 @@ def LIT_RaiseOp : LITOp<"raise"> {
   let summary = "Lexical raise statement.";
   let description = [{
     The `lit.raise` operation is not a terminator. It corresponds to a raise
-    statement in Lit. It takes a single operand: the error to raise. This
+    statement in Lit. It takes a single opearand: the error to raise. This
     operation is only allowed inside the 'try' region of a `lit.try` operation
     or within a `lit.func` marked as `throws`.
 
