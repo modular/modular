@@ -664,9 +664,3 @@ lit.func @nested_try_finally() {
   // CHECK: unreachable
   kgen.return
 }
-
-lit.func @throwing_func() throws->!pop.variant<@Error, !lit.none> {
-  %1 = lit.struct.create() : () -> !kgen.declref<@Error>
-  // CHECK: lit.error_return %1 : <@Error, !lit.none>
-  lit.raise %1 : <@Error> lit.end_func
-}
