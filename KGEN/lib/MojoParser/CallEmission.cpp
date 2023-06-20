@@ -2267,7 +2267,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       return {};
     if (arg.getType() != calleeArgType)
       arg = builder->create<RebindOp>(loc, calleeArgType, arg);
-    if (conventionX == ValueInputConvention::ByRefResult)
+    if (conventionX == ValueInputConvention::ByRefResult ||
+        conventionX == ValueInputConvention::InitSelf)
       byRefResults.push_back(arg);
     callArgs.push_back(arg);
   }
