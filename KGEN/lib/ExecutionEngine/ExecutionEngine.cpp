@@ -22,6 +22,7 @@
 #include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
 #include "llvm/ExecutionEngine/Orc/MachOPlatform.h"
 #include "llvm/ExecutionEngine/Orc/MapperJITLinkMemoryManager.h"
+#include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -101,6 +102,43 @@ ErrorOrSuccess StaticSymbolLayer::add(StringRef libName, StringRef funcName,
 }
 
 //===----------------------------------------------------------------------===//
+// StaticArchiveObjectMaterializationUnit
+//===----------------------------------------------------------------------===//
+
+namespace {
+class StaticArchiveObjectMaterializationUnit
+    : public llvm::orc::MaterializationUnit {
+public:
+  StaticArchiveObjectMaterializationUnit(llvm::orc::ObjectLayer &objLayer,
+                                         llvm::MemoryBufferRef objectBuffer,
+                                         Interface &interface)
+      : MaterializationUnit(interface), objectBuffer(objectBuffer),
+        genLayer(objLayer) {}
+
+  /// Provide a name for this MU that will show up in ORC debug logs.
+  StringRef getName() const override {
+    return "KGEN::StaticArchiveObjectMaterializationUnit";
+  }
+
+  /// Given a MaterializationResponsibility, push the object file buffer onto
+  /// the base layer.
+  void materialize(
+      std::unique_ptr<llvm::orc::MaterializationResponsibility> mr) override {
+    genLayer.emit(std::move(mr),
+                  llvm::MemoryBuffer::getMemBuffer(
+                      objectBuffer, /*RequiresNullTerminator=*/false));
+  }
+
+  /// Notify that the symbol `name` has been overridden.
+  void discard(const llvm::orc::JITDylib &jd,
+               const llvm::orc::SymbolStringPtr &name) override {}
+
+  llvm::MemoryBufferRef objectBuffer;
+  llvm::orc::ObjectLayer &genLayer;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // StaticArchiveMaterializationLayer
 //===----------------------------------------------------------------------===//
 
@@ -128,15 +166,42 @@ ErrorOrSuccess StaticArchiveLayer::add(StringRef libName,
       llvm::MemoryBuffer::getMemBuffer(archive->getBuffer(),
                                        /*BufferName=*/"",
                                        /*RequiresNullTerminator=*/false);
-
-  auto archiveOr = llvm::orc::StaticLibraryDefinitionGenerator::Create(
-      objectLayer, std::move(archiveMemBuf));
-  if (auto err = archiveOr.takeError())
-    return M::Error(toString(std::move(err)));
-  dylib->addGenerator(std::move(*archiveOr));
+  auto archiveBinary =
+      llvm::object::Archive::create(archiveMemBuf->getMemBufferRef());
+  if (!archiveBinary)
+    return M::Error(toString(archiveBinary.takeError()));
 
   // Store a ref to the buffer data.
   archiveBuffers.push_back(archive.copy());
+
+  // Generate a materialization unit for each of the children in this archive.
+  // TODO: We really shouldn't have to do this, we should be able to use a
+  // static library generator instead. This unfortunately doesn't work well with
+  // the current generator model in orc, where some platforms (like MSVC) define
+  // "terminal" generators as part of platform setup.
+  llvm::orc::ResourceTrackerSP resourceTracker =
+      dylib->getDefaultResourceTracker();
+  llvm::Error err = llvm::Error::success();
+  for (auto &child : (*archiveBinary)->children(err)) {
+    if (err)
+      return Error(toString(std::move(err)));
+    auto childBufferOr = child.getMemoryBufferRef();
+    if (!childBufferOr)
+      return M::Error(toString(childBufferOr.takeError()));
+
+    auto childInterface =
+        llvm::orc::getObjectFileInterface(session, *childBufferOr);
+    if (!childInterface)
+      return M::Error(toString(childInterface.takeError()));
+    auto defineErr =
+        dylib->define(std::make_unique<StaticArchiveObjectMaterializationUnit>(
+                          objectLayer, *childBufferOr, *childInterface),
+                      resourceTracker);
+    if (defineErr)
+      return M::Error(toString(std::move(defineErr)));
+  }
+  if (err)
+    return Error(toString(std::move(err)));
 
   return success();
 }
