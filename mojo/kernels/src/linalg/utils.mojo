@@ -8,7 +8,8 @@ from DType import DType
 from Index import StaticIntTuple, Index
 from Math import div_ceil, max, min, sqrt
 from List import DimList
-from SIMD import Float32
+from SIMD import SIMD, Float32
+from String import String
 from TargetInfo import (
     has_avx512f,
     has_neon,
@@ -18,7 +19,6 @@ from TargetInfo import (
 )
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
 from Buffer import NDBuffer, DynamicRankBuffer
-from SIMD import SIMD
 
 alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
@@ -663,3 +663,35 @@ fn dispatch_is_critical_stride[
         func[True]()
     else:
         func[False]()
+
+
+@always_inline
+fn get_trace_information(
+    name: StringRef,
+    shape: GemmShape,
+    a_transpose: Bool,
+    b_transpose: Bool,
+    b_packed: Bool,
+) -> String:
+    let a_description = String("A=") + shape.M + "x" + shape.K
+    let b_description = String("B=") + shape.K + "x" + shape.N
+    let c_description = String("C=") + shape.M + "x" + shape.N
+    let a_transpose_description = String("a_transpose=") + a_transpose
+    let b_transpose_description = String("b_transpose=") + b_transpose
+    let b_packed_description = String("b_packed=") + b_packed
+
+    return (
+        String(name)
+        + ";"
+        + a_description
+        + ";"
+        + b_description
+        + ";"
+        + c_description
+        + ";"
+        + a_transpose_description
+        + ";"
+        + b_transpose_description
+        + ";"
+        + b_packed_description
+    )
