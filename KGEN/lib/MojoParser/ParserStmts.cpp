@@ -623,28 +623,14 @@ LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
   // Cannot raise in a parameter expression.
   if (!builder)
     return failure();
-
-  auto [tryOp, inExceptRegion] = findParentTry(builder->getInsertionBlock());
-
-  // If this raise is happening in the 'except' portion of a try block, then
-  // check to see what actually encloses if anything.
-  while (tryOp && inExceptRegion)
-    std::tie(tryOp, inExceptRegion) = findParentTry(tryOp->getBlock());
-
-  // If this error is getting handled an enclosing try, generate a TryRaise.
-  if (tryOp) {
-    builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
-    return success();
-  }
-
+  // If the raise is not in a try and the parent doesn't throw, it is not valid
+  // syntax.
   auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
-  if (!funcOp || !funcOp.isThrows())
+  if (!findTryBlock(builder->getInsertionBlock()) &&
+      (!funcOp || !funcOp.isThrows()))
     return failure();
 
-  // Otherwise, we are returning the error value from the function.
-  Value retVal = builder->create<POP::VariantCreateOp>(
-      raiseLoc, funcOp.getMLIRResultType(), errorValue);
-  builder->create<LIT::ReturnOp>(raiseLoc, retVal);
+  builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
   return success();
 }
 
