@@ -524,6 +524,9 @@ struct S:
   fn __init__(inout self, x: Int):
     self.v = x
 
+  fn __init__(inout self) raises:
+    self.v = 1
+
   fn __copyinit__(inout self, existing: Self):
     self.v = existing.v
 
@@ -543,6 +546,15 @@ fn call_raising():
     # CHECK:       kgen.unreachable
     # CHECK:     }
     let x = fail("hello world")
+    # CHECK:  %[[VAR1:.*]] = lit.handle_variant %5, %y : (!pop.variant<@"$Error"::@Error, !lit.none>, !pop.pointer<@"$statements"::@S>) -> !lit.none {
+    # CHECK:    %[[VAR2:.*]] = pop.variant.get %5 : !pop.variant<@"$Error"::@Error, !lit.none> as !lit.none
+    # CHECK:    lit.yield %[[VAR2]] : !lit.none
+    # CHECK:  } else {
+    # CHECK:    %[[VAR2:.*]] = pop.variant.get %5 : !pop.variant<@"$Error"::@Error, !lit.none> as !kgen.declref<@"$Error"::@Error>
+    # CHECK:    lit.raise %[[VAR2]] : <@"$Error"::@Error>
+    # CHECK:    kgen.unreachable
+    # CHECK:  }
+    let y = S()
   except e:
     pass
 
