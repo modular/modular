@@ -85,6 +85,10 @@ public:
            arch:feature. e.g. x86_64:avx2 or x86_64:avx512f"),
       cl::init("none")};
 
+  cl::opt<std::string> backendVersion{
+      "backend-version", cl::desc("Set the version for the local backend."),
+      cl::init("")};
+
   /// Specify the target path for the CAS backend.
   cl::opt<std::string> fsPath{
       "base-dir",
@@ -249,8 +253,8 @@ int main(int argc, char **argv) {
   Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                   createThreadPoolWorkQueue());
 
-  auto backendChainOr =
-      getLocalDefaultBackendChain(runtime, clOptions.getFsPath());
+  auto backendChainOr = getLocalDefaultBackendChain(
+      runtime, clOptions.getFsPath(), clOptions.backendVersion);
   if (backendChainOr.isError())
     return clOptions.reportError(backendChainOr.getError());
 

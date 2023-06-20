@@ -313,7 +313,10 @@ public:
                   Runtime *optExistingRuntime = nullptr)
       : cacheDir(std::move(cacheDir)), optExistingRuntime(optExistingRuntime) {}
 
-  ErrorOrSuccess setup() {
+  /// Set up the runtime and cache. The version string is passed directly to
+  /// `getDefaultBackendChain` - it will commonly be KGEN_VERSION_STRING or
+  /// similar.
+  ErrorOrSuccess setup(std::string version = "") {
     assert(!cacheRef && "setup already called");
     auto uriOr = URI::parse(cacheDir);
     if (uriOr.isError())
@@ -322,7 +325,8 @@ public:
         optExistingRuntime,
         LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
         LLCL::createSingleThreadWorkQueue());
-    auto backendList = getDefaultBackendChain(*ownedRuntime, *uriOr);
+    auto backendList =
+        getDefaultBackendChain(*ownedRuntime, *uriOr, std::move(version));
     if (backendList.isError())
       return backendList.takeError();
     cacheRef = CacheRef::create(std::move(*backendList));
