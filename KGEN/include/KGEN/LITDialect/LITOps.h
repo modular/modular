@@ -64,6 +64,10 @@ getUnboundSpecializedSignature(SignatureType type,
 #include "KGEN/LITDialect/LIT.h.inc"
 
 namespace M::KGEN::LIT {
+/// Given an insertion point in a block, scan up the parent hierarchy to see if
+/// this block is nested under the try region of a try op.
+bool findTryBlock(Block *currentBlock);
+
 /// This class provides a wrapper around a mojo FuncOp that mangles its name (in
 /// `mangled`) but also provides all the components of the mangled name. If the
 /// func is already mangled, this will pull everything apart.
