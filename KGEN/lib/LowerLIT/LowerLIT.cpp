@@ -129,6 +129,9 @@ static void lowerLITOps(LIT::FuncOp func,
       }
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);
+    } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
+      b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
     }
   });
 }
