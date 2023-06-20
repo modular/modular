@@ -174,9 +174,20 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
     diagnosticManager.Clear();
   });
 
+  StringRef exprText(m_expr_text);
+
+  // We want to let the user know if `%%python\n` is incorrectly placed
+  // the middle in the expression without triggering the actual expression
+  // evaluation.
+  if (exprText.contains("\n%%python")) {
+    diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
+        "`%%python` can only be at the beginning of an expression.",
+        eDiagnosticSeverityError, false));
+    return false;
+  }
+
   // If the expression starts with `%%python`, the user wants to treat this as a
   // python expression. Otherwise, it should be treated as a Mojo expression.
-  StringRef exprText(m_expr_text);
   if (!exprText.consume_front("%%python\n")) {
     if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
                                           impl->persistentState)))
