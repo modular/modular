@@ -417,8 +417,7 @@ def propagateErrorInDef():
     # CHECK:    lit.yield [[VAR]] : !kgen.declref<@"$Int"::@Int>
     # CHECK: } else {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, @"$Int"::@Int> as !kgen.declref<@{{.*}}::@Error>
-    # CHECK:    [[VAR:%.*]] = pop.variant.create [[ERR]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
-    # CHECK:    lit.return [[VAR]] : !pop.variant<@{{.*}}::@Error, !lit.none>
+    # CHECK:    lit.raise [[ERR]] : <@{{.*}}::@Error>
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK-NEXT: pop.store %1, %a
@@ -436,8 +435,7 @@ fn propagateErrorInRaisingFn() raises:
     # CHECK:    lit.yield [[ERR]] : !kgen.declref<@"$Int"::@Int>
     # CHECK:  } else {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
-    # CHECK:    [[VAR:%.*]] = pop.variant.create [[ERR]]
-    # CHECK:    lit.return [[VAR]]
+    # CHECK:    lit.raise [[ERR]] : <@"$Error"::@Error>
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK:  pop.store %1, %a
@@ -467,8 +465,7 @@ fn propagateErrorInTry():
 def raiseErrorInDef(err: Error):
     # CHECK: %[[ERRVAL:.*]] = pop.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = kgen.call {{.*}}@Error::@"__copyinit__
-    # CHECK: %[[RES:.*]] = pop.variant.create %[[ERRVALCOPY]] : !kgen.declref<@{{.*}}::@Error> -> !pop.variant<@{{.*}}::@Error, !lit.none>
-    # CHECK: lit.return %[[RES]]
+    # CHECK: lit.raise %[[ERRVALCOPY]] : <@{{.*}}@Error>
     raise err
 
 
@@ -476,7 +473,7 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.if
     if cond:
-        # CHECK: lit.return {{.*}} : !pop.variant<@{{.*}}::@Error, !lit.none>
+        # CHECK: lit.raise {{.*}} : <@{{.*}}::@Error>
         raise err
 
 
@@ -514,8 +511,7 @@ fn rethrowsToRethrow():
 fn raise_string() raises:
    # CHECK-NEXT: %0 = kgen.param.constant: @"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "thing"}>>
    # CHECK-NEXT: %1 = kgen.call @"$Error"::@Error::@"__init__($StringLiteral::StringLiteral)"(%0) : (!kgen.declref<@"$StringLiteral"::@StringLiteral> borrow) ownedresult -> !kgen.declref<@"$Error"::@Error>
-   # CHECK-NEXT: %2 = pop.variant.create %1 : !kgen.declref<@"$Error"::@Error> -> !pop.variant<@"$Error"::@Error, !lit.none>
-   # CHECK-NEXT: lit.return %2 : !pop.variant<@"$Error"::@Error, !lit.none>
+   # CHECK-NEXT: lit.raise %1 : <@"$Error"::@Error>
    raise "thing"
 
 struct S:
@@ -573,8 +569,7 @@ fn fail_register_raises(str: StringRef) raises -> Int:
   # CHECK:     lit.yield %[[VAR1]] : !kgen.declref<@"$Int"::@Int>
   # CHECK:   } else {
   # CHECK:     %[[VAR2:.*]] = pop.variant.get %0 : !pop.variant<@"$Error"::@Error, @"$Int"::@Int> as !kgen.declref<@"$Error"::@Error>
-  # CHECK:     %[[VAR3:.*]] = pop.variant.create %[[VAR2]] : !kgen.declref<@"$Error"::@Error> -> !pop.variant<@"$Error"::@Error, @"$Int"::@Int>
-  # CHECK:     lit.return %[[VAR3]] : !pop.variant<@"$Error"::@Error, @"$Int"::@Int>
+  # CHECK:     lit.raise %[[VAR2]] : <@"$Error"::@Error>
   # CHECK:     kgen.unreachable
   # CHECK:   }
   return fail_register(str)
@@ -655,8 +650,7 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT:   lit.try.yield
   # CHECK:      } finally {
   # CHECK:    } except
-  # CHECK-NEXT:  pop.variant.create %arg0
-  # CHECK-NEXT:  lit.return
+  # CHECK-NEXT:  lit.raise %arg0
   # CHECK:    } finally {
   # CHECK-NEXT: %[[EXC:.*]] = pop.load %__with_exc__
   # CHECK-NEXT: hlcf.if %[[EXC]]
