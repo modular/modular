@@ -321,11 +321,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     if (!pageSize)
       return Error(toString(pageSize.takeError()));
 
-#ifdef _WIN32
-    size_t slabSize = 1024 * 1024;
-#else
     size_t slabSize = 1024 * 1024 * 1024;
-#endif
+
     auto managerOr = llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
         llvm::orc::InProcessMemoryMapper>(slabSize);
     if (!managerOr)
