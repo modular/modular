@@ -430,6 +430,7 @@ fn broadcast_to_tensor[
     original_rank: Int,
     target_rank: Int,
     output_rank: Int,
+    single_thread_blocking_override: Bool,
 ](
     original: NDBuffer[
         original_rank, DimList.create_unknown[original_rank](), type
@@ -601,6 +602,7 @@ fn transpose[
     rank: Int,
     type: DType,
     int_type: DType,
+    single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
