@@ -153,7 +153,7 @@ static constexpr StringLiteral compilerRTlibName = "$compilerrt-lib";
 using Keys::ReadOnlyKey;
 
 /// Write the rt buffer to a temporary path so we can pass that path.
-static ErrorOrSuccess writeRTToFile(StringRef prefix, BufferRef &buf,
+static ErrorOrSuccess writeRTToFile(StringRef prefix, BufferRef buf,
                                     std::string &outPath) {
   std::error_code ec;
   std::filesystem::path path = std::filesystem::temp_directory_path(ec);
@@ -291,9 +291,11 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
   if (compilerRTBuf.isError())
     return compilerRTBuf.takeError();
   std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
+  if (!rtBuf)
+    return Error("could not find the CompilerRT binary in the CAS");
 
   std::string compilerRTPath;
-  if (auto err = writeRTToFile("compilerrt", *rtBuf, compilerRTPath))
+  if (auto err = writeRTToFile("compilerrt", std::move(*rtBuf), compilerRTPath))
     return err.takeError();
 
   auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
@@ -346,16 +348,17 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return orcRTBuf.takeError();
 
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
+  bool haveOrcRT = rtBuf.has_value();
   std::string orcRTPath;
 
   // TODO(#10097): Orc now supports passing in an archive, remove the usage of
   // files for the orcrt.
-  if (rtBuf.has_value())
-    if (auto err = writeRTToFile("liborc", *rtBuf, orcRTPath))
+  if (haveOrcRT)
+    if (auto err = writeRTToFile("liborc", std::move(*rtBuf), orcRTPath))
       return err.takeError();
 
   // Windows *requires* the orc runtime.
-  if (!rtBuf.has_value() && tt.isOSBinFormatCOFF())
+  if (!haveOrcRT && tt.isOSBinFormatCOFF())
     return Error("could not find orc_rt in the cache");
 
   // Construct the object linking layer.
