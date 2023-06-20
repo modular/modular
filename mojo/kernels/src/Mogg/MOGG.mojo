@@ -35,6 +35,8 @@ from Math import (
     abs,
     log1p,
 )
+from Matmul import matmul_parallel_async
+from MatmulUtils import GemmShape, get_trace_information
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -78,6 +80,7 @@ fn MOGGExport():
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _matrix_solve = matrix_solve
+    alias _matmul = matmul
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
     alias _mul = mul
@@ -775,6 +778,55 @@ fn matrix_solve[
     batch_matrix_solve[type, x_rank, a_rank, b_rank](x, a, b)
 
     out_chain.mark_ready()
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG matmul
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn matmul[
+    type: DType,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), type],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+
+    let shape = GemmShape.get[
+        # transpose_a
+        False,
+        # transpose_b
+        False,
+    ](c, a, b)
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return get_trace_information(
+            "dynamic_tile",
+            shape,
+            # transpose_a
+            False,
+            # transpose_b
+            False,
+            # b_packed
+            False,
+        )
+
+    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
+
+    matmul_parallel_async[
+        type,
+        # transpose_a,
+        False,
+        # transpose_b,
+        False,
+        # b_packed,
+        False,
+    ](c, a, b, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
