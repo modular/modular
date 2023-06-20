@@ -9,6 +9,7 @@
 #include "Cache/Support/Keys.h"
 #include "KGEN/ExecutionEngine/COMPILERRTCASID.h"
 #include "KGEN/ExecutionEngine/ORCCASID.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -263,7 +264,7 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   std::filesystem::path base = ".kgen_cache";
   base /= "orc";
   RuntimeAndCache<ReadOnlyKey> runtimeAndCache(base.string());
-  if (auto err = runtimeAndCache.setup())
+  if (auto err = runtimeAndCache.setup(KGEN_VERSION_STRING))
     return err.takeError();
 
   BlobCache<ReadOnlyKey> &cache = runtimeAndCache.getCache();

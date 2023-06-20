@@ -31,7 +31,7 @@ endif ()
 list(APPEND CMAKE_PREFIX_PATH ${LLVMCompilerRTLibPath})
 
 find_library(ORC_LIB orc_rt${ORCSuffix} REQUIRED
-        HINTS "${MODULAR_SOURCE_DIR}/${LLVMCompilerRTLibPath}")
+  HINTS "${MODULAR_SOURCE_DIR}/${LLVMCompilerRTLibPath}")
 
 add_modular_library(KGENExecutionEngine
   ExecutionEngine.cpp
@@ -50,20 +50,27 @@ add_modular_library(KGENExecutionEngine
   )
 
 if (NOT MODULAR_BUILD_ARCH)
+  # Generate the KGEN version string so we can use it for the cache_files call.
+  include(${CMAKE_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/GenerateVersion.cmake)
+  set(VERSION_STRING "${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${KGEN_VERSION_REVISION}-${MODULAR_BUILD_TYPE_LOWER}")
+
   cache_files(orc-rt-cas
-  BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
-  HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
-  INPUTS ${ORC_LIB}
-  INPUT_NAMES "kOrcRT"
-  RELATIVE_INSTALL_DIR ".kgen_cache/orc")
+    BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
+    HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
+    INPUTS ${ORC_LIB}
+    VERSION ${VERSION_STRING}
+    INPUT_NAMES "kOrcRT"
+    RELATIVE_INSTALL_DIR ".kgen_cache/orc"
+  )
 
   cache_files(compiler-rt-cas
     BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
     HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/COMPILERRTCASID.h
     INPUTS $<TARGET_FILE:KGENCompilerRTShared>
+    VERSION ${VERSION_STRING}
     INPUT_NAMES "kCompilerRT"
     RELATIVE_INSTALL_DIR ".kgen_cache/orc"
   )
 
   add_dependencies(KGENExecutionEngine orc-rt-cas compiler-rt-cas)
-endif()
+endif ()
