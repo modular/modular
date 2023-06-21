@@ -6,7 +6,6 @@
 
 import os
 import platform
-from shutil import which
 
 from lit.llvm import llvm_config
 
@@ -18,7 +17,6 @@ def configure_lldb_tests(config):
     if config.llvm_use_sanitizer and platform.system() == "Darwin":
         lldb_env = config.asan_lib_inject_env
 
-    lldb_path = which("lldb")
     # lit_lldb_init is a file with a list of commands to be executed by LLDB
     # during initialization that set it up for a correct execution during tests.
     config.substitutions.append(
