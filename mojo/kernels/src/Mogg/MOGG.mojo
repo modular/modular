@@ -48,7 +48,7 @@ from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
 from Tracing import Trace, TraceLevel
 from String import String
-from MatrixSolve import batch_matrix_solve
+from MatrixSolve import matrix_solve
 from Index import Index
 
 
@@ -758,49 +758,6 @@ fn _gather_with_lambdas[
             output.dynamic_shape,
             out_chain,
         )
-
-
-# ===----------------------------------------------------------------------===#
-# Matrix Solve
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn matrix_solve[
-    type: DType, a_rank: Int, b_rank: Int, x_rank: Int
-](
-    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
-    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
-    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
-    out_chain: OutputChainPtr,
-):
-    """A specialized matrix solver for Nx3x3 matrix and Nx3x2 RHS"""
-    out_chain.trace[TraceLevel.OP]("mogg.matrix_solve")
-
-    @parameter
-    if not type.is_floating_point():
-        return out_chain.mark_error("Only floating point types are supported.")
-
-    @parameter
-    if a_rank > 2:
-        if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
-            return out_chain.mark_error(
-                "input and output batch sizes must match"
-            )
-
-    alias row_dim = a_rank - 2
-    alias col_dim = a_rank - 1
-
-    if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
-        return out_chain.mark_error("The matrix's shape must be (3,2)")
-    if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
-        return out_chain.mark_error("The matrix's shape must be (3,3)")
-    if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
-        return out_chain.mark_error("The matrix's shape must be (3,2)")
-
-    batch_matrix_solve[type, x_rank, a_rank, b_rank](x, a, b)
-
-    out_chain.mark_ready()
 
 
 # ===----------------------------------------------------------------------===#
