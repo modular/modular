@@ -41,6 +41,7 @@ from Math import (
     log1p,
 )
 from Matmul import matmul_parallel_async
+from BatchedMatmul import batched_matmul_parallel_async
 from MatmulUtils import GemmShape, get_trace_information
 from Pointer import Pointer, DTypePointer
 from Range import range
@@ -86,6 +87,7 @@ fn MOGGExport():
     alias _load_scalar = load_scalar
     alias _matrix_solve = matrix_solve
     alias _matmul = matmul
+    alias _batched_matmul = batched_matmul
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
     alias _mul = mul
@@ -806,6 +808,31 @@ fn matmul[
         False,
         # b_packed,
         False,
+    ](c, a, b, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG batched matmul
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn batched_matmul[
+    rank: Int,
+    type: DType,
+](
+    a: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    b: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    c: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    # TODO: Add trace detail information
+    out_chain.trace[TraceLevel.OP]("mojo.mogg.batched_matmul")
+    batched_matmul_parallel_async[
+        rank,
+        type,
+        False,  # adj_a
+        False,  # adj_b
     ](c, a, b, out_chain)
 
 
