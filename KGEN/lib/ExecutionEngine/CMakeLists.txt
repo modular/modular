@@ -33,22 +33,7 @@ list(APPEND CMAKE_PREFIX_PATH ${LLVMCompilerRTLibPath})
 find_library(ORC_LIB orc_rt${ORCSuffix} REQUIRED
   HINTS "${MODULAR_SOURCE_DIR}/${LLVMCompilerRTLibPath}")
 
-add_modular_library(KGENExecutionEngine
-  ExecutionEngine.cpp
-
-  LINK_COMPONENTS
-  OrcJIT
-  OrcShared
-  OrcTargetProcess
-  JITLink
-  MC
-
-  LINK_LIBS PUBLIC
-  LLCLRuntime
-  MCache
-  MSupport
-  )
-
+set(CAS_DEPENDS "")
 if (NOT MODULAR_BUILD_ARCH)
   # Generate the KGEN version string so we can use it for the cache_files call.
   include(${CMAKE_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/GenerateVersion.cmake)
@@ -72,5 +57,25 @@ if (NOT MODULAR_BUILD_ARCH)
     RELATIVE_INSTALL_DIR ".kgen_cache/orc"
   )
 
-  add_dependencies(KGENExecutionEngine orc-rt-cas compiler-rt-cas)
+  set(CAS_DEPENDS compiler-rt-cas orc-rt-cas)
 endif ()
+
+add_modular_library(KGENExecutionEngine
+  ExecutionEngine.cpp
+
+  DEPENDS
+  ${CAS_DEPENDS}
+  KGENVersion
+
+  LINK_COMPONENTS
+  OrcJIT
+  OrcShared
+  OrcTargetProcess
+  JITLink
+  MC
+
+  LINK_LIBS PUBLIC
+  LLCLRuntime
+  MCache
+  MSupport
+)
