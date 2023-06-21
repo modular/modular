@@ -25,12 +25,16 @@ struct Matrix[
     """
 
     var data: NDBuffer[2, shape, type]
+    # var dynamic_shape: StaticIntTuple[2]
+    # """The dynamic value of the shape."""
+    # var dynamic_dtype: DType
+    # """The dynamic dtype."""
 
     fn __init__(inout self, dptr: DTypePointer[type]):
         """Constructor of a matrix from a DTypePointer.
 
         Args:
-            data: The buffer containing the matrix data.
+            dptr: The buffer containing the matrix data.
 
         Returns:
             The constructed matrix.
@@ -38,18 +42,61 @@ struct Matrix[
         self.data = dptr
 
     fn __init__(
+        inout self,
+        dptr: DTypePointer[type],
+        dynamic_shape: StaticIntTuple[2],
+        dynamic_dtype: DType,
+    ):
+        """Constructs of a matrix from a DTypePointer with dynamic shapes and type.
+
+        Args:
+            dptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 2 representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+
+        Returns:
+            The constructed matrix.
+
+        """
+        self = Self(
+            NDBuffer[2, shape, type](dptr, dynamic_shape, dynamic_dtype)
+        )
+
+    fn __init__(
         inout self, ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]]
     ):
         """Constructor of a matrix from a Pointer.
 
         Args:
-            data: The buffer containing the matrix data.
+            ptr: The buffer containing the matrix data.
 
         Returns:
             The constructed matrix.
         """
         let dptr = DTypePointer[type](ptr.address)
         self = Self(NDBuffer[2, shape, type](dptr))
+
+    fn __init__(
+        inout self,
+        ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
+        dynamic_shape: StaticIntTuple[2],
+        dynamic_dtype: DType,
+    ):
+        """Constructs of a matrix from a DTypePointer with dynamic shapes and type.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 2 representing shapes.
+            dynamic_dtype: Dtype for the buffer.
+
+        Returns:
+            The constructed matrix.
+
+        """
+        let dptr = DTypePointer[type](ptr.address)
+        self = Self(
+            NDBuffer[2, shape, type](dptr, dynamic_shape, dynamic_dtype)
+        )
 
     @staticmethod
     @always_inline
