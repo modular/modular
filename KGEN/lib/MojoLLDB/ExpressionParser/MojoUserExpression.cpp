@@ -391,7 +391,8 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
   // requires us to use the LLDB python interpreter.
   ScriptInterpreter *scriptInterpreter = debugger.GetScriptInterpreter(
       /*can_create=*/true, lldb::eScriptLanguagePython);
-  if (!scriptInterpreter) {
+  if (!scriptInterpreter ||
+      scriptInterpreter->GetLanguage() != lldb::eScriptLanguagePython) {
     diagnosticManager.PutString(lldb_private::eDiagnosticSeverityWarning,
                                 "persisting Python symbols requires LLDB to be "
                                 "built with Python scripting support.");
