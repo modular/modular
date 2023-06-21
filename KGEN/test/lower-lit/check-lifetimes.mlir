@@ -173,3 +173,209 @@ lit.func @verify_callee_destroys(%c: i1) -> !lit.none {
   lit.return %3 : !lit.none
   lit.end_func
 }
+
+// -----
+
+// COM: Test initialized fields are destroyed before error return.
+
+lit.struct.decl @Error {
+  lit.struct.field a : index
+}
+
+lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !kgen.signature<(!pop.pointer<@S> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : index
+}
+
+lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@DestructSome::@__del__> : !kgen.signature<(!pop.pointer<@DestructSome> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : !kgen.declref<@S>
+  lit.struct.field stole : !kgen.declref<@S>
+  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field byinit: !kgen.declref<@S>
+  lit.struct.field register : index
+
+  lit.func @__init__(%self: !pop.pointer<@DestructSome> init_self, %cond: i1,
+                     %x: !pop.pointer<@S> borrow_in_mem,
+                     %y: !pop.pointer<@S> borrow_in_mem,
+                     %takeMe: !pop.pointer<@S> owned_in_mem,
+                     %reg: index
+                     ) throws -> !pop.variant<@Error, !lit.none> {
+    %0 = lit.struct.gep %self[a] : <@S> from <@DestructSome>
+    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+
+    %100 = lit.struct.gep %self[register] : <index> from <@DestructSome>
+    pop.store %reg, %100 : !pop.pointer<index>
+
+    %103 = lit.struct.gep %self[stole] : <@S> from <@DestructSome>
+    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!pop.pointer<@S> init_self, !pop.pointer<@S> owned_in_mem) -> !lit.none
+
+    %105 = lit.struct.gep %self[byinit] : <@S> from <@DestructSome>
+    %106 = kgen.call @S::@__init__(%105) : (!pop.pointer<@S> init_self) -> !lit.none
+    // CHECK: hlcf.if %cond {
+    // CHECK-NEXT: [[VAR0:%.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+    // CHECK-NEXT: [[VAR1:%.*]] = pop.variant.create [[VAR0]] : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+    // CHECK-NEXT: [[VAR2:%.*]] = lit.struct.gep %self[a] : <@S> from <@DestructSome>
+    // CHECK-NEXT: [[VAR3:%.*]] = kgen.call @S::@__del__([[VAR2]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK-NEXT: [[VAR4:%.*]] = lit.struct.gep %self[stole] : <@S> from <@DestructSome>
+    // CHECK-NEXT: [[VAR5:%.*]] = kgen.call @S::@__del__([[VAR4]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK-NEXT: [[VAR6:%.*]] = lit.struct.gep %self[byinit] : <@S> from <@DestructSome>
+    // CHECK-NEXT: [[VAR7:%.*]] = kgen.call @S::@__del__([[VAR6]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK-NEXT: lit.error_return [[VAR1]] : <@Error, !lit.none>
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: hlcf.yield
+    // CHECK-NEXT: }
+    hlcf.if %cond {
+      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+      lit.error_return %13 : !pop.variant<@Error, !lit.none>
+    } else {
+        hlcf.yield
+    }
+    %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructSome>
+    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    %14 = pop.variant.create %none : !lit.none -> !pop.variant<@Error, !lit.none>
+    kgen.return %14 : !pop.variant<@Error, !lit.none>
+  }
+}
+
+lit.struct.decl @DestructNone attributes {destructor = #kgen.symbol.constant<@DestructNone::@__del__> : !kgen.signature<(!pop.pointer<@DestructNone> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : !kgen.declref<@S>
+  lit.struct.field stole : !kgen.declref<@S>
+  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field register : index
+
+  lit.func @__init__(%self: !pop.pointer<@DestructNone> init_self, %cond: i1,
+                     %x: !pop.pointer<@S> borrow_in_mem,
+                     %y: !pop.pointer<@S> borrow_in_mem,
+                     %takeMe: !pop.pointer<@S> owned_in_mem,
+                     %reg: index
+                     ) throws -> !pop.variant<@Error, !lit.none> {
+    // CHECK: hlcf.if %cond {
+    // CHECK-NEXT: %[[VAR0:.*]] = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+    // CHECK-NEXT: %[[VAR1:.*]] = pop.variant.create %[[VAR0]] : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+    // CHECK-NEXT: lit.error_return %[[VAR1]] : <@Error, !lit.none>
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: hlcf.yield
+    // CHECK-NEXT: }
+    hlcf.if %cond {
+      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+      lit.error_return %13 : !pop.variant<@Error, !lit.none>
+    } else {
+        hlcf.yield
+    }
+    %0 = lit.struct.gep %self[a] : <@S> from <@DestructNone>
+    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+
+    %100 = lit.struct.gep %self[register] : <index> from <@DestructNone>
+    pop.store %reg, %100 : !pop.pointer<index>
+
+    %103 = lit.struct.gep %self[stole] : <@S> from <@DestructNone>
+    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!pop.pointer<@S> init_self, !pop.pointer<@S> owned_in_mem) -> !lit.none
+
+    %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructNone>
+    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    %14 = pop.variant.create %none : !lit.none -> !pop.variant<@Error, !lit.none>
+    kgen.return %14 : !pop.variant<@Error, !lit.none>
+  }
+}
+
+lit.struct.decl @DestructFull attributes {destructor = #kgen.symbol.constant<@DestructFull::@__del__> : !kgen.signature<(!pop.pointer<@DestructFull> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : !kgen.declref<@S>
+  lit.struct.field stole : !kgen.declref<@S>
+  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field register : index
+
+  lit.func @__init__(%self: !pop.pointer<@DestructFull> init_self, %cond: i1,
+                     %x: !pop.pointer<@S> borrow_in_mem,
+                     %y: !pop.pointer<@S> borrow_in_mem,
+                     %takeMe: !pop.pointer<@S> owned_in_mem,
+                     %reg: index
+                     ) throws -> !pop.variant<@Error, !lit.none> {
+
+    %0 = lit.struct.gep %self[a] : <@S> from <@DestructFull>
+    %1 = kgen.call @S::@__copyinit__(%0, %x) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+
+    %100 = lit.struct.gep %self[register] : <index> from <@DestructFull>
+    pop.store %reg, %100 : !pop.pointer<index>
+
+    %103 = lit.struct.gep %self[stole] : <@S> from <@DestructFull>
+    %104 = kgen.call @S::@__moveinit__(%103, %takeMe) : (!pop.pointer<@S> init_self, !pop.pointer<@S> owned_in_mem) -> !lit.none
+
+    %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructFull>
+    %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!pop.pointer<@S> init_self, !pop.pointer<@S> borrow_in_mem) -> !lit.none
+    hlcf.if %cond {
+      %12 = kgen.call @Error::@__init__() : () ownedresult -> !kgen.declref<@Error>
+      %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
+      // CHECK: %[[VAR0:.*]] = kgen.call @DestructFull::@__del__(%self) : (!pop.pointer<@DestructFull> owned_in_mem) -> !lit.none
+      lit.error_return %13 : !pop.variant<@Error, !lit.none>
+    } else {
+        hlcf.yield
+    }
+
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    %14 = pop.variant.create %none : !lit.none -> !pop.variant<@Error, !lit.none>
+    kgen.return %14 : !pop.variant<@Error, !lit.none>
+  }
+}
+
+// -----
+
+// COM: Test all fields are destroyed in object destructor
+
+lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@__del__> : !kgen.signature<(!pop.pointer<@S> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : index
+}
+
+lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@HasMemFields::@__del__> : !kgen.signature<(!pop.pointer<@HasMemFields> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : !kgen.declref<@S>
+  lit.struct.field stole : !kgen.declref<@S>
+  lit.struct.field uninitialized : !kgen.declref<@S>
+  lit.struct.field register : index
+
+  lit.func @__del__(%self: !pop.pointer<@HasMemFields> owned_in_mem) -> !lit.none {
+    // CHECK: %[[VAR0:.*]] = lit.struct.gep %self[a] : <@S> from <@HasMemFields>
+    // CHECK: %[[VAR1:.*]] = kgen.call @S::@__del__(%[[VAR0]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK: %[[VAR2:.*]] = lit.struct.gep %self[stole] : <@S> from <@HasMemFields>
+    // CHECK: %[[VAR3:.*]] = kgen.call @S::@__del__(%[[VAR2]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK: %[[VAR4:.*]] = lit.struct.gep %self[uninitialized] : <@S> from <@HasMemFields>
+    // CHECK: %[[VAR5:.*]] = kgen.call @S::@__del__(%[[VAR4]]) : (!pop.pointer<@S> owned_in_mem) -> !lit.none
+    // CHECK-NOT: kgen.call @HasMemFields::@__del__(%self) : (!pop.pointer<@HasMemFields> owned_in_mem) -> !lit.none
+    lit.ownership.mark.destroyed %self : !pop.pointer<@HasMemFields>
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    kgen.return %none : !lit.none
+  }
+}
+
+// -----
+
+// COM: Verify that initialized values are masked out of the function value set.
+
+lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !kgen.signature<(!pop.pointer<@MyStruct> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : index
+}
+
+lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none {
+  %1 = kgen.param.constant: !lit.none = <#lit.none>
+  hlcf.if %cond1 {
+    kgen.return %1 : !lit.none
+  } else {
+    // CHECK: hlcf.if %cond2 {
+    // CHECK: kgen.return %0 : !lit.none
+    // CHECK: } else {
+    // CHECK: hlcf.yield
+    // CHECK: }
+    hlcf.if %cond2 {
+      kgen.return %1 : !lit.none
+    } else {
+      hlcf.yield
+    }
+    %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@MyStruct>
+    %3 = kgen.call @MyStruct::@__init__(%anonymous2A) : (!pop.pointer<@MyStruct> init_self) -> !lit.none
+    %6 = kgen.call @use(%anonymous2A) : (!pop.pointer<@MyStruct> borrow_in_mem) vararg -> !lit.none
+    // CHECK: kgen.call @MyStruct::@__del__(%anonymous2A) : (!pop.pointer<@MyStruct> owned_in_mem) -> !lit.none
+    hlcf.yield
+  }
+  kgen.return %1 : !lit.none
+}
