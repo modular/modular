@@ -7,7 +7,12 @@
 from Activations import relu, gelu, sigmoid
 from Buffer import NDBuffer
 from DType import DType
-from Functional import elementwise, unroll, vectorize, async_parallelize
+from Functional import (
+    _elementwise_impl,
+    unroll,
+    vectorize,
+    async_parallelize,
+)
 from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print
@@ -217,6 +222,7 @@ fn elementwise_wrapper[
     simd_width: Int,
     type: DType,
     rank: Int,
+    single_thread_blocking_override: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -242,7 +248,10 @@ fn elementwise_wrapper[
         return res
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
-    elementwise[rank, simd_width, unroll_factor, func](
+
+    _elementwise_impl[
+        rank, simd_width, unroll_factor, func, single_thread_blocking_override
+    ](
         buffer.dynamic_shape,
         out_chain,
     )
@@ -639,6 +648,7 @@ fn _gather_with_lambdas[
     axis_type: DType,
     output_rank: Int,
     simd_width: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -727,13 +737,24 @@ fn _gather_with_lambdas[
 
     # If we are gathering on the last dimension then we have to be scalar.
     if axis == in_rank - 1:
-        elementwise[output_rank, 1, unroll_factor, gather_lambda](
+        _elementwise_impl[
+            output_rank,
+            1,
+            unroll_factor,
+            gather_lambda,
+            single_thread_blocking_override,
+        ](
             output.dynamic_shape,
             out_chain,
         )
     else:
-        # We can be simd if the gather is along the other dimensions.
-        elementwise[output_rank, simd_width, unroll_factor, gather_lambda](
+        _elementwise_impl[
+            output_rank,
+            simd_width,
+            unroll_factor,
+            gather_lambda,
+            single_thread_blocking_override,
+        ](
             output.dynamic_shape,
             out_chain,
         )
