@@ -75,67 +75,269 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   buildDebugInfoForStructRef(DeclRefType ref,
                              DebugInfo::DebugInfoTypeConverter &converter);
 
-  /// Recursively substitute types.
-  Type substituteTypes(Type type) { return replacer.replace(type); }
-
   /// Materialize destination conversions.
   template <typename OpT>
   LogicalResult materializeLowering(OpT op);
 
+  /// Attr replace functions that give more control on what and when to cache
+  Type replace(Type type);
+
+  /// Type replace functions that give more control on what and when to cache
+  Attribute replace(Attribute attr);
+
+  /// AttrType replace implementation helper.
+  /// This function is doing the replace traversal the same as
+  /// mlir::AttrTypeReplacer, but has more controlled caching mechanism.
+  /// We don't want to cache the replaced result of erased Pointer type for
+  /// recursive nested struct field to avoid the same DeclRefType
+  /// being replace in general cases. We only want to replace the one that is
+  /// used to access the struct field.
+  template <typename T, typename U = std::conditional_t<
+                            std::is_base_of_v<Type, T>, Type, Attribute>>
+  U replaceImpl(T value);
+
+  /// Replace elements in an Operation.
+  void replaceElementsIn(Operation *op);
+
   /// The struct decl map.
   StructDeclarations &structDecls;
 
-  /// The type converter.
-  mlir::AttrTypeReplacer replacer;
-
   /// Set to the value of an invalid DeclRefType.
   DeclRefType errDeclRef;
+
+  /// Cache to memorize AttrType replacement results.
+  DenseMap<const void *, const void *> attrTypeReplaceCache;
+
+  /// Flag to erase the type for a struct field of recursive pointer.
+  bool eraseRecursivePointerField = false;
+
+  /// Flag to track recursive AttrType replacement when erasing recursive struct
+  /// pointer type.
+  bool erasedType = false;
+
+  /// Seen Types when replacing.
+  DenseSet<Type> seenTypes;
+
+  /// Seen Attributes when replacing.
+  DenseSet<Attribute> seenAttrs;
+
+  /// Flag to run debug type conversion on updated types.
+  bool runDebugTypeConversion = false;
+
+  /// Debug type converter.
+  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
 };
 } // namespace
 
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
-
-  replacer.addReplacement([&](DeclRefType type) -> Type {
-    auto result = substituteStructRef(type);
-    if (auto type = dyn_cast<Type>(result))
-      return type;
-    return cast<POP::StructType>(result);
+  // Build a converter to handle updating converted types within debug info
+  // constructs.
+  debugTypeConverter.addConversion([&](Type type) -> std::optional<Type> {
+    Type newType = replace(type);
+    if (newType != type)
+      return debugTypeConverter.convertDebugType(newType);
+    return std::nullopt;
   });
-
-  replacer.addReplacement([&](LIT::StructAttr attr) -> Attribute {
-    auto newType = substituteStructRef(attr.getType());
-    // Flatten single-element structs.
-    if (auto type = dyn_cast<Type>(newType)) {
-      ParameterEvaluator evaluator(attr.getType().getParamValues());
-      auto value =
-          evaluator.getReboundAttribute(std::get<1>(attr.getValues()[0]));
-      return replacer.replace(value);
-    }
-
-    SmallVector<TypedAttr> values;
-    for (auto [name, value] : attr.getValues())
-      values.push_back(cast<TypedAttr>(replacer.replace(value)));
-    return POP::StructAttr::get(values, cast<POP::StructType>(newType));
+  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
+    return buildDebugInfoForStructRef(type, debugTypeConverter);
   });
+  debugTypeConverter.addConversion(
+      [&](LIT::NoneType type) -> std::optional<Type> {
+        return DebugInfo::DIUnspecifiedType::get(type.getContext(), "void");
+      });
+}
 
-  replacer.addReplacement([&](LIT::StructExtractAttr attr) -> Attribute {
-    auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
-    int64_t fieldNo = getField(attr.getField(), litStructType);
-    auto structValue = replacer.replace(attr.getStructValue());
+template <typename T, typename U>
+U StructOperationLowerer::replaceImpl(T value) {
+  SmallVector<Attribute, 16> replAttrs;
+  SmallVector<Type, 16> replTypes;
+  bool changed = false;
+  bool failed = false;
+  U result = value;
+  value.walkImmediateSubElements(
+      [&](Attribute attr) {
+        if (failed)
+          return;
 
-    // If this is an extract of element 0, check to see if it
-    // is a flattened struct.
-    if (fieldNo == 0) {
-      if (isa<Type>(substituteStructRef(litStructType)))
-        return structValue;
-    }
+        Attribute result = replace(attr);
+        if (!result)
+          failed = true;
 
-    return POP::StructExtractAttr::get(
-        cast<TypedAttr>(structValue),
-        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
-  });
+        replAttrs.push_back(result);
+        changed |= result != attr;
+      },
+      [&](Type type) {
+        if (failed)
+          return;
+        Type result = replace(type);
+        if (!result)
+          failed = true;
+        replTypes.push_back(result);
+        changed |= result != type;
+      });
+
+  if (failed)
+    return nullptr;
+
+  if (changed)
+    result = value.replaceImmediateSubElements(replAttrs, replTypes);
+
+  return result;
+}
+
+Attribute StructOperationLowerer::replace(Attribute attr) {
+  auto iter = attrTypeReplaceCache.find(attr.getAsOpaquePointer());
+  if (iter != attrTypeReplaceCache.end())
+    return Attribute::getFromOpaquePointer(iter->second);
+
+  Attribute result = attr;
+  bool foundRecursion = seenAttrs.contains(attr);
+  if (foundRecursion && !eraseRecursivePointerField) {
+    // Found illegal recursion.
+    return nullptr;
+  }
+
+  // Keep track of ancestor attributes.
+  seenAttrs.insert(attr);
+
+  if (auto sattr = dyn_cast<LIT::StructAttr>(attr)) {
+    result = [&]() -> Attribute {
+      PointerUnion<POP::StructType, Type> newType =
+          substituteStructRef(sattr.getType());
+      // Flatten single-element structs.
+      if (auto type = dyn_cast<Type>(newType)) {
+        ParameterEvaluator evaluator(sattr.getType().getParamValues());
+        Attribute value =
+            evaluator.getReboundAttribute(std::get<1>(sattr.getValues()[0]));
+
+        return replace(value);
+      }
+
+      SmallVector<TypedAttr> values;
+      for (auto [name, value] : sattr.getValues())
+        values.push_back(cast<TypedAttr>(replace(value)));
+      return POP::StructAttr::get(values, cast<POP::StructType>(newType));
+    }();
+  } else if (auto sattr = dyn_cast<LIT::StructExtractAttr>(attr)) {
+    result = [&]() -> Attribute {
+      auto litStructType = cast<DeclRefType>(sattr.getStructValue().getType());
+      int64_t fieldNo = getField(sattr.getField(), litStructType);
+
+      Attribute structValue = replace(sattr.getStructValue());
+
+      // If this is an extract of element 0, check to see if it
+      // is a flattened struct.
+      if (fieldNo == 0)
+        if (isa<Type>(substituteStructRef(litStructType)))
+          return structValue;
+
+      return POP::StructExtractAttr::get(
+          cast<TypedAttr>(structValue),
+          IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
+    }();
+  } else {
+    // Recursively replace attributes.
+    result = replaceImpl<Attribute, Attribute>(attr);
+  }
+
+  attrTypeReplaceCache.try_emplace(attr.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+  seenAttrs.erase(attr);
+
+  return result;
+}
+
+Type StructOperationLowerer::replace(Type type) {
+  auto iter = attrTypeReplaceCache.find(type.getAsOpaquePointer());
+  if (iter != attrTypeReplaceCache.end())
+    return Type::getFromOpaquePointer(iter->second);
+
+  Type result = type;
+
+  bool foundRecursion = seenTypes.contains(type);
+  if (foundRecursion && !eraseRecursivePointerField) {
+    // Found illegal recursion.
+    return nullptr;
+  }
+  bool cacheResult = true;
+
+  // Keep track of types.
+  seenTypes.insert(type);
+  if (auto ditype = dyn_cast<DebugInfo::DIType>(type)) {
+    if (runDebugTypeConversion)
+      result = debugTypeConverter.convertDebugType(ditype);
+  } else if (auto ptr = dyn_cast<POP::PointerType>(type)) {
+    result = [&]() -> Type {
+      if (foundRecursion) {
+        // Handle a struct (Foo) that has a pointer to a recursive struct, i.e.:
+        // 1. the pointer points to the struct itself Foo
+        // struct Foo:
+        //    var x: Pointer[Foo]
+        //
+        // 2. the pointer points to another struct that has a chain of field of
+        // structs that recurses back to Foo, and one of the field is a Pointer
+        // before Foo shows up again in the chain
+        //
+        // struct Foo:
+        //    var x: Pointer[Bar]
+        // struct Bar:
+        //    var x: Foo
+        //
+        // or
+        // struct Foo:
+        //    var x: Bar
+        // struct Bar:
+        //    var x: Pointer[Foo]
+        //
+        // or
+        // struct Foo:
+        //    var x: Pointer[Bar]
+        // struct Bar:
+        //    var x: Pointer[Foo]
+
+        cacheResult = false;
+        erasedType = true;
+        // Erase the type of Pointer[Foo] to Pointer[NoneType] to break the
+        // recursive chain.
+        return POP::PointerType::get(POP::SIMDType::get(
+            1, KGEN::DTypeConstantAttr::get(ptr.getContext(), DType::invalid)));
+      }
+      return replaceImpl(ptr);
+    }();
+  } else if (auto ref = dyn_cast<DeclRefType>(type)) {
+    result = [&]() -> Type {
+      PointerUnion<POP::StructType, Type> result = substituteStructRef(ref);
+      if (erasedType) {
+        // If Pointer type erase happened, don't cache this type replacement
+        // result.
+        cacheResult = false;
+        erasedType = false;
+      }
+
+      if (!result)
+        return nullptr;
+
+      if (auto type = dyn_cast<Type>(result))
+        return type;
+
+      return cast<POP::StructType>(result);
+    }();
+  } else {
+    // Recursively replace types.
+    result = replaceImpl(type);
+  }
+
+  if (cacheResult) {
+    attrTypeReplaceCache.try_emplace(type.getAsOpaquePointer(),
+                                     result.getAsOpaquePointer());
+  }
+  if (!foundRecursion) {
+    seenTypes.erase(type);
+  }
+
+  return result;
 }
 
 PointerUnion<POP::StructType, Type>
@@ -146,12 +348,13 @@ StructOperationLowerer::substituteStructRef(DeclRefType ref) {
     errDeclRef = ref;
     return Type(ref);
   }
-
-  // Substitute parameters into the field types.
   ParameterEvaluator evaluator(ref.getParamValues());
   SmallVector<Type> elementTypes;
-  for (Type type : llvm::make_second_range(it->second))
-    elementTypes.push_back(replacer.replace(evaluator.getReboundType(type)));
+  for (Type type : llvm::make_second_range(it->second)) {
+    Type reboundType = evaluator.getReboundType(type);
+    Type substituteReboundType = replace(reboundType);
+    elementTypes.push_back(substituteReboundType);
+  }
 
   // Flatten single-element structs.
   if (elementTypes.size() == 1)
@@ -180,7 +383,9 @@ DebugInfo::DIType StructOperationLowerer::buildDebugInfoForStructRef(
 
 static Value lowerStructOp(StructCreateOp op, StructCreateOpAdaptor adaptor,
                            StructOperationLowerer &lowerer) {
-  auto newType = lowerer.substituteStructRef(op.getType());
+  PointerUnion<POP::StructType, Type> newType =
+      lowerer.substituteStructRef(op.getType());
+
   if (isa<Type>(newType)) {
     assert(adaptor.getOperands().size() == 1 &&
            "Flattening non-one element struct");
@@ -198,14 +403,36 @@ static Value lowerStructOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
 
   // Check to see if we need to flatten this.  Flattening an insert just
   // replaces the value.
+
+  PointerUnion<POP::StructType, Type> resultStructType =
+      lowerer.substituteStructRef(op.getType());
   if (index == 0) {
-    if (isa<Type>(lowerer.substituteStructRef(op.getType())))
+    if (isa<Type>(resultStructType))
       return adaptor.getValue();
   }
 
-  return lowerer.create<POP::StructReplaceOp>(op.getLoc(), adaptor.getValue(),
-                                              adaptor.getContainer(),
-                                              lowerer.getIndexAttr(index));
+  auto result = lowerer.create<POP::StructReplaceOp>(
+      op.getLoc(), adaptor.getValue(), adaptor.getContainer(),
+      lowerer.getIndexAttr(index));
+
+  auto structType = cast<POP::StructType>(result.getResult().getType());
+  TypedAttr fieldTypedAttr = structType.getElementTypes()[index];
+
+  if (auto attr = dyn_cast<TypeConstantAttr>(fieldTypedAttr)) {
+    if (result->getOperand(0).getType() != attr.getValue()) {
+      // If a Pointer type of the struct field is erased to NoneType
+      // because of recursive nested type,
+      // when inserting the new value to the field, a PointerBitcast is needed
+      // here so that the created StructReplaceOp won't complain about the
+      // types.
+      OpBuilder builder(result);
+      auto cast = builder.create<POP::PointerBitcastOp>(
+          result.getLoc(), attr.getValue(), result->getOperand(0));
+      result.setOperand(0, cast.getResult());
+    }
+  }
+
+  return result;
 }
 
 static Value lowerStructOp(StructExtractOp op, StructExtractOpAdaptor adaptor,
@@ -261,10 +488,20 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   setInsertionPoint(op);
   SmallVector<Value> castedOperands;
   castedOperands.reserve(op->getNumOperands());
-
   // Get type adjusted values into the adaptor to simplify clients.
-  for (Value value : op->getOperands()) {
-    auto newType = substituteTypes(value.getType());
+  for (OpOperand &operand : op->getOpOperands()) {
+    Value value = operand.get();
+    Type newType = replace(value.getType());
+
+    if (!newType) {
+      // Found recursive nested struct so that replace failed to get a new type.
+      // This is very unlikely to happen because the recursion should be
+      // detected in earlier passes already.
+      op.emitError("Found recursive nested structs in operand: " +
+                   std::to_string(operand.getOperandNumber()));
+      return failure();
+    }
+
     castedOperands.push_back(getCastedToType(value, newType, *this));
   }
 
@@ -273,8 +510,10 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   auto resultType = op->getResult(0).getType();
 
   Value result = lowerStructOp(op, adaptor, *this);
+
   if (result.getType() != resultType)
     result = getCastedToType(result, resultType, *this);
+
   replaceOp(op, {result});
 
   if (LLVM_UNLIKELY(errDeclRef)) {
@@ -283,6 +522,41 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
            << errDeclRef;
   }
   return success();
+}
+
+void StructOperationLowerer::replaceElementsIn(Operation *op) {
+  // Functor that replaces the given element if the new value is different,
+  // otherwise returns nullptr.
+  auto replaceIfDifferent = [&](auto element) {
+    auto replacement = replace(element);
+    return (replacement && replacement != element) ? replacement : nullptr;
+  };
+
+  // Update the attribute dictionary.
+  if (auto newAttrs = replaceIfDifferent(op->getAttrDictionary()))
+    op->setAttrs(cast<DictionaryAttr>(newAttrs));
+
+  // Update the location.
+  if (Attribute newLoc = replaceIfDifferent(op->getLoc()))
+    op->setLoc(cast<mlir::LocationAttr>(newLoc));
+
+  // Update the result types.
+  for (OpResult result : op->getResults())
+    if (Type newType = replaceIfDifferent(result.getType()))
+      result.setType(newType);
+
+  // Update any nested block arguments.
+  for (Region &region : op->getRegions()) {
+    // Our IR will only have single-block regions.
+    Block &block = region.front();
+    for (BlockArgument &arg : block.getArguments()) {
+      if (Attribute newLoc = replaceIfDifferent(arg.getLoc()))
+        arg.setLoc(cast<mlir::LocationAttr>(newLoc));
+
+      if (Type newType = replaceIfDifferent(arg.getType()))
+        arg.setType(newType);
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -305,7 +579,10 @@ struct LowerStructsPass
 
 void LowerStructsPass::runOnOperation() {
   // Collect all struct declarations and erase them.
+  auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+
   StructDeclarations structDecls;
+
   for (auto decl :
        llvm::make_early_inc_range(getOperation().getOps<StructDeclOp>())) {
     SmallVector<std::pair<StringAttr, Type>> fields;
@@ -314,48 +591,35 @@ void LowerStructsPass::runOnOperation() {
       structDecls.fieldIndices.try_emplace(
           {decl.getNameAttr(), field.getNameAttr()}, idx);
     }
+
     structDecls.fields.try_emplace(decl.getNameAttr(), std::move(fields));
-    decl->erase();
+    analysis.getTopLevelSymbolTable().erase(decl);
   }
+
   StructOperationLowerer structLowerer(&getContext(), structDecls);
 
   // Lower KGEN struct operations.
+  structLowerer.eraseRecursivePointerField = true;
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });
+  structLowerer.eraseRecursivePointerField = false;
   if (result.wasInterrupted())
     return signalPassFailure();
 
-  // Build a converter to handle updating converted types within debug info
-  // constructs.
-  DebugInfo::DebugInfoTypeConverter debugTypeConverter;
-  debugTypeConverter.addConversion([&](Type type) -> std::optional<Type> {
-    Type newType = structLowerer.substituteTypes(type);
-    if (newType != type)
-      return debugTypeConverter.convertDebugType(newType);
-    return std::nullopt;
-  });
-  debugTypeConverter.addConversion([&](DeclRefType type) -> DebugInfo::DIType {
-    return structLowerer.buildDebugInfoForStructRef(type, debugTypeConverter);
-  });
-  debugTypeConverter.addConversion(
-      [&](LIT::NoneType type) -> std::optional<Type> {
-        return DebugInfo::DIUnspecifiedType::get(type.getContext(), "void");
-      });
+  // update converted types with debug info
+  structLowerer.runDebugTypeConversion = true;
 
-  structLowerer.replacer.addReplacement([&](DebugInfo::DIType type) -> Type {
-    return debugTypeConverter.convertDebugType(type);
-  });
   // Type references can be used in nested types. Walk through all the types and
   // rewrite them in-place to use the lowered types. Walk pre-order, and while
   // doing so, erase any trivial casts left over from the type conversion.
   std::function<LogicalResult(Operation *)> replaceTypes =
       [&](Operation *op) -> LogicalResult {
-    structLowerer.replacer.replaceElementsIn(
-        op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+    structLowerer.replaceElementsIn(op);
+
     if (LLVM_UNLIKELY(structLowerer.errDeclRef)) {
       return op->emitError("operation contains a declref type that does not "
                            "refer to a struct: ")
@@ -366,7 +630,21 @@ void LowerStructsPass::runOnOperation() {
       if (cast.getOperandTypes() == cast.getResultTypes()) {
         cast.replaceAllUsesWith(cast.getOperands());
         cast.erase();
+      } else {
+        if (cast->getNumResults() == 1 && cast->getNumOperands() == 1) {
+          if (isa<POP::PointerType>(cast.getResult(0).getType()) &&
+              isa<POP::PointerType>(cast.getOperand(0).getType())) {
+            // Change into a PointerBitcastOp for Pointer whose type is erased
+            // to be NoneType.
+            OpBuilder b(cast);
+            auto ptrBCast = b.create<POP::PointerBitcastOp>(
+                cast.getLoc(), cast.getResult(0).getType(), cast.getOperand(0));
+            cast->replaceAllUsesWith(ptrBCast->getResults());
+            cast.erase();
+          }
+        }
       }
+
       return success();
     }
     for (Region &region : op->getRegions())
