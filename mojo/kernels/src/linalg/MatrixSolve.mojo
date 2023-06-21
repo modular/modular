@@ -9,9 +9,11 @@ from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
 from Index import Index
-from List import DimList
-from Range import range
 from Index import StaticIntTuple
+from List import DimList
+from LLCL import OutputChainPtr
+from Range import range
+from Tracing import TraceLevel
 
 
 fn matrix_solve_tiny[
@@ -70,12 +72,13 @@ fn matrix_solve_tiny[
     )
 
 
-fn batch_matrix_solve[
+fn matrix_solve[
     type: DType, x_rank: Int, a_rank: Int, b_rank: Int
 ](
-    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
     a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
     b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
+    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    out_chain: OutputChainPtr,
 ):
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS
@@ -84,8 +87,28 @@ fn batch_matrix_solve[
     assert_param[a_rank == b_rank]()
     assert_param[a_rank == x_rank]()
 
+    out_chain.trace[TraceLevel.OP]("mojo.matrix_solve")
+
+    @parameter
+    if not type.is_floating_point():
+        return out_chain.mark_error("Only floating point types are supported.")
+
+    @parameter
+    if a_rank > 2:
+        if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
+            return out_chain.mark_error(
+                "input and output batch sizes must match"
+            )
+
     alias row_dim = a_rank - 2
     alias col_dim = a_rank - 1
+
+    if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
+        return out_chain.mark_error("The x matrix's shape must be (3,2)")
+    if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
+        return out_chain.mark_error("The a matrix's shape must be (3,3)")
+    if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
+        return out_chain.mark_error("The b matrix's shape must be (3,2)")
 
     var batch_size = 1
     for i in range(row_dim):
@@ -109,3 +132,5 @@ fn batch_matrix_solve[
             type,
         )
         matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
+
+    out_chain.mark_ready()
