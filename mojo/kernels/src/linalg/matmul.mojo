@@ -30,6 +30,7 @@ from Math import min, fma, div_ceil, align_down
 from MatmulUtils import (
     get_packB_unroll_factor,
     MatmulConfig,
+    SubMatmulConfig,
     MatmulDataType,
     MatmulOperandLayout,
     GemmShape,
@@ -40,6 +41,7 @@ from MatmulUtils import (
     search_mm_config,
     elementwise_lambda_fn_sig_type,
     dispatch_is_critical_stride,
+    is_critical_stride,
 )
 from Matrix import Matrix
 from Pointer import DTypePointer
@@ -1642,19 +1644,11 @@ fn matmul_parallel_async[
 ):
     assert_param[not transpose_a, "transpose_a not yet supported"]()
 
-    let shape = GemmShape.get[
-        False,
-        transpose_b,
-        DimList.create_unknown[2](),
-        DimList.create_unknown[2](),
-        DimList.create_unknown[2](),
-        type,
-        type,
-    ](c, a, b)
-
+    let shape = GemmShape.get[False, transpose_b](c, a, b)
     let m = shape.M
     let n = shape.N
     let k = shape.K
+
     let complexity = m * n * k
     let num_tasks = min(
         div_ceil(complexity, get_min_task_size()),
@@ -1662,66 +1656,192 @@ fn matmul_parallel_async[
         > 0 else out_chain.get_runtime().parallelism_level(),
     )
 
+    @always_inline
     @parameter
-    fn dispatch_on_critical_stride[critical_stride: Bool]():
-        @always_inline
-        @parameter
-        fn task_func(task_id: Int):
-            let sub_matmul_config = get_partitioned_matmul[
-                PartitionHeuristic.MOJO, critical_stride
-            ](m, n, k, task_id, num_tasks)
-            if (
-                sub_matmul_config.shape[0] <= 0
-                or sub_matmul_config.shape[1] <= 0
-            ):
-                return
-            alias mm_config = search_mm_config[
-                type,
-                b_packed,
-                critical_stride,
-            ]()
+    fn task_func(task_id: Int):
+        let sub_matmul_config = get_partitioned_matmul[PartitionHeuristic.MOJO](
+            m, n, k, task_id, num_tasks
+        )
 
-            fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-                elementwise_epilogue_c_tile[
-                    mm_config.simd_size,
-                    type,
-                    mm_config.shape_c,
-                    elementwise_lambda_fn,
-                ](
-                    offset,
-                    shape,
-                    rebind[NDBuffer[2, mm_config.shape_c, type]](c),
-                )
+        if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
+            return
 
-            TiledMatmul[
-                mm_config,
-                # accum_type
-                type,
-                # value_type
-                type,
-                # transpose_a
-                False,
-                transpose_b,
-                b_packed,
-                elementwise_epilogue_enabled,
-                # rowwise_epilogue_enabled,
-                False,
-                critical_stride,
-            ].run(
-                rebind[NDBuffer[2, mm_config.shape_c, type]](c),
-                rebind[NDBuffer[2, mm_config.shape_a, type]](a),
-                rebind[NDBuffer[2, mm_config.shape_b, type]](b),
-                elementwise_closure,
-                sub_matmul_config.shape,
-                sub_matmul_config.offset,
-            )
+        matmul_sequential_sync[
+            type,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
+            elementwise_lambda_fn,
+        ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
 
-        async_parallelize[task_func](out_chain, num_tasks)
-
-    dispatch_is_critical_stride[type, dispatch_on_critical_stride](k)
+    async_parallelize[task_func](out_chain, num_tasks)
 
     # TODO (#12624): Closure captures some state on the stack so this needs
     # to be synchronous in order to keep that state alive
     external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
         out_chain.ptr
     )
+
+
+fn matmul_sequential_sync[
+    type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    rowwise_epilogue_enabled: Bool,
+](
+    c: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    a: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    b: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    sub_matrix_shape: GemmShape,
+    sub_matrix_offset: GemmShape,
+    rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
+):
+    assert_param[not transpose_a, "transpose_a not yet supported"]()
+
+    let shape = GemmShape.get[False, transpose_b](c, a, b)
+    let m = shape.M
+    let n = shape.N
+    let k = shape.K
+
+    @parameter
+    fn dispatch_on_critical_stride[critical_stride: Bool]():
+        alias mm_config = search_mm_config[type, b_packed, critical_stride]()
+
+        fn elementwise_closure(offset: GemmShape, shape: GemmShape):
+            elementwise_epilogue_c_tile[
+                mm_config.simd_size,
+                type,
+                mm_config.shape_c,
+                elementwise_lambda_fn,
+            ](
+                offset,
+                shape,
+                rebind[NDBuffer[2, mm_config.shape_c, type]](c),
+            )
+
+        TiledMatmul[
+            mm_config,
+            # accum_type
+            type,
+            # value_type
+            type,
+            # transpose_a
+            False,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
+            rowwise_epilogue_enabled,
+            critical_stride,
+        ].run(
+            rebind[NDBuffer[2, mm_config.shape_c, type]](c),
+            rebind[NDBuffer[2, mm_config.shape_a, type]](a),
+            rebind[NDBuffer[2, mm_config.shape_b, type]](b),
+            elementwise_closure,
+            rowwise_epilogue_fn,
+            sub_matrix_shape,
+            sub_matrix_offset,
+        )
+
+    dispatch_is_critical_stride[dispatch_on_critical_stride](k)
+
+
+fn matmul_sequential_sync[
+    type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+](
+    c: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    a: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    b: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    sub_matrix_shape: GemmShape,
+    sub_matrix_offset: GemmShape,
+):
+    @parameter
+    fn null_lambda[
+        val_type: DType, width: Int
+    ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
+        pass
+
+    matmul_sequential_sync[
+        type,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        # elementwise_epilogue_enabled,
+        False,
+        null_lambda,
+    ](c, a, b, sub_matrix_shape, sub_matrix_offset)
+
+
+fn matmul_sequential_sync[
+    type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+](
+    c: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    a: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    b: NDBuffer[
+        2,
+        DimList.create_unknown[2](),
+        type,
+    ],
+    sub_matrix_shape: GemmShape,
+    sub_matrix_offset: GemmShape,
+):
+    @closure
+    @always_inline
+    fn null_rowwise_epilogue(
+        start_row: Int,
+        num_rows: Int,
+    ):
+        pass
+
+    matmul_sequential_sync[
+        type,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_epilogue_enabled,
+        elementwise_lambda_fn,
+        False,
+    ](c, a, b, sub_matrix_shape, sub_matrix_offset, null_rowwise_epilogue)

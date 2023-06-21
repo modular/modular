@@ -425,6 +425,19 @@ fn partition_work(
 
 
 fn get_partitioned_matmul[
+    heuristic: PartitionHeuristic
+](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
+    if is_critical_stride(k):
+        return get_partitioned_matmul[heuristic, True](
+            m, n, k, task_id, num_tasks
+        )
+    else:
+        return get_partitioned_matmul[heuristic, False](
+            m, n, k, task_id, num_tasks
+        )
+
+
+fn get_partitioned_matmul[
     heuristic: PartitionHeuristic, critical_stride: Bool
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # TODO: Add oneDNN/MLAS partition heuristic and use the parameter if below.
@@ -655,17 +668,6 @@ fn is_critical_stride(k: Int) -> Bool:
 
 
 @always_inline
-fn dispatch_is_critical_stride[
-    type: DType,
-    func: fn[x: Bool] () capturing -> None,
-](k: Int):
-    if is_critical_stride(k):
-        func[True]()
-    else:
-        func[False]()
-
-
-@always_inline
 fn get_trace_information(
     name: StringRef,
     shape: GemmShape,
@@ -695,3 +697,12 @@ fn get_trace_information(
         + ";"
         + b_packed_description
     )
+
+
+fn dispatch_is_critical_stride[
+    func: fn[x: Bool] () capturing -> None,
+](k: Int):
+    if is_critical_stride(k):
+        func[True]()
+    else:
+        func[False]()
