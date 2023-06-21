@@ -871,7 +871,37 @@ fn elementwise[
         shape: The shape of the buffer.
         out_chain: The our chain to attach results to.
     """
+
+    _elementwise_impl[rank, simd_width, unroll_factor, func, False](
+        shape, out_chain
+    )
+
+
+@always_inline
+@adaptive
+fn _elementwise_impl[
+    rank: Int,
+    simd_width: Int,
+    unroll_factor: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    use_blocking_impl: Bool,
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The unroll factor to use.
+        func: The body function.
+        use_blocking_impl: If true this is a blocking op
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
     assert_param[rank == 1, "Specialization for 1D"]()
+    assert_param[use_blocking_impl == False, "Specialization for async"]()
 
     let problem_size = shape.flattened_length()
     let num_workers = get_num_workers(problem_size, out_chain.get_runtime())
@@ -955,11 +985,12 @@ fn _get_nd_indices_from_flat_index[
 
 @always_inline
 @adaptive
-fn elementwise[
+fn _elementwise_impl[
     rank: Int,
     simd_width: Int,
     unroll_factor: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    use_blocking_impl: Bool,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes func[width, rank](indices) as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
@@ -971,6 +1002,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         unroll_factor: The unroll factor to use.
         func: The body function.
+        use_blocking_impl: If true this is a blocking op
 
     Args:
         shape: The shape of the buffer.
@@ -978,6 +1010,7 @@ fn elementwise[
     """
 
     assert_param[rank > 1, "Specialization for ND where N > 1"]()
+    assert_param[use_blocking_impl == False, "Specialization for async"]()
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
@@ -1024,3 +1057,96 @@ fn elementwise[
             ](shape[rank - 1])
 
     async_parallelize[task_func](out_chain, num_workers)
+
+
+@always_inline
+@adaptive
+fn _elementwise_impl[
+    rank: Int,
+    simd_width: Int,
+    unroll_factor: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    use_blocking_impl: Bool,
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    A trivial overload for small kernels which will run immediately.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The unroll factor to use.
+        func: The body function.
+        use_blocking_impl: If true this is a blocking op
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
+    assert_param[rank > 1, "Specialization for ND where N > 1"]()
+    assert_param[use_blocking_impl == True, "Specialization for non-async"]()
+
+    let total_size: Int = shape.flattened_length()
+    let outer_loop: Int = total_size // shape[rank - 1]
+
+    for i in range(outer_loop):
+        var indices = _get_nd_indices_from_flat_index[rank](i, shape)
+
+        @always_inline
+        @parameter
+        fn func_wrapper[simd_width: Int](idx: Int):
+            # The inner most dimension is vectorized, so we set it
+            # to the index offset.
+            indices[rank - 1] = idx
+            func[simd_width, rank](indices)
+
+        # We vectorize over the innermost dimension.
+        vectorize_unroll[
+            simd_width,
+            unroll_factor,
+            func_wrapper,
+        ](shape[rank - 1])
+
+
+@always_inline
+@adaptive
+fn _elementwise_impl[
+    rank: Int,
+    simd_width: Int,
+    unroll_factor: Int,
+    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
+    use_blocking_impl: Bool,
+](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
+    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    combination of width and indices so as to cover shape.
+
+    A trivial overload for small kernels which will run immediately.
+
+    Parameters:
+        rank: The rank of the buffer.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The unroll factor to use.
+        func: The body function.
+        use_blocking_impl: If true this is a blocking op
+
+    Args:
+        shape: The shape of the buffer.
+        out_chain: The our chain to attach results to.
+    """
+    assert_param[rank == 1, "Specialization for ND where N == 1"]()
+    assert_param[use_blocking_impl == True, "Specialization for non-async"]()
+
+    let total_size: Int = shape.flattened_length()
+
+    @always_inline
+    @parameter
+    fn func_wrapper[simd_width: Int](idx: Int):
+        func[simd_width, rank](idx)
+
+    # Just vectorize over the full size.
+    vectorize_unroll[
+        simd_width,
+        unroll_factor,
+        func_wrapper,
+    ](total_size)
