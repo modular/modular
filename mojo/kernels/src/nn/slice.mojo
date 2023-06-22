@@ -20,13 +20,14 @@ from TypeUtilities import rebind
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn slice_as_view[
     type: DType, index_type: DType, rank: Int
 ](
     tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    starts: Buffer[Dim(), index_type],
-    ends: Buffer[Dim(), index_type],
-    steps: Buffer[Dim(), index_type],
+    starts: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    ends: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    steps: NDBuffer[1, DimList.create_unknown[1](), index_type],
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
 
     var new_shape = StaticIntTuple[rank]()
@@ -82,14 +83,15 @@ fn slice_as_view[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn slice_as_copy[
     type: DType, index_type: DType, in_rank: Int
 ](
     output: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
     tensor: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
-    start: Buffer[Dim(), index_type],
-    end: Buffer[Dim(), index_type],
-    step: Buffer[Dim(), index_type],
+    start: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    end: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    step: NDBuffer[1, DimList.create_unknown[1](), index_type],
     out_chain: OutputChainPtr,
 ):
 

@@ -71,13 +71,25 @@ fn test_slice[
     print("In strides:", in_tensor.dynamic_stride)
 
     let start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    let start_tensor = Buffer[Dim(), DType.index](start_tensor_mem, outer_rank)
+    let start_tensor = NDBuffer[
+        1,
+        DimList.create_unknown[1](),
+        DType.index,
+    ](start_tensor_mem.address, StaticIntTuple[1](outer_rank), DType.index)
 
     let end_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    let end_tensor = Buffer[Dim(), DType.index](end_tensor_mem, outer_rank)
+    let end_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
+        end_tensor_mem.address,
+        StaticIntTuple[1](outer_rank),
+        DType.index,
+    )
 
     let step_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
-    let step_tensor = Buffer[Dim(), DType.index](step_tensor_mem, outer_rank)
+    let step_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
+        step_tensor_mem.address,
+        StaticIntTuple[1](outer_rank),
+        DType.index,
+    )
 
     for dim in range(outer_rank):
         let start_val = SIMD[DType.index, 1](starts[dim])
