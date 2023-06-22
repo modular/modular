@@ -191,9 +191,11 @@ void M::Detail::timeTraceProfilerDestroy() {
   if (auto *ctx = Globals::exchangeGlobalProfilerContext(
           nullptr)) { // Clear out any dangling pointers in thread profiler
                       // contexts.
-    std::lock_guard<std::mutex> guard(ctx->lock);
-    for (auto *tpc : ctx->threadProfilerContexts)
-      tpc->profiler = nullptr;
+    {
+      std::lock_guard<std::mutex> guard(ctx->lock);
+      for (auto *tpc : ctx->threadProfilerContexts)
+        tpc->profiler = nullptr;
+    }
     delete ctx;
   }
 }
