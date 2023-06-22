@@ -1666,7 +1666,7 @@ fn matmul_parallel_async[
         if sub_matmul_config.shape[0] <= 0 or sub_matmul_config.shape[1] <= 0:
             return
 
-        matmul_sequential_sync[
+        _submatmul_sequential_sync[
             type,
             transpose_a,
             transpose_b,
@@ -1684,7 +1684,7 @@ fn matmul_parallel_async[
     )
 
 
-fn matmul_sequential_sync[
+fn _submatmul_sequential_sync[
     type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
@@ -1761,7 +1761,7 @@ fn matmul_sequential_sync[
     dispatch_is_critical_stride[dispatch_on_critical_stride](k)
 
 
-fn matmul_sequential_sync[
+fn _submatmul_sequential_sync[
     type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
@@ -1791,7 +1791,7 @@ fn matmul_sequential_sync[
     ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
         pass
 
-    matmul_sequential_sync[
+    _submatmul_sequential_sync[
         type,
         transpose_a,
         transpose_b,
@@ -1802,7 +1802,7 @@ fn matmul_sequential_sync[
     ](c, a, b, sub_matrix_shape, sub_matrix_offset)
 
 
-fn matmul_sequential_sync[
+fn _submatmul_sequential_sync[
     type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
@@ -1836,7 +1836,7 @@ fn matmul_sequential_sync[
     ):
         pass
 
-    matmul_sequential_sync[
+    _submatmul_sequential_sync[
         type,
         transpose_a,
         transpose_b,

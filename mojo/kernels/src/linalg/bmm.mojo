@@ -20,7 +20,7 @@ from MatmulUtils import (
     PartitionHeuristic,
     partition_work,
 )
-from Matmul import matmul_sequential_sync
+from Matmul import _submatmul_sequential_sync
 from TargetInfo import dtype_simd_width
 from Functional import async_parallelize
 from Range import range
@@ -241,7 +241,7 @@ fn batched_matmul_parallel_async[
             ):
                 return
 
-            matmul_sequential_sync[
+            _submatmul_sequential_sync[
                 type,
                 False,
                 adj_b,
