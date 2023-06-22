@@ -223,7 +223,8 @@ LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
         return value.getDType() == *dtype;
       }))
     return emitError() << "all elements must have dtype "
-                       << dtype->getAsString();
+                       << dtype->getAsString() << " but the first element is "
+                       << values[0].getDType().getAsString();
   return success();
 }
 
