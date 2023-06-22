@@ -168,8 +168,6 @@ void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     BuildInfoAttr build, EvaluatorExecutorFn evaluatorExecutorFn,
     const CompilationOptions &options) {
-  populateGenerateLibraryFilePasses(pm, runtime);
-
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
@@ -317,6 +315,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   setTargetInfo(theModule, target);
   setBuildInfo(theModule, build);
   // Populate the passes.
+  populateGenerateLibraryFilePasses(pm, runtime);
   populateElaborateModulePasses(pm, runtime, target, build, options);
 
   // Run the passes as a cached transform. Don't deflate the op as part of this
