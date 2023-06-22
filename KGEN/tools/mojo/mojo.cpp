@@ -71,6 +71,10 @@ public:
   cl::opt<bool> validateDocStrings{
       "doc-validate", cl::desc("Validate doc strings in the input Mojo file."),
       cl::init(false)};
+
+  cl::list<std::string> mojoExecuteArguments{
+      llvm::cl::Sink,
+      cl::desc("Arguments to be passed to mojo when executed.")};
 };
 } // namespace
 
@@ -296,6 +300,16 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return clOptions.reportError("could not find 'fn main()' or 'def main()', "
                                  "please provide a main function with no "
                                  "arguments / return values.");
+
+  // Initialize the mojo command line arguments.
+  SmallVector<const char *> args;
+  args.push_back(clOptions.inputFilename.data());
+  for (StringRef arg : clOptions.mojoExecuteArguments)
+    args.push_back(arg.data());
+  auto setArgVOr = engine->lookup("KGEN_CompilerRT_SetArgV");
+  if (failed(setArgVOr))
+    return clOptions.reportError(setArgVOr.getError());
+  setArgVOr->invoke<void>(args.size(), args.data());
 
   TimeTraceScope<> traceScope("execute-main");
   auto compiledFuncOr = engine->lookup("main");
