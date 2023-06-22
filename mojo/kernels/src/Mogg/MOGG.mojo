@@ -52,6 +52,7 @@ from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
 from Tracing import Trace, TraceLevel
 from String import String
+from Slice import slice_as_view
 from MatrixSolve import matrix_solve
 from Index import Index
 
@@ -103,6 +104,7 @@ fn MOGGExport():
     alias _tanh = tanh
     alias _relu = relu
     alias _broadcast = broadcast_to_tensor
+    alias _slice = slice
     alias _simd_load = simd_load
     alias _simd_store = simd_store
     alias _simd_load_1D = simd_load_1D
@@ -604,6 +606,26 @@ fn mogg_min[
     type, simd_width
 ]:
     return min(x, y)
+
+
+# ===----------------------------------------------------------------------===#
+# Slice op
+# ===----------------------------------------------------------------------===#
+
+# Wrapper for slice here to include the `single_thread_blocking_override`.
+@always_inline
+fn slice[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    starts: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    ends: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    steps: NDBuffer[1, DimList.create_unknown[1](), index_type],
+) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+    return slice_as_view(tensor, starts, ends, steps)
 
 
 # ===----------------------------------------------------------------------===#
