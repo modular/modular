@@ -23,6 +23,7 @@ from MatmulUtils import (
 from Matmul import _submatmul_sequential_sync
 from TargetInfo import dtype_simd_width
 from Functional import async_parallelize
+from String import String
 from Range import range
 
 
@@ -259,3 +260,35 @@ fn batched_matmul_parallel_async[
             )
 
     async_parallelize[task_func](out_chain, num_tasks)
+
+
+@always_inline
+fn get_trace_information[
+    rank: Int
+](
+    name: StringRef,
+    a_matrix_shape: StaticIntTuple[rank],
+    b_matrix_shape: StaticIntTuple[rank],
+    c_matrix_shape: StaticIntTuple[rank],
+    adj_a: Bool,
+    adj_b: Bool,
+) -> String:
+    let shape_a: String
+    let shape_b: String
+    let shape_c: String
+    shape_a = String("x").join(a_matrix_shape)
+    shape_b = String("x").join(b_matrix_shape)
+    shape_c = String("x").join(c_matrix_shape)
+
+    let a_description = String("A=") + shape_a
+    let b_description = String("B=") + shape_b
+    let c_description = String("C=") + shape_c
+    let adj_a_description = String("adj_a=") + adj_a
+    let adj_b_description = String("adj_b=") + adj_b
+
+    return String(";").join(
+        String(name),
+        a_description,
+        b_description,
+        c_description + ";" + adj_a_description + ";" + adj_b_description,
+    )
