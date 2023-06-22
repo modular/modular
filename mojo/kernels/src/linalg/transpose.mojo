@@ -12,7 +12,7 @@ from Functional import (
     unroll,
     async_parallelize,
     vectorize,
-    unroll2,
+    unroll,
     tile,
     unswitch,
 )
@@ -560,7 +560,7 @@ fn _process_tile[
     fn compute_output_vals[m: Int, n: Int]():
         output_vals[m][n] = input_vals[n][m]
 
-    unroll2[tile_size_m, tile_size_n, compute_output_vals]()
+    unroll[tile_size_m, tile_size_n, compute_output_vals]()
 
     @parameter
     @always_inline

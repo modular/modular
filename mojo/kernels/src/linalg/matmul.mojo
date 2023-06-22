@@ -19,7 +19,7 @@ from Functional import (
     tile,
     unswitch,
     unroll,
-    unroll2,
+    unroll,
     vectorize,
     async_parallelize,
 )
@@ -654,7 +654,7 @@ struct MatmulInnerLoopBPacked[
                 SIMD[accum_type, simd_size](0),
             )
 
-        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     @always_inline
     fn _load_c_tile(
@@ -728,7 +728,7 @@ struct MatmulInnerLoopBPacked[
             if idx1 == pack_inner_size // simd_size - 1:
                 c_ptr = c_ptr.offset(N)
 
-        unroll2[a_row_size, pack_inner_size // simd_size, body]()
+        unroll[a_row_size, pack_inner_size // simd_size, body]()
 
     @always_inline
     fn _store_c_tile(
@@ -794,7 +794,7 @@ struct MatmulInnerLoopBPacked[
             if idx1 == pack_inner_size // simd_size - 1:
                 c_ptr = c_ptr.offset(N)
 
-        unroll2[a_row_size, pack_inner_size // simd_size, body]()
+        unroll[a_row_size, pack_inner_size // simd_size, body]()
 
     @adaptive
     fn _accumulate[
@@ -868,7 +868,7 @@ struct MatmulInnerLoopBPacked[
                 c_val = fma[accum_type, simd_size](a_val[idx0], b_val, c_val)
                 c_local.simd_store[simd_size](c_idx, c_val)
 
-            unroll2[a_col_size, pack_inner_size // simd_size, outer_body]()
+            unroll[a_col_size, pack_inner_size // simd_size, outer_body]()
 
         unroll[a_row_size, _do]()
 
@@ -937,7 +937,7 @@ struct MatmulInnerLoopBPacked[
             c_val = fma[accum_type, simd_size](a_val, b_val, c_val)
             c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-        unroll2[a_row_size, pack_inner_size // simd_size, body]()
+        unroll[a_row_size, pack_inner_size // simd_size, body]()
 
     @adaptive
     fn _run_inner_loop(self):
