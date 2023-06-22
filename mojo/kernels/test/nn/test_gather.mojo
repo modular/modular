@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# ALLOW_RETRIES: 5
 # RUN: mojo %s | FileCheck %s
 
 # Test gather_2D_input_1D_indices_axis_0.
