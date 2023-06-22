@@ -6,6 +6,7 @@
 
 #include "Support/ADT/SmartVariant.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Value.h"
 
 #include "gtest/gtest.h"
 
@@ -104,4 +105,19 @@ TEST_F(SmartVariantTest, pointerLikeTypes) {
     using SV = SmartVariant<mlir::Attribute, int>;
     static_assert(!SV::CanStealBits);
   }
+}
+
+TEST_F(SmartVariantTest, copyAssignable) {
+  using SV = SmartVariant<mlir::Value, int>;
+  SV v1 = 1;
+  SV v2 = v1;
+  EXPECT_EQ(v2, v1);
+}
+
+TEST_F(SmartVariantTest, moveAssignable) {
+  using SV = SmartVariant<mlir::Value, int>;
+  SV v1 = 1;
+  SV v2 = std::move(v1);
+  SV expected = 1;
+  EXPECT_EQ(expected, v2);
 }

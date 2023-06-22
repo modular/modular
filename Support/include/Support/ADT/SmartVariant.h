@@ -51,6 +51,23 @@ public:
   template <class... TArgs>
   SmartVariant(TArgs &&...args) : storage(std::forward<TArgs...>(args...)) {}
 
+  // This implicit conversion operator allows for free copy-assignment,
+  // move-assignment, and other operators from the underlying storage type that
+  // is already implemented. We don't want to implement those ourselves that
+  // just delegate, and we can't easily opt into them since the underlying
+  // storage type isn't a base class, i.e. we can't write
+  //
+  // ```
+  // using UnderlyingStorage::operator=;
+  // ```
+  //
+  // since it's not a base class. We don't immediately want to make it a base
+  // class either since there isn't a common "accessor" interface for the
+  // underlying storage to use in the explicit case. We could use design by
+  // introspection likely to enable that if we care, but this is easy and
+  // sufficient for today's use cases.
+  constexpr operator UnderlyingStorage() const { return storage; }
+
   UnderlyingStorage &getUnderlyingStorage() { return storage; }
 
   const UnderlyingStorage &getUnderlyingStorage() const { return storage; }
