@@ -41,7 +41,10 @@ from Math import (
     log1p,
 )
 from Matmul import matmul_parallel_async
-from BatchedMatmul import batched_matmul_parallel_async
+from BatchedMatmul import (
+    batched_matmul_parallel_async,
+    get_trace_information as get_trace_information_batched_matmul,
+)
 from MatmulUtils import GemmShape, get_trace_information
 from Pointer import Pointer, DTypePointer
 from Range import range
@@ -776,38 +779,31 @@ fn matmul[
     c: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
 ):
-
-    let shape = GemmShape.get[
-        # transpose_a
-        False,
-        # transpose_b
-        False,
-    ](c, a, b)
+    alias transpose_a = False
+    alias transpose_b = False
+    alias b_packed = False
 
     @always_inline
     @parameter
     fn description_fn() -> String:
         return get_trace_information(
             "dynamic_tile",
-            shape,
-            # transpose_a
-            False,
-            # transpose_b
-            False,
-            # b_packed
-            False,
+            GemmShape.get[
+                transpose_a,
+                transpose_b,
+            ](c, a, b),
+            transpose_a,
+            transpose_b,
+            b_packed,
         )
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
     matmul_parallel_async[
         type,
-        # transpose_a,
-        False,
-        # transpose_b,
-        False,
-        # b_packed,
-        False,
+        transpose_a,
+        transpose_b,
+        b_packed,
     ](c, a, b, out_chain)
 
 
@@ -826,13 +822,27 @@ fn batched_matmul[
     c: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    # TODO: Add trace detail information
-    out_chain.trace[TraceLevel.OP]("mojo.mogg.batched_matmul")
+    alias adj_a = False
+    alias adj_b = False
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return get_trace_information_batched_matmul[rank](
+            "dynamic_tile",
+            a.get_shape(),
+            b.get_shape(),
+            c.get_shape(),
+            adj_a,
+            adj_b,
+        )
+
+    out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
     batched_matmul_parallel_async[
         rank,
         type,
-        False,  # adj_a
-        False,  # adj_b
+        adj_a,
+        adj_b,
     ](c, a, b, out_chain)
 
 
