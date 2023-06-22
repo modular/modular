@@ -22,7 +22,7 @@ from ConvUtils import (
 from DType import DType
 from Functional import (
     unroll,
-    unroll2,
+    unroll,
     async_parallelize,
     tile,
     unswitch,
@@ -1448,7 +1448,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                 SIMD[accum_type, simd_size](0),
             )
 
-        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     fn _load_c_tile(
         self,
@@ -1513,7 +1513,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             # Store data to local buffer.
             c_local.simd_store[simd_size](local_idx, c_data)
 
-        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     fn _store_c_tile(
         self,
@@ -1570,7 +1570,7 @@ struct ConvNHWCInnerLoopFilterPacked[
                     c_data,
                 )
 
-        unroll2[a_row_size, pack_inner_size // simd_size, outer_body]()
+        unroll[a_row_size, pack_inner_size // simd_size, outer_body]()
 
     # TODO: This can be lifted to common utility.
 
@@ -1645,7 +1645,7 @@ struct ConvNHWCInnerLoopFilterPacked[
             c_val = fma(a_val, b_val, c_val)
             c_local.simd_store[simd_size](c_idx, c_val)
 
-        unroll2[pack_inner_size // simd_size, a_row_size, outer_body]()
+        unroll[pack_inner_size // simd_size, a_row_size, outer_body]()
 
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
@@ -2797,7 +2797,7 @@ struct ConvDirectNHWC[
                 Index(idx0, idx1 * simd_size), SIMD[type, simd_size](0.0)
             )
 
-        unroll2[micro_kernel_height, micro_kernel_width, body]()
+        unroll[micro_kernel_height, micro_kernel_width, body]()
 
     @always_inline
     fn _load_output_micro_tile[
@@ -2832,7 +2832,7 @@ struct ConvDirectNHWC[
                 Index(idx0, idx1 * simd_size), output_ptr.simd_load[simd_size]()
             )
 
-        unroll2[micro_kernel_height, micro_kernel_width, body]()
+        unroll[micro_kernel_height, micro_kernel_width, body]()
 
     @always_inline
     fn _micro_kernel[
@@ -2876,7 +2876,7 @@ struct ConvDirectNHWC[
                 output_micro_idx, output_vec
             )
 
-        unroll2[micro_kernel_height, micro_kernel_width, body]()
+        unroll[micro_kernel_height, micro_kernel_width, body]()
 
     @always_inline
     fn _store_output_micro_tile[
@@ -2918,7 +2918,7 @@ struct ConvDirectNHWC[
             if idx1 == micro_kernel_width - 1:
                 output_ptr = output_ptr.offset(self.conv_shape.f)
 
-        unroll2[micro_kernel_height, micro_kernel_width, body]()
+        unroll[micro_kernel_height, micro_kernel_width, body]()
 
 
 fn pack_filter_rscf_to_cfrscf[
