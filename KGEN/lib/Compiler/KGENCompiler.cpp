@@ -34,6 +34,10 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
 
+  // Check if a struct contains recursive nested struct fields and emit error if
+  // found.
+  pm.addPass(createCheckRecursiveStructs());
+
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
 

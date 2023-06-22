@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(LowerLIT
   CheckLifetimes.cpp
+  CheckRecursiveStructs.cpp
   ConstraintReduction.cpp
   ConstraintSet.cpp
   LowerClosures.cpp
