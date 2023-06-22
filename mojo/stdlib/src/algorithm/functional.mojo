@@ -72,12 +72,12 @@ fn _unroll_impl[
 
 
 # ===----------------------------------------------------------------------===#
-# unroll2
+# unroll
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline
-fn unroll2[
+fn unroll[
     dim0: Int,
     dim1: Int,
     func: fn[idx0: Int, idx1: Int] () capturing -> None,
@@ -105,12 +105,12 @@ fn unroll2[
 
 
 # ===----------------------------------------------------------------------===#
-# unroll3
+# unroll
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline
-fn unroll3[
+fn unroll[
     dim0: Int,
     dim1: Int,
     dim2: Int,
@@ -133,7 +133,7 @@ fn unroll3[
         alias _idx2 = idx1 % dim2
         func[idx0, _idx1, _idx2]()
 
-    unroll2[dim0, dim1 * dim2, func_wrapper]()
+    unroll[dim0, dim1 * dim2, func_wrapper]()
 
 
 # ===----------------------------------------------------------------------===#
