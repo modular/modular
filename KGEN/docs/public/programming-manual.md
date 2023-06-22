@@ -58,11 +58,7 @@ hello world
 $
 ```
 
-Again, you can use either the emoji or the `.mojo` suffix.
-
-If you are interested in diving into the internal implementation
-details of Mojo, it can be instructive to look at types in the standard
-library, example code in notebooks, blogs and other sample code.
+Again, you can use either the `.🔥` or `.mojo` suffix.
 
 ## Basic systems programming extensions
 
