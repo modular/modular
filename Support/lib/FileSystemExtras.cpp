@@ -74,7 +74,6 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
 std::optional<std::string>
 M::findDirInEnvPath(StringRef subdirName, StringRef envName, char separator) {
   assert(!llvm::sys::path::is_absolute(subdirName));
-  std::optional<std::string> foundPath;
   std::optional<std::string> optPath = llvm::sys::Process::GetEnv(envName);
   if (!optPath)
     return {};
@@ -91,12 +90,11 @@ M::findDirInEnvPath(StringRef subdirName, StringRef envName, char separator) {
     llvm::sys::path::append(dirPath, subdirName);
     if (llvm::sys::fs::exists(Twine(dirPath)) &&
         llvm::sys::fs::is_directory(Twine(dirPath))) {
-      foundPath = std::string(dirPath.str());
-      break;
+      return std::string(dirPath);
     }
   }
 
-  return foundPath;
+  return std::nullopt;
 }
 
 ErrorOr<TempFile> TempFile::create(StringRef model) {

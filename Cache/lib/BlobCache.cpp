@@ -543,7 +543,7 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
 #else
     } else if (auto path = findDirInEnvPath(cacheDir.string())) {
 #endif
-      base = std::filesystem::absolute(*path, ec) / cacheDir;
+      base = std::filesystem::absolute(*path, ec);
       if (ec)
         return Error("failed to get absolute path to directory specified by " +
                      *path + ec.message());
