@@ -37,7 +37,5 @@ tools = ["cache-opt", "cache-mgr"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
-# We need to add this so that the tests can be predicated on whether we're
-# running on an Apple M1 machine.
-if is_apple_silicon():
-    config.available_features.add("apple-m1")
+if platform.system() == "Windows":
+    config.available_features.add("windows")
