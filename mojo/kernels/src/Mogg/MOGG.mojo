@@ -241,9 +241,7 @@ fn elementwise_wrapper[
     @parameter
     fn description_fn() -> String:
         let name_str = String("name=") + trace_description
-        let shape_str = String("shape=") + String("x").join[rank](
-            buffer.get_shape()
-        )
+        let shape_str = String("shape=") + String("x").join(buffer.get_shape())
 
         let unroll_factor_str = String("unroll_factor=") + unroll_factor
         let vector_width_str = String("vector_width=") + simd_width
@@ -257,7 +255,7 @@ fn elementwise_wrapper[
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
     _elementwise_impl[
-        rank, simd_width, unroll_factor, func, single_thread_blocking_override
+        rank, simd_width, unroll_factor, single_thread_blocking_override, func
     ](
         buffer.dynamic_shape,
         out_chain,
@@ -768,8 +766,8 @@ fn _gather_with_lambdas[
             output_rank,
             1,
             unroll_factor,
-            gather_lambda,
             single_thread_blocking_override,
+            gather_lambda,
         ](
             output.dynamic_shape,
             out_chain,
@@ -779,8 +777,8 @@ fn _gather_with_lambdas[
             output_rank,
             simd_width,
             unroll_factor,
-            gather_lambda,
             single_thread_blocking_override,
+            gather_lambda,
         ](
             output.dynamic_shape,
             out_chain,
