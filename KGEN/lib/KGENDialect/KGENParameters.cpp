@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
@@ -706,6 +707,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       nestedScopes.try_emplace(nestedParameterScope,
                                std::move(nestedParameterGraph));
     }
+    nested.nestedScopes.clear();
     for (ParamDeclRefAttr use : nested.usesFromAbove) {
       auto it = decls.find(use.getName());
       assert(it != decls.end() && "nested use has no declaration?");
@@ -805,29 +807,38 @@ ParameterUseDefGraph ParameterUseDefGraph::copy(const IRMapping &map) const {
 }
 
 void ParameterUseDefGraph::dump() const {
-  llvm::errs() << "Decls: ";
-  llvm::interleaveComma(decls, llvm::errs(), [&](const auto &nameAndDecl) {
-    llvm::errs() << nameAndDecl.first;
-  });
-  llvm::errs() << "\n";
+  // Nested graphs are actually contained on the top-level map.
+  const ParameterUseDefGraph &top = *this;
 
-  llvm::errs() << "Defs: ";
-  llvm::interleaveComma(defs, llvm::errs(), [&](const auto &nameAndDef) {
-    llvm::errs() << nameAndDef.first;
-  });
-  llvm::errs() << "\n";
+  // Dump the graphs in-order.
+  std::deque<std::pair<const ParameterUseDefGraph *, unsigned>> bfsDump;
+  bfsDump.emplace_back(this, 0);
 
-  llvm::errs() << "Uses: ";
-  llvm::interleaveComma(opUses, llvm::errs(), [&](const auto &opAndUses) {
-    llvm::interleaveComma(opAndUses.second, llvm::errs(), [&](const auto &use) {
-      llvm::errs() << use.getName();
+  while (!bfsDump.empty()) {
+    mlir::raw_indented_ostream os(llvm::errs());
+    auto [cur, depth] = bfsDump.front();
+    bfsDump.pop_front();
+    os.indent(depth * 2);
+
+    os << "Decls: ";
+    llvm::interleaveComma(cur->decls, os, [&](const auto &nameAndDecl) {
+      os << nameAndDecl.first;
     });
-  });
-  llvm::errs() << "\n";
+    os << "\n";
 
-  for (auto [idx, nestedDecl] : llvm::enumerate(nestedDecls)) {
-    llvm::errs() << "Nested scope " << idx << " {\n";
-    nestedScopes.at(nestedDecl).dump();
-    llvm::errs() << "}\n";
+    os << "Defs: ";
+    llvm::interleaveComma(
+        cur->defs, os, [&](const auto &nameAndDef) { os << nameAndDef.first; });
+    os << "\n";
+
+    os << "Uses: ";
+    llvm::interleaveComma(cur->opUses, os, [&](const auto &opAndUses) {
+      llvm::interleaveComma(opAndUses.second, os,
+                            [&](const auto &use) { os << use.getName(); });
+    });
+    os << "\n";
+
+    for (Region *nested : cur->nestedDecls)
+      bfsDump.emplace_back(&top.nestedScopes.at(nested), depth + 1);
   }
 }
