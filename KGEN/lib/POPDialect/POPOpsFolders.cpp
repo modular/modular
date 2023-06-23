@@ -497,6 +497,22 @@ OpFoldResult PointerBitcastOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+/// Canonicalize `bitcast(bitcast(x)) -> bitcast(x)`, only if the intermediate
+/// bitcast has one use.
+LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
+                                             PatternRewriter &b) {
+  auto cast = op.getInput().getDefiningOp<PointerBitcastOp>();
+  if (!cast)
+    return b.notifyMatchFailure(op.getLoc(), "not a bitcast of a bitcast");
+  if (!cast->hasOneUse())
+    return b.notifyMatchFailure(op.getLoc(),
+                                "intermediate cast has multiple uses");
+  b.replaceOpWithNewOp<PointerBitcastOp>(op, op.getType(), cast.getInput());
+  // Erase the intermediate cast -- its only use has been removed.
+  b.eraseOp(cast);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
@@ -921,8 +937,8 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
     return rewriter.notifyMatchFailure(op, "Size is not known to be scalar");
 
   // Don't repeatedly canonicalize already constant values.
-  if (op.getIndex().getDefiningOp() &&
-      op.getIndex().getDefiningOp()->hasTrait<OpTrait::ConstantLike>())
+  if (auto indexOp = op.getIndex().getDefiningOp();
+      indexOp && indexOp->hasTrait<OpTrait::ConstantLike>())
     return rewriter.notifyMatchFailure(op,
                                        "ArrayGEP index is already constant.");
 

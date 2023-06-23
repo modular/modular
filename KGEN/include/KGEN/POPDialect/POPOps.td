@@ -507,6 +507,7 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
   }];
 
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
