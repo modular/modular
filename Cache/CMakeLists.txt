@@ -28,13 +28,36 @@ function(cache_files target)
   set(UNIQUE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/${UNIQUE_PATH})
   # Set the variables the script is gonna need.
   set(FILENAME ${UNIQUE_BINARY_DIR}/hashes.out)
+  # rm the file and create it anew to ensure it's empty.
+  add_custom_target(${target}_clean
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${FILENAME}
+    COMMAND ${CMAKE_COMMAND} -E touch ${FILENAME})
+
+  # Add a target to run that script to generate the header file.
+  add_custom_target(${target}
+    COMMAND ${CMAKE_COMMAND} -P ${UNIQUE_BINARY_DIR}/ReadHashes.cmake
+    DEPENDS ${UNIQUE_BINARY_DIR}/ReadHashes.cmake ${target}_clean)
+
+  list(LENGTH CACHE_MGR_INPUTS num_inputs)
+  if (num_inputs EQUAL 1)
+    set(CACHE_MGR_INPUTS "${CACHE_MGR_INPUTS};")
+    set(CACHE_MGR_INPUT_NAMES "${CACHE_MGR_INPUT_NAMES};")
+  endif ()
+  # CMake foreach loops are inclusive, so we have to iterate up to num_inputs - 1
+  math(EXPR iters "${num_inputs} - 1")
+
+  foreach (idx RANGE ${iters})
+    list(GET CACHE_MGR_INPUTS ${idx} input)
+    list(GET CACHE_MGR_INPUT_NAMES ${idx} name)
+    add_custom_target(${target}_${name} ALL
+      COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${input} -backend-version=${CACHE_MGR_VERSION} -o=${FILENAME} -append
+      DEPENDS ${target}_clean)
+    add_dependencies(${target} ${target}_${name})
+  endforeach ()
+
   set(OUTFILE ${CACHE_MGR_HEADER_NAME})
   set(NAMES ${CACHE_MGR_INPUT_NAMES})
   configure_file(${CMAKE_SOURCE_DIR}/Cache/cmake/ReadHashes.cmake.in ${UNIQUE_BINARY_DIR}/ReadHashes.cmake @ONLY)
-  # Add a target to run that script to generate the header file.
-  add_custom_target(${target} ALL
-    COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${CACHE_MGR_INPUTS} -backend-version=${CACHE_MGR_VERSION} -o=${FILENAME}
-    COMMAND ${CMAKE_COMMAND} -P ${UNIQUE_BINARY_DIR}/ReadHashes.cmake)
 
   install(DIRECTORY "${CACHE_MGR_BASE_DIR}/"
     DESTINATION ${CACHE_MGR_RELATIVE_INSTALL_DIR})
