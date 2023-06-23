@@ -69,11 +69,20 @@ void ParamConstantOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   // If the type of the value has a registered pretty name, use that for the SSA
   // value name.
-  std::optional<StringRef> name =
-      getContext()->getLoadedDialect<KGENDialect>()->getTypeName(
-          getType().getTypeID());
-  if (name)
+  if (std::optional<StringRef> name =
+          getContext()->getLoadedDialect<KGENDialect>()->getTypeName(
+              getType().getTypeID())) {
     setNameFn(getResult(), *name);
+    return;
+  }
+
+  // Otherwise, handle some common cases here.
+  if (isa<IndexType>(getType())) {
+    if (auto intVal = dyn_cast<IntegerAttr>(getValue()))
+      setNameFn(getResult(), ("index" + Twine(intVal.getInt())).str());
+    else
+      setNameFn(getResult(), "index");
+  }
 }
 
 OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {

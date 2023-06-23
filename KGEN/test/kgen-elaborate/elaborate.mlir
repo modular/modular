@@ -1125,14 +1125,14 @@ kgen.generator @constexpr_load_store() {
 
 // CHECK-LABEL: kgen.func @bind_signature_region
 kgen.generator @bind_signature_region() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
   kgen.param.declare.region Fn = <A>() -> index {
     %0 = kgen.param.constant = <A>
     kgen.return %0 : index
   }
   kgen.param.declare BoundFn: () -> index = <bind_signature(:<index>() -> index Fn, 1)>
   %0 = kgen.call_param[() -> index: BoundFn]()
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index1
   kgen.return %0 : index
 }
 
@@ -1140,33 +1140,33 @@ kgen.generator @bind_signature_region() -> index {
 
 // CHECK-LABEL: kgen.func @partial_bind_signature_region
 kgen.generator @partial_bind_signature_region() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <1>
+  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
   kgen.param.declare.region Fn = <A, B>() -> index {
     %0 = kgen.param.constant = <sub(A, B)>
     kgen.return %0 : index
   }
   kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index Fn, #kgen.unbound, 1)>
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index1
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @partial_bind_signature_region_2
 kgen.generator @partial_bind_signature_region_2() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <3>
+  // CHECK-NEXT: %index3 = kgen.param.constant = <3>
   kgen.param.declare.region Fn = <A, B>() -> index {
     %0 = kgen.param.constant = <add(A, B)>
     kgen.return %0 : index
   }
   kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index Fn, 1, #kgen.unbound)>
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index3
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @partial_bind_signature_region_3
 kgen.generator @partial_bind_signature_region_3() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <4>
+  // CHECK-NEXT: %index4 = kgen.param.constant = <4>
   kgen.param.declare.region Fn = <A, B, C>() -> index {
    %0 = kgen.param.constant = <add(sub(B, A), C)>
    kgen.return %0 : index
@@ -1174,15 +1174,15 @@ kgen.generator @partial_bind_signature_region_3() -> index {
   kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index Fn, 1, #kgen.unbound, #kgen.unbound)>
   kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index,index>() -> index BoundFn, #kgen.unbound, 3)>
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn2, 2)]()
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index4
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @"param_add,A=1,B=2"
 kgen.generator @param_add<A, B>() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <3>
+  // CHECK-NEXT: %index3 = kgen.param.constant = <3>
   %0 = kgen.param.constant = <add(A, B)>
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index3
   kgen.return %0 : index
 }
 
@@ -1197,9 +1197,9 @@ kgen.generator @partial_bind_signature_region_4() -> index {
 
 // CHECK-LABEL: kgen.func @"param_add3,A=1,B=2,C=3"
 kgen.generator @param_add3<A, B, C>() -> index {
-  // CHECK-NEXT: %0 = kgen.param.constant = <4>
+  // CHECK-NEXT: %index4 = kgen.param.constant = <4>
   %0 = kgen.param.constant = <add(sub(B, A), C)>
-  // CHECK-NEXT: kgen.return %0
+  // CHECK-NEXT: kgen.return %index4
   kgen.return %0 : index
 }
 
@@ -2375,9 +2375,9 @@ kgen.generator @main_make_closure_with_param() {
     kgen.return
   }
   // CHECK: [[ARG0:%[0-9]+]] = kgen.stage_closure = () capturing {
-  // CHECK-NEXT: [[ARG1:%[0-9]+]] = kgen.param.constant = <3>
+  // CHECK-NEXT: kgen.param.constant = <3>
   // CHECK: [[ARG2:%[0-9]+]] = kgen.stage_closure = () capturing {
-  // CHECK-NEXT: [[ARG3:%[0-9]+]] = kgen.param.constant = <4>
+  // CHECK-NEXT: kgen.param.constant = <4>
   kgen.param.declare Bound1: <>() capturing -> () = <bind_signature(:<index>() capturing -> () h, 3)>
   kgen.param.declare Bound2: <>() capturing -> () = <bind_signature(:<index>() capturing -> () h, 4)>
   %0 = kgen.create_closure [<>() capturing -> (): Bound1]()
@@ -2403,7 +2403,7 @@ kgen.generator @make_closure_capture_param<N>(%arg0: index) {
       kgen.return %arg0 : index
   }
   // CHECK: [[ARG0:%[0-9]+]] = kgen.stage_closure = () capturing -> index {
-  // CHECK: [[ARG1:%[0-9]+]] = kgen.param.constant = <5>
+  // CHECK: kgen.param.constant = <5>
   %0 = kgen.create_closure [<>() capturing -> index: bind_signature(:<index>() capturing -> index g, 4)]()
   kgen.return
 }

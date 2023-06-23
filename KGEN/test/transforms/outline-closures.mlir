@@ -19,7 +19,7 @@ kgen.generator @call_region<fn: <index -> index>() ->index -> E>() -> index {
 // CHECK-NEXT:   [[PTR:%[0-9]+]] = pop.compiler.global_load "raiseClosure_context_var_0" : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[ARG0:%[0-9]+]] = pop.struct.extract [[PTR]][0] : !pop.struct<index, scalar<index>>
 // CHECK-NEXT:   [[ARG1:%[0-9]+]] = pop.struct.extract [[PTR]][1] : !pop.struct<index, scalar<index>>
-// CHECK-NEXT:   [[CST:%[0-9]+]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
+// CHECK-NEXT:   [[CST:%.*]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
 // CHECK-NEXT:   [[CASTCST:%[0-9]+]] = pop.cast_from_builtin [[CST]] : index to !pop.scalar<index>
 // CHECK-NEXT:   [[CASTARG:%[0-9]+]] = pop.cast_from_builtin [[ARG0]] : index to !pop.scalar<index>
 // CHECK-NEXT:   [[ADD:%[0-9]+]] = pop.add [[CASTCST]], [[CASTARG]] : !pop.scalar<index>
