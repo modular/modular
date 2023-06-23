@@ -22,7 +22,7 @@ from MatmulUtils import (
 )
 from Matmul import _submatmul_sequential_sync
 from TargetInfo import dtype_simd_width
-from Functional import async_parallelize
+from Functional import async_parallelize, _get_start_indices_of_nth_subvolume
 from String import String
 from Range import range
 
@@ -214,10 +214,16 @@ fn batched_matmul_parallel_async[
             fn elementwise_lambda_2d[
                 type: DType, width: Int
             ](out_coords: StaticIntTuple[2], out_val: SIMD[type, width]):
-                let coords_3d = StaticIntTuple[3](
-                    batch, out_coords[0], out_coords[1]
+                # the caller provided the elementwise epilogue fn over the original
+                # buffer rank, not the collapsed buffer rank
+                # so un-collapse the batch dims here
+                var coords = _get_start_indices_of_nth_subvolume[rank, 2](
+                    batch, c_buf.get_shape()
                 )
-                elementwise_epilogue_fn[3, type, width](coords_3d, out_val)
+                coords[rank - 1] = out_coords[1]
+                coords[rank - 2] = out_coords[0]
+
+                elementwise_epilogue_fn[rank, type, width](coords, out_val)
 
             @parameter
             @always_inline
