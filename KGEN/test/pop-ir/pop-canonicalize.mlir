@@ -374,6 +374,15 @@ kgen.func @pointer_bitcast() -> !pop.pointer<si32> {
   kgen.return %1 : !pop.pointer<si32>
 }
 
+// CHECK-LABEL: @pointer_bitcast_of_bitcast
+kgen.func @pointer_bitcast_of_bitcast(%arg0: !pop.pointer<si32>) -> !pop.pointer<f32> {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !pop.pointer<si32> to !pop.pointer<f32>
+  %0 = pop.pointer.bitcast %arg0 : !pop.pointer<si32> to !pop.pointer<f64>
+  %1 = pop.pointer.bitcast %0 : !pop.pointer<f64> to !pop.pointer<f32>
+  // CHECK-NEXT: return %0
+  kgen.return %1 : !pop.pointer<f32>
+}
+
 // CHECK-LABEL: @cast
 kgen.func @cast() -> (
     !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
