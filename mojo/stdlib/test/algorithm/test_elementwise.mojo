@@ -8,7 +8,7 @@
 from Buffer import NDBuffer, Buffer, _raw_stack_allocation
 from Range import range
 from DType import DType
-from Functional import _elementwise_impl
+from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
 from Math import mul, min
 from List import Dim, DimList
 from IO import print
@@ -91,6 +91,16 @@ fn test_elementwise[
             print("ERROR")
 
 
+fn test_indices_conversion():
+    print("== Testing indices conversion:")
+    let shape = StaticIntTuple[4](3, 4, 5, 6)
+    print(_get_start_indices_of_nth_subvolume[4, 0](10, shape))
+    print(_get_start_indices_of_nth_subvolume[4, 1](10, shape))
+    print(_get_start_indices_of_nth_subvolume[4, 2](10, shape))
+    print(_get_start_indices_of_nth_subvolume[4, 3](2, shape))
+    print(_get_start_indices_of_nth_subvolume[4, 4](0, shape))
+
+
 fn main():
     # CHECK-LABEL: == Testing 1D:
     # CHECK-NOT: ERROR
@@ -165,3 +175,11 @@ fn main():
     test_elementwise[131072, 2, DimList.create_unknown[2](), True](
         DimList(1024, 128)
     )
+
+    # CHECK-LABEL: == Testing indices conversion:
+    # CHECK: (0, 0, 1, 4)
+    # CHECK: (0, 2, 0, 0)
+    # CHECK: (2, 2, 0, 0)
+    # CHECK: (2, 0, 0, 0)
+    # CHECK: (0, 0, 0, 0)
+    test_indices_conversion()

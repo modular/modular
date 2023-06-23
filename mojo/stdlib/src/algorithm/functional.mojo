@@ -851,51 +851,72 @@ fn _get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
 
 
 @always_inline
-fn _get_nd_indices_from_flat_index[
-    rank: Int
-](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
-    """Converts a flat index into ND indices.
+fn _get_start_indices_of_nth_subvolume[
+    rank: Int, subvolume_rank: Int
+](n: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    """Converts a flat index into the starting ND indices of the nth subvolume
+    with rank subvolume_rank.
+
+    For example:
+        - _get_start_indices_of_nth_subvolume[3, 0](n, shape) will return
+        the starting indices of the nth element in shape.
+        - _get_start_indices_of_nth_subvolume[3, 1](n, shape) will return
+        the starting indices of the nth row in shape.
+        - _get_start_indices_of_nth_subvolume[3, 2](n, shape) will return
+        the starting indices of the nth horizontal slice in shape.
 
     The ND indices will iterate from right to left. I.E
 
     shape = (20, 5, 2, N)
-    _get_nd_indices_from_flat_index(1, shape) = (0, 0, 1, 0)
-    _get_nd_indices_from_flat_index(5, shape) = (0, 2, 1, 0)
-    _get_nd_indices_from_flat_index(50, shape) = (5, 0, 0, 0)
-    _get_nd_indices_from_flat_index(56, shape) = (5, 1, 1, 0)
-
-    We ignore the Nth dimension to allow that to be traversed in the elementwise
-    function.
+    _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
+    _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
+    _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
+    _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
 
     Parameters:
         rank: The rank of the ND index.
+        subvolume_rank: The rank of the subvolume under consideration.
 
     Args:
-        flat_index: The flat index to convert.
+        n: The flat index to convert (the nth subvolume to retrieve).
         shape: The shape of the ND space we are converting into.
 
     Returns:
         Constructed ND-index.
     """
 
-    # The inner dimensions ([outer, outer, inner]) are not traversed here.
+    assert_param[
+        subvolume_rank <= rank,
+        "subvolume rank cannot be greater than indices rank",
+    ]()
+    assert_param[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
+
+    # fast impls for common cases
+    @parameter
+    if rank == 2 and subvolume_rank == 1:
+        return StaticIntTuple[rank](n, 0)
 
     @parameter
-    if rank == 2:
-        return StaticIntTuple[rank](flat_index, 0)
+    if rank - 1 == subvolume_rank:
+        var out = StaticIntTuple[rank](0)
+        out[0] = n
+        return out
 
-    var out = StaticIntTuple[rank]()
-    var curr_index = flat_index
+    @parameter
+    if rank == subvolume_rank:
+        return StaticIntTuple[rank](0)
+
+    var out = StaticIntTuple[rank](0)
+    var curr_index = n
 
     @always_inline
     @parameter
     fn compute_shape[idx: Int]():
-        alias i = rank - idx - 2
+        alias i = rank - 1 - idx - subvolume_rank
         out[i] = curr_index % shape[i]
         curr_index //= shape[i]
 
-    unroll[rank - 1, compute_shape]()
-    out[rank - 1] = 0
+    unroll[rank - subvolume_rank, compute_shape]()
 
     return out
 
@@ -1036,7 +1057,7 @@ fn _elementwise_impl[
         @always_inline
         @parameter
         fn blocking_task_fn(i: Int):
-            var indices = _get_nd_indices_from_flat_index[rank](i, shape)
+            var indices = _get_start_indices_of_nth_subvolume[rank, 1](i, shape)
 
             @always_inline
             @parameter
@@ -1074,7 +1095,7 @@ fn _elementwise_impl[
         for parallel_offset in range(
             start_parallel_offset, end_parallel_offset
         ):
-            var indices = _get_nd_indices_from_flat_index[rank](
+            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
                 parallel_offset, shape
             )
 
