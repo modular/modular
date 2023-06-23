@@ -9,6 +9,10 @@ add_modular_tool(mojo-driver
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
 
+  DEPENDS
+  orc-rt-cas
+  compiler-rt-cas
+
   LINK_LIBS PRIVATE
   LITDialect
   LLCLRuntimeGlobals

@@ -7,6 +7,10 @@
 add_modular_tool(mojo
   mojo.cpp
 
+  DEPENDS
+  orc-rt-cas
+  compiler-rt-cas
+
   LINK_COMPONENTS
   native
   nativecodegen

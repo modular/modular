@@ -7,6 +7,10 @@
 add_modular_tool(kgen-elaborate-opt
   kgen-elaborate-opt.cpp
 
+  DEPENDS
+  orc-rt-cas
+  compiler-rt-cas
+
   LINK_COMPONENTS
   native
   nativecodegen
