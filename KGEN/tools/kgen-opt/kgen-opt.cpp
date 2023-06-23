@@ -104,6 +104,7 @@ int main(int argc, char **argv) {
   KGEN::registerPruneImpossibleVariants();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
+  KGEN::registerStackReuse();
   KGEN::registerSynthesizeDebugInfo();
   KGEN::registerTweakSpilledAllocas();
   KGEN::registerVerifyParameters();

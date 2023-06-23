@@ -443,7 +443,7 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
 // FoldGlobalConstLoads
 //===----------------------------------------------------------------------===//
 
-def FoldGlobalConstLoads: Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
+def FoldGlobalConstLoads : Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
   let summary = "Replace loads from global constants with the constant";
   let description = [{
     When we load from a global constant we can just directly replace it with
@@ -452,6 +452,51 @@ def FoldGlobalConstLoads: Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// StackReuse
+//===----------------------------------------------------------------------===//
+
+def StackReuse : Pass<"stack-reuse", "KGEN::FuncOp"> {
+  let summary = "Elide redundant stack values.";
+  let description = [{
+    The `stack-reuse` pass is an optimization that attempts to remove unneeded
+    stack allocations from the program. These are stack allocations where at all
+    points the memory is read, the stack allocation has a value equal to some
+    other live stack allocation in the program, and therefore it can be removed.
+
+    NOTE: This pass *must* run after `lower-closures`, because stack allocations
+    are assumed to never cross implicit control-flow boundaries.
+
+    Example:
+
+    ```mlir
+    %s0 = pop.stack_allocation 1 x index
+    %s1 = pop.stack_allocation 1 x index
+    pop.store %arg0, %s0
+    pop.store %arg1, %s1
+
+    %s2 = pop.stack_allocation 1 x index
+    pop.store %arg0, %s2
+    %v0 = pop.load %s2
+    pop.store %arg1, %s2
+    %v1 = pop.load %s2
+    ```
+
+    The third stack allocation can be replaced entirely by a combination of the
+    first two:
+
+    ```mlir
+    %s0 = pop.stack_allocation 1 x index
+    %s1 = pop.stack_allocation 1 x index
+    pop.store %arg0, %s0
+    pop.store %arg1, %s1
+
+    %v0 = pop.load %s0
+    %v1 = pop.load %s1
+    ```
+  }];
 }
 
 //===----------------------------------------------------------------------===//
