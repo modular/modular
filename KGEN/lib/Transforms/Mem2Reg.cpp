@@ -59,7 +59,7 @@ static LogicalResult
 processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               llvm::MapVector<StackAllocationOp, Value> &state,
               DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
-                  termVariants) {
+                  &termVariants) {
   // This analysis only works on single-block regions.
   if (!llvm::hasSingleElement(region)) {
     return region.getParentOp()->emitError(
