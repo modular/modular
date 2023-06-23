@@ -128,8 +128,12 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
   } else if (auto sw = dyn_cast<SwitchOp>(node.getOperation())) {
     auto arg = b.create<mlir::UnrealizedConversionCastOp>(
         node->getLoc(), typeConverter.getIndexType(), sw.getArg());
+    SmallVector<APInt> caseValues;
+    for (const auto &it : llvm::enumerate(sw.getCaseValues()))
+      caseValues.emplace_back(32, it.value(), /*isSigned=*/true);
+
     b.create<LLVM::SwitchOp>(node->getLoc(), arg.getResult(0), entries.front(),
-                             ValueRange(), sw.getCaseValues(),
+                             ValueRange(), caseValues,
                              ArrayRef(entries).drop_front(),
                              SmallVector<ValueRange>(entries.size() - 1));
     b.eraseOp(node);
