@@ -317,6 +317,12 @@ struct ParamNode {
   /// The current state of the node. This flag is used to break recursion.
   ParamNodeState state;
 
+  /// This flag is needed to prevent a rare race condition that occurs when
+  /// evaluating a constraint results in a suspension.
+  /// FIXME: Spinning is bad. Constraint handling should be refactored to avoid
+  /// this.
+  std::atomic<bool> inConstraint = false;
+
   /// This flag is used by cycle detection, which runs DFS and checks for
   /// already-visited nodes. In order to know when to invalidate the visited
   /// flag, we set a generation number.

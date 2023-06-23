@@ -883,8 +883,8 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   // Insert the new function at a location relative to the current one. This
   // ensures all forks are inserted in a deterministic order, regardless of
   // which occur first.
-  symtab.modify([clone, it = cur->func->getIterator()](SymbolTable &symtab) {
-    symtab.insert(clone, std::next(it));
+  symtab.modify([clone, func = cur->func](SymbolTable &symtab) {
+    symtab.insert(clone, std::next(func->getIterator()));
   });
 
   // Fork the node and its bindings.
@@ -1973,6 +1973,12 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                                                      ParamNode *genNode,
                                                      ParamNode *from,
                                                      bool addWaiter) {
+  // The status of the node is updated after constraint evaluation suspends,
+  // meaning this can potentially result in a race.
+  SpinWaiter<> waiter;
+  while (genNode->inConstraint)
+    waiter.wait();
+
   switch (genNode->state.markInProgress()) {
   case ParamNodeState::DONE:
     // If this generator instantiation is already known to always be invalid,
@@ -2052,12 +2058,15 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     evaluator.setOrOverwriteParameterValue(decl, val);
 
   // If the generator's constraints don't satisfy, set an error and move on.
+  genNode->inConstraint = true;
   std::optional<ErrorTreeOrSuccess> constraintResult =
       KGEN::evaluateConstraints(inode, generator.getConstraints(), evaluator);
   if (!constraintResult) {
     genNode->state.refresh();
+    genNode->inConstraint = false;
     return ElaborationState::skipNode();
   }
+  genNode->inConstraint = false;
   if (constraintResult->isError()) {
     // This node is complete. It can never be valid. Mark the node as `DONE` and
     // add its waiter count before emplacing its completion chain.
