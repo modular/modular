@@ -165,7 +165,10 @@ struct ParameterUseDefGraph {
   /// A list of nested parameter scopes.
   SmallVector<Region *> nestedDecls;
 
-  /// A map of nested scopes to their use-def graph.
+  /// A map of nested scopes to their use-def graph. Note that when calculating
+  /// the use-def graph, the top-level use-def graph contains the mappings for
+  /// ALL the nested scopes. The graphs of nested scopes must be looked up on
+  /// the top-level graph.
   DenseMap<Region *, ParameterUseDefGraph> nestedScopes;
 
   /// Compute the parameter declarations, definitions, and uses within the
