@@ -173,7 +173,7 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
     rewriter.inlineRegionBefore(op.getThenRegion(), newIfOp.getThenRegion(),
                                 newIfOp.getThenRegion().begin());
     rewriter.setInsertionPoint(newIfOp.getThenTerminator());
-    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(
+    rewriter.replaceOpWithNewOp<YieldOp>(
         newIfOp.getThenTerminator(),
         newIfOp.getThenTerminator()->getOperands());
 
@@ -181,7 +181,7 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
     rewriter.inlineRegionBefore(op.getElseRegion(), newIfOp.getElseRegion(),
                                 newIfOp.getElseRegion().begin());
     rewriter.setInsertionPoint(newIfOp.getElseTerminator());
-    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(
+    rewriter.replaceOpWithNewOp<YieldOp>(
         newIfOp.getElseTerminator(),
         newIfOp.getElseTerminator()->getOperands());
 
@@ -280,7 +280,7 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     // Now we know that we can transform this. Create a new IfOp (we can't use
     // the original IfOp because we might need a different number of result
     // values).
-    auto newIfOp = rewriter.create<HLCF::IfOp>(
+    auto newIfOp = rewriter.create<IfOp>(
         op.getLoc(), parentBlockTerm->getOperandTypes(), op.getCond());
 
     // Move the original 'then' and 'else' basic blocks into the new IfOp.
@@ -316,11 +316,10 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
     }
 
     rewriter.setInsertionPoint(parentBlockTerm);
-    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(parentBlockTerm,
-                                               parentBlockTerm->getOperands());
+    rewriter.replaceOpWithNewOp<YieldOp>(parentBlockTerm,
+                                         parentBlockTerm->getOperands());
     rewriter.setInsertionPoint(returnTerm);
-    rewriter.replaceOpWithNewOp<HLCF::YieldOp>(returnTerm,
-                                               returnTerm->getOperands());
+    rewriter.replaceOpWithNewOp<YieldOp>(returnTerm, returnTerm->getOperands());
 
     // Finally, erase the original op.
     rewriter.eraseOp(op);
@@ -330,13 +329,12 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
 };
 
 /// Remove unused results of the `if` and any yields.
-struct IfRemoveUnusedResults : public OpRewritePattern<HLCF::IfOp> {
+struct IfRemoveUnusedResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HLCF::IfOp op,
-                                PatternRewriter &b) const override {
-    auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
-    auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
+  LogicalResult matchAndRewrite(IfOp op, PatternRewriter &b) const override {
+    auto thenYield = dyn_cast<YieldOp>(op.getThenTerminator());
+    auto elseYield = dyn_cast<YieldOp>(op.getElseTerminator());
     llvm::BitVector unused(op.getNumResults());
     SmallVector<Value> toReplace;
     for (auto [i, result] : llvm::enumerate(op.getResults())) {
@@ -354,8 +352,8 @@ struct IfRemoveUnusedResults : public OpRewritePattern<HLCF::IfOp> {
     if (elseYield)
       b.updateRootInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
 
-    auto newIf = b.create<HLCF::IfOp>(
-        op.getLoc(), TypeRange(ValueRange(toReplace)), op.getCond());
+    auto newIf = b.create<IfOp>(op.getLoc(), TypeRange(ValueRange(toReplace)),
+                                op.getCond());
     b.replaceAllUsesWith(toReplace, newIf.getResults());
     b.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                          newIf.getThenRegion().begin());
