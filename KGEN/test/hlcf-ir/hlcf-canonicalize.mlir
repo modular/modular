@@ -436,3 +436,13 @@ kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
   }
   kgen.return %0#1 : i32
 }
+
+// CHECK-LABEL: @unused_loop_args
+kgen.func @unused_loop_args(%arg0: i32) {
+  // CHECK-NEXT: hlcf.loop {
+  hlcf.loop (%arg1 = %arg0 : i32) -> () {
+    // CHECK-NEXT: hlcf.continue
+    hlcf.continue %arg0 : i32
+  }
+  kgen.return
+}

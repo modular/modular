@@ -447,9 +447,46 @@ struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
     return success();
   }
 };
+
+/// Remove loop arguments that are unused.
+struct RemoveUnusedLoopArgs : OpRewritePattern<LoopOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(LoopOp loop,
+                                PatternRewriter &b) const override {
+    llvm::BitVector unused(loop.getNumOperands());
+    for (BlockArgument arg : loop.getBody().getArguments())
+      if (arg.use_empty())
+        unused.set(arg.getArgNumber());
+    if (unused.none())
+      return b.notifyMatchFailure(loop.getLoc(), "no unused arguments");
+
+    loop->eraseOperands(unused);
+    loop.getBody().front().eraseArguments(unused);
+
+    // Find all matching continue operations.
+    StringAttr label = loop.getLabelAttr();
+    loop.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      // Walk over loops with the same label.
+      if (auto inner = dyn_cast<LoopOp>(op);
+          inner && inner.getLabelAttr() == label)
+        return WalkResult::skip();
+
+      // If this is a matching break, remove the unused operands.
+      if (auto cont = dyn_cast<ContinueOp>(op);
+          cont && getParentLoop(cont, cont.getLabelAttr()) == loop)
+        b.updateRootInPlace(cont, [&] { cont->eraseOperands(unused); });
+
+      return WalkResult::advance();
+    });
+
+    return success();
+  }
+};
 } // namespace
 
 void LoopOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                          MLIRContext *context) {
-  results.insert<RemoveDeadLoop, RemoveUnusedLoopResults>(context);
+  results.insert<RemoveDeadLoop, RemoveUnusedLoopResults, RemoveUnusedLoopArgs>(
+      context);
 }
