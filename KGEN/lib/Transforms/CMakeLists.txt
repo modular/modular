@@ -17,6 +17,7 @@ add_modular_conversion_library(KGENTransforms
   OutlineClosures.cpp
   SimplifyCF.cpp
   SROA.cpp
+  StackReuse.cpp
   SyntheticDebugInfo.cpp
   VerifyParameters.cpp
 
