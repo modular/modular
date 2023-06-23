@@ -105,6 +105,7 @@
 
 #include <chrono>
 #include <sstream>
+#include <variant>
 
 namespace llvm {
 class raw_pwrite_stream;
