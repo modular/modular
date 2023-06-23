@@ -41,13 +41,9 @@ fn batched_matmul_parallel_async[
 ):
     @parameter
     fn null_elementwise_epilogue[
-        type: DType, width: Int
-    ](
-        out_coords: StaticIntTuple[3],
-        out_val: SIMD[type, width],
-        c: NDBuffer[3, DimList.create_unknown[3](), type],
-    ):
-        c.simd_store(out_coords, out_val)
+        rank: Int, type: DType, width: Int
+    ](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width],):
+        pass
 
     @closure
     @always_inline
@@ -76,14 +72,9 @@ fn batched_matmul_parallel_async[
     adj_a: Bool,
     adj_b: Bool,
     elementwise_epilogue_enabled: Bool,
-    # fmt: off
-    # TODO (#12950): mblack fails to format this signature
-    elementwise_epilogue_fn: fn [type: DType, width: Int
-        ](StaticIntTuple[3],
-          SIMD[type, width],
-          NDBuffer[3, DimList.create_unknown[3](), type]
-        ) capturing -> None,
-    # fmt: on
+    elementwise_epilogue_fn: fn[rank: Int, type: DType, width: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -226,7 +217,7 @@ fn batched_matmul_parallel_async[
                 let coords_3d = StaticIntTuple[3](
                     batch, out_coords[0], out_coords[1]
                 )
-                elementwise_epilogue_fn[type, width](coords_3d, out_val, c)
+                elementwise_epilogue_fn[3, type, width](coords_3d, out_val)
 
             @parameter
             @always_inline
