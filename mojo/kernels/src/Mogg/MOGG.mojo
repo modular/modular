@@ -17,7 +17,7 @@ from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print
 from List import Dim, DimList
-from LLCL import Runtime, OutputChainPtr
+from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from Math import (
     add,
     div,
@@ -791,8 +791,33 @@ fn _gather_with_lambdas[
 
 
 @always_inline
+fn soft_fusion_run_wrapper[
+    single_thread_blocking_override: Bool,
+    func: fn (OutputChainPtr) capturing -> None,
+](out_chain: OutputChainPtr):
+    """Runs func with the async behaviour expected by single_thread_blocking_override.
+
+    If single_thread_blocking_override is true, we want to run the func
+    synchronously without signaling the out_chain since the out_chain represents
+    the out_chain for the entire soft-fused kernel.
+
+    Else if single_thread_blocking_override is false, run the kernel asynchronously
+    and signal the out_chain when done.
+    """
+
+    @parameter
+    if single_thread_blocking_override:
+        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
+        func(new_chain.borrow())
+        new_chain.wait()
+    else:
+        func(out_chain)
+
+
+@always_inline
 fn matmul[
     type: DType,
+    single_thread_blocking_override: Bool,
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), type],
     b: NDBuffer[2, DimList.create_unknown[2](), type],
@@ -819,12 +844,17 @@ fn matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
-    matmul_parallel_async[
-        type,
-        transpose_a,
-        transpose_b,
-        b_packed,
-    ](c, a, b, out_chain)
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        matmul_parallel_async[type, transpose_a, transpose_b, b_packed,](
+            c,
+            a,
+            b,
+            chain,
+        )
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
 # ===----------------------------------------------------------------------===#
