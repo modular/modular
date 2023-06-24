@@ -53,7 +53,7 @@ from TargetInfo import simd_width, dtype_simd_width
 from Tracing import Trace, TraceLevel
 from String import String
 from Slice import slice_as_view
-from MatrixSolve import matrix_solve
+from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
 
 
@@ -866,6 +866,7 @@ fn matmul[
 fn batched_matmul[
     rank: Int,
     type: DType,
+    single_thread_blocking_override: Bool,
 ](
     a: NDBuffer[rank, DimList.create_unknown[rank](), type],
     b: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -888,12 +889,44 @@ fn batched_matmul[
         )
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
-    batched_matmul_parallel_async[
-        rank,
-        type,
-        adj_a,
-        adj_b,
-    ](c, a, b, out_chain)
+
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        return batched_matmul_parallel_async[
+            rank,
+            type,
+            adj_a,
+            adj_b,
+        ](c, a, b, chain)
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG matrix solve
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn matrix_solve[
+    type: DType,
+    x_rank: Int,
+    a_rank: Int,
+    b_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
+    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
+    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        return _matrix_solve[type, x_rank, a_rank, b_rank](a, b, x, chain)
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
 # ===----------------------------------------------------------------------===#
