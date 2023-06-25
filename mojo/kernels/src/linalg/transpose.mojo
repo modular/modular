@@ -1232,17 +1232,18 @@ fn transpose[
         return transpose_trivial_memcpy[rank, output_shape, input_shape, type](
             output, input, out_chain
         )
-    elif simplified_rank == 2:
-        # tiled transpose
-        return transpose_2d[rank, output_shape, input_shape, type](
-            output,
-            input,
-            perms,
-            simplified_shape,
-            simplified_rank,
-            0,
-            out_chain,
-        )
+    # TODO: Reenable once #15947 is fixed.
+    # elif simplified_rank == 2:
+    #     # tiled transpose
+    #     return transpose_2d[rank, output_shape, input_shape, type](
+    #         output,
+    #         input,
+    #         perms,
+    #         simplified_shape,
+    #         simplified_rank,
+    #         0,
+    #         out_chain,
+    #     )
     elif rank >= 3 and simplified_rank == 3:
         if (
             simplified_perms[0] == 0
