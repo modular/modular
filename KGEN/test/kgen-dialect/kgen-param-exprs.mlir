@@ -457,6 +457,13 @@ kgen.generator @target_is_os<t0: target>()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @target_is_little_endian<t0: target>()
+kgen.generator @target_is_little_endian<t0: target>()
+  constraints <[eq(:string target_get_field(t0, "endianness"), "little"), "target must be little endian"]> {
+  kgen.return
+}
+
+
 // CHECK-LABEL: kgen.generator @target_get_field()
 kgen.generator @target_get_field() {
   kgen.param.assert<le(1, target_get_field(#target, "simd_bit_width"))>,
