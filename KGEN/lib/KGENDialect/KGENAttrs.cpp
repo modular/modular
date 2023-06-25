@@ -1327,7 +1327,7 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return {};
 
   Builder b(field.getContext());
-  if (llvm::is_contained<StringRef>({"os", "cpu"}, field))
+  if (llvm::is_contained<StringRef>({"os", "cpu", "endianness"}, field))
     resultType = b.getType<StringType>();
   else
     resultType = b.getIndexType();
@@ -1341,7 +1341,10 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return StringAttr::get(target.getTarget().getCpu(), resultType);
   if (field.getValue() == "simd_bit_width")
     return b.getIndexAttr(target.getTarget().getSimdBitWidth());
-
+  if (field.getValue() == "endianness")
+    return StringAttr::get(
+        target.getTarget().getTriple().isLittleEndian() ? "little" : "big",
+        resultType);
   return {};
 }
 
