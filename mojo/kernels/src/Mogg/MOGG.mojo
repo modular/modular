@@ -13,6 +13,7 @@ from Functional import (
     vectorize,
     async_parallelize,
 )
+from Reductions import _reduce_generator
 from Intrinsics import strided_load
 from Index import StaticIntTuple
 from IO import print
@@ -89,6 +90,7 @@ fn MOGGExport():
     alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
+    alias _mean = mean
     alias _matrix_solve = matrix_solve
     alias _matmul = matmul
     alias _batched_matmul = batched_matmul
@@ -113,6 +115,7 @@ fn MOGGExport():
     alias _simd_load_strided = simd_load_strided
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
+    alias _sum = sum
     alias _splat = splat
     alias _transpose = transpose
     alias _elementwise = elementwise_wrapper
@@ -607,6 +610,144 @@ fn mogg_min[
 
 
 # ===----------------------------------------------------------------------===#
+# Mean op
+# ===----------------------------------------------------------------------===#
+
+
+# Cast a SIMD value to a new SIMD value of different type.
+@always_inline
+fn mean[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain.trace[TraceLevel.OP]("mogg.mean")
+
+    # Only one reduce dimension supported currently, it must be deduced from
+    # the attached input lambda rather than read directly.
+    let zero_idx = StaticIntTuple[1]()
+    var reduce_dim = input_1_fn[index_type, 1, 1](zero_idx).to_int()
+    if reduce_dim < 0:
+        reduce_dim = rank + reduce_dim
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 + v2
+
+    # For floats apply the reciprocal as a multiply.
+    @parameter
+    if type == DType.float32 or type == DType.float64 or type == DType.float16:
+        # Apply mean division before storing to the output lambda.
+        let reciprocal = 1.0 / input_buffer.dim(reduce_dim)
+
+        @always_inline
+        @parameter
+        fn wrapped_output_mul[
+            type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[type, width]):
+            let mean_val = value * reciprocal
+            output_0_fn[type, width, rank](indices, mean_val)
+
+        _reduce_generator[
+            type,
+            rank,
+            dtype_simd_width[type](),
+            input_0_fn,
+            wrapped_output_mul,
+            reduce_impl,
+        ](input_buffer, 0, reduce_dim, out_chain)
+
+    else:
+        # For ints just a normal divide.
+        let dim_size = input_buffer.dim(reduce_dim)
+
+        @always_inline
+        @parameter
+        fn wrapped_output_div[
+            type: DType, width: Int, rank: Int
+        ](indices: StaticIntTuple[rank], value: SIMD[type, width]):
+            let mean_val = value / dim_size
+            output_0_fn[type, width, rank](indices, mean_val)
+
+        _reduce_generator[
+            type,
+            rank,
+            dtype_simd_width[type](),
+            input_0_fn,
+            wrapped_output_div,
+            reduce_impl,
+        ](input_buffer, 0, reduce_dim, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# Sum op
+# ===----------------------------------------------------------------------===#
+
+
+# Cast a SIMD value to a new SIMD value of different type.
+@always_inline
+fn sum[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain.trace[TraceLevel.OP]("mogg.sum")
+
+    # Only one reduce dimension supported currently, it must be deduced from
+    # the attached input lambda rather than read directly.
+    let zero_idx = StaticIntTuple[1]()
+    var reduce_dim = input_1_fn[index_type, 1, 1](zero_idx).to_int()
+    if reduce_dim < 0:
+        reduce_dim = rank + reduce_dim
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 + v2
+
+    _reduce_generator[
+        type,
+        rank,
+        dtype_simd_width[type](),
+        input_0_fn,
+        output_0_fn,
+        reduce_impl,
+    ](input_buffer, 0, reduce_dim, out_chain)
+
+
 # Slice op
 # ===----------------------------------------------------------------------===#
 
