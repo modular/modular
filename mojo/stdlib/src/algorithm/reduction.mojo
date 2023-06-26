@@ -8,18 +8,88 @@
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
-from Functional import vectorize
+from Functional import (
+    vectorize,
+    _get_num_workers,
+    async_parallelize,
+    unroll,
+)
 from Index import StaticIntTuple
 from List import DimList, Dim
+from LLCL import OutputChainPtr
 from Math import (
     all_true as _all_true,
     any_true as _any_true,
     none_true as _none_true,
+    div_ceil,
+    min as _min,
 )
 from Numerics import inf, neginf
 from Range import range
 from SIMD import SIMD
 from TargetInfo import dtype_sizeof, dtype_simd_width
+
+# ===----------------------------------------------------------------------===#
+# ND indexing helper
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _get_nd_indices_from_flat_index[
+    rank: Int,
+](
+    flat_index: Int, shape: StaticIntTuple[rank], skip_dim: Int
+) -> StaticIntTuple[rank]:
+    """Converts a flat index into ND indices but skip over one of the dimensons.
+
+    The ND indices will iterate from right to left. I.E
+
+    shape = (20, 5, 2, N)
+    _get_nd_indices_from_flat_index(1, shape, rank -1) = (0, 0, 1, 0)
+    _get_nd_indices_from_flat_index(5, shape, rank -1) = (0, 2, 1, 0)
+    _get_nd_indices_from_flat_index(50, shape, rank -1) = (5, 0, 0, 0)
+    _get_nd_indices_from_flat_index(56, shape, rank -1) = (5, 1, 1, 0)
+
+    We ignore the Nth dimension to allow that to be traversed in the elementwise
+    function.
+
+    Parameters:
+        rank: The rank of the ND index.
+    Args:
+        flat_index: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+        skip_dim: The dimension to skip over. This represents the dimension
+                  which is being iterated across.
+    Returns:
+        Constructed ND-index.
+    """
+
+    # The inner dimensions ([outer, outer, inner]) are not traversed if
+    # drop last is set.
+    if rank == 2 and skip_dim == 1:
+        return StaticIntTuple[rank](flat_index, 0)
+    elif rank == 2:
+        return StaticIntTuple[rank](0, flat_index)
+
+    var out = StaticIntTuple[rank]()
+    var curr_index = flat_index
+
+    @always_inline
+    @parameter
+    fn compute_shape[idx: Int]():
+        alias i = rank - idx - 1
+        # There is one dimension we skip, this represents the inner loop that
+        # is being traversed.
+        if i == skip_dim:
+            out[i] = 0
+        else:
+            out[i] = curr_index % shape[i]
+            curr_index //= shape[i]
+
+    unroll[rank, compute_shape]()
+
+    return out
+
 
 # ===----------------------------------------------------------------------===#
 # reduce
@@ -345,6 +415,264 @@ fn reduce[
         map_fn,
         reduce_fn,
     ](input_3d, output_3d, init)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG reduce functions.
+# These take lambdas and don't assume contiguous inputs so can compose
+# with mogg kernels / fusion.
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+@adaptive
+fn _reduce_generator[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    reduce_function: fn[ty: DType, width: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing -> SIMD[ty, width],
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    init_value: SIMD[type, 1],
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
+    """Reduce the given tensor using the given reduction function.
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        type: The element type we are reducing.
+        rank: The rank of the tensor.
+        simd_width: The SIMD vector width to use.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+
+    Args:
+        input: The tensor we are reducing.
+        init_value: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
+    """
+    assert_param[rank == 1, "Specialization for 1D"]()
+
+    let shape = input.dynamic_shape
+    let total_size: Int = shape[0]
+    let simd_compatible_size = (total_size // simd_width) * simd_width
+
+    @always_inline
+    @parameter
+    fn reduce(ignored: Int):
+        var acc_simd = SIMD[type, simd_width].splat(init_value)
+        for idx in range(0, simd_compatible_size, simd_width):
+            let indices = StaticIntTuple[rank](idx)
+            let load_value = input_0_fn[type, simd_width, rank](indices)
+            acc_simd = reduce_function[type, simd_width](load_value, acc_simd)
+
+        # Final reduction. SIMD -> scalar.
+        var acc_scalar = SIMD[type, 1].splat(init_value)
+        for i in range(simd_width):
+            let indices = StaticIntTuple[rank](i)
+            acc_scalar = reduce_function[type, 1](acc_scalar, acc_simd[i])
+
+        # The simds might not cover all the elements so we still need to scalar reduce those too.
+        for i in range(simd_compatible_size, total_size, 1):
+            let indices = StaticIntTuple[rank](i)
+            let load_value = input_0_fn[type, 1, rank](indices)
+            acc_scalar = reduce_function[type, 1](load_value, acc_scalar)
+
+        # Store the result back to the output.
+        let indices = StaticIntTuple[rank](0)
+        output_0_fn[type, 1, rank](indices, acc_scalar)
+
+    # Until the threading model allows partials we have to launch this on one
+    # thread.
+    async_parallelize[reduce](out_chain, 1)
+
+
+@always_inline
+@adaptive
+fn _reduce_generator[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    reduce_function: fn[ty: DType, width: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing -> SIMD[ty, width],
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    init_value: SIMD[type, 1],
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
+    """Reduce the given tensor using the given reduction function.
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        type: The element type we are reducing.
+        rank: The rank of the tensor.
+        simd_width: The SIMD vector width to use.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+
+    Args:
+        input: The tensor we are reducing.
+        init_value: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
+    """
+    assert_param[rank > 1, "Specialization for ND where N > 1"]()
+
+    # If the input is strided along the input dimension then we can simd
+    # reduce over it directly.
+    # TODO: Support more optimal case for reduce over non-strided.
+    if input.stride(reduce_dim) == 1:
+        alias unroll_factor = simd_width * 8
+        _reduce_along_dimension[
+            type,
+            rank,
+            simd_width,
+            unroll_factor,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+        ](input, init_value, reduce_dim, out_chain)
+    else:
+        # Scalar fallback.
+        _reduce_along_dimension[
+            type,
+            rank,
+            1,
+            1,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
+        ](input, init_value, reduce_dim, out_chain)
+
+
+@always_inline
+fn _reduce_along_dimension[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    unroll_factor: Int,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    reduce_function: fn[ty: DType, width: Int] (
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing -> SIMD[ty, width],
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    init_value: SIMD[type, 1],
+    reduce_dim: Int,
+    out_chain: OutputChainPtr,
+):
+    """Reduce the given tensor using the given reduction function.
+    All free vars in func must be "async safe", see async_parallelize.
+
+    Parameters:
+        type: The element type we are reducing.
+        rank: The rank of the tensor.
+        simd_width: The SIMD vector width to use.
+        unroll_factor: The amount to unroll the inner loop by.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+    Args:
+        input: The tensor we are reducing
+        init_value: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        out_chain: The our chain to attach results to.
+    """
+    let shape = input.dynamic_shape
+
+    # Compute the number of workers to allocate based on ALL work, not just
+    # the dimensions we split across.
+    let total_size: Int = shape.flattened_length()
+    let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
+    let reduce_dim_size = shape[reduce_dim]
+
+    let parallelism_size: Int = total_size // reduce_dim_size
+    let chunk_size = div_ceil(parallelism_size, num_workers)
+
+    @always_inline
+    @parameter
+    fn unrolled_inner_loop[vector_width: Int](start: Int, end: Int):
+        # Manually hoist this out of the loops anyway. Not clear if we want to
+        # hoist it all the way out of the async body.
+        let simd_compatible_size = (
+            reduce_dim_size // vector_width
+        ) * vector_width
+
+        # Iterate over the non reduced dimensions.
+        for flat_index in range(start, end):
+            # In normal elementwise get_nd_indices skips the last dimension as it is the dimension being iterated over. In our case we don't know this yet so we do have to calculate the extra one.
+            var indices = _get_nd_indices_from_flat_index[rank](
+                flat_index, shape, reduce_dim
+            )
+
+            var acc_simd = SIMD[type, vector_width].splat(init_value)
+            for idx in range(0, simd_compatible_size, vector_width):
+                indices[reduce_dim] = idx
+                let load_value = input_0_fn[type, vector_width, rank](indices)
+                acc_simd = reduce_function[type, vector_width](
+                    load_value, acc_simd
+                )
+
+            # Semi final reduction. SIMD -> scalar.
+            var acc_scalar = acc_simd.reduce[reduce_function]()
+
+            # The simds might not cover all the elements so we still need to scalar reduce those too.
+            for i in range(simd_compatible_size, reduce_dim_size, 1):
+                indices[reduce_dim] = i
+                let load_value = input_0_fn[type, 1, rank](indices)
+                acc_scalar = reduce_function[type, 1](load_value, acc_scalar)
+
+            # Store the result back to the output.
+            indices[reduce_dim] = 0
+            output_0_fn[type, 1, rank](indices, acc_scalar)
+
+    @always_inline
+    @parameter
+    fn vectorize_over_reduced_dim(i: Int):
+        let start_parallel_offset = i * chunk_size
+        let end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
+
+        let len = end_parallel_offset - start_parallel_offset
+        if len <= 0:
+            return
+
+        # We will unroll only if it is safe
+        # (i.e we won't unroll into other dimensions).
+        if unroll_factor > reduce_dim_size:
+            unrolled_inner_loop[simd_width](
+                start_parallel_offset, end_parallel_offset
+            )
+        else:
+            unrolled_inner_loop[unroll_factor](
+                start_parallel_offset, end_parallel_offset
+            )
+
+    async_parallelize[vectorize_over_reduced_dim](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
