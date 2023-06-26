@@ -162,6 +162,33 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
   }
 };
 
+/// Given an if, the condition argument is known to be true within the 'then'
+/// region and false in the 'else' region. Propagate this by replacing the
+/// condition with a constant in both regions.
+struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
+                                PatternRewriter &b) const override {
+    // The pattern matches if the condition has uses in either region. Lazily
+    // create the true and false constants.
+    Value trueCst, falseCst;
+    for (OpOperand &use : op.getCond().getUses()) {
+      if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
+        if (!trueCst)
+          trueCst = b.create<mlir::index::BoolConstantOp>(op.getLoc(), true);
+        use.set(trueCst);
+      } else if (op.getElseRegion().isAncestor(
+                     use.getOwner()->getParentRegion())) {
+        if (!falseCst)
+          falseCst = b.create<mlir::index::BoolConstantOp>(op.getLoc(), false);
+        use.set(falseCst);
+      }
+    }
+    return success(trueCst || falseCst);
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -184,8 +211,8 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
       op.getCanonicalizationPatterns(owningPatterns, context);
 
-    owningPatterns
-        .insert<IfToSelect, IndexifyComparison, SimplifyCompareSelect>(context);
+    owningPatterns.insert<IfToSelect, IndexifyComparison, SimplifyCompareSelect,
+                          ConditionPropagation>(context);
 
     patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
     return success();
