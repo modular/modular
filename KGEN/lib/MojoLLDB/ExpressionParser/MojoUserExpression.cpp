@@ -188,13 +188,15 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   // If the expression starts with `%%python`, the user wants to treat this as a
   // python expression. Otherwise, it should be treated as a Mojo expression.
-  if (!exprText.consume_front("%%python\n")) {
-    if (failed(wrapTextAndParseExpression(diagnosticManager, exeCtx, exeScope,
-                                          impl->persistentState)))
+  auto [firstLine, rest] = exprText.split('\n');
+  if (firstLine.rtrim() == "%%python") {
+    if (failed(wrapTextAndParsePythonExpression(rest, diagnosticManager, exeCtx,
+                                                exeScope,
+                                                impl->persistentState))) {
       return false;
-  } else if (failed(wrapTextAndParsePythonExpression(
-                 exprText, diagnosticManager, exeCtx, exeScope,
-                 impl->persistentState))) {
+    }
+  } else if (failed(wrapTextAndParseExpression(
+                 diagnosticManager, exeCtx, exeScope, impl->persistentState))) {
     return false;
   }
 
