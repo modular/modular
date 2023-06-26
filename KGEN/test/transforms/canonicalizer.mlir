@@ -35,3 +35,14 @@ kgen.func @if_to_select_multiple(%arg0: i1, %arg1: f32, %arg2: i32,
   }
   kgen.return %0#0, %0#1 : f32, i32
 }
+
+// CHECK-LABEL: @indexify_comparison
+kgen.func @indexify_comparison(%arg0: index) -> i1 {
+  // CHECK: %0 = index.cmp sgt(%arg0, %idx1)
+  %simd = kgen.param.constant: scalar<index> = <1>
+  %0 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
+  %1 = pop.cmp gt(%0, %simd) : !pop.scalar<index>
+  %2 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
+  // CHECK: return %0
+  kgen.return %2 : i1
+}
