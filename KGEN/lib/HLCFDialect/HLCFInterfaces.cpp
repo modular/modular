@@ -177,8 +177,14 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
   // Special case `kgen.return` and `kgen.unreachable`. These are the only
   // terminators allowed for a function-like.
   if (isa<KGEN::ReturnOp, KGEN::UnreachableOp>(op) &&
-      isa<KGEN::FunctionLike>(parent))
-    return success();
+      isa<KGEN::FunctionLike>(parent)) {
+    if (!isa<KGEN::ReturnOp>(op))
+      return success();
+    // Verify return types.
+    return verifyReturnTypes(op->getOperandTypes(),
+                             cast<KGEN::FunctionLike>(parent).getResultTypes(),
+                             op, parent);
+  }
 
   return (op->emitOpError("expected parent operation to be a control-flow "
                           "operation but got '")

@@ -728,3 +728,11 @@ kgen.generator @unknown_extern() {
   pop.external_call @unk() from @unlinked : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{see function here}}
+kgen.generator @bad_return() -> index {
+  // expected-error @below {{'kgen.return' op specifies 0 results but surrounding function expects 1}}
+  kgen.return
+}
