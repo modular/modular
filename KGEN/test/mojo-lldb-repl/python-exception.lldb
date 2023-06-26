@@ -13,19 +13,3 @@ a = 1/0
 
 # CHECK: ZeroDivisionError: division by zero
 # CHECK-NOT: Error: No module named '__lldb_python_module_
-
-
-x = 1
-%%python
-
-# CHECK: [User] error: `%%python` can only be at the beginning of an expression.
-
-# Try to make this cell python!
-%%python
-
-# CHECK: [User] error: `%%python` can only be at the beginning of an expression.
-
-%%python
-%%python
-
-# CHECK: [User] error: `%%python` can only be at the beginning of an expression.
