@@ -118,6 +118,50 @@ private:
   }
 };
 
+/// Canonicalize `(i < x ? x - i : 0) > 0` to `i < x`. This is a common pattern
+/// in for loop constructs.
+/// TODO: Generalize this pattern?
+struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(mlir::index::CmpOp op,
+                                PatternRewriter &b) const override {
+    if (op.getPred() != mlir::index::IndexCmpPredicate::SGT)
+      return b.notifyMatchFailure(op.getLoc(), "predicate is not `sgt`");
+
+    IntegerAttr cmpRhs;
+    if (!mlir::matchPattern(op.getRhs(), mlir::m_Constant(&cmpRhs)) ||
+        !cmpRhs.getValue().isZero())
+      return b.notifyMatchFailure(op.getLoc(), "RHS is not zero");
+
+    auto select = op.getLhs().getDefiningOp<POP::SelectOp>();
+    if (!select)
+      return b.notifyMatchFailure(op.getLoc(), "LHS is not a select");
+
+    auto indexCmp = select.getCondition().getDefiningOp<mlir::index::CmpOp>();
+    if (!indexCmp || indexCmp.getPred() != mlir::index::IndexCmpPredicate::SLT)
+      return b.notifyMatchFailure(op.getLoc(),
+                                  "select condition is not `slt` comparison");
+
+    auto trueVal = select.getTrueValue().getDefiningOp<mlir::index::SubOp>();
+    if (!trueVal || trueVal.getLhs() != indexCmp.getRhs() ||
+        trueVal.getRhs() != indexCmp.getLhs())
+      return b.notifyMatchFailure(op.getLoc(),
+                                  "select true value is not `x - i`");
+
+    IntegerAttr falseVal;
+    if (!mlir::matchPattern(select.getFalseValue(),
+                            mlir::m_Constant(&falseVal)) ||
+        falseVal != cmpRhs)
+      return b.notifyMatchFailure(op.getLoc(),
+                                  "select false value is not zero");
+
+    // Just replace the whole thing with `i < x`.
+    b.replaceOp(op, indexCmp);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -140,7 +184,8 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
       op.getCanonicalizationPatterns(owningPatterns, context);
 
-    owningPatterns.insert<IfToSelect, IndexifyComparison>(context);
+    owningPatterns
+        .insert<IfToSelect, IndexifyComparison, SimplifyCompareSelect>(context);
 
     patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
     return success();
