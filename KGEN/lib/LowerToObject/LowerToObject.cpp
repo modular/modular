@@ -24,6 +24,7 @@
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
@@ -131,6 +132,10 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
 
   llvm::PassInstrumentationCallbacks pic;
   LLVMTimeTraceInstrumentation timeTraceInstrumentation(pic);
+
+  StandardInstrumentations standardInstrumentations(module.getContext(),
+                                                    /*DebugLogging=*/false);
+  standardInstrumentations.registerCallbacks(pic, &moduleAnalysisMgr);
 
   TargetLibraryInfoImpl targetLibInfo(Triple(module.getTargetTriple()));
   PassBuilder passBuilder(&targetMachine, PipelineTuningOptions(),
