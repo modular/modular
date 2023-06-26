@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalizer %s | FileCheck %s
+// RUN: kgen-opt -canonicalizer -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @if_to_select
 kgen.func @if_to_select(%arg0: i1, %arg1: f32, %arg2: f32) -> f32 {
@@ -57,4 +57,20 @@ kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index) -> i1 {
   %3 = index.cmp sgt(%2, %idx0)
   // CHECK-NEXT: return %0
   kgen.return %3 : i1
+}
+
+// CHECK-LABEL: @condition_propagation
+kgen.func @condition_propagation(%cond: i1) {
+  // CHECK: hlcf.if
+  hlcf.if %cond {
+    // CHECK-NEXT: "use"(%true)
+    "use"(%cond) : (i1) -> ()
+    hlcf.yield
+  // CHECK: else
+  } else {
+    // CHECK-NEXT: "use"(%false)
+    "use"(%cond) : (i1) -> ()
+    hlcf.yield
+  }
+  kgen.return
 }
