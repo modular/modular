@@ -26,6 +26,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"

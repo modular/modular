@@ -18,6 +18,8 @@ def Canonicalizer : Pass<"canonicalizer"> {
     IR representation. This pass also disables the region simplifier, since KGEN
     IR only has single-block regions.
   }];
+
+  let dependentDialects = ["mlir::index::IndexDialect"];
 }
 
 //===----------------------------------------------------------------------===//
@@ -312,11 +314,13 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
     funcs.
   }];
 
+  // FIXME(#15949): Should not require all these dialects to be loaded.
   let dependentDialects = [
     "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
     "mlir::LLVM::LLVMDialect",
+    "mlir::index::IndexDialect",
   ];
 
   let options = [
