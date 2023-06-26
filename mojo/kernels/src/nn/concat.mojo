@@ -6,11 +6,12 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, DynamicRankBuffer
+from BuildInfo import is_kernels_debug_build
 from DType import DType
 from Functional import async_parallelize
 from Index import product
-from LLCL import OutputChainPtr
 from List import Dim, VariadicList
+from LLCL import OutputChainPtr
 from Math import align_down, align_up, div_ceil, max, min
 from Memory import memcpy
 from Pointer import DTypePointer
@@ -264,6 +265,9 @@ fn _concat_inner[
 
 
 fn _check_input_consistency(axis: Int, inputs: VariadicList[DynamicRankBuffer]):
+    @parameter
+    if not is_kernels_debug_build():
+        return
     # check inputs have same rank and same dims except for axis dim
     for i in range(inputs.__len__()):
         debug_assert(
