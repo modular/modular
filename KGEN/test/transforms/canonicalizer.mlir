@@ -46,3 +46,15 @@ kgen.func @indexify_comparison(%arg0: index) -> i1 {
   // CHECK: return %0
   kgen.return %2 : i1
 }
+
+// CHECK-LABEL: @canonicalize_loop_range
+kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index) -> i1 {
+  // CHECK-NEXT: %0 = index.cmp slt(%arg0, %arg1)
+  %0 = index.cmp slt(%arg0, %arg1)
+  %idx0 = index.constant 0
+  %1 = index.sub %arg1, %arg0
+  %2 = pop.select %0, %1, %idx0 : index
+  %3 = index.cmp sgt(%2, %idx0)
+  // CHECK-NEXT: return %0
+  kgen.return %3 : i1
+}
