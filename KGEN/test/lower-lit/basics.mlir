@@ -42,7 +42,7 @@ lit.func @aliasFwdDecl() {
 // HandleVariant
 //===----------------------------------------------------------------------===//
 
-lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes {isParametric} {
+lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
   %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
   %0 = kgen.call @throwing_callee(%y) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
   // CHECK: %2 = pop.variant.is !pop.array<0, i1>, %1 : !pop.variant<@Error, array<0, i1>>
@@ -62,11 +62,11 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes
     %9 = pop.variant.create %8 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
     kgen.return %9 : !pop.variant<@Error, !lit.none>
   }
-  %6 = kgen.param.constant: !lit.none = <#lit.none>
-  kgen.return %6 : !lit.none
+  %6 = kgen.param.constant: !pop.variant<@Error, !lit.none> = <#pop.variant<:!lit.none #lit.none>>
+  kgen.return %6 : !pop.variant<@Error, !lit.none>
 }
 
-lit.func @caller_reg() -> !lit.none attributes {isParametric} {
+lit.func @caller_reg() -> !lit.none {
   lit.try {
     %0 = kgen.call @throwing_callee() : () throws -> !pop.variant<@Error, index>
     // CHECK: %[[VAR0:.*]] = pop.variant.is index, %0 : !pop.variant<@Error, index>
