@@ -68,7 +68,10 @@ static void propagateTrivialParameters(Region *region,
                                                ParamDeclRefAttr::get(decl));
       }
       // All required parameters are bound for the parent op. Process it now.
-      processOp(op);
+      // Skip the top-level declaration since it cannot reference parameters
+      // declared inside it.
+      if (op != topLevel.scope->getParentOp())
+        processOp(op);
     } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       // If the value of the declared parameter is "trivial", i.e. a simple
       // constant, then propagate it.
