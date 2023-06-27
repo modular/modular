@@ -667,6 +667,7 @@ def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
