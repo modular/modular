@@ -296,3 +296,11 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes
     %6 = kgen.param.constant: !lit.none = <#lit.none>
     kgen.return %6 : !lit.none
 }
+
+// -----
+
+// expected-error@below {{expected only `lit.file_module` or `lit.package` in its body}}
+lit.package @MyPackage {
+  // expected-note @below {{see operation defined here}}
+  kgen.unreachable
+}

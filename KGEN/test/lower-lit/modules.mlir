@@ -32,14 +32,18 @@ lit.func @caller(%ref: !kgen.declref<@module::@Adder<size = 10>>)  {
 // -----
 
 // CHECK-NOT: lit.
-// CHECK: kgen.generator @"module::foo"()
-// CHECK: kgen.export @"module::foo"
+// CHECK: kgen.generator @"package::subpackage::module::foo"()
+// CHECK: kgen.export @"package::subpackage::module::foo"
 
-lit.file_module @module {
-  lit.func @foo() {
-    kgen.return
+lit.package @package {
+  lit.package @subpackage {
+    lit.file_module @module {
+      lit.func @foo() {
+        kgen.return
+      }
+      kgen.export @package::@subpackage::@module::@foo
+    }
   }
-  kgen.export @module::@foo
 }
 
 // -----

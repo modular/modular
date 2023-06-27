@@ -111,27 +111,26 @@ LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
   else
     out.signature = nullptr;
 
-  // Nested structs, add them in order from in -> out (they'll be added to the
-  // name from out->in).
-  if (auto s = op->getParentOfType<StructDeclOp>()) {
-    out.structNames.push_back(s.getNameAttr());
-    while ((s = s->getParentOfType<StructDeclOp>()))
-      out.structNames.push_back(s.getNameAttr());
+  // Grab parent structs/modules/etc., add them in order from in -> out (they'll
+  // be added to the name from out->in).
+  Operation *parentOp = op;
+  while ((parentOp = parentOp->getParentOp())) {
+    TypeSwitch<Operation *>(parentOp)
+        .Case([&](StructDeclOp op) {
+          out.structNames.push_back(op.getNameAttr());
+        })
+        .Case<FileModuleOp, PackageOp>(
+            [&](auto op) { out.moduleNames.push_back(op.getNameAttr()); });
   }
-
-  // If the module is named, grab that too.
-  if (auto file = op->getParentOfType<FileModuleOp>())
-    out.moduleName = file.getNameAttr();
+  std::reverse(out.structNames.begin(), out.structNames.end());
+  std::reverse(out.moduleNames.begin(), out.moduleNames.end());
 
   std::string mangledName;
   llvm::raw_string_ostream nameStream(mangledName);
-  // First up is the module name. It will be prefixed with `$` - that's how
-  // we'll know it's a module and not a struct.
-  if (out.moduleName)
-    nameStream << out.moduleName.getValue() << "::";
-  // Next up, structs.
-  for (auto s : out.structNames)
-    nameStream << s.getValue() << "::";
+  // Emit the parent module and struct names. Module names are prefixed with `$`
+  // - which provides a signal for what's a module vs struct when demangling.
+  for (auto name : llvm::concat<StringAttr>(out.moduleNames, out.structNames))
+    nameStream << name.getValue() << "::";
   // Finally, function name and argument types. Use the string coming out of the
   // parser rather than the actual function type.
   nameStream << out.symName.getValue() << signatureStr.getValue();
@@ -199,10 +198,10 @@ LIT::MangledSymbol::demangle(StringAttr mangled, bool parseSignature) {
     m = m.drop_front(separator);
     // Skip past the separator as well (if it exists).
     m.consume_front("::");
-    // First one is a the module name if it starts with a leading `$`.
+    // It's a module name if it starts with a leading `$`.
     if (current.starts_with("$"))
-      out.moduleName =
-          StringAttr::get(mangled.getContext(), current.drop_front());
+      out.moduleNames.push_back(
+          StringAttr::get(mangled.getContext(), current.drop_front()));
     else
       out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
   }
@@ -242,8 +241,9 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os,
   // terminals don't like.
   llvm::printEscapedString(ms.mangled.getValue(), os);
   os << "\" - ";
-  os << "Module: " << (ms.moduleName ? ms.moduleName.getValue() : "(none)")
-     << ", Structs: [";
+  os << "Modules: [";
+  llvm::interleaveComma(ms.moduleNames, os);
+  os << "], Structs: [";
   llvm::interleaveComma(ms.structNames, os);
   os << "], Symbol: " << ms.symName << ", Signature: ";
   if (ms.signature)
@@ -268,6 +268,34 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
 /// Modules don't have result parameters.
 ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
+
+//===----------------------------------------------------------------------===//
+// PackageOp
+//===----------------------------------------------------------------------===//
+
+void PackageOp::build(OpBuilder &odsBuilder, OperationState &state,
+                      StringAttr name) {
+  state.addAttribute(getSymNameAttrName(state.name), name);
+  state.addRegion()->push_back(new Block());
+}
+
+/// Packages don't have input parameters but do define a parameter scope.
+ArrayRef<ParamDeclAttr> PackageOp::getInputParams() { return {}; }
+
+/// Packages don't have result parameters.
+ArrayRef<ParamDeclAttr> PackageOp::getResultParams() { return {}; }
+
+LogicalResult PackageOp::verify() {
+  for (Operation &op : *getBody()) {
+    if (!isa<FileModuleOp, PackageOp>(op)) {
+      return emitOpError(
+                 "expected only `lit.file_module` or `lit.package` in its body")
+          .attachNote(op.getLoc())
+          .append("see operation defined here");
+    }
+  }
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // FuncOp
