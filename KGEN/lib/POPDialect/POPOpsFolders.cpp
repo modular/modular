@@ -628,13 +628,27 @@ OpFoldResult SIMDSelectOp::fold(FoldAdaptor adaptor) {
   auto condVals = dyn_cast_or_null<SIMDAttr>(adaptor.getCondition());
   auto trueVals = dyn_cast_or_null<SIMDAttr>(adaptor.getTrueValue());
   auto falseVals = dyn_cast_or_null<SIMDAttr>(adaptor.getFalseValue());
-  if (!condVals || !trueVals || !falseVals)
-    return {};
-  SmallVector<DTypeValue> results;
-  for (auto [cond, trueVal, falseVal] : llvm::zip(
-           condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
-    results.push_back(cond.getBoolVal() ? trueVal : falseVal);
-  return SIMDAttr::get(results, getType());
+  if (condVals && trueVals && falseVals) {
+    SmallVector<DTypeValue> results;
+    for (auto [cond, trueVal, falseVal] : llvm::zip(
+             condVals.getValues(), trueVals.getValues(), falseVals.getValues()))
+      results.push_back(cond.getBoolVal() ? trueVal : falseVal);
+    return SIMDAttr::get(results, getType());
+  }
+
+  // Fold `select(x, true, false) -> x`.
+  if (getType().getResolvedDType() == KGENDType::kBool && trueVals &&
+      falseVals) {
+    if (llvm::all_of(
+            trueVals.getValues(),
+            [](const DTypeValue &value) { return value.getBoolVal(); }) &&
+        llvm::all_of(falseVals.getValues(), [](const DTypeValue &value) {
+          return !value.getBoolVal();
+        }))
+      return getCondition();
+  }
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

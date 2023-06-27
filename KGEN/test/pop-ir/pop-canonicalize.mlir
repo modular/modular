@@ -347,6 +347,15 @@ kgen.func @simd_select() -> !pop.simd<2, si4> {
   kgen.return %3 : !pop.simd<2, si4>
 }
 
+// CHECK-LABEL: @simd_select_true_false
+kgen.func @simd_select_true_false(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
+  // CHECK-NEXT: return %arg0
+  %true = kgen.param.constant: simd<2, bool> = <<true, true>>
+  %false = kgen.param.constant: simd<2, bool> = <<false, false>>
+  %0 = pop.simd.select %arg0, %true, %false : <2, bool>
+  kgen.return %0 : !pop.simd<2, bool>
+}
+
 // CHECK-LABEL: @bitcast
 kgen.func @bitcast() -> (!pop.simd<2, bf16>, !pop.simd<2, f16>) {
   // CHECK-DAG: <"0.125", "8">
