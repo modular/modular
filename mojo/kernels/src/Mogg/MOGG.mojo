@@ -974,6 +974,41 @@ fn matmul[
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = False
+    alias simd_width = dtype_simd_width[type]()
+
+    @parameter
+    if (
+        single_thread_blocking_override
+        and not transpose_a
+        and not transpose_b
+        and not b_packed
+    ):
+        let K = a.dynamic_shape[1]
+        let simd_k = (K // simd_width) * simd_width
+        for m in range(a.dynamic_shape[0]):
+            for n in range(b.dynamic_shape[1]):
+                var acc = SIMD[type, simd_width]()
+
+                for k in range(0, simd_k, simd_width):
+                    let a_ind = StaticIntTuple[2](m, k)
+                    let b_ind = StaticIntTuple[2](k, n)
+                    acc += simd_load[type, simd_width, 2](a, a_ind) * simd_load[
+                        type, simd_width, 2
+                    ](b, b_ind)
+
+                var scalar_acc = SIMD[type, 1]()
+                for k in range(simd_k, K):
+                    let a_ind = StaticIntTuple[2](m, k)
+                    let b_ind = StaticIntTuple[2](k, n)
+                    scalar_acc += simd_load[type, 1, 2](a, a_ind) * simd_load[
+                        type, 1, 2
+                    ](b, b_ind)
+
+                scalar_acc = acc.reduce_add() + scalar_acc
+
+                let out_index = StaticIntTuple[2](m, n)
+                simd_store[type, 1, 2](c, out_index, scalar_acc)
+        return
 
     @always_inline
     @parameter
