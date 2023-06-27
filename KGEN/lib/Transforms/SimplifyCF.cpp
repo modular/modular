@@ -8,9 +8,13 @@
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
+using namespace KGEN;
 using namespace HLCF;
 
 namespace M::KGEN {
@@ -18,20 +22,21 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
 namespace {
-struct SimplifyCF : M::KGEN::impl::SimplifyCFBase<SimplifyCF> {
+struct SimplifyCF : impl::SimplifyCFBase<SimplifyCF> {
   void runOnOperation() override;
 
 private:
   void tryRemovingLoop(LoopOp loop);
-  LoopOp getOrFindTargetLoop(Operation *op, StringAttr label);
-  void walkLoopsPreorder(Operation *cur);
-
-  /// A map for looking up the target loop for the op (break or continue).
-  DenseMap<Operation *, LoopOp> targetLoopMap;
+  void findTargetLoop(Operation *op, StringAttr label);
+  void walkPreorder(Region &region);
 
   /// Function loops in the pre-order.
-  SmallVector<LoopOp> loopsInOrder;
+  std::vector<LoopOp> loopsInOrder;
 
   /// Outer loops stack for the walk.
   SmallVector<LoopOp> parentLoops;
@@ -39,25 +44,78 @@ private:
   /// Number of break or continue ops that lead to the current loop (breaks and
   /// continues in inner loops don't count).
   DenseMap<LoopOp, int> jumpsCount;
+
+  /// The try operations in pre-order.
+  std::vector<LIT::TryOp> triesInOrder;
+
+  /// Try operations that can be elided.
+  DenseSet<LIT::TryOp> elidableTries;
+
+  /// The last seen try operation in pre-order traversal.
+  LIT::TryOp lastTry;
 };
 } // namespace
 
-LoopOp SimplifyCF::getOrFindTargetLoop(Operation *op, StringAttr label) {
-  assert((isa<ContinueOp, BreakOp>(op)));
-  auto it = targetLoopMap.find(op);
-  if (it != targetLoopMap.end())
-    return it->second;
+//===----------------------------------------------------------------------===//
+// CFG Analysis
+//===----------------------------------------------------------------------===//
 
-  assert(!parentLoops.empty());
-  for (auto loop : llvm::reverse(parentLoops)) {
+void SimplifyCF::findTargetLoop(Operation *op, StringAttr label) {
+  assert((isa<ContinueOp, BreakOp>(op)));
+  for (LoopOp loop : llvm::reverse(parentLoops)) {
     if (isMatchingLoop(loop, label)) {
       ++jumpsCount[loop];
-      targetLoopMap[op] = loop;
-      return loop;
+      return;
     }
   }
-  return nullptr;
+  llvm_unreachable("no parent loop?");
 }
+
+void SimplifyCF::walkPreorder(Region &region) {
+  region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (auto c = dyn_cast<ContinueOp>(op))
+      findTargetLoop(op, c.getLabelAttr());
+    if (auto br = dyn_cast<BreakOp>(op))
+      findTargetLoop(op, br.getLabelAttr());
+
+    // Keep walking until we see another loop, then we recurse.
+    if (auto loop = dyn_cast<LoopOp>(op)) {
+      loopsInOrder.push_back(loop);
+      parentLoops.push_back(loop);
+      walkPreorder(loop.getBody());
+      parentLoops.pop_back();
+      return WalkResult::skip();
+    }
+
+    // Save a try operation if we see one.
+    if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
+      triesInOrder.push_back(tryOp);
+      elidableTries.insert(tryOp);
+      {
+        // Set the contextual try for the 'try' region and then visit it.
+        llvm::SaveAndRestore restore(lastTry);
+        lastTry = tryOp;
+        walkPreorder(tryOp.getTryRegion());
+      }
+      // Visit the rest of the regions.
+      walkPreorder(tryOp.getExceptRegion());
+      walkPreorder(tryOp.getElseRegion());
+      return WalkResult::skip();
+    }
+
+    // A raise means we cannot elide the most recent try.
+    if (auto raise = dyn_cast<LIT::TryRaiseOp>(op)) {
+      assert(lastTry && "no contextual try?");
+      elidableTries.erase(lastTry);
+    }
+
+    return WalkResult::advance();
+  });
+}
+
+//===----------------------------------------------------------------------===//
+// Erasing Ops
+//===----------------------------------------------------------------------===//
 
 /// If the loop body ends with BreakOp and there are no other break or continue
 /// ops in the body, the loop can be removed.  Such loops are often generated as
@@ -75,67 +133,119 @@ LoopOp SimplifyCF::getOrFindTargetLoop(Operation *op, StringAttr label) {
 /// }                          }
 void SimplifyCF::tryRemovingLoop(LoopOp loop) {
   Block &body = loop.getBody().front();
+  int count = jumpsCount[loop];
+  mlir::IRRewriter b{OpBuilder(loop)};
 
-  // If the loop has more than just one break or continue in it, we can't remove
-  // it.
-  if (jumpsCount.at(loop) > 1)
+  // Fold loops with a single break to that loop.
+  StringAttr label;
+  auto breakOp = dyn_cast<BreakOp>(body.getTerminator());
+  if (count == 1 && breakOp &&
+      (!(label = breakOp.getLabelAttr()) || label == loop.getLabelAttr())) {
+    // Move out the loop body and then erase the loop.
+    b.inlineBlockBefore(&body, loop);
+    loop.replaceAllUsesWith(breakOp.getOperands());
+
+    b.eraseOp(breakOp);
+    b.eraseOp(loop);
     return;
+  }
 
-  // Check that the body ends with a break or return.
-  Operation *term = body.getTerminator();
-  if (!isa<BreakOp, KGEN::ReturnOp>(term))
+  // The loop is never branched to, meaning the terminator branches to some
+  // other parent operation.
+  if (count == 0) {
+    // Move out the loop body. The loop results will have no uses after the
+    // subsequent operations are erased.
+    b.inlineBlockBefore(&body, loop);
+    Block *toErase = b.splitBlock(loop->getBlock(), loop->getIterator());
+    b.eraseBlock(toErase);
     return;
-
-  // If the loop body ends with return, but jumpsCount is 1, it means that there
-  // is a break or continue somewhere inside the loop body - we can't deal with
-  // that.
-  if (isa<KGEN::ReturnOp>(term) && jumpsCount.at(loop) != 0)
-    return;
-
-  // All the checks passed, the loop now can be removed!
-  mlir::IRRewriter rewriter{OpBuilder(loop)};
-
-  rewriter.inlineBlockBefore(&body, loop);
-  loop.replaceAllUsesWith(term->getOperands());
-
-  rewriter.eraseOp(term);
-  rewriter.eraseOp(loop);
+  }
 }
 
-void SimplifyCF::walkLoopsPreorder(Operation *cur) {
-  cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (auto c = dyn_cast<ContinueOp>(op))
-      getOrFindTargetLoop(op, c.getLabelAttr());
+/// Given a try in the following form:
+///
+/// ```mlir
+/// lit.try {
+///   A
+///   lit.try.yield
+/// } except (%args) {
+///   B
+/// } else {
+///   C
+///   lit.try.yield
+/// }
+/// ```
+///
+/// Where `A` represents code that does not raise, transform this into
+///
+/// ```mlir
+/// A
+/// C
+/// ```
+static void removeTrivialTry(LIT::TryOp op) {
+  mlir::IRRewriter b{OpBuilder(op)};
 
-    if (auto br = dyn_cast<BreakOp>(op))
-      getOrFindTargetLoop(op, br.getLabelAttr());
+  // We know the 'try' body has no raises, meaning it always reaches its
+  // terminator or early exits to a parent region.
+  Block *tryBlock = &op.getTryRegion().front();
+  Operation *tryTerm = tryBlock->getTerminator();
+  b.inlineBlockBefore(tryBlock, op);
 
-    // keep walking until we see another loop, then we recurse
-    if (auto loop = dyn_cast<LoopOp>(op); loop && loop != cur) {
-      loopsInOrder.push_back(loop);
-      parentLoops.push_back(loop);
-      walkLoopsPreorder(op);
-      parentLoops.pop_back();
-      return WalkResult::skip();
-    }
-    return WalkResult::advance();
-  });
+  // If the terminator is not a yield and not a raise, then this is a branch
+  // to a parent operation. Erase all subsequent ops.
+  if (!isa<LIT::TryYieldOp>(tryTerm)) {
+    Block *toErase = b.splitBlock(op->getBlock(), op->getIterator());
+    b.eraseBlock(toErase);
+    return;
+  }
+
+  // It branches to the 'else' region with the operands of the yield.
+  Block *elseBlock = &op.getElseRegion().front();
+  Operation *elseTerm = elseBlock->getTerminator();
+  b.inlineBlockBefore(elseBlock, op, tryTerm->getOperands());
+  b.eraseOp(tryTerm);
+
+  // If the terminator is not a yield, then this is a branch to a parent
+  // operation. Else all subsequent ops.
+  if (!isa<LIT::TryYieldOp>(elseTerm)) {
+    Block *toErase = b.splitBlock(op->getBlock(), op->getIterator());
+    b.eraseBlock(toErase);
+    return;
+  }
+
+  // Replace uses of the operation with the yield.
+  b.replaceOp(op, elseTerm->getOperands());
+  b.eraseOp(elseTerm);
 }
+
+//===----------------------------------------------------------------------===//
+// Pass Driver
+//===----------------------------------------------------------------------===//
 
 void SimplifyCF::runOnOperation() {
-  targetLoopMap.clear();
   loopsInOrder.clear();
   parentLoops.clear();
   jumpsCount.clear();
+  triesInOrder.clear();
+  elidableTries.clear();
+  lastTry = nullptr;
 
   // Walk over the functions and count how many jumps (breaks or continues) each
   // loop has. Note that breaks and continues targeting inner loops do not count
   // as jumps in this context - we only care about control flow transfers that
   // move us out of this loop.
-  walkLoopsPreorder(getOperation());
+  {
+    TimeTraceScope traceScope("cfgAnalysis");
+    walkPreorder(getOperation().getBodyRegion());
+  }
 
-  // If a loop has just one jump, we can try removing it.
-  for (LoopOp loop : loopsInOrder)
-    if (jumpsCount[loop] <= 1)
-      tryRemovingLoop(loop);
+  // Try to remove trivial loops. Process in reverse to make sure later ops are
+  // visited first.
+  TimeTraceScope traceScope("eraseOps");
+  for (LoopOp loop : llvm::reverse(loopsInOrder))
+    tryRemovingLoop(loop);
+  // Remove elidable tries.
+  for (LIT::TryOp tryOp : llvm::reverse(triesInOrder))
+    if (elidableTries.contains(tryOp))
+      removeTrivialTry(tryOp);
 }
