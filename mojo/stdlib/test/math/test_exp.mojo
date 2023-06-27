@@ -24,6 +24,12 @@ fn test_exp_float32():
     # CHECK: 7.38905{{[0-9]+}}
     print(exp(Float32(2)))
 
+    # CHECK: inf
+    print(exp(Float32(89)))
+
+    # CHECK: inf
+    print(exp(Float32(108.5230)))
+
 
 # CHECK-LABEL: test_exp_float64
 fn test_exp_float64():
@@ -37,6 +43,12 @@ fn test_exp_float64():
 
     # CHECK: 7.38905{{[0-9]+}}
     print(exp(Float64(2)))
+
+    # CHECK: 1.6516{{[0-9]+}}e+38
+    print(exp(Float64(88)))
+
+    # CHECK: 1.3518{{[0-9]+}}e+47
+    print(exp(Float64(108.5230)))
 
 
 fn main():
