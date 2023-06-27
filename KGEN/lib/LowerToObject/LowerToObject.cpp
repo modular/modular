@@ -11,7 +11,7 @@
 #include "LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/Host.h"
+#include "Support/SIMD.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
@@ -308,7 +308,7 @@ ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
 
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
-                             std::move(*dl), simdWidthFromFeatures(features));
+                             std::move(*dl), kPreferredSIMDBitWidth);
 }
 
 //===----------------------------------------------------------------------===//

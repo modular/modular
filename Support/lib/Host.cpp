@@ -532,29 +532,6 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 }
 
 //===----------------------------------------------------------------------===//
-// SIMD Width
-//===----------------------------------------------------------------------===//
-
-size_t M::simdWidthFromFeatures(StringRef features) {
-  if (features.contains("avx512"))
-    return 512;
-  if (features.contains("avx2"))
-    return 256;
-  // The fallback is going to be 128.
-  return 128;
-}
-
-size_t M::simdWidthFromFeatures(const std::vector<std::string> &features) {
-  for (const std::string &feature : features) {
-    if (feature == "avx512f")
-      return 512;
-    if (feature == "avx2")
-      return 256;
-  }
-  return 128;
-}
-
-//===----------------------------------------------------------------------===//
 // HostMachineInfo
 //===----------------------------------------------------------------------===//
 
@@ -584,8 +561,6 @@ void M::HostMachineInfo::print(llvm::raw_ostream &os) const {
   os << cpuArch;
   os << "\ncpu-model: ";
   os << cpuModelName;
-  os << "\nsimd-bitwidth: ";
-  os << simdBitWidth;
   os << "\nfeatures: ";
   dumpFeatures(os, cpuFeatures);
   os << "\ncore-count: ";
@@ -609,7 +584,6 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
   json.attribute("os", osName);
   json.attribute("arch", cpuArch);
   json.attribute("cpu-model", cpuModelName);
-  json.attribute("simd-bitwidth", simdBitWidth);
   json.attribute("features", cpuFeatures);
   json.attribute("core-count", numPhysicalCores);
   json.attribute("l1-cache-size", l1CacheSize);
@@ -636,9 +610,6 @@ void HostMachineInfo::print(HostProperty property,
     break;
   case HostProperty::CPUModel:
     os << cpuModelName;
-    break;
-  case HostProperty::SIMDBitWidth:
-    os << simdBitWidth;
     break;
   case HostProperty::Features:
     dumpFeatures(os, cpuFeatures);
@@ -670,7 +641,6 @@ void HostMachineInfo::printStaticInfo(raw_ostream &os) const {
   print(HostProperty::OS, os);
   print(HostProperty::Arch, os);
   print(HostProperty::CPUModel, os);
-  print(HostProperty::SIMDBitWidth, os);
   print(HostProperty::Features, os);
   print(HostProperty::L1CacheSize, os);
   print(HostProperty::L2CacheSize, os);
@@ -695,8 +665,6 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
     if (feature.getValue())
       machineInfo.cpuFeatures.push_back(feature.getKey().str());
   llvm::sort(machineInfo.cpuFeatures);
-
-  machineInfo.simdBitWidth = simdWidthFromFeatures(machineInfo.cpuFeatures);
 
   auto physicalCoresOr = M::getNumPhysicalCores();
   if (physicalCoresOr.isError())
