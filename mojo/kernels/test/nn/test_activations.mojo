@@ -5,10 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Activations import elu, relu, relu_n1, prelu, gelu, gelu_approximate
+from Activations import (
+    elu,
+    relu,
+    relu_n1,
+    prelu,
+    gelu,
+    gelu_approximate,
+    gelu_approximate_sigmoid,
+)
 from DType import DType
 from IO import print
 from Math import iota
+from SIMD import Float32, Float64
 
 # CHECK-LABEL: test_elu
 fn test_elu():
@@ -115,6 +124,18 @@ fn test_gelu_float32():
     # CHECK: [0.84119{{[0-9]+}}, 0.57996{{[0-9]+}}, 0.34571{{[0-9]+}}, 0.14967{{[0-9]+}}]
     print(gelu_approximate(0.5 * simd_val))
 
+    # CHECK: 108.523
+    print(gelu_approximate(Float32(108.5230)))
+
+    # CHECK: 107.523
+    print(gelu_approximate(Float32(107.5230)))
+
+    # CHECK: 108.523
+    print(gelu_approximate_sigmoid(Float32(108.5230)))
+
+    # CHECK: 107.523
+    print(gelu_approximate_sigmoid(Float32(107.5230)))
+
 
 # CHECK-LABEL: test_gelu_float64
 fn test_gelu_float64():
@@ -135,6 +156,18 @@ fn test_gelu_float64():
 
     # CHECK: [0.84119{{[0-9]+}}, 0.57996{{[0-9]+}}, 0.34571{{[0-9]+}}, 0.14967{{[0-9]+}}]
     print(gelu_approximate(0.5 * simd_val))
+
+    # CHECK: 108.5229
+    print(gelu_approximate(Float64(108.5230)))
+
+    # CHECK: 107.5229
+    print(gelu_approximate(Float64(107.5230)))
+
+    # CHECK: 108.523
+    print(gelu_approximate_sigmoid(Float64(108.5230)))
+
+    # CHECK: 107.523
+    print(gelu_approximate_sigmoid(Float64(107.5230)))
 
 
 fn main():
