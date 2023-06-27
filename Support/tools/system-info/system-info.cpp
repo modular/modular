@@ -32,8 +32,6 @@ struct SystemInfoCLIOptions {
           clEnumValN(HostProperty::Arch, "arch", "Host CPU architecture"),
           clEnumValN(HostProperty::CPUModel, "cpu-model",
                      "Host CPU model name"),
-          clEnumValN(HostProperty::SIMDBitWidth, "simd-bitwidth",
-                     "Host CPU SIMD bitwidth"),
           clEnumValN(HostProperty::Features, "features",
                      "Host CPU features printed as comma-separated values"),
           clEnumValN(HostProperty::CoreCount, "core-count",
