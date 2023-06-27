@@ -46,7 +46,11 @@ bool CommandLLVMDebugEnable::DoExecute(SBDebugger debugger, char **command,
     ++count;
 
   llvm::DebugFlag = true;
+#ifndef NDEBUG
   llvm::setCurrentDebugTypes(const_cast<const char **>(command), count);
+#else
+  setCurrentDebugTypes(const_cast<const char **>(command), count);
+#endif
   return true;
 }
 
