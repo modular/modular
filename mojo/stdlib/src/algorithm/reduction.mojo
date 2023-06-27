@@ -470,6 +470,13 @@ fn _reduce_generator[
     let total_size: Int = shape[0]
     let simd_compatible_size = (total_size // simd_width) * simd_width
 
+    if total_size == 0:
+
+        @parameter
+        if not single_thread_blocking_override:
+            out_chain.mark_ready()
+        return
+
     @always_inline
     @parameter
     fn reduce(ignored: Int):
@@ -620,6 +627,13 @@ fn _reduce_along_dimension[
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
     let total_size: Int = shape.flattened_length()
+    if total_size == 0:
+
+        @parameter
+        if not single_thread_blocking_override:
+            out_chain.mark_ready()
+        return
+
     let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
     let reduce_dim_size = shape[reduce_dim]
 
