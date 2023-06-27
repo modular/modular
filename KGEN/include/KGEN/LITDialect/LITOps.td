@@ -135,6 +135,40 @@ def FileModuleOp : LITOp<"file_module", [
 }
 
 //===----------------------------------------------------------------------===//
+// PackageOp
+//===----------------------------------------------------------------------===//
+
+def PackageOp : LITOp<"package", [
+    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    DeclareOpInterfaceMethods<DeclInterface>,
+  ] # GraphRegionNoTerminator.traits> {
+  let summary = "mojo source package";
+  let description = [{
+    A `lit.package` models a mojo package. It contains a set of additional
+    `lit.file_module` and `lit.package` operations.
+
+    Example:
+
+    ```mlir
+    lit.package @foo {
+      lit.file_module @bar {
+      }
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let builders = [
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let skipDefaultBuilders = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 

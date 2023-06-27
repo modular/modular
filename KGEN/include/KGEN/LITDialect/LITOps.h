@@ -86,7 +86,7 @@ struct MangledSymbol {
   /// The fully mangled name.
   StringAttr mangled;
   /// The various strings that make up the mangled name.
-  StringAttr moduleName;
+  SmallVector<StringAttr, 1> moduleNames;
   /// We support nested structs, so there may be more than one struct name.
   SmallVector<StringAttr, 1> structNames;
   /// The bare name of the symbol.

@@ -25,6 +25,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -304,27 +305,35 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
     // If we are already in the symbol table, use the the operations iterator.
     auto opSymTableIt = isTopLevel ? op.getIterator() : symTableIt;
 
-    if (auto func = dyn_cast<LIT::FuncOp>(op)) {
-      if (failed(lowerLITFunc(func, symbolTable, opSymTableIt, parentPrefix)))
-        return failure();
-    } else if (auto structDecl = dyn_cast<StructDeclOp>(op)) {
-      if (failed(lowerStructDecl(structDecl, symbolTable, opSymTableIt)))
-        return failure();
-    } else if (auto fileDecl = dyn_cast<LIT::FileModuleOp>(op)) {
-      // Lower the constructs within the body.
-      Block *fileBody = fileDecl.getBody();
-      if (failed(lowerModuleDecl(fileBody, symbolTable, opSymTableIt,
-                                 parentPrefix + fileDecl.getName() + "::")))
-        return failure();
+    LogicalResult result =
+        TypeSwitch<Operation *, LogicalResult>(&op)
+            .Case([&](LIT::FuncOp op) {
+              return lowerLITFunc(op, symbolTable, opSymTableIt, parentPrefix);
+            })
+            .Case([&](StructDeclOp op) {
+              return lowerStructDecl(op, symbolTable, opSymTableIt);
+            })
+            .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
+              // Lower the constructs within the body.
+              Block *fileBody = op.getBody();
+              if (failed(lowerModuleDecl(fileBody, symbolTable, opSymTableIt,
+                                         parentPrefix + op.getName() + "::")))
+                return failure();
 
-      // Inline the remaining body of the file into the parent.
-      fileDecl->getBlock()->getOperations().splice(
-          fileDecl->getIterator(), fileBody->getOperations(), fileBody->begin(),
-          fileBody->end());
-      fileDecl->erase();
-    } else if (isa<ParamDeclareOp, LIT::UnresolvedImportOp>(op)) {
-      op.erase();
-    }
+              // Inline the remaining body of the file into the parent.
+              op->getBlock()->getOperations().splice(
+                  op->getIterator(), fileBody->getOperations(),
+                  fileBody->begin(), fileBody->end());
+              op->erase();
+              return mlir::success();
+            })
+            .Case<ParamDeclareOp, LIT::UnresolvedImportOp>([&](auto op) {
+              op->erase();
+              return mlir::success();
+            })
+            .Default(mlir::success());
+    if (failed(result))
+      return failure();
   }
   return success();
 }

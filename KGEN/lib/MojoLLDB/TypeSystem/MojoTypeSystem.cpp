@@ -364,9 +364,9 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
 
   // We need to delete the artificial module we use for expression evaluations
   // to avoid confusing the user.
-  if (succeeded(mangledOr) && mangledOr->moduleName &&
+  if (succeeded(mangledOr) && !mangledOr->moduleNames.empty() &&
       MojoPersistentExpressionState::isExpressionModuleName(
-          mangledOr->moduleName))
+          mangledOr->moduleNames.back()))
     return ConstString(mangledOr->symName);
 
   return ConstString(name);

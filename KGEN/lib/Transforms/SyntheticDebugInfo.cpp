@@ -93,10 +93,9 @@ static LogicalResult synthesizeDebugInfo(ModuleOp module) {
       os << name.getValue();
     } else {
       // Mangle the namespaces back.
-      if (symbol->moduleName)
-        os << symbol->moduleName.getValue() << "::";
-      for (StringAttr structName : symbol->structNames)
-        os << structName.getValue() << "::";
+      for (StringAttr name :
+           llvm::concat<StringAttr>(symbol->moduleNames, symbol->structNames))
+        os << name.getValue() << "::";
       os << symbol->symName.getValue();
     }
 
