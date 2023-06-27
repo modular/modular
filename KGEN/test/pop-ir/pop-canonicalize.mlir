@@ -320,6 +320,27 @@ kgen.func @cmp_true_false(%simd: !pop.simd<2, bool>) -> (!pop.simd<2, bool>, !po
   kgen.return %0, %1 : !pop.simd<2, bool>, !pop.simd<2, bool>
 }
 
+// CHECK-LABEL: @cmp_unsigned
+kgen.func @cmp_unsigned(%simd: !pop.simd<2, ui8>) -> (
+    !pop.simd<2, bool>, !pop.simd<2, bool>,
+    !pop.simd<2, bool>, !pop.simd<2, bool>
+) {
+  %zero = kgen.param.constant: simd<2, ui8> = <<0, 0>>
+
+  // CHECK-DAG: %[[TRUE:.*]] = kgen.param.constant: simd<2, bool> = <true>
+  // CHECK-DAG: %[[FALSE:.*]] = kgen.param.constant: simd<2, bool> = <false>
+
+  %0 = pop.cmp ge(%simd, %zero) : <2, ui8>
+  %1 = pop.cmp ge(%zero, %simd) : <2, ui8>
+
+  %2 = pop.cmp le(%simd, %zero) : <2, ui8>
+  %3 = pop.cmp le(%zero, %simd) : <2, ui8>
+
+  // CHECK-NEXT: return %[[TRUE]], %[[FALSE]], %[[FALSE]], %[[TRUE]]
+  kgen.return %0, %1, %2, %3 : !pop.simd<2, bool>, !pop.simd<2, bool>,
+                               !pop.simd<2, bool>, !pop.simd<2, bool>
+}
+
 // CHECK-LABEL: @and
 kgen.func @and() -> !pop.scalar<ui4> {
   // CHECK-NEXT <1>
