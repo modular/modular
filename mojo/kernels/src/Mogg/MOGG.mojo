@@ -11,11 +11,12 @@ from Functional import (
     _elementwise_impl,
     unroll,
     vectorize,
+    vectorize_unroll,
     async_parallelize,
 )
 from Reductions import _reduce_generator
 from Intrinsics import strided_load
-from Index import StaticIntTuple
+from Index import Index, StaticIntTuple
 from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
@@ -983,31 +984,27 @@ fn matmul[
         and not transpose_b
         and not b_packed
     ):
-        let K = a.dynamic_shape[1]
-        let simd_k = (K // simd_width) * simd_width
-        for m in range(a.dynamic_shape[0]):
-            for n in range(b.dynamic_shape[1]):
-                var acc = SIMD[type, simd_width]()
+        let M = a.dim[0]()
+        let N = b.dim[1]()
+        let K = a.dim[1]()
 
-                for k in range(0, simd_k, simd_width):
-                    let a_ind = StaticIntTuple[2](m, k)
-                    let b_ind = StaticIntTuple[2](k, n)
-                    acc += simd_load[type, simd_width, 2](a, a_ind) * simd_load[
-                        type, simd_width, 2
-                    ](b, b_ind)
+        c.zero()
 
-                var scalar_acc = SIMD[type, 1]()
-                for k in range(simd_k, K):
-                    let a_ind = StaticIntTuple[2](m, k)
-                    let b_ind = StaticIntTuple[2](k, n)
-                    scalar_acc += simd_load[type, 1, 2](a, a_ind) * simd_load[
-                        type, 1, 2
-                    ](b, b_ind)
+        for m in range(M):
+            for k in range(K):
 
-                scalar_acc = acc.reduce_add() + scalar_acc
+                @always_inline
+                @parameter
+                fn compute_fn[simd_width: Int](n: Int):
+                    c.simd_store[simd_width](
+                        Index(m, n),
+                        c.simd_load[simd_width](m, n)
+                        + a[m, k] * b.simd_load[simd_width](k, n),
+                    )
 
-                let out_index = StaticIntTuple[2](m, n)
-                simd_store[type, 1, 2](c, out_index, scalar_acc)
+                alias unroll_factor = 4
+
+                vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
         return
 
     @always_inline
