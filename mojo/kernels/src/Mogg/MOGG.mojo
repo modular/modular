@@ -621,6 +621,7 @@ fn mean[
     index_type: DType,
     rank: Int,
     simd_width: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -669,6 +670,7 @@ fn mean[
             type,
             rank,
             dtype_simd_width[type](),
+            single_thread_blocking_override,
             input_0_fn,
             wrapped_output_mul,
             reduce_impl,
@@ -690,6 +692,7 @@ fn mean[
             type,
             rank,
             dtype_simd_width[type](),
+            single_thread_blocking_override,
             input_0_fn,
             wrapped_output_div,
             reduce_impl,
@@ -708,6 +711,7 @@ fn sum[
     index_type: DType,
     rank: Int,
     simd_width: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -742,6 +746,7 @@ fn sum[
         type,
         rank,
         dtype_simd_width[type](),
+        single_thread_blocking_override,
         input_0_fn,
         output_0_fn,
         reduce_impl,
