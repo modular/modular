@@ -418,17 +418,37 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
 
   // Handle the case of applying the operation at compile time on the constant
   // values.
-  return foldSIMDOpResult<::detail::kOtherResult>(
-      adaptor.getOperands(), KGENDType::kBool,
-      [&](APSInt lhs, APSInt rhs) {
-        return compareConstants(getPred(), lhs, rhs);
-      },
-      [&](APFloat lhs, APFloat rhs) {
-        return compareConstants(getPred(), lhs, rhs);
-      },
-      [&](bool lhs, bool rhs) {
-        return compareConstants(getPred(), lhs, rhs);
-      });
+  if (OpFoldResult result = foldSIMDOpResult<::detail::kOtherResult>(
+          adaptor.getOperands(), KGENDType::kBool,
+          [&](APSInt lhs, APSInt rhs) {
+            return compareConstants(getPred(), lhs, rhs);
+          },
+          [&](APFloat lhs, APFloat rhs) {
+            return compareConstants(getPred(), lhs, rhs);
+          },
+          [&](bool lhs, bool rhs) {
+            return compareConstants(getPred(), lhs, rhs);
+          }))
+    return result;
+
+  // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
+  if ((getPred() == CmpPredicate::EQ || getPred() == CmpPredicate::NE) &&
+      getLhs().getType().getResolvedDType() == DType::kBool) {
+    // Only one input will be constant.
+    auto lhs = dyn_cast_or_null<SIMDAttr>(adaptor.getLhs());
+    auto rhs = dyn_cast_or_null<SIMDAttr>(adaptor.getRhs());
+    assert(!(lhs && rhs) && "constant case should be handled");
+    // If `rhs` contains the constant, move it to `lhs`.
+    if (rhs)
+      lhs = rhs;
+    // Check that the constant is either all true or all false elements, then
+    // match `eq` with `true` or `ne` with `false`.
+    if (lhs && llvm::all_equal(lhs.getValues()) &&
+        (getPred() == CmpPredicate::EQ) == lhs.getValues().front().getBoolVal())
+      return rhs ? getLhs() : getRhs();
+  }
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
