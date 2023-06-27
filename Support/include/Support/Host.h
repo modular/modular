@@ -117,13 +117,22 @@ ErrorOr<std::string> getHostCPUModelName();
 // Cache sizes
 //===----------------------------------------------------------------------===//
 
-// Get the D$ or unified cache size in bytes at a 1-based cache level index.
-// An error is returned if there is an OS error in finding the cache level.  If
-// the cache level does not exist, 0 is returned.
+/// Get the D$ or unified cache size in bytes at a 1-based cache level index.
+/// An error is returned if there is an OS error in finding the cache level.  If
+/// the cache level does not exist, 0 is returned.
 ErrorOr<size_t> getHostCPUCacheSize(size_t cacheLevel);
 
 /// Get the number of physical cores of in processor.
 M::ErrorOr<size_t> getNumPhysicalCores();
+
+//===----------------------------------------------------------------------===//
+// SIMD Width
+//===----------------------------------------------------------------------===//
+
+/// Gets the SIMD width from the processor features. The features are comma
+/// separated.
+size_t simdWidthFromFeatures(StringRef features);
+size_t simdWidthFromFeatures(const std::vector<std::string> &features);
 
 //===----------------------------------------------------------------------===//
 // HostMachineInfo
@@ -135,6 +144,7 @@ enum class HostProperty {
   Arch,
   CPUModel,
   Features,
+  SIMDBitWidth,
   CoreCount,
   L1CacheSize,
   L2CacheSize,
@@ -149,6 +159,9 @@ struct HostMachineInfo {
   std::string osName;
   std::string cpuArch;
   std::string cpuModelName;
+  // This is the SIMD bit-width of the host system. Unlike the build-info, it
+  // could change as one moves the binary across systems.
+  size_t simdBitWidth;
   std::vector<std::string> cpuFeatures;
   size_t numPhysicalCores;
   // These represent either data or unified cache size -- they do not include
