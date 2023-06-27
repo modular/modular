@@ -260,7 +260,7 @@ kgen.func @cmp_index() -> !pop.scalar<bool> {
 }
 
 // CHECK-LABEL: @cmp_eq_self
-kgen.func @cmp_eq_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_eq_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <true>
   %0 = pop.cmp eq(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
@@ -268,7 +268,7 @@ kgen.func @cmp_eq_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
 
 // Floats cannot be removed symbolically as they could be NAN.
 // CHECK-LABEL: @cmp_eq_self_float
-kgen.func @cmp_eq_self_float(%simd : !pop.simd<2, f32>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_eq_self_float(%simd: !pop.simd<2, f32>) -> !pop.simd<2, bool> {
   // CHECK-NEXT: %[[RES:.*]] = pop.cmp eq
   // CHECK-NEXT: kgen.return %[[RES]]
   %0 = pop.cmp eq(%simd, %simd) : !pop.simd<2, f32>
@@ -276,38 +276,48 @@ kgen.func @cmp_eq_self_float(%simd : !pop.simd<2, f32>) -> (!pop.simd<2, bool>) 
 }
 
 // CHECK-LABEL: @cmp_ne_self
-kgen.func @cmp_ne_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_ne_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <false>
   %0 = pop.cmp ne(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @cmp_lt_self
-kgen.func @cmp_lt_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_lt_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <false>
   %0 = pop.cmp lt(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @cmp_gt_self
-kgen.func @cmp_gt_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_gt_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <false>
   %0 = pop.cmp gt(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @cmp_ge_self
-kgen.func @cmp_ge_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_ge_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <true>
   %0 = pop.cmp ge(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @cmp_le_self
-kgen.func @cmp_le_self(%simd : !pop.simd<2, si8>) -> (!pop.simd<2, bool>) {
+kgen.func @cmp_le_self(%simd: !pop.simd<2, si8>) -> !pop.simd<2, bool> {
   // CHECK-DAG: <true>
   %0 = pop.cmp le(%simd, %simd) : !pop.simd<2, si8>
   kgen.return %0 : !pop.simd<2, bool>
+}
+
+// CHECK-LABEL: @cmp_true_false
+kgen.func @cmp_true_false(%simd: !pop.simd<2, bool>) -> (!pop.simd<2, bool>, !pop.simd<2, bool>) {
+  %true = kgen.param.constant: simd<2, bool> = <<true, true>>
+  %false = kgen.param.constant: simd<2, bool> = <<false, false>>
+  %0 = pop.cmp eq(%true, %simd) : <2, bool>
+  %1 = pop.cmp ne(%simd, %false) : <2, bool>
+  // CHECK-NEXT: return %arg0, %arg0
+  kgen.return %0, %1 : !pop.simd<2, bool>, !pop.simd<2, bool>
 }
 
 // CHECK-LABEL: @and
