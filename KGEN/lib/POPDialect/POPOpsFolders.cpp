@@ -433,8 +433,8 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
     return result;
 
   // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
-  if ((getPred() == CmpPredicate::EQ || getPred() == CmpPredicate::NE) &&
-      getLhs().getType().getResolvedDType() == DType::kBool) {
+  if (operandTy && operandTy == DType::kBool &&
+      llvm::is_contained({CmpPredicate::EQ, CmpPredicate::NE}, getPred())) {
     // Only one input will be constant.
     auto lhs = dyn_cast_or_null<SIMDAttr>(adaptor.getLhs());
     auto rhs = dyn_cast_or_null<SIMDAttr>(adaptor.getRhs());
@@ -447,6 +447,37 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
     if (lhs && llvm::all_equal(lhs.getValues()) &&
         (getPred() == CmpPredicate::EQ) == lhs.getValues().front().getBoolVal())
       return rhs ? getLhs() : getRhs();
+  }
+
+  // Fold `ge(unsigned_val, 0), le(0, unsigned_val)` into true and false
+  // otherwise.
+  if (operandTy && operandTy->isUInt() &&
+      llvm::is_contained({CmpPredicate::LE, CmpPredicate::GE}, getPred())) {
+
+    // Only one input will be constant.
+    auto lhs = dyn_cast_or_null<SIMDAttr>(adaptor.getLhs());
+    auto rhs = dyn_cast_or_null<SIMDAttr>(adaptor.getRhs());
+    assert(!(lhs && rhs) && "constant case should be handled");
+
+    // If `lhs` contains the constant, move it to `rhs` so that `rhs` is now
+    // constant.
+    bool isSwapped = false;
+    if (lhs) {
+      isSwapped = true;
+      std::swap(lhs, rhs);
+    }
+
+    // If the `rhs` is constant and zero, then we can simplify the comparison.
+    if (rhs && llvm::all_equal(rhs.getValues()) &&
+        rhs.getValues()[0].getData().isZero()) {
+
+      bool cond = getPred() == CmpPredicate::GE;
+      if (isSwapped)
+        cond = !cond;
+
+      SmallVector<DTypeValue> values(*size, DTypeValue(cond, KGENDType::kBool));
+      return SIMDAttr::get(values, getType());
+    }
   }
 
   return {};
