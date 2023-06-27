@@ -430,6 +430,7 @@ fn _reduce_generator[
     type: DType,
     rank: Int,
     simd_width: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -452,6 +453,7 @@ fn _reduce_generator[
         type: The element type we are reducing.
         rank: The rank of the tensor.
         simd_width: The SIMD vector width to use.
+        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
@@ -493,9 +495,13 @@ fn _reduce_generator[
         let indices = StaticIntTuple[rank](0)
         output_0_fn[type, 1, rank](indices, acc_scalar)
 
-    # Until the threading model allows partials we have to launch this on one
-    # thread.
-    async_parallelize[reduce](out_chain, 1)
+    @parameter
+    if single_thread_blocking_override:
+        reduce(0)
+    else:
+        # Until the threading model allows partials we have to launch this on one
+        # thread.
+        async_parallelize[reduce](out_chain, 1)
 
 
 @always_inline
@@ -504,6 +510,7 @@ fn _reduce_generator[
     type: DType,
     rank: Int,
     simd_width: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -526,6 +533,7 @@ fn _reduce_generator[
         type: The element type we are reducing.
         rank: The rank of the tensor.
         simd_width: The SIMD vector width to use.
+        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
@@ -548,6 +556,7 @@ fn _reduce_generator[
             rank,
             simd_width,
             unroll_factor,
+            single_thread_blocking_override,
             input_0_fn,
             output_0_fn,
             reduce_function,
@@ -559,6 +568,7 @@ fn _reduce_generator[
             rank,
             1,
             1,
+            single_thread_blocking_override,
             input_0_fn,
             output_0_fn,
             reduce_function,
@@ -571,6 +581,7 @@ fn _reduce_along_dimension[
     rank: Int,
     simd_width: Int,
     unroll_factor: Int,
+    single_thread_blocking_override: Bool,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -594,6 +605,7 @@ fn _reduce_along_dimension[
         rank: The rank of the tensor.
         simd_width: The SIMD vector width to use.
         unroll_factor: The amount to unroll the inner loop by.
+        single_thread_blocking_override: if set will run immediately
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
@@ -672,7 +684,14 @@ fn _reduce_along_dimension[
                 start_parallel_offset, end_parallel_offset
             )
 
-    async_parallelize[vectorize_over_reduced_dim](out_chain, num_workers)
+    @parameter
+    if single_thread_blocking_override:
+        if unroll_factor > reduce_dim_size:
+            unrolled_inner_loop[simd_width](0, parallelism_size)
+        else:
+            unrolled_inner_loop[unroll_factor](0, parallelism_size)
+    else:
+        async_parallelize[vectorize_over_reduced_dim](out_chain, num_workers)
 
 
 # ===----------------------------------------------------------------------===#
