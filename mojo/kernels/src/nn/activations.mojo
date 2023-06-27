@@ -9,11 +9,12 @@
 from Assert import assert_param
 from Bit import _is_neg
 from DType import DType
-from Math import abs, copysign, erf, exp, clamp, max, min, identity, tanh, fma
-from SIMD import SIMD
-from LLCL import OutputChainPtr
-from Polynomial import polynomial_evaluate
 from List import VariadicList
+from LLCL import OutputChainPtr
+from Math import abs, copysign, erf, exp, clamp, max, min, identity, tanh, fma
+from Numerics import isfinite
+from Polynomial import polynomial_evaluate
+from SIMD import SIMD
 
 
 @value
@@ -320,7 +321,7 @@ fn gelu[
     Constraints:
         type must be a floating point type.
     """
-    alias inv_SQRT_2 = 0.70710678118
+    alias inv_SQRT_2 = 0.70710678118654752440
     assert_param[
         type.is_floating_point(),
         "dtype must be a floating point type",
@@ -387,8 +388,7 @@ fn gelu_approximate_sigmoid[
         type must be a floating point type.
     """
     assert_param[
-        type.is_floating_point(),
-        "dtype must be a floating point type",
+        type.is_floating_point(), "dtype must be a floating point type"
     ]()
     return x * sigmoid(x * 1.702)
 
@@ -405,8 +405,8 @@ fn sigmoid[
     """Compute the Sigmoid Op using the equation $e^x / (e^x + 1)$.
 
     Parameters:
+        type: The `dtype` used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the sigmoid operation on.
@@ -414,9 +414,7 @@ fn sigmoid[
     Returns:
         SIMD[type, size]: The result of the sigmoid operation.
     """
-
-    let ex = exp(x)
-    return ex / (ex + 1)
+    return 1 / (1 + exp(-x))
 
 
 # ===----------------------------------------------------------------------===#
@@ -432,8 +430,8 @@ fn sigmoid_grad[
     $(1-sigmoid(x))*sigmoid(x)$.
 
     Parameters:
+        type: The `dtype` used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the sigmoid grad operation on.
