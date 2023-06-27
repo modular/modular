@@ -9,6 +9,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
@@ -656,6 +657,10 @@ OpFoldResult SIMDSelectOp::fold(FoldAdaptor adaptor) {
     return SIMDAttr::get(results, getType());
   }
 
+  // Fold `select(x, y, y) -> y`.
+  if (getTrueValue() == getFalseValue())
+    return getTrueValue();
+
   // Fold `select(x, true, false) -> x`.
   if (getType().getResolvedDType() == KGENDType::kBool && trueVals &&
       falseVals) {
@@ -669,6 +674,29 @@ OpFoldResult SIMDSelectOp::fold(FoldAdaptor adaptor) {
   }
 
   return {};
+}
+
+/// Canonicalize `select(x, false, true) -> not(x)`.
+LogicalResult SIMDSelectOp::canonicalize(SIMDSelectOp op, PatternRewriter &b) {
+  if (op.getType().getResolvedDType() != KGENDType::kBool)
+    return b.notifyMatchFailure(op.getLoc(), "not bool dtype");
+
+  SIMDAttr trueVals, falseVals;
+  if (!mlir::matchPattern(op.getTrueValue(), mlir::m_Constant(&trueVals)) ||
+      !mlir::matchPattern(op.getFalseValue(), mlir::m_Constant(&falseVals)))
+    return b.notifyMatchFailure(op.getLoc(), "values are not constants");
+
+  if (!llvm::all_of(
+          trueVals.getValues(),
+          [](const DTypeValue &value) { return !value.getBoolVal(); }) ||
+      !llvm::all_of(falseVals.getValues(),
+                    [](const DTypeValue &value) { return value.getBoolVal(); }))
+    return b.notifyMatchFailure(
+        op.getLoc(), "values are not 'false' and 'true' respectively");
+
+  // The pattern has matched. Re-use the 'true' constant.
+  b.replaceOpWithNewOp<XOrOp>(op, op.getCondition(), op.getFalseValue());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

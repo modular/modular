@@ -360,9 +360,27 @@ kgen.func @simd_select() -> !pop.simd<2, si4> {
 // CHECK-LABEL: @simd_select_true_false
 kgen.func @simd_select_true_false(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
   // CHECK-NEXT: return %arg0
+  %true = kgen.param.constant: simd<2, bool> = <true>
+  %false = kgen.param.constant: simd<2, bool> = <false>
+  %0 = pop.simd.select %arg0, %true, %false : <2, bool>
+  kgen.return %0 : !pop.simd<2, bool>
+}
+
+// CHECK-LABEL: @simd_select_false_true
+kgen.func @simd_select_false_true(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
+  // CHECK-NEXT: %[[TRUE:.*]] = kgen.param.constant: simd<2, bool> = <true>
+  // CHECK-NEXT: %0 = pop.xor %arg0, %[[TRUE]]
+  // CHECK-NEXT: return %0
   %true = kgen.param.constant: simd<2, bool> = <<true, true>>
   %false = kgen.param.constant: simd<2, bool> = <<false, false>>
-  %0 = pop.simd.select %arg0, %true, %false : <2, bool>
+  %0 = pop.simd.select %arg0, %false, %true : <2, bool>
+  kgen.return %0 : !pop.simd<2, bool>
+}
+
+// CHECK-LABEL: @simd_select_equal
+kgen.func @simd_select_equal(%arg0: !pop.simd<2, bool>, %arg1: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
+  %0 = pop.simd.select %arg0, %arg1, %arg1 : <2, bool>
+  // CHECK-NEXT: return %arg1
   kgen.return %0 : !pop.simd<2, bool>
 }
 
