@@ -963,6 +963,7 @@ fn soft_fusion_run_wrapper[
 @always_inline
 fn matmul[
     type: DType,
+    transpose_in_1: Bool,  # matches name of MO attribute
     single_thread_blocking_override: Bool,
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), type],
@@ -971,7 +972,7 @@ fn matmul[
     out_chain: OutputChainPtr,
 ):
     alias transpose_a = False
-    alias transpose_b = False
+    alias transpose_b = transpose_in_1
     alias b_packed = False
 
     @always_inline
