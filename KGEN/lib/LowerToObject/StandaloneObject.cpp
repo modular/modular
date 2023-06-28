@@ -315,39 +315,28 @@ private:
 /// library when it's an archive, for example.
 static void
 collectLinksAndUsers(ModuleOp theModule, const SymbolTable &symtab,
-                     DenseMap<StringAttr, llvm::StringSet<>> &linksAndUsers) {
+                     DenseMap<Attribute, llvm::StringSet<>> &linksAndUsers) {
   theModule.walk([&](POP::ExternalCallOp call) {
     auto importedFromAttr = call.getImportedFromAttr();
     if (!importedFromAttr)
       return;
 
     auto link = symtab.lookup<LinkOp>(importedFromAttr.getAttr());
-    if (link)
-      linksAndUsers[link.getLinkPathAttr()].insert(call.getCallee());
+    assert(link && "There wasn't a valid LinkOp?");
+
+    if (auto path = link.getLinkPathAttr())
+      linksAndUsers[path].insert(call.getCallee());
+    else if (auto bytes = link.getLinkBytesAttr())
+      linksAndUsers[bytes].insert(call.getCallee());
   });
 }
 
-/// Open the static archive or object specified by the link directive, and add
-/// relevant archive members to the provided list.
+/// Given a binary in `bufferRef`, add all the required pieces of it to the list
+/// of archive members. This is effectively a very dumb static linker.
 static ErrorOrSuccess
-handleLinkDirective(StringAttr linkPath, const llvm::StringSet<> &users,
-                    llvm::SourceMgr &linkMgr, DenseSet<StringAttr> &processed,
-                    SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
-  // Only pull in each library exactly once.
-  if (!processed.insert(linkPath).second)
-    return success();
-
-  // Pull in the library as an 'include' file. This has the lovely side effect
-  // of holding onto the file for as long as we need it, so we don't have to do
-  // anything after opening the file.
-  std::string filepath;
-  unsigned fileIdx =
-      linkMgr.AddIncludeFile(linkPath.str(), llvm::SMLoc{}, filepath);
-  if (fileIdx == 0)
-    return Error("could not find file at " + linkPath.getValue());
-  llvm::MemoryBufferRef bufferRef =
-      linkMgr.getMemoryBuffer(fileIdx)->getMemBufferRef();
-
+addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
+                   const llvm::StringSet<> &users,
+                   SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
   // Create the binary.
   auto binaryOr = llvm::object::createBinary(bufferRef);
   if (!binaryOr)
@@ -411,6 +400,48 @@ handleLinkDirective(StringAttr linkPath, const llvm::StringSet<> &users,
   return success();
 }
 
+/// Open the static archive or object specified by the link directive, and add
+/// relevant archive members to the provided list.
+static ErrorOrSuccess handleLinkPathDirective(
+    StringAttr linkPath, const llvm::StringSet<> &users,
+    llvm::SourceMgr &linkMgr, DenseSet<Attribute> &processed,
+    SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
+  // Only pull in each library exactly once.
+  if (!processed.insert(linkPath).second)
+    return success();
+
+  // Pull in the library as an 'include' file. This has the lovely side effect
+  // of holding onto the file for as long as we need it, so we don't have to do
+  // anything after opening the file.
+  std::string filepath;
+  unsigned fileIdx =
+      linkMgr.AddIncludeFile(linkPath.str(), llvm::SMLoc{}, filepath);
+  if (fileIdx == 0)
+    return Error("could not find file at " + linkPath.getValue());
+  llvm::MemoryBufferRef bufferRef =
+      linkMgr.getMemoryBuffer(fileIdx)->getMemBufferRef();
+
+  return addBinaryToArchive(bufferRef, users, archiveMembers);
+}
+
+/// Take the bytes provided, interpret them as a static archive, and add the
+/// archive members to the provided list.
+static ErrorOrSuccess handleLinkBytesDirective(
+    DenseResourceElementsAttr linkBytes, const llvm::StringSet<> &users,
+    DenseSet<Attribute> &processed,
+    SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
+  // Only pull in each library exactly once.
+  if (!processed.insert(linkBytes).second)
+    return success();
+
+  // Create the llvm memory buffer ref.
+  ArrayRef<char> rawBytes = linkBytes.getRawHandle().getBlob()->getData();
+  llvm::MemoryBufferRef byteBuffer(StringRef(rawBytes.begin(), rawBytes.size()),
+                                   linkBytes.getRawHandle().getKey());
+
+  return addBinaryToArchive(byteBuffer, users, archiveMembers);
+}
+
 //===----------------------------------------------------------------------===//
 // produceStandaloneArchive
 //===----------------------------------------------------------------------===//
@@ -426,7 +457,7 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
   // Pull out the link/external_call map. Do this while we still have the IR in
   // a recognizable state to make things simple. This map contains a mapping
   // from library import path to all the symbols imported from that library.
-  DenseMap<StringAttr, llvm::StringSet<>> linksAndUsers;
+  DenseMap<Attribute, llvm::StringSet<>> linksAndUsers;
   collectLinksAndUsers(*slicedModule, symtab, linksAndUsers);
 
   // Set up a SourceMgr that we can use to find link files.
@@ -480,10 +511,30 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
             // Process all the link directives now. We keep a set of
             // already-processed link directives, so we don't re-process
             // libraries.
-            DenseSet<StringAttr> processedLinks;
-            for (auto [link, users] : linksAndUsers) {
-              if (auto err = handleLinkDirective(
-                      link, users, linkMgr, processedLinks, archiveMembers)) {
+            DenseSet<Attribute> processedLinks;
+            for (const auto &lu : linksAndUsers) {
+              Attribute link = lu.first;
+              const llvm::StringSet<> &users = lu.second;
+              auto err =
+                  llvm::TypeSwitch<Attribute, ErrorOrSuccess>(link)
+                      .Case([&](StringAttr path) {
+                        return handleLinkPathDirective(path, users, linkMgr,
+                                                       processedLinks,
+                                                       archiveMembers);
+                      })
+                      .Case([&](DenseResourceElementsAttr bytes) {
+                        return handleLinkBytesDirective(
+                            bytes, users, processedLinks, archiveMembers);
+                      })
+                      .Default([](Attribute attr) {
+                        llvm::report_fatal_error(
+                            ("kgen.link expected bytes or path, not " +
+                             mlir::debugString(attr))
+                                .c_str());
+                        return Error("kgen.link expected bytes or path, not " +
+                                     mlir::debugString(attr));
+                      });
+              if (err.isError()) {
                 return std::move(output).setToError(
                     LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
               }

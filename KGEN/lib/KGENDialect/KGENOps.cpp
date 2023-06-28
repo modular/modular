@@ -1124,6 +1124,17 @@ LogicalResult CreateClosureOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// LinkOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LinkOp::verify() {
+  if (getLinkPath().has_value() == getLinkBytes().has_value())
+    return emitError(
+        "expected either a path or the bytes of an object or archive");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -15,6 +15,7 @@ include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/Interpreter/InterpreterInterface.td"
+include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -975,7 +976,9 @@ def KGEN_LinkOp : KGENOp<"link", [HasParent<"mlir::ModuleOp">, Symbol]> {
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       StrAttr:$linkPath);
+    OptionalAttr<StrAttr>:$linkPath,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$linkBytes);
 
-  let assemblyFormat = "$linkPath `as` $sym_name attr-dict";
+  let assemblyFormat = "($linkPath^)? ($linkBytes^)? `as` $sym_name attr-dict";
+  let hasVerifier = 1;
 }
