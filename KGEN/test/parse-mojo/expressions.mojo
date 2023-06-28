@@ -86,8 +86,8 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
   # CHECK-NEXT: %regX = lit.varlet.decl
+  # CHECK-NEXT: [[AX:%.*]] = lit.struct.gep %a[x]
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%regX, [[AX]])
   let regX = a.x
 
@@ -112,8 +112,8 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   let v2xx = v2.x.x
 
   # Implicit conversion between memory-only types.
-  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: %mpFloat = lit.varlet.decl
+  # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mpFloat, [[V2X]])
   let mpFloat : MemoryOnlyFloat64 = v2.x
 
@@ -484,6 +484,7 @@ fn initializers():
 
 # CHECK-LABEL: lit.func @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
+    # CHECK: %i = lit.varlet.decl "i"
     # CHECK: %[[COND:.*]] = pop.load %cond_0
     # CHECK: %[[LIT_BOOLI1:.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
@@ -493,7 +494,6 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT:   %[[INT_THREE:.*]] = kgen{{.*}}= 3}
     # CHECK-NEXT:   hlcf.yield %[[INT_THREE]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: %i = lit.varlet.decl "i"
     # CHECK-NEXT: pop.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
@@ -1047,6 +1047,7 @@ fn dynamic_attribute():
 
 # CHECK-LABEL: lit.func @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
+    # CHECK-NEXT: %res = lit.varlet.decl "res"
     # CHECK:      [[CMP_A_B:%.*]] = kgen.call @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = kgen.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
@@ -1061,7 +1062,6 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: %res = lit.varlet.decl "res"
     # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
     var res = a < b < c < d
 

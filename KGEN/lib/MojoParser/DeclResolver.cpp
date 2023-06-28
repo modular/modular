@@ -31,7 +31,6 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -2383,110 +2382,8 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 // VarLetDecl implementation
 //===----------------------------------------------------------------------===//
 
-/// var_decl_stmt ::= var_or_let identifier ":" expression ["=" expression]
-///                 | var_or_let identifier "=" expression
-/// var_or_let    ::= "var" | "let"
 LogicalResult DeclResolver::resolveSignature(VarLetDeclOp varOp, Lexer &lexer,
                                              ASTDecl &decl) {
-  ParserBase p(lexer);
-  auto decorators = p.parseDecorators(decl);
-
-  p.consumeToken(); // eat the let/var.
-  if (p.parseToken(Token::identifier, "internal error: checked by stmt parser"))
-    return failure();
-
-  //  Parse the type if present.
-  ASTType parsedType;
-  if (p.consumeIf(Token::colon)) {
-    if (parseType(p, parsedType, *decl.getParentDecl(), decl.getIndentation()))
-      return failure();
-  }
-
-  // Parse the initializer if present.
-  ExprNode *initExpr = nullptr;
-  if (p.consumeIf(Token::equal)) {
-    if (p.parseExpression(initExpr, decl.getIndentation()))
-      return failure();
-  }
-
-  // Now that parsing succeeded, we do IR emission and semantic processing.
-
-  // Handle the initializer if present.
-  if (initExpr) {
-    // Insert before the var decl op. Ops can get deleted, so we have to ensure
-    // the insertion point is stable.
-    OpBuilder builder(varOp);
-    ExprEmitter emitter(shared, *decl.getParentDecl(), builder,
-                        /*varDeclCursor*/ nullptr);
-
-    // If we have a type, then emit directly into the LValue.  Otherwise emit
-    // into the varOp to infer its type.
-    ValueDest dest;
-    ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
-    if (parsedType) {
-      varOp.getResult().setType(POP::PointerType::get(parsedType));
-      dest = ValueDest(SLValue(varOp), exprContext);
-    } else {
-      // If we don't, we emit into the varOp itself, because this will infer the
-      // type of the varOp from the initializer expression.
-      dest = ValueDest(varOp, exprContext);
-    }
-
-    if (!initExpr->emitIR(dest, emitter)) {
-      dest.resetForError();
-      return failure();
-    }
-
-    // Now move the var decl op to the end of the initializer IR.
-    // This requires us to identify the first use. At this point,
-    // there is either 1 or 2 uses of this varOp within the same
-    // block.
-    Operation *first_user = *varOp->getUsers().begin();
-    if (!varOp->hasOneUse()) {
-      Operation *second_user = *(++varOp->getUsers().begin());
-      if (shared.getDomInfo().dominates(second_user, first_user))
-        first_user = second_user;
-    }
-    varOp->moveBefore(first_user);
-    assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
-           "RValue emission should have inferred var type");
-
-  } else if (parsedType) {
-    varOp.getResult().setType(POP::PointerType::get(parsedType));
-  } else {
-    // If there was neither a type or initializer, reject the var.
-    emitError(varOp.getLoc(),
-              "declaration must have either a type or an initializer");
-    return failure();
-  }
-
-  rejectDecorators(decorators, decl, shared);
-
-  // Now that this has been fully checked, we can promote to a LetRegDeclOp
-  // if this was a non-parameteric register-passable `let` declaration with
-  // an initializer.  We don't care about the address being available and
-  // this produces smaller IR.
-  ASTType inferredRValueType = ASTType(varOp.getType()).getPointerElementType();
-  if (initExpr && !varOp.getIsVar() &&
-      // NOTE: This is assuming type parameters are valid register types.  We
-      // will need to build out better support when we have traits, but this is
-      // important for kernels in practice today.
-      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
-    // There should be exactly one store to the original op, sanity check this.
-    assert(varOp->hasOneUse() && "Should have one store use");
-    auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
-
-    // Create new LetRegDeclOp and put it into the ASTDecl.
-    OpBuilder builder(theStore);
-    auto newLetOp = builder.create<LetRegDeclOp>(
-        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg());
-    decl.setIRValue(newLetOp.getOperation());
-
-    // Remove the store and the original VarLetDeclOp.
-    theStore->erase();
-    varOp->erase();
-  }
-
   return success();
 }
 

@@ -16,10 +16,6 @@
 
 #include "mlir/IR/BuiltinOps.h"
 
-namespace mlir {
-class DominanceInfo;
-} // namespace mlir
-
 namespace M {
 struct MojoParserConfig;
 } // namespace M
@@ -126,9 +122,6 @@ public:
   /// into the MLIR symbol table for its container.  If the symbol is already
   /// declared in the same MLIR scope, then return the conflicting operation.
   Operation *setResolvedDeclSymbol(Operation *declOp);
-
-  /// Get the shared operation dominance analysis.
-  mlir::DominanceInfo &getDomInfo();
 
   //===--------------------------------------------------------------------===//
   // Name Lookup
