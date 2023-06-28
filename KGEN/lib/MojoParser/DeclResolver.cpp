@@ -71,9 +71,7 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
 
 /// Look up a name in this declaration's scope only: return null on failure.
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
-  assert((resolvedness == DeclResolvedness::fully ||
-          // FIXME(Issue#5975): FuncOp shouldn't be special cased.
-          isa<FuncOp>(*this)) &&
+  assert(resolvedness == DeclResolvedness::fully &&
          "cannot perform lookup in a decl that isn't fully resolved");
   auto it = declsInScope.find(name);
   if (it != declsInScope.end() && !it->second.empty())
@@ -84,7 +82,11 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
 void ASTDecl::dump() const {
   // The value is either an operation or a type of MLIR `Value`.
   TypeSwitch<DeclIRValue>(getIRValue())
-      .Case<Operation *>([](Operation *op) { op->dump(); })
+      .Case<Operation *>([](Operation *op) {
+        // Print without verifying, since IR could be in an invalid state.
+        op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
+        llvm::errs() << "\n";
+      })
       .Case<PValue, SRValue, MRValue, SBValue, MBValue, SLValue>(
           [](auto v) { v.dump(); })
       .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
@@ -622,6 +624,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       }
     };
 
+    // Mark the body as already resolved so that name lookup can be performed
+    // in the decl during resolution.
+    decl.resolvedness = DeclResolvedness::fully;
+
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
@@ -640,7 +646,6 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             emitError(decl.getLoc(),
                       "do not know how to resolve the body of this decl!");
         });
-    decl.resolvedness = DeclResolvedness::fully;
 
     // With the decl fully processed, validate the doc string.
     if (shared.shouldValidateDocStrings())
@@ -1347,7 +1352,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
           type = shared.getTypeCheckErrorType();
       } else {
         // In an 'fn' we report an error.
-        emitErrorLoc(arg.loc, "'fn' parameter type must be specified")
+        emitErrorLoc(arg.loc, "'fn' argument type must be specified")
             << SourceRange(arg.loc, arg.loc);
         type = shared.getTypeCheckErrorType();
       }
@@ -1788,9 +1793,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in function definition"))
     return failure();
 
-  // Resolve the result parameter types now that the arguments are in scope.
-  ExprEmitter typeEmitter(shared, decl, EC_Type, nullptr);
-
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
   // Okay, apply them now.
@@ -1804,11 +1806,25 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return success();
   };
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
-  ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-      reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
-      defaults, funcOp.getIsDef(), resultLoc, decl, fnInfo);
-  if (!resultType)
-    return failure();
+
+  ASTType resultType;
+  // Mark the decl container as 'fully resolved' temporarily to facilitate
+  // this, so it doesn't attempt to get resolved again.
+  // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
+  // that parameters should be accessible before the body is, and we have
+  // no way to express this currently.
+  {
+    assert(decl.resolvedness == DeclResolvedness::unparsed);
+    llvm::SaveAndRestore X(decl.resolvedness, DeclResolvedness::fully);
+    ExprEmitter typeEmitter(shared, decl, EC_Type, nullptr);
+
+    resultType = ParsedArgument::emitFunctionArgumentsAndResults(
+        reportError, shared, typeEmitter, resultTypeExpr, effects, args,
+        argTypes, defaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(),
+        fnInfo);
+    if (!resultType)
+      return failure();
+  }
 
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<FuncOp>())
@@ -2000,10 +2016,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (!funcOp.getIsParametric()) {
     // Fully resolve the body so we can swap the IR value of the decl. Later on,
     // we will need this to determine the capture signature.
-    decl.resolvedness = DeclResolvedness::signature;
+    decl.resolvedness = DeclResolvedness::fully;
     if (failed(resolveBody(funcOp, lexer, decl)))
       return failure();
-    decl.resolvedness = DeclResolvedness::fully;
     if (failed(recursivelyResolveFully(decl, decl.getLoc())))
       return failure();
 
@@ -3259,9 +3274,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (ParserBase::parseSuite(structDecl, lexer))
     return failure();
 
-  // Mark the declaration as fully resolved so we can lookup into it.
-  structDecl.resolvedness = DeclResolvedness::fully;
-
   // Track whether any field needs destruction, if so, we need a __del__
   // method.
   bool needsDtorForFields = false;
@@ -3291,7 +3303,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // checking other decorators.  This ensures that we reject invalid
   // register_passable types before processing them.
   if (auto passability = structOp.getRegisterPassable()) {
-    // TODO: Split trivial and register_passable appart.
+    // TODO: Split trivial and register_passable apart.
     processRegisterPassableDecorator(
         structOp, structDecl, structFields, *this,
         (StructDeclOp::RegisterPassable)passability);
