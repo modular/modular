@@ -1019,16 +1019,8 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
       return failure();
   }
 
-  // Mark the decl container as 'fully resolved' temporarily to facilitate
-  // this, so it doesn't attempt to get resolved again.
-  // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
-  // that parameters should be accessible before the body is, and we have
-  // no way to express this currently.
-  assert(declScope.resolvedness == DeclResolvedness::unparsed);
-  llvm::SaveAndRestore X(declScope.resolvedness, DeclResolvedness::fully);
-  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
-
   // Resolve each of the parameter declarations.
+  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
   ParsedArgument::processParameterArgs(emitter, declScope, args, inputParams,
                                        /*isResultParams=*/false, paramVararg);
 
@@ -1728,18 +1720,23 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (p.parseIdentifier(baseName, "expected function name"))
     return failure();
 
+  // The function signature is a self-contained scope where the input and result
+  // parameters of the function are visible by all types.
+  ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
+                                          decl.getParentDecl());
+
   // Add meta parameters from an enclosing declaration to the symbol table.
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
   bool paramVararg = false;
-  bool inAStruct = isa<StructDeclOp>(*decl.getParentDecl());
-  if (inAStruct) {
-    auto structDecl = cast<StructDeclOp>(*decl.getParentDecl());
-    auto parentLoc = decl.getParentDecl()->getLoc();
+  auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl());
+  if (structDecl) {
+    SMLoc parentLoc = decl.getParentDecl()->getLoc();
     for (ParamDeclAttr param : structDecl.getInputParams()) {
       auto paramRef = ParamDeclRefAttr::get(param);
-      addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc, &decl);
+      addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc,
+                           &sigDecl);
     }
     paramVararg = structDecl.getParamVarargs();
   }
@@ -1753,7 +1750,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parseOptionalParameterSignature(p, decl, inputParamDecls,
+  if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                       resultParamDecls, paramVararg) ||
       p.parseToken(Token::l_paren, "expected '(' for parameter list"))
     return failure();
@@ -1806,25 +1803,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return success();
   };
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
+  ExprEmitter typeEmitter(shared, sigDecl, EC_Type, nullptr);
+  ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
+      reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
+      defaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
+  if (!resultType)
+    return failure();
 
-  ASTType resultType;
-  // Mark the decl container as 'fully resolved' temporarily to facilitate
-  // this, so it doesn't attempt to get resolved again.
-  // FIXME(5975): This is a hack and shouldn't be needed.  The problem is
-  // that parameters should be accessible before the body is, and we have
-  // no way to express this currently.
-  {
-    assert(decl.resolvedness == DeclResolvedness::unparsed);
-    llvm::SaveAndRestore X(decl.resolvedness, DeclResolvedness::fully);
-    ExprEmitter typeEmitter(shared, decl, EC_Type, nullptr);
-
-    resultType = ParsedArgument::emitFunctionArgumentsAndResults(
-        reportError, shared, typeEmitter, resultTypeExpr, effects, args,
-        argTypes, defaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(),
-        fnInfo);
-    if (!resultType)
-      return failure();
-  }
+  // Propagate errors and the parsed decls in the signature.
+  decl.hasReferenceError |= sigDecl.hasReferenceError;
+  decl.declsInScope = std::move(sigDecl.declsInScope);
 
   // Nested functions are capturing by default.
   if (funcOp->getParentOfType<FuncOp>())
@@ -1954,7 +1942,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // If have a main function, fn main(), export it automatically.
-  if (!inAStruct && isMainFunction(baseName, funcOp, shared))
+  if (!structDecl && isMainFunction(baseName, funcOp, shared))
     getDeclResolver().exportMain(decl);
 
   // Generate a debug subprogram for this function.
@@ -2656,6 +2644,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ParserBase p(lexer);
   auto decoratorExprs = p.parseDecorators(decl);
 
+  // The signature of a struct is a self-contained decl where types can
+  // reference the struct parameters.
+  ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
+                                          decl.getParentDecl());
+
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
   bool paramVarargs = false;
@@ -2663,10 +2656,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                    "internal error: checked by stmt parser") ||
       p.parseToken(Token::identifier,
                    "internal error: checked by stmt parser") ||
-      parseOptionalParameterSignature(p, decl, inputParamDecls,
+      parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                       resultParamDecls, paramVarargs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
+
+  // Propagate signature errors and decls.
+  decl.hasReferenceError |= sigDecl.hasReferenceError;
+  decl.declsInScope = std::move(sigDecl.declsInScope);
 
   structOp.setInputParams(inputParamDecls);
   structOp.setParamVarargs(paramVarargs);
