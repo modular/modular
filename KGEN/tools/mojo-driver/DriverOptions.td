@@ -4,13 +4,27 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "HelpOptions.td"
+include "OptionsBase.td"
+include "CommonOptions.td"
 
-def MojoDriverGroup : OptionGroup<
-  "Options specific to the top-level driver command.">;
+//===----------------------------------------------------------------------===//
+// Top-Level Command
+//===----------------------------------------------------------------------===//
 
-def version : Flag<["--", "-"], "version">, Group<MojoDriverGroup>, Flags<[]>,
+def : MojoDriverDescription<
+  "The Mojo🔥 command line interface", "Interface with Mojo's various features.",
+  /*metaVarName=*/"command", /*requiresInput=*/false, /*variadicInput=*/false>;
+
+//===----------------------------------------------------------------------===//
+// Diagnostic Options
+//===----------------------------------------------------------------------===//
+
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<0>;
+
+def version : Flag<["--", "-"], "version">, Group<DiagnosticOptionGroup>,
+  Index<0>, Flags<[]>,
   HelpText<"Prints the Mojo version and exits.">;
-def : Flag<["-"], "v">, Group<MojoDriverGroup>, Flags<[]>,
-  HelpText<"Alias for --version.">, Alias<version>;
+
+def v : Flag<["-"], "v">, Group<DiagnosticOptionGroup>, Index<0>, Flags<[]>,
+  Alias<version>;
 

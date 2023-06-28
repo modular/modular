@@ -28,12 +28,22 @@ def configure_lldb_tests(config):
         )
     )
 
+    config.substitutions.append(
+        (
+            "%mojo-tblgen",
+            (
+                'mojo-tblgen -I "{0}/KGEN/include" -I "{0}/Support/include" '
+                '-I "{0}/third-party/llvm-project/llvm/include"'
+            ).format(config.modular_src_root),
+        )
+    )
+
 
 # name: The name of this test suite.
 config.name = "KGEN"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mlir", ".mojo", ".test", ".🔥", ".lldb"]
+config.suffixes = [".mlir", ".mojo", ".test", ".🔥", ".lldb", ".td"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -56,6 +66,7 @@ tools = [
     "kgen-translate",
     "mojo",
     "mojo-lsp-server",
+    "mojo-tblgen",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

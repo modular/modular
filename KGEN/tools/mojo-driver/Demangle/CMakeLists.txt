@@ -5,3 +5,4 @@
 ##===----------------------------------------------------------------------===##
 
 add_driver_option_tablegen(DemangleOptions.td)
+add_driver_man_page_tablegen(DemangleOptions.td mojo-driver-demangle)

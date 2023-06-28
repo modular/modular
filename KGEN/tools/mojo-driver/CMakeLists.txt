@@ -25,7 +25,7 @@ add_modular_tool(mojo-driver
   LLVMOption
 )
 
-# An umbrella target for all driver option defnition TableGen targets.
+# An umbrella target for all driver TableGen targets.
 add_custom_target(MojoDriverOptions)
 
 # Given an input path "Foo.td", this creates a public TableGen target named
@@ -39,8 +39,27 @@ macro(add_driver_option_tablegen input)
   add_dependencies(MojoDriverOptions "MojoDriver${name}")
 endmacro()
 
+# Given an input path "Foo.td" and a manual page name "foo", this creates a
+# TableGen target named "man-foo", which when built generates a Linux manual
+# file named "foo.1" ('1' is the "general commands" section for manual pages).
+# That "foo.1" file is also copied to the build's share/man directory.
+macro(add_driver_man_page_tablegen input name)
+  set(file_name "${name}.1")
+  set(LLVM_TARGET_DEFINITIONS "${input}")
+  tablegen(MOJO "${file_name}" -gen-man-page)
+  add_public_tablegen_target("man-${name}")
+
+  add_custom_command(TARGET "man-${name}" POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    "${CMAKE_CURRENT_BINARY_DIR}/${file_name}"
+    "${MODULAR_SHARE_DIR}/man/man1/${file_name}")
+
+  add_dependencies(MojoDriverOptions "man-${name}")
+endmacro()
+
 # Add targets to generate option definitions for the top-level driver.
 add_driver_option_tablegen(DriverOptions.td)
+add_driver_man_page_tablegen(DriverOptions.td mojo-driver)
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
