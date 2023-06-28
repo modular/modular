@@ -25,9 +25,7 @@ struct Float32:
 // -----
 # Crashed at top level.
 
-# https://github.com/modularml/modular/issues/6701
-# expected-error @below {{recursive reference to declaration}}
-# expected-note @below {{previously used here}}
+# expected-error @below {{MLIR attribute is not a TypedAttr}}
 __mlir_attr.`#index<cmp_predicate eq>`
 
 // -----

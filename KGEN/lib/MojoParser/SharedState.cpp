@@ -363,11 +363,8 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
   // Ensure the context is fully resolved, so all its members are known.  It
   // would be bad to look something up in a scope without all members known.
-  // FIXME(Issue#5975): FuncOp shouldn't be special cased.
-  if (!isa<FuncOp>(scope)) {
-    if (failed(declResolver->resolveFully(scope, loc)))
-      return LookupResult::getErroneous();
-  }
+  if (failed(declResolver->resolveFully(scope, loc)))
+    return LookupResult::getErroneous();
 
   auto nameAttr = StringAttr::get(getContext(), name);
 
@@ -427,7 +424,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood.
-  for (auto *decl : entry) {
+  for (ASTDecl *decl : entry) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,

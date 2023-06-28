@@ -97,7 +97,9 @@ fn __add__(): pass
 fn __sub__(self: Int, a: Int): pass
 
 # Test differences between fn and def.
-fn testFn(a: Int, b): # expected-error {{'fn' parameter type must be specified}}
+fn noArgType(a: Int, b): pass # expected-error {{'fn' argument type must be specified}}
+
+fn mutArgAndImplicit(a: Int):
   a = a  # expected-error {{expression must be mutable in assignment}}
   c = a  # expected-error {{use of unknown declaration 'c', 'fn' declarations require explicit variable declarations}}
 
@@ -562,9 +564,8 @@ struct DirectInstanceReference:
 fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
 
-# https://github.com/modularml/modular/issues/6701
-struct MLIRAttrWithinStruct: # expected-note {{previously used here}}
-  # expected-error @+1 {{recursive reference to declaration}}
+struct MLIRAttrWithinStruct:
+  # expected-error @below {{MLIR attribute is not a TypedAttr}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 
