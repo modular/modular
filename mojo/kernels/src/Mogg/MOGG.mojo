@@ -18,7 +18,7 @@ from Reductions import _reduce_generator
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from IO import print
-from List import Dim, DimList, VariadicList
+from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from Math import (
     add,
@@ -79,9 +79,8 @@ fn MOGGExport():
     alias _to_buffer = to_buffer
     alias _abs = abs_wrapped
     alias _add = add
-    alias _cast = cast
-    alias _concat = mogg_concat
     alias _div = div
+    alias _cast = cast
     alias _erf = erf
     alias _exp = exp
     alias _equal = equal
@@ -569,87 +568,6 @@ fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width],) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
-
-
-@always_inline
-fn mogg_concat[
-    type: DType,
-    rank: Int,
-    simd_width: Int,
-    single_thread_blocking_override: Bool,
-    axis_type: DType,
-](
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    out_chain: OutputChainPtr,
-    *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
-):
-    let axis_int = axis[0].to_int()
-    let inputs = VariadicList(variadic_ins)
-
-    @parameter
-    @always_inline
-    fn concat_lambda[
-        simd_width: Int, rank: Int
-    ](out_index: StaticIntTuple[rank]):
-
-        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
-        # [:, 60, :] so when the target dim is:
-        #   0 >= target_dim < 10: We are loading from first input.
-        #   10 >= target_dim < 20: We are loading from second input.
-        #   20 >= target_dim < 30: We are loading from third input.
-        # The output will always be storing to the full index but we load from
-        # an offset.
-
-        var target_dim = out_index[axis_int]
-
-        # Iterate through the inputs to find the one we should be storing to.
-        for i in range(inputs.__len__()):
-            let input = inputs[i]
-
-            # This is the input we should be loading/storing.
-            if target_dim < input.dynamic_shape[axis_int]:
-                var in_index = out_index
-                in_index[axis_int] = target_dim
-                let load = simd_load[type, simd_width, rank](input, in_index)
-                simd_store[type, simd_width, rank](output, out_index, load)
-                break
-            else:
-                # Keep looking...
-                target_dim -= input.dynamic_shape[axis_int]
-
-    alias unroll_factor = 1
-
-    # If we are concat'ing along the last dimension we can do a simd load.
-    if axis_int == rank - 1:
-        _elementwise_impl[
-            rank,
-            simd_width,
-            unroll_factor,
-            single_thread_blocking_override,
-            concat_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
-        )
-    else:
-        # Otherwise we must run scalar.
-        _elementwise_impl[
-            rank,
-            1,
-            unroll_factor,
-            single_thread_blocking_override,
-            concat_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
-        )
-
-    # If we aren't using the trivial kernel we actually still have to wait.
-    # The variadics fall off the stack when captured by the lambda.
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.wait()
 
 
 # ===----------------------------------------------------------------------===#
