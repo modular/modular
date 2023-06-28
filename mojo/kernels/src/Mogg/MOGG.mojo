@@ -961,11 +961,83 @@ fn soft_fusion_run_wrapper[
         func(out_chain)
 
 
+# TODO: move into kernel lib
+@always_inline
+fn small_matmul[
+    type: DType,
+    simd_width: Int,
+    epilogue_wrapper: fn[type: DType, width: Int] (
+        StaticIntTuple[2], SIMD[type, width]
+    ) capturing -> None,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), type],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+):
+    let M = a.dim[0]()
+    let N = b.dim[1]()
+    let K = a.dim[1]()
+
+    c.zero()
+    alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
+
+    @always_inline
+    @parameter
+    fn compute_fn[
+        simd_width: Int,
+        output_func: fn[type: DType, width: Int] (
+            StaticIntTuple[2], SIMD[type, width]
+        ) capturing -> None,
+    ](m: Int, n: Int, k: Int):
+        output_func[type, simd_width](
+            Index(m, n),
+            c.simd_load[simd_width](m, n)
+            + a[m, k] * b.simd_load[simd_width](k, n),
+        )
+
+    @parameter
+    @always_inline
+    fn normal_update[
+        type: DType, width: Int
+    ](coords: StaticIntTuple[2], val: SIMD[type, width]):
+        c.simd_store[width](Index(coords[0], coords[1]), val)
+
+    @parameter
+    @always_inline
+    fn last_update[
+        type: DType, width: Int
+    ](coords: StaticIntTuple[2], val: SIMD[type, width]):
+        epilogue_wrapper[type, width](coords, val)
+
+    @always_inline
+    @parameter
+    fn accum_out_row[
+        output_func: fn[type: DType, width: Int] (
+            StaticIntTuple[2], SIMD[type, width]
+        ) capturing -> None,
+    ](m: Int, k: Int):
+        @always_inline
+        @parameter
+        fn _wrapper[simd_width: Int](n: Int):
+            compute_fn[simd_width, output_func](m, n, k)
+
+        vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
+
+    for m in range(M):
+        for k in range(K - 1):
+            accum_out_row[normal_update](m, k)
+        accum_out_row[last_update](m, K - 1)
+    return
+
+
 @always_inline
 fn matmul[
     type: DType,
     transpose_in_1: Bool,  # matches name of MO attribute
     single_thread_blocking_override: Bool,
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
     a: NDBuffer[2, DimList.create_unknown[2](), type],
     b: NDBuffer[2, DimList.create_unknown[2](), type],
@@ -978,34 +1050,20 @@ fn matmul[
     alias simd_width = dtype_simd_width[type]()
 
     @parameter
+    @always_inline
+    fn epilogue_wrapper[
+        type: DType, width: Int
+    ](coords: StaticIntTuple[2], val: SIMD[type, width]):
+        output_0_fn[type, width, 2](coords, val)
+
+    @parameter
     if (
         single_thread_blocking_override
         and not transpose_a
         and not transpose_b
         and not b_packed
     ):
-        let M = a.dim[0]()
-        let N = b.dim[1]()
-        let K = a.dim[1]()
-
-        c.zero()
-
-        for m in range(M):
-            for k in range(K):
-
-                @always_inline
-                @parameter
-                fn compute_fn[simd_width: Int](n: Int):
-                    c.simd_store[simd_width](
-                        Index(m, n),
-                        c.simd_load[simd_width](m, n)
-                        + a[m, k] * b.simd_load[simd_width](k, n),
-                    )
-
-                alias unroll_factor = 4
-
-                vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
-        return
+        return small_matmul[type, simd_width, epilogue_wrapper](a, b, c)
 
     @always_inline
     @parameter
@@ -1026,7 +1084,9 @@ fn matmul[
     @parameter
     @always_inline
     fn func(chain: OutputChainPtr):
-        matmul_parallel_async[type, transpose_a, transpose_b, b_packed,](
+        matmul_parallel_async[
+            type, transpose_a, transpose_b, b_packed, True, epilogue_wrapper
+        ](
             c,
             a,
             b,
