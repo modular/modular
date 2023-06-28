@@ -77,6 +77,7 @@ fn MOGGExport():
     alias _dtype_ui8 = DTypeUInt8TypeDef
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
+    alias _to_shape = to_shape
     alias _abs = abs_wrapped
     alias _add = add
     alias _div = div
@@ -106,6 +107,7 @@ fn MOGGExport():
     alias _sub = sub
     alias _tanh = tanh
     alias _relu = relu
+    alias _reshape = reshape
     alias _broadcast = broadcast_to_tensor
     alias _slice = slice
     alias _simd_load = simd_load
@@ -225,6 +227,23 @@ fn to_buffer[
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
         DTypePointer[type](data), shape_tuple, type, stride_tuple
     )
+
+
+@always_inline
+fn to_shape[
+    rank: Int
+](shape: __mlir_type.`!pop.pointer<index>`,) -> StaticIntTuple[rank]:
+    let shape_ptr = Pointer(shape)
+    var shape_tuple = StaticIntTuple[rank]()
+
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        shape_tuple[idx] = shape_ptr.load(idx)
+
+    unroll[rank, body]()
+
+    return shape_tuple
 
 
 @always_inline
@@ -771,6 +790,43 @@ fn slice[
     steps: NDBuffer[1, DimList.create_unknown[1](), index_type],
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     return slice_as_view(tensor, starts, ends, steps)
+
+
+# ===----------------------------------------------------------------------===#
+# Reshape op
+# ===----------------------------------------------------------------------===#
+
+# Reshape assumes inputs are contiguous. It should always be fused last and
+# a non-contiguous tensor cannot be fused *into* this as input.
+@always_inline
+fn reshape[
+    rank: Int,
+    output_rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    new_shape: StaticIntTuple[output_rank],
+) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
+
+    var stride_tuple = StaticIntTuple[output_rank]()
+    var stride: Int = 1
+
+    # Create contiguous strides.
+    @always_inline
+    @parameter
+    fn body[idx: Int]():
+        # Start from the back so we can accumulate the strides.
+        let i = output_rank - 1 - idx
+        stride_tuple[i] = stride
+        stride *= new_shape[i]
+
+    unroll[output_rank, body]()
+
+    # Return the a view with the new shape.
+    return NDBuffer[output_rank, DimList.create_unknown[output_rank](), type](
+        input.data, new_shape, input.dynamic_dtype, stride_tuple
+    )
 
 
 # ===----------------------------------------------------------------------===#
