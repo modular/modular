@@ -32,7 +32,6 @@
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -110,9 +109,6 @@ struct SharedState::Impl {
 
   /// The cache used to store cached transformations within the parser.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
-
-  /// The shared operation dominance analysis
-  mlir::DominanceInfo domInfo;
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
@@ -290,8 +286,6 @@ Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
          "symbol table insertion changed the name");
   return existingOp;
 }
-
-mlir::DominanceInfo &SharedState::getDomInfo() { return impl->domInfo; }
 
 //===----------------------------------------------------------------------===//
 // ASTDecl

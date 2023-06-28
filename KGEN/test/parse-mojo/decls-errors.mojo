@@ -78,9 +78,8 @@ struct StructWithLets:
 
 
 fn use_before_def():
-    # expected-error @below {{reference to local 'let' declaration before it is defined}}
+    # expected-error @below {{use of unknown declaration 'x', 'fn' declarations require explicit variable declarations}}
     let y = x
-    # expected-note @below {{'let' declaration defined here}}
     let x = 10
 
 
@@ -445,8 +444,8 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 struct DecoratedStruct: pass
 
 fn decoratorTest():
-  @decorator # expected-error {{decorators not supported on this statement}}
-  var DecoratedVar: Int
+  @decorator
+  var DecoratedVar: Int # expected-error {{'var' statement does not allow decorators}}
 
 @invalidDec # expected-error {{unsupported decorator: @invalidDec}}
 def BadDecorator(): pass

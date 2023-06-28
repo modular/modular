@@ -30,7 +30,6 @@
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
-#include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Verifier.h"
@@ -421,17 +420,6 @@ bool CallArgument::isPositionalStringLiteral(StringRef str) const {
   return kind == kPositional && strExpr && strExpr->getValue() == str;
 }
 
-/// Check that the operation dominates the current builder insertion point.
-static bool dominatesInsertionPoint(mlir::DominanceInfo &domInfo, Operation *op,
-                                    OpBuilder &b) {
-  // The current insertion point could be the end iterator.
-  Block::iterator it = b.getInsertionPoint();
-  Block *block = b.getInsertionBlock();
-  if (it == block->end())
-    return domInfo.dominates(op->getBlock(), block);
-  return domInfo.dominates(op, &*it);
-}
-
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -562,19 +550,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
-  // 'let' and 'var' declaration references have to be in lexical order.
-  auto checkDominance = [&](Operation *op, bool letOrVar) -> LogicalResult {
-    if (dominatesInsertionPoint(emitter.shared.getDomInfo(), op,
-                                *emitter.builder))
-      return success();
-    auto diag = emitter.emitError(getLoc(), "reference to local '")
-                << (letOrVar ? "let" : "var")
-                << "' declaration before it is defined";
-    diag.attachNote(op->getLoc())
-        << "'" << (letOrVar ? "let" : "var") << "' declaration defined here";
-    return failure();
-  };
-
   // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
   // can check if it is captured in a function.
   Value mlirValue;
@@ -582,16 +557,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // 'let' declarations resolve to an SBvalue when they are register_passable.
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    if (failed(checkDominance(letDecl, /*letOrVar=*/true)))
-      return {};
     mlirValue = letDecl.getResult();
     value = SBValue(mlirValue);
 
     // Variable references resolve to an MBValue or LValue addressing the
     // memory.
   } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    if (failed(checkDominance(var, /*letOrVar=*/false)))
-      return {};
     // We handle both var and let's as mutable lvalues and let check lifetimes
     // diagnose any problems.  This allows us to handle late-initialized lets.
     mlirValue = var.getResult();

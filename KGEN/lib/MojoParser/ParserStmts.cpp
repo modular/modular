@@ -424,6 +424,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return success();
   case Token::kw_let:
   case Token::kw_var:
+    rejectDecorator();
     return parseLetVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
@@ -1495,6 +1496,9 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   return success();
 }
 
+/// var_decl_stmt ::= var_or_let identifier ":" expression ["=" expression]
+///                 | var_or_let identifier "=" expression
+/// var_or_let    ::= "var" | "let"
 ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                         size_t stmtIndent) {
   bool isVar = getToken().is(Token::kw_var);
@@ -1505,10 +1509,6 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                   : "expected name for 'let' declaration"))
     return failure();
 
-  // Skip the body of this definition: go to a token the starts a line at the
-  // same indent level (or less) as the current definition.
-  skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
-
   auto unresolvedType = UnresolvedType::get(getContext());
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
@@ -1518,6 +1518,10 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     if (!isVar)
       emitError(loc, "'let' fields in structs are not supported yet");
     declOp = builder.create<StructFieldOp>(loc, name, unresolvedType);
+
+    // Skip the body of this definition: go to a token the starts a line at the
+    // same indent level (or less) as the current definition.
+    skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   } else if (isa<LIT::FuncOp>(getParentDecl())) {
     // Otherwise this is a local let/var definition.
 
@@ -1528,6 +1532,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                           /*isSynth=*/false);
   } else {
     emitError(loc, "cannot declare value outside a function");
+    skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success(); // Continue parsing.
   }
 
@@ -1536,10 +1541,101 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   ASTDecl &decl =
       getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
                                 getLexer().getCursor(), stmtIndent);
-  // Parse docstrings for struct fields here.
-  if (isa<StructFieldOp>(declOp))
-    parseDocString(decl);
 
+  auto varOp = dyn_cast<VarLetDeclOp>(decl);
+  if (!varOp) {
+    // Parse docstrings for struct fields here.
+    parseDocString(decl);
+    return success();
+  }
+
+  // Local variable declarations inside functions are lexically resolved, so
+  // fully resolve the decl now. If an error occurs, skip the declaration and
+  // keep parsing to emit as many diagnostics as possible.
+  auto declParseError = [&] {
+    decl.hasReferenceError = true;
+    skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
+    return success();
+  };
+
+  // Parse the type if present.
+  ASTType parsedType;
+  ExprEmitter emitter = getEmitter();
+  if (consumeIf(Token::colon)) {
+    ExprNode *typeExpr = nullptr;
+    if (parseExpression(typeExpr, stmtIndent))
+      return declParseError();
+    parsedType = emitter.emitExprType(typeExpr);
+    if (!parsedType)
+      return declParseError();
+  }
+
+  // Parse the initializer if present.
+  ExprNode *initExpr = nullptr;
+  if (consumeIf(Token::equal))
+    if (parseExpression(initExpr, stmtIndent))
+      return declParseError();
+
+  // Now that parsing succeeded, we do IR emission and semantic processing.
+
+  // Handle the initializer if present.
+  if (initExpr) {
+    // If we have a type, then emit directly into the LValue.  Otherwise emit
+    // into the varOp to infer its type.
+    ValueDest dest;
+    ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
+    if (parsedType) {
+      varOp.getResult().setType(POP::PointerType::get(parsedType));
+      dest = ValueDest(SLValue(varOp), exprContext);
+    } else {
+      // If we don't, we emit into the varOp itself, because this will infer the
+      // type of the varOp from the initializer expression.
+      dest = ValueDest(varOp, exprContext);
+    }
+
+    if (!initExpr->emitIR(dest, emitter)) {
+      dest.resetForError();
+      return declParseError();
+    }
+
+    assert(!isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
+           "RValue emission should have inferred var type");
+
+  } else if (parsedType) {
+    varOp.getResult().setType(POP::PointerType::get(parsedType));
+  } else {
+    // If there was neither a type or initializer, reject the var.
+    emitError(varOp.getLoc(),
+              "declaration must have either a type or an initializer");
+    return declParseError();
+  }
+
+  // Now that this has been fully checked, we can promote to a LetRegDeclOp
+  // if this was a non-parameteric register-passable `let` declaration with
+  // an initializer.  We don't care about the address being available and
+  // this produces smaller IR.
+  ASTType inferredRValueType = ASTType(varOp.getType()).getPointerElementType();
+  if (initExpr && !varOp.getIsVar() &&
+      // NOTE: This is assuming type parameters are valid register types.  We
+      // will need to build out better support when we have traits, but this is
+      // important for kernels in practice today.
+      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
+    // There should be exactly one store to the original op, sanity check this.
+    assert(varOp->hasOneUse() && "Should have one store use");
+    auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
+
+    // Create new LetRegDeclOp and put it into the ASTDecl.
+    OpBuilder builder(theStore);
+    decl.setIRValue(&*builder.create<LetRegDeclOp>(
+        varOp.getLoc(), varOp.getNameAttr(), theStore.getArg()));
+
+    // Remove the store and the original VarLetDeclOp.
+    theStore->erase();
+    varOp->erase();
+  }
+
+  // Now mark the decl as fully resolved.
+  decl.resolvedness = DeclResolvedness::fully;
   return success();
 }
 

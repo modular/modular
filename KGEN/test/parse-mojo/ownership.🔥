@@ -554,8 +554,8 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # Make sure var bindings work the same way even though the IR differs.
 
-  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: %example2 = lit.varlet.decl
+  # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: pop.store [[TMP]], %example2
   var example2 = RegExample() # expected-warning {{consider switching to a 'let'}}
 
@@ -643,8 +643,8 @@ struct BigRegExample:
 
 # CHECK-LABEL: lit.func @"bigreg_test
 fn bigreg_test():
-  # CHECK-NEXT: %0 = kgen.call {{.*}}__init__()
   # CHECK-NEXT: %varThing = lit.varlet.decl "varThing"
+  # CHECK-NEXT: %0 = kgen.call {{.*}}__init__()
   # CHECK-NEXT: pop.store %0, %varThing
   var varThing = BigRegExample()
 
@@ -958,24 +958,24 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%r3)
 
 
-   # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
    # CHECK-NEXT: %v1 = lit.varlet.decl
+   # CHECK-NEXT: [[TMP:%.*]] = kgen.call {{.*}}__init__{{.*}}()
    # CHECK-NEXT: pop.store [[TMP]], %v1
    var v1 = RegExample()                   # expected-warning {{never mutated}}
    # CHECK-NEXT: [[TMP:%.*]] = pop.load %v1
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
    v1.noop()
 
-   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v1
    # CHECK-NEXT: %v2 = lit.varlet.decl
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v1
    # CHECK-NEXT: pop.store [[TMP]], %v2
    var v2 = v1                   # expected-warning {{never mutated}}
    # CHECK-NEXT: [[TMP:%.*]] = pop.load %v2
    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[TMP]])
    v2.noop()
 
-   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v2
    # CHECK-NEXT: %v3 = lit.varlet.decl
+   # CHECK-NEXT: [[TMP:%.*]] = pop.load %v2
    # CHECK-NEXT: pop.store [[TMP]], %v3
    var v3 = v2                   # expected-warning {{never mutated}}
    # CHECK-NEXT: [[TMP:%.*]] = pop.load %v3

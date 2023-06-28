@@ -17,18 +17,18 @@ fn mlirMagicTest(
     # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<float32>>>
     var c: __mlir_type.`!pop.pointer<!pop.pointer<float32>>`
 
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
     # CHECK: %d = lit.varlet.decl
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
     # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
     var d = __mlir_attr.`4: i17`
 
-    # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
     # CHECK: %dt = lit.varlet.decl
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
     # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
     var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
 
-    # CHECK: index.constant 42
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
+    # CHECK: index.constant 42
     var idxConstant = __mlir_op.`index.constant`[
         value : (42).value
     ]()
