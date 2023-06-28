@@ -17,6 +17,7 @@ include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/Interpreter/InterpreterInterface.td"
+include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
@@ -157,7 +158,9 @@ def PackageOp : LITOp<"package", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name);
+  let arguments = (ins SymbolNameAttr:$sym_name,
+    OptionalAttr<M_TargetInfoAttr>:$compiledFor,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let builders = [

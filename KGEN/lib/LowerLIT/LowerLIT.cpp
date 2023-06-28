@@ -76,7 +76,8 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
                                    TypeRange(successType), variantIsOp);
   ifOp.getThenRegion().takeBody(handleVariantOp.getSuccessRegion());
   ifOp.getElseRegion().takeBody(handleVariantOp.getErrorRegion());
-  if (auto litYield = dyn_cast<LIT::YieldOp>(ifOp.getThenRegion().front().getTerminator())) {
+  if (auto litYield = dyn_cast<LIT::YieldOp>(
+          ifOp.getThenRegion().front().getTerminator())) {
     mlir::IRRewriter b{OpBuilder(litYield)};
     b.replaceOpWithNewOp<HLCF::YieldOp>(litYield, litYield->getOperands());
   }
@@ -295,6 +296,45 @@ static void lowerAttributesAndTypes(Operation *op) {
       op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
 }
 
+/// Add a kgen.link directive that shadows the package's name if the package was
+/// precompiled. If this package is a source package, do nothing.
+static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
+                                             SymbolTable &symtab) {
+  std::optional<TargetInfoAttr> compiledFor = package.getCompiledFor();
+  // If the package wasn't compiled for anything, it's a source package, so
+  // there are no link directives to insert.
+  if (!compiledFor)
+    return success();
+
+  // Get the target on the module. If we don't have a target, we punt and hope
+  // that the target is going to end up being the same.
+  TargetInfoAttr target = M::lookupTargetInfo(package);
+  if (target && target != *compiledFor) {
+    return package.emitError("package was compiled for ")
+           << *compiledFor << " but current target is " << target;
+  }
+
+  // We have an archive, insert the link directive.
+  DenseResourceElementsAttr bytes = package.getArchiveBytesAttr();
+  if (!bytes) {
+    return package->emitError("expected archive bytes to be provided since the "
+                              "package has a target specified");
+  }
+
+  OpBuilder b(package.getContext());
+  auto linkOp = b.create<KGEN::LinkOp>(
+      package.getLoc(), package.getSymNameAttr(), StringAttr(), bytes);
+
+  // Insert the link op into the symbol table right where the package was. Don't
+  // erase the package op cause we need to do some cleanup still, but we do
+  // still want to remove it from the symbol table.
+  auto iter = package->getIterator();
+  symtab.remove(package);
+  symtab.insert(linkOp, iter);
+
+  return success();
+}
+
 /// Lower the constructs within the body of a module decl.
 static LogicalResult lowerModuleDecl(Block *moduleBody,
                                      SymbolTable &symbolTable,
@@ -319,6 +359,12 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
               if (failed(lowerModuleDecl(fileBody, symbolTable, opSymTableIt,
                                          parentPrefix + op.getName() + "::")))
                 return failure();
+
+              // If the package has already been compiled, insert a kgen.link
+              // directive.
+              if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
+                if (failed(addPackageLinkDirective(op, symbolTable)))
+                  return failure();
 
               // Inline the remaining body of the file into the parent.
               op->getBlock()->getOperations().splice(
