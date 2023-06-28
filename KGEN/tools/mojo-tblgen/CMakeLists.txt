@@ -4,5 +4,12 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_driver_option_tablegen(DocOptions.td)
-add_driver_man_page_tablegen(DocOptions.td mojo-driver-doc)
+set(LLVM_LINK_COMPONENTS
+  Support
+  TableGen
+)
+
+add_tablegen(mojo-tblgen MOJO
+  mojo-tblgen.cpp
+  DriverCommand.cpp
+  GenManPage.cpp)

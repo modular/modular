@@ -1,0 +1,166 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines a TableGen backend that outputs a manual page, formatted
+// using the roff formatting language (see `man roff` for details).
+//
+// Basically, the document has a title denoted by `TH`, followed by sections
+// denoted by `SH` ("section header"). Within sections there may be
+// sub-sections, denoted by `SS`. Special formatting can be applied to text
+// within those sections by using control characters such as `\fBfoo\fR` (this
+// puts "foo" in bold).
+//
+//===----------------------------------------------------------------------===//
+
+#include "GenManPage.h"
+#include "BackendRegistry.h"
+#include "DriverCommand.h"
+
+#include "Support/LLVMForwardDecls.h"
+
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
+
+using namespace M;
+
+/// Instantiates a new string based on the given text, but with special roff
+/// characters, such as "-", escaped ("\-").
+static std::string escape(Twine text) {
+  std::string result = text.str();
+  for (size_t i = 0; i < result.size(); ++i)
+    if (result[i] == '-')
+      result.insert(i++, 1, '\\');
+  return result;
+}
+
+/// Output the title, as well as some text controls that apply to the entire
+/// file.
+static void genTitle(raw_ostream &os, const CommandDescription &cmd) {
+  // Each `man` document starts with the `TH` macro specifying the document's
+  // name and section.
+  os << escape(llvm::formatv(".TH \"{0}\" \"1\"\n",
+                             StringRef(cmd.getName()).upper()))
+     // `nh` disables automatic hyphenation for the following text.
+     << ".nh\n"
+     // `ad` controls line adjustment for what follows; `l` specifies
+     // left-adjusted.
+     << ".ad l\n";
+}
+
+static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
+  os << ".SH \"NAME\"\n"
+     << escape(
+            llvm::formatv("{0} \\[em] {1}\n", cmd.getName(), cmd.getSummary()));
+}
+
+static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
+                               ArrayRef<CommandOptionGroup> groups) {
+  os << ".SH \"SYNOPSIS\"\n"
+     << escape(llvm::formatv("\\fB{0}\\fR", cmd.getName(/*join=*/" ")));
+  if (!groups.empty())
+    os << " [\\fIoptions\\fR]";
+  std::string input =
+      escape(llvm::formatv("\\fI{0}{1}\\fR", cmd.getInputMetaVarName(),
+                           cmd.getVariadicInput() ? "..." : ""));
+  if (!cmd.getRequiresInput())
+    input = "[" + input + "]";
+  os << ' ' << input << '\n';
+}
+
+static void genDescriptionSection(raw_ostream &os,
+                                  const CommandDescription &cmd) {
+  os << ".SH \"DESCRIPTION\"\n" << escape(cmd.getDescription()) << '\n';
+}
+
+/// Output the given LLVM `Option` record's prefix and name, followed by its
+/// `MetaVarName` if present.
+static void genOptionName(raw_ostream &os, const llvm::Record *option) {
+  std::vector<StringRef> prefixes = option->getValueAsListOfStrings("Prefixes");
+  // Only options such as `INPUT` and `UNKNOWN` can be defined without a prefix,
+  // and we don't process those here.
+  assert(!prefixes.empty() && "all options must have a prefix");
+  // If an option can be used with multiple prefixes, print just the first one
+  // listed.
+  os << escape(llvm::formatv("\\fB{0}{1}\\fR", prefixes.front().str(),
+                             option->getValueAsString("Name")));
+
+  if (auto metaVarName = option->getValueAsOptionalString("MetaVarName"))
+    os << " \\fI" << escape(*metaVarName) << "\\fR";
+}
+
+/// If there are 1 or more option groups present, outputs an "OPTIONS" section,
+/// with a separate sub-section for each option group.
+static void genOptionsSection(raw_ostream &os,
+                              ArrayRef<CommandOptionGroup> groups) {
+  if (groups.empty())
+    return;
+
+  os << ".SH \"OPTIONS\"\n";
+
+  for (const CommandOptionGroup &group : groups) {
+    // Print each option group as a subsection.
+    os << escape(llvm::formatv(".SS \"{0}\"\n",
+                               group.getGroup()->getValueAsString("Name")));
+    if (auto helpText = group.getGroup()->getValueAsOptionalString("HelpText"))
+      os << escape(*helpText) << '\n';
+    os << ".sp\n";
+
+    // Populate the option group subsection with each of the options that belong
+    // to that group.
+    for (const CommandOption &option : group.getOptions()) {
+      // Print the option's name, and then the names of its aliases.
+      genOptionName(os, option.getOption());
+      for (const llvm::Record *option : option.getAliases()) {
+        os << ", ";
+        genOptionName(os, option);
+      }
+      os << '\n';
+
+      // Print the main option's help text, indented using `RS` and `RE`.
+      // (The aliases' help text is ignored.) The help text may be an empty
+      // string, if the documentation writer ignored mojo-tblgen warnings.
+      os << ".RS 4\n"
+         << escape(option.getHelpText()) << "\n"
+         << ".RE\n"
+         << ".sp\n";
+    }
+  }
+}
+
+/// If the given description describes a subcommand, outputs a "SEE ALSO"
+/// section that points to the parent executable.
+static void genSeeAlsoSection(raw_ostream &os, const CommandDescription &cmd) {
+  if (cmd.getSubcommand().empty())
+    return;
+
+  os << ".SH \"SEE ALSO\"\n"
+     << escape(llvm::formatv("\\fB{0}\\fR(1)\n", cmd.getExecutable()));
+}
+
+static bool genManPage(raw_ostream &os, const llvm::RecordKeeper &records) {
+  ErrorOr<CommandDescription> cmd = CommandDescription::get(records);
+  if (cmd.isError()) {
+    llvm::PrintError(cmd.getError());
+    return true;
+  }
+  std::vector<CommandOptionGroup> groups = CommandOptionGroup::getAll(records);
+
+  genTitle(os, *cmd);
+  genNameSection(os, *cmd);
+  genSynopsisSection(os, *cmd, groups);
+  genDescriptionSection(os, *cmd);
+  genOptionsSection(os, groups);
+  genSeeAlsoSection(os, *cmd);
+  return false;
+}
+
+void M::registerGenManPageBackend(BackendRegistry &registry) {
+  registry.addBackend("gen-man-page", "Generate a man page formatted with roff",
+                      [](raw_ostream &os, const llvm::RecordKeeper &records) {
+                        return genManPage(os, records);
+                      });
+}
