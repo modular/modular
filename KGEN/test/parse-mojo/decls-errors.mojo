@@ -458,8 +458,9 @@ def StaticMethod(): pass
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# FIXME(Issue#5975): This isn't quite right, we shouldn't be able to resolve Rec here.
-struct Rec[param: Rec]: # expected-error {{only @register_passable types are supported right now}}
+# expected-error @below {{recursive reference to declaration}}
+# expected-note @below {{previously used here}}
+struct Rec[param: Rec]:
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
