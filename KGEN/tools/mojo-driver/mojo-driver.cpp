@@ -7,6 +7,7 @@
 #include "mojo-driver.h"
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
+#include "REPL/mojo-repl.h"
 
 #include "Config/Version.h"
 
@@ -138,6 +139,7 @@ int main(int argc, char **argv) {
   SubcommandRegistry registry;
   registerDemangleSubCommand(registry);
   registerDocSubCommand(registry);
+  registerREPLSubCommand(registry);
 
   // Store the program name and subcommand arguments in the driver state object.
   State state(programName, arguments.slice(index));

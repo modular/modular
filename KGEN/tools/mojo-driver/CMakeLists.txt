@@ -8,6 +8,7 @@ add_modular_tool(mojo-driver
   mojo-driver.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
+  REPL/mojo-repl.cpp
 
   DEPENDS
   orc-rt-cas
@@ -63,6 +64,7 @@ add_driver_man_page_tablegen(DriverOptions.td mojo-driver)
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
+add_subdirectory(REPL)
 
 # The driver depends on these option definitions.
 target_include_directories(mojo-driver PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
