@@ -24,12 +24,6 @@ def configure_lldb_tests(config):
     config.substitutions.append(
         (
             "%repl",
-            f"{lldb_env} mojo-repl --source-quietly -S {config.lit_lldb_init}",
-        )
-    )
-    config.substitutions.append(
-        (
-            "%mojo-driver-repl",
             (
                 f"{lldb_env} mojo-driver repl --source-quietly -S"
                 f" {config.lit_lldb_init}"
