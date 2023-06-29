@@ -53,6 +53,7 @@ from Range import range
 from SIMD import SIMD
 from TargetInfo import simd_width, dtype_simd_width
 from Tracing import Trace, TraceLevel
+from TypeUtilities import rebind
 from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
@@ -1054,9 +1055,11 @@ fn small_matmul[
     @parameter
     @always_inline
     fn normal_update[
-        type: DType, width: Int
-    ](coords: StaticIntTuple[2], val: SIMD[type, width]):
-        c.simd_store[width](Index(coords[0], coords[1]), val)
+        inner_type: DType, width: Int
+    ](coords: StaticIntTuple[2], val: SIMD[inner_type, width]):
+        c.simd_store[width](
+            Index(coords[0], coords[1]), rebind[SIMD[type, width]](val)
+        )
 
     @parameter
     @always_inline
