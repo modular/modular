@@ -19,8 +19,6 @@ execute_process (
 
 set(version_inc "${VERSION_OUTPUT_FILE}")
 
-string(TOLOWER ${MODULAR_BUILD_TYPE} MODULAR_BUILD_TYPE_LOWER)
-
 file(APPEND "${version_inc}.tmp"
   "/* Major version */\n"
   "#define MODULAR_VERSION_MAJOR ${MODULAR_VERSION_MAJOR}\n\n"
