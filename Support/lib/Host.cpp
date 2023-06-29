@@ -535,16 +535,16 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
 // SIMD Width
 //===----------------------------------------------------------------------===//
 
-size_t M::simdWidthFromFeatures(StringRef features) {
-  if (features.contains("avx512"))
+size_t M::simdWidthFromFeatures(StringRef feature) {
+  if (feature.contains("avx512"))
     return 512;
-  if (features.contains("avx2"))
+  if (feature.contains("avx2"))
     return 256;
   // The fallback is going to be 128.
   return 128;
 }
 
-size_t M::simdWidthFromFeatures(const std::vector<std::string> &features) {
+size_t M::simdWidthFromFeatures(ArrayRef<std::string> features) {
   size_t maxWidth = 128;
   for (StringRef feature : features) {
     maxWidth = std::max(maxWidth, simdWidthFromFeatures(feature));
