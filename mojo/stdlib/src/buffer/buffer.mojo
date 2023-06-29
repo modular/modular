@@ -18,7 +18,7 @@ from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
 from StaticTuple import StaticTuple
-from TargetInfo import dtype_sizeof, dtype_simd_width, dtype_alignof
+from TargetInfo import dtype_sizeof, simdwidthof, dtype_alignof
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
@@ -371,7 +371,7 @@ struct Buffer[size: Dim, type: DType]:
         Args:
             val: The value to store.
         """
-        self.simd_fill[dtype_simd_width[type]()](val)
+        self.simd_fill[simdwidthof[type]()](val)
 
     @staticmethod
     @always_inline
@@ -1395,7 +1395,7 @@ struct NDBuffer[
             val: The value to store.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        self.simd_fill[dtype_simd_width[type]()](val)
+        self.simd_fill[simdwidthof[type]()](val)
 
     @staticmethod
     @always_inline
