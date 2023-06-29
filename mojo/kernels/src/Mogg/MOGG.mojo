@@ -52,7 +52,7 @@ from MatmulUtils import GemmShape, get_trace_information
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_width, dtype_simd_width
+from TargetInfo import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
 from String import String
@@ -558,7 +558,7 @@ fn broadcast_to_tensor[
 # This involves applying parameter expressions to this result which must be
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
 fn get_target_simd[type: DType]() -> __mlir_type.index:
-    return dtype_simd_width[type]().value
+    return simdwidthof[type]().value
 
 
 fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
@@ -691,7 +691,7 @@ fn mean[
         _reduce_generator[
             type,
             rank,
-            dtype_simd_width[type](),
+            simdwidthof[type](),
             single_thread_blocking_override,
             input_0_fn,
             wrapped_output_mul,
@@ -713,7 +713,7 @@ fn mean[
         _reduce_generator[
             type,
             rank,
-            dtype_simd_width[type](),
+            simdwidthof[type](),
             single_thread_blocking_override,
             input_0_fn,
             wrapped_output_div,
@@ -767,7 +767,7 @@ fn sum[
     _reduce_generator[
         type,
         rank,
-        dtype_simd_width[type](),
+        simdwidthof[type](),
         single_thread_blocking_override,
         input_0_fn,
         output_0_fn,
@@ -1107,7 +1107,7 @@ fn matmul[
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = False
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
 
     @parameter
     @always_inline
