@@ -207,8 +207,8 @@ private:
     if (lhsPriority != rhsPriority)
       return lhsPriority < rhsPriority;
 
-    // Then compare the names themselves.
-    return lhs < rhs;
+    // If there is no name priority, then leave in the original source order.
+    return false;
   }
 
   void generateJSONForChildren(ASTDecl &decl) {
@@ -235,7 +235,7 @@ private:
     // Functor used to generically process a bucket of children.
     auto processChildren = [&](StringRef tag, ChildrenVecT &children,
                                auto &&processChildFn) {
-      llvm::sort(children, [](auto &lhs, auto &rhs) {
+      llvm::stable_sort(children, [](auto &lhs, auto &rhs) {
         return compareDeclNames(lhs.first, rhs.first);
       });
 
