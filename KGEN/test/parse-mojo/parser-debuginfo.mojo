@@ -11,7 +11,7 @@ from imported_module import imported_fn
 # Check that we properly generate functions that get resolved within other functions.
 # This is mostly checking that the scope of the nested function is not another function.
 
-# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($parser-debuginfo::CalledStruct[param])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "test", linkageName = "test($parser-debuginfo::CalledStruct[{{.*}}param])"
 
 
 struct CalledStruct[param: __mlir_type.index]:

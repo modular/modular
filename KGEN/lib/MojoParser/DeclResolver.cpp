@@ -984,11 +984,14 @@ void ParsedArgument::processParameterArgs(
       emitter.emitError(arg.loc, "parameters must always be passed by-value");
 
     // Bind the parsed type expression so references from other parameters
-    // can be resolved.
-    auto tmpDecl = ParamDeclRefAttr::get(arg.name, type);
-    emitter.getDeclResolver().addFullyResolvedDecl(PValue(tmpDecl), arg.name,
-                                                   arg.loc, &declScope);
-    params.push_back(ParamDeclAttr::get(arg.name, type));
+    // can be resolved. The parameter names are mangled with the location so
+    // that parameter names shadowing in mojo are unique in the IR.
+    auto [line, col] = emitter.getSourceMgr().getLineAndColumn(arg.loc);
+    auto newDecl =
+        ParamDeclAttr::get(mangleParameter(arg.name, line, col), type);
+    params.push_back(newDecl);
+    emitter.getDeclResolver().addFullyResolvedDecl(
+        PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
   }
 }
 
@@ -1493,7 +1496,9 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
     funcOp.setSpecialFnKind(uint8_t(fnInfo.kind));
 }
 
-// Mangle 'name', ensuring that overloaded methods get unique symbol names.
+/// Mangle 'name', ensuring that overloaded methods get unique symbol names.
+/// TODO(#16040): Struct names mangled into the signature should be parameter
+/// name-erased.
 static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
@@ -1502,7 +1507,11 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
   if (!inputParams.empty()) {
     os << '[';
     llvm::interleave(
-        inputParams, os, [&](ASTType type) { os << type.getAsString(); }, ",");
+        inputParams, os,
+        [&](ASTType type) {
+          os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+        },
+        ",");
     os << ']';
   }
 
@@ -1527,7 +1536,7 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
     if (convention != ValueInputConvention::OwnedInReg &&
         convention != ValueInputConvention::BorrowedInReg)
       type = type.getPointerElementType();
-    mangledName += type.getAsString();
+    mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {

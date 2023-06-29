@@ -9,9 +9,9 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
-#include "llvm/Support/Regex.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -418,7 +418,9 @@ private:
   void generateJSONFor(ASTDecl &decl, ParamDeclareOp paramOp) {
     os.object([&] {
       os.attribute("kind", "alias");
-      os.attribute("name", paramOp.getName().getValue());
+      os.attribute(
+          "name",
+          demangleIfNeeded(paramOp.getParamDecl()).getName().getValue());
 
       // Pretty print the value.
       std::string valueStr;
@@ -514,13 +516,14 @@ private:
     }
 
     // Grab the types of the parameters to the function.
+    SmallVector<ParamDeclAttr> demangledParams;
     SmallVector<std::string> paramTypeDetails;
-    llvm::StringMap<StringRef> paramToDetail;
-    ArrayRef<ParamDeclAttr> params = funcOp.getInputParams();
-    for (ParamDeclAttr param : params)
-      paramTypeDetails.push_back(generateTypeString(param.getType(), selfType));
-    for (auto [index, value] : llvm::enumerate(params))
-      paramToDetail[value.getName()] = paramTypeDetails[index];
+    for (ParamDeclAttr param : funcOp.getInputParams()) {
+      ParamDeclAttr demangled = demangleIfNeeded(param);
+      demangledParams.emplace_back(demangled);
+      paramTypeDetails.emplace_back(
+          generateTypeString(param.getType(), selfType));
+    }
 
     // Grab the result type, if it's non-none.
     std::optional<std::string> resultTypeName;
@@ -528,12 +531,17 @@ private:
       resultTypeName = generateTypeString(resultType, selfType);
 
     os.object([&] {
-      os.attribute("signature", generateFunctionSignature(
-                                    name, argNames, argTypeDetails, params,
-                                    paramTypeDetails, resultTypeName));
+      os.attribute("signature",
+                   generateFunctionSignature(name, argNames, argTypeDetails,
+                                             demangledParams, paramTypeDetails,
+                                             resultTypeName));
 
       // Emit the doc string if present.
       if (std::optional<DocString> docStr = getDocString(decl)) {
+        llvm::StringMap<StringRef> paramToDetail;
+        for (auto [demangled, typeString] :
+             llvm::zip(demangledParams, paramTypeDetails))
+          paramToDetail[demangled.getName()] = typeString;
         os.attribute("summary", docStr->getSummary());
         processFunctionDocDescription(docStr->getDescription(), paramToDetail,
                                       argNameToDetail, resultTypeName);
@@ -629,8 +637,11 @@ private:
 
         // Grab the types of the parameters to the struct.
         llvm::StringMap<std::string> paramToDetail;
-        for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
-          paramToDetail[value.getName()] = generateTypeString(value.getType());
+        for (ParamDeclAttr attr : structOp.getInputParams()) {
+          ParamDeclAttr demangled = demangleIfNeeded(attr);
+          paramToDetail[demangled.getName()] =
+              generateTypeString(demangled.getType());
+        }
         processStructDocDescription(docStr->getDescription(), paramToDetail);
       }
 
@@ -985,8 +996,8 @@ private:
 
     // Grab the parameters to the function.
     llvm::MapVector<StringRef, SMLoc> seenParameters;
-    for (auto [index, value] : llvm::enumerate(funcOp.getInputParams()))
-      seenParameters.insert({value.getName(), SMLoc()});
+    for (ParamDeclAttr decl : funcOp.getInputParams())
+      seenParameters.insert({demangleIfNeeded(decl).getName(), SMLoc()});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {
@@ -1041,8 +1052,8 @@ private:
                     ValidationKind validation) {
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, SMLoc> seenParameters;
-    for (auto [index, value] : llvm::enumerate(structOp.getInputParams()))
-      seenParameters.insert({value.getName(), SMLoc()});
+    for (ParamDeclAttr decl : structOp.getInputParams())
+      seenParameters.insert({demangleIfNeeded(decl).getName(), SMLoc()});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {

@@ -29,7 +29,7 @@ struct ParamStruct_Missing[_type: __mlir_type.`!kgen.dtype`]:
 struct ParamStruct_Invalid[_type: __mlir_type.`!kgen.dtype`]:
     """This is a class summary.
 
-    # expected-warning @below {{parameter '_type' is not documented}}
+    # expected-warning-re @below {{parameter '{{.*}}_type' is not documented}}
     Parameters:
         invalid_param: This is an invalid parameter.
           # expected-warning @above {{unknown parameter 'invalid_param' in doc string}}

@@ -10,7 +10,7 @@
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
-    # CHECK: kgen.param.declare a = <1>
+    # CHECK: kgen.param.declare [[A:.*]] = <1>
     alias a: __mlir_type.index = (1).value
     # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
     var b: __mlir_type.f64
@@ -37,29 +37,32 @@ fn mlirMagicTest(
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
     var i1Cast = __mlir_op.`index.castu`[_type : __mlir_type.i1](idxConstant)
 
-    # CHECK: kgen.param.declare new_lower = <max(a, 42)>
+    # CHECK: kgen.param.declare [[NEW_LOWER:.*]] = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max, `, a, `, `, (42).value, `> : index`
     ]
 
-    # CHECK: [[TMP1:%.*]] = kgen.param.constant = <new_lower>
+    # CHECK: [[TMP1:%.*]] = kgen.param.constant = <[[NEW_LOWER]]>
     # CHECK: [[TMP2:%.*]] = index.constant 1
     # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
     # CHECK: lit.return [[SHRU]] : index
     return __mlir_op.`index.shru`(new_lower, (1).value)
 
 
-# CHECK-LABEL: lit.func @"mlirTypesAndAttrs
+# CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
+# CHECK-SAME: [[DTYPE:.*]]: dtype>()
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
-    # CHECK: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<dtype>>
+    # CHECK: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<[[DTYPE]]>>
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
-    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <simd<4, dtype>>
+    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <simd<4, [[DTYPE]]>>
     var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
+# CHECK-LABEL: lit.struct.decl @ComplexSubstitution
+# CHECK-SAME: <[[TYPE:.*]]: dtype>
 struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
-    # CHECK: lit.struct.field pointer : !pop.pointer<scalar<type>>
+    # CHECK: lit.struct.field pointer : !pop.pointer<scalar<[[TYPE]]>>
     var pointer: __mlir_type[`!pop.pointer<!pop.scalar<`, type, `>>`]
 
 
@@ -74,8 +77,9 @@ fn fancierSubstitutions():
     # CHECK: = lit.varlet.decl {{.*}} : <complex<i32>>
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
+    # CHECK: kgen.param.declare [[A:.*]] = <1>
     alias a: __mlir_type.index = (1).value
-    # CHECK: kgen.param.declare new_lower = <max(a, 42)>
+    # CHECK: kgen.param.declare {{.*}}new_lower = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max,`, a, `, `, (42).value, `> : index`
     ]
@@ -83,11 +87,12 @@ fn fancierSubstitutions():
 
 # This shows that we can use unary+ to make the printer avoid printing types.
 # See Issue #6468: [Lit] __mlir_attr construction fails for !kgen.list
-# CHECK-LABEL: testAttrConcatWithoutType
+# CHECK-LABEL: @"testAttrConcatWithoutType{{.*}}()"<
+# CHECK-SAME: [[LENGTH:.*]]>() ->
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
-    # CHECK: kgen.param.declare x: variadic<index> = <[1, length]>
+    # CHECK: kgen.param.declare {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
     alias x = __mlir_attr[
         `#kgen.variadic<`,
         +(1).value,
@@ -101,23 +106,25 @@ fn testAttrConcatWithoutType[
 # Issue #6825: Expose a way to get the address of an lvalue
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
+# CHECK-SAME: <[[ELTYPE:.*]]: type>
 @register_passable
-struct MyPointer[eltType: __mlir_type.`!kgen.mlirtype`]:
-    alias StorageTy = __mlir_type[`!pop.pointer<`, eltType, `>`]
-    # CHECK: lit.struct.field value : !pop.pointer<eltType>
+struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
+    alias StorageTy = __mlir_type[`!pop.pointer<`, elType, `>`]
+    # CHECK: lit.struct.field value : !pop.pointer<[[ELTYPE]]>
     var value: StorageTy
 
-    fn __init__(value: StorageTy) -> MyPointer[eltType]:
-        return MyPointer[eltType] {value: value}
+    fn __init__(value: StorageTy) -> MyPointer[elType]:
+        return MyPointer[elType] {value: value}
 
 
-# CHECK-LABEL: getAddressOf{{.*}}"<T: type>(%arg: !pop.pointer<T> byref)
+# CHECK-LABEL: getAddressOf{{.*}}"<
+# CHECK-SAME: [[T:.*]]: type>(%arg: !pop.pointer<[[T]]> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def.lvalue %arg
-    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!pop.pointer<eltType>)"<:type T>(%arg)
+    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!pop.pointer<elType>)"<:type [[T]]>(%arg)
     # CHECK-NEXT: lit.return %0
 
 
