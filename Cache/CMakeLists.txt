@@ -51,7 +51,13 @@ function(cache_files target)
     list(GET CACHE_MGR_INPUT_NAMES ${idx} name)
     add_custom_target(${target}_${name} ALL
       COMMAND $<TARGET_FILE:cache-mgr> -base-dir=${CACHE_MGR_BASE_DIR} -input=${input} -backend-version=${CACHE_MGR_VERSION} -o=${FILENAME} -append
-      DEPENDS ${target}_clean)
+      # If an input dependency that would change the KGEN version changes,
+      # we need to have the `cache-mgr` put the new CAS ID for the artifact in.
+      # Otherwise, you will have stale CAS IDs and may run into runtime issues
+      # in the KGEN ExecutionEngine when looking up the CAS ID, such as for
+      # `compiler-rt-cas`.
+      DEPENDS ${target}_clean KGENVersion)
+
     add_dependencies(${target} ${target}_${name})
   endforeach ()
 
