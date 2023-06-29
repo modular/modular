@@ -1042,20 +1042,6 @@ fn small_matmul[
 
     alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
 
-    @always_inline
-    @parameter
-    fn compute_fn[
-        simd_width: Int,
-        output_func: fn[type: DType, width: Int] (
-            StaticIntTuple[2], SIMD[type, width]
-        ) capturing -> None,
-    ](m: Int, n: Int, k: Int):
-        output_func[type, simd_width](
-            Index(m, n),
-            c.simd_load[simd_width](m, n)
-            + a[m, k] * b.simd_load[simd_width](k, n),
-        )
-
     @parameter
     @always_inline
     fn normal_update[
@@ -1079,10 +1065,16 @@ fn small_matmul[
             StaticIntTuple[2], SIMD[type, width]
         ) capturing -> None,
     ](m: Int, k: Int):
+        let a_val = a[m, k]
+
         @always_inline
         @parameter
         fn _wrapper[simd_width: Int](n: Int):
-            compute_fn[simd_width, output_func](m, n, k)
+            output_func[type, simd_width](
+                Index(m, n),
+                c.simd_load[simd_width](m, n)
+                + a_val * b.simd_load[simd_width](k, n),
+            )
 
         vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
 
