@@ -211,24 +211,17 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
 /// when outChain is completed. If an entry already exists, merge the name
 /// and details.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(LLCLOutputChainRef outChain,
-                                                  const char *namePtr,
-                                                  ssize_t nameLen,
-                                                  const char *detailPtr,
-                                                  ssize_t detailLen) {
-  StringRef name(namePtr, nameLen);
-  StringRef detail(detailPtr, detailLen);
-  unwrap(outChain).trace(name, detail);
-}
-
-/// Begins a profiling entry with name when called, and ends it when outChain
-/// is completed.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(LLCLOutputChainRef outChain,
-                                          const char *namePtr,
-                                          ssize_t nameLen) {
-  KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed(outChain, namePtr, nameLen,
-                                                    "", 0);
+                                          const char *namePtr, ssize_t nameLen,
+                                          const char *detailPtr,
+                                          ssize_t detailLen) {
+  StringRef name(namePtr, nameLen);
+  if (detailPtr) {
+    StringRef detail(detailPtr, detailLen);
+    unwrap(outChain).trace(name, detail);
+  } else {
+    unwrap(outChain).trace(name);
+  }
 }
 
 /// Execute a coroutine.
@@ -279,8 +272,6 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Await",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Await});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed",
-                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Trace",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Trace});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask",
