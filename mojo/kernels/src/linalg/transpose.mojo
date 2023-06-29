@@ -24,7 +24,7 @@ from Math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_sizeof, dtype_simd_width
+from TargetInfo import dtype_sizeof, simdwidthof
 from TypeUtilities import rebind
 from SIMD import SIMD
 
@@ -586,7 +586,7 @@ fn _transpose_2d_serial_tiled[
     offset: Int,
     out_chain: OutputChainPtr,
 ):
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
 
     @parameter
     if rank < 2:
@@ -657,7 +657,7 @@ fn _transpose_2d_parallel_tiled[
     if rank < 2:
         return
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     let N = simplified_input_shape[simplified_rank - 2]
     let M = simplified_input_shape[simplified_rank - 1]
     alias min_work_per_task = 1024
@@ -722,7 +722,7 @@ fn transpose_2d[
     if rank < 2:
         return
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     let N = simplified_input_shape[simplified_rank - 2]
     let M = simplified_input_shape[simplified_rank - 1]
     alias min_work_per_task = 1024
@@ -1006,8 +1006,7 @@ fn _copy_with_strides[
                 src_ptr = src_ptr.offset(simd_width * input_axis_stride)
                 dst_ptr = dst_ptr.offset(simd_width * output_axis_stride)
 
-            alias vector_width = dtype_simd_width[type]()
-            vectorize[vector_width, _copy](axis_dim)
+            vectorize[simdwidthof[type](), _copy](axis_dim)
 
         if out_chain:
             out_chain.mark_ready()

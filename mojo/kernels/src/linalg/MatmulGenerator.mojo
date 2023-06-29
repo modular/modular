@@ -24,7 +24,7 @@ from Matmul import (
 from MatmulUtils import get_pack_data_size
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 from TargetInfo import simd_byte_width
 
 
@@ -468,7 +468,7 @@ struct MatmulStaticState:
             static_gemm_switch: GemmSwitch.all_false(),
             static_gemm_shape: StaticGemmShape.all_unknown(),
             static_data_layout: data_layout,
-            simd_size: dtype_simd_width[data_type.value_type](),
+            simd_size: simdwidthof[data_type.value_type](),
             a_packed: False,
             b_packed: False,
             c_packed: False,

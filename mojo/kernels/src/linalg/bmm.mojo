@@ -21,7 +21,7 @@ from MatmulUtils import (
     partition_work,
 )
 from Matmul import _submatmul_sequential_sync
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 from Functional import async_parallelize, _get_start_indices_of_nth_subvolume
 from String import String
 from Range import range
@@ -136,10 +136,10 @@ fn batched_matmul_parallel_async[
         div_ceil(m * n * k * batch_size, get_min_task_size()), batch_size
     )
     # Prevent parallelizing matmul with too many threads.
-    let max_num_tasks_matmul = get_matmul_num_tasks[
-        dtype_simd_width[type](), True
-    ](m, n, k, num_threads) if is_critical_stride(k) else get_matmul_num_tasks[
-        dtype_simd_width[type](), False
+    let max_num_tasks_matmul = get_matmul_num_tasks[simdwidthof[type](), True](
+        m, n, k, num_threads
+    ) if is_critical_stride(k) else get_matmul_num_tasks[
+        simdwidthof[type](), False
     ](
         m, n, k, num_threads
     )

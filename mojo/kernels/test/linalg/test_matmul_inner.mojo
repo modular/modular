@@ -12,14 +12,14 @@ from Matmul import (
 )
 from MatmulUtils import get_pack_data_size
 from Buffer import NDBuffer
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 from Index import Index
 from DType import DType
 from List import DimList
 from IO import print
 
 
-alias simd_size: Int = dtype_simd_width[DType.float32]()
+alias simd_size: Int = simdwidthof[DType.float32]()
 alias a_row_size: Int = 5
 alias pack_inner_size: Int = 4
 alias prefetch_b_distance_k: Int = 4

@@ -47,7 +47,7 @@ from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import has_neon, alignof, dtype_simd_width
+from TargetInfo import has_neon, alignof, simdwidthof
 from Transpose import transpose_inplace
 from TypeUtilities import rebind
 from Intrinsics import PrefetchOptions, external_call
@@ -1490,7 +1490,7 @@ struct BTileGenerator[
             b_tile_stack_ptr = _raw_stack_allocation[
                 config.pack_data_size,
                 type,
-                alignof[SIMD[type, dtype_simd_width[type]()]](),
+                alignof[SIMD[type, simdwidthof[type]()]](),
             ]()
 
         return BTileGenerator[config, type, transpose_b, b_packed](

@@ -14,7 +14,7 @@ from TargetInfo import (
     has_avx512f,
     has_neon,
     os_is_macos,
-    dtype_simd_width,
+    simdwidthof,
     dtype_sizeof,
 )
 from BuildInfo import is_relwithdebinfo_build, is_debug_build
@@ -446,13 +446,13 @@ fn get_partitioned_matmul[
         return get_partitioned_matmul_mojo[
             get_matmul_a_row_size[critical_stride](),
             get_matmul_pack_inner_size[critical_stride]()
-            * dtype_simd_width[DType.float32](),
+            * simdwidthof[DType.float32](),
         ](m, n, k, task_id, num_tasks)
     else:
         return get_partitioned_matmul_im2col[
             get_matmul_a_row_size[critical_stride](),
             get_matmul_pack_inner_size[critical_stride]()
-            * dtype_simd_width[DType.float32](),
+            * simdwidthof[DType.float32](),
         ](m, n, k, task_id, num_tasks)
 
 
@@ -642,7 +642,7 @@ fn get_matmul_config[
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = dtype_simd_width[type]()
+    alias simd_size = simdwidthof[type]()
 
     # number of k iterations to prefetch ahead on the
     #   inner micro kernel loop.

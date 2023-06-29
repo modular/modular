@@ -11,11 +11,11 @@ from Index import Index
 from List import DimList
 from Matmul import PackMatrixCols
 from SIMD import SIMD
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 from IO import print
 
 alias type = DType.float32
-alias simd_size: Int = dtype_simd_width[DType.float32]()
+alias simd_size: Int = simdwidthof[DType.float32]()
 alias pack_inner_size: Int = 4
 alias tile_inner_size: Int = pack_inner_size * simd_size
 alias width = 2 * tile_inner_size
