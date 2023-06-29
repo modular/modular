@@ -451,13 +451,17 @@ static LogicalResult recordDecl(ParameterUseDefGraph &g, ParamDeclAttr decl,
                                 Operation *op, Region &scope) {
   ParamDeclaration &paramDecl = g.decls[decl.getName()];
 
-  // If this parameter has already been declared in an operation in the same
-  // scope, we have an error.
-  if (paramDecl.scope && scope.isAncestor(paramDecl.scope)) {
-    return (emitError(op->getLoc(), "redeclaration of parameter ")
-            << decl.getName())
-               .attachNote(paramDecl.declOp->getLoc())
-           << "previous declaration here";
+  if (paramDecl.scope) {
+    // If this parameter has already been declared by a different op, or by the
+    // same op in the same scope, we have an error.
+    // NOTE: Parameters can be redeclared by the same op in different scopes.
+    // This is so that we don't run into redeclaration with ops that implement
+    // both ParamOpInterface and DeclInterface.
+    if (paramDecl.declOp != op || paramDecl.scope == &scope)
+      return (emitError(op->getLoc(), "redeclaration of parameter ")
+              << decl.getName())
+                 .attachNote(paramDecl.declOp->getLoc())
+             << "previous declaration here";
   }
 
   // Record the new declaration.

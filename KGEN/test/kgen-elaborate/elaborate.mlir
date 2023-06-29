@@ -244,6 +244,8 @@ kgen.generator @test_f32() -> f32 {
   kgen.return %2 : f32
 }
 
+// -----
+
 //===----------------------------------------------------------------------===//
 
 // Test that we can do static assertions on computed parameter expressions (e.g.
@@ -2039,20 +2041,6 @@ kgen.generator @fork_unreachable_blocks() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @param_if_shadow
-kgen.generator @param_if_shadow() {
-  // CHECK-NEXT: constant = <1>
-  kgen.param.declare a = <1>
-  kgen.param.if <1> {
-    kgen.param.declare a: dtype = <si32>
-    kgen.param.yield
-  } else {
-    kgen.param.yield
-  }
-  kgen.param.constant = <a>
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.func @"param_if_different,cond=-1"
 // CHECK-NEXT: constant = <2>
 
@@ -2061,8 +2049,8 @@ kgen.generator @param_if_shadow() {
 kgen.generator @param_if_different<cond: i1>() {
   kgen.param.declare a = <3>
   kgen.param.if <cond> {
-    kgen.param.declare a = <2>
-    kgen.param.constant = <a>
+    kgen.param.declare b = <2>
+    kgen.param.constant = <b>
     kgen.param.yield
   } else {
     kgen.param.constant = <a>

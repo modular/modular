@@ -51,14 +51,6 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
     kgen.return
   }
 
-  kgen.param.declare upper_param = <add(p0, 1)>
-  kgen.param.declare shadowed = <upper_param>
-  kgen.param.declare.region F3 = <upper_param: dtype>() {
-    // CHECK: constant = <shadowed>
-    kgen.param.constant = <shadowed>
-    kgen.return
-  }
-
   // CHECK: bound: () -> () = <[@unbound_fn<2>]>
   kgen.param.fork bound: () -> () = <[@unbound_fn<a2>]>
 

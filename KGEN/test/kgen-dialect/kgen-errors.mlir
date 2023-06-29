@@ -477,10 +477,10 @@ kgen.generator @bar<F>() {
 
 kgen.generator @doIt<SomeParam>() {
   kgen.param.declare.region fn = () {
-    // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeParam" with incorrect type 'index'}}
-    %0 = kgen.param.constant = <SomeParam>
+    // expected-error @below {{'kgen.param.constant' op reference to parameter "SomeOtherParam" with incorrect type 'index'}}
+    %0 = kgen.param.constant = <SomeOtherParam>
     // expected-note @below {{parameter defined with type '!kgen.dtype'}}
-    kgen.param.declare SomeParam : dtype = <f32>
+    kgen.param.declare SomeOtherParam : dtype = <f32>
     kgen.return
   }
   kgen.return
@@ -636,6 +636,40 @@ kgen.generator @declareWrongType() {
 kgen.generator @noArgumentForGetAllImpl() {
   // expected-error @below {{'get_all_impls' expects one operand}}
   kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls()>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @duplicate_decl<() -> out>() {
+  // expected-note @below {{previous declaration here}}
+  kgen.param.declare a = <5>
+  // expected-error @below {{redeclaration of parameter "a"}}
+  kgen.param.declare a = <6>
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{previous declaration here}}
+kgen.generator @name_shadwing_1<a>() {
+  // expected-error @below {{redeclaration of parameter "a"}}
+  kgen.param.declare.region fn = <a>() {
+    kgen.unreachable
+  }
+  kgen.return
+}
+
+// -----
+
+kgen.generator @name_shadwing_2<a>() {
+  // expected-note @below {{previous declaration here}}
+  kgen.param.declare b = <a>
+  kgen.param.declare.region fn = () {
+    // expected-error @below {{redeclaration of parameter "b"}}
+    kgen.param.declare b = <a>
+    kgen.unreachable
+  }
   kgen.return
 }
 

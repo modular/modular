@@ -15,7 +15,6 @@ def DeclInterface : OpInterface<"DeclInterface"> {
     parameter scope. A parameter scope contains a set of operations where a
     particular parameter can be defined at most once and where operations may
     only reference parameters declared in that scope or in a higher.
-    Declarations can shadow declarations in higher scopes.
 
     Parameter scopes can be isolated from above, meaning that operations nested
     within and below a scope cannot reference parameters defined in higher
