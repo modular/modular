@@ -132,7 +132,7 @@ M::ErrorOr<size_t> getNumPhysicalCores();
 /// Gets the SIMD width from the processor features. The features are comma
 /// separated.
 size_t simdWidthFromFeatures(StringRef features);
-size_t simdWidthFromFeatures(const std::vector<std::string> &features);
+size_t simdWidthFromFeatures(ArrayRef<std::string> features);
 
 //===----------------------------------------------------------------------===//
 // HostMachineInfo
