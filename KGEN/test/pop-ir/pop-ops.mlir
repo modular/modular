@@ -1064,6 +1064,25 @@ kgen.generator @dtype_utils<type: dtype>(%arg0: !kgen.dtype) {
   kgen.return
 }
 
+// CHECK-LABEL: pop.global @global_var(2) : i32
+// CHECK: (%arg0: !pop.pointer<i32>)
+pop.global @global_var(2) : i32, (%arg0: !pop.pointer<i32>) {
+  // CHECK-NEXT: %0 = kgen.param.constant: i32 = <1>
+  %0 = kgen.param.constant: i32 = <1>
+  // CHECK-NEXT: pop.store %0, %arg0
+  pop.store %0, %arg0 : !pop.pointer<i32>
+// CHECK-NEXT: }, (%arg0: !pop.pointer<i32>) {
+}, (%arg0: !pop.pointer<i32>) {
+// CHECK-NEXT: }
+}
+
+// CHECK-LABEL: @global_address
+kgen.func @global_address() -> !pop.pointer<i32> {
+  // CHECK-NEXT: pop.global.address @global_var : <i32>
+  %0 = pop.global.address @global_var : <i32>
+  kgen.return %0 : !pop.pointer<i32>
+}
+
 // -----
 
 // CHECK-LABEL: lit.file_module @module
