@@ -34,21 +34,12 @@ public:
 
   ~SingleThreadWorkQueue() override = default;
 
-  void addTask(TaskFunction &&work,
-               WorkProfilerEntry &&profilerEntry) override {
+  void addTask(TaskFunction &&work) override {
     assert(work);
-    // Begin the waiting clock.
-    InternalProfilerEntry waitingEntry =
-        profilerEntry.copy<InternalProfilerEntry>().withNameSuffix(
-            ".waiting"); // restarts clock
-    workItems.enqueue(ProfiledTaskFunction(
-        std::move(work), std::move(waitingEntry), std::move(profilerEntry)));
+    workItems.enqueue(std::move(work));
   }
 
-  void addLocalTask(TaskFunction work) override {
-    addTask(std::move(work), AllWorkItemsProfilerEntry::create("llcl.waiter")
-                                 .copy<WorkProfilerEntry>());
-  }
+  void addLocalTask(TaskFunction &&work) override { addTask(std::move(work)); }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
   size_t getParallelismLevel() const override { return 1; }
@@ -64,26 +55,16 @@ private:
   void runUntilImpl(StopPredicateFn stopPredicate);
 
   // Execute a single profiled work item.
-  void doWork(ProfiledTaskFunction &&profiledTask) {
-    // Record the waiting clock.
-    std::move(profiledTask.waiting).record();
-    // Start the running clock.
-    profiledTask.running.restart();
-    assert(running == nullptr);
-    running = &profiledTask.running;
+  void doWork(TaskFunction &&taskFunction) {
+    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.doWork"));
     // Do the work.
-    profiledTask.work();
-    running = nullptr;
-    // Record the running clock (if not recorded already).
-    std::move(profiledTask.running).record();
+    taskFunction();
   }
 
   /// CPU ID to set affinity to when running the runUntil loop.
   size_t cpuID;
   /// Pending work items.
-  ConcurrentQueue<ProfiledTaskFunction> workItems;
-  /// The profiling entry for the currently running work item, or null if none.
-  WorkProfilerEntry *running = nullptr;
+  ConcurrentQueue<TaskFunction> workItems;
 };
 } // namespace
 
@@ -116,28 +97,10 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
 
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
-  WorkProfilerEntry *origRunning = running;
-  if (origRunning) {
-    WorkProfilerEntry newRunning = origRunning->withNameSuffix(".post");
-    // Switch out the original entry and an entry we'll start once we're done
-    // pumping work.
-    std::swap(newRunning, *origRunning);
-    // Record the currently running clock (if any) before we start any more
-    // work.
-    std::move(newRunning).record();
-    running = nullptr;
-  }
-
   while (auto profiledTask = workItems.dequeue()) {
     doWork(std::move(profiledTask));
     if (stopPredicate())
       break;
-  }
-
-  if (origRunning) {
-    // Resume tracing the original work item.
-    origRunning->restart();
-    running = origRunning;
   }
 }
 

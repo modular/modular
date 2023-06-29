@@ -13,7 +13,6 @@
 
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/Profiling.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Twine.h"
 #include <utility>
@@ -299,14 +298,6 @@ template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
 inline static void addTask(Runtime &runtime, FnTy f) {
   runtime.getWorkQueue()->addTask(std::forward<FnTy>(f));
-}
-
-template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
-          std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
-inline static void addTask(Runtime &runtime, WorkProfilerEntry &&profilerEntry,
-                           FnTy f) {
-  runtime.getWorkQueue()->addTask(std::forward<FnTy>(f),
-                                  std::move(profilerEntry));
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R

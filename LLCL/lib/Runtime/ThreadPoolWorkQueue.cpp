@@ -179,10 +179,10 @@ struct WorkQueueThread {
   /// The lock-free queue of pending tasks available for any worker.
   ///
   /// Tasks on this list always take precedence over those in overflowTaskList.
-  LockFreeRingBuffer<ProfiledTaskFunction> &taskList;
+  LockFreeRingBuffer<TaskFunction> &taskList;
   /// The mutex-protected queue of pending tasks available for any worker.
   std::mutex &overflowMutex; // Protects overflowTaskList
-  SmallVectorImpl<ProfiledTaskFunction> &overflowTaskList;
+  SmallVectorImpl<TaskFunction> &overflowTaskList;
   /// Unique index for this thread. Index #0 is reserved to represent all
   /// 'foreign' threads, and will not have a dedicated thread.
   size_t workerID;
@@ -201,11 +201,6 @@ struct WorkQueueThread {
   /// thread. This supports tasks which themselves (unfortunately) need to
   /// await.
   size_t numRecursiveCalls = 0;
-  /// The profiling entry for the currently running work item, or null if none.
-  /// This entry is manipulated to accurately record when a task is actually
-  /// executing 'its own' work rather than executing other work items as a
-  /// side effect of calling await.
-  WorkProfilerEntry *running = nullptr;
   // The underlying worker thread, or none if this object represents all
   // 'foreign' threads.
   std::optional<std::thread> thread;
@@ -214,9 +209,9 @@ struct WorkQueueThread {
   /// Unless representing all 'foreign' threads, a new thread is created
   /// and enters a runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
-                  LockFreeRingBuffer<ProfiledTaskFunction> &taskList,
+                  LockFreeRingBuffer<TaskFunction> &taskList,
                   std::mutex &overflowMutex,
-                  SmallVectorImpl<ProfiledTaskFunction> &overflowTaskList,
+                  SmallVectorImpl<TaskFunction> &overflowTaskList,
                   size_t workerID, size_t cpuID)
       : sharedState(sharedState), taskList(taskList),
         overflowMutex(overflowMutex), overflowTaskList(overflowTaskList),
@@ -245,30 +240,13 @@ struct WorkQueueThread {
       thread->join();
   }
 
-  // Execute a single profiled work item. If OnOwningThread is true then
-  // the caller is either a worker thread or a 'working foreign' thread,
-  // in which case we can capture the running profile entry before any
-  // recursive awaits begin executing additional work items.
-  template <bool OnOwningThread>
-  void doWork(ProfiledTaskFunction &&profiledTask) {
-    // Record the waiting clock.
-    std::move(profiledTask.waiting).record();
-    // Start the running cock.
-    profiledTask.running =
-        profiledTask.running.withDetailSuffix(printWorkerId(workerID));
-    // If the caller owns the WorkQueueThread then we can try to ensure
-    // the running profiling entry gets stopped if the work item itself
-    // calls back into await.
-    if constexpr (OnOwningThread) {
-      assert(running == nullptr);
-      running = &profiledTask.running;
-    }
+  // Execute a single profiled work item.
+  template <bool IsWaiter>
+  void doWork(TaskFunction &&taskFunction) {
+    TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
+        IsWaiter ? "llcl.waiter" : "llcl.doWork"));
     // Do the work.
-    profiledTask.work();
-    if constexpr (OnOwningThread)
-      running = nullptr;
-    // Record the running clock (if not recorded already).
-    std::move(profiledTask.running).record();
+    taskFunction();
   }
 
   /// Returns true if the calling thread can be considered to own this
@@ -393,18 +371,6 @@ void WorkQueueThread::runItemsOnOwningThread(
     EarlyStopPredicateFn earlyStopPredicate,
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringRef spinningLabel, StringRef sleepingLabel) {
-  WorkProfilerEntry *origRunning = running;
-  if (origRunning) {
-    WorkProfilerEntry newRunning = origRunning->withNameSuffix(".post");
-    // Switch out the original entry and an entry we'll start once we're done
-    // pumping work.
-    std::swap(newRunning, *origRunning);
-    // Record the currently running clock (if any) before we start any more
-    // work.
-    std::move(newRunning).record();
-    running = nullptr;
-  }
-
   if (workerID == 0) {
     // Since caller is a 'foreign' thread, temporarily set its thread
     // affinity.
@@ -417,12 +383,6 @@ void WorkQueueThread::runItemsOnOwningThread(
     runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
         earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
         sleepingLabel);
-  }
-
-  if (origRunning) {
-    // Resume tracing the original work item.
-    origRunning->restart();
-    running = origRunning;
   }
 }
 
@@ -437,22 +397,17 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
     while (!localTaskList.empty()) {
-      ProfiledTaskFunction labelledTask(
-          std::move(localTaskList.back()),
-          /*waiting=*/InternalProfilerEntry(),
-          /*running=*/
-          AllWorkItemsProfilerEntry::create("llcl.waiter")
-              .copy<WorkProfilerEntry>());
-      localTaskList.erase(localTaskList.end() - 1);
-      doWork</*OnOwningThread=*/true>(std::move(labelledTask));
+      TaskFunction taskFunction = std::move(localTaskList.back());
+      localTaskList.pop_back();
+      doWork</*IsWaiter=*/true>(std::move(taskFunction));
     }
 
     if (earlyStopPredicate())
       return;
 
     // In the normal case we happily pick up and do work.
-    if (auto labelledTask = taskList.dequeue()) {
-      doWork</*OnOwningThread=*/true>(std::move(labelledTask));
+    if (auto taskFunction = taskList.dequeue()) {
+      doWork</*IsWaiter=*/false>(std::move(taskFunction));
       goto KeepRunning;
     }
 
@@ -477,7 +432,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
         // normal.
         if (auto work = taskList.dequeue()) {
           std::move(spinning).record();
-          doWork</*OnOwningThread=*/true>(std::move(work));
+          doWork</*IsWaiter=*/false>(std::move(work));
           goto KeepRunning;
         }
 
@@ -501,12 +456,11 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       std::lock_guard<std::mutex> guard(overflowMutex);
       if (!overflowTaskList.empty()) {
         while (!overflowTaskList.empty()) {
-          ProfiledTaskFunction labelledTask =
-              std::move(overflowTaskList.back());
+          TaskFunction taskFunction = std::move(overflowTaskList.back());
           overflowTaskList.pop_back();
-          if (!taskList.enqueue(labelledTask)) {
+          if (!taskList.enqueue(taskFunction)) {
             // Oops, went too far.
-            overflowTaskList.emplace_back(std::move(labelledTask));
+            overflowTaskList.emplace_back(std::move(taskFunction));
             break;
           }
         }
@@ -562,9 +516,9 @@ public:
 
   void shutdown() override;
 
-  void addTask(TaskFunction &&work, WorkProfilerEntry &&profilerEntry) override;
+  void addTask(TaskFunction &&work) override;
 
-  void addLocalTask(TaskFunction work) override;
+  void addLocalTask(TaskFunction &&work) override;
 
   void await(ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
 
@@ -606,11 +560,11 @@ private:
 
   /// The lock-free queue of pending tasks available for any worker.
   /// It may become full.
-  LockFreeRingBuffer<ProfiledTaskFunction> taskList;
+  LockFreeRingBuffer<TaskFunction> taskList;
   /// The mutex-protected queue of pending tasks available for any worker.
   /// Only used when the taskList is full.
   std::mutex overflowMutex; // protects overflowTaskList
-  SmallVector<ProfiledTaskFunction> overflowTaskList;
+  SmallVector<TaskFunction> overflowTaskList;
 };
 } // namespace
 
@@ -676,21 +630,11 @@ void ThreadPoolWorkQueue::shutdown() {
     workers[i].join();
 }
 
-void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
-                                  WorkProfilerEntry &&profilerEntry) {
+void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
   assert(work);
-  WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
 
-  // Begin the waiting clock.
-  InternalProfilerEntry waitingEntry =
-      profilerEntry.copy<InternalProfilerEntry>()
-          .withNameSuffix(".waiting")
-          .withDetailSuffix(
-              printWorkerId(callerWorker->workerID)); // restarts clock
-  ProfiledTaskFunction profiledTask(std::move(work), std::move(waitingEntry),
-                                    std::move(profilerEntry));
   // Try to add this work to the lock-free queue.
-  if (taskList.enqueue(profiledTask)) {
+  if (taskList.enqueue(work)) {
     // If there are any suspended workers, kick one of them now that there is
     // new work to do.
     int workerIDToPoke = sharedState.takeAnySuspendedThread();
@@ -715,15 +659,11 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work,
   //    way the mutex overhead is only paid for in the uncommon case. However,
   //    we obviously risk starving these tasks.
   // We go for the last option.
-  if (profiledTask.running.empty())
-    profiledTask.running = WorkProfilerEntry::create("llcl.addTask.overflow");
-  else
-    profiledTask.running = profiledTask.running.withNameSuffix(".overflow");
   std::lock_guard<std::mutex> guard(overflowMutex);
-  overflowTaskList.emplace_back(std::move(profiledTask));
+  overflowTaskList.emplace_back(std::move(work));
 }
 
-void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
+void ThreadPoolWorkQueue::addLocalTask(TaskFunction &&work) {
   assert(work);
   WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
   if (callerWorker->workerID == 0 &&
@@ -731,8 +671,7 @@ void ThreadPoolWorkQueue::addLocalTask(M::LLCL::TaskFunction work) {
     // Called from a foreign worker which is not within a runItems loop, so
     // there's no local task list we can enqueue to on this thread.
     // Add as a task instead.
-    addTask(std::move(work),
-            WorkProfilerEntry::create("llcl.addLocalTask.task"));
+    addTask(std::move(work));
     return;
   }
 
