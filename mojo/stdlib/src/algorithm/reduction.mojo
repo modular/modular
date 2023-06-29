@@ -27,7 +27,7 @@ from Math import (
 from Numerics import inf, neginf
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_sizeof, dtype_simd_width
+from TargetInfo import dtype_sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper
@@ -642,12 +642,10 @@ fn _reduce_along_dimension[
 
     @always_inline
     @parameter
-    fn unrolled_inner_loop[vector_width: Int](start: Int, end: Int):
+    fn unrolled_inner_loop[simd_width: Int](start: Int, end: Int):
         # Manually hoist this out of the loops anyway. Not clear if we want to
         # hoist it all the way out of the async body.
-        let simd_compatible_size = (
-            reduce_dim_size // vector_width
-        ) * vector_width
+        let simd_compatible_size = (reduce_dim_size // simd_width) * simd_width
 
         # Iterate over the non reduced dimensions.
         for flat_index in range(start, end):
@@ -656,11 +654,11 @@ fn _reduce_along_dimension[
                 flat_index, shape, reduce_dim
             )
 
-            var acc_simd = SIMD[type, vector_width].splat(init_value)
-            for idx in range(0, simd_compatible_size, vector_width):
+            var acc_simd = SIMD[type, simd_width].splat(init_value)
+            for idx in range(0, simd_compatible_size, simd_width):
                 indices[reduce_dim] = idx
-                let load_value = input_0_fn[type, vector_width, rank](indices)
-                acc_simd = reduce_function[type, vector_width](
+                let load_value = input_0_fn[type, simd_width, rank](indices)
+                acc_simd = reduce_function[type, simd_width](
                     load_value, acc_simd
                 )
 
@@ -752,9 +750,8 @@ fn max[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     Returns:
         The maximum of the buffer elements.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width, size, type, type, _simd_max_elementwise, _simd_max
+        simdwidthof[type](), size, type, type, _simd_max_elementwise, _simd_max
     ](src, src[0])
 
 
@@ -781,9 +778,8 @@ fn max[
         src: The input buffer.
         dst: The output buffer.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width,
+        simdwidthof[type](),
         rank,
         input_shape,
         output_shape,
@@ -836,9 +832,8 @@ fn min[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     Returns:
         The minimum of the buffer elements.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width, size, type, type, _simd_min_elementwise, _simd_min
+        simdwidthof[type](), size, type, type, _simd_min_elementwise, _simd_min
     ](src, src[0])
 
 
@@ -865,9 +860,8 @@ fn min[
         src: The input buffer.
         dst: The output buffer.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width,
+        simdwidthof[type](),
         rank,
         input_shape,
         output_shape,
@@ -920,9 +914,8 @@ fn sum[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     Returns:
         The sum of the buffer elements.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width, size, type, type, _simd_sum_elementwise, _simd_sum
+        simdwidthof[type](), size, type, type, _simd_sum_elementwise, _simd_sum
     ](src, 0)
 
 
@@ -949,9 +942,8 @@ fn sum[
         src: The input buffer.
         dst: The output buffer.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width,
+        simdwidthof[type](),
         rank,
         input_shape,
         output_shape,
@@ -1004,9 +996,13 @@ fn product[size: Dim, type: DType](src: Buffer[size, type]) -> SIMD[type, 1]:
     Returns:
         The product of the buffer elements.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width, size, type, type, _simd_product_elementwise, _simd_product
+        simdwidthof[type](),
+        size,
+        type,
+        type,
+        _simd_product_elementwise,
+        _simd_product,
     ](src, 1)
 
 
@@ -1033,9 +1029,8 @@ fn product[
         src: The input buffer.
         dst: The output buffer.
     """
-    alias simd_width = dtype_simd_width[type]()
     return reduce[
-        simd_width,
+        simdwidthof[type](),
         rank,
         input_shape,
         output_shape,
@@ -1103,7 +1098,7 @@ fn mean[
         dst: The output buffer.
     """
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     sum[rank, input_shape, output_shape, type, reduce_axis](src, dst)
 
     let n = src.dim[reduce_axis]()
@@ -1166,7 +1161,7 @@ fn variance[
         The variance value of the elements in a buffer.
     """
     debug_assert(src.__len__() > 1, "input length must be greater than 1")
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
 
     @always_inline
     @parameter
@@ -1249,7 +1244,7 @@ fn all_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, False
     )
@@ -1289,7 +1284,7 @@ fn any_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return not val
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, False
     )
@@ -1330,7 +1325,7 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     fn _continue_fn(val: Bool) -> Bool:
         return val
 
-    alias simd_width = dtype_simd_width[type]()
+    alias simd_width = simdwidthof[type]()
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, True
     )
