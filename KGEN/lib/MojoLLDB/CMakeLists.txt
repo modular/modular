@@ -67,14 +67,4 @@ file(GENERATE
   CONTENT "plugin load $<TARGET_FILE:MojoLLDB>\nlog enable -f ${logfile} lldb expr\n"
   TARGET MojoLLDB)
 
-# Find python.
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
-# Generate a launcher for the mojo repl.
-file(GENERATE
-  OUTPUT ${CMAKE_BINARY_DIR}/bin/mojo-repl
-  INPUT ${CMAKE_CURRENT_SOURCE_DIR}/mojo-repl.py.in
-  TARGET Python3::Interpreter
-  FILE_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-
 add_dependencies(MojoLLDB mojo-repl-entry-point)

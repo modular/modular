@@ -29,11 +29,11 @@ session within LLDB, Mojo provides a convenient utility with the necessary
 setup:
 
 ```shell
-# Build the Mojo REPL and all of the various dependencies.
-$ build MojoLLDB
+# Build the Mojo driver, along with the REPL and all of its dependencies.
+$ build mojo-driver
 
 # Launch the REPL.
-$ mojo-repl
+$ mojo-driver repl
 ```
 
 Once run, you'll be provided with a REPL environment where you can immediately

@@ -6,3 +6,6 @@
 
 add_driver_option_tablegen(REPLOptions.td)
 add_driver_man_page_tablegen(REPLOptions.td mojo-driver-repl)
+
+# The `repl` subcommand depends on Mojo's LLDB REPL.
+add_dependencies(mojo-driver MojoLLDB)
