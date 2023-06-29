@@ -11,6 +11,9 @@ from ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
+    get_direct_conv_micro_kernel_height,
+    get_conv_num_tasks,
+    get_conv_num_partitions,
 )
 from Conv import (
     ConvDirectNHWC,
@@ -25,7 +28,7 @@ from Intrinsics import external_call
 from List import DimList
 from Pointer import DTypePointer
 from LLCL import Runtime, OwningOutputChainPtr
-from Math import abs, div_ceil
+from Math import abs, div_ceil, min
 from Range import range
 from Random import rand
 from TargetInfo import dtype_simd_width
@@ -82,10 +85,19 @@ fn test[
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    let cf_tile_size = get_conv_tile_shape[
-        type,
-        get_direct_conv_micro_kernel_width(),
-    ](conv_shape)
+    # Find the tile size used in packing.
+    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    let cf_tile_size = get_conv_tile_shape[type, micro_kernel_width](conv_shape)
+    # If the input channel is partitioned, the tile size in C
+    # may be reduced to fit the partition
+    let num_threads = rt.parallelism_level()
+    let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+    let num_partitions = get_conv_num_partitions[
+        micro_kernel_height, micro_kernel_width * simd_size
+    ](num_tasks, conv_shape)
+    # Actual tile size
+    let c_tile_size = min(conv_shape.c // num_partitions[1], cf_tile_size[0])
 
     # Rounded C and F size for pre-packed filter.
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
@@ -98,7 +110,7 @@ fn test[
             get_direct_conv_micro_kernel_width(),
             simd_size,
             type,
-        ](conv_shape, cf_tile_size[0], filter_ptr, packed_filter_ptr)
+        ](conv_shape, c_tile_size, filter_ptr, packed_filter_ptr)
 
     let input = NDBuffer[4, DimList.create_unknown[4](), type](
         input_ptr, Index(N, H, W, C), type
@@ -403,6 +415,22 @@ fn main():
             5,  # S
             256,  # F
             Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        # likely to partition C
+        test[DType.float32, True](
+            1,  # N
+            16,  # H
+            16,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            256,  # F
+            Index(1, 1),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w

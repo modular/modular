@@ -18,20 +18,22 @@ from ConvUtils import (
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
+    get_conv_num_tasks,
+    get_conv_num_partitions,
 )
 from DType import DType
 from Functional import (
     unroll,
-    unroll,
     async_parallelize,
     tile,
     unswitch,
+    vectorize_unroll,
 )
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions, external_call
-from LLCL import OutputChainPtr
-from List import DimList, VariadicList
+from LLCL import OutputChainPtr, OwningOutputChainPtr
+from List import Dim, DimList, VariadicList
 from Math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
@@ -47,6 +49,7 @@ from MatmulUtils import (
     get_partitioned_matmul_im2col,
     get_min_task_size,
     PartitionHeuristic,
+    partition_work,
 )
 from Pointer import DTypePointer
 from Range import range
@@ -2496,60 +2499,123 @@ struct ConvDirectNHWC[
             type, get_direct_conv_micro_kernel_width()
         ](conv_shape)
 
-        # Reuse the im2col partition heuristic, which is based on matmul.
-        # Conver the problem dimension to matmul dimensions.
-        let matmul_M = conv_shape.n * conv_shape.out_h * conv_shape.out_w
-        let matmul_N = conv_shape.f
-        let matmul_K = conv_shape.r * conv_shape.s * conv_shape.c
+        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
+        alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+        alias simd_size = dtype_simd_width[type]()
 
+        # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
-        let complexity = matmul_M * matmul_N * matmul_K
-        let num_tasks = min(
-            div_ceil(complexity, get_min_task_size()), num_threads
-        )
+        let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+        let num_partitions = get_conv_num_partitions[
+            micro_kernel_height, micro_kernel_width * simd_size
+        ](num_tasks, conv_shape)
+
+        # This pointer is not properly captured by the following closure.
+        # WAR: wrap it in a letdecl buffer.
+        var output_ptr = output.data
+        let output_size = conv_shape.n * conv_shape.out_h * conv_shape.out_w * conv_shape.f
+        let scratch_size = num_partitions[1] * output_size
+        if num_partitions[1] > 1:
+            output_ptr = DTypePointer[type].alloc(scratch_size)
+        let output_scratch = Buffer[Dim(), type](output_ptr, scratch_size)
 
         @parameter
         @always_inline
         fn task_func(task_id: Int):
-            alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-            alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-            alias simd_size = dtype_simd_width[type]()
+            let task_id_f = task_id % num_partitions[2]
+            let quotient = task_id // num_partitions[2]
+            let task_id_c = quotient % num_partitions[1]
+            let task_id_nhowo = quotient // num_partitions[1]
 
-            let sub_matmul_config = get_partitioned_matmul_im2col[
-                micro_kernel_height, micro_kernel_width * simd_size
-            ](matmul_M, matmul_N, matmul_K, task_id, num_tasks)
+            let nhowo_range = partition_work(
+                task_id_nhowo,
+                num_partitions[0],
+                conv_shape.n * conv_shape.out_h * conv_shape.out_w,
+                micro_kernel_height,
+            )
+            let c_range = partition_work(
+                task_id_c, num_partitions[1], conv_shape.c, 1
+            )
+            let f_range = partition_work(
+                task_id_f,
+                num_partitions[2],
+                conv_shape.f,
+                micro_kernel_width * simd_size,
+            )
 
-            # The partition heuristic may reduce active tasks for better
-            # alignment with micro kernel size. Skip tasks without any work.
-            if (
-                sub_matmul_config.shape[0] <= 0
-                or sub_matmul_config.shape[1] <= 0
-            ):
+            let task_tile_size = Index(
+                min(cf_tile_size[0], c_range[1]), cf_tile_size[1]
+            )
+
+            if nhowo_range[1] <= 0 or c_range[1] <= 0 or f_range[1] <= 0:
                 return
 
-            let partition_offsets = Index(
-                sub_matmul_config.offset[0], 0, sub_matmul_config.offset[1]
-            )
-            let partition_sizes = Index(
-                sub_matmul_config.shape[0],
-                conv_shape.c,
-                sub_matmul_config.shape[1],
+            let task_output = NDBuffer[4, shape_output, type](
+                output_scratch.data.offset(task_id_c * output_size),
+                Index(
+                    conv_shape.n,
+                    conv_shape.out_h,
+                    conv_shape.out_w,
+                    conv_shape.f,
+                ),
+                type,
             )
 
             let instance = ConvDirectNHWC[
                 shape_input, shape_filter, shape_output, type, filter_packed
             ](
-                output,
+                task_output,
                 input,
                 filter,
                 conv_shape,
-                partition_offsets,
-                partition_sizes,
-                cf_tile_size,
+                Index(nhowo_range[0], c_range[0], f_range[0]),
+                Index(nhowo_range[1], c_range[1], f_range[1]),
+                task_tile_size,
             )
             instance.direct_conv()
 
-        async_parallelize[task_func](out_chain, num_tasks)
+        if num_partitions[1] > 1:
+            # Finish the conv computation and sync at the end.
+            let runtime = out_chain.get_runtime()
+            let conv_chain = OwningOutputChainPtr(runtime)
+            async_parallelize[task_func](conv_chain.borrow(), num_tasks)
+            conv_chain.wait()
+
+            # Reduce from the output scratch buffer to the actual output.
+            @parameter
+            @always_inline
+            fn reduce_task(tid: Int):
+                # Use all threads in reduction.
+                let reduce_range = partition_work(
+                    tid, num_threads, output_size, simd_size
+                )
+
+                @parameter
+                @always_inline
+                fn sum[width: Int](idx: Int):
+                    let tid_output_offset = reduce_range[0] + idx
+                    var vec = output_scratch.data.offset(
+                        tid_output_offset
+                    ).simd_load[simd_size]()
+                    # The number of partitions here is typically small.
+                    # There may not be much benefit from unrolling the reduction axis.
+                    # Only unroll the last dimension.
+                    for i in range(1, num_partitions[1]):
+                        vec += output_scratch.data.offset(
+                            tid_output_offset + i * output_size
+                        ).simd_load[simd_size]()
+                    output.data.offset(tid_output_offset).simd_store[simd_size](
+                        vec
+                    )
+
+                vectorize_unroll[simd_size, 4, sum](reduce_range[1])
+
+            async_parallelize[reduce_task](out_chain, num_threads)
+
+            out_chain.wait()
+            output_ptr.free()
+        else:
+            async_parallelize[task_func](out_chain, num_tasks)
 
     fn direct_conv(self):
         self._c_tile_loop(self.cf_tile_size[0])
@@ -2563,8 +2629,8 @@ struct ConvDirectNHWC[
             self._f_tile_loop(c_tile_offset, c_tile_size)
 
         tile[c_tile_iteration](
-            0,
-            self.conv_shape.c,
+            self.partition_offsets[1],
+            self.partition_offsets[1] + self.partition_sizes[1],
             tile_size,
         )
 
@@ -2685,7 +2751,7 @@ struct ConvDirectNHWC[
         for f in range(
             f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
         ):
-            if c_tile_offset == 0:
+            if c_tile_offset == self.partition_offsets[1]:
                 self._init_output_micro_tile[
                     micro_kernel_height, micro_kernel_width, simd_size
                 ](output_micro_tile)
