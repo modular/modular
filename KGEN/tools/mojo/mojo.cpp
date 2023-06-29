@@ -47,7 +47,6 @@ using namespace mlir;
 namespace {
 /// What to do with a given Mojo file.
 enum class MojoCommand {
-  kEmit,
   kEmitHeader,
   kExecute,
 };
@@ -60,7 +59,6 @@ public:
   cl::opt<MojoCommand> cmd{
       cl::desc("The command to execute"),
       cl::values(
-          clEnumValN(MojoCommand::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(
               MojoCommand::kEmitHeader, "emit-header",
               "Emit a C header file with declarations of exported functions."),
@@ -282,18 +280,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().second.alias);
   if (funcOr.isError())
     return clOptions.reportError(funcOr.getError());
-
-  // If we're emitting the archive, do it.
-  if (clOptions.cmd == MojoCommand::kEmit) {
-    // Notify the object layer that we don't need immediate execution.
-    objLayer.notForImmediateExecution();
-    // And lookup the archive.
-    std::optional<Cache::BufferRef> archive =
-        objLayer.lookupArchive(*theModule);
-    if (!archive.has_value())
-      return clOptions.reportError("no compiled archive for the module");
-    return failed(clOptions.emitArchive((*archive)->getBuffer()));
-  }
 
   bool isDef = false;
   if (!moduleExportsMain(*theModule, symtab, isDef))
