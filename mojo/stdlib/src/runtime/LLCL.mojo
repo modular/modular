@@ -432,6 +432,8 @@ struct OutputChainPtr:
             self.ptr,
             label.data,
             label.length.value,
+            DTypePointer[DType.uint8].get_null(),
+            0,
         )
 
     @always_inline
@@ -444,9 +446,7 @@ struct OutputChainPtr:
         @parameter
         if is_mojo_profiling_disabled[level]():
             return
-        external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_TraceDetailed", NoneType
-        ](
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Trace", NoneType](
             self.ptr,
             label.data,
             label.length.value,
