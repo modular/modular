@@ -210,3 +210,53 @@ kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
   %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i64>
   kgen.return
 }
+
+// -----
+
+// expected-error @below {{'pop.global' op expected initializer argument to be type '!pop.pointer<i32>'}}
+pop.global @global_var(2) : i32, (%arg0: i32) {
+}, (%arg0: !pop.pointer<i32>) {
+}
+
+// -----
+
+// expected-error @below {{'pop.global' op expected destructor argument to be type '!pop.pointer<i32>'}}
+pop.global @global_var(2) : i32, (%arg0: !pop.pointer<i32>) {
+}, (%arg0: i32) {
+}
+
+// -----
+
+// expected-error @below {{'pop.global' op expected initializer region to have one argument}}
+"pop.global"() ({
+^bb0:
+}, {
+^bb0(%arg0: !pop.pointer<i32>):
+}) {sym_name = "global_var", priority = 2 : i32, type = i32} : () -> ()
+
+// -----
+
+// expected-error @below {{'pop.global' op expected destructor region to have one argument}}
+"pop.global"() ({
+^bb0(%arg0: !pop.pointer<i32>):
+}, {
+^bb0:
+}) {sym_name = "global_var", priority = 2 : i32, type = i32} : () -> ()
+
+// -----
+
+kgen.func @func() {
+  // expected-error @below {{'pop.global.address' op does not reference a `pop.global` operation}}
+  pop.global.address @func : <i32>
+  kgen.return
+}
+
+// -----
+
+pop.global @global_var(2) : i32, (%arg0: !pop.pointer<i32>) {}, (%arg0: !pop.pointer<i32>) {}
+
+kgen.func @func() {
+  // expected-error @below {{'pop.global.address' op result type does not match global type 'i32'}}
+  pop.global.address @global_var : <i64>
+  kgen.return
+}

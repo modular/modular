@@ -663,6 +663,65 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseGlobalRegions(OpAsmParser &p, Region &initializer,
+                                      Region &destructor) {
+  OpAsmParser::Argument arg;
+  if (p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
+      p.parseRParen() || p.parseRegion(initializer, arg) || p.parseComma() ||
+      p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
+      p.parseRParen() || p.parseRegion(destructor, arg))
+    return failure();
+  return success();
+}
+
+static void printGlobalRegions(OpAsmPrinter &p, Operation *op,
+                               Region &initializer, Region &destructor) {
+  p << '(';
+  p.printRegionArgument(initializer.getArgument(0));
+  p << ") ";
+  p.printRegion(initializer, /*printEntryBlockArgs=*/false);
+  p << ", (";
+  p.printRegionArgument(destructor.getArgument(0));
+  p << ") ";
+  p.printRegion(destructor, /*printEntryBlockArgs=*/false);
+}
+
+LogicalResult GlobalOp::verify() {
+  auto ptrType = PointerType::get(getType());
+  auto verifyRegion = [&](Region &region, StringRef name) -> LogicalResult {
+    if (region.getNumArguments() != 1)
+      return emitOpError() << "expected " << name
+                           << " region to have one argument";
+    if (region.getArgument(0).getType() != ptrType)
+      return emitOpError() << "expected " << name << " argument to be type "
+                           << ptrType;
+    return success();
+  };
+  if (failed(verifyRegion(getInitializer(), "initializer")) ||
+      failed(verifyRegion(getDestructor(), "destructor")))
+    return failure();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalAddressOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
+  auto global = symtab.lookupSymbolIn<GlobalOp>(
+      (*this)->getParentOfType<ModuleOp>(), getGlobal());
+  if (!global)
+    return emitOpError("does not reference a `pop.global` operation");
+  if (global.getType() != getResult().getType().getElementAsType())
+    return emitOpError("result type does not match global type ")
+           << global.getType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 

@@ -1531,6 +1531,72 @@ def POP_ExternalCallOp : POPOp<"external_call",
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalOp
+//===----------------------------------------------------------------------===//
+
+def POP_GlobalOp : POPOp<"global", [Symbol, NoTerminator]> {
+  let summary = "Declare a global variable with an initializer.";
+  let description = [{
+    The `pop.global` operation declares a global variable bound to a symbol
+    name. It contains the type of the global variable, an initializer region,
+    a destructor region, and an initialization priority. The initialization
+    priority determines the order in which the initializers of all the globals
+    in the program will be invoked (lower is earlier) and the reverse order in
+    which the destructors are invoked.
+
+    Example:
+
+    ```mlir
+    pop.global @foo(2) : i32, (%arg0: !pop.pointer<i32>) {
+      %0 = kgen.param.constant: i32 = <4>
+      pop.store %0, %arg0 : !pop.pointer<i32>
+    }, (%arg0: !pop.pointer<i32>) {
+    }
+    ```
+
+    The global `@foo` with initialization priority `2` will be initialized
+    after a global with priority lower than `2` and destroyed before.
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, I32Attr:$priority,
+                       TypeAttr:$type);
+  let regions = (region SizedRegion<1>:$initializer,
+                        SizedRegion<1>:$destructor);
+
+  let assemblyFormat = [{
+    $sym_name `(` $priority `)` `:` $type `,` attr-dict-with-keyword
+    custom<GlobalRegions>($initializer, $destructor)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalAddressOp
+//===----------------------------------------------------------------------===//
+
+def POP_GlobalAddressOp : POPOp<"global.address", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get the address of a global variable.";
+  let description = [{
+    The `pop.global.address` operation returns the address of a referenced
+    global variable. The type of the result is a `!pop.pointer` to the global
+    type.
+
+    Example:
+
+    ```mlir
+    %ptr = pop.global.address @foo : <i32>
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$global);
+  let results = (outs POP_PointerType:$result);
+
+  let assemblyFormat = "$global attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
