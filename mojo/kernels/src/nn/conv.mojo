@@ -54,7 +54,7 @@ from MatmulUtils import (
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_byte_width, dtype_simd_width, alignof
+from TargetInfo import simd_byte_width, simdwidthof, alignof
 
 
 alias MAX_NUM_CHANNELS_TILE = 384
@@ -2491,7 +2491,7 @@ struct ConvDirectNHWC[
         out_chain: OutputChainPtr,
     ):
         debug_assert(
-            (conv_shape.f % dtype_simd_width[type]() == 0),
+            (conv_shape.f % simdwidthof[type]() == 0),
             "Only support F divisible by simd_size",
         )
 
@@ -2501,7 +2501,7 @@ struct ConvDirectNHWC[
 
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-        alias simd_size = dtype_simd_width[type]()
+        alias simd_size = simdwidthof[type]()
 
         # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
@@ -2637,7 +2637,7 @@ struct ConvDirectNHWC[
     fn _f_tile_loop(self, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-        alias simd_size = dtype_simd_width[type]()
+        alias simd_size = simdwidthof[type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
@@ -2679,7 +2679,7 @@ struct ConvDirectNHWC[
         """The N, HO, WO dimensions are fused and traversed with the micro
         kernel height as the step.
         Note that the micro kernel height changes for residual blocks."""
-        alias simd_size = dtype_simd_width[type]()
+        alias simd_size = simdwidthof[type]()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = micro_kernel_f_size // simd_size
 
@@ -2712,7 +2712,7 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         n_ho_wo: Int,
     ):
-        alias simd_size = dtype_simd_width[type]()
+        alias simd_size = simdwidthof[type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
         # Base input offsets.
         let input_base_offsets = Buffer[

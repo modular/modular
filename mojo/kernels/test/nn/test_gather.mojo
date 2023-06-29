@@ -21,7 +21,7 @@ from List import DimList
 from LLCL import Runtime, OwningOutputChainPtr
 from Range import range
 from SIMD import SIMD
-from TargetInfo import simd_width
+from TargetInfo import simdwidthof
 
 
 # CHECK-LABEL: test_gather
@@ -64,7 +64,7 @@ fn test_gather():
         ].aligned_stack_allocation[64]()
 
         # Test gather
-        alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
@@ -78,7 +78,7 @@ fn test_gather():
                 DType.float32,
                 indices_type,
                 0,
-                vector_width,
+                simd_width,
             ](output, input, indices, out_chain.borrow())
             out_chain.wait()
 
@@ -138,7 +138,7 @@ fn test_gather_3d():
         ].aligned_stack_allocation[64]()
 
         # Test gather
-        alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
@@ -152,7 +152,7 @@ fn test_gather_3d():
                 DType.float32,
                 indices_type,
                 0,
-                vector_width,
+                simd_width,
             ](output, input, indices, out_chain.borrow())
             out_chain.wait()
 
@@ -216,7 +216,7 @@ fn test_gather_empty_indices():
         ].aligned_stack_allocation[output_size]()
 
         # Test gather
-        alias vector_width = simd_width[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
@@ -230,7 +230,7 @@ fn test_gather_empty_indices():
                 DType.float32,
                 indices_type,
                 0,
-                vector_width,
+                simd_width,
             ](output, input, indices, out_chain.borrow())
             out_chain.wait()
 

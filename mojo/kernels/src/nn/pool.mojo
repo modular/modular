@@ -14,7 +14,7 @@ from Math import min, max, add, div_ceil
 from Numerics import neginf
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 
 # Pooling method.
 @value
@@ -88,7 +88,7 @@ struct Pool2d[
         """
         # TODO: Find a heuristic to replace the magic numbers.
         alias min_task_num_slices = 64
-        alias vector_width = dtype_simd_width[type]()
+        alias simd_width = simdwidthof[type]()
         alias unroll_factor = 8
 
         let num_threads = out_chain.get_runtime().parallelism_level()
@@ -140,7 +140,7 @@ struct Pool2d[
                     values,
                 )
 
-            vectorize_unroll[vector_width, unroll_factor, func_wrapper](
+            vectorize_unroll[simd_width, unroll_factor, func_wrapper](
                 min(work_block_size, work - offset)
             )
 

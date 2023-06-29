@@ -21,7 +21,7 @@ from TargetInfo import (
     has_avx512f,
     has_neon,
     os_is_macos,
-    dtype_simd_width,
+    simdwidthof,
     dtype_sizeof,
 )
 
@@ -208,7 +208,7 @@ fn get_conv_tile_shape[
     by default fully covered. The heuristic tried to block in C as much as
     possible. If C is small, it would start to block F.
     """
-    alias simd_size = dtype_simd_width[type]()
+    alias simd_size = simdwidthof[type]()
 
     # Number of elements in tile.
     let tile_size = get_conv_tile_size[type]()

@@ -31,9 +31,9 @@ from LLCL import Runtime, OwningOutputChainPtr
 from Math import abs, div_ceil, min
 from Range import range
 from Random import rand
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 
-alias simd_size: Int = dtype_simd_width[DType.float32]()
+alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32
 
 
