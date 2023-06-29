@@ -137,14 +137,6 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
   ASTDecl &moduleDecl =
       sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
-  // Auto-import the core Lang modules.
-  for (StringRef moduleName : SharedState::kBuiltinModuleNames) {
-    auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
-    if (failed(sharedState.declResolver->importModule(
-            topLevelDecl, builtinStrAttr, builtinStrAttr, startSMLoc)))
-      return {nullptr, nullptr};
-  }
-
   // With the top-level of the file parsed, we can now go ahead and resolve all
   // of the deferred declarations.
   sharedState.declResolver->resolveAll();

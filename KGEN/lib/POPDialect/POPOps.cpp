@@ -650,14 +650,14 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
 
 LogicalResult
 ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  auto importedFrom = getImportedFromAttr();
+  SymbolRefAttr importedFrom = getImportedFromAttr();
   if (!importedFrom)
     return success();
 
-  auto linkOp = symbolTable.lookupSymbolIn(
-      (*this)->getParentOfType<ModuleOp>(), importedFrom.getAttr());
-  if (!linkOp)
-    return emitError("expected valid symbol for 'from' directive");
+  if (!symbolTable.lookupSymbolIn((*this)->getParentOfType<ModuleOp>(),
+                                  importedFrom))
+    return emitError() << "'from' directive does not reference a valid symbol: "
+                       << importedFrom;
 
   return success();
 }

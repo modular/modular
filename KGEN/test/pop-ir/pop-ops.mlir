@@ -1063,3 +1063,16 @@ kgen.generator @dtype_utils<type: dtype>(%arg0: !kgen.dtype) {
 
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: lit.file_module @module
+lit.file_module @module {
+  kgen.link "lib.a" as @lib
+
+  lit.func @main() {
+    // CHECK: external_call @func() from @module::@lib
+    pop.external_call @func() from @module::@lib : () -> ()
+    kgen.return
+  }
+}

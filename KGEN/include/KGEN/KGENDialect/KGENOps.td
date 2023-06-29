@@ -961,7 +961,7 @@ def KGEN_ExportOp : KGENOp<"export", [
 // LinkOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_LinkOp : KGENOp<"link", [HasParent<"mlir::ModuleOp">, Symbol]> {
+def KGEN_LinkOp : KGENOp<"link", [Symbol]> {
   let summary = "Link directive.";
   let description = [{
     The `kgen.link` operation defines a symbol that can be used to import

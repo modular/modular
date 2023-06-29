@@ -157,7 +157,7 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
   else
     op->remove();
 
-  op.setSymNameAttr(mangled.mangled);
+  op.setName(mangled.mangled);
   symbolTable.insert(op, symbolTableIt);
   return mangled.mangled;
 }
@@ -375,6 +375,10 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
             })
             .Case<ParamDeclareOp, LIT::UnresolvedImportOp>([&](auto op) {
               op->erase();
+              return mlir::success();
+            })
+            .Case([&](mlir::SymbolOpInterface symbol) {
+              flattenAndRenameSymbol(symbol, symbolTable, opSymTableIt);
               return mlir::success();
             })
             .Default(mlir::success());
