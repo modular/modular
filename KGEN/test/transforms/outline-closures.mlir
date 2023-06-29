@@ -235,7 +235,7 @@ kgen.generator @nested2() -> index {
 // CHECK-LABEL: kgen.generator @capture_crosses_parameter_domain
 kgen.generator @capture_crosses_parameter_domain<T: type>(%arg0: !kgen.paramref<T>) {
   // CHECK: declare Fn: <index, type>
-  kgen.param.declare.region Fn = <A, T: type>() capturing -> !kgen.paramref<T> {
+  kgen.param.declare.region Fn = <A, S: type>() capturing -> !kgen.paramref<T> {
     kgen.return %arg0: !kgen.paramref<T>
   }
   kgen.return
@@ -255,12 +255,12 @@ kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> in
 }
 
 // COM: We should not try and capture input parameters.
-// CHECK-LABEL: @dontBindInputParameters_fn<T: type, I>
+// CHECK-LABEL: @dontBindInputParameters_fn<T: type, N>
 kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
   %0 = kgen.call_param[<>() -> index: bind_signature(:<index>() -> index fn, I)]()
   // CHECK: kgen.param.declare fn: <index>() capturing -> index = <@dontBindInputParameters_fn<:type T, #kgen.unbound>>
-  kgen.param.declare.region fn = <I>() capturing -> index {
-    %1 = kgen.param.constant = <I>
+  kgen.param.declare.region fn = <N>() capturing -> index {
+    %1 = kgen.param.constant = <N>
     "use.op"(%arg0) : (!kgen.paramref<T>) -> ()
     kgen.return %1 : index
   }

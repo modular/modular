@@ -353,10 +353,10 @@ lit.struct.decl @StructWithNestedFn<a_param> {
     // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
     kgen.param.declare b: () -> index = <nestedFunction>
 
-    // CHECK: kgen.param.declare.region paramNestedFunc = <b_param -> c_param>()
-    lit.func paramNestedFunc<b_param -> c_param>() {
-      // CHECK-NEXT: kgen.param.result_bind<b_param>
-      lit.param_return<b_param>
+    // CHECK: kgen.param.declare.region paramNestedFunc = <c_param -> d_param>()
+    lit.func paramNestedFunc<c_param -> d_param>() {
+      // CHECK-NEXT: kgen.param.result_bind<c_param>
+      lit.param_return<c_param>
       lit.return
       lit.end_func
     }

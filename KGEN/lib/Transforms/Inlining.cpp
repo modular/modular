@@ -67,7 +67,8 @@ public:
   /// Populate the mangler using the decls in two potentially conflicting
   /// scopes. Returns false if there is nothing to mangle.
   bool populate(Builder &b, const ParameterUseDefGraph &curScope,
-                const llvm::SetVector<StringAttr> &calleeDecls);
+                const llvm::SetVector<StringAttr> &calleeDecls,
+                const ParameterUseDefGraph &topLevelGraph);
 
   /// Optionally mangle a declaration.
   ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
@@ -125,51 +126,96 @@ Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
   return mangleRefsInImpl(attr, hasRefs);
 }
 
-bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
-                               const llvm::SetVector<StringAttr> &calleeDecls) {
-  TimeTraceScope<> traceScope("AttrTypeMangler::populate");
+/// This uniquing scheme involves splitting each decl name into a key string
+/// and a substring of trailing digits. We track the max of such digits of the
+/// same key string and use that to generate the next unique ID.
+class NameUniquer {
+public:
+  NameUniquer(const ParameterUseDefGraph &scope,
+              const ParameterUseDefGraph &topLevelGraph)
+      : topLevelGraph(topLevelGraph) {
+    updateMaxIds(scope);
+  }
 
-  // This uniquing scheme involves splitting each decl name into a key string
-  // and a substring of trailing digits. We track the max of such digits of the
-  // same key string and use that to generate the next unique ID.
-  llvm::StringMap<ssize_t> maxIds;
-  auto getId = [&](StringRef name) {
+  /// Check if the name needs mangling.
+  bool needsMangling(StringAttr name) {
+    auto [key, id] = split(name);
+    if (auto it = maxIds.find(key); it != maxIds.end())
+      return id <= it->second;
+    return false;
+  }
+
+  /// Uniquely mangle a parameter name. Returns the original name if mangling is
+  /// not needed.
+  StringAttr mangle(StringAttr name) {
+    if (!needsMangling(name))
+      return name;
+    auto [key, _] = split(name);
+    ssize_t newId = ++maxIds[key];
+    return StringAttr::get(name.getContext(), key + Twine(newId));
+  }
+
+  /// Update the uniquer with a new name.
+  void updateWith(StringRef name) {
+    auto [key, id] = split(name);
+    ssize_t &max = maxIds.try_emplace(key, -1).first->second;
+    max = std::max(max, id);
+  }
+
+private:
+  /// Split the name into the base name and a trailing id. If there is not
+  /// trailing number, -1 is returned.
+  static std::pair<StringRef, ssize_t> split(StringRef name) {
+    // We first
     StringRef key = name.rtrim("0123456789");
     size_t splitIdx = key.size();
 
     // -1 means no number suffix.
     ssize_t id = -1;
     name.substr(splitIdx).getAsInteger(/*Radix=*/10, id);
+
     return std::make_pair(key, id);
   };
 
-  bool needsMangling = false;
+  /// Update the ids we are tracking with the declarations (including those
+  /// nested) in the given scope.
+  void updateMaxIds(const ParameterUseDefGraph &scope) {
+    for (auto [declName, _] : scope.decls)
+      updateWith(declName);
+    for (Region *nestedRegion : scope.nestedDecls)
+      updateMaxIds(topLevelGraph.nestedScopes.at(nestedRegion));
+  }
+
+  /// Map to store the maximum id for each base name we are tracking.
+  llvm::StringMap<ssize_t> maxIds;
+
+  /// The top level ParameterUseDefGraph that contains nested scopes that that
+  /// carry declarations.
+  const ParameterUseDefGraph &topLevelGraph;
+};
+
+bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
+                               const llvm::SetVector<StringAttr> &calleeDecls,
+                               const ParameterUseDefGraph &topLevelGraph) {
+  TimeTraceScope<> traceScope("AttrTypeMangler::populate");
+
   // `curScope` contains all declarations visible in the scope of the call,
   // including those defined in higher scopes. When the function is inlined,
   // these are the declarations that will project into the inlined body. We need
   // to mangle parameters in the inlined body such that they do not collide with
-  // any declarations visible in the call scope.
+  // any declarations visible in the call scope, or in any nested scopes.
+  NameUniquer uniquer(curScope, topLevelGraph);
+  bool needsMangling = false;
   for (StringAttr decl : calleeDecls) {
-    if (curScope.decls.find(decl) == curScope.decls.end()) {
-      // This declaration will not collide.
+    if (!uniquer.needsMangling(decl))
       continue;
-    }
     if (!needsMangling) {
-      // Lazily populate the IDs;
-      auto updateMaxId = [&](StringRef name) {
-        auto [key, id] = getId(name);
-        ssize_t &max = maxIds.try_emplace(key, -1).first->second;
-        max = std::max(max, id);
-      };
+      // Lazily populate with the callee decls
       for (StringAttr name : calleeDecls)
-        updateMaxId(name);
-      for (auto &[decl, _] : curScope.decls)
-        updateMaxId(decl);
+        uniquer.updateWith(name);
     }
-    // Generate a new ID by taking the max number.
-    auto [key, _] = getId(decl);
-    ssize_t newId = ++maxIds[key];
-    mangledDecls.try_emplace(decl, b.getStringAttr(key + Twine(newId)));
+    auto mangled = uniquer.mangle(decl);
+    mangledDecls.try_emplace(decl, mangled);
     needsMangling = true;
   }
   return needsMangling;
@@ -213,36 +259,21 @@ void AttrTypeMangler::recursivelyMangle(Region *scope,
   TimeTraceScope</*Enabled=*/false> traceScope(
       "AttrTypeMangler::recursivelyMangle");
 
-  // Exit early if the scope is parametrically isolated.
-  if (cast<DeclInterface>(scope->getParentOp())
-          .isIsolatedFromAbove(scope->getRegionNumber()))
-    return;
-
   const ParameterUseDefGraph &uses = graph.nestedScopes.find(scope)->second;
-  AttrTypeMangler mangler(manglerCache);
-  bool empty = true;
-  for (ParamDeclRefAttr ref : uses.usesFromAbove) {
-    if (StringAttr mangled = mangledDecls.lookup(ref.getName())) {
-      mangler.mangledDecls.try_emplace(ref.getName(), mangled);
-      empty = false;
-    }
-  }
-  // Exit early if there is nothing to mangle.
-  if (empty)
-    return;
 
   for (Operation *op : uses.paramOps) {
     if (op == scope->getParentOp())
       continue;
-    mangler.mangleElementsIn(op);
+    mangleElementsIn(op);
   }
   for (auto &[_, decl] : uses.decls) {
     if (!scope->getParentOp()->isProperAncestor(decl.declOp))
       continue;
-    mangler.mangleElementsIn(decl.declOp);
+    mangleElementsIn(decl.declOp);
   }
+
   for (Region *nestedScope : uses.nestedDecls)
-    mangler.recursivelyMangle(nestedScope, graph);
+    recursivelyMangle(nestedScope, graph);
 }
 
 /// Insert a new parameter declaration into all nested declaration scopes.
@@ -300,6 +331,32 @@ rebindReturnOperands(OpBuilder &b, Operation *newReturn, Operation *call) {
                       call->getResultTypes());
 }
 
+using MangleDefTy = function_ref<void(const ParamDefinition &, Region *,
+                                      ParameterUseDefGraph *, IRMapping &)>;
+
+/// Recursively mangle parameter definitions within the inlined scope
+/// corresponding to the callee's use def graph. The mangling callback is
+/// more or less arbitrary.
+static void recursivelyMangleDefs(IRMapping &map, Region *calleeRegion,
+                                  const ParameterUseDefGraph &calleeGraph,
+                                  ParameterUseDefGraph &topLevelGraph,
+                                  MangleDefTy mangleDef) {
+  const ParameterUseDefGraph *calleeNestedGraph =
+      &calleeGraph.nestedScopes.find(calleeRegion)->second;
+  Region *clonedNestedRegion =
+      &map.lookup(calleeRegion->getParentOp())
+           ->getRegion(calleeRegion->getRegionNumber());
+  for (auto &[_, def] : calleeNestedGraph->defs) {
+    mangleDef(def, clonedNestedRegion,
+              &topLevelGraph.nestedScopes.find(clonedNestedRegion)->second,
+              map);
+  }
+  for (Region *calleeNestedRegion : calleeNestedGraph->nestedDecls) {
+    recursivelyMangleDefs(map, calleeNestedRegion, calleeGraph, topLevelGraph,
+                          mangleDef);
+  }
+}
+
 void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
                                AlwaysInlineLevel level,
                                ParameterUseDefGraph &topLevelGraph,
@@ -326,7 +383,8 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
   b.createBlock(&scope.getBody());
 
   AttrTypeMangler mangler(manglerCache);
-  bool needsMangling = mangler.populate(b, *callScope, calleeDecls);
+  bool needsMangling =
+      mangler.populate(b, *callScope, calleeDecls, topLevelGraph);
 
   // Make sure to rebind the call operands based on the mangled types of the
   // callee's argument types.
@@ -394,10 +452,13 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
       mangler.mangleElementsIn(cloned);
     }
   }
-  for (auto &[name, def] : calleeParams.defs) {
-    // Skip the parent decl. It's handled after.
-    if (def.defOp == callee)
-      continue;
+
+  /// Since the callee might contain nested parameter scopes (e.g.
+  /// `kgen.param.if`), we recursively walk them and mangle parameter
+  /// definitions.
+  auto mangleDef = [&mangler, &needsMangling, &topLevelGraph](
+                       const ParamDefinition &def, Region *scopeRegion,
+                       ParameterUseDefGraph *defScope, IRMapping &map) {
     Operation *cloned = map.lookup(def.defOp);
     mangler.mangleElementsIn(cloned);
     // Rename declarations.
@@ -407,19 +468,50 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
       newDecls.push_back(mangler.mangleDecl(decl, needsMangling));
     });
     cast<ParamOpInterface>(cloned).renameDeclarations(newDecls);
+
+    // At this point, the only nested op that declares parameters in its scope
+    // is ParamDeclareRegionOp, whose declarations need special treatment.
+    if (needsMangling) {
+      if (auto regionDecl = dyn_cast<ParamDeclareRegionOp>(cloned)) {
+        SmallVector<ParamDeclAttr> newInputDecls;
+        for (ParamDeclAttr decl : regionDecl.getInputParams())
+          newInputDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
+        regionDecl.setInputParams(newInputDecls);
+        newDecls.append(newInputDecls);
+
+        SmallVector<ParamDeclAttr> newResDecls;
+        for (ParamDeclAttr decl : regionDecl.getResultParams())
+          newResDecls.emplace_back(mangler.mangleDecl(decl, needsMangling));
+        regionDecl.setResultParams(newResDecls);
+        newDecls.append(newResDecls);
+      }
+    }
+
     // Populate the new declarations into the call scope graph.
-    propagateNewDecls(newDecls, topLevelGraph, *callScope, cloned, scopeRegion);
+    propagateNewDecls(newDecls, topLevelGraph, *defScope, cloned, scopeRegion);
+  };
+  for (auto &[_, def] : calleeParams.defs) {
+    // Skip the parent decl. It's handled after.
+    if (def.defOp == callee)
+      continue;
+    mangleDef(def, scopeRegion, callScope, map);
   }
+  for (Region *calleeNestedRegion : calleeParams.nestedDecls) {
+    recursivelyMangleDefs(map, calleeNestedRegion, calleeParams, topLevelGraph,
+                          mangleDef);
+  }
+
   if (needsMangling) {
     for (Region *nestedScope : calleeParams.nestedDecls) {
-      mangler.recursivelyMangle(
-          &map.lookup(nestedScope->getParentOp())
-               ->getRegion(nestedScope->getRegionNumber()),
-          topLevelGraph);
+      Operation *clonedOp = map.lookup(nestedScope->getParentOp());
+      Region &clonedRegion =
+          clonedOp->getRegion(nestedScope->getRegionNumber());
+      mangler.recursivelyMangle(&clonedRegion, topLevelGraph);
     }
   }
 
   // Mangle the DeclInterface declarations.
+  // TODO: mangle result parameter names as well.
   b.setInsertionPointToStart(&scope.getBody().front());
   for (auto [origDecl, value] :
        llvm::zip(callee.getInputParams(), call.getParamValues())) {
