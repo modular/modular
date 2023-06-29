@@ -1527,8 +1527,9 @@ public:
     }
 
     // Erase the link op now - we don't need it now the ExternalCall op is gone.
-    if (FlatSymbolRefAttr importedFrom = op.getImportedFromAttr())
-      if (auto linkOp = symtab.lookup<LinkOp>(importedFrom.getAttr()))
+    if (SymbolRefAttr importedFrom = op.getImportedFromAttr())
+      if (auto linkOp = symtab.lookup<LinkOp>(
+              cast<FlatSymbolRefAttr>(importedFrom).getAttr()))
         symtab.erase(linkOp);
 
     auto call = rewriter.replaceOpWithNewOp<LLVM::CallOp>(

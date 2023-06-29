@@ -1494,14 +1494,15 @@ def POP_ExternalCallOp : POPOp<"external_call",
     ```mlir
     kgen.link "libc.a" as @libc
 
-    %0 = pop.external_call @sqrt(%arg) from @libc : (!pop.scalar<f64>) -> !pop.scalar<f64>
+    %0 = pop.external_call @sqrt(%arg) from @libc
+        : (!pop.scalar<f64>) -> !pop.scalar<f64>
     ```
   }];
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$func,
                        Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
-                       OptionalAttr<FlatSymbolRefAttr>:$importedFrom);
+                       OptionalAttr<SymbolRefAttr>:$importedFrom);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{

@@ -724,7 +724,7 @@ kgen.generator @variadic_get() {
 // -----
 
 kgen.generator @unknown_extern() {
-  // expected-error @below {{expected valid symbol for 'from' directive}}
+  // expected-error @below {{'from' directive does not reference a valid symbol: @unlinked}}
   pop.external_call @unk() from @unlinked : () -> ()
   kgen.return
 }

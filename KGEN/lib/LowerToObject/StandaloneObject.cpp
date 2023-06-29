@@ -104,7 +104,7 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
             })
             .Case([&](POP::ExternalCallOp op) {
               if (auto importedFrom = op.getImportedFromAttr())
-                return importedFrom.getAttr();
+                return cast<FlatSymbolRefAttr>(importedFrom).getAttr();
               return StringAttr();
             })
             .Default({});
@@ -321,9 +321,9 @@ collectLinksAndUsers(ModuleOp theModule, const SymbolTable &symtab,
     if (!importedFromAttr)
       return;
 
-    auto link = symtab.lookup<LinkOp>(importedFromAttr.getAttr());
+    auto link = symtab.lookup<LinkOp>(
+        cast<FlatSymbolRefAttr>(importedFromAttr).getAttr());
     assert(link && "There wasn't a valid LinkOp?");
-
     if (auto path = link.getLinkPathAttr())
       linksAndUsers[path].insert(call.getCallee());
     else if (auto bytes = link.getLinkBytesAttr())
