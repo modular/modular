@@ -358,7 +358,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
     return compilerRTBuf.takeError();
   std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
   if (!rtBuf)
-    return Error("could not find the CompilerRT binary in the CAS");
+    return Error("could not find the CompilerRT binary in the CAS. Looked for CAS ID: " + M::CASID::kCompilerRT);
 
   std::string compilerRTPath;
   if (auto err = writeRTToFile("compilerrt", std::move(*rtBuf), compilerRTPath))
