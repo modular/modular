@@ -27,7 +27,7 @@ from Complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
 from Pointer import Pointer, DTypePointer
-from TargetInfo import dtype_simd_width
+from TargetInfo import simdwidthof
 
 alias float_type = DType.float64
 alias int_type = DType.int64
@@ -131,7 +131,7 @@ fn main():
     var time: Float32
     let ns_per_second: Int = 1_000_000_000
 
-    bench_parallel[dtype_simd_width[DType.float32]()]()
+    bench_parallel[simdwidthof[DType.float32]()]()
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
