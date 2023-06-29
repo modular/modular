@@ -24,9 +24,11 @@ from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from Math import (
     add,
     div,
+    ceil,
     erf,
     exp,
     equal,
+    floor,
     greater,
     greater_equal,
     pow,
@@ -84,9 +86,11 @@ fn MOGGExport():
     alias _add = add
     alias _div = div
     alias _cast = cast
+    alias _ceil = ceil
     alias _erf = erf
     alias _exp = exp
     alias _equal = equal
+    alias _floor = floor
     alias _gather = _gather_with_lambdas
     alias _gelu = gelu
     alias _greater = greater
