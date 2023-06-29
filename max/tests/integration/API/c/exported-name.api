@@ -1,0 +1,6 @@
+// REQUIRES: MODEL
+// RUN: python3 -m %modeltool execute --framework modular-tf-api %modelsdir/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir --exported-name serving_default | FileCheck %s --check-prefix=CHECK-EXPORTED
+// RUN: python3 -m %modeltool execute --framework modular-onnx-api %modelsdir/resnet50-pytorch.yaml --weights-dir %api_executor_models_dir | FileCheck %s --check-prefix=CHECK-NOT-EXPORTED
+
+// CHECK-EXPORTED: 'benchmark' returned tensor{{.*}}
+// CHECK-NOT-EXPORTED: 'benchmark' returned tensor{{.*}}
