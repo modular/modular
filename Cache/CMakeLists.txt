@@ -23,6 +23,14 @@ add_subdirectory(unittests)
 #             RELATIVE_INSTALL_DIR ".kgen_cache/orc")
 function(cache_files target)
   cmake_parse_arguments(CACHE_MGR "" "BASE_DIR;HEADER_NAME;VERSION" "INPUTS;INPUT_NAMES;RELATIVE_INSTALL_DIR" ${ARGN})
+
+  # For debugging, but default to always for now.
+  # This is the name of the directory used in `.derived/.kgen_cache`
+  # for where to store the relevant CAS artifacts.  Before filing a bug
+  # report, please check the contents there.
+  include(CMakePrintHelpers)
+  cmake_print_variables(CACHE_MGR_VERSION)
+
   # Input names must all be unique, so we can use the first one.
   list(GET CACHE_MGR_INPUT_NAMES 0 UNIQUE_PATH)
   set(UNIQUE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/${UNIQUE_PATH})
