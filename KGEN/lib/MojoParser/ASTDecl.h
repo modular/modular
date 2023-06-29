@@ -152,7 +152,7 @@ public:
   }
 
   /// Return the set of declarations in this scope.
-  const DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> &
+  const llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> &
   getDeclsInScope() const {
     return declsInScope;
   }
@@ -228,7 +228,7 @@ private:
   StringRef docString;
 
   /// These are the declarations defined within this scope.
-  DenseMap<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
+  llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
 
   /// A set of modules with unresolved wildcard imports into this decl, mapped
   /// to the location of the import.
