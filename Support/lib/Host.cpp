@@ -545,13 +545,15 @@ size_t M::simdWidthFromFeatures(StringRef features) {
 }
 
 size_t M::simdWidthFromFeatures(const std::vector<std::string> &features) {
-  for (const std::string &feature : features) {
-    if (feature == "avx512f")
-      return 512;
-    if (feature == "avx2")
-      return 256;
+  size_t maxWidth = 128;
+  for (StringRef feature : features) {
+    maxWidth = std::max(maxWidth, simdWidthFromFeatures(feature));
+    if (maxWidth == 512) {
+      // We can return now. It can't get bigger than this.
+      return maxWidth;
+    }
   }
-  return 128;
+  return maxWidth;
 }
 
 //===----------------------------------------------------------------------===//
