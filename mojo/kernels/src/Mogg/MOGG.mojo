@@ -17,6 +17,7 @@ from Functional import (
 from Reductions import _reduce_generator
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
+from Memory import memset_zero
 from IO import print
 from List import Dim, DimList
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
@@ -1035,7 +1036,6 @@ fn small_matmul[
     let N = b.dim[1]()
     let K = a.dim[1]()
 
-    c.zero()
     alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
 
     @always_inline
@@ -1083,6 +1083,7 @@ fn small_matmul[
         vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
 
     for m in range(M):
+        memset_zero(c.data + m * N, N)
         for k in range(K - 1):
             accum_out_row[normal_update](m, k)
         accum_out_row[last_update](m, K - 1)
