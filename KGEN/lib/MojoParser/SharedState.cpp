@@ -417,8 +417,9 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     return LookupResult::getFailure();
 
   // If the lookup succeeded, make sure the signature for the referenced decls
-  // are understood.
-  for (ASTDecl *decl : entry) {
+  // are understood. Make a copy of the entries to avoid dangling references if
+  // we end up invalidating the decl map.
+  for (ASTDecl *decl : SmallVector<ASTDecl *>(entry)) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,

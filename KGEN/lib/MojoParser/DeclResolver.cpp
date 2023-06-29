@@ -333,7 +333,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     return success(!importDecl.hasReferenceError);
   }
 
-  auto [it, inserted] = context.declsInScope.try_emplace(name, decls);
+  auto [it, inserted] = context.declsInScope.insert({name, decls});
   if (inserted)
     return success();
   TinyPtrVector<ASTDecl *> &entries = it->second;
