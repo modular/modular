@@ -32,16 +32,18 @@ void OutputChain::transfer(SmallVector<LLCL::AnyAsyncValueRef> &&argRefs) {
     refs.emplace_back(std::move(argRef));
 }
 
-void OutputChain::trace(StringRef name, StringRef detail) {
+void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
   if (profilerEntry.empty()) {
     // Establish the profiling entry for this Mojo kernel call.
-    profilerEntry = MojoProfilerEntry::create(name, detail);
+    profilerEntry = detail ? MojoProfilerEntry::create(name, *detail)
+                           : MojoProfilerEntry::create(name);
   } else {
     // Merge the given details into the existing profile entry. This is useful
     // when we need to combine profile data contributed from both the C++
     // and Mojo sides.
-    profilerEntry.withNameSuffix(name).withDetailSuffix(
-        [&]() { return detail.str(); });
+    profilerEntry.withNameSuffix(name);
+    if (detail)
+      profilerEntry.withDetailSuffix([&]() { return detail->str(); });
   }
   // (Re)establish the 'prototype' profile entry, which is only used
   // by executeAsTask() below.

@@ -112,7 +112,7 @@ struct OutputChain {
   /// Adds tracing entry with name and detail.
   ///
   /// Called from the Mojo side.
-  void trace(StringRef name, StringRef detail);
+  void trace(StringRef name, std::optional<StringRef> detail = std::nullopt);
 
   /// Indicate the Mojo call is complete.
   ///
