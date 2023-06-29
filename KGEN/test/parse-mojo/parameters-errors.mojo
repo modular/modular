@@ -41,12 +41,7 @@ fn OneMissingThingMetaParam(a: Thing[1]):  # expected-error {{'Thing' expects 2 
 fn WeirdMetaParams(a: Thing[1, 1.5]):
   pass
 
-# expected-note @+1 {{previous definition here}}
 struct Parameterized[p1: Int]:
-  # expected-error @+1 {{invalid redefinition of 'p1'}}
-  fn a[p1: Int](self):  # Cannot shadow parameter names.
-    pass
-
   # expected-error @below {{invalid redefinition of 'p2'}}
   # expected-note @below {{previous definition here}}
   fn b[p2: Int, p2: Int, p3: Int](self): # Cannot shadow parameter names.

@@ -115,7 +115,9 @@ public:
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
-  std::string getAsString(bool forDiag = false) const;
+  /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
+  std::string getAsString(bool forDiag = false,
+                          bool demangleParams = false) const;
 
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
@@ -129,8 +131,11 @@ public:
   }
 
   /// Print the ASTType. If `forDiag` is set, prettier printing is used to
-  /// print the type.
-  void print(raw_ostream &os, bool forDiag = false) const;
+  /// print the type. If `demangleParams` is set, parameter names will be
+  /// demangled, if necessary.
+  /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
+  void print(raw_ostream &os, bool forDiag = false,
+             bool demangleParams = false) const;
 };
 
 void addToDiagnostic(ASTType type, InflightDiag &diag);

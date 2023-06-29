@@ -321,7 +321,19 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
   os << getParamAsString(param);
 }
 
-void ASTType::print(raw_ostream &os, bool forDiag) const {
+/// Pretty print a parameter value and optionally demangle it.
+/// TODO(16040): Remove this overload when symbol names are name-erased.
+static void printParam(raw_ostream &os, TypedAttr param, bool forDiag,
+                       bool demangleParams) {
+  if (forDiag || demangleParams)
+    param = demangleIfNeeded(param);
+  printParam(os, param, forDiag);
+}
+
+void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
+  // We demangle parameters when printing for diagnostics.
+  demangleParams |= forDiag;
+
   if (!mlirType) {
     os << "<<NULL ASTTYPE>>";
     return;
@@ -344,7 +356,7 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
           if (!isa<ParamRefType>(type.mlirType))
             return type.print(os, forDiag);
 
-        printParam(os, val, forDiag);
+        printParam(os, val, forDiag, demangleParams);
       });
       os << ']';
     }
@@ -457,7 +469,7 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(paramRef.getParam()))
       os << '$' << indexRef.getIndex();
     else
-      os << getParamAsString(paramRef.getParam());
+      printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<MLIRTypeType>(type)) {
     os << "AnyType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
@@ -476,9 +488,9 @@ void ASTType::print(raw_ostream &os, bool forDiag) const {
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)
-      printKGENType(os, type);
+      printKGENType(os, demangleIfNeeded(type));
     else
-      os << "__mlir_type." << type;
+      os << "__mlir_type." << (demangleParams ? demangleIfNeeded(type) : type);
   }
 }
 
@@ -491,10 +503,10 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
   return os;
 }
 
-std::string ASTType::getAsString(bool forDiag) const {
+std::string ASTType::getAsString(bool forDiag, bool demangleParams) const {
   std::string result;
   llvm::raw_string_ostream os(result);
-  print(os, forDiag);
+  print(os, forDiag, demangleParams);
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
   std::replace(result.begin(), result.end(), '@', '_');

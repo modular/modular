@@ -1651,8 +1651,9 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // UnresolvedAliasValueAttr.
   auto type = UnresolvedType::get(getContext());
   auto value = UnresolvedAliasValueAttr::get(type);
+  auto [line, col] = getSourceMgr().getLineAndColumn(curDeclScope->getLoc());
   auto declOp = builder.create<ParamDeclareOp>(
-      loc, ParamDeclAttr::get(name, type), value);
+      loc, ParamDeclAttr::get(mangleParameter(name, line, col), type), value);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.

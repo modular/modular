@@ -822,7 +822,9 @@ void SharedState::loadModulesFromCache(
         } else if (auto varOp = dyn_cast<VarLetDeclOp>(&op)) {
           addDeclForOp(varOp, varOp.getNameAttr());
         } else if (auto paramDeclareOp = dyn_cast<ParamDeclareOp>(&op)) {
-          addDeclForOp(paramDeclareOp, paramDeclareOp.getName());
+          addDeclForOp(
+              paramDeclareOp,
+              demangleIfNeeded(paramDeclareOp.getParamDecl()).getName());
         } else if (auto aliasForwardDeclOp =
                        dyn_cast<AliasForwardDeclOp>(&op)) {
           addDeclForOp(aliasForwardDeclOp, aliasForwardDeclOp.getNameAttr());
