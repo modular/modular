@@ -243,3 +243,10 @@ fn crash1_callee(a: __mlir_type.index, rhs: __mlir_type.index) -> __mlir_type.in
 
 fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
   alias y = crash1_callee(a, p) # expected-error {{cannot use a dynamic value in alias initializer}}
+
+@value
+@register_passable
+struct StructWithParam[n: Int]:
+    alias Alias = StructWithParam[1]()
+
+alias accessStructWithParam = StructWithParam.Alias # expected-error {{incorrect number of struct parameters}}

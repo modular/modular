@@ -234,7 +234,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// function definition.
 static PValue resolveParamDeclareValue(ParamDeclareOp param,
                                        ParamBindArrayAttr bindings,
-                                       SharedState &shared) {
+                                       SharedState &shared, SMLoc errLoc) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (1) {
@@ -257,8 +257,13 @@ static PValue resolveParamDeclareValue(ParamDeclareOp param,
       if (!bindings)
         return param.getValue();
 
-      assert(structDecl.getInputParams().size() == bindings.size() &&
-             "mismatch in # struct parameters and # bindings");
+      if (structDecl.getInputParams().size() != bindings.size()) {
+        shared.emitError(errLoc,
+                         "incorrect number of struct parameters, expected:")
+            << structDecl.getInputParams().size() << " got: " << bindings.size()
+            << ".";
+        return PValue();
+      }
 
       ParserParamEvaluator evaluator(*shared.declResolver, bindings);
       return PValue(evaluator.getReboundAttribute(param.getValue()));
@@ -527,8 +532,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Aliases form a PValue.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
     PValue result =
-        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared);
-    return emitter.emitResult(result, this, dest);
+        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared, getLoc());
+    return emitter.emitResult(result.get(), this, dest);
   }
 
   // Use of forward alias references.
@@ -987,8 +992,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Parameters form a meta-value.
   if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
     PValue result = resolveParamDeclareValue(
-        param, baseRVType.getParamBindings(), emitter.shared);
-    return emitter.emitResult(result, this, dest);
+        param, baseRVType.getParamBindings(), emitter.shared, getLoc());
+    return emitter.emitResult(result.get(), this, dest);
   }
 
   // If the field is a variable, emit a reference to it.
