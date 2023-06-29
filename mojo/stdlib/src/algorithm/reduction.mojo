@@ -1172,9 +1172,9 @@ fn variance[
     @parameter
     fn _simd_variance_elementwise[
         acc_type: DType,
-        type: DType,
+        inner_type: DType,
         simd_width: Int,
-    ](x: SIMD[acc_type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    ](x: SIMD[acc_type, simd_width], y: SIMD[inner_type, simd_width]) -> SIMD[
         acc_type, simd_width
     ]:
         """Computes the equation $sum (x_i - u)^2 + y$"""
