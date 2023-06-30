@@ -23,8 +23,9 @@ from Math import (
     none_true as _none_true,
     div_ceil,
     min as _min,
+    inf,
+    neginf,
 )
-from Numerics import inf, neginf
 from Range import range
 from SIMD import SIMD
 from TargetInfo import dtype_sizeof, simdwidthof
