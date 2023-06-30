@@ -15,14 +15,14 @@
 #ifndef MOJO_DRIVER_COMMONOPTIONS_TD
 #define MOJO_DRIVER_COMMONOPTIONS_TD
 
+include "KGEN/DriverCommand.td"
 include "Support/Option/OptParser.td"
 
 def CommonOptionGroup : OptionGroup<"Common Options">, Index<99>;
 
 def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<0>,
-  Flags<[]>, HelpText<"Prints help information.">;
+  HelpText<"Prints help information.">;
 
-def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Index<0>, Flags<[]>,
-  HelpText<"Alias for --help.">, Alias<help>;
+def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>, Index<0>;
 
 #endif // MOJO_DRIVER_COMMONOPTIONS_TD
