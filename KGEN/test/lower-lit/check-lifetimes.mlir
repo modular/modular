@@ -379,3 +379,51 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
   }
   kgen.return %1 : !lit.none
 }
+
+// -----
+
+// COM: debuginfo.value ops may reference values that are not initialized (e.g.
+// COM: init_self arguments in __init__ functions). We check here that this does
+// COM: not cause an error in the pass.
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo",
+  file = #file,
+  line = 10,
+  arg = 1
+> : !debuginfo.unresolved<index>
+
+
+lit.struct.decl @SomeData {
+}
+
+lit.struct.decl @MyStruct {
+  lit.struct.field str : !kgen.declref<@SomeData>
+}
+
+// CHECK: lit.func @init
+lit.func @init(%self: !pop.pointer<@MyStruct> init_self) {
+  // CHECK-NEXT: debuginfo.value #local_variable
+  debuginfo.value #local_variable = %self : !pop.pointer<@MyStruct>
+  %2 = kgen.call @bar(%self) : (!pop.pointer<@MyStruct> init_self) -> !lit.none
+  kgen.return
+}

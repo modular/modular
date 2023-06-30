@@ -16,6 +16,7 @@
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
@@ -846,7 +847,12 @@ void UninitializedValueScan::scanBlock(Block &block) {
 }
 
 void UninitializedValueScan::checkOp(Operation &op) {
-  if (auto litErrorReturn = dyn_cast<LIT::ErrorReturnOp>(op))
+  if (isa<LIT::ErrorReturnOp>(op))
+    return;
+
+  // Debuginfo ops may reference values that aren't fully initialized, so we
+  // skip over them.
+  if (isa<DebugInfo::ValueOp>(op))
     return;
 
   // This op is handled when used.
