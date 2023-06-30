@@ -57,3 +57,7 @@ add_subdirectory(Compiler)
 add_subdirectory(Interpreter)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
+
+if(MODULAR_ENABLE_TELEMETRY)
+  add_subdirectory(Telemetry)
+endif()
