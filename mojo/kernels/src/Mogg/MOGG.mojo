@@ -31,6 +31,8 @@ from Math import (
     floor,
     greater,
     greater_equal,
+    isinf,
+    isnan,
     pow,
     max,
     min,
@@ -96,6 +98,8 @@ fn MOGGExport():
     alias _gelu = gelu
     alias _greater = greater
     alias _greater_equal = greater_equal
+    alias _isinf = isinf
+    alias _isnan = isnan
     alias _log1p = log1p
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
