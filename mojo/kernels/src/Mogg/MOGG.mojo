@@ -1171,28 +1171,6 @@ fn small_matmul[
                 epilogue_wrapper[type, 1](
                     Index(m, n), acc_vector.reduce_add() + acc_scalar
                 )
-        return
-
-    if K > N:
-        for m in range(M):
-            for n in range(N):
-                var acc_vector = SIMD[type, simd_width]()
-                var acc_scalar = SIMD[type, 1]()
-
-                @always_inline
-                @parameter
-                fn dot[width: Int](k: Int):
-                    @parameter
-                    if width == 1:
-                        acc_scalar += a[m, k] * b[k, n]
-                    else:
-                        acc_vector += a.simd_load[simd_width](m, k) * b[k, n]
-
-                vectorize_unroll[simd_width, unroll_factor, dot](K)
-
-                epilogue_wrapper[type, 1](
-                    Index(m, n), acc_vector.reduce_add() + acc_scalar
-                )
     else:
 
         @parameter
