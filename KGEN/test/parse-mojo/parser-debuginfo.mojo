@@ -56,3 +56,16 @@ fn structured_for_loop() -> __mlir_type.index:
     return __mlir_op.`hlcf.loop`[
         _type : __mlir_type.index, _region : "loop_body".value
     ]((0).value)
+
+
+# // -----
+
+# CHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"{{.*}}Int.mojo" in
+
+# CHECK: lit.struct.decl @Int
+# CHECK-NEXT: lit.struct.field value : index loc(#[[LOC:loc[0-9]+]])
+fn caller():
+    let y = StringRef.__init__("woof")
+
+
+# CHECK: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
