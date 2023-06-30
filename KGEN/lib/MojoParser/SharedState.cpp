@@ -82,6 +82,9 @@ static void getAutoImportPaths(SmallVector<std::string> &paths) {
 }
 
 struct SharedState::Impl {
+  Impl(MLIRContext *ctx)
+      : bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
+
   SymbolTableCollection symbolTables;
 
   /// A map of symbol tables to unique counters for names within those
@@ -120,6 +123,9 @@ struct SharedState::Impl {
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
   DenseMap<const ASTDecl *, std::vector<LexerCursor>> bodyDecorators;
+
+  /// The parser configuration used when loading bytecode.
+  mlir::ParserConfig bytecodeParserContext;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
@@ -127,7 +133,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
-      runtime(config.runtime), impl(std::make_unique<Impl>()) {
+      runtime(config.runtime), impl(std::make_unique<Impl>(config.context)) {
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 
@@ -316,6 +322,13 @@ void ASTDecl::setBodyDecorators(ArrayRef<LexerCursor> decorators,
 
 struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
+  ~ModuleState() {
+    // Drop any remaining operations in the reader to avoid dangling
+    // unmaterialized operations. If these were neded, they would have been
+    // handled already as part of parsing.
+    if (bytecodeReader)
+      (void)bytecodeReader->finalize([](Operation *) { return false; });
+  }
 
   /// Build the cache key for this module.
   Cache::WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
@@ -341,8 +354,9 @@ struct SharedState::ModuleState {
   llvm::BLAKE3Result<> contentHash;
   /// The set of other modules that this module depends on.
   llvm::SmallSetVector<ModuleState *, 4> dependencies;
-  /// A flag indicating if this module was imported from the cache.
-  bool importedFromCache = false;
+  /// An optional bytecode reader, in the case where this module was loaded from
+  /// bytecode as opposed to a textual source file.
+  std::optional<mlir::BytecodeReader> bytecodeReader;
 };
 
 //===----------------------------------------------------------------------===//
@@ -674,7 +688,6 @@ void SharedState::loadModulesFromCache(
     return;
 
   // Check the cache results for the various modules.
-  SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
   for (ModuleState *moduleState : moduleStates) {
     // If the module has already been resolved in any form, we shouldn't
     // try reading it from the cache.
@@ -687,7 +700,7 @@ void SharedState::loadModulesFromCache(
         std::move(keyBuf), LLCL::MLIRLocationDecoder::getEncodedLocation(
                                moduleState->decl->getIfOperation()->getLoc()));
     std::move(f).andThenSync(
-        [moduleState, out = out.copy()](
+        [this, moduleState, out = out.copy()](
             AsyncValueRef<std::optional<Cache::BufferRef>> &&f) mutable {
           // If the module isn't in the cache, process it as normal. We will
           // attempt to cache it later instead of now, given that we can't
@@ -705,132 +718,38 @@ void SharedState::loadModulesFromCache(
           Block b;
           {
             TimeTraceScope<> timeScope("readBytecodeFile");
-            std::unique_ptr<llvm::MemoryBuffer> bytecode =
-                llvm::MemoryBuffer::getMemBuffer(
-                    (**f)->getBuffer(), /*BufferName=*/"",
-                    /*RequiresNullTerminator=*/false);
-            mlir::ParserConfig config(moduleOp->getContext(),
-                                      /*verifyAfterParse=*/false);
+            auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+            sourceMgr->AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(
+                                              (**f)->getBuffer(),
+                                              /*BufferName=*/"",
+                                              /*RequiresNullTerminator=*/false),
+                                          SMLoc());
+            const llvm::MemoryBuffer *memoryBuf =
+                sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+            moduleState->bytecodeReader.emplace(memoryBuf->getMemBufferRef(),
+                                                impl->bytecodeParserContext,
+                                                /*lazyLoad=*/true, sourceMgr);
 
             // Read in the cached bytecode. If we fail, bail and try processing
             // the IR as normal.
-            if (failed(mlir::readBytecodeFile(*bytecode, &b, config))) {
+            if (failed(moduleState->bytecodeReader->readTopLevel(&b))) {
               return std::move(out).setToError(LLCL::getMLIRDiagnostic(
                   "failed to read module bytecode", moduleOp.getLoc()));
             }
           }
 
-          // Replace the body of the module with the cached IR.
+          // Replace the module with the cached IR.
           FileModuleOp cachedModuleOp = cast<FileModuleOp>(b.front());
-          moduleOp.getBodyRegion().takeBody(cachedModuleOp.getBodyRegion());
+          cachedModuleOp->moveAfter(moduleOp);
+          moduleDecl.setIRValue(DeclIRValue(cachedModuleOp));
+          moduleOp->erase();
 
           // Mark the module as imported from cache.
-          moduleState->importedFromCache = true;
-          moduleDecl.resolvedness = DeclResolvedness::fully;
+          moduleState->decl->loadedFromBytecode = true;
+          moduleDecl.resolvedness = DeclResolvedness::signature;
           std::move(out).emplace();
         });
-    cacheResults.push_back(std::move(out));
-  }
-  LLCL::await(cacheResults);
-
-  // Now that the cached IR has been read, create decl information for the
-  // constructs within the cached IR.
-  // TODO: When we can lazy load bytecode, we shouldn't build all of the decls
-  // immediately. We can wait to load until the bodies of the decls are actually
-  // needed.
-  TimeTraceScope<> timeScope("Rebuild ASTDecls");
-  SmallVector<ASTDecl *> declsToFill;
-
-  // Populate the decls that we successfully loaded from the cache.
-  for (ModuleState *moduleState : moduleStates) {
-    // Throw it away if not all the dependencies are also in the cache.
-    // TODO: See #10657 - we need to figure out a better way to deal with this,
-    //   because this simply throws away work.
-    if (moduleState->importedFromCache &&
-        llvm::any_of(moduleState->dependencies,
-                     [&](auto *state) { return !state->importedFromCache; })) {
-      auto moduleOp = cast<FileModuleOp>(*moduleState->decl);
-      // Clear out the blocks in this file module and replace with an empty
-      // block. This avoids later symbol table issues.
-      moduleOp.getBodyRegion().getBlocks().clear();
-      moduleOp.getBodyRegion().push_back(new Block);
-      moduleState->importedFromCache = false;
-      moduleState->decl->resolvedness = DeclResolvedness::unparsed;
-      continue;
-    }
-
-    if (moduleState->importedFromCache)
-      declsToFill.push_back(moduleState->decl);
-  }
-
-  // Collect the referenced types that need to be resolved.
-  mlir::AttrTypeWalker typeWalker;
-  auto resolveTypes = [&](ASTDecl *context, TypeRange types) {
-    for (Type type : types)
-      typeWalker.walk(type);
-  };
-  auto resolveParams = [&](ASTDecl *context, ArrayRef<ParamDeclAttr> params) {
-    for (ParamDeclAttr param : params)
-      typeWalker.walk(param);
-  };
-
-  while (!declsToFill.empty()) {
-    ASTDecl *container = declsToFill.pop_back_val();
-    Operation *containerOp = container->getIfOperation();
-
-    for (Region &region : containerOp->getRegions()) {
-      for (Operation &op : region.getOps()) {
-
-        auto addDeclForOp = [&](Operation *op, StringAttr name) -> ASTDecl & {
-          ASTDecl &decl = declResolver->addFullyResolvedDecl(
-              DeclIRValue(op), name, container->getLoc(), container);
-          declsToFill.push_back(&decl);
-          return decl;
-        };
-
-        if (auto funcOp = dyn_cast<LIT::FuncOp>(&op)) {
-          // The mangled name may include the input parameter signature.
-          StringRef baseFuncName =
-              funcOp.getName().split('(').first.split('[').first;
-          auto &decl = declResolver->addFullyResolvedDecl(
-              DeclIRValue(funcOp), StringAttr::get(getContext(), baseFuncName),
-              container->getLoc(), container);
-          declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
-
-          // Resolve the function types.
-          resolveParams(&decl, funcOp.getInputParams());
-          resolveParams(&decl, funcOp.getResultParams());
-          resolveTypes(&decl, funcOp.getArgumentTypes());
-          resolveTypes(&decl, funcOp.getResultTypes());
-
-        } else if (auto importOp = dyn_cast<LIT::UnresolvedImportOp>(&op)) {
-          declResolver->addDecl(importOp, container->getLoc(),
-                                importOp.getImportNameAttr(), container,
-                                container->getCursor(), container->getCursor(),
-                                /*indentation=*/0);
-        } else if (auto structOp = dyn_cast<StructDeclOp>(&op)) {
-          ASTDecl &structDecl =
-              addDeclForOp(structOp, structOp.getSymNameAttr());
-          structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
-
-          // Resolve the types of any parameters.
-          resolveParams(&structDecl, structOp.getInputParams());
-        } else if (auto structFieldOp = dyn_cast<StructFieldOp>(&op)) {
-          addDeclForOp(structFieldOp, structFieldOp.getNameAttr());
-        } else if (auto letOp = dyn_cast<LetRegDeclOp>(&op)) {
-          addDeclForOp(letOp, letOp.getNameAttr());
-        } else if (auto varOp = dyn_cast<VarLetDeclOp>(&op)) {
-          addDeclForOp(varOp, varOp.getNameAttr());
-        } else if (auto paramDeclareOp = dyn_cast<ParamDeclareOp>(&op)) {
-          addDeclForOp(
-              paramDeclareOp,
-              demangleIfNeeded(paramDeclareOp.getParamDecl()).getName());
-        } else if (auto aliasForwardDeclOp =
-                       dyn_cast<AliasForwardDeclOp>(&op)) {
-          addDeclForOp(aliasForwardDeclOp, aliasForwardDeclOp.getNameAttr());
-        }
-      }
-    }
+    LLCL::await(out);
   }
 }
 
@@ -1040,7 +959,7 @@ void SharedState::cacheParsedModules() {
 
   SmallVector<LLCL::AnyAsyncValueRef> results;
   for (auto &module : impl->importedModules) {
-    if (module.second->importedFromCache)
+    if (module.second->bytecodeReader)
       continue;
     ModuleState &moduleState = *module.second;
     FileModuleOp moduleOp =
@@ -1078,6 +997,214 @@ void SharedState::cacheParsedModules() {
     results.push_back(std::move(out));
   }
   await(results);
+}
+
+/// Builds an attribute/type walker to resolve references originating from
+/// bytecode decls.
+static mlir::AttrTypeWalker
+buildBytecodeDeclReferenceResolver(SharedState &sharedState,
+                                   DeclResolver &declResolver, ASTDecl &decl,
+                                   ASTDecl &topLevelDecl) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](SymbolRefAttr attr) -> WalkResult {
+    // Any source defined reference will be qualified, so any flat symbols
+    // references can be skipped (these are used for things like external_call).
+    if (isa<FlatSymbolRefAttr>(attr))
+      return WalkResult::advance();
+
+    // Functor used to look up and resolve a decl with the given mangled name.
+    auto lookupDecl = [&](StringRef mangledSymbol, ASTDecl &container,
+                          DeclResolvedness howResolved =
+                              DeclResolvedness::fully) -> ASTDecl * {
+      StringRef baseName = mangledSymbol.split('(').first.split('[').first;
+      LookupResult result = sharedState.lookupAndResolveDecl(
+          baseName, decl.getLoc(), container, /*searchParentScopes=*/false);
+      if (!result.isSuccess())
+        return nullptr;
+
+      // Functor used to emit an error if we couldn't find the symbol.
+      auto emitLookupError = [&] {
+        sharedState.emitError(decl.getLoc(), "unable to find '")
+            << baseName << "' symbol";
+        return nullptr;
+      };
+
+      // Find the entry that matches the full symbol name.
+      for (ASTDecl *resultDecl : result.getIfSuccess()) {
+        auto symbolOp = dyn_cast_if_present<mlir::SymbolOpInterface>(
+            resultDecl->getIfOperation());
+        if (!symbolOp || symbolOp.getName() != mangledSymbol)
+          continue;
+
+        // Resolve the decl now that we've found it.
+        if (failed(
+                declResolver.resolve(*resultDecl, howResolved, decl.getLoc())))
+          return nullptr;
+        return resultDecl;
+      }
+      return emitLookupError();
+    };
+
+    // Resolve the top-level container for the reference.
+    ASTDecl *decl = lookupDecl(attr.getRootReference(), topLevelDecl);
+    if (!decl)
+      return WalkResult::interrupt();
+    ArrayRef<FlatSymbolRefAttr> nestedRefs = attr.getNestedReferences();
+    for (FlatSymbolRefAttr name : nestedRefs.drop_back())
+      if (!(decl = lookupDecl(name.getValue(), *decl)))
+        return WalkResult::interrupt();
+    if (!lookupDecl(nestedRefs.back().getValue(), *decl,
+                    DeclResolvedness::signature))
+      return WalkResult::interrupt();
+
+    // Don't recursively process the nested flat references.
+    return WalkResult::skip();
+  });
+  return walker;
+}
+
+LogicalResult
+SharedState::resolveDeclFromBytecode(ASTDecl &decl,
+                                     DeclResolvedness resolvedness) {
+  Operation *declOp = decl.getIfOperation();
+
+  // Collect the referenced types that need to be resolved.
+  mlir::AttrTypeWalker typeWalker = buildBytecodeDeclReferenceResolver(
+      *this, *declResolver, decl, *impl->topLevelDecl);
+  auto resolveTypes = [&](TypeRange types) {
+    for (Type type : types)
+      typeWalker.walk<mlir::WalkOrder::PreOrder>(type);
+  };
+
+  // Handle resolving the signature of the decl.
+  if (decl.resolvedness < DeclResolvedness::signature) {
+    decl.resolvedness = DeclResolvedness::signature;
+
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(declOp)) {
+      declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
+
+      // Resolve the references from the signature.
+      typeWalker.walk<mlir::WalkOrder::PreOrder>(declOp->getAttrDictionary());
+    } else if (auto structOp = dyn_cast<StructDeclOp>(declOp)) {
+      // Resolve the types of any parameters.
+      typeWalker.walk<mlir::WalkOrder::PreOrder>(structOp.getInputParamsAttr());
+    } else if (auto unresolvedImport = dyn_cast<UnresolvedImportOp>(declOp)) {
+      // Let the normal decl resolver handling insert aliases and other import
+      // behavior.
+      Lexer lexer(*this, decl.getCursor());
+      if (failed(declResolver->resolveSignature(unresolvedImport, lexer, decl)))
+        return failure();
+    }
+  }
+  if (resolvedness < DeclResolvedness::fully)
+    return success();
+  decl.resolvedness = DeclResolvedness::fully;
+
+  // Start body resolution by materializing the regions of this operation from
+  // the bytecode reader.
+  auto moduleOp = dyn_cast<FileModuleOp>(declOp);
+  if (!moduleOp)
+    moduleOp = declOp->getParentOfType<FileModuleOp>();
+  auto &bytecodeReader =
+      impl->importedModules[moduleOp.getNameAttr()]->bytecodeReader;
+  if (bytecodeReader->isMaterializable(declOp)) {
+    if (failed(bytecodeReader->materialize(declOp)))
+      return failure();
+  }
+
+  // Functor used to resolve references within a single operation.
+  auto resolveSingleOp = [&](Operation *op) -> WalkResult {
+    if (bytecodeReader->isMaterializable(op) &&
+        failed(bytecodeReader->materialize(op)))
+      return failure();
+
+    for (Region &region : op->getRegions())
+      for (Block &block : region)
+        resolveTypes(block.getArgumentTypes());
+    resolveTypes(op->getOperandTypes());
+    resolveTypes(op->getResultTypes());
+    typeWalker.walk<mlir::WalkOrder::PreOrder>(op->getAttrDictionary());
+    return mlir::success();
+  };
+
+  // If this isn't a container op, we don't need to resolve any nested decls,
+  // simply materialize everything nested within.
+  if (!isa<FileModuleOp, StructDeclOp>(declOp)) {
+    return failure(declOp->walk<mlir::WalkOrder::PreOrder>(resolveSingleOp)
+                       .wasInterrupted());
+  }
+
+  // Functor to build a decl for a nested operation.
+  auto addDeclForOp = [&](Operation *op, StringAttr name) -> ASTDecl & {
+    ASTDecl &newDecl = declResolver->addDecl(
+        DeclIRValue(op), decl.getLoc(), name, &decl, decl.getCursor(),
+        decl.getCursor(), /*indentation=*/-1);
+    newDecl.loadedFromBytecode = true;
+    return newDecl;
+  };
+
+  // Process the parsed region bodies, generating any necessary nested decls.
+  SmallVector<Operation *> deferredOps;
+  for (Region &region : declOp->getRegions()) {
+    for (Operation &op : region.getOps()) {
+      if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+        // The mangled name may include the input parameter signature.
+        StringRef baseFuncName =
+            funcOp.getName().split('(').first.split('[').first;
+        addDeclForOp(&op, StringAttr::get(getContext(), baseFuncName));
+      } else if (auto importOp = dyn_cast<LIT::UnresolvedImportOp>(op)) {
+        addDeclForOp(&op, importOp.getImportNameAttr());
+      } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
+        ASTDecl &structDecl = addDeclForOp(&op, structOp.getSymNameAttr());
+        structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
+      } else if (auto structFieldOp = dyn_cast<StructFieldOp>(op)) {
+        addDeclForOp(&op, structFieldOp.getNameAttr());
+      } else if (auto letOp = dyn_cast<LetRegDeclOp>(op)) {
+        addDeclForOp(&op, letOp.getNameAttr());
+      } else if (auto varOp = dyn_cast<VarLetDeclOp>(op)) {
+        addDeclForOp(&op, varOp.getNameAttr());
+      } else if (auto paramDeclareOp = dyn_cast<ParamDeclareOp>(op)) {
+        addDeclForOp(&op,
+                     demangleIfNeeded(paramDeclareOp.getParamDecl()).getName());
+      } else if (auto aliasForwardDeclOp = dyn_cast<AliasForwardDeclOp>(op)) {
+        addDeclForOp(&op, aliasForwardDeclOp.getNameAttr());
+      } else {
+        deferredOps.push_back(&op);
+      }
+    }
+  }
+
+  // Resolve references within the deferred operations. These don't have
+  // corresponding decls, so we manually resolve them now.
+  for (Operation *op : deferredOps)
+    if (op->walk(resolveSingleOp).wasInterrupted())
+      return failure();
+
+  // After processing the region, make sure any non-signature attributes get
+  // resolved.
+  typeWalker.walk<mlir::WalkOrder::PreOrder>(declOp->getAttrDictionary());
+  return success();
+}
+
+LogicalResult SharedState::finalizeImportedBytecodeModules() {
+  // TODO: FuncOp is currently not isolated from above and thus can't be lazy
+  // loaded, so we need to erase it directly when it's unused.
+  for (ASTDecl *decl : declResolver->parsedDeclList) {
+    if (isa<FuncOp>(*decl) && decl->loadedFromBytecode &&
+        decl->resolvedness == DeclResolvedness::unparsed) {
+      decl->getIfOperation()->erase();
+    }
+  }
+  for (auto &module : llvm::make_second_range(impl->importedModules)) {
+    if (!module->bytecodeReader)
+      continue;
+
+    // Finalize the bytecode, deleting any operations that weren't materialized.
+    if (failed(module->bytecodeReader->finalize(
+            [&](Operation *op) { return false; })))
+      return failure();
+  }
+  return success();
 }
 
 ArrayRef<std::string> SharedState::getIncludedFiles() const {

@@ -26,6 +26,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/ScopeExit.h"
 
 #include <filesystem>
 
@@ -112,6 +113,10 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
                           /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
+  // Ensure we finalize bytecode modules even in the case of failure.
+  auto clearOnError = llvm::make_scope_exit(
+      [&] { (void)sharedState.finalizeImportedBytecodeModules(); });
+
   Lexer lexer(sharedState, sourceBuf);
   auto startSMLoc = lexer.getToken().getLoc();
 
@@ -137,15 +142,20 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
   ASTDecl &moduleDecl =
       sharedState.createModule(moduleName, sourceBuf, fileLoc);
 
-  // With the top-level of the file parsed, we can now go ahead and resolve all
-  // of the deferred declarations.
-  sharedState.declResolver->resolveAll();
+  // Resolve everything within the main input module.
+  sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
   if (sharedState.diags.isErrorEmitted())
     return {nullptr, nullptr};
+
+  // Finalize the imported bytecode now that we've resolved everything. This
+  // will drop bytecode operations that never got referenced.
+  if (failed(sharedState.finalizeImportedBytecodeModules()))
+    return {nullptr, nullptr};
+
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
   {
@@ -153,6 +163,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
     if (failed(verify(*module)))
       return {};
   }
+  clearOnError.release();
 
   // Now that resolution is finished, cache the state of modules we have parsed.
   // TODO: We should be able to cache even in the presence of warnings and

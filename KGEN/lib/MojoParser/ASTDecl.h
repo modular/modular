@@ -185,6 +185,12 @@ private:
   /// hashtable.  Clients should use "getBodyDecorators().
   bool hasBodyDecorators = false;
 
+  /// This is set to true when the declaration was loaded from bytecode, not
+  /// parsed from a textual source file. These declarations behave differently
+  /// than source decls, and e.g., do not resolve in the same way as source
+  /// decls.
+  bool loadedFromBytecode = false;
+
   friend class DeclResolver;
   friend class SharedState;
   ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,

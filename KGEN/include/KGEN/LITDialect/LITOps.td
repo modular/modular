@@ -175,8 +175,10 @@ def PackageOp : LITOp<"package", [
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_StructDeclOp : LITOp<"struct.decl", [Symbol, SymbolTable,
-    DeclInterface, SingleBlock, NoTerminator]> {
+def LIT_StructDeclOp : LITOp<"struct.decl", [
+    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    NoTerminator
+  ]> {
   let summary = "Struct declaration.";
   let description = [{
     The `lit.struct.decl` operation is a top-level operation used to declare
