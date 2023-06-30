@@ -48,3 +48,5 @@ configure_file(
   ${MODULAR_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/Version.h.in
   ${version_inc}
 )
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${version_inc})
