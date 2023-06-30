@@ -742,6 +742,29 @@ def LIT_EndFuncOp : LITOp<"end_func", [Terminator, HasParent<"LIT::FuncOp">]> {
 }
 
 //===----------------------------------------------------------------------===//
+// ExternFuncOp
+//===----------------------------------------------------------------------===//
+
+def LIT_ExternFuncOp : LITOp<"extern_func", [Terminator,
+    HasParent<"LIT::FuncOp">]> {
+  let summary = "Denotes an externalized function.";
+  let description = [{
+    The `lit.extern_func` operation denotes the end of a `lit.func` body,
+    indicating that the function's body has been externalized or elided.
+
+    Example:
+
+    ```mlir
+    lit.func @extern() {
+      lit.extern_func
+    }
+    ```
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
