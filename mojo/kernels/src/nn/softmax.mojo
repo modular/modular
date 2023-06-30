@@ -8,8 +8,7 @@ from Buffer import Buffer
 from DType import DType
 from Functional import vectorize_unroll
 from List import Dim
-from Math import exp, identity, log, mul, reciprocal, sub
-from Numerics import neginf
+from Math import exp, identity, log, mul, reciprocal, sub, neginf
 from Range import range
 from Reductions import max
 from SIMD import SIMD

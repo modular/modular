@@ -11,8 +11,19 @@ from Bit import _is_neg
 from DType import DType
 from List import VariadicList
 from LLCL import OutputChainPtr
-from Math import abs, copysign, erf, exp, clamp, max, min, identity, tanh, fma
-from Numerics import isfinite
+from Math import (
+    abs,
+    copysign,
+    erf,
+    exp,
+    clamp,
+    max,
+    min,
+    identity,
+    tanh,
+    fma,
+    isfinite,
+)
 from Polynomial import polynomial_evaluate
 from SIMD import SIMD
 

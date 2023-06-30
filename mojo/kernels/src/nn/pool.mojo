@@ -10,8 +10,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from LLCL import OutputChainPtr
 from List import DimList
-from Math import min, max, add, div_ceil
-from Numerics import neginf
+from Math import min, max, add, div_ceil, neginf
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simdwidthof
