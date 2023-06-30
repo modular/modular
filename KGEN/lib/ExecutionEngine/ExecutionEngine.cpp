@@ -357,15 +357,37 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
   if (compilerRTBuf.isError())
     return compilerRTBuf.takeError();
   std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
-  if (!rtBuf)
-    return Error("could not find the CompilerRT binary in the CAS. Looked for CAS ID: " + M::CASID::kCompilerRT);
-
   std::string compilerRTPath;
-  if (auto err = writeRTToFile("compilerrt", std::move(*rtBuf), compilerRTPath))
-    return err.takeError();
+  // If we have rtBuf we can write it to a file and use that. Otherwise, attempt
+  // to read it from the build dir.
+  if (rtBuf) {
+    if (auto err =
+            writeRTToFile("compilerrt", std::move(*rtBuf), compilerRTPath))
+      return err.takeError();
+  } else {
+    // TODO: This solution prevents cross-compilation.
+    auto envDir = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+    if (!envDir)
+      return Error("must have MODULAR_DERIVED_PATH");
+
+    std::filesystem::path rtPath = *envDir;
+    rtPath /= "build";
+
+    if (session.getTargetTriple().isOSBinFormatMachO()) {
+      rtPath /= "lib";
+      rtPath /= "libKGENCompilerRTShared.dylib";
+    } else if (session.getTargetTriple().isOSBinFormatELF()) {
+      rtPath /= "lib";
+      rtPath /= "libKGENCompilerRTShared.so";
+    } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
+      rtPath /= "bin";
+      rtPath /= "KGENCompilerRTShared.dll";
+    }
+    compilerRTPath = rtPath.string();
+  }
 
   auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-      session, compilerRTPath.data());
+      session, compilerRTPath.c_str());
   if (!generatorOr)
     return Error(toString(generatorOr.takeError()));
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
