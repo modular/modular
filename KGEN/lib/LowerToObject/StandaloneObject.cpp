@@ -483,9 +483,12 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
       }
       TimeTraceScope<> traceScope("split-input-module");
 
+      // If we are saving the temp files we don't want to split.
+      bool savingTemps = !options.saveTempsPrefix.empty();
+
       // Split the module into multiple slices and compile each in parallel.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
-      if (runtime.getWorkQueue()->getParallelismLevel() < 2) {
+      if (runtime.getWorkQueue()->getParallelismLevel() < 2 || savingTemps) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc(), isJIT));
       } else {
