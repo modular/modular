@@ -1,0 +1,28 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# REQUIRES: python-lldb-integration
+# RUN: %repl <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# This test must be first in the file, it is testing when the expression
+# instances are emtpy.
+print(x)
+# CHECK: [User] error:
+
+%%python
+x = 1
+y = 2
+z = 1/0
+# CHECK: ZeroDivisionError: division by zero
+# CHECK-NOT: ($PythonObject::PythonObject) x =
+# CHECK-NOT: ($PythonObject::PythonObject) y =
+# CHECK-NOT: ($PythonObject::PythonObject) z =
+
+%%python
+a = 2
+# CHECK: ($PythonObject::PythonObject) a =

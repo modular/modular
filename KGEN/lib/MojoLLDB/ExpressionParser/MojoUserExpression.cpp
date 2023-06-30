@@ -482,10 +482,10 @@ sys.modules['{1}'] = expr_module
   std::string escapedPythonExpr;
   llvm::raw_string_ostream escapedPythonExprOS(escapedPythonExpr);
   for (const auto &exprInst : state.getExpressionInstances()) {
-    if (exprInst.pythonModuleName) {
+    if (exprInst->pythonModuleName) {
       escapedPythonExprOS.write_escaped("try:\n");
       escapedPythonExprOS.write_escaped(
-          llvm::formatv("  from {0} import *\n", *exprInst.pythonModuleName)
+          llvm::formatv("  from {0} import *\n", exprInst->pythonModuleName)
               .str());
       escapedPythonExprOS.write_escaped("except:\n  pass\n");
     }
@@ -508,8 +508,8 @@ sys.modules['{1}'] = expr_module
   mojoExprOS << "var __lldb_repl_python__ = Python()\n\n";
   mojoExprOS << "if not __lldb_repl_python__.eval(\"";
   mojoExprOS.write_escaped(wrappedPythonExpr);
-  mojoExprOS
-      << "\"):\n  raise Error('The Python expression raised an exception')\n";
+  mojoExprOS << "\"):\n  ___lldb_expr_failed = True\n  raise Error('The Python "
+                "expression raised an exception')\n";
 
   // If persistent results are enabled, we also import top-level symbols from
   // the python module into the mojo context.

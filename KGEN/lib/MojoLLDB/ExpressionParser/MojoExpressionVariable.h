@@ -65,6 +65,7 @@ public:
   /// This struct represents all of the state related to a single successful
   /// expression evaluation.
   struct ExpressionInstanceState {
+
     ExpressionInstanceState(std::shared_ptr<JITExecutionUnit> executionUnit,
                             std::vector<lldb::ExpressionVariableSP> &&variables,
                             std::optional<std::string> pythonModuleName)
@@ -89,9 +90,15 @@ public:
     return expressionInstances.size();
   }
 
-  /// Returns the expression instances persisted within the state.
-  auto getExpressionInstances() const {
-    return llvm::make_pointee_range(expressionInstances);
+  /// Returns a variable with name name. Returns nullptr if the variable does
+  /// not exist, or if expressionInstances is empty.
+  std::shared_ptr<lldb_private::ExpressionVariable> getVar(StringRef name) const {
+    if (!expressionInstances.empty()) {
+      for (auto var: expressionInstances.back()->persistentVariables)
+        if (var->GetName().GetStringRef() == name)
+          return var;
+    }
+   return nullptr;
   }
 
   /// Register a new expression instance.
@@ -159,7 +166,13 @@ public:
   /// Lookup a symbol with the provided name.
   lldb::addr_t LookupSymbol(lldb_private::ConstString name) override;
 
+  /// Return the expression instances as a list.
+  ArrayRef<std::unique_ptr<ExpressionInstanceState>> getExpressionInstances() {
+    return expressionInstances;
+  }
+
 private:
+
   /// Instance state associated with successful expression evaluations.
   std::vector<std::unique_ptr<ExpressionInstanceState>> expressionInstances;
 

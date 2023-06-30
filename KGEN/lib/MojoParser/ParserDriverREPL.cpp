@@ -282,8 +282,10 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
   exprOSIndented << "  @parameter\n"
                  << "  def __mojo_repl_expr_body__() -> None:\n";
 
+  exprOSIndented << "    var ___lldb_expr_failed = False\n";
   // The following is the other chunk of code just written by the user.
   exprOSIndented << kMainBodyBlockBegin;
+  // Add a sigil variable that is true if the cell succeeded, false otherwise.
   exprOSIndented.printReindented(mainBodyCode, "    ");
   exprOSIndented << kMainBodyBlockEnd
                  << "    return\n"

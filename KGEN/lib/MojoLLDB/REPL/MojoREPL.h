@@ -51,6 +51,10 @@ protected:
 
   lldb::LanguageType GetLanguage() override { return lldb::eLanguageTypeMojo; }
 
+  std::shared_ptr<MojoTypeSystem> getTypeSystem() {
+    return typeSystem;
+  }
+
   //===--------------------------------------------------------------------===//
   // Source Code Handling
   //===--------------------------------------------------------------------===//
@@ -103,6 +107,7 @@ private:
   std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
   lldb::StreamSP errorStream;
   std::mutex flushStreamsMutex;
+  std::shared_ptr<MojoTypeSystem> typeSystem;
 };
 } // namespace M::KGEN::Mojo
 
