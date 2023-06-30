@@ -5,9 +5,96 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Math import factorial, sin, cos
+from DType import DType
+from Math import factorial, sin, cos, isfinite, isinf, inf, neginf, nan, isnan
 from IO import print
-from SIMD import Float16, Float32
+from SIMD import SIMD, Float16, Float32
+
+# CHECK-LABEL: test_inf
+fn test_inf():
+    print("== test_inf")
+
+    # CHECK: False
+    print(isfinite(inf[DType.float32]()))
+
+    # CHECK: False
+    print(isfinite(inf[DType.float64]()))
+
+    # CHECK: True
+    print(isinf(inf[DType.float32]()))
+
+    # CHECK: True
+    print(isinf(inf[DType.float64]()))
+
+    # CHECK: False
+    print(isfinite(neginf[DType.float32]()))
+
+    # CHECK: False
+    print(isfinite(neginf[DType.float64]()))
+
+    # CHECK: True
+    print(isinf(neginf[DType.float32]()))
+
+    # CHECK: True
+    print(isinf(neginf[DType.float64]()))
+
+    # CHECK: False
+    print(isfinite(nan[DType.float32]()))
+
+    # CHECK: False
+    print(isfinite(nan[DType.float64]()))
+
+    # CHECK: True
+    print(isfinite(Float32(33)))
+
+    # CHECK: True
+    print(isinf(Float32(33) / 0))
+
+    # CHECK: False
+    print(isfinite(Float32(33) / 0))
+
+
+# CHECK-LABEL: test_nan
+fn test_nan():
+    print("== test_nan")
+
+    # CHECK: False
+    print(isnan(inf[DType.float32]()))
+
+    # CHECK: False
+    print(isnan(neginf[DType.float32]()))
+
+    # CHECK: True
+    print(isnan(nan[DType.float32]()))
+
+    # CHECK: True
+    print(isnan(nan[DType.float64]()))
+
+    # CHECK: False
+    print(isnan(Float32(33)))
+
+    # CHECK: [False, True, False, False]
+    print(
+        isnan(
+            SIMD[DType.float32, 4](1, 0, 3, -1)
+            / SIMD[DType.float32, 4](0, 0, 1, 0)
+        )
+    )
+
+    # CHECK: [False, True, False, False]
+    print(
+        isnan(
+            SIMD[DType.float64, 4](1, 0, 3, -1)
+            / SIMD[DType.float64, 4](0, 0, 1, 0)
+        )
+    )
+
+    # CHECK: False
+    print(isnan(SIMD[DType.float32, 1](1) / SIMD[DType.float32, 1](0)))
+
+    # CHECK: False
+    print(isnan(inf[DType.float64]()))
+
 
 # CHECK-LABEL: test_sin
 fn test_sin():
@@ -49,6 +136,8 @@ fn test_factorial():
 
 
 fn main():
+    test_inf()
+    test_nan()
     test_sin()
     test_cos()
     test_factorial()
