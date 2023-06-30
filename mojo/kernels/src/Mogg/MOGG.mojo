@@ -1274,6 +1274,35 @@ fn batched_matmul[
     alias adj_a = False
     alias adj_b = False
 
+    alias simd_width = simdwidthof[type]()
+
+    let B = a.dim[0]()
+    let M = a.dim[1]()
+    let N = b.dim[2]()
+    let K = a.dim[2]()
+
+    @parameter
+    if single_thread_blocking_override and rank == 3:
+        for batch in range(B):
+            memset_zero(c.data + batch * M * N, M * N)
+            for m in range(M):
+                for k in range(K):
+                    let a_val = a[batch, m, k]
+
+                    @always_inline
+                    @parameter
+                    fn compute_fn[simd_width: Int](n: Int):
+                        c.simd_store[simd_width](
+                            StaticIntTuple[rank](batch, m, n),
+                            c.simd_load[simd_width](batch, m, n)
+                            + a_val * b.simd_load[simd_width](batch, k, n),
+                        )
+
+                    alias unroll_factor = 2
+
+                    vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
+        return
+
     @always_inline
     @parameter
     fn description_fn() -> String:
