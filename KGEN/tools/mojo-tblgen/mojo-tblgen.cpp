@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BackendRegistry.h"
+#include "GenHelpText.h"
 #include "GenManPage.h"
 
 #include "llvm/Support/CommandLine.h"
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
 
   // Register backends.
   BackendRegistry registry;
+  registerGenHelpTextBackend(registry);
   registerGenManPageBackend(registry);
 
   // Register the backend option and its option parser.

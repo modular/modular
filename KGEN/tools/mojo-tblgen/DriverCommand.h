@@ -153,6 +153,17 @@ public:
   /// Return all the aliases of this option.
   ArrayRef<const llvm::Record *> getAliases() const { return aliases; }
 
+  /// Return the first prefix defined for the given `option`, which we treat as
+  /// the "preferred" prefix for help text.
+  static StringRef getPreferredPrefix(const llvm::Record *option) {
+    std::vector<StringRef> prefixes =
+        option->getValueAsListOfStrings("Prefixes");
+    // Only options such as `INPUT` and `UNKNOWN` can be defined without a
+    // prefix, and we don't process those.
+    assert(!prefixes.empty() && "all options must have a prefix");
+    return prefixes.front();
+  }
+
 private:
   /// Initializes the wrapper with the given `Option` record.
   CommandOption(const llvm::Record *option) : option(option) {

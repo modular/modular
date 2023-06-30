@@ -40,6 +40,18 @@ macro(add_driver_option_tablegen input)
   add_dependencies(MojoDriverOptions "MojoDriver${name}")
 endmacro()
 
+# Given an input path "Foo.td", this creates a public TableGen target named
+# "FooHelpText", which when built outputs a raw C++ string literal containing
+# help text to a file "FooHelpText.inc". It also adds that target to the driver
+# option umbrella target.
+macro(add_driver_help_text_tablegen input)
+  get_filename_component(name "${input}" NAME_WE)
+  set(LLVM_TARGET_DEFINITIONS "${input}")
+  tablegen(MOJO "${name}HelpText.inc" -gen-help-text)
+  add_public_tablegen_target("${name}HelpText")
+  add_dependencies(MojoDriverOptions "${name}HelpText")
+endmacro()
+
 # Given an input path "Foo.td" and a manual page name "foo", this creates a
 # TableGen target named "man-foo", which when built generates a Linux manual
 # file named "foo.1" ('1' is the "general commands" section for manual pages).
@@ -60,6 +72,7 @@ endmacro()
 
 # Add targets to generate option definitions for the top-level driver.
 add_driver_option_tablegen(DriverOptions.td)
+add_driver_help_text_tablegen(DriverOptions.td)
 add_driver_man_page_tablegen(DriverOptions.td mojo-driver)
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)

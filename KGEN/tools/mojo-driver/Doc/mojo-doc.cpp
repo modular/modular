@@ -51,11 +51,9 @@ static int doc(const State &state) {
       options.ParseArgs(state.arguments, missingIndex, missingCount);
 
   if (args.hasArg(options::OPT_help)) {
-    options.printHelp(
-        llvm::outs(),
-        (Twine(state.programName) + " doc [options]").str().c_str(),
-        "Translate source file doc strings into a structured output format.");
-    return 0;
+    return state.printHelp(
+#include "Doc/DocOptionsHelpText.inc"
+    );
   }
 
   if (args.hasArg(options::OPT_UNKNOWN)) {
