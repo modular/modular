@@ -1,4 +1,4 @@
-// XFAIL: windows
+// UNSUPPORTED: windows
 // RUN: kgen --emit %s -o %t -L "$MODULAR_DERIVED_PATH/build/lib" && llvm-objdump -t %t | FileCheck %s
 
 kgen.link "libKGENCompilerRT.a" as @CompilerRT
