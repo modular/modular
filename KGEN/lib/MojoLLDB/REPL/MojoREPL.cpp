@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoREPL.h"
+#include "../ExpressionParser/MojoExpressionVariable.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBBroadcaster.h"
@@ -103,11 +104,53 @@ llvm::Error MojoREPL::OnExpressionEvaluated(
     const EvaluateExpressionOptions &expr_options,
     lldb::ExpressionResults execution_results,
     const lldb::ValueObjectSP &result_valobj_sp, const Status &error) {
-  // We flush right after an expression was evaluated but before the next one is
-  // executed. Otherwise we might have a race condition when executing
-  // expressions in batch mode, in which the events of an expression are merged
-  // with the events of a subsequent expression. This makes this method a
-  // synchronization point between event processing and the REPL.
+
+  auto persistentState = (MojoPersistentExpressionState *)
+                             getTypeSystem()->GetPersistentExpressionState();
+
+
+  auto lldbExprFailedVar = persistentState->getVar(lldb_private::ConstString("___lldb_expr_failed"));
+  // Remove ___lldb_expr_failed so that it won't be printed.
+  if (lldbExprFailedVar != nullptr)
+    persistentState->RemovePersistentVariable(lldbExprFailedVar);
+
+  // If the expression succeeded, make sure it wasn't a python magic expression
+  // that failed.
+  if (!execution_results) {
+    if (lldbExprFailedVar == nullptr)
+      llvm::report_fatal_error("Expected to find variable `___lldb_expr_failed` in the persistent state.");
+
+    // Extract the value of ___lldb_expr_failed.
+    DataExtractor extractor(lldbExprFailedVar->GetValueBytes(), *lldbExprFailedVar->GetByteSize(),
+                            exe_ctx.GetProcessRef().GetByteOrder(),
+                            exe_ctx.GetProcessRef().GetAddressByteSize());
+    lldb::offset_t offset = 0;
+    lldb::offset_t addr = extractor.GetAddress(&offset);
+
+    bool exprFailed;
+    Status status = Status();
+    exe_ctx.GetProcessRef().ReadMemory((lldb::addr_t)addr, &exprFailed, 1,
+                                        status);
+
+    // Now that we have the value, we can check whether the expression failed or
+    // not.
+    auto expressionInstances = persistentState->getExpressionInstances();
+    if (exprFailed) {
+      // The expression failed, so we won't persist any variables defined in the
+      // expression.
+      for (auto var :
+          expressionInstances.back()->persistentVariables)
+        persistentState->RemovePersistentVariable(var);
+      // TODO: eventually we should put the exception into the persistent
+      // state.
+    }
+  }
+  // We flush right after an expression was evaluated but
+  // before the next one is executed. Otherwise we might have a race condition
+  // when executing expressions in batch mode, in which the events of an
+  // expression are merged with the events of a subsequent expression. This
+  // makes this method a synchronization point between event processing and the
+  // REPL.
   flushTypeSystemEventsAndProcessStreams();
   return llvm::Error::success();
 }
@@ -131,8 +174,8 @@ MojoREPL::MojoREPL(Target &target)
   if (!typeSystemOr)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
-  std::shared_ptr<MojoTypeSystem> typeSystem =
-      std::static_pointer_cast<MojoTypeSystem>(*typeSystemOr);
+  typeSystem = std::static_pointer_cast<MojoTypeSystem>(*typeSystemOr);
+
   if (!typeSystem)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
