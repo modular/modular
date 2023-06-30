@@ -45,26 +45,11 @@ using namespace KGEN;
 using namespace mlir;
 
 namespace {
-/// What to do with a given Mojo file.
-enum class MojoCommand {
-  kEmitHeader,
-  kExecute,
-};
 
 /// Top-level options for the `mojo` executable.
 class CLOptions : public KGENCommonOptions, public CommonCLOptions {
 public:
   using CommonCLOptions::CommonCLOptions;
-
-  cl::opt<MojoCommand> cmd{
-      cl::desc("The command to execute"),
-      cl::values(
-          clEnumValN(
-              MojoCommand::kEmitHeader, "emit-header",
-              "Emit a C header file with declarations of exported functions."),
-          clEnumValN(MojoCommand::kExecute, "execute",
-                     "Execute the main function.")),
-      cl::init(MojoCommand::kExecute)};
 
   cl::opt<bool> validateDocStrings{
       "doc-validate", cl::desc("Validate doc strings in the input Mojo file."),
@@ -201,9 +186,8 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
 
   // Now create the execution engine so we can JIT.
-  auto tmOr =
-      createTargetMachine(compilationOptions,
-                          /*isJIT=*/clOptions.cmd == MojoCommand::kExecute);
+  auto tmOr = createTargetMachine(compilationOptions,
+                                  /*isJIT=*/true);
   if (tmOr.isError())
     return clOptions.reportError(tmOr.getError());
 
@@ -251,14 +235,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Generate a symbol table and an export map for the module post-compile.
   SymbolTable symtab(*theModule);
   ExportMap exports = getExportedSymbols(*theModule);
-
-  // Handle header emission, we don't need to generate an archive for this.
-  if (clOptions.cmd == MojoCommand::kEmitHeader) {
-    if (failed(
-            emitHeader(symtab, exports, *compiler, clOptions.outputFilename)))
-      return clOptions.reportError("failed to emit header file");
-    return EXIT_SUCCESS;
-  }
 
   // No ops, we can't actually do anything.
   auto symbolRange = theModule->getOps<mlir::SymbolOpInterface>();
