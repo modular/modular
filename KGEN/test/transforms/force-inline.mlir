@@ -116,8 +116,8 @@ kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
   kgen.return %0: index
 }
 
-// CHECK-LABEL: kgen.func @call_it
-kgen.func @call_it() -> index {
+// CHECK-LABEL: kgen.func @call_nodebug_inline_me
+kgen.func @call_nodebug_inline_me() -> index {
   %0 = index.constant 3
   // CHECK: index.add %idx3, %idx3 loc(#[[NODEBUG_LOC:.*]])
   // CHECK-NOT: debuginfo.value
@@ -125,7 +125,24 @@ kgen.func @call_it() -> index {
   kgen.return %1 : index
 }
 
-// CHECK: #[[NODEBUG_LOC]] = loc("within split
+kgen.func @inline_me(%arg0: index) -> index always_inline {
+  debuginfo.value #local_variable = %arg0 : index
+  kgen.return %arg0: index
+}
+
+// CHECK-LABEL: kgen.func @call_inline_me
+kgen.func @call_inline_me() -> index {
+  %0 = index.constant 3
+  // CHECK: %idx3 = index.constant 3
+  // CHECK-NEXT: debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE:loc[0-9]+]])
+  %1 = kgen.call @inline_me(%0) : (index) -> index
+  kgen.return %1 : index
+}
+
+// CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#subprogram>[#[[LOC_CALLSITE:loc[0-9]+]]])
+// CHECK-DAG: #[[LOC_CALLSITE]] = loc(callsite(#loc{{[0-9]+}} at #loc{{[0-9]+}}))
+
+// CHECK-DAG: #[[NODEBUG_LOC]] = loc("within split
 
 // -----
 
