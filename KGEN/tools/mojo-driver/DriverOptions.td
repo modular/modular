@@ -22,9 +22,7 @@ def : MojoDriverDescription<
 def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<0>;
 
 def version : Flag<["--", "-"], "version">, Group<DiagnosticOptionGroup>,
-  Index<0>, Flags<[]>,
-  HelpText<"Prints the Mojo version and exits.">;
+  Index<0>, HelpText<"Prints the Mojo version and exits.">;
 
-def v : Flag<["-"], "v">, Group<DiagnosticOptionGroup>, Index<0>, Flags<[]>,
-  Alias<version>;
-
+def v : Flag<["-"], "v">, Group<DiagnosticOptionGroup>, Alias<version>,
+  Index<0>;

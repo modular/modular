@@ -23,12 +23,12 @@ def DocDescription : MojoCommandDescription<
 def CompilationOptionGroup : OptionGroup<"Compilation Options">, Index<0>;
 
 def o : JoinedOrSeparate<["-"], "o">, Group<CompilationOptionGroup>, Index<0>,
-  Flags<[]>, MetaVarName<"PATH">,
+  MetaVarName<"PATH">,
   HelpText<"The path to which an output file will be written. If not "
            "provided, output is written to stdout.">;
 
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
-  Flags<[]>, MetaVarName<"PATH">,
+  MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "
            "included Mojo files.">;
 
@@ -46,6 +46,6 @@ def ValidationOptionGroup :
     "and other validation warnings.">;
 
 def validate : Flag<["--", "-"], "validate">,
-  Group<ValidationOptionGroup>, Index<0>, Flags<[]>,
+  Group<ValidationOptionGroup>, Index<0>,
   HelpText<"Validate doc strings as they are parsed. When enabled, warning "
            "diagnostics are emitted as invalid doc strings are parsed.">;
