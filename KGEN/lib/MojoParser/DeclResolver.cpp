@@ -3174,6 +3174,12 @@ static void processRegisterPassableDecorator(
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
+  // Push the debug scope for this struct if necessary so that nested operations
+  // have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto spAttr = DebugInfo::extractScope(structOp))
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
   if (ParserBase::parseSuite(structDecl, lexer))
     return failure();
 
