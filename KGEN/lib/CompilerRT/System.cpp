@@ -65,8 +65,9 @@ struct ArgVList {
 } // namespace
 
 COMPILERRT_EXPORT
-COMPILERRT_VISIBILITY_EXPORT ArgVList::RawList KGEN_CompilerRT_GetArgV() {
-  return ArgVList::get().getRawList();
+COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_GetArgV(ArgVList::RawList *result) {
+  *result = ArgVList::get().getRawList();
 }
 
 COMPILERRT_EXPORT
