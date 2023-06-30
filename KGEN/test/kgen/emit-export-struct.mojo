@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo %s -emit-header | FileCheck %s
+# RUN: kgen %s -emit-header | FileCheck %s
 
 
 @register_passable("trivial")
