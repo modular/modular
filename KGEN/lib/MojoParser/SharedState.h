@@ -48,6 +48,24 @@ inline const char *plural(size_t value, const char *one = "",
   return value == 1 ? one : other;
 }
 
+/// This enum indicates how much parsing and type checking has been done on
+/// this declaration.
+enum class DeclResolvedness : int8_t {
+  /// This declaration hasn't been parsed outside of its identifier being
+  /// processed.  We don't know anything about its arguments, generic
+  /// signature, etc.
+  unparsed,
+
+  /// This declaration has had its signature parsed and type checked, so we know
+  /// what parameters and metaparameters it might take, but its body hasn't been
+  /// processed.
+  signature,
+
+  /// This declaration has been fully type checked, including its body.  Any
+  /// declarations within the body may not be fully resolved though.
+  fully
+};
+
 /// This is state shared across multiple different instances of Parser
 /// which are always shared across them.
 class SharedState {
@@ -160,6 +178,16 @@ public:
 
   /// Cache the state of any modules that we parsed.
   void cacheParsedModules();
+
+  /// Resolve a declaration that originated from bytecode to the given
+  /// resolvedness.
+  LogicalResult resolveDeclFromBytecode(ASTDecl &decl,
+                                        DeclResolvedness resolvedness);
+
+  /// Finalize any imported bytecode modules. This should be called after all
+  /// decls have been resolved, as this will erase bytecode operations attached
+  /// to decls that have not been resolved.
+  LogicalResult finalizeImportedBytecodeModules();
 
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
@@ -280,24 +308,6 @@ public:
   InflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {}) {
     return shared.emitWarning(loc, message);
   }
-};
-
-/// This enum indicates how much parsing and type checking has been done on
-/// this declaration.
-enum class DeclResolvedness : int8_t {
-  /// This declaration hasn't been parsed outside of its identifier being
-  /// processed.  We don't know anything about its arguments, generic
-  /// signature, etc.
-  unparsed,
-
-  /// This declaration has had its signature parsed and type checked, so we know
-  /// what parameters and metaparameters it might take, but its body hasn't been
-  /// processed.
-  signature,
-
-  /// This declaration has been fully type checked, including its body.  Any
-  /// declarations within the body may not be fully resolved though.
-  fully
 };
 
 /// This is the result of lookupDecl.

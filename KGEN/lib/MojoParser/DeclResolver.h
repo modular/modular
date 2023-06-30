@@ -58,6 +58,10 @@ public:
   /// translation unit.
   void resolveAll();
 
+  /// Resolve all of the declarations that are defined within or referenced by
+  /// the given container `decl`.
+  void resolveAllReferencedFrom(ASTDecl &decl);
+
   /// Add a new declaration that needs to be resolved.
   ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,

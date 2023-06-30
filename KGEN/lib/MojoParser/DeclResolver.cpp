@@ -33,10 +33,12 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include <deque>
 
 using namespace M;
 using namespace M::KGEN;
@@ -517,6 +519,68 @@ void DeclResolver::resolveAll() {
     (void)resolveFully(*parsedDeclList[i], parsedDeclList[i]->getLoc());
 }
 
+void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
+  // The first stage is to fully resolve all of the decls recursively defined
+  // within the main container. These decls provide the anchor for resolution.
+  std::deque<ASTDecl *> worklist({&decl});
+  while (!worklist.empty()) {
+    ASTDecl *declIt = worklist.back();
+    worklist.pop_back();
+
+    // Resolve the decl.
+    (void)resolveFully(*declIt, declIt->getLoc());
+
+    // Traverse the children. We don't resolve alias children, these will be
+    // resolved separately if they actually got referenced.
+    for (auto &decls : llvm::make_second_range(declIt->declsInScope)) {
+      for (ASTDecl *decl : decls)
+        if (decl->getParentDecl() == declIt)
+          worklist.push_front(decl);
+    }
+  }
+
+  // After all of the children within `decl` have been fully resolved, we can
+  // now iteratively resolve all of the outside decls that got referenced.
+  llvm::SetVector<ASTDecl *> deferredDecls;
+  size_t parsedDeclIt = 0;
+  do {
+    // Resolve all of the newly parsed decls that got referenced.
+    for (; parsedDeclIt != parsedDeclList.size(); ++parsedDeclIt) {
+      ASTDecl &decl = *parsedDeclList[parsedDeclIt];
+
+      // If the decl was never touched and we pulled it in from bytecode, treat
+      // it as unreachable and don't resolve it now.
+      if (decl.loadedFromBytecode &&
+          decl.resolvedness == DeclResolvedness::unparsed) {
+        // Some decls always need to be resolved if their parents were resolved,
+        // allowlist the decls that we can safely ignore when unparsed.
+        if (isa<FuncOp, FileModuleOp, UnresolvedImportOp, StructDeclOp,
+                AliasForwardDeclOp>(decl)) {
+          deferredDecls.insert(&decl);
+          continue;
+        }
+      }
+
+      (void)resolveFully(decl, decl.getLoc());
+    }
+
+    // After resolving the newly parsed decls, make sure we resolve any
+    // previously parsed decls that are newly referenced.
+    bool resolvedAnything = false;
+    do {
+      resolvedAnything = false;
+      for (ASTDecl *decl : deferredDecls) {
+        // Fully resolve this decl if it was only midway resolved during normal
+        // parsing resolution.
+        if (decl->resolvedness == DeclResolvedness::signature) {
+          (void)resolveFully(*decl, decl->getLoc());
+          resolvedAnything = true;
+        }
+      }
+    } while (resolvedAnything);
+  } while (parsedDeclIt != parsedDeclList.size());
+}
+
 void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
   StringAttr aliasName = exportOp.getAliasAttr();
   auto it = exportedSymbolNames.find(aliasName);
@@ -567,6 +631,16 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         << "previously used here";
     decl.hasReferenceError = true;
     return failure();
+  }
+
+  // Handle decls that are loaded from bytecode. These decls are not parsed like
+  // decls originating from source files.
+  if (decl.loadedFromBytecode) {
+    if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
+      decl.hasReferenceError = true;
+
+    declsCurrentlyProcessing.erase(&decl);
+    return success(!decl.hasReferenceError);
   }
 
   // If the signature hasn't been parsed, do so.
