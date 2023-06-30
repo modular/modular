@@ -318,6 +318,87 @@ is architecturally satisfying, but is ultimately an implementation/feature set
 detail of how Mojo structs work. It is orthogonal to the overall purpose of this
 document.
 
+## Name Shadowing and Dynamism
+
+A feature request to allow shadowing of `let` bindings within function bodies
+was posted in <https://github.com/modularml/mojo/issues/5>. This begs a larger
+question of, given lexically parsed but lazily resolved declarations, whether
+lexical name shadowing should be allowed for anything, even functions and
+structs:
+
+```mojo
+fn foo():
+    print(10)
+
+foo() # prints '10'
+
+fn foo():
+    print(20)
+
+foo() # prints '20'
+```
+
+This extension would be low-cost at the risk of creating potentially confusing
+code to read, and it would match the desired behaviour of Mojo in the REPL
+environment. Allowing this kind of redefinition is a feature built in to the
+Mojo REPL implementation (the backend to the Jupyter notebook interface) but it
+comes with a fair share of sharp edges because it lacks first-class language
+support.
+
+Difficulty arises when discussing `def`s themselves. Although `def`s should
+internally support full hashtable dynamism, what kind of objects are `def`s
+themselves? For instance:
+
+```mojo
+def foo():
+    bar()
+
+def bar():
+    print("hello")
+
+foo() # prints 'hello'
+
+def bar():
+    print("goodbye")
+
+foo() # should this print 'goodbye'?
+```
+
+In Mojo today, the first time the name lookup of `bar` is resolved, it is baked
+into a direct call to the first `bar`. Therefore, shadowing of `bar` does not
+propagate into the body of `foo`. On the other hand, if all `def`s were treated
+as entries in a hashtable, then it would.
+
+A middle-ground approach would be to treat `bar` as a mutable global variable
+with type `def()`, with escalated dynamism if tagged with `@dynamic`. This gets
+into the "levels of dynamism" Mojo intends to provide.
+
+## Three Levels of Dynanism
+
+In order to support incremental typing-for-performance, Mojo will have to
+support everything from strict, strongly-typed code to full Python hashtable
+dynamism but with syntax that provides a gradual transition from one end to the
+other. Given all that has been discussed and what the language looks like today,
+Mojo's dynamism is moving into three boxes:
+
+1. Strict mode.
+2. Partial dynamism.
+3. Full hashtable dynamism.
+
+There is a fourth rung to this ladder, and that is full interoperability with
+Python itself. In order to provide the right default for Mojo, partial dynamism
+will be the default behaviour for syntax in Mojo (vtable classes), whereas full
+hashtable dynamism will have to be opt-in via a `@dynamic` decorator.
+
+It could be argued that hashtable local variables should fall into `@dynamic`,
+and not the default middle-ground mode, for instance. This would be the primary
+difference between regular `def`s and `@dynamic def`s.
+
+The main thing to take away from here is that full hashtable dynamism is going
+to be a very long-tail goal where there will always be missing features and
+capabilities that have not been built, but the endgoal is Python-level dynamism
+emulated in Mojo.
+
 ## Top-Level Code
 
 Top-level code has two "modes" in Mojo: in standalone Mojo files and in the
@@ -329,12 +410,12 @@ tables, data sections, and so on. There are interesting questions like how to
 support Python-style globals mixed in top-level code, how imports work, and how
 globals work.
 
-The core idea is that top-level could *should be treated the same* as any other
-body of code in the program. The semantics of a self-contained program should be
-the same if the top-level code is wrapped inside an `fn main()`. What differs is
-how declarations in top-level code are represented in the generated IR: using
+One idea is that top-level could *should be treated the same* as any other body
+of code in the program. The semantics of a self-contained program should be the
+same if the top-level code is wrapped inside an `fn main()`. What differs is how
+declarations in top-level code are represented in the generated IR: using
 symbols instead of stack-allocated variables or parameters. For example, Mojo
-should support the following:
+could support the following:
 
 ```mojo
 fn foo():
@@ -361,9 +442,49 @@ Although `foo` is really a closure, in top-level code, it gets promoted to a
 function with captured variables replaced with global value references. The
 dynamic initializer code is placed inside an entry point in the module.
 
+More difficult questions arise when mixing fully dynamic `def`s and static
+`def`s in the same name scope:
+
+```mojo
+@dynamic
+def foo(a): # this 'foo' is dynamically name bound in a global hashtable
+    print(a)
+
+def foo(a): # this 'foo' is statically name bound and overloadable
+    print(a)
+
+@dynamic
+def bar():
+    foo(10) # which 'foo' does this call?
+```
+
+This same problem will exist inside the body of a function, if top-level code
+should be treated the same as a function body. So, this must be solved
+regardless of the semantics of top-level code. On solution would be for the
+parser to look for a statically matching function to call, and if that fails
+emit a hashtable lookup when in a `@dynamic` `def`.
+
+Global variables are another feature that have to be developed regardless. One
+of the user-visible sharp edge right now is that functions cannot access
+variables declared directly in cells:
+
+```mojo
+# [1]
+a = 10
+
+# [2]
+fn foo():
+    print(a) # error: 'a' is not defined
+```
+
+Given this, it's likely top-level code will stay as the status quo in the
+near-term as these other features are built out.
+
 ## Putting Everything Together
 
-Consider a more involved example (assume `print` is builtin magic):
+Consider a more involved example (assume `print` is builtin magic). This could
+be one outcome where top-level code is treated like a function body, mixing
+fully-dynamic objects and static ones:
 
 ```mojo
 # foo.mojo
@@ -463,6 +584,7 @@ to be incrementally ported to Mojo.
 What should the behaviour be when nesting an `fn` inside a `def`?
 
 ```mojo
+@dynamic
 def foo():
     fn bar():
         print(a)
