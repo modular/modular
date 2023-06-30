@@ -60,7 +60,7 @@ static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
 static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
                                ArrayRef<CommandOptionGroup> groups) {
   os << ".SH \"SYNOPSIS\"\n"
-     << escape(llvm::formatv("\\fB{0}\\fR", cmd.getName(/*join=*/" ")));
+     << "\\fB" << escape(cmd.getName(/*join=*/" ")) << "\\fR";
   if (!groups.empty())
     os << " [\\fIoptions\\fR]";
   std::string input =
@@ -79,13 +79,8 @@ static void genDescriptionSection(raw_ostream &os,
 /// Output the given LLVM `Option` record's prefix and name, followed by its
 /// `MetaVarName` if present.
 static void genOptionName(raw_ostream &os, const llvm::Record *option) {
-  std::vector<StringRef> prefixes = option->getValueAsListOfStrings("Prefixes");
-  // Only options such as `INPUT` and `UNKNOWN` can be defined without a prefix,
-  // and we don't process those here.
-  assert(!prefixes.empty() && "all options must have a prefix");
-  // If an option can be used with multiple prefixes, print just the first one
-  // listed.
-  os << escape(llvm::formatv("\\fB{0}{1}\\fR", prefixes.front().str(),
+  os << escape(llvm::formatv("\\fB{0}{1}\\fR",
+                             CommandOption::getPreferredPrefix(option),
                              option->getValueAsString("Name")));
 
   if (auto metaVarName = option->getValueAsOptionalString("MetaVarName"))

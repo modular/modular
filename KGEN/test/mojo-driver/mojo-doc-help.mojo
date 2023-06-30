@@ -1,0 +1,9 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# Invoking the subcommand with `--help` prints its help text.
+# RUN: mojo-driver doc -bad-option --doesnt-matter --help | FileCheck %s
+# CHECK: Compile doc strings

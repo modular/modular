@@ -34,18 +34,9 @@ static int repl(const State &state) {
       options.ParseArgs(state.arguments, unused, unused);
 
   if (args.hasArg(options::OPT_help)) {
-    options.printHelp(
-        llvm::outs(),
-        (Twine(state.programName) + " repl [options] [lldb-args...]")
-            .str()
-            .c_str(),
-        "Launch a Mojo read-evaluate-print loop that allows for interactive "
-        "development.\n"
-        "\n"
-        "Any number of options and arguments may be specified on the command "
-        "line. These are then forwarded to the underlying lldb tool, which "
-        "runs the REPL.");
-    return 0;
+    return state.printHelp(
+#include "REPL/REPLOptionsHelpText.inc"
+    );
   }
 
   llvm::ErrorOr<std::string> lldb = llvm::sys::findProgramByName("lldb");

@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# Invoking the subcommand with `--help` prints its help text.
+# RUN: mojo-driver demangle --one -two --help | FileCheck %s --check-prefix CHECK-HELP
+# CHECK-HELP: Demangle the given name
+
 # Reject unknown options.
 # RUN: not mojo-driver demangle -one --two '$aModule::main()' 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN
 # CHECK-UNKNOWN: mojo-driver{{.*}}: error: unrecognized argument '-one'

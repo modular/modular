@@ -38,6 +38,11 @@ int State::reportError(Twine errorMessage) const {
   return EXIT_FAILURE;
 }
 
+int State::printHelp(Twine helpText) const {
+  llvm::outs() << helpText;
+  return EXIT_SUCCESS;
+}
+
 //===----------------------------------------------------------------------===//
 // SubcommandRegistry
 //===----------------------------------------------------------------------===//
@@ -117,16 +122,14 @@ int main(int argc, char **argv) {
                  << version.patch << "\n";
     return 0;
   }
-  case options::OPT_help: {
-    // Print the top-level driver help and exit.
-    options.printHelp(llvm::outs(), usage.c_str(),
-                      "The Mojo🔥 command-line interface.");
-    return 0;
-  }
-  case options::OPT_INPUT: {
+  case options::OPT_help:
+    return State(programName, ArrayRef(arguments).slice(1))
+        .printHelp(
+#include "DriverOptionsHelpText.inc"
+        );
+  case options::OPT_INPUT:
     // This isn't an option; we'll interpret it as a subcommand.
     break;
-  }
   default: {
     // Otherwise, we don't know what this is. Report an error.
     return State(programName, ArrayRef(arguments).slice(1))

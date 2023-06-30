@@ -44,11 +44,9 @@ static int demangle(const State &state) {
       options.ParseArgs(state.arguments, missingIndex, missingCount);
 
   if (args.hasArg(options::OPT_help)) {
-    options.printHelp(
-        llvm::outs(),
-        (Twine(state.programName) + " demangle [options]").str().c_str(),
-        "Demangle the name provided on the command line.");
-    return 0;
+    return state.printHelp(
+#include "Demangle/DemangleOptionsHelpText.inc"
+    );
   }
 
   if (args.hasArg(options::OPT_UNKNOWN)) {

@@ -26,6 +26,10 @@ struct State {
   /// Write the given error message to stderr and return a non-zero exit code.
   int reportError(Twine errorMessage) const;
 
+  /// Prints the given `helpText` for the current command and returns a
+  /// successful exit code.
+  int printHelp(Twine helpText) const;
+
   /// The name of the executable that the user invoked.
   /// This is used for error reporting.
   const char *programName;

@@ -12,4 +12,5 @@ set(LLVM_LINK_COMPONENTS
 add_tablegen(mojo-tblgen MOJO
   mojo-tblgen.cpp
   DriverCommand.cpp
+  GenHelpText.cpp
   GenManPage.cpp)
