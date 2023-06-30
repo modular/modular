@@ -783,7 +783,7 @@ fn mean[
 
     # For floats apply the reciprocal as a multiply.
     @parameter
-    if type == DType.float32 or type == DType.float64 or type == DType.float16:
+    if type.is_floating_point():
         # Apply mean division before storing to the output lambda.
         let reciprocal = 1.0 / input_buffer.dim(reduce_dim)
 
@@ -1276,31 +1276,78 @@ fn batched_matmul[
 
     alias simd_width = simdwidthof[type]()
 
-    let B = a.dim[0]()
-    let M = a.dim[1]()
-    let N = b.dim[2]()
-    let K = a.dim[2]()
-
     @parameter
     if single_thread_blocking_override and rank == 3:
-        for batch in range(B):
-            memset_zero(c.data + batch * M * N, M * N)
-            for m in range(M):
-                for k in range(K):
-                    let a_val = a[batch, m, k]
+        let B = a.dim[0]()
+        let M = a.dim[1]()
+        let N = b.dim[2]()
+        let K = a.dim[2]()
 
-                    @always_inline
-                    @parameter
-                    fn compute_fn[simd_width: Int](n: Int):
-                        c.simd_store[simd_width](
-                            StaticIntTuple[rank](batch, m, n),
-                            c.simd_load[simd_width](batch, m, n)
-                            + a_val * b.simd_load[simd_width](batch, k, n),
+        if M == 1 and N == 1:
+            for batch in range(B):
+                let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                    a.data + batch * K, Index(K), type
+                )
+                let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                    b.data + batch * K, Index(K), type
+                )
+
+                @always_inline
+                @parameter
+                fn input_fn[
+                    type: DType, width: Int, rank: Int
+                ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+                    return (
+                        a_view.simd_load[width](idx[0])
+                        * b_view.simd_load[width](idx[0])
+                    ).cast[type]()
+
+                @always_inline
+                @parameter
+                fn output_fn[
+                    out_type: DType, width: Int, r: Int
+                ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
+                    c.simd_store[width](
+                        StaticIntTuple[rank](batch, 0, 0), value.cast[type]()
+                    )
+
+                @always_inline
+                fn reduce_impl[
+                    ty: DType, width: Int
+                ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+                    return v1 + v2
+
+                _reduce_generator[
+                    type,
+                    1,
+                    simdwidthof[type](),
+                    single_thread_blocking_override,
+                    input_fn,
+                    output_fn,
+                    reduce_impl,
+                ](a_view, 0, 0, out_chain)
+
+        else:
+            for batch in range(B):
+                memset_zero(c.data + batch * M * N, M * N)
+                for m in range(M):
+                    for k in range(K):
+                        let a_val = a[batch, m, k]
+
+                        @always_inline
+                        @parameter
+                        fn compute_fn[simd_width: Int](n: Int):
+                            c.simd_store[simd_width](
+                                StaticIntTuple[rank](batch, m, n),
+                                c.simd_load[simd_width](batch, m, n)
+                                + a_val * b.simd_load[simd_width](batch, k, n),
+                            )
+
+                        alias unroll_factor = 2
+
+                        vectorize_unroll[simd_width, unroll_factor, compute_fn](
+                            N
                         )
-
-                    alias unroll_factor = 2
-
-                    vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
         return
 
     @always_inline
