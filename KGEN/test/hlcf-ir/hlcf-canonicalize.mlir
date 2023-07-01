@@ -433,7 +433,9 @@ kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
     }
     // CHECK: break %arg1 : i32
     hlcf.break %arg0, %arg1 : i32, i32
-  }
+  // CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
+  } {unrollFactor = #hlcf<loop_unroll_full full>}
+
   kgen.return %0#1 : i32
 }
 

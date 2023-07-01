@@ -7,12 +7,14 @@
 #ifndef HLCFOPS_TD
 #define HLCFOPS_TD
 
+include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFDialect.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
 // Operation Base Classes
@@ -94,7 +96,9 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands,
-                       OptionalAttr<StrAttr>:$label);
+                       OptionalAttr<StrAttr>:$label,
+                       OptionalAttr<AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>>:$unrollFactor);
+
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
 

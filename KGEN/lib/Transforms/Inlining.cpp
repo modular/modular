@@ -378,8 +378,10 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
   mlir::IRRewriter b{OpBuilder(call)};
   // Use a LoopOp to be able to break to a label - any returns inlined from
   // callee must only exit the inlined block.
-  auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                      ValueRange(), label);
+  auto scope = b.create<HLCF::LoopOp>(
+      call.getLoc(), call->getResultTypes(), ValueRange(), label,
+      HLCF::LoopUnrollFullAttr::get(call.getContext(),
+                                    HLCF::LoopUnrollFull::None));
   b.createBlock(&scope.getBody());
 
   AttrTypeMangler mangler(manglerCache);
@@ -940,8 +942,10 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
   mlir::IRRewriter b{OpBuilder(call)};
   Operation *scope;
   if (isa<CallOp>(&*call)) {
-    scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                   ValueRange(), label);
+    scope = b.create<HLCF::LoopOp>(
+        call.getLoc(), call->getResultTypes(), ValueRange(), label,
+        HLCF::LoopUnrollFullAttr::get(call.getContext(),
+                                      HLCF::LoopUnrollFull::None));
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {

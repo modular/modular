@@ -4,24 +4,32 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFAttrs.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
-#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Error.h"
+
+using namespace M;
+using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
-// HLCFDialect
+// POPDialect
 //===----------------------------------------------------------------------===//
 
-void M::HLCF::HLCFDialect::initialize() {
-  registerAttributes();
-
-  addOperations<
-#define GET_OP_LIST
-#include "KGEN/HLCFDialect/HLCF.cpp.inc"
+void HLCFDialect::registerAttributes() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "KGEN/HLCFDialect/HLCFAttrs.cpp.inc"
       >();
 }
 
 //===----------------------------------------------------------------------===//
-// Generated Definitions
+// ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/HLCFDialect/HLCFDialect.cpp.inc"
+#include "KGEN/HLCFDialect/HLCFEnums.cpp.inc"
+
+#define GET_ATTRDEF_CLASSES
+#include "KGEN/HLCFDialect/HLCFAttrs.cpp.inc"
