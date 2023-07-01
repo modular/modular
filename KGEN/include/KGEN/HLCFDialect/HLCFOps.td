@@ -10,6 +10,7 @@
 include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFDialect.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
+include "KGEN/KGENDialect/KGENAttrs.td"
 include "Support/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
@@ -36,6 +37,73 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
            [Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
+
+//===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ForOp : HLCFParentOp<"for"> {
+  let summary = "for operation";
+  let description = [{
+    The `hlcf.for` operation defines a control-flow region taking 3
+    operands that represent the lower bound, upper bound and step respectively.
+    It has one region capturing the loop body.
+    The lower and upper bounds specify a half-open range:
+    the range includes the lower bound but does not include the upper bound.
+
+    The body region must contain exactly one block that terminates with
+    `scf.for.yield`.
+
+    The operation can define loop-carried values and operation results. The
+    operand types of `hlcf.for.yield` operations in the immediate loop scope
+    must match the initArgs types of the operation. The operand types of
+    `hlcf.break` in the immediate loop scope must match the result types of the
+    operation.
+
+    Example:
+
+    ```mlir
+     hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
+       %5 = index.add %arg0, %c2
+       hlcf.for.yield %5 : index
+     } {unrollFactor = #hlcf<loop_unroll_full full>}
+    ```
+
+    or
+
+    ```mlir
+     %0:2 = hlcf.for [%lb to %up step %step]
+                    (%arg0 = %i: index, %arg1 = %k: index) -> (index, index) {
+         %3 = index.add %arg1, %index2
+         %5 = index.add %arg0, %arg1
+         hlcf.for.yield %5, %3 : index, index, index
+       } {unrollFactor = "full"}
+    ```
+  }];
+
+  let arguments = (ins Index:$lowerBound,
+                       Index:$upperBound,
+                       Index:$step,
+                       Variadic<AnyType>:$initArgs,
+                       OptionalAttr<StrAttr>:$label,
+                       OptionalAttr<AnyAttrOf<[
+                        HLCF_LoopUnrollFullAttr,
+                        IndexAttr]>>:$unrollFactor);
+
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body);
+
+  let assemblyFormat = [{
+    ($label^)? ``
+    ` ``[` $lowerBound
+    ` ``to` $upperBound
+    ` ``step` $step `]`
+    custom<For>($initArgs, type($initArgs), type($results), $body) attr-dict
+  }];
+
+  let hasVerifier = 1;
+}
+
 
 //===----------------------------------------------------------------------===//
 // LoopOp
@@ -366,6 +434,35 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
   let arguments = (ins Variadic<AnyType>:$operands);
 
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
+}
+
+//===----------------------------------------------------------------------===//
+// ForYieldOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
+    ParentOneOf<["ForOp"]>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "yield operation in a for-loop";
+  let description = [{
+    The `hlcf.for.yield` operation is a control-flow terminator that transfers
+    control-flow either back to the beginning or after the parent `hlcf.for`
+    operation, depending on whether the for-loop continues or not.
+    The operation expects its operand types to match the types of the
+    `initArgs` of `hlcf.for`.
+
+    Example:
+
+    ```mlir
+    hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
+      %5 = index.add %arg0, %c2
+      hlcf.for.yield %5 : index
+    } {unrollFactor = #hlcf<loop_unroll_full full>}
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands,
+                       OptionalAttr<StrAttr>:$label);
 }
 
 #endif // HLCFOPS_TD

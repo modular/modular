@@ -13,6 +13,88 @@ using namespace M;
 using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseFor(OpAsmParser &p,
+         SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+         SmallVectorImpl<Type> &operandTypes,
+         SmallVectorImpl<Type> &resultTypes, Region &body) {
+  SmallVector<OpAsmParser::Argument> loopArgs;
+
+  // Parse the optional loop signature.
+  if (succeeded(p.parseOptionalLParen())) {
+    if (p.parseOptionalRParen()) {
+      OpAsmParser::Argument arg;
+      OpAsmParser::UnresolvedOperand operand;
+      auto parseEl = [&]() -> ParseResult {
+        if (p.parseArgument(arg) || p.parseEqual() || p.parseOperand(operand) ||
+            p.parseColonType(arg.type))
+          return failure();
+        loopArgs.push_back(arg);
+        operands.push_back(operand);
+        operandTypes.push_back(arg.type);
+        return success();
+      };
+      if (p.parseCommaSeparatedList(parseEl) || p.parseRParen())
+        return failure();
+    }
+    if (p.parseOptionalArrowTypeList(resultTypes))
+      return failure();
+  }
+  return p.parseRegion(body, loopArgs);
+}
+
+static void printFor(OpAsmPrinter &p, Operation *op, ValueRange operands,
+                     TypeRange operandTypes, TypeRange resultTypes,
+                     Region &body) {
+  if (!operandTypes.empty() || !resultTypes.empty()) {
+    p << "(";
+    llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {
+      auto [i, operand] = it;
+      p << body.getArgument(i) << " = " << operand << " : " << operandTypes[i];
+    });
+    p << ")";
+    p.printOptionalArrowTypeList(resultTypes);
+  }
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
+}
+
+LogicalResult ForOp::verify() {
+  if (getInitArgs().size() != getBody().getNumArguments())
+    return emitOpError("operand types do not match body region argument types");
+
+  for (auto [initarg, blockarg] :
+       llvm::zip(getInitArgs(), getBody().getArgumentTypes()))
+    if (initarg.getType() != blockarg)
+      return emitOpError(
+          "operand types do not match body region argument types");
+
+  return success();
+}
+
+void ForOp::getEntryTargets(ArrayRef<Attribute> operands,
+                            SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(0, getOperands());
+}
+
+ValueRange ForOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target == 0);
+  return getBody().getArguments();
+}
+
+ErrorTreeOrSuccess ForOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  state.transferControlFlowTo(&getBody().front(), operands);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
 
@@ -301,6 +383,28 @@ ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   state.setReturnValues(operands);
   state.transferControlFlowTo((*this)->getParentOp());
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// YieldOp
+//===----------------------------------------------------------------------===//
+
+bool ForYieldOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
+
+void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<ControlFlowTarget> &targets) {
+
+  assert(operands.size() == getNumOperands());
+  // Branch to the beginning of the body region.
+  // Though `hlcf.for.yield` can exit when iter count meets upperbound.
+  targets.emplace_back(0, getOperands());
+}
+
+ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  LoopOp loop = getParentLoop(*this, getLabelAttr());
+  state.transferControlFlowTo(&loop.getBody().front(), operands);
   return success();
 }
 
