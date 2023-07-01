@@ -89,6 +89,7 @@ int main(int argc, char **argv) {
   KGEN::registerForceInline();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
+  KGEN::registerLoopUnrolling();
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();

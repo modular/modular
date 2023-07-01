@@ -13,6 +13,7 @@ add_modular_conversion_library(KGENTransforms
   Inlining.cpp
   KnownVariant.cpp
   LiftAndFoldApply.cpp
+  LoopUnrolling.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
   RaiseForLoops.cpp

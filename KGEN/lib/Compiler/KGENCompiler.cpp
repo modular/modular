@@ -232,6 +232,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Raise for-loops as late as possible to simplify loop bounds and step
   // inferring.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
+  pm.addNestedPass<FuncOp>(createLoopUnrolling());
 }
 
 //===----------------------------------------------------------------------===//

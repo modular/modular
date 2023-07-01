@@ -725,3 +725,18 @@ def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
 
   let dependentDialects = ["HLCF::HLCFDialect"];
 }
+
+//===----------------------------------------------------------------------===//
+// LoopUnrolling
+//===----------------------------------------------------------------------===//
+
+def LoopUnrolling : Pass<"loop-unrolling", "KGEN::FuncOp"> {
+  let summary = "unroll loops";
+  let description = [{
+    The `loop-unrolling` pass will unroll hlcf for-loops with factors from the
+    for loop decorator. This pass will strip hlcf for-loop's `unroll_factor`
+    attribute.  This pass must run on concrete KGEN IR.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}
