@@ -18,7 +18,7 @@ from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
 from StaticTuple import StaticTuple
-from TargetInfo import dtype_sizeof, simdwidthof, dtype_alignof
+from TargetInfo import sizeof, simdwidthof, alignof
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
@@ -334,7 +334,7 @@ struct Buffer[size: Dim, type: DType]:
         Returns:
             The size of the Buffer in bytes.
         """
-        return self.__len__() * dtype_sizeof[type]()
+        return self.__len__() * sizeof[type]()
 
     @always_inline
     fn zero(self):
@@ -396,9 +396,7 @@ struct Buffer[size: Dim, type: DType]:
         Returns:
             Constructed buffer with the allocated space.
         """
-        return Buffer[size, type].aligned_stack_allocation[
-            dtype_alignof[type]()
-        ]()
+        return Buffer[size, type].aligned_stack_allocation[alignof[type]()]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1358,7 +1356,7 @@ struct NDBuffer[
         Returns:
             The size of the NDBuffer in bytes.
         """
-        return self.size() * dtype_sizeof[type]()
+        return self.size() * sizeof[type]()
 
     @always_inline
     fn zero(self):
@@ -1424,7 +1422,7 @@ struct NDBuffer[
             Constructed NDBuffer with the allocated space.
         """
         return NDBuffer[rank, shape, type].aligned_stack_allocation[
-            dtype_alignof[type]()
+            alignof[type]()
         ]()
 
     @always_inline
