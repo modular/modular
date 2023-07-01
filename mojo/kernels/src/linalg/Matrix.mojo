@@ -11,7 +11,7 @@ from List import DimList
 from Index import StaticIntTuple
 from Pointer import Pointer, DTypePointer
 from SIMD import SIMD
-from TargetInfo import dtype_alignof
+from TargetInfo import alignof
 
 
 @value
@@ -124,7 +124,7 @@ struct Matrix[
             Constructed matrix with the allocated space.
         """
         return Matrix[shape, type, transposed].aligned_stack_allocation[
-            dtype_alignof[type]()
+            alignof[type]()
         ]()
 
     fn __getitem__(self, x: Int, y: Int) -> SIMD[type, 1]:

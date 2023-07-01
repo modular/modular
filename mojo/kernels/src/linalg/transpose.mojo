@@ -24,7 +24,7 @@ from Math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_sizeof, simdwidthof
+from TargetInfo import sizeof, simdwidthof
 from TypeUtilities import rebind
 from SIMD import SIMD
 
