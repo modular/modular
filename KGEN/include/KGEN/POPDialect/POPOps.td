@@ -359,7 +359,6 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
       POPOp<mnemonic, traits # [
         Pure,
         Commutative,
-        Idempotent,
         SameOperandsAndResultType
       ]> {
 
@@ -375,7 +374,7 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
 // AndOp
 //===----------------------------------------------------------------------===//
 
-def POP_AndOp : POP_BitwiseOp<"and"> {
+def POP_AndOp : POP_BitwiseOp<"and", [Idempotent]> {
   let summary = "bitwise logical and";
   let description = [{
     The `pop.and` returns the bitwise logical and of its two operands. The dtype
@@ -395,7 +394,7 @@ def POP_AndOp : POP_BitwiseOp<"and"> {
 // OrOp
 //===----------------------------------------------------------------------===//
 
-def POP_OrOp : POP_BitwiseOp<"or"> {
+def POP_OrOp : POP_BitwiseOp<"or", [Idempotent]> {
   let summary = "bitwise logical or";
   let description = [{
     The `pop.or` returns the bitwise logical or of its two operands. The dtype
