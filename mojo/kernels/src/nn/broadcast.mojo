@@ -10,7 +10,7 @@ from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
 from List import DimList
-from TargetInfo import dtype_sizeof
+from TargetInfo import sizeof
 
 
 # ===----------------------------------------------------------------------===#

@@ -22,7 +22,7 @@ from Math import div_ceil
 from Math import min
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_sizeof
+from TargetInfo import sizeof
 from TypeUtilities import rebind
 
 ## gather_reduce_2D_axis_1
@@ -79,7 +79,7 @@ fn gather_reduce[
             indices.dim[0]()
             * indices.dim[1]()
             * input.dim[1]()
-            * dtype_sizeof[type](),
+            * sizeof[type](),
             MIN_TASK_COPY_SIZE,
         ),
         num_threads,
@@ -242,7 +242,7 @@ fn gather[
             let indices_ptr = indices._offset(indices_coords)
             let indices_remaining = (
                 end_indices_ptr.__as_index() - indices_ptr.__as_index()
-            ) // dtype_sizeof[type]()
+            ) // sizeof[type]()
             # assumes that indices are layed out in row major order
             let next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining, prefetch_offset

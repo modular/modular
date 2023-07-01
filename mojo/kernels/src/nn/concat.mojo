@@ -16,7 +16,7 @@ from Math import align_down, align_up, div_ceil, max, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import dtype_sizeof
+from TargetInfo import sizeof
 
 # ===----------------------------------------------------------------------===#
 # concat
@@ -57,7 +57,7 @@ fn _canonical_reshape(
 
     @parameter
     fn know_type[type: DType]():
-        elsize = dtype_sizeof[type]()
+        elsize = sizeof[type]()
 
     buf.type.dispatch_arithmetic[know_type]()
     debug_assert(elsize > 0, "unknown dtype size")
@@ -319,7 +319,7 @@ fn concat(
         alias KB = 1024
         alias min_work_for_parallel = 128 * KB  # TODO: autotune
 
-        let output_bytes = output.num_elements() * dtype_sizeof[type]()
+        let output_bytes = output.num_elements() * sizeof[type]()
 
         if output_bytes < min_work_for_parallel:
             async_parallelize[dispatch_serial[type]](out_chain, 1)

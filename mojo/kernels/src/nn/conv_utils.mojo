@@ -22,7 +22,7 @@ from TargetInfo import (
     has_neon,
     os_is_macos,
     simdwidthof,
-    dtype_sizeof,
+    sizeof,
 )
 
 # conv uses a different kernel than matmul
@@ -184,20 +184,20 @@ fn get_conv_tile_size[type: DType]() -> Int:
     # See MatmulUtils for context on tile size for debug built and macos.
     @parameter
     if is_relwithdebinfo_build() or is_debug_build():
-        return 4 * KB // dtype_sizeof[type]()
+        return 4 * KB // sizeof[type]()
 
     @parameter
     if os_is_macos():
-        return 64 * KB // dtype_sizeof[type]()
+        return 64 * KB // sizeof[type]()
 
     @parameter
     if has_neon() or has_avx512f():
         # This should be 1/2 of L2 cache size. Graviton 2 and Skylake server
         # have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache.
         # Use 576 instead of 512 to accommodate important shapes in resnet.
-        return 576 * KB // dtype_sizeof[type]()
+        return 576 * KB // sizeof[type]()
 
-    return 256 * KB // dtype_sizeof[type]()
+    return 256 * KB // sizeof[type]()
 
 
 fn get_conv_tile_shape[

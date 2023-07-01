@@ -19,7 +19,7 @@ from SIMD import SIMD
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides
-from TargetInfo import dtype_sizeof
+from TargetInfo import sizeof
 from Range import range
 
 
