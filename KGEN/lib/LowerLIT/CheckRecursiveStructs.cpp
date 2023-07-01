@@ -3,10 +3,6 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-//
-// This pass checks value lifetime invariants, e.g. that
-//
-//===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENPasses.h"
 
