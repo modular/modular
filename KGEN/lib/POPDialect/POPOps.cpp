@@ -813,7 +813,7 @@ verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
   }
 
   auto vector = dyn_cast<VectorType>(builtinType);
-  if (!vector || vector.getRank() != 1 || vector.getNumScalableDims() != 0)
+  if (!vector || vector.getRank() != 1 || vector.isScalable())
     return emitError("expected a rank 1 non-scalable vector");
 
   if (size && *size != vector.getShape().front())
