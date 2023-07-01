@@ -318,6 +318,16 @@ def doWalrus():
   # expected-error @+1 {{':=' operator not implemented yet}}
   bad_assignment0(1, abc := 42)
 
+# See Issue #15578
+def doIs(a: Int, b: Int):
+  # expected-error @+1 {{'Int' does not implement the '__is__' method}}
+  if a is b:
+    pass
+
+def doIsNot(a: Int, b: Int):
+  # expected-error @+1 {{'Int' does not implement the '__isnot__' method}}
+  if a is not b:
+    pass
 
 ##===----------------------------------------------------------------------===##
 # Computed Properties and Subscripts

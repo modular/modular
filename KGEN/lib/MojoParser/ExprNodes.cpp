@@ -1940,16 +1940,14 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                               ValueDest &dest, const ExprNode *callExpr,
                               ExprEmitter &emitter) {
 
-  // FIXME: We currently hack in index type support as transition to proper
-  // expression support.
-  PValue lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
-  if (lhsParam && rhsParam) {
-    if (isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
+  // FIXME: We currently hack in support for _mlir_type equality comparison
+  // until we have proper metatypes.
+  if (kind == ExprNode::Kind::kCmpEQ) {
+    PValue lhsParam = lhs.ir.getIfPValue(), rhsParam = rhs.ir.getIfPValue();
+    if (lhsParam && rhsParam &&
+        isa<MLIRTypeType>(lhsParam.getType().mlirType) &&
         isa<MLIRTypeType>(rhsParam.getType().mlirType)) {
-      // FIXME: MLIR types should be wrapped in their own custom type too.
-      if (kind == ExprNode::Kind::kCmpEQ)
-        return ParamOperatorAttr::get(POC::EQ,
-                                      {lhsParam.get(), rhsParam.get()});
+      return ParamOperatorAttr::get(POC::EQ, {lhsParam.get(), rhsParam.get()});
     }
   }
 
