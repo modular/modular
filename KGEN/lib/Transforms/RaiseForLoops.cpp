@@ -132,11 +132,8 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // This is pretty limited assumption to bootstrap loop unrolling.
   // This can be improved to support more general for loops.
 
-  if (continueOp->getNumOperands() != 1)
-    return {};
-
   // Infer loop stride from ContinueOp's input operand expression.
-  Value nextIter = continueOp.getOperand(0);
+  Value nextIter = continueOp.getOperand(continueOp.getNumOperands() - 1);
   Value stride;
   Operation *nextIterOp = nextIter.getDefiningOp();
   if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
@@ -268,6 +265,8 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
     prevOp = &op;
   }
 
+  loop->replaceAllUsesWith(forOp.getResults());
+
   // Erase the original loop.
   rewriter.eraseOp(loop);
 }
@@ -283,3 +282,4 @@ void RaiseForLoops::runOnOperation() {
     raiseForLoops(loop);
   }
 }
+
