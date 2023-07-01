@@ -635,10 +635,18 @@ fn _reduce_along_dimension[
             out_chain.mark_ready()
         return
 
-    let num_workers = _get_num_workers(total_size, out_chain.get_runtime())
     let reduce_dim_size = shape[reduce_dim]
 
     let parallelism_size: Int = total_size // reduce_dim_size
+
+    let num_workers: Int
+
+    @parameter
+    if single_thread_blocking_override:
+        num_workers = 1
+    else:
+        num_workers = _get_num_workers(total_size, out_chain.get_runtime())
+
     let chunk_size = div_ceil(parallelism_size, num_workers)
 
     @always_inline
