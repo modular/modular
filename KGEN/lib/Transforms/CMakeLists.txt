@@ -15,6 +15,7 @@ add_modular_conversion_library(KGENTransforms
   LiftAndFoldApply.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp
+  RaiseForLoops.cpp
   SimplifyCF.cpp
   SROA.cpp
   StackReuse.cpp

@@ -710,3 +710,18 @@ def SynthesizeDebugInfo : Pass<"synth-debuginfo", "mlir::ModuleOp"> {
 
   let dependentDialects = ["DebugInfo::DebugInfoDialect"];
 }
+
+//===----------------------------------------------------------------------===//
+// RaiseForLoops
+//===----------------------------------------------------------------------===//
+
+def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
+  let summary = "raise hlcf.for loops.";
+  let description = [{
+    The `raise-for-loops` pass will transform simple `hlcf.loop` with no early exits
+    into `hlcf.for` operation. This pass must run on concrete KGEN IR.
+    TODO: raise any LoopOp with or without an unroll factor if possible.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}

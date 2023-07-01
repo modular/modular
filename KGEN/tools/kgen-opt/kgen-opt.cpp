@@ -102,6 +102,7 @@ int main(int argc, char **argv) {
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerPruneImpossibleVariants();
+  KGEN::registerRaiseForLoops();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
   KGEN::registerStackReuse();

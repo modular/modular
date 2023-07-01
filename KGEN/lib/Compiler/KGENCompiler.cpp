@@ -228,6 +228,10 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createStackReuse());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
+
+  // Raise for-loops as late as possible to simplify loop bounds and step
+  // inferring.
+  pm.addNestedPass<FuncOp>(createRaiseForLoops());
 }
 
 //===----------------------------------------------------------------------===//
