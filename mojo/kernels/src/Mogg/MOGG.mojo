@@ -1433,6 +1433,7 @@ fn matrix_solve[
 
 
 # Helper function to mark the output chain as ready in tests.
+@always_inline
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
     out_chain.mark_ready()
 
