@@ -68,6 +68,7 @@ tools = [
     "kgen-opt",
     "kgen-translate",
     "mojo",
+    "mojo-driver",
     "mojo-lsp-server",
     "mojo-tblgen",
 ]
