@@ -220,7 +220,7 @@ for the value being defined. For example, consider the following code that uses
 the `MyPair` struct shown above:
 
 ```mojo
-def pairTest() -> Bool:
+def pair_test() -> Bool:
     let p = MyPair(1, 2)
     return p < 4 # gives a compile-time error
 ```
@@ -374,7 +374,7 @@ short string optimizations, etc.  However, if you go ahead and try this out, you
 might be surprised:
 
 ```mojo
-fn useStrings():
+fn use_strings():
     var a: MyString = "hello"
     print(a)   # Should print "hello"
     var b = a  # ERROR: MyString doesn't implement __copyinit__
