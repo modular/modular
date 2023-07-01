@@ -28,7 +28,7 @@ from Math import (
 )
 from Range import range
 from SIMD import SIMD
-from TargetInfo import dtype_sizeof, simdwidthof
+from TargetInfo import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper
@@ -321,7 +321,7 @@ fn _reduce_3D[
         assert_param[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[simd_width, dtype_sizeof[type]()]()
+    alias unroll_factor = get_unroll_factor[simd_width, sizeof[type]()]()
     alias usimd_width = unroll_factor * simd_width
     for i in range(h):
 
