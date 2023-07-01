@@ -103,8 +103,8 @@ struct StmtParser : public ParserBase {
 
   // Compound statements.
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
-  ParseResult parseWhileStmt(size_t curIndent);
-  ParseResult parseForStmt(size_t curIndent);
+  ParseResult parseWhileStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
 
@@ -378,13 +378,11 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseIfStmt(startCursor, stmtIndent);
   case Token::kw_for:
-    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseForStmt(stmtIndent);
+    return parseForStmt(startCursor, stmtIndent);
   case Token::kw_while:
-    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseWhileStmt(stmtIndent);
+    return parseWhileStmt(startCursor, stmtIndent);
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
@@ -724,13 +722,55 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
   return success();
 }
 
+static ParseResult parseLoopDecorators(ParserBase &parser,
+                                       LexerCursor startCursor,
+                                       size_t curIndent, Token::Kind kind) {
+  std::string kindName = "";
+  switch (kind) {
+  case Token::kw_for:
+    kindName = "for";
+    break;
+  case Token::kw_while:
+    kindName = "while";
+    break;
+  default:
+    llvm_unreachable("Parsing loop decorator in a non-loop statement.");
+  }
+
+  if (startCursor != parser.getLexer().getCursor()) {
+    startCursor.restore(parser.getLexer());
+    for (auto [decorator, cursor] : parser.parseDecorators(curIndent)) {
+      // Handle recognized decorators.
+      if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
+        if (kind == Token::kw_for && dre->spelling == "unroll") {
+          // TODO: enable this for kw_while once we have support for while loop
+          // unrolling
+          continue;
+        }
+      }
+
+      // TODO: Parse unroll with a integer number or a parameter expression
+      return parser.emitError(decorator->getLoc(),
+                              "unsupported decorator on '" + kindName +
+                                  "' statement")
+             << decorator->getRange();
+    }
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
-ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
+ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
+                                       size_t curIndent) {
+  // We parse the decorators for the 'while' if they exist.
+  if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_while))
+    return success();
+
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
@@ -778,7 +818,12 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
 
 /// for_stmt ::=  "for" target_list "in" starred_list ":" suite
 ///              ["else" ":" suite]
-ParseResult StmtParser::parseForStmt(size_t curIndent) {
+ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
+                                     size_t curIndent) {
+  // We parse the decorators for the 'for' if they exist.
+  if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_for))
+    return success();
+
   Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
 
   // parse [target_list] in [starred_list]

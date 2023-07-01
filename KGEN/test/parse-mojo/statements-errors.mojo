@@ -7,6 +7,8 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
 
 from prolog import DType, Error, Float32, Int, object
+from IO import print
+from Range import range
 
 ##===----------------------------------------------------------------------===##
 # Lexical Issues
@@ -93,6 +95,13 @@ fn test_if_decorator(a: Bool):
     pass
   elif a:  # expected-error {{cannot use a dynamic value in '@parameter if' condition}}
     pass
+
+fn unroll_while():
+    let i = 1
+    # expected-error @below  {{unsupported decorator on 'while' statement}}
+    @unroll
+    while i < 4:
+        print(i)
 
 ##===----------------------------------------------------------------------===##
 # For
