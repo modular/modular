@@ -47,6 +47,11 @@ setup(
             "flake8>=3.9",
             "pyright>=1.1.255",
         ],
+        "build-metrics": [
+            "opentelemetry-api>=1.18.0",
+            "opentelemetry-sdk>=1.18.0",
+            "opentelemetry-exporter-otlp>=1.18.0",
+        ],
     },
     classifiers=[
         "License :: Other/Proprietary License",
