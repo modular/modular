@@ -616,7 +616,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(),
         AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled),
-        builder.getI8IntegerAttr(uint8_t(specialFnKind)));
+        builder.getI8IntegerAttr(uint8_t(specialFnKind)),
+        DenseResourceElementsAttr{});
 
   result.regions[0]->push_back(new Block());
 }

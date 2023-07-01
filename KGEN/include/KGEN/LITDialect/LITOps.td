@@ -66,7 +66,10 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
-    DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind
+    DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
+    // Used for binary packages, the body of the function post-elaboration
+    // if it's non-parametric.
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postElaborationBodyRef
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

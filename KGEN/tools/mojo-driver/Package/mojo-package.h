@@ -1,0 +1,20 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef MOJO_PACKAGE_H
+#define MOJO_PACKAGE_H
+
+namespace M {
+
+class SubcommandRegistry;
+
+/// Initializes the `package` subcommand and its various options, and registers
+/// its callback function with the registry.
+void registerPackageSubCommand(SubcommandRegistry &registry);
+
+} // namespace M
+
+#endif // MOJO_PACKAGE_H
