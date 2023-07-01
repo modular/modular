@@ -19,6 +19,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFAttrs.h"
+
 #define GET_OP_CLASSES
 #include "KGEN/HLCFDialect/HLCF.h.inc"
 

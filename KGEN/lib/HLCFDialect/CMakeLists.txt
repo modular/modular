@@ -7,6 +7,7 @@
 add_subdirectory(Analysis)
 
 add_modular_dialect_library(HLCFDialect
+  HLCFAttrs.cpp
   HLCFDialect.cpp
   HLCFInterfaces.cpp
   HLCFOps.cpp

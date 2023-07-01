@@ -126,6 +126,12 @@ def HLCFDialect : Dialect {
   }];
 
   let cppNamespace = "::M::HLCF";
+
+  let useDefaultAttributePrinterParser = 1;
+  let extraClassDeclaration = [{
+    /// Register all HLCF attributes.
+    void registerAttributes();
+  }];
 }
 
 #endif // HLCFDIALECT_TD
