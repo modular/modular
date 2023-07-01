@@ -14,6 +14,7 @@
 #error "MOJO_DRIVER_OPTIONS_PATH must be defined before including this header"
 #endif
 
+namespace {
 namespace options {
 enum ID {
   OPT_INVALID = 0,
@@ -25,6 +26,7 @@ enum ID {
   LastOption
 };
 } // namespace options
+} // namespace
 
 #define OPTTABLE_VALUES_CODE
 #include MOJO_DRIVER_OPTIONS_PATH
