@@ -29,7 +29,7 @@ Let's take a look at how Mojo's parser achieves this today and some the current
 issues with it. We will also propose next steps for the parser and Mojo to
 expand the supported feature set and more closely align with Python.
 
-### Current Implement Approach
+### Current Implementation Approach
 
 Mojo's parser is inherently lazy. In simple terms, Mojo source code is parsed
 only as needed. A lazy parser is an architecturally important feature of Mojo.
@@ -46,7 +46,7 @@ declaration -- a function, for example -- can be skipped without even lexing it
 (with a few exceptions, such as multi-line strings). This means huge amounts of
 declarations can be processed and registered in a name table with little effort.
 
-### Three-Phase Parsing
+### Three-Phase Parsing and Type Checking
 
 Today, Mojo implements a 3-phase parser, in which the name, signature/type, and
 body/value of a declaration are incrementally resolved as needed. In Mojo
@@ -70,8 +70,9 @@ fn bar():
     foo()
 ```
 
-The declarations of the functions are parsed and the bodies are resolved later.
-This allows the functions to reference each other without forward declarations.
+The signatures of the functions are parsed first and the bodies are resolved,
+later, allowing the functions to reference each other without forward
+declarations.
 The same 3-phase parsing mechanism is used throughout different levels of Mojo
 code, including in "imperative" regions like function bodies: the declarations
 of variables, nested functions, and nested structs are parsed first, before the
@@ -90,7 +91,8 @@ fn foo():
 This code seems non-sensical: `x` is defined by calling `bar`, even though `bar`
 is defined after `x`! This works, however, because the definitions of
 declarations even inside a function body are lazily resolved. The reality is
-that imperative regions like function bodies have different considerations: we
+that imperative regions like function bodies have different considerations,
+because e.g. they can capture values and we
 would like to be able to reference variables within imperative code before the
 function body is fully resolved.
 
@@ -117,7 +119,7 @@ def foo(k):
     for i in range(k):
         print(i)
     # Mojo complains that `i` is not defined, but this code should compile and
-    # dynamically through an `UnboundLocalError` depending on the value of `k`!
+    # dynamically raise an `UnboundLocalError` depending on the value of `k`!
     print(i)
 ```
 
@@ -145,10 +147,12 @@ and global variables.
 
 ## Local Variable Scoping and Implicitly Declared Variables
 
-The core idea is that code will be parsed imperatively with a scoped hash table
+To solve these problems, we will move to a design where
+code will be parsed imperatively with a scoped hash table
 but certain declarations will still be resolved lazily. Importantly, explicit
 `var` and `let` declarations will no longer be parsed lazily: lazy parsing of
-these declarations doesn't make sense because they represent imperative code.
+these declarations doesn't make sense because they represent imperative code
+with lexical scoping (concepts that don't exist in Python).
 
 This means `var` and `let` declarations are simply residents of a scoped hash
 table within each function body, naturally allowing shadowing while rejecting
@@ -191,7 +195,12 @@ runtime. On the other hand, the function does have a notion of what variable
 required. Of course, the compiler can optimize the table away and do all the
 nice stuff compilers do if posible.
 
-On top of that, Mojo needs to default implicitly-declared variables to be
+### Improving Dynamic Type Compatibility
+
+Given the stronger guarantees and solidified model for variables explicitly
+declared with var/let, we also need to address implicitly-declared variables in
+`def` functions, which are constrained by compatibility with existing Python
+code.  Mojo needs to default implicitly-declared variables to be
 `object` type, so that they can be reassigned to values of any type:
 
 ```mojo
@@ -204,14 +213,17 @@ def foo():
 This fits into Mojo's incremental performance story: implicitly declared
 variables are fully dynamic and provide huge amounts of expressibility, but to
 get guaranteed performance, programmers can add explicit `var` and `let`
-declarations.
+declarations.  Of course, we can also use MLIR optimizations to "unbox"
+dynamicly typed values in simple cases without loss of generality as well.
 
-As an aside, the type annotations on implicitly-declared variables might have to
-be ignored. For example, Python happily accepts the following code:
+As an aside, while Python supports type annotations on implicitly-declared
+variables, they need to be ignored for compatibility with Python. For example,
+Python happily accepts an expression as a type annotation, including things like
+the following code:
 
 ```python
-x: 42 = 42
-print(x) # prints '42'
+x: 1+2 = 42 # The type is 1+2??
+print(x)   # prints '42'
 ```
 
 Together, this will give Mojo proper scoping rules for explicitly-declared
@@ -221,8 +233,10 @@ structs, and modules.
 
 ## Dynamic Classes
 
-Python classes are quite crazy when compared to classes in other languages.
-Methods can be defined and then deleted, and even conditionally defined!
+Python classes are much more flexible than a language like C++ or Java, they
+are more similar to classes in Javascript or Smalltalk.  Methods can be defined
+and then deleted, and even conditionally defined!  For example, this is valid
+Python code:
 
 ```python
 define = True
@@ -246,52 +260,83 @@ would be member functions have their first argument bound to the new class
 instance.
 
 In Mojo, we need to support full "hash-table" dynamism in classes for
-compatibility with Python, but it should not be the default behaviour of
-classes. This is analogous to
-[Swift's @objc](https://swiftunboxed.com/interop/objc-dynamic/) decorator for
-maintaining backwards compatibility with Objective-C classes. In Mojo, this
-will be the `@dynamic` decorator, in which the class is an instance of a hash
-table and the body is executed at runtime:
+compatibility with Python, but reference semantic classes are also important for
+systems programming and application programming, where this level of dynamism
+isn't needed and is actively harmful.  We need to decide how to handle this.
+
+One approach is to provide a decorator on class definitions (which can be opt-in
+or opt-out) to indicate whether the class is "fully dynamic" as in Python or
+whether it is "constrained dynamic" (e.g. has virtual methods that may be
+overridden but cannot have methods added or removed).
+
+"Constrained dynamic" Mojo classes will use vtables for a more limited but more
+efficient constrained dynamism than full hash table lookups.  In addition to
+raw lookups, constrained dynamic classes can use "[class hierarchy
+analysis](https://dl.acm.org/doi/10.5555/646153.679523)" to devirtualize and
+inline method calls, which are not valid for "fully dynamic" classes.
+
+Swift has a similar issue, where the developers wanted to have constrained
+dynamism by default but needed full dynamism when working with Objective-C code:
+Objective-C is based on the Smalltalk object model and thus has the same issues
+as Python.  Swift solved this by adding an opt-in
+[@objc](https://swiftunboxed.com/interop/objc-dynamic/) decorator, which
+provides full compatibility with Objective-C classes.  Swift implicitly applies
+this decorator to subclasses of Objective-C or `@objc` classes for convenience.
+
+If we chose to follow
+this design in Mojo, we could introduce a `@dynamic` decorator, in which the
+class is an instance of a hash table and the body is executed at runtime:
 
 ```mojo
 @dynamic
 class C:
-    def foo(): print("duh what")
-    foo() # prints 'duh what'
+    def foo(): print("warming up")
+    foo() # prints 'warming up'
     del foo
     def foo(): print("huzzah")
     foo() # prints 'huzzah'
 ```
 
-The trickier question is "when does the body get executed?" when the class is
-defined at the top-level. In this case, the class `C` should be treated as a
+We could of course make dynamic be the default, and have a decorator to opt-in
+to constrained dynamism as well.  Regardless of the bias, we absolutely need to
+support full dynamism to maintain compatibility with Python.
+
+The next question is "when does the body get executed?" when
+the class is
+defined at the top-level. In this case, the class `C` could be treated as a
 global variable with a static initializer that is executed when the program
 is loaded. This ties into a discussion about how to treat global variables and
 top-level code in general, which will come in a subsequent section. Naturally,
 if the class is never referenced, the body is never parsed and the static
 initializer is never emitted.
 
-Non-`@dynamic` Mojo classes will use vtables for a more limited but performant
-kind of dynamism. Note that a non-goal of Mojo is syntactic compatibility with
-Python but a clear goal is to have an automatic and mechanical tranformer from
-Python code to Mojo code. In this case, all Python classes will be translated
-by sticking `@dynamic` on them, and they can be removed for incremental boosts
-to performance.
-
 ### Syntactic Compatibility and `@dynamic`
 
 A primary goal of Mojo is to
 [minimize the syntactic differences](https://docs.modular.com/mojo/why-mojo.html#intentional-differences-from-python)
 with Python. We also have to balance that need with what the right default for
-Mojo is. By requiring Mojo classes have a `@dynamic` decorator to attain Python
-behaviour adds an extra point of difference. An alternative would be to require
-Mojo classes to be tagged with `@strict` (or use another keyword altogether) for
-vtable dynamism instead.
+Mojo is, and this affects the bias on whether this decorator is "opt-in" or
+"opt-out".
 
-## Static Struct Initialization
+We find it appealing to follow the Swift approach by making "full dynamic" an
+opt-in choice for a Mojo class.  This choice would make Mojo not strictly a
+superset of Python (because you may need to add the decorator in some cases),
+but it is already a non-goal of Mojo is syntactic compatibility with
+Python.  Instead, we expect to provide an automatic mechanical tranformer from
+Python code to Mojo code (e.g. to deal with new keywords we take). In this case,
+all Python classes will be translated by sticking `@dynamic` on them, and they
+can be removed for incremental boosts to performance.
 
-Take the above example for dynamic classes and consider something similar for
-structs:
+An alternate design is to require opt-in to "constraint dynamism" by adding a
+`@strict` (or use another keyword altogether) for vtable dynamism.  We can
+evaluate tradeoffs as more of the model is implemented.
+
+### Initialization of Struct and Constrained-Dynamic classes
+
+While we need full compatibility for fully-dynamic classes, and thus must
+execute struct initializers in a fully dynamic way, we still need to decide how
+initializers work for structs and constrained dynamic classes, consider this
+example:
 
 ```mojo
 struct C:
@@ -302,7 +347,7 @@ struct C:
     foo() # prints 'huzzah'
 ```
 
-What does this code do? How can Mojo support the crazy Python dynamism while
+What does this code do? How can Mojo support this dynamism while
 retaining performance and compiler guarantees?
 
 In the spirit of moving runtime computation to compile time, as is the theme of
@@ -317,6 +362,27 @@ The concept of the bodies of structs being parsed and interpreted to be resolved
 is architecturally satisfying, but is ultimately an implementation/feature set
 detail of how Mojo structs work. It is orthogonal to the overall purpose of this
 document.
+
+### Four Levels of Dynamism
+
+To summarize, in order to support incremental typing-for-performance, Mojo will
+have to
+support everything from strict, strongly-typed code to full Python hashtable
+dynamism but with syntax that provides a gradual transition from one end to the
+other.
+
+Given all that has been discussed and what the language looks like today,
+Mojo's dynamism is moving into four boxes:
+
+1. Compile-time static resolution.
+2. Partial dynamism.
+3. Full hashtable dynamism.
+4. ABI interoperability with CPython.
+
+The fourth category isn't explored here, but will important when/if we support
+subclassing imported-from-CPython classes in Mojo, because that will fix the
+runtime in-memory representation to what CPython uses.  This work is not
+explored in this document.
 
 ## Name Shadowing and Dynamism
 
@@ -372,32 +438,6 @@ as entries in a hashtable, then it would.
 A middle-ground approach would be to treat `bar` as a mutable global variable
 with type `def()`, with escalated dynamism if tagged with `@dynamic`. This gets
 into the "levels of dynamism" Mojo intends to provide.
-
-## Three Levels of Dynanism
-
-In order to support incremental typing-for-performance, Mojo will have to
-support everything from strict, strongly-typed code to full Python hashtable
-dynamism but with syntax that provides a gradual transition from one end to the
-other. Given all that has been discussed and what the language looks like today,
-Mojo's dynamism is moving into three boxes:
-
-1. Strict mode.
-2. Partial dynamism.
-3. Full hashtable dynamism.
-
-There is a fourth rung to this ladder, and that is full interoperability with
-Python itself. In order to provide the right default for Mojo, partial dynamism
-will be the default behaviour for syntax in Mojo (vtable classes), whereas full
-hashtable dynamism will have to be opt-in via a `@dynamic` decorator.
-
-It could be argued that hashtable local variables should fall into `@dynamic`,
-and not the default middle-ground mode, for instance. This would be the primary
-difference between regular `def`s and `@dynamic def`s.
-
-The main thing to take away from here is that full hashtable dynamism is going
-to be a very long-tail goal where there will always be missing features and
-capabilities that have not been built, but the endgoal is Python-level dynamism
-emulated in Mojo.
 
 ## Top-Level Code
 
