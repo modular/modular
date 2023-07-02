@@ -536,7 +536,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   let example1 = RegExample()
 
   # CHECK-NEXT: hlcf.if %cond
-  if (cond):
+  if cond:
     # Transferring ownership to the result means the copy ctor/dtor isn't
     # invoked.
 
@@ -545,7 +545,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     return example1^
 
   # CHECK: hlcf.if %cond
-  if (cond):
+  if cond:
     # Normal copying works and the copy/destroy can be elided.
     # CHECK-NEXT: kgen.return %example1
     return example1

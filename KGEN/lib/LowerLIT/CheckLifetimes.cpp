@@ -791,27 +791,8 @@ ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
   if (!valueRef)
     return valueRef;
 
-  // If we are overwriting a value that has already been specified, then the
-  // underlying value must be declared a 'var' and not a 'let'.
-  if (!valueRef.isAllMissing(everMutatedValues)) {
-    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-
-    // If this was declared as a let, then this is an error.
-    if (info.isLet && !info.hasErrorDiagnosed) {
-      auto diag =
-          mlir::emitError(op.getLoc(), "invalid mutation of immutable value ");
-      addBadValueNameToDiag(valueRef, everMutatedValues, valueSet, diag);
-      diag.attachNote(info.value.getLoc())
-          << "'" << info.getName().str() << "' declared here";
-      info.hasErrorDiagnosed = true;
-    }
-
-    // If this is a var, then just notice the mutation so it doesn't get
-    // suggested to promote to a let.
-    info.isMutatedWhenInitialized = true;
-  }
-
-  // This marks its value as dead.
+  // This marks its value as dead, but the value as unmutated so it can be
+  // overwriten if it is a 'let'.
   valueRef.markBits(liveValues, false);
   valueRef.markBits(everMutatedValues, true);
   return valueRef;
@@ -938,15 +919,24 @@ void UninitializedValueScan::checkOp(Operation &op) {
   for (Value operand : op.getOperands())
     checkUse(operand, op);
 
-  // lit.letreg.decl and lit.ownership.end.lifetime define their own values.
-  if (isa<LetRegDeclOp, OwnershipEndLifetimeOp>(op)) {
+  // lit.letreg.decl defines its own value after using its operand.
+  if (isa<LetRegDeclOp>(op)) {
+    // Operand use already checked above.
     checkDef(op.getResult(0), op);
+    return;
+  }
+
+  // lit.ownership.end.lifetime consumes its operand then defines its result.
+  if (auto ownershipEnd = dyn_cast<OwnershipEndLifetimeOp>(op)) {
+    // Operand use already checked above.
+    checkConsume(ownershipEnd.getOperand(), op);
+    checkDef(ownershipEnd.getResult(), op);
     return;
   }
 
   // OwnershipMakePointerLValue is a def if liveOnEntry.
   if (auto makePointer = dyn_cast<OwnershipMakePointerLValue>(op)) {
-    checkUse(makePointer.getOperand(), op);
+    // Operand use already checked above.
     checkDef(makePointer.getOperand(), op);
     if (makePointer.getLiveOnEntry())
       checkDef(makePointer.getResult(), op);
@@ -954,12 +944,17 @@ void UninitializedValueScan::checkOp(Operation &op) {
 
   // If this is a kgen.return then we have an exit from the function
   // (including early returns and exception raises that leave the function).
-  // Check that all of the values we are tracking are managed correctly.
+  // Check that *all* of the values we are tracking are managed correctly.
   if (isa<KGEN::ReturnOp>(op)) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos()))
       if (!valueInfo.endsUninit)
         checkUse(valueInfo.value, op);
+
+    // Indicate that all values are live after the return so that an early
+    // return in an 'if' will get properly intersected with the other side of
+    // the branch.
+    liveValues.set();
     return;
   }
 

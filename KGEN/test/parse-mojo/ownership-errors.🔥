@@ -221,32 +221,41 @@ fn disableDtor(owned x: MoreComplexExample):
 
 
 # expected-error @+2 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
-fn fieldConsumeError(owned w: MoreComplexExample,
+fn fieldConsumeError(owned w: MoreComplexExample, # expected-note {{'w' declared here}}
                      owned x: MoreComplexExample,
                      owned y: MoreComplexExample,
-                     owned z: MoreComplexExample):
+                     owned z: MoreComplexExample): # expected-note {{'z' declared here}}
   _ = x.mem^  # Error diagnosed above.
 
   # This is ok because we replace the mem field.
   _ = y.mem^
   y.mem = MemExample()
 
-  # expected-error @+1 {{value 'z.mem' cannot be consumed, because 'z' is used later}}
   _ = z.mem^
-  _ = z.mem^
+  _ = z.mem^ # expected-error {{use of uninitialized value 'z.mem'}}
   z.mem = MemExample()
 
-  # expected-error @+1 {{value 'w.mem' cannot be consumed, because 'w' is used later}}
   _ = w.mem^
-  use(w)
+  use(w) # expected-error {{use of uninitialized value 'w.mem'}}
 
   # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
   var twoRegsRP = TwoRegsRP()
   _ = twoRegsRP.reg1^
 
-  var single1 = MemExample()
-  _ = single1^  # expected-error {{value 'single1' cannot be consumed, because it is used later}}
-  _ = single1
+  var single1 = MemExample() # expected-note {{'single1' declared here}}
+  _ = single1^
+  _ = single1   # expected-error {{use of uninitialized value 'single1'}}
+
+
+
+# https://github.com/modularml/modular/issues/15404
+struct SimpleStructNoDtor:
+  fn __init__(inout self): pass
+fn consume(owned x: SimpleStructNoDtor): pass
+fn issue15404():
+  let c = SimpleStructNoDtor() # expected-note {{'c' declared here}}
+  consume(c^)
+  consume(c^) # expected-error {{use of uninitialized value 'c'}}
 
 
 ##===----------------------------------------------------------------------===##
