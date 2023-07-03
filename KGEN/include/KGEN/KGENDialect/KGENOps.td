@@ -55,11 +55,27 @@ def KGEN_FuncOp : KGENOp<"func", [
       kgen.return %0 : index
     }
     ```
+
+    There are cases where we might have a `kgen.func` with a
+    `precompiledBodyRef` attribute, like so:
+    ```mlir
+    kgen.func @someFn(%arg0: index) -> index attributes {
+      precompiledBodyRef = @importedLib
+    } {
+      ...
+    }
+
+    The presence of this attribute means that the function was already compiled
+    all the way to an object file once, so we should avoid doing it again.
+    ```
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+                       // If the body was precompiled, this will hold a reference
+                       // to the link directive.
+                       OptionalAttr<SymbolRefAttr>:$precompiledBodyRef);
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -69,6 +85,19 @@ def KGEN_FuncOp : KGENOp<"func", [
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     FunctionType getFunctionType() { return getSignature().getValues(); }
   }];
+
+  let builders = [
+    // Builder to be used when there is no precompiled body.
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+                   "AlwaysInlineLevel":$alwaysInlineLevel), [{
+      build($_builder, $_state, name, signature, alwaysInlineLevel, {});
+    }]>,
+    // Builder to be used when there is no precompiled body.
+    OpBuilder<(ins "StringRef":$name, "SignatureType":$signature,
+                   "AlwaysInlineLevel":$alwaysInlineLevel), [{
+      build($_builder, $_state, name, signature, alwaysInlineLevel, {});
+    }]>
+  ];
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
