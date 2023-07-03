@@ -423,7 +423,7 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 LogicalResult DeclResolver::importModule(ASTDecl &context,
                                          StringAttr moduleName,
                                          StringAttr importName, SMLoc loc) {
-  ASTDecl &module = shared.importModule(moduleName, loc);
+  ASTDecl &module = shared.importModule(moduleName, &context, loc);
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
                           /*declName=*/StringAttr(), moduleName, loc, context);
 }
@@ -434,7 +434,7 @@ LogicalResult DeclResolver::importDeclFromModule(ASTDecl &context,
                                                  StringAttr destName,
                                                  SMLoc loc) {
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(moduleName, loc);
+  ASTDecl &module = shared.importModule(moduleName, &context, loc);
   if (failed(resolveFully(module, loc)))
     return failure();
 
@@ -445,10 +445,10 @@ LogicalResult DeclResolver::importDeclFromModule(ASTDecl &context,
     return failure();
   if (result.isFailure()) {
     // Emit an error with the module name without the leading `$` mangle.
-    StringRef moduleName =
-        cast<FileModuleOp>(module.getIfOperation()).getName();
-    assert(moduleName.startswith("$") && "unexpected module name mangling");
-    return emitError(loc, "module '" + moduleName.drop_front() +
+    StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
+    StringRef declType = isa<PackageOp>(module) ? "package" : "module";
+    assert(name.startswith("$") && "unexpected module/package name mangling");
+    return emitError(loc, declType + " '" + name.drop_front() +
                               "' does not contain '" + sourceName.getValue() +
                               "'");
   }
@@ -460,7 +460,7 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
                                                           StringAttr moduleName,
                                                           llvm::SMLoc loc) {
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(moduleName, loc);
+  ASTDecl &module = shared.importModule(moduleName, &context, loc);
   if (failed(resolveFully(module, loc)))
     return failure();
 
@@ -554,8 +554,8 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
           decl.resolvedness == DeclResolvedness::unparsed) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
-        if (isa<FuncOp, FileModuleOp, UnresolvedImportOp, StructDeclOp,
-                AliasForwardDeclOp>(decl)) {
+        if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
+                StructDeclOp, AliasForwardDeclOp>(decl)) {
           deferredDecls.insert(&decl);
           continue;
         }
@@ -661,7 +661,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             decl.hasReferenceError = true;
           decl.getCursor() = lexer.getCursor();
         })
-        .Case<LIT::FileModuleOp, ModuleOp>([&](auto op) { /*Nothing*/ })
+        .Case<LIT::FileModuleOp, ModuleOp, PackageOp>(
+            [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           // Invalid function arguments will not be resolved to a value and will
           // have a null IR representation.
@@ -703,7 +704,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
+        .Case<FileModuleOp, LIT::FuncOp, PackageOp, StructDeclOp, StructFieldOp,
               VarLetDeclOp, LetRegDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
             [&](auto op) {
               // Parse the body of the declaration from the correct point.
@@ -2459,6 +2460,50 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
   }
 
   return ParserBase::parseSuite(decl, lexer);
+}
+
+//===----------------------------------------------------------------------===//
+// Package Decl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveBody(LIT::PackageOp op, Lexer &lexer,
+                                      ASTDecl &decl) {
+  // A source package corresponds to a directory, resolving the body requires
+  // iterating the filesystem directory and importing the corresponding
+  // children.
+
+  // Grab the directory that this package is defined in.
+  std::optional<std::string> directoryStr = shared.getModuleSourcePath(decl);
+  if (!directoryStr)
+    return emitError(op.getLoc(), "unable to locate package directory");
+
+  std::error_code ec{};
+  std::filesystem::path directory(*directoryStr);
+  if (!std::filesystem::is_directory(directory, ec) && !ec)
+    return emitError(op.getLoc(), "unable to locate package directory");
+
+  // Iterate the directory and import nested modules.
+  OpBuilder builder = decl.getDeclEndBuilder();
+  for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+    if (!shared.isModulePath(entry.path()))
+      continue;
+    std::string name =
+        entry.path().filename().replace_extension().generic_string();
+
+    // Create an unresolved relative import for this module. That way we only
+    // need to actually pull anything in from the filesystem if it gets
+    // referenced.
+    StringAttr importName = builder.getStringAttr("." + name);
+    StringAttr boundName = builder.getStringAttr(name);
+
+    auto importDecl = builder.create<LIT::UnresolvedImportOp>(
+        op->getLoc(), importName, boundName, /*declName=*/StringAttr());
+    getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
+                              lexer.getCursor(), lexer.getCursor(),
+                              /*indentation=*/-1);
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

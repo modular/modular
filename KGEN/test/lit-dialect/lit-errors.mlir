@@ -299,7 +299,7 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes
 
 // -----
 
-// expected-error@below {{expected only `lit.file_module` or `lit.package` in its body}}
+// expected-error@below {{expected only `lit.file_module`, `lit.package`, or `lit.unresolved_import` in its body}}
 lit.package @MyPackage {
   // expected-note @below {{see operation defined here}}
   kgen.unreachable

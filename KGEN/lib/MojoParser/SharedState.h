@@ -15,6 +15,7 @@
 #include "Diags.h"
 
 #include "mlir/IR/BuiltinOps.h"
+#include <filesystem>
 
 namespace M {
 struct MojoParserConfig;
@@ -167,14 +168,22 @@ public:
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
-  /// Import the specified module, returning the module decl. Always returns a
-  /// valid decl, even if the module could not be found.
-  ASTDecl &importModule(StringRef moduleName, llvm::SMLoc loc);
+  /// Import the specified module or package, returning the decl. Always returns
+  /// a valid decl, even if a corresponding module or package could not be
+  /// found.
+  ASTDecl &importModule(StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc);
 
   /// Create a new module with the given name, location, and body.
   ASTDecl &createModule(StringRef moduleName,
                         const llvm::MemoryBuffer *moduleBuffer,
                         FileLineColLoc loc);
+
+  /// Return the source path for the given module decl, or nullopt if the decl
+  /// doesn't have a source path.
+  std::optional<std::string> getModuleSourcePath(ASTDecl &module);
+
+  /// Returns true if the given local path corresponds with a module or package.
+  bool isModulePath(const std::filesystem::path &path);
 
   /// Cache the state of any modules that we parsed.
   void cacheParsedModules();
@@ -244,23 +253,47 @@ public:
   Impl &getImpl() const { return *impl; }
 
 private:
-  /// The internal state of an imported module.
+  /// The internal state of an imported module or package.
   struct ModuleState;
 
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 
-  /// Import the specified module, returning the module state. Always returns a
-  /// valid module state, even if the module could not be found.
-  ModuleState &importModuleState(StringRef moduleName, llvm::SMLoc loc);
+  /// Import the specified module or package, returning the module state. Always
+  /// returns a valid module state, even if the module could not be found.
+  ModuleState &importModuleState(StringRef name, ASTDecl *context,
+                                 llvm::SMLoc loc);
+
+  /// Import the specified module or package nested within the given parent
+  /// decl, returning the module state. Always returns a valid module state,
+  /// even if the module could not be found.
+  ModuleState &importSubModuleState(StringRef name, ASTDecl *parentDecl,
+                                    llvm::SMLoc loc);
+
+  /// Import the specified module or package, which contains `.` indexing,
+  /// returning the module state. Always returns a valid module state, even if
+  /// the module could not be found.
+  ModuleState &importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
+                                         llvm::SMLoc loc);
 
   /// Create a new module state with the given name, location, and body.
-  ModuleState &createModuleState(StringRef moduleName,
+  ModuleState &createModuleState(StringAttr declName, StringAttr mangledName,
                                  const llvm::MemoryBuffer *moduleBuffer,
-                                 FileLineColLoc loc);
+                                 ModuleState &parentState, FileLineColLoc loc);
+
+  /// Create a new module state for a package with the given name, location, and
+  /// body.
+  ModuleState &createPackageState(StringAttr declName, StringAttr mangledName,
+                                  StringRef packagePath,
+                                  ModuleState &parentState, FileLineColLoc loc);
+
+  /// Create an error module state with the given mangled name.
+  ModuleState &createErrorModuleState(StringAttr mangledName,
+                                      ModuleState &parentState, SMLoc loc);
 
   /// Resolve the dependencies of the given module.
-  void resolveModuleDependencies(ModuleState &module, StringRef moduleBuffer);
+  void resolveModuleDependencies(ModuleState &module, ASTDecl *parentDecl,
+                                 StringRef moduleBuffer);
 
   /// Attempt to get a cached version of the given modules. If loading from the
   /// cache fails, the modules will be processed as normal.

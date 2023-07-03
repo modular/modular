@@ -924,6 +924,8 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
     ```mlir
     // Import a module as the given name.
     lit.unresolved_import @module as @newModule
+    // Import a relative module as the given name.
+    lit.unresolved_import @package.module as @newModule
     // Import a function within the module as the given name.
     lit.unresolved_import @module -> @func as @newFunc
     ```

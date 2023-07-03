@@ -31,6 +31,7 @@ class FileModuleOp;
 class FuncOp;
 class Lexer;
 class LexerCursor;
+class PackageOp;
 class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
@@ -164,6 +165,7 @@ private:
   ParseResult resolveBody(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(PackageOp op, Lexer &lexer, ASTDecl &decl);
 
   ParseResult resolveSignature(LIT::UnresolvedImportOp op, Lexer &lexer,
                                ASTDecl &decl);
