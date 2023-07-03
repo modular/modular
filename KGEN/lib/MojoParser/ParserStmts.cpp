@@ -454,7 +454,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.
   ExprNode *expr = nullptr;
-  if (parseExpressionOrAssignmentStmt(expr, stmtIndent))
+  if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
 
   // Emit the expression and ignore the results.  If it is an assignment
@@ -484,7 +484,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If there is an expression list present, parse it.
   ExprNode *operandExpr = nullptr;
-  if (parseExpressionList(loc, operandExpr, returnIndent))
+  if (!isTokenInCurrentStatement(returnIndent))
+    operandExpr = getNoneExpr(loc);
+  else if (parseExpressionList(operandExpr, returnIndent))
     return failure();
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
@@ -546,7 +548,7 @@ ParseResult StmtParser::parseParamReturnStmt(size_t returnIndent) {
     return success();
 
   ExprNode *expr = nullptr;
-  if (parseExpressionList(startLoc, expr, returnIndent, Token::r_square) ||
+  if (parseExpressionList(expr, returnIndent) ||
       parseToken(Token::r_square, "expected ']' at end of parameter list",
                  &endLoc))
     return failure();
@@ -635,12 +637,10 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   llvm::SMRange loc = consumeToken(Token::kw_raise).getLocRange();
 
   ExprNode *errorExpr = nullptr;
-  if (!getToken().getIndentation().has_value() ||
-      *getToken().getIndentation() > raiseIndent) {
-    // If there is an error expression, parse it.
-    if (parseExpression(errorExpr, raiseIndent))
-      return failure();
-  }
+  // If there is an error expression, parse it.
+  if (isTokenInCurrentStatement(raiseIndent) &&
+      parseExpression(errorExpr, raiseIndent))
+    return failure();
 
   // TODO: Support "from" exception chaining.
 
@@ -813,8 +813,8 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   builder.create<HLCF::ContinueOp>(whileLoc);
 
   // The 'else' block is executed only when the condition check fails.
-  if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
     builder.setInsertionPointToStart(exit);
     if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
@@ -944,8 +944,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   builder.create<HLCF::ContinueOp>(forLoc);
 
   // The 'else' block is executed only when the condition check fails.
-  if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
     builder.setInsertionPointToStart(exit);
     if (parseToken(Token::colon, "expected ':' after else") ||
         parseLocalScopeSuite(curIndent))
@@ -1387,8 +1387,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   createYield(ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
-         getToken().getIndentation().has_value() &&
-         *getToken().getIndentation() >= curIndent) {
+         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
     Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
     if (parseExpression(condExp, std::nullopt) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
@@ -1406,8 +1405,8 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   }
 
   createElseBlock();
-  if (getToken().getIndentation().has_value() &&
-      *getToken().getIndentation() >= curIndent && consumeIf(Token::kw_else)) {
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
       return failure();
     if (failed(parseLocalScopeSuite(curIndent)))

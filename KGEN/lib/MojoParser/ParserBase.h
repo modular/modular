@@ -148,6 +148,28 @@ public:
                           ArrayRef<Token::Kind> terminators,
                           SMLoc *firstCommaLoc = nullptr);
 
+  /// Return true if the current token is part of the current statement, false
+  /// if it is the start of a new one.  When stmtIndent is null, the token is
+  /// always considered part of the current statement (returns true).
+  ///
+  /// When allowSameIndent=true, a matching indent level is considered part of
+  /// this statement.  An 'else' is part of an 'if' when it is at the same
+  /// indent level as the 'if', it doesn't need to be indented extra.
+  bool isTokenInCurrentStatement(std::optional<size_t> stmtIndent,
+                                 bool allowSameIndent = false) const {
+    // If the current token is on the same line as the last or if we should
+    // always eat tokens (e.g. because within parens), then keep going.
+    auto tokIndent = getToken().getIndentation();
+    if (!tokIndent.has_value() || !stmtIndent.has_value())
+      return true;
+
+    // If this token is on its own line is indented less or the same as the
+    // current statement, then it is the start of a new statement.
+    if (allowSameIndent)
+      return tokIndent >= stmtIndent;
+    return tokIndent > stmtIndent;
+  }
+
   /// Skip tokens until we get to a token at start of line that has indentation
   /// that is equal or less than the specified indentation.  This is used for
   /// multiphase parsing.
@@ -156,16 +178,6 @@ public:
   /// This should only be used for statements that can share a line with other
   /// statements with ; separation.
   void skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false);
-
-  /// Consume tokens until we get to the end of the current line, used for error
-  /// recovery.
-  /// TODO: we should know the indentation of the current statement so we can
-  /// eat trailing components that lack a \.
-  void eatToEndOfLine() {
-    while (!getToken().getIndentation().has_value() &&
-           getToken().isNot(Token::eof))
-      consumeToken();
-  }
 
   //===--------------------------------------------------------------------===//
   // Integration with parsers for subsets of the grammar.
@@ -192,17 +204,16 @@ public:
                               std::optional<size_t> stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
-  /// tuple expression if there are commas.  If 'terminators' is specified,
-  /// (e.g. in a subscript expression) then parsing ignores indentation and
-  /// looks for the specified terminator.
-  ParseResult parseExpressionList(SMLoc emptyLoc, ExprNode *&result,
-                                  std::optional<size_t> stmtIndent,
-                                  ArrayRef<Token::Kind> terminators = {});
+  /// tuple expression if there are commas.
+  ParseResult parseExpressionList(ExprNode *&result,
+                                  std::optional<size_t> stmtIndent);
 
   ParseResult parseStarredItem(ExprNode *&expr);
-  /// Parse an expression, allowing `=`, and `+=`.
-  ParseResult parseExpressionOrAssignmentStmt(ExprNode *&expr,
-                                              std::optional<size_t> stmtIndent);
+
+  /// Parse a simple_stmt production containing an expression, including
+  /// expression_stmt and {augmented_|annotated_|}assignment_stmt.
+  ParseResult parseSimpleStmtExprs(ExprNode *&expr,
+                                   std::optional<size_t> stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);
