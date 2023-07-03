@@ -16,7 +16,7 @@
 #define MOJO_DRIVER_COMMONOPTIONS_TD
 
 include "KGEN/DriverCommand.td"
-include "Support/Option/OptParser.td"
+include "llvm/Option/OptParser.td"
 
 def CommonOptionGroup : OptionGroup<"Common Options">, Index<99>;
 

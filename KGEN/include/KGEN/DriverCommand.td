@@ -12,7 +12,7 @@
 #ifndef KGEN_DRIVERCOMMAND_TD
 #define KGEN_DRIVERCOMMAND_TD
 
-include "Support/Option/OptParser.td"
+include "llvm/Option/OptParser.td"
 
 // A description of a command line executable, or subcommand of a top-level
 // driver executable. In addition to documentation about the command, this also
