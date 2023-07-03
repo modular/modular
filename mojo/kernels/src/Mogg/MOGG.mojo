@@ -133,6 +133,8 @@ fn MOGGExport():
     alias _splat = splat
     alias _transpose = transpose
     alias _elementwise = elementwise_wrapper
+    alias _get_int_from_shape = get_int_from_shape
+    alias _tensor_to_shape = tensor_to_shape
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
 
@@ -255,6 +257,29 @@ fn to_shape[
     unroll[rank, body]()
 
     return shape_tuple
+
+
+# Convert a tensor into a shape.
+@always_inline
+fn tensor_to_shape[
+    type: DType,
+    rank: Int,
+](tensor: NDBuffer[1, DimList.create_unknown[1](), type],) -> StaticIntTuple[
+    rank
+]:
+    var out = StaticIntTuple[rank]()
+    for i in range(rank):
+        out[i] = tensor[i].to_int()
+
+    return out
+
+
+# Extract a value from a shape.
+@always_inline
+fn get_int_from_shape[
+    param_index: Int, rank: Int
+](shape: StaticIntTuple[rank]) -> Int:
+    return shape[param_index]
 
 
 @always_inline
