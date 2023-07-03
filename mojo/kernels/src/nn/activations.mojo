@@ -16,7 +16,6 @@ from Math import (
     copysign,
     erf,
     exp,
-    expm1,
     clamp,
     max,
     min,
@@ -179,7 +178,7 @@ fn elu[
     Returns:
         SIMD[type, simd_width]: The result of the ELU operation.
     """
-    return (x >= 0).select(x, expm1(x))
+    return (x >= 0).select(x, exp(x) - 1)
 
 
 # ===----------------------------------------------------------------------===#
