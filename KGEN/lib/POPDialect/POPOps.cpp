@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -666,42 +667,20 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 // GlobalOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseGlobalRegions(OpAsmParser &p, Region &initializer,
-                                      Region &destructor) {
-  OpAsmParser::Argument arg;
-  if (p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
-      p.parseRParen() || p.parseRegion(initializer, arg) || p.parseComma() ||
-      p.parseLParen() || p.parseArgument(arg, /*allowType=*/true) ||
-      p.parseRParen() || p.parseRegion(destructor, arg))
-    return failure();
-  return success();
-}
-
-static void printGlobalRegions(OpAsmPrinter &p, Operation *op,
-                               Region &initializer, Region &destructor) {
-  p << '(';
-  p.printRegionArgument(initializer.getArgument(0));
-  p << ") ";
-  p.printRegion(initializer, /*printEntryBlockArgs=*/false);
-  p << ", (";
-  p.printRegionArgument(destructor.getArgument(0));
-  p << ") ";
-  p.printRegion(destructor, /*printEntryBlockArgs=*/false);
-}
-
-LogicalResult GlobalOp::verify() {
+LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
   auto ptrType = PointerType::get(getType());
-  auto verifyRegion = [&](Region &region, StringRef name) -> LogicalResult {
-    if (region.getNumArguments() != 1)
-      return emitOpError() << "expected " << name
-                           << " region to have one argument";
-    if (region.getArgument(0).getType() != ptrType)
-      return emitOpError() << "expected " << name << " argument to be type "
-                           << ptrType;
+  auto module = (*this)->getParentOfType<ModuleOp>();
+  auto verifyFunc = [&](SymbolRefAttr ref, StringRef name) -> LogicalResult {
+    auto func = symtab.lookupSymbolIn<FuncOp>(module, ref);
+    if (!func || func.getNumResults() != 0 || func.getNumArguments() != 1 ||
+        func.getArgumentTypes().front() != ptrType)
+      return emitOpError() << name << ' ' << ref
+                           << " does not reference a function with signature ("
+                           << ptrType << ") -> ()";
     return success();
   };
-  if (failed(verifyRegion(getInitializer(), "initializer")) ||
-      failed(verifyRegion(getDestructor(), "destructor")))
+  if (failed(verifyFunc(getCtor(), "constructor")) ||
+      failed(verifyFunc(getDtor(), "destructor")))
     return failure();
   return success();
 }
