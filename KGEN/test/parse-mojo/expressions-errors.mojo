@@ -301,6 +301,11 @@ def bad_assignment1(a: Int, b: Int):
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
 
+fn unused_assignments():
+  var a = 1
+  a = a  # ok of course.
+  a := a # expected-warning {{'Int' value is unused}}
+
 async fn async_function() -> Int:
     return 0
 
@@ -312,11 +317,6 @@ fn call_async_fn_in_param():
     alias await_it = await awaitable
     # expected-error @below {{cannot await inside a non-async function}}
     await Coroutine[Int](async_function())
-
-
-def doWalrus():
-  # expected-error @+1 {{':=' operator not implemented yet}}
-  bad_assignment0(1, abc := 42)
 
 # See Issue #15578
 def doIs(a: Int, b: Int):

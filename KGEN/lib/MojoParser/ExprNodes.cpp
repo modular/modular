@@ -1994,20 +1994,23 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 ///    def test2(): print("test2"); return 1
 ///    a[test1()] = test2()
 ///  ==> test2; test1
+///
+/// The walrus := operator in Python requires the left side to be a simple
+/// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
   // In an assignment, we emit the RHS into the LHS as its context.  This is
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
   ValueDest assignDest(lhs, EC_Assignment);
-  if (!rhs->emitIR(assignDest, emitter)) {
+  auto resultValue = rhs->emitIR(assignDest, emitter);
+  if (!resultValue) {
     assignDest.resetForError();
     return {};
   }
 
-  // Assignments are not actually expressions in Python.  We treat them this
-  // way for consistency, but model them as returning None.
-  auto noneAttr = emitter.shared.getNoneAttr();
-  return emitter.emitResult(noneAttr, this, dest);
+  // To support the walrus operator and chained assignment like `x = y = 1`, the
+  /// assignment operation returns a borrowed version of the dest value.
+  return emitter.emitResult(resultValue, this, dest);
 }
 
 /// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS
@@ -2039,14 +2042,10 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(dest, emitter);
-  if (kind == kAssign) // `x = y`
+  if (kind == kAssign || kind == kWalrus) // `x = y` and `x := y`
     return emitAssign(dest, emitter);
   if (isAssignmentStmt()) // `x += y`
     return emitInplace(dest, emitter);
-  if (kind == kWalrus) {
-    emitter.emitError(getLoc(), "':=' operator not implemented yet");
-    return {};
-  }
 
   // Othewise we emit the LHS followed by the RHS.
   AnyValue lhsRV = emitter.emitExpr(lhs, EC_OperatorOperandValue);

@@ -637,45 +637,57 @@ def defTests(a: Int, b: Int, untyped) -> None:
 def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %a_0 = lit.varlet.decl "a", var = true
   # CHECK:      %b_1 = lit.varlet.decl "b", var = true
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a += b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__isub__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__isub__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a -= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imul__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__imul__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a *= b
-  # HECK:      %[[LOAD_C:.*]] = pop.load %c_2  : !pop.pointer<@M>
-  # HECK-NEXT: %[[RES:.*]] = kgen.call @M::@"__imatmul__($Int::Int&,$Int::Int)"(%d_3, %[[LOAD_C]])
+  # HECK:      [[LOAD_C:%.*]] = pop.load %c_2  : !pop.pointer<@M>
+  # HECK-NEXT: [[RES:%.*]] = kgen.call @M::@"__imatmul__($Int::Int&,$Int::Int)"(%d_3, [[LOAD_C]])
   #d @= c
-  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__itruediv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # HECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # HECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__itruediv__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   #a /= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a //= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a %= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a **= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__irshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__irshift__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a >>= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ilshift__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ilshift__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a <<= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__iand__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__iand__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a &= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ixor__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ixor__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a ^= b
-  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
   a |= b
+
+  # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
+  # CHECK-NEXT: pop.store [[FOUR]], %b_1
+  # CHECK-NEXT: pop.store [[FOUR]], %a_0
+  a = b = 4
+
+  # Walrus
+  # CHECK-NEXT: [[SEVEN:%.*]] = kgen.param.constant: {{.*}}value = 7
+  # CHECK-NEXT: pop.store [[SEVEN]], %b_1
+  # CHECK-NEXT: [[A:%.*]] = pop.load %a_0
+  # CHECK-NEXT: kgen.call {{.*}}simpleMath{{.*}}([[A]], [[SEVEN]])
+  simpleMath(a, b := 7)
 
 ##===----------------------------------------------------------------------===##
 # Literals
