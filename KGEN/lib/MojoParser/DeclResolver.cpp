@@ -1929,7 +1929,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // If the function raises, it implicitly gets a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
-    if (ASTType errorType = shared.getBuiltinErrorType(decl.getLoc())) {
+    if (ASTType errorType =
+            shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc())) {
       resultType = POP::VariantType::get({errorType, resultType});
 
       // FIXME(#12604): We cannot return an Error type from a function that also

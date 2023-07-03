@@ -664,7 +664,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   // If we had an error, emit it.
   Value errorVal;
   if (errorExpr) {
-    ASTType errorType = shared.getBuiltinErrorType(loc.Start);
+    ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), loc.Start);
     if (!errorType)
       return success();
 
@@ -976,7 +976,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   SMLoc errValLoc = getToken().getLoc();
-  ASTType errorType = shared.getBuiltinErrorType(errValLoc);
+  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), errValLoc);
   if (!errorType.isRegisterPassable(errValLoc, shared)) {
     emitError(errValLoc) << errorType << " is not a @register_passable type";
     return failure();
@@ -1212,7 +1212,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   }
 
   // Lookup the error type.
-  ASTType errorType = shared.getBuiltinErrorType(smLoc);
+  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
   if (!errorType)
     return failure();
   if (!errorType.isRegisterPassable(smLoc, shared)) {

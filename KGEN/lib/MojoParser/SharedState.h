@@ -236,18 +236,19 @@ public:
       kBuiltinDoubleModuleName,      kBuiltinStringRefModuleName};
 
   /// Get a builtin type, or emit an error and return null if invalid.
-  ASTType getBuiltinBoolType(llvm::SMLoc loc);
-  ASTType getBuiltinTupleType(llvm::SMLoc loc);
-  ASTType getBuiltinErrorType(llvm::SMLoc loc);
-  ASTType getBuiltinIntType(llvm::SMLoc loc);
-  ASTType getBuiltinStringLiteralType(llvm::SMLoc loc);
-  ASTType getBuiltinSliceType(llvm::SMLoc loc);
-  ASTType getBuiltinListLiteralType(llvm::SMLoc loc);
-  ASTType getBuiltinDoubleType(llvm::SMLoc loc);
+  ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc);
 
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.
-  ASTType getBuiltinTupleInstantion(llvm::SMLoc loc, ArrayRef<Type> elements);
+  ASTType getBuiltinTupleInstantion(ASTDecl &context, llvm::SMLoc loc,
+                                    ArrayRef<Type> elements);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

@@ -746,67 +746,69 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
   return importSubModuleState(name, parentDecl, loc);
 }
 
-static ASTType resolveBuiltinModuleType(llvm::SMLoc loc, StringRef moduleName,
+static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
+                                        StringRef moduleName,
                                         StringRef typeName,
                                         SharedState &shared) {
-  StringAttr moduleStrAttr =
-      getMangledModuleName(shared.getContext(), moduleName);
-  auto &impl = shared.getImpl();
-  auto it = impl.topLevelModuleState->nestedModules.find(moduleStrAttr);
-  if (it != impl.topLevelModuleState->nestedModules.end()) {
-    ASTDecl &moduleDecl = *it->second->decl;
-    LookupResult lookup =
-        shared.lookupAndResolveDecl(typeName, loc, moduleDecl,
-                                    /*searchParentScopes=*/false);
-    if (!lookup.isFailure() && !lookup.getIfSuccess().empty())
-      return lookup.getIfSuccess()[0]->getSelfType();
-  }
+  // Unresolved wildcard imports have been added for all builtin modules. Search
+  // from the contextual ASTDecl.
+  LookupResult lookup = shared.lookupAndResolveDecl(
+      typeName, loc, context, /*searchInParentScopes=*/true);
+  if (!lookup.isFailure() && !lookup.getIfSuccess().empty())
+    return lookup.getIfSuccess()[0]->getSelfType();
 
-  shared.emitError(loc, "internal error: could not find builtin '")
-      << typeName << "' type";
+  shared.emitError(loc, "could not find builtin '") << typeName << "' type";
   return {};
 }
 
-ASTType SharedState::getBuiltinBoolType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinBoolModuleName, "Bool", *this);
+ASTType SharedState::getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinBoolModuleName, "Bool",
+                                  *this);
 }
 
-ASTType SharedState::getBuiltinTupleType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinTupleModuleName, "Tuple", *this);
+ASTType SharedState::getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinTupleModuleName,
+                                  "Tuple", *this);
 }
 
-ASTType SharedState::getBuiltinErrorType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinErrorModuleName, "Error", *this);
+ASTType SharedState::getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinErrorModuleName,
+                                  "Error", *this);
 }
 
-ASTType SharedState::getBuiltinIntType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinIntModuleName, "Int", *this);
+ASTType SharedState::getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinIntModuleName, "Int",
+                                  *this);
 }
 
-ASTType SharedState::getBuiltinStringLiteralType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinStringModuleName,
+ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
+                                                 llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinStringModuleName,
                                   "StringLiteral", *this);
 }
 
-ASTType SharedState::getBuiltinSliceType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinSliceModuleName, "slice", *this);
+ASTType SharedState::getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinSliceModuleName,
+                                  "slice", *this);
 }
 
-ASTType SharedState::getBuiltinListLiteralType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinListModuleName, "ListLiteral",
-                                  *this);
+ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,
+                                               llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinListModuleName,
+                                  "ListLiteral", *this);
 }
 
-ASTType SharedState::getBuiltinDoubleType(llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(loc, kBuiltinDoubleModuleName, "FloatLiteral",
-                                  *this);
+ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, kBuiltinDoubleModuleName,
+                                  "FloatLiteral", *this);
 }
 
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
-ASTType SharedState::getBuiltinTupleInstantion(llvm::SMLoc loc,
+ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
+                                               llvm::SMLoc loc,
                                                ArrayRef<Type> elements) {
-  auto tupleType = getBuiltinTupleType(loc);
+  auto tupleType = getBuiltinTupleType(context, loc);
   if (!tupleType)
     return {};
 
