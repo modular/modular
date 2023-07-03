@@ -101,9 +101,11 @@ public:
   }
 
 private:
-  /// Return true if the current token is the start of another statement, false
-  /// if it is part of this one.
-  bool isTokenStartOfNextStatement();
+  /// Return true if the current token is part of the current statement, false
+  /// if it is the start of a new one.
+  bool isTokenInCurrentStatement() const {
+    return ParserBase::isTokenInCurrentStatement(stmtIndent);
+  }
 
   ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
@@ -127,24 +129,6 @@ private:
   std::optional<size_t> stmtIndent;
 };
 } // namespace M::KGEN::LIT
-
-//===----------------------------------------------------------------------===//
-// Mechanics
-//===----------------------------------------------------------------------===//
-
-/// Return true if the current token is the start of another statement, false
-/// if it is part of this one.
-bool ExprParser::isTokenStartOfNextStatement() {
-  // If the current token is on the same line as the last or if we should always
-  // eat tokens, then keep going.
-  auto tokIndent = getToken().getIndentation();
-  if (!tokIndent.has_value() || !stmtIndent.has_value())
-    return false;
-
-  // If this token is on its own line and we care, then it is a new statement if
-  // it is as indented (or less) than the statement.
-  return tokIndent <= stmtIndent;
-}
 
 //===----------------------------------------------------------------------===//
 // Parsing rules
@@ -288,7 +272,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
-  while (!isTokenStartOfNextStatement() && minPrec < infixInfo.precedence) {
+  while (isTokenInCurrentStatement() && minPrec < infixInfo.precedence) {
     Token::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
 
@@ -378,7 +362,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
   exprs.push_back(rhs);
   ops.push_back(kind);
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
-  while (!isTokenStartOfNextStatement() &&
+  while (isTokenInCurrentStatement() &&
          infixInfo.precedence == Precedence::kComparison) {
     consumeToken();
     ExprNode *cmpOperand;
@@ -492,7 +476,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::string: { // primary -> literal -> stringliteral
     SmallVector<StringRef> spellings;
     // Python supports string literal concatenation
-    while (getToken().is(Token::string) && !isTokenStartOfNextStatement()) {
+    while (getToken().is(Token::string) && isTokenInCurrentStatement()) {
       spellings.push_back(getToken().getSpelling());
       consumeToken(Token::string);
     }
@@ -547,7 +531,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
   // Parse postfix productions so long as they aren't the start of the next
   // statement.
-  while (!isTokenStartOfNextStatement()) {
+  while (isTokenInCurrentStatement()) {
     auto loc = getToken().getLoc();
 
     // Handle "attributeref": x.y
@@ -588,7 +572,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
       // We know this is a binary ^ if there is a primary expression after it.
       if (isPrimaryExprToken(getToken().getKind()) &&
-          !isTokenStartOfNextStatement()) {
+          isTokenInCurrentStatement()) {
         cursor.restore(lexer);
         break;
       }
@@ -1030,21 +1014,9 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
 //===----------------------------------------------------------------------===//
 
 /// Parse an expression_list production, returning a single expression or a
-/// tuple expression if there are commas.  If 'terminators' is specified,
-/// (e.g. in a subscript expression) then parsing ignores indentation and
-/// looks for the specified terminator.
-ParseResult ParserBase::parseExpressionList(SMLoc emptyLoc, ExprNode *&result,
-                                            std::optional<size_t> stmtIndent,
-                                            ArrayRef<Token::Kind> terminators) {
-  // If this expression_list has no terminator (e.g. not in a subscript list
-  // terminated with ], and if it is empty, then produce a None value.  This
-  // makes return statements happy.
-  if (terminators.empty() && getToken().getIndentation().has_value() &&
-      stmtIndent.has_value() && *getToken().getIndentation() <= *stmtIndent) {
-    result = getNoneExpr(emptyLoc);
-    return success();
-  }
-
+/// tuple expression if there are commas.
+ParseResult ParserBase::parseExpressionList(ExprNode *&result,
+                                            std::optional<size_t> stmtIndent) {
   ExprParser parser(getLexer(), stmtIndent);
   SmallVector<ExprNode *> exprs;
   auto parseItem = [&]() -> ParseResult {
@@ -1053,7 +1025,8 @@ ParseResult ParserBase::parseExpressionList(SMLoc emptyLoc, ExprNode *&result,
   };
 
   SMLoc firstCommaLoc;
-  if (parser.parseCommaSeparatedList(parseItem, terminators, &firstCommaLoc))
+  if (parser.parseCommaSeparatedList(parseItem, /*terminators=*/{},
+                                     &firstCommaLoc))
     return failure();
 
   // If we parsed multiple items or have a comma, then this is actually a tuple.
@@ -1083,25 +1056,16 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
   return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);
 }
 
-/// assignment_stmt ::=
-///                 (target_list "=")+ (starred_expression | yield_expression)
-/// target_list     ::=  target ("," target)* [","]
-/// target ::= identifier
-///          | "(" [target_list] ")" | "[" [target_list] "]"
-///          | attributeref | subscription | slicing | "*" target
+/// Parse a simple_stmt production containing an expression, including
+/// expression_stmt and {augmented_|annotated_|}assignment_stmt.
 ///
 /// expression_stmt ::= starred_expression
+/// assignment_stmt ::=
+///              (expression_list "=")+ (starred_expression | yield_expression)
 /// augmented_assignment_stmt ::=
-///                         augtarget augop (expression_list |
-///                         yield_expression)
-/// augtarget ::=  identifier | attributeref | subscription | slicing
-/// augop ::=  "+=" | "-=" | "*=" | "@=" | "/=" | "//=" | "%=" | "**="
-///            | ">>=" | "<<=" | "&=" | "^=" | "|="
-///
-/// Parse an expression, allowing `=`, and `+=`.
-ParseResult
-ParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
-                                            std::optional<size_t> stmtIndent) {
+///                        expression "+=" (expression_list | yield_expression)
+ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
+                                             std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kSimpleStmt);
 }
