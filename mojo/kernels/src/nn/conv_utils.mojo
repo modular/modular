@@ -223,12 +223,9 @@ fn get_conv_tile_shape[
     # C tile size is bounded by the input channels.
     let c_tile_size = min(max_c_tile_size, conv_shape.c)
     # F tile size is rounded up to multiple micro_kernel_f.
-    let rounded_f_tile_size = (
-        CF_tile_size // c_tile_size // micro_kernel_f
+    let f_tile_size = max(
+        CF_tile_size // c_tile_size // micro_kernel_f, 1
     ) * micro_kernel_f
-    let f_tile_size: Int = clamp[DType.int32, 1](
-        rounded_f_tile_size, conv_shape.f, micro_kernel_f
-    ).value
 
     return Index(c_tile_size, f_tile_size)
 
