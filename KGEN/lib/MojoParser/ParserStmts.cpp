@@ -1814,7 +1814,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
       argLocs.push_back(translateLocation(arg.loc));
       return success();
     };
-    if (parseCommaSeparatedList(parseArg, Token::r_paren))
+    if (parseCommaSeparatedList(parseArg, Token::r_paren, std::nullopt))
       return failure();
     consumeToken(Token::r_paren);
   }
