@@ -189,7 +189,7 @@ struct InfixInfo {
       return {Precedence::kAssignExpr, ExprNode::kIAnd, false};
     case Token::pipe_equal:
       return {Precedence::kAssignExpr, ExprNode::kIOr, false};
-    case Token::circumflex_equal:
+    case Token::caret_equal:
       return {Precedence::kAssignExpr, ExprNode::kIXor, false};
     case Token::less_less_equal:
       return {Precedence::kAssignExpr, ExprNode::kILShift, false};
@@ -237,7 +237,7 @@ struct InfixInfo {
       return {Precedence::kComparison, ExprNode::kCmpEQ, false};
     case Token::pipe:
       return {Precedence::kOr, ExprNode::kOr, false};
-    case Token::circumflex:
+    case Token::caret:
       return {Precedence::kXor, ExprNode::kXor, false};
     case Token::amp:
       return {Precedence::kAnd, ExprNode::kAnd, false};
@@ -561,9 +561,9 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 
     // Handle postfix ^.  This is a bit tricky because ^ is also an infix
     // expression.  We handle this by consuming it and backtracking if needed.
-    if (getToken().is(Token::circumflex)) {
+    if (getToken().is(Token::caret)) {
       auto cursor = lexer.getCursor();
-      auto loc = consumeToken(Token::circumflex).getLoc();
+      auto loc = consumeToken(Token::caret).getLoc();
 
       // We know this is a binary ^ if there is a primary expression after it.
       if (isPrimaryExprToken(getToken().getKind()) &&
