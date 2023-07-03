@@ -93,6 +93,6 @@ static int demangle(const State &state) {
   return EXIT_SUCCESS;
 }
 
-void M::registerDemangleSubCommand(SubcommandRegistry &registry) {
+void M::registerDemangleSubcommand(SubcommandRegistry &registry) {
   registry.addCallback("demangle", demangle);
 }

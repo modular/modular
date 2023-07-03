@@ -51,6 +51,6 @@ static int repl(const State &state) {
   return llvm::sys::ExecuteAndWait(lldb.get(), lldbArgs);
 }
 
-void M::registerREPLSubCommand(SubcommandRegistry &registry) {
+void M::registerREPLSubcommand(SubcommandRegistry &registry) {
   registry.addCallback("repl", repl);
 }

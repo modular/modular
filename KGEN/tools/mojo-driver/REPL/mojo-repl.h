@@ -13,7 +13,7 @@ class SubcommandRegistry;
 
 /// Initializes the `repl` subcommand and its various options, and registers
 /// its callback function with the registry.
-void registerREPLSubCommand(SubcommandRegistry &registry);
+void registerREPLSubcommand(SubcommandRegistry &registry);
 
 } // namespace M
 

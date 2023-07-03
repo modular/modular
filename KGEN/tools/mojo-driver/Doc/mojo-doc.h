@@ -13,7 +13,7 @@ class SubcommandRegistry;
 
 /// Initializes the `doc` subcommand and its various options, and registers
 /// its callback function with the registry.
-void registerDocSubCommand(SubcommandRegistry &registry);
+void registerDocSubcommand(SubcommandRegistry &registry);
 
 } // namespace M
 

@@ -654,6 +654,6 @@ static int package(const State &state) {
   return EXIT_SUCCESS;
 }
 
-void M::registerPackageSubCommand(SubcommandRegistry &registry) {
+void M::registerPackageSubcommand(SubcommandRegistry &registry) {
   registry.addCallback("package", package);
 }

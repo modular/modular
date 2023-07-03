@@ -128,6 +128,6 @@ static int doc(const State &state) {
   return EXIT_SUCCESS;
 }
 
-void M::registerDocSubCommand(SubcommandRegistry &registry) {
+void M::registerDocSubcommand(SubcommandRegistry &registry) {
   registry.addCallback("doc", doc);
 }

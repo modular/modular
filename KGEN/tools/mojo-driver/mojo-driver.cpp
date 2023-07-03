@@ -141,10 +141,10 @@ int main(int argc, char **argv) {
 
   // Register subcommands and their options.
   SubcommandRegistry registry;
-  registerDemangleSubCommand(registry);
-  registerDocSubCommand(registry);
-  registerPackageSubCommand(registry);
-  registerREPLSubCommand(registry);
+  registerDemangleSubcommand(registry);
+  registerDocSubcommand(registry);
+  registerPackageSubcommand(registry);
+  registerREPLSubcommand(registry);
 
   // Store the program name and subcommand arguments in the driver state object.
   State state(programName, arguments.slice(index));

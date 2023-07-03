@@ -13,7 +13,7 @@ class SubcommandRegistry;
 
 /// Initializes the `package` subcommand and its various options, and registers
 /// its callback function with the registry.
-void registerPackageSubCommand(SubcommandRegistry &registry);
+void registerPackageSubcommand(SubcommandRegistry &registry);
 
 } // namespace M
 
