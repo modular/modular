@@ -105,7 +105,7 @@ fn mutArgAndImplicit(a: Int):
 fn missingColon()  # expected-error {{expected ':' in function definition}}
   # Don't get confused by comments or blank lines!
 
-  var x = 1
+  var x = 1 # expected-error {{could not find builtin 'Int' type}}
 
 # expected-error @below {{expected parameter name}}
 # expected-error @below {{unexpected token in expression}}

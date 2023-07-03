@@ -320,7 +320,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Convert this to an instance of Int. Int must be in scope since it is
   // auto-imported.
-  ASTType type = emitter.shared.getBuiltinIntType(getLoc());
+  ASTType type = emitter.shared.getBuiltinIntType(emitter.declScope, getLoc());
   if (!type)
     return {};
 
@@ -335,7 +335,8 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                              APFloat(value.convertToDouble()));
 
   // Convert this to an instance of Double.
-  ASTType type = emitter.shared.getBuiltinDoubleType(getLoc());
+  ASTType type =
+      emitter.shared.getBuiltinDoubleType(emitter.declScope, getLoc());
   if (!type)
     return {};
 
@@ -351,7 +352,7 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
-  ASTType type = emitter.shared.getBuiltinBoolType(getLoc());
+  ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
   if (!type)
     return {};
 
@@ -410,7 +411,8 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   auto attr = StringAttr::get(value, StringType::get(emitter.getContext()));
 
   // Convert this to an instance of StringLiteral.
-  ASTType type = emitter.shared.getBuiltinStringLiteralType(getLoc());
+  ASTType type =
+      emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
   if (!type)
     return {};
 
@@ -531,8 +533,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Aliases form a PValue.
   if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    PValue result =
-        resolveParamDeclareValue(param, /*bindings=*/{}, emitter.shared, getLoc());
+    PValue result = resolveParamDeclareValue(param, /*bindings=*/{},
+                                             emitter.shared, getLoc());
     return emitter.emitResult(result.get(), this, dest);
   }
 
@@ -946,7 +948,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     };
 
     // Emit the value as a StringLiteral.
-    ASTType type = emitter.shared.getBuiltinStringLiteralType(getLoc());
+    ASTType type =
+        emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
     if (!type)
       return {};
 
@@ -1310,7 +1313,8 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   // Lookup the builtin slice type and emit a constructor call.
-  ASTType type = emitter.shared.getBuiltinSliceType(getLoc());
+  ASTType type =
+      emitter.shared.getBuiltinSliceType(emitter.declScope, getLoc());
   if (!type)
     return {};
 
@@ -1698,7 +1702,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
     SmallVector<Type> typeElts;
     for (auto elt : elements)
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    type = emitter.shared.getBuiltinTupleInstantion(node->getLoc(), typeElts);
+    type = emitter.shared.getBuiltinTupleInstantion(emitter.declScope,
+                                                    node->getLoc(), typeElts);
 
     DLValue result(LLCL::RCRef<TupleDLValue>::create(elements, type, node));
     return emitter.emitResult(std::move(result), node, dest);
@@ -1712,8 +1717,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
     for (auto elt : elements)
       typeElts.push_back(elt.ir.getIfTypeValue());
 
-    auto result =
-        emitter.shared.getBuiltinTupleInstantion(node->getLoc(), typeElts);
+    auto result = emitter.shared.getBuiltinTupleInstantion(
+        emitter.declScope, node->getLoc(), typeElts);
     return emitter.emitResult(PValue(result), node, dest);
   }
 
@@ -1729,13 +1734,15 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin Tuple type, in order to call its constructor.
-  ASTType type = emitter.shared.getBuiltinTupleType(getLoc());
+  ASTType type =
+      emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
   return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin ListLiteral type, in order to call its constructor.
-  ASTType type = emitter.shared.getBuiltinListLiteralType(getLoc());
+  ASTType type =
+      emitter.shared.getBuiltinListLiteralType(emitter.declScope, getLoc());
   return emitHeterogenousSequence(dest, emitter, type, this, exprs);
 }
 
@@ -2195,7 +2202,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     // This has no common type to return, but the result should still be
     // boolean-ish.  Handle this by extracting the boolean result out of the
     // second argument and converting that to a proper Bool result.
-    ASTType boolType = emitter.shared.getBuiltinBoolType(getLoc());
+    ASTType boolType =
+        emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
     if (!boolType)
       return {};
 
@@ -2632,7 +2640,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
 
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
-    Type errorType = emitter.shared.getBuiltinErrorType(resultLoc);
+    Type errorType =
+        emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);
     if (!errorType)
       return {};
 
