@@ -21,6 +21,9 @@ class TimingScope;
 namespace M {
 namespace KGEN {
 class CompilationOptions;
+namespace LIT {
+class SharedState;
+} // namespace LIT
 } // namespace KGEN
 namespace LLCL {
 class Runtime;
@@ -59,6 +62,8 @@ class MojoASTDeclRef {
 public:
   MojoASTDeclRef() : MojoASTDeclRef(nullptr) {}
 
+  MojoASTDeclRef(void *impl) : impl(impl) {}
+
   /// Returns the operation corresponding to this decl if there is one, nullptr
   /// otherwise. The returned operation should only be used for introspection,
   /// it should not be modified in any way.
@@ -68,13 +73,40 @@ public:
   operator bool() const { return impl != nullptr; }
 
 private:
-  MojoASTDeclRef(void *impl) : impl(impl) {}
 
   /// Allow MojoParserContext to access the internal implementation.
   friend class MojoParserContext;
 
   /// The internal implementation of the AST declaration.
   void *impl;
+};
+
+
+//===----------------------------------------------------------------------===//
+// MojoASTTypeRef
+//===----------------------------------------------------------------------===//
+
+/// This class provides a view into an Mojo AST type.
+class MojoASTTypeRef {
+  public:
+    MojoASTTypeRef() : MojoASTTypeRef(nullptr) {}
+
+    MojoASTTypeRef(void *impl) : impl(impl) {};
+
+    /// Returns if the AST declaration is valid.
+    operator bool() const { return impl != nullptr; }
+
+  private:
+
+    // Return the decl that defined this type.
+    MojoASTDeclRef getDecl(KGEN::LIT::SharedState& sharedState);
+
+    /// Allow MojoParserContext to access the internal implementation.
+    friend class MojoParserContext;
+
+    /// The internal implementation of the AST type.
+    void *impl;
+
 };
 
 //===----------------------------------------------------------------------===//
@@ -180,6 +212,9 @@ public:
   /// erroneous expression when it is only detected as invalid after it has been
   /// parsed.
   void removeLastREPLExpression();
+
+  /// Get the declaration that defined an AST type.
+  MojoASTDeclRef getDecl(MojoASTTypeRef type);
 
 protected:
   /// A struct representing the internal state of the parser.

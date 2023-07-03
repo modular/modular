@@ -51,6 +51,20 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoASTTypeRef
+//===----------------------------------------------------------------------===//
+
+/// Unwrap a raw ASTDecl pointer.
+static ASTType *unwrapMojoASTType(void *declImpl) {
+  assert(declImpl && "expected valid MojoASTDeclRef impl");
+  return reinterpret_cast<ASTType *>(declImpl);
+}
+
+MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &sharedState) {
+  return MojoASTDeclRef(unwrapMojoASTType(impl)->getDecl(sharedState));
+}
+
+//===----------------------------------------------------------------------===//
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//
 

@@ -655,3 +655,7 @@ void MojoParserContext::removeLastREPLExpression() {
   impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
   moduleDecl->getIfOperation()->remove();
 }
+
+MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
+  return type.getDecl(impl->sharedState);
+}
