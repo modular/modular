@@ -261,7 +261,10 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
            type.isEqualCanon(shared.getTypeCheckErrorType());
   };
 
-  if (isImplicitlyIgnorableType(valueType))
+  if (isImplicitlyIgnorableType(valueType) ||
+      // The `x = y` operation returns a borrowed version of its operand but its
+      // result can be ignored.
+      expr->kind == ExprNode::kAssign)
     return;
 
   // If this type is a function with no arguments and an ignorable type, we
