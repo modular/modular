@@ -143,7 +143,8 @@ ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
     return parseStarredItem(results.emplace_back(nullptr));
   };
 
-  return parseCommaSeparatedList(parseItem, terminators, firstCommaLoc);
+  return parseCommaSeparatedList(parseItem, terminators, stmtIndent,
+                                 firstCommaLoc);
 }
 
 namespace {
@@ -755,7 +756,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
     };
 
     // TODO: Handle comprehension argument.
-    if (parseCommaSeparatedList(parseArgument, Token::r_paren) ||
+    if (parseCommaSeparatedList(parseArgument, Token::r_paren, std::nullopt) ||
         parseToken(Token::r_paren, "expected ')' in call argument list",
                    &rparenLoc)) {
       return failure();
@@ -853,7 +854,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
   SMLoc rsquareLoc;
   if (parseCommaSeparatedList(parseExprOrSlice,
-                              {Token::r_square, Token::minus_greater}) ||
+                              {Token::r_square, Token::minus_greater},
+                              std::nullopt) ||
       getLocation(rsquareLoc))
     return failure();
 
@@ -871,7 +873,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   SmallVector<ExprNode *> arrowExprs;
   std::swap(indices, arrowExprs);
   if (parseCommaSeparatedList(parseExprOrSlice,
-                              {Token::r_square, Token::minus_greater}) ||
+                              {Token::r_square, Token::minus_greater},
+                              std::nullopt) ||
       getLocation(rsquareLoc) ||
       parseToken(Token::r_square, "expected ']' in call argument list"))
     return failure();
@@ -1025,7 +1028,7 @@ ParseResult ParserBase::parseExpressionList(ExprNode *&result,
   };
 
   SMLoc firstCommaLoc;
-  if (parser.parseCommaSeparatedList(parseItem, /*terminators=*/{},
+  if (parser.parseCommaSeparatedList(parseItem, /*terminators=*/{}, stmtIndent,
                                      &firstCommaLoc))
     return failure();
 

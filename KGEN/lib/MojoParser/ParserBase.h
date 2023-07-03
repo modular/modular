@@ -128,24 +128,20 @@ public:
   ParseResult parseIdentifier(StringAttr &result, const Twine &message,
                               SMLoc *loc = nullptr);
 
-  /// Parse a list of elements, terminated with an arbitrary token.  This does
-  /// not consume the stop token.
+  /// Parse a list of elements continued with commas.  If a set of terminators
+  /// are specified, then the list ends when one is encountered (but it is not
+  /// consumed).  If no terminators are specified, the list ends at end of the
+  /// current statement.
   ///
-  /// list ::= (element)* STOPTOKEN
-  ///
-  ParseResult parseListUntil(Token::Kind stopToken,
-                             const function_ref<ParseResult()> &parseElement);
-
-  /// Parse a list of elements continued with commas.  The list ends either with
-  /// a terminator, which is not consumed, or a new line. firstCommaLoc is set
-  /// to the location of the first comma that is parsed, which is meaningful
-  /// when there is a trailing comma.
+  /// firstCommaLoc (if non-null) is set to the location of the first comma that
+  /// is parsed, even if it is a trailing comma.
   ///
   /// separated_list ::= (element (',' element)* [','] TERMINATOR
   ///
   ParseResult
   parseCommaSeparatedList(const function_ref<ParseResult()> &parseElement,
                           ArrayRef<Token::Kind> terminators,
+                          std::optional<size_t> stmtIndent,
                           SMLoc *firstCommaLoc = nullptr);
 
   /// Return true if the current token is part of the current statement, false

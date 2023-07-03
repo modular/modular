@@ -999,7 +999,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
 
   // Parse a list of arguments and keyword argument specifiers.  Each argument
   // will leave its `kwargHandling` default initialized.
-  if (p.parseCommaSeparatedList(parseArgument, stopTokens))
+  if (p.parseCommaSeparatedList(parseArgument, stopTokens, std::nullopt))
     return failure();
 
   // TODO(Keyword Args): now that we parsed a fully generic parameter list,

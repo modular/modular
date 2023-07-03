@@ -58,50 +58,40 @@ ParseResult ParserBase::parseIdentifier(StringAttr &result,
   return parseToken(Token::identifier, message);
 }
 
-/// Parse a list of elements, terminated with an arbitrary token.  This does
-/// not consume the stop token.
+/// Parse a list of elements continued with commas.  If a set of terminators
+/// are specified, then the list ends when one is encountered (but it is not
+/// consumed).  If no terminators are specified, the list ends at end of the
+/// current statement.
 ///
-/// list ::= (element)* STOPTOKEN
-///
-ParseResult
-ParserBase::parseListUntil(Token::Kind rightToken,
-                           const function_ref<ParseResult()> &parseElement) {
-
-  while (!consumeIf(rightToken)) {
-    if (parseElement())
-      return failure();
-  }
-  return success();
-}
-
-/// Parse a list of elements continued with commas.  The list ends either with
-/// a terminator, which is not consumed, or a new line. firstCommaLoc is set
-/// to the location of the first comma that is parsed, which is meaningful
-/// when there is a trailing comma.
+/// firstCommaLoc (if non-null) is set to the location of the first comma that
+/// is parsed, even if it is a trailing comma.
 ///
 /// separated_list ::= (element (',' element)* [','] TERMINATOR
 ///
 ParseResult ParserBase::parseCommaSeparatedList(
     const function_ref<ParseResult()> &parseElement,
-    ArrayRef<Token::Kind> terminators, SMLoc *firstCommaLoc) {
+    ArrayRef<Token::Kind> terminators, std::optional<size_t> stmtIndent,
+    SMLoc *firstCommaLoc) {
   if (firstCommaLoc)
     *firstCommaLoc = SMLoc();
-  if (parseElement())
-    return failure();
 
-  while (consumeIf(Token::comma, firstCommaLoc)) {
+  while (1) {
+    if (parseElement())
+      return failure();
+
+    if (!consumeIf(Token::comma, firstCommaLoc))
+      break;
     // Get the location of the first comma, not subsequent ones.
     firstCommaLoc = nullptr;
 
-    // Empty terminators signals no terminator was given as input so check for
-    // "new line": if we have indentation it means we are starting a line
-    // after the last separator.
-    if (getToken().isAny(terminators) ||
-        (terminators.empty() && getToken().getIndentation().has_value()))
+    // Mojo/Python supports trailing commas in lists, e.g. for tuples without
+    // parens.
+    if (!terminators.empty()) {
+      if (getToken().isAny(terminators))
+        break;
+    } else if (!isTokenInCurrentStatement(stmtIndent)) {
       break;
-
-    if (parseElement())
-      return failure();
+    }
   }
   return success();
 }
