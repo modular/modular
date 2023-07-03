@@ -603,6 +603,10 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
     // Walk all functions and update them.
     bool hadError = false;
     getOperation().walk<mlir::WalkOrder::PostOrder>([&](LIT::FuncOp func) {
+      // Skip external functions.
+      if (func.isExternal())
+        return;
+
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.
       hadError |= failed(lowerSemanticCF(func));
