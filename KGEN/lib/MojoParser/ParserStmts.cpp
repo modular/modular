@@ -31,6 +31,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <filesystem>
 #include <limits>
@@ -1430,22 +1431,31 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
 ParseResult StmtParser::parseFromImportStmt() {
   consumeToken(Token::kw_from);
 
-  // TODO: Support packages, this currently just handles basic module importing.
+  // TODO: Support relative modules.
 
   // Parse the relative module we are importing from.
   if (getToken().isAny(Token::dot, Token::dot_dot_dot))
     return emitTokenError(
         "TODO: relative package imports are not yet supported");
   SMLoc importLoc = getToken().getLoc();
-  StringRef moduleName = getTokenSpelling();
-  if (parseToken(Token::identifier, "expected module name") ||
-      parseToken(Token::kw_import, "expected 'import' after module name"))
+  SmallVector<StringRef> moduleNames(1, getTokenSpelling());
+  if (parseToken(Token::identifier, "expected module name"))
+    return failure();
+  // Parse nested module names.
+  while (consumeIf(Token::dot)) {
+    moduleNames.push_back(getTokenSpelling());
+    if (parseToken(Token::identifier, "expected module name"))
+      return failure();
+  }
+  std::string fullModuleName = llvm::join(moduleNames, ".");
+
+  if (parseToken(Token::kw_import, "expected 'import' after module name"))
     return failure();
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
     getParentDecl().addUnresolvedWildCardImport(
-        builder.getStringAttr(moduleName), importLoc);
+        builder.getStringAttr(fullModuleName), importLoc);
     return success();
   }
 
@@ -1469,7 +1479,7 @@ ParseResult StmtParser::parseFromImportStmt() {
     StringAttr importDestNameAttr = builder.getStringAttr(importDestName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         translateLocation(importSourceNameLoc),
-        builder.getStringAttr(moduleName), importDestNameAttr,
+        builder.getStringAttr(fullModuleName), importDestNameAttr,
         builder.getStringAttr(importSourceName));
     getDeclResolver().addDecl(
         importDecl, importSourceNameLoc, importDestNameAttr, curDeclScope,
@@ -1497,17 +1507,22 @@ ParseResult StmtParser::parseFromImportStmt() {
 ParseResult StmtParser::parseImportStmt() {
   consumeToken(Token::kw_import);
 
-  // TODO: Support packages, this currently just handles basic module importing.
-
   // Parse the next module to import.
   do {
     SMLoc importLoc = getToken().getLoc();
-    StringRef moduleName = getTokenSpelling();
+    SmallVector<StringRef> moduleNames(1, getTokenSpelling());
     if (parseToken(Token::identifier, "expected module name"))
       return failure();
 
+    // Parse nested module names.
+    while (consumeIf(Token::dot)) {
+      moduleNames.push_back(getTokenSpelling());
+      if (parseToken(Token::identifier, "expected module name"))
+        return failure();
+    }
+
     // Check for a name binding.
-    StringRef boundModuleName = moduleName;
+    StringRef boundModuleName = moduleNames.back();
     if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
       if (parseToken(Token::identifier, "expected name to bind import"))
@@ -1517,8 +1532,9 @@ ParseResult StmtParser::parseImportStmt() {
     // Create an unresolved decl for the import.
     StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importLoc), builder.getStringAttr(moduleName),
-        importDestNameAttr, /*declName=*/StringAttr());
+        translateLocation(importLoc),
+        builder.getStringAttr(llvm::join(moduleNames, ".")), importDestNameAttr,
+        /*declName=*/StringAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);
