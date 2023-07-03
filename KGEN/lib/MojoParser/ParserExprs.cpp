@@ -38,10 +38,13 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
+  // This is the parsing level used to parse simple_stmt, which includes
+  // expression_stmt, assignment_stmt, augmented_assignment_stmt, and
+  // annotated_assignment_stmt.
+  kSimpleStmt,
+
   // infix: =, +=, -=: These are not a Python 'expression', and are not allowed
   // in parens, they are only allowed as a top level statement.
-  kAssignStmt,
-
   kAssignExpr, // "assignment_expression" precedence
   kWalrus,     // infix: := (walrus)
   kExpression, // "expression" precedence
@@ -164,95 +167,112 @@ namespace {
 struct InfixInfo {
   Precedence precedence;
   ExprNode::Kind nodeKind;
-  bool isLeftAssociative;
+
+  // True when this operator is right associative:
+  //   https://en.wikipedia.org/wiki/Operator_associativity
+  // This matters when operators are at the same precedence level.  Consider
+  // 7 op 4 op 2. The result could be either `(7 op 4) op 2` or `7 op (4 op 2)`.
+  // The former result corresponds to the case the operators are
+  // left-associative, the latter to when they are right-associative.
+  //
+  // Almost all operators in Python/Mojo are left associative.  Exceptions are
+  // the power operator and assignment operator `=`.
+  bool isRightAssociative;
 
   /// Classify a token for an infix operator.
   static InfixInfo get(Token::Kind tokKind) {
+    // Helper to reduce boilerplate with isRightAssociative.
+    auto get = [](Precedence precedence, ExprNode::Kind nodeKind,
+                  bool isRightAssociative = false) -> InfixInfo {
+      return {precedence, nodeKind, isRightAssociative};
+    };
+
     switch (tokKind) {
     default:
-      return {Precedence::kInvalid, ExprNode::kLastBinOp, false};
+      return get(Precedence::kInvalid, ExprNode::kLastBinOp);
     case Token::equal:
-      return {Precedence::kAssignExpr, ExprNode::kAssign, false};
+      // FIXME: a = b = 42 binds to the right.
+      return get(Precedence::kAssignExpr, ExprNode::kAssign);
     case Token::plus_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIAdd, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIAdd);
     case Token::minus_equal:
-      return {Precedence::kAssignExpr, ExprNode::kISub, false};
+      return get(Precedence::kAssignExpr, ExprNode::kISub);
     case Token::star_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIMul, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIMul);
     case Token::at_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIMatMul, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIMatMul);
     case Token::slash_equal:
-      return {Precedence::kAssignExpr, ExprNode::kITrueDiv, false};
+      return get(Precedence::kAssignExpr, ExprNode::kITrueDiv);
     case Token::percent_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIMod, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIMod);
     case Token::amp_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIAnd, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIAnd);
     case Token::pipe_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIOr, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIOr);
     case Token::caret_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIXor, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIXor);
     case Token::less_less_equal:
-      return {Precedence::kAssignExpr, ExprNode::kILShift, false};
+      return get(Precedence::kAssignExpr, ExprNode::kILShift);
     case Token::right_right_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIRShift, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIRShift);
     case Token::star_star_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIPow, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIPow);
     case Token::slash_slash_equal:
-      return {Precedence::kAssignExpr, ExprNode::kIFloorDiv, false};
+      return get(Precedence::kAssignExpr, ExprNode::kIFloorDiv);
     case Token::plus:
-      return {Precedence::kSum, ExprNode::kAdd, false};
+      return get(Precedence::kSum, ExprNode::kAdd);
     case Token::minus:
-      return {Precedence::kSum, ExprNode::kSub, false};
+      return get(Precedence::kSum, ExprNode::kSub);
     case Token::star:
-      return {Precedence::kTerm, ExprNode::kMul, false};
+      return get(Precedence::kTerm, ExprNode::kMul);
     case Token::at:
-      return {Precedence::kTerm, ExprNode::kMatMul, false};
+      return get(Precedence::kTerm, ExprNode::kMatMul);
     case Token::slash:
-      return {Precedence::kTerm, ExprNode::kTrueDiv, false};
+      return get(Precedence::kTerm, ExprNode::kTrueDiv);
     case Token::slash_slash:
-      return {Precedence::kTerm, ExprNode::kFloorDiv, false};
+      return get(Precedence::kTerm, ExprNode::kFloorDiv);
     case Token::percent:
-      return {Precedence::kTerm, ExprNode::kMod, false};
+      return get(Precedence::kTerm, ExprNode::kMod);
     case Token::kw_or:
-      return {Precedence::kBoolOr, ExprNode::kBoolOr, false};
+      return get(Precedence::kBoolOr, ExprNode::kBoolOr);
     case Token::kw_and:
-      return {Precedence::kBoolAnd, ExprNode::kBoolAnd, false};
+      return get(Precedence::kBoolAnd, ExprNode::kBoolAnd);
     case Token::kw_not:
-      return {Precedence::kBoolNot, ExprNode::kBoolNot, false};
+      return get(Precedence::kBoolNot, ExprNode::kBoolNot);
     case Token::kw_in:
-      return {Precedence::kComparison, ExprNode::kCmpIn, false};
+      return get(Precedence::kComparison, ExprNode::kCmpIn);
     case Token::kw_is:
-      return {Precedence::kComparison, ExprNode::kCmpIs, false};
+      return get(Precedence::kComparison, ExprNode::kCmpIs);
     case Token::less:
-      return {Precedence::kComparison, ExprNode::kCmpLT, false};
+      return get(Precedence::kComparison, ExprNode::kCmpLT);
     case Token::less_equal:
-      return {Precedence::kComparison, ExprNode::kCmpLE, false};
+      return get(Precedence::kComparison, ExprNode::kCmpLE);
     case Token::greater:
-      return {Precedence::kComparison, ExprNode::kCmpGT, false};
+      return get(Precedence::kComparison, ExprNode::kCmpGT);
     case Token::greater_equal:
-      return {Precedence::kComparison, ExprNode::kCmpGE, false};
+      return get(Precedence::kComparison, ExprNode::kCmpGE);
     case Token::exclaim_equal:
-      return {Precedence::kComparison, ExprNode::kCmpNE, false};
+      return get(Precedence::kComparison, ExprNode::kCmpNE);
     case Token::equal_equal:
-      return {Precedence::kComparison, ExprNode::kCmpEQ, false};
+      return get(Precedence::kComparison, ExprNode::kCmpEQ);
     case Token::pipe:
-      return {Precedence::kOr, ExprNode::kOr, false};
+      return get(Precedence::kOr, ExprNode::kOr);
     case Token::caret:
-      return {Precedence::kXor, ExprNode::kXor, false};
+      return get(Precedence::kXor, ExprNode::kXor);
     case Token::amp:
-      return {Precedence::kAnd, ExprNode::kAnd, false};
+      return get(Precedence::kAnd, ExprNode::kAnd);
     case Token::less_less:
-      return {Precedence::kShift, ExprNode::kLShift, false};
+      return get(Precedence::kShift, ExprNode::kLShift);
     case Token::right_right:
-      return {Precedence::kShift, ExprNode::kRShift, false};
+      return get(Precedence::kShift, ExprNode::kRShift);
     case Token::kw_if:
-      return {Precedence::kIfElse, ExprNode::kIfElse, false};
+      return get(Precedence::kIfElse, ExprNode::kIfElse);
     case Token::star_star:
-      return {Precedence::kPower, ExprNode::kPow, true};
+      return get(Precedence::kPower, ExprNode::kPow, true);
     case Token::kw_await:
-      return {Precedence::kAwait, ExprNode::kAwait, false};
+      return get(Precedence::kAwait, ExprNode::kAwait);
     case Token::colon_equal:
-      return {Precedence::kWalrus, ExprNode::kWalrus, false};
+      return get(Precedence::kWalrus, ExprNode::kWalrus);
     }
   }
 };
@@ -299,8 +319,9 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
       infixInfo.precedence = Precedence::kComparison;
     }
 
-    // Handle left associative operations.
-    if (infixInfo.isLeftAssociative)
+    // Handle right associative operations: they can parse anything at the
+    // current operator level.
+    if (infixInfo.isRightAssociative)
       infixInfo.precedence = Precedence(unsigned(infixInfo.precedence) - 1);
 
     ExprNode *rhs;
@@ -1082,7 +1103,7 @@ ParseResult
 ParserBase::parseExpressionOrAssignmentStmt(ExprNode *&result,
                                             std::optional<size_t> stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kAssignStmt);
+      .parseExpression(result, Precedence::kSimpleStmt);
 }
 
 /// Return an expression node for None at the specified location.

@@ -451,8 +451,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     break;
   }
 
-  // TODO: Nail down a model for struct-level meta-programs.
-
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.
   ExprNode *expr = nullptr;
