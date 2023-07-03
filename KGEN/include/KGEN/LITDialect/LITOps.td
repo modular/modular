@@ -93,6 +93,12 @@ def LIT_FuncOp : LITOp<"func", [
     /// function like __init__ or __radd__.
     SpecialFunctionKind getSpecialFunctionKind();
     const SpecialFunctionInfo &getSpecialFunctionInfo();
+
+    /// Check if a function is coming from an external package. This is
+    /// signified by having the post elaboration body on the func itself.
+    bool isExternal() {
+      return getPostElaborationBodyRef().has_value();
+    }
   }];
 
   let builders = [
