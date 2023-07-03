@@ -294,7 +294,7 @@ fn bad_exprs(cond: Bool, Float32: Float32, c1: Conv1, c2: Conv2):
   _ = c1 if cond else c2
 
 def bad_assignment0(a: Int, b: Int):
-   # expected-error @+1 {{expression must be mutable for in-place operator destination}}
+   # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int' in assignment}}
    a = b += b
 
 def bad_assignment1(a: Int, b: Int):

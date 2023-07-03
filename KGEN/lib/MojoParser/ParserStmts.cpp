@@ -1629,9 +1629,10 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
   // Parse the initializer if present.
   ExprNode *initExpr = nullptr;
-  if (consumeIf(Token::equal))
-    if (parseExpression(initExpr, stmtIndent))
+  if (consumeIf(Token::equal)) {
+    if (parseVarLetInitExpression(initExpr, stmtIndent))
       return declParseError();
+  }
 
   // Now that parsing succeeded, we do IR emission and semantic processing.
 

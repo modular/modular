@@ -198,6 +198,7 @@ public:
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
+  ParseResult parseVarLetInitExpression(ExprNode *&expr, size_t stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
   /// tuple expression if there are commas.
@@ -208,8 +209,7 @@ public:
 
   /// Parse a simple_stmt production containing an expression, including
   /// expression_stmt and {augmented_|annotated_|}assignment_stmt.
-  ParseResult parseSimpleStmtExprs(ExprNode *&expr,
-                                   std::optional<size_t> stmtIndent);
+  ParseResult parseSimpleStmtExprs(ExprNode *&expr, size_t stmtIndent);
 
   /// Return an expression node for None at the specified location.
   ExprNode *getNoneExpr(SMLoc loc);

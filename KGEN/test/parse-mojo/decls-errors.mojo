@@ -208,8 +208,7 @@ fn defaultArgumentNonRegisterType(a: NonRegisterPassableStruct = 1): pass
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 
-# expected-error @+2 {{expected parameter name}}
-# expected-error @+1 {{unexpected token in expression}}
+# expected-error @+1 {{expected parameter name}}
 fn starSpaceStar(* *a: Int): pass
 
 # expected-error @+1 {{variadic arguments may not have defaults}}
