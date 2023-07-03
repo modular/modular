@@ -1533,41 +1533,34 @@ def POP_ExternalCallOp : POPOp<"external_call",
 // GlobalOp
 //===----------------------------------------------------------------------===//
 
-def POP_GlobalOp : POPOp<"global", [Symbol, NoTerminator]> {
-  let summary = "Declare a global variable with an initializer.";
+def POP_GlobalOp : POPOp<"global", [Symbol, NoTerminator,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Declare a global variable with an constructor.";
   let description = [{
     The `pop.global` operation declares a global variable bound to a symbol
-    name. It contains the type of the global variable, an initializer region,
-    a destructor region, and an initialization priority. The initialization
-    priority determines the order in which the initializers of all the globals
+    name. It contains the type of the global variable, an constructor function,
+    a destructor function, and an initialization priority. The initialization
+    priority determines the order in which the constructors of all the globals
     in the program will be invoked (lower is earlier) and the reverse order in
     which the destructors are invoked.
 
     Example:
 
     ```mlir
-    pop.global @foo(2) : i32, (%arg0: !pop.pointer<i32>) {
-      %0 = kgen.param.constant: i32 = <4>
-      pop.store %0, %arg0 : !pop.pointer<i32>
-    }, (%arg0: !pop.pointer<i32>) {
-    }
+    pop.global @foo : i32 (2, @foo_ctor, @foo_dtor)
     ```
 
     The global `@foo` with initialization priority `2` will be initialized
     after a global with priority lower than `2` and destroyed before.
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name, I32Attr:$priority,
-                       TypeAttr:$type);
-  let regions = (region SizedRegion<1>:$initializer,
-                        SizedRegion<1>:$destructor);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name, TypeAttr:$type, I32Attr:$priority,
+    SymbolRefAttr:$ctor, SymbolRefAttr:$dtor);
 
   let assemblyFormat = [{
-    $sym_name `(` $priority `)` `:` $type `,` attr-dict-with-keyword
-    custom<GlobalRegions>($initializer, $destructor)
+    $sym_name `:` $type ` ` `(` $priority `,` $ctor `,` $dtor `)` attr-dict
   }];
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
