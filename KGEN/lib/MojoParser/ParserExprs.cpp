@@ -38,13 +38,7 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
-  // This is the parsing level used to parse simple_stmt, which includes
-  // expression_stmt, assignment_stmt, augmented_assignment_stmt, and
-  // annotated_assignment_stmt.
-  kSimpleStmt,
-
   kAssignExpr, // infix: := (walrus)
-  kExpression, // "expression" precedence
   kIfElse,     // infix: if - else + lambda.
   kBoolOr,     // infix: or
   kBoolAnd,    // infix: and
@@ -61,6 +55,8 @@ enum class Precedence {
   kAwait,      // prefix: await
   kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
                //         foo.bar, foo[bar]
+
+  kExpression = kIfElse, // "expression" precedence is if/else + lambda.
   kHighest = kPrimary
 };
 
@@ -211,8 +207,6 @@ struct InfixInfo {
       return get(Precedence::kBoolOr, ExprNode::kBoolOr);
     case Token::kw_and:
       return get(Precedence::kBoolAnd, ExprNode::kBoolAnd);
-    case Token::kw_not:
-      return get(Precedence::kBoolNot, ExprNode::kBoolNot);
     case Token::kw_in:
       return get(Precedence::kComparison, ExprNode::kCmpIn);
     case Token::kw_is:
@@ -243,8 +237,6 @@ struct InfixInfo {
       return get(Precedence::kIfElse, ExprNode::kIfElse);
     case Token::star_star:
       return get(Precedence::kPower, ExprNode::kPow, true);
-    case Token::kw_await:
-      return get(Precedence::kAwait, ExprNode::kAwait);
     case Token::colon_equal:
       return get(Precedence::kAssignExpr, ExprNode::kWalrus);
     }
@@ -252,7 +244,10 @@ struct InfixInfo {
 };
 } // namespace
 
-/// Parse an expression using top-down operator precedence parsing.
+/// Parse an expression using top-down operator precedence parsing.  minPrec
+/// specifies the minimum precedence that binary sub-expression must have to be
+/// included.  Anything looser than the specified precedence is left for a
+/// parent expression to parse.
 ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // Parse any prefix expression like -1.
   if (parsePrimaryExpr(expr))
@@ -262,7 +257,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
   // lower than minPrec. This means that it collects all tokens that bind
   // together before returning to the operator that called it.
   InfixInfo infixInfo = InfixInfo::get(getToken().getKind());
-  while (isTokenInCurrentStatement() && minPrec < infixInfo.precedence) {
+  while (isTokenInCurrentStatement() && minPrec <= infixInfo.precedence) {
     Token::Kind tokKind = getToken().getKind();
     auto binOpLoc = consumeToken().getLoc();
 
@@ -270,14 +265,14 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
       // Conditional if - else expression.
       // trueExpr 'if' condition 'else' falseExpr.
       ExprNode *cond;
-      if (parseExpression(cond, infixInfo.precedence))
+      if (parseExpression(cond, Precedence::kBoolOr))
         return failure();
 
       ExprNode *falseExpr;
       auto elseLoc = getToken().getLoc();
       if (parseToken(Token::Kind::kw_else,
                      "expecting an 'else' followed by an expression") ||
-          parseExpression(falseExpr, infixInfo.precedence))
+          parseExpression(falseExpr, Precedence::kBoolOr))
         return failure();
       expr = alloc<IfElseOpNode>(expr, binOpLoc, cond, elseLoc, falseExpr);
       infixInfo = InfixInfo::get(getToken().getKind());
@@ -293,15 +288,19 @@ ParseResult ExprParser::parseExpression(ExprNode *&expr, Precedence minPrec) {
       infixInfo.precedence = Precedence::kComparison;
     }
 
-    // Handle right associative operations: they can parse anything at the
-    // current operator level.
-    if (infixInfo.isRightAssociative)
-      infixInfo.precedence = Precedence(unsigned(infixInfo.precedence) - 1);
+    // Right associative operations can parse anything at the current operator
+    // level on the right side, but left associative operators consume RHS that
+    // binds more tightly than the current operator.
+    Precedence subExprPrec = infixInfo.precedence;
+    if (!infixInfo.isRightAssociative)
+      subExprPrec = Precedence(unsigned(infixInfo.precedence) + 1);
 
-    ExprNode *rhs;
-    if (parseExpression(rhs, infixInfo.precedence))
+    ExprNode *rhs = nullptr;
+    if (parseExpression(rhs, subExprPrec))
       return failure();
 
+    // Comparison operators get special handling to treat 'a < b < c' as a
+    // ChainedCmpOpNode.
     if (infixInfo.precedence != Precedence::kComparison)
       expr = alloc<BinOpNode>(infixInfo.nodeKind, expr, binOpLoc, rhs);
     else if (parseComparisonExpr(expr, rhs, infixInfo.nodeKind, binOpLoc))
@@ -321,25 +320,9 @@ ParseResult ExprParser::parseStarredItem(ExprNode *&expr) {
     return success();
   }
 
-  return parseExpression(expr, Precedence::kSimpleStmt);
+  return parseExpression(expr, Precedence::kAssignExpr);
 }
 
-static ExprNode::Kind getUnaryOpKind(Token::Kind tokKind) {
-  switch (tokKind) {
-  default:
-    llvm_unreachable("invalid unary token");
-  case Token::kw_await:
-    return ExprNode::kAwait;
-  case Token::kw_not:
-    return ExprNode::kBoolNot;
-  case Token::plus:
-    return ExprNode::kPos;
-  case Token::minus:
-    return ExprNode::kNeg;
-  case Token::tilde:
-    return ExprNode::kInvert;
-  }
-}
 /// Parse a chained comparison expression (ex. a < b < c) starting from the
 /// first comparison given as input:
 /// expr is the lhs and kind specifies the type of comparison, ex. kCmpLT.
@@ -356,7 +339,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&expr, ExprNode *rhs,
          infixInfo.precedence == Precedence::kComparison) {
     consumeToken();
     ExprNode *cmpOperand;
-    if (parseExpression(cmpOperand, Precedence::kComparison))
+    if (parseExpression(cmpOperand, Precedence::kOr))
       return failure();
     exprs.push_back(cmpOperand);
     ops.push_back(infixInfo.nodeKind);
@@ -401,6 +384,26 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   }
 }
 
+/// Given a token for a unary operator like await or ~, return the ExprNode
+/// code to use along with the precedence of the subexpression we should parse.
+static std::pair<ExprNode::Kind, Precedence>
+getUnaryOpInfo(Token::Kind tokKind) {
+  switch (tokKind) {
+  default:
+    llvm_unreachable("invalid unary token");
+  case Token::kw_await:
+    return {ExprNode::kAwait, Precedence::kPrimary};
+  case Token::kw_not:
+    return {ExprNode::kBoolNot, Precedence::kBoolNot};
+  case Token::plus:
+    return {ExprNode::kPos, Precedence::kFactor};
+  case Token::minus:
+    return {ExprNode::kNeg, Precedence::kFactor};
+  case Token::tilde:
+    return {ExprNode::kInvert, Precedence::kFactor};
+  }
+}
+
 /// Parse the expression identified by the current token and provided
 /// `precedence`.  Store the resulting expression in `expr`.
 /// Prefix expressions supported are:
@@ -426,11 +429,13 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_await:
   case Token::kw_not: { // u_expr
     auto unaryLoc = consumeToken().getLoc();
-    ExprNode *expr;
-    Precedence precedence = InfixInfo::get(tokKind).precedence;
-    if (parseExpression(expr, precedence))
+    // Get the kind enum and the precedence of the subexpression.
+    auto [unaryKind, subExprPrec] = getUnaryOpInfo(tokKind);
+
+    ExprNode *expr = nullptr;
+    if (parseExpression(expr, subExprPrec))
       return failure();
-    result = alloc<UnaryOpNode>(getUnaryOpKind(tokKind), unaryLoc, expr);
+    result = alloc<UnaryOpNode>(unaryKind, unaryLoc, expr);
     break;
   }
   case Token::identifier: // primary -> atom -> identifier
@@ -736,7 +741,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
       }
 
       // Parse this as an assignment_expression, allowing := operator.
-      return parseExpression(arg.expr, Precedence::kSimpleStmt);
+      return parseExpression(arg.expr, Precedence::kAssignExpr);
     };
 
     // TODO: Handle comprehension argument.
