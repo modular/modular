@@ -299,8 +299,8 @@ void Lexer::lexToken() {
       return formToken(Token::r_square);
     case '^':
       if (*curPtr == '=')
-        return formToken(Token::circumflex_equal, 1);
-      return formToken(Token::circumflex);
+        return formToken(Token::caret_equal, 1);
+      return formToken(Token::caret);
     case '{':
       return formToken(Token::l_brace);
     case '|':
