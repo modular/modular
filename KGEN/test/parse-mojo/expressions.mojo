@@ -655,9 +655,9 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a //= b
-  # HECK:      %[[LOAD_B:.*]] = pop.load %b_1
-  # HECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
-  # a %= b
+  # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
+  # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
+  a %= b
   # CHECK:      %[[LOAD_B:.*]] = pop.load %b_1
   # CHECK-NEXT: %[[RES:.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, %[[LOAD_B]])
   a **= b
@@ -795,12 +795,28 @@ fn tuples_rv(a: Int, b: Float32):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
     _ = ()
+
     # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
     _ = (a, b)
+
+    # CHECK: [[PACK1:%.*]] = pop.pack.create(%a, %b)
+    # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
+    _ = a, b
+
     # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
     # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
     _ = (a,)
+
+    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    _ = a,
+
+    # CHECK: %c = lit.varlet.decl "c"
+    # CHECK: [[PACK2:%.*]] = pop.pack.create(%a)
+    # CHECK: [[TUP2:%.*]] = kgen.call @"{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: pop.store [[TUP2]], %c
+    var c = a,
 
 # CHECK-LABEL: lit.func @"tuples_lv
 fn tuples_lv(i0: Int, f0: Float32):

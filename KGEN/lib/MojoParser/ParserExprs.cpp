@@ -43,10 +43,7 @@ enum class Precedence {
   // annotated_assignment_stmt.
   kSimpleStmt,
 
-  // infix: =, +=, -=: These are not a Python 'expression', and are not allowed
-  // in parens, they are only allowed as a top level statement.
-  kAssignExpr, // "assignment_expression" precedence
-  kWalrus,     // infix: := (walrus)
+  kAssignExpr, // infix: := (walrus)
   kExpression, // "expression" precedence
   kIfElse,     // infix: if - else + lambda.
   kBoolOr,     // infix: or
@@ -81,6 +78,8 @@ public:
   ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
                                ArrayRef<Token::Kind> terminators,
                                SMLoc *firstCommaLoc = nullptr);
+  ParseResult parseStarredListAsTuple(ExprNode *&result,
+                                      ArrayRef<Token::Kind> terminators);
 
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kExpression);
@@ -100,13 +99,13 @@ public:
     return shared.getPersistentCopy(elements);
   }
 
-private:
   /// Return true if the current token is part of the current statement, false
   /// if it is the start of a new one.
   bool isTokenInCurrentStatement() const {
     return ParserBase::isTokenInCurrentStatement(stmtIndent);
   }
 
+private:
   ParseResult parsePrimaryExpr(ExprNode *&result);
   ParseResult parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc);
   ParseResult parsePrefixLSquare(ExprNode *&result, SMLoc lsquareLoc);
@@ -147,6 +146,25 @@ ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
                                  firstCommaLoc);
 }
 
+/// Parse a started_list, forming a single TupleExpr if a comma is present.
+ParseResult
+ExprParser::parseStarredListAsTuple(ExprNode *&result,
+                                    ArrayRef<Token::Kind> terminators) {
+  SmallVector<ExprNode *> exprs;
+  SMLoc firstCommaLoc;
+  if (parseStarredList(exprs, terminators, &firstCommaLoc))
+    return failure();
+
+  // If there was a tuple inside the parens, form it.
+  if (firstCommaLoc.isValid())
+    result = alloc<TupleNode>(firstCommaLoc, copyArrayRef<ExprNode *>(exprs));
+  else {
+    assert(exprs.size() == 1);
+    result = exprs[0];
+  }
+  return success();
+}
+
 namespace {
 /// This struct bundles up information related to infix binary operations.
 struct InfixInfo {
@@ -175,35 +193,6 @@ struct InfixInfo {
     switch (tokKind) {
     default:
       return get(Precedence::kInvalid, ExprNode::kLastBinOp);
-    case Token::equal:
-      // FIXME: a = b = 42 binds to the right.
-      return get(Precedence::kAssignExpr, ExprNode::kAssign);
-    case Token::plus_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIAdd);
-    case Token::minus_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kISub);
-    case Token::star_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIMul);
-    case Token::at_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIMatMul);
-    case Token::slash_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kITrueDiv);
-    case Token::percent_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIMod);
-    case Token::amp_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIAnd);
-    case Token::pipe_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIOr);
-    case Token::caret_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIXor);
-    case Token::less_less_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kILShift);
-    case Token::right_right_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIRShift);
-    case Token::star_star_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIPow);
-    case Token::slash_slash_equal:
-      return get(Precedence::kAssignExpr, ExprNode::kIFloorDiv);
     case Token::plus:
       return get(Precedence::kSum, ExprNode::kAdd);
     case Token::minus:
@@ -257,7 +246,7 @@ struct InfixInfo {
     case Token::kw_await:
       return get(Precedence::kAwait, ExprNode::kAwait);
     case Token::colon_equal:
-      return get(Precedence::kWalrus, ExprNode::kWalrus);
+      return get(Precedence::kAssignExpr, ExprNode::kWalrus);
     }
   }
 };
@@ -332,7 +321,7 @@ ParseResult ExprParser::parseStarredItem(ExprNode *&expr) {
     return success();
   }
 
-  return parseExpression(expr, Precedence::kAssignExpr);
+  return parseExpression(expr, Precedence::kSimpleStmt);
 }
 
 static ExprNode::Kind getUnaryOpKind(Token::Kind tokKind) {
@@ -593,25 +582,20 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
 /// If the list contains at least one comma, it yields a tuple.
 ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
   SMLoc rparenLoc;
-  SmallVector<ExprNode *> exprs;
-  SMLoc firstCommaLoc;
+
+  ExprNode *element = nullptr;
 
   // Empty parens is a tuple.
   if (consumeIf(Token::r_paren, &rparenLoc)) {
     // Empty tuples are represented as ParenNode(TupleNode()) where the tuple
     // has no subexpressions.
-    firstCommaLoc = lparenLoc;
-  } else if (parseStarredList(exprs, Token::r_paren, &firstCommaLoc) ||
+    element = alloc<TupleNode>(lparenLoc, ArrayRef<ExprNode *>());
+  } else if (parseStarredListAsTuple(element, Token::r_paren) ||
              parseToken(Token::r_paren,
                         "expected ')' in parenthesized expression", &rparenLoc))
     return failure();
 
-  // If there was a tuple inside the parens, form it.
-  if (exprs.size() != 1 || firstCommaLoc.isValid())
-    result = alloc<TupleNode>(firstCommaLoc, copyArrayRef<ExprNode *>(exprs));
-  else
-    result = exprs[0];
-  result = alloc<ParenNode>(lparenLoc, result, rparenLoc);
+  result = alloc<ParenNode>(lparenLoc, element, rparenLoc);
   return success();
 }
 
@@ -752,7 +736,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
       }
 
       // Parse this as an assignment_expression, allowing := operator.
-      return parseExpression(arg.expr, Precedence::kAssignExpr);
+      return parseExpression(arg.expr, Precedence::kSimpleStmt);
     };
 
     // TODO: Handle comprehension argument.
@@ -1059,6 +1043,43 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
   return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);
 }
 
+/// If the specified token is an '=' or '+=' sort of token, return the
+/// expression kind, otherwise return null.
+static std::optional<ExprNode::Kind> getAssignmentKind(Token::Kind tokenKind) {
+  switch (tokenKind) {
+  default:
+    return std::nullopt;
+  case Token::equal:
+    return ExprNode::kAssign;
+  case Token::plus_equal:
+    return ExprNode::kIAdd;
+  case Token::minus_equal:
+    return ExprNode::kISub;
+  case Token::star_equal:
+    return ExprNode::kIMul;
+  case Token::at_equal:
+    return ExprNode::kIMatMul;
+  case Token::slash_equal:
+    return ExprNode::kITrueDiv;
+  case Token::percent_equal:
+    return ExprNode::kIMod;
+  case Token::amp_equal:
+    return ExprNode::kIAnd;
+  case Token::pipe_equal:
+    return ExprNode::kIOr;
+  case Token::caret_equal:
+    return ExprNode::kIXor;
+  case Token::less_less_equal:
+    return ExprNode::kILShift;
+  case Token::right_right_equal:
+    return ExprNode::kIRShift;
+  case Token::star_star_equal:
+    return ExprNode::kIPow;
+  case Token::slash_slash_equal:
+    return ExprNode::kIFloorDiv;
+  }
+}
+
 /// Parse a simple_stmt production containing an expression, including
 /// expression_stmt and {augmented_|annotated_|}assignment_stmt.
 ///
@@ -1067,10 +1088,47 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
 ///              (expression_list "=")+ (starred_expression | yield_expression)
 /// augmented_assignment_stmt ::=
 ///                        expression "+=" (expression_list | yield_expression)
+///
+/// NOTE: we do not handle this as part of binary operator parsing because the
+/// grammar is so weird and different with yield expressions, expression_list,
+/// and starred expression.
 ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
-                                             std::optional<size_t> stmtIndent) {
+                                             size_t stmtIndent) {
+  ExprParser p(getLexer(), stmtIndent);
+
+  // We have three very different grammar productions that all start with an
+  // expression, starred_expression, or assignment_expression plus the target
+  // stuff in various mixes.  This is all the Python grammar trying to enforce
+  // semantic considerations in the grammar, which is unpleasant.  Implement
+  // this by parsing the most general thing and sorting out what is valid later.
+  ExprNode *expr = nullptr;
+  // TODO: Handle yield_expression.
+  if (p.parseStarredListAsTuple(expr, /*terminators=*/{}))
+    return failure();
+
+  // If that was it, just return the expression.
+  std::optional<ExprNode::Kind> assignKind =
+      getAssignmentKind(p.getToken().getKind());
+  if (!p.isTokenInCurrentStatement() || !assignKind.has_value()) {
+    result = expr;
+    return success();
+  }
+  SMLoc assignLoc = p.consumeToken().getLoc();
+
+  // If we have an = or += operator, parse the rest of the statement pieces;
+  // assignments are right associative, so we just recurse to handle this.
+  ExprNode *rhsExpr = nullptr;
+  if (parseSimpleStmtExprs(rhsExpr, stmtIndent))
+    return failure();
+
+  result = p.alloc<BinOpNode>(assignKind.value(), expr, assignLoc, rhsExpr);
+  return success();
+}
+
+ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&expr,
+                                                  size_t stmtIndent) {
   return ExprParser(getLexer(), stmtIndent)
-      .parseExpression(result, Precedence::kSimpleStmt);
+      .parseStarredListAsTuple(expr, /*terminators=*/{});
 }
 
 /// Return an expression node for None at the specified location.
