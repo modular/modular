@@ -538,7 +538,7 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
   // Otherwise, check for a source module with this name.
   if (std::filesystem::exists(name.replace_extension("mojo")) ||
       std::filesystem::exists(name.replace_extension("🔥")))
-    return name;
+    return name.string();
   return std::nullopt;
 }
 
