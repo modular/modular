@@ -712,11 +712,16 @@ void InliningGraphBase<DerivedT, NodeT>::build(ModuleOp module,
     auto &[func, node] = value;
     NodeT *callerNode = &node;
     func.getBodyRegion().walk([&](CallOpT call) {
-      auto callee = symtab.lookup<FuncOpT>(
+      Operation *calleeOp = symtab.lookup(
           cast<FlatSymbolRefAttr>(
               cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
               .getAttr());
-      assert(callee && "invalid IR?");
+      assert(calleeOp && "invalid IR?");
+      // Only add the edge if the symbol we found is of the type we expect.
+      auto callee = dyn_cast<FuncOpT>(calleeOp);
+      if (!callee)
+        return;
+
       NodeT *calleeNode = &nodes.find(callee)->second;
       // Filter calls that do not satisfy the inlining level.
       if (!getDerived().shouldInline(calleeNode))
