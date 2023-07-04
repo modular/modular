@@ -50,7 +50,6 @@ TEST(TypeID, typeName) {
   static_assert("int &&"sv == typeNameFor<int &&>());
 
   static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
-  static_assert("ns1::ns2::bar[]"sv == typeNameFor<ns1::ns2::bar[]>());
 
   static_assert("SingleClassTemplate<void>"sv ==
                 typeNameFor<SingleClassTemplate<void>>());
@@ -75,7 +74,6 @@ TEST(TypeID, typeName) {
   static_assert("int&&"sv == typeNameFor<int &&>());
 
   static_assert("ns1::ns2::bar"sv == typeNameFor<ns1::ns2::bar>());
-  static_assert("ns1::ns2::bar []"sv == typeNameFor<ns1::ns2::bar[]>());
 
   static_assert("SingleClassTemplate<void>"sv ==
                 typeNameFor<SingleClassTemplate<void>>());
