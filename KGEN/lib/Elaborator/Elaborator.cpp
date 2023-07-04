@@ -2373,6 +2373,18 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
     if (op.getName().getStringRef() == "lit.func")
       return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
+  // Find any kgen.func we have already - they're already elaborated, and we do
+  // not want to re-process them. Add concrete ImplNodes for each one.
+  std::vector<std::unique_ptr<ImplNode>> preElaboratedNodes;
+  for (auto func : theModule.getOps<FuncOp>()) {
+    g.concreteNodes.get().try_emplace(
+        func,
+        preElaboratedNodes
+            .emplace_back(std::make_unique<ImplNode>(
+                func, nullptr, func.getBodyRegion(), func.getSymName().str()))
+            .get());
+  }
+
   auto emptyInputParamKey = ArrayAttr::get(theModule.getContext(), {});
   std::vector<AnyAsyncValueRef> primaryChs;
   std::vector<std::unique_ptr<ImplNode>> rootNodes;
