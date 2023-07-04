@@ -53,3 +53,33 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK: %0 = llvm.mlir.undef : !llvm.array<4 x i32>
   // CHECK: llvm.return %{{.*}} : !llvm.array<4 x i32>
 }
+
+// -----
+
+// COM: Don't generate globals where there are none.
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-NOT: llvm.mlir.global_ctors
+  // CHECK-NOT: llvm.mlir.global_dtors
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c], priorities = [2 : i32, 5 : i32]}
+  // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d], priorities = [2 : i32, 5 : i32]}
+  llvm.func @foo_c() {
+    llvm.return
+  }
+  llvm.func @foo_d() {
+    llvm.return
+  }
+  llvm.func @bar_c() {
+    llvm.return
+  }
+  llvm.func @bar_d() {
+    llvm.return
+  }
+
+  kgen.global @foo : i32 (2, @foo_c, @foo_d)
+  kgen.global @bar : i64 (5, @bar_c, @bar_d)
+}

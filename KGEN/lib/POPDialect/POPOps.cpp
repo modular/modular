@@ -664,28 +664,6 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
-// GlobalOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
-  auto ptrType = PointerType::get(getType());
-  auto module = (*this)->getParentOfType<ModuleOp>();
-  auto verifyFunc = [&](SymbolRefAttr ref, StringRef name) -> LogicalResult {
-    auto func = symtab.lookupSymbolIn<FuncOp>(module, ref);
-    if (!func || func.getNumResults() != 0 || func.getNumArguments() != 1 ||
-        func.getArgumentTypes().front() != ptrType)
-      return emitOpError() << name << ' ' << ref
-                           << " does not reference a function with signature ("
-                           << ptrType << ") -> ()";
-    return success();
-  };
-  if (failed(verifyFunc(getCtor(), "constructor")) ||
-      failed(verifyFunc(getDtor(), "destructor")))
-    return failure();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // GlobalAddressOp
 //===----------------------------------------------------------------------===//
 
