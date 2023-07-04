@@ -2550,3 +2550,11 @@ kgen.generator @main() {
   %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @preelaborated()
+kgen.func @preelaborated() {
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}

@@ -10,3 +10,9 @@ kgen.generator @foo() {
 kgen.generator @bar() {
   kgen.return
 }
+
+// No warnings or errors expected for this, it should just pass through with
+// no changes.
+kgen.func @alreadyDone() {
+  kgen.return
+}
