@@ -1014,7 +1014,7 @@ void TryRaiseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
-// LetRegDeclOp / VarLetDeclOp
+// LetRegDeclOp
 //===----------------------------------------------------------------------===//
 
 void LetRegDeclOp::build(OpBuilder &builder, OperationState &state,
@@ -1032,9 +1032,50 @@ OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
   return adaptor.getValue();
 }
 
+//===----------------------------------------------------------------------===//
+// VarLetDeclOp
+//===----------------------------------------------------------------------===//
+
 void VarLetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalVarDeclOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseNoArgRegion(OpAsmParser &p, Region &region) {
+  if (p.parseRegion(region, {}))
+    return failure();
+  if (region.empty())
+    region.push_back(new Block);
+  return success();
+}
+
+static void printNoArgRegion(OpAsmPrinter &p, Operation *op, Region &region) {
+  p.printRegion(region);
+}
+
+LogicalResult GlobalVarDeclOp::verify() {
+  if (getCtor().getNumArguments())
+    return emitOpError() << "constructor region should have zero arguments";
+  if (getDtor().getNumArguments())
+    return emitOpError() << "destructor region should have zero arguments";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalVarRefOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
+  auto global = symtab.lookupSymbolIn<GlobalVarDeclOp>(
+      (*this)->getParentOfType<ModuleOp>(), getGlobal());
+  if (!global || global.getType() != getResult().getType().getElementAsType())
+    return emitOpError() << "does not refer to a global variable declaration "
+                            "of the right type";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
