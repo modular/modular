@@ -72,12 +72,9 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
   };
 
   mlir::AttrTypeWalker walker;
-  walker.addWalk([&](Type type) {
-    if (auto ref = dyn_cast<DeclRefType>(type)) {
-      // Recurse on the type declaration.
-      if (Operation *decl = extractDependency(ref.getName()))
-        sliceDependencies(decl, sliceSymtab, symtab);
-    }
+  walker.addWalk([&](FlatSymbolRefAttr ref) {
+    if (Operation *decl = extractDependency(ref.getAttr()))
+      sliceDependencies(decl, sliceSymtab, symtab);
   });
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
@@ -87,32 +84,6 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     for (Region &region : op->getRegions())
       for (Type type : region.getArgumentTypes())
         walker.walk(type);
-
-    // Extract references to functions. Mark copied functions as module private
-    // and recurse.
-    StringAttr ref =
-        llvm::TypeSwitch<Operation *, StringAttr>(op)
-            .Case<KGENCallOpInterface>([&](auto op) {
-              return cast<SymbolConstantAttr>(op.getCallee())
-                  .getSymbol()
-                  .getRootReference();
-            })
-            .Case([&](ParamConstantOp op) {
-              if (auto symbol = dyn_cast<SymbolConstantAttr>(op.getValue()))
-                return symbol.getSymbol().getRootReference();
-              return StringAttr();
-            })
-            .Case([&](POP::ExternalCallOp op) {
-              if (auto importedFrom = op.getImportedFromAttr())
-                return cast<FlatSymbolRefAttr>(importedFrom).getAttr();
-              return StringAttr();
-            })
-            .Default({});
-    if (ref) {
-      Operation *symbol = extractDependency(ref);
-      if (auto func = dyn_cast_if_present<FuncOp>(symbol))
-        sliceDependencies(func, sliceSymtab, symtab);
-    }
   };
   op->walk(extractDependencies);
 }
