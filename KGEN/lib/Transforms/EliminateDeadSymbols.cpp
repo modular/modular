@@ -29,10 +29,15 @@ void EliminateDeadSymbolsPass::runOnOperation() {
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
   DenseSet<StringAttr> usedSymbols;
-  // The base of the export set is the used symbols.
-  theModule.walk([&](ExportOp exportOp) {
-    usedSymbols.insert(
-        cast<FlatSymbolRefAttr>(exportOp.getExported()).getAttr());
+  theModule.walk([&](Operation *op) {
+    if (auto exportOp = dyn_cast<ExportOp>(op)) {
+      // The base of the export set is the used symbols.
+      usedSymbols.insert(
+          cast<FlatSymbolRefAttr>(exportOp.getExported()).getAttr());
+    } else if (auto globalOp = dyn_cast<GlobalOp>(op)) {
+      // And global variables.
+      usedSymbols.insert(globalOp.getSymNameAttr());
+    }
   });
 
   // Now walk the used symbols and find symbols that they use.

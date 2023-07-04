@@ -43,3 +43,16 @@ kgen.func @B() {
 }
 
 kgen.export @A
+
+// CHECK: @global_var_ctor
+kgen.func @global_var_ctor() {
+  kgen.return
+}
+
+// CHECK: @global_var_dtor
+kgen.func @global_var_dtor() {
+  kgen.return
+}
+
+// CHECK: kgen.global @global_var {{.*}} @global_var_ctor, @global_var_dtor
+kgen.global @global_var : i32 (2, @global_var_ctor, @global_var_dtor)
