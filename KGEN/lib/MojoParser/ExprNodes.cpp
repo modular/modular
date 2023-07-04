@@ -2275,11 +2275,11 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
 }
 
 /// Emit the x^ expression.
-AnyValue UnaryOpNode::emitConsume(AnyValue argValue, ValueDest &dest,
-                                  ExprEmitter &emitter) const {
+AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
+                                   ExprEmitter &emitter) const {
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
-        this, "cannot consume a value in this context");
+        this, "cannot transfer a value in this context");
 
   // If this is a value we can track the lifetime of, then we can end that
   // value's lifetime to make a new RValue, otherwise return null.
@@ -2288,6 +2288,13 @@ AnyValue UnaryOpNode::emitConsume(AnyValue argValue, ValueDest &dest,
     if (!LifetimeTrackable::findUnderlyingValueFromField(v))
       return {};
 
+    // If the input is already an owned RValue, then there is no need to
+    // transfer from the temporary.
+    if (argValue.getIfRValue())
+      emitter.emitWarning(getLoc())
+          << "transfer from an owned value has no effect and can be removed"
+          << FixIt::remove(getLoc());
+
     auto newVal = emitter.builder->create<OwnershipEndLifetimeOp>(
         getLocation(emitter), v, isRegister);
     if (isRegister)
@@ -2295,7 +2302,7 @@ AnyValue UnaryOpNode::emitConsume(AnyValue argValue, ValueDest &dest,
     return emitter.emitResult(MRValue(newVal), this, dest);
   };
 
-  // The consume expression expects the result to be a ownable value that it
+  // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
   if (auto sl = argValue.getIfSLValue()) {
     if (auto result = handleLifetimeEnd(sl, /*isRegister=*/false))
@@ -2354,8 +2361,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Handle special cases that don't correspond to special functions, such as
   // `not x`, `*args: *Ts`, `x^` etc
-  if (kind == kConsume)
-    return emitConsume(exprRep, dest, emitter);
+  if (kind == kTransfer)
+    return emitTransfer(exprRep, dest, emitter);
 
   ASTExprAnd<AnyValue> argValue = {exprRep, subExpr};
   Kind kindToEmit = kind;

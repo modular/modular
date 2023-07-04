@@ -63,15 +63,15 @@ public:
     kLastAddressConvert = kGetAddressAsOwned,
 
     // Prefix and Postfix unary expressions.
-    kNeg,     // -x
-    kPos,     // +x
-    kInvert,  // ~x
-    kUnpack,  // *x
-    kBoolNot, // not x
-    kAwait,   // await x
-    kConsume, // x^
+    kNeg,      // -x
+    kPos,      // +x
+    kInvert,   // ~x
+    kUnpack,   // *x
+    kBoolNot,  // not x
+    kAwait,    // await x
+    kTransfer, // x^
     kFirstUnaryOp = kNeg,
-    kLastUnaryOp = kConsume,
+    kLastUnaryOp = kTransfer,
 
     // Binary expressions.
     kAdd,

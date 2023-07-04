@@ -25,7 +25,6 @@ struct MemExample:
     self.noop()
 
 fn consume(owned a: MemExample): pass
-fn use(owned a: MemExample): pass
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@"$ownership"::@RegExample::@"__del__
@@ -46,7 +45,6 @@ struct RegExample:
     pass
 
 fn consume(owned a: RegExample): pass
-fn use(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
 # CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
@@ -76,6 +74,25 @@ fn destructors(owned arg0: MemExample):
   mem2.noop()
   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem2)
+
+  # CHECK-NEXT:  %mem3 = lit.varlet.decl "mem3"
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem3)
+  let mem3 = MemExample()
+
+  # Test pointless transfers from RValues.
+
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end.lifetime %mem3
+  # CHECK-NEXT: [[T2:%.*]] = lit.ownership.end.lifetime [[T1]]
+  # CHECK-NEXT: [[T3:%.*]] = lit.ownership.end.lifetime [[T2]]
+  # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T3]])
+  consume(mem3^^^)
+
+  # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
+  # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end.lifetime %anonymous2A
+  # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T1]])
+  consume(MemExample()^)
+
 
 # CHECK-LABEL: lit.func @"if_examples
 fn if_examples(cond: __mlir_type.i1):
@@ -659,8 +676,8 @@ fn bigreg_test():
   # CHECK-NEXT: %5 = lit.struct.gep %varThing[b]
   # CHECK-NEXT: %6 = pop.load %5
   # CHECK-NEXT: %7 = kgen.call {{.*}}__copyinit__{{.*}}(%6)
-  # CHECK-NEXT: kgen.call {{.*}}use{{.*}}(%7)
-  use(varThing.b)
+  # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}(%7)
+  consume(varThing.b)
 
   # CHECK-NEXT: %9 = kgen.call {{.*}}__init__
   # CHECK-NEXT: %10 = lit.struct.gep %varThing[a]

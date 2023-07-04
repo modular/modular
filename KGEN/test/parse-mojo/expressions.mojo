@@ -31,6 +31,8 @@ struct MemoryOnlyInt:
   fn variadic(*value: MemoryOnlyInt):
     pass
 
+fn consume(owned a: MemoryOnlyInt): pass
+
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
   var x: FloatLiteral
@@ -1286,3 +1288,12 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: M, i: Int) -
   # CHECK-NEXT: }
   # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
   return a if cond else b
+
+fn testTransferWarning():
+  let a = MemoryOnlyInt()
+
+  # expected-warning @+1 {{transfer from an owned value has no effect}}
+  consume(a^^)
+
+  # expected-warning @+1 {{transfer from an owned value has no effect}}
+  consume(MemoryOnlyInt()^)
