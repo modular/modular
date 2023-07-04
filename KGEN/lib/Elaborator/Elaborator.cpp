@@ -2584,20 +2584,29 @@ public:
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-    // Collect exports - we don't want to elaborate generators that are not
-    // exported.
-    DenseSet<GeneratorOp> exports;
-    for (auto e : theModule.getOps<ExportOp>())
-      if (auto gen = analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
-              cast<FlatSymbolRefAttr>(e.getExported()).getValue()))
-        exports.insert(gen);
+    // Root elaboration on exports and global variables. These are the
+    // generators that elaboration will start from. If there are no such
+    // generators, then elaborate anything with no input parameters.
+    DenseSet<GeneratorOp> roots;
+    auto addAsRoot = [&](SymbolRefAttr ref) {
+      roots.insert(analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
+          cast<FlatSymbolRefAttr>(ref).getValue()));
+    };
+    for (Operation &op : theModule.getOps()) {
+      if (auto e = dyn_cast<ExportOp>(op)) {
+        addAsRoot(e.getExported());
+      } else if (auto global = dyn_cast<GlobalOp>(op)) {
+        addAsRoot(global.getCtor());
+        addAsRoot(global.getDtor());
+      }
+    }
 
     // Extract the top-level, parameterless generators from the main module.
     // These are the only generators that will be elaborated.
     SmallVector<GeneratorOp> primaryGenerators;
     for (auto gen : theModule.getOps<GeneratorOp>())
       if (gen.getInputParams().empty() &&
-          (exports.empty() || exports.contains(gen)))
+          (roots.empty() || roots.contains(gen)))
         primaryGenerators.push_back(gen);
 
     // Elaboration is the compilation phase in which the IR goes from
