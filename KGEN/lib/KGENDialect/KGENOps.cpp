@@ -1124,6 +1124,27 @@ LogicalResult CreateClosureOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
+  auto module = (*this)->getParentOfType<ModuleOp>();
+  auto verifyFunc = [&](SymbolRefAttr ref, StringRef name) -> LogicalResult {
+    auto func = symtab.lookupSymbolIn<mlir::FunctionOpInterface>(module, ref);
+    if (!func || func.getNumArguments() != 0) {
+      return emitOpError() << name << ' ' << ref
+                           << " does not reference a function with zero "
+                              "arguments and zero results";
+    }
+    return success();
+  };
+  if (failed(verifyFunc(getCtor(), "constructor")) ||
+      failed(verifyFunc(getDtor(), "destructor")))
+    return failure();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // LinkOp
 //===----------------------------------------------------------------------===//
 

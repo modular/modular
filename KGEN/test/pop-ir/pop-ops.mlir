@@ -1064,16 +1064,12 @@ kgen.generator @dtype_utils<type: dtype>(%arg0: !kgen.dtype) {
   kgen.return
 }
 
-kgen.func @global_var_ctor(%arg0: !pop.pointer<i32>) {
+kgen.func @global_var_ctor() {
   kgen.return
 }
 
-kgen.func @global_var_dtor(%arg0: !pop.pointer<i32>) {
-  kgen.return
-}
-
-// CHECK: pop.global @global_var : i32 (2, @global_var_ctor, @global_var_dtor)
-pop.global @global_var : i32 (2, @global_var_ctor, @global_var_dtor)
+// CHECK: kgen.global @global_var : i32 (2, @global_var_ctor, @global_var_ctor)
+kgen.global @global_var : i32 (2, @global_var_ctor, @global_var_ctor)
 
 // CHECK-LABEL: @global_address
 kgen.func @global_address() -> !pop.pointer<i32> {

@@ -987,6 +987,43 @@ def KGEN_ExportOp : KGENOp<"export", [
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalOp
+//===----------------------------------------------------------------------===//
+
+def POP_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Declare a global variable with an constructor.";
+  let description = [{
+    The `kgen.global` operation declares a global variable bound to a symbol
+    name. It contains the type of the global variable, an constructor function,
+    a destructor function, and an initialization priority. The initialization
+    priority determines the order in which the constructors of all the globals
+    in the program will be invoked (lower is earlier) and the reverse order in
+    which the destructors are invoked.
+
+    The constructor and destructor functions are expected to have zero arguments
+    and zero results.
+
+    Example:
+
+    ```mlir
+    kgen.global @foo : i32 (2, @foo_ctor, @foo_dtor)
+    ```
+
+    The global `@foo` with initialization priority `2` will be initialized
+    after a global with priority lower than `2` and destroyed before.
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name, TypeAttr:$type, I32Attr:$priority,
+    SymbolRefAttr:$ctor, SymbolRefAttr:$dtor);
+
+  let assemblyFormat = [{
+    $sym_name `:` $type ` ` `(` $priority `,` $ctor `,` $dtor `)` attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // LinkOp
 //===----------------------------------------------------------------------===//
 
