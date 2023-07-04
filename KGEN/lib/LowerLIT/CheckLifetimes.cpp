@@ -434,6 +434,9 @@ struct ValueSet {
   LLVM_DUMP_METHOD void dump() const;
   void printFuncName(raw_ostream &os) const;
 
+  // Get the location of the function we're scanning.
+  Location getFuncLocation() { return func.getLoc(); }
+
 private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
@@ -743,14 +746,30 @@ ValueRef UninitializedValueScan::checkUse(Value value, Operation &op) {
     return valueRef;
   }
 
-  auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
+  // Specialize diagnostics for returns because it can be confusing why they are
+  // "using" argument values otherwise.
+  if (isa<KGEN::ReturnOp>(op)) {
+    auto diag = mlir::emitError(op.getLoc());
+    addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
+    diag << " is uninitialized at ";
 
-  // If some fields are present and others are missing, complain about the first
-  // whole field that is missing.
-  addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
+    // Diagnostics with implicit function returns can be confusing because the
+    // Location of the return op is set to the function entry.  Make it explicit
+    // when we're complaining about this.
+    if (op.getLoc() == valueSet.getFuncLocation())
+      diag << "the implicit ";
 
-  diag.attachNote(valueEntry.value.getLoc())
-      << "'" << valueEntry.getName().str() << "' declared here";
+    diag << "return from this function";
+  } else {
+    auto diag = mlir::emitError(op.getLoc(), "use of uninitialized value ");
+
+    // If some fields are present and others are missing, complain about the
+    // first whole field that is missing.
+    addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
+
+    diag.attachNote(valueEntry.value.getLoc())
+        << "'" << valueEntry.getName().str() << "' declared here";
+  }
   return valueRef;
 }
 
