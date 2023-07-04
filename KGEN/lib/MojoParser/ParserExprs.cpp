@@ -572,7 +572,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
         break;
       }
 
-      result = alloc<UnaryOpNode>(ExprNode::kConsume, loc, result);
+      result = alloc<UnaryOpNode>(ExprNode::kTransfer, loc, result);
       continue;
     }
 

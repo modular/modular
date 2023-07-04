@@ -453,8 +453,8 @@ struct UnaryOpNode final : public ExprNode {
     return {opLoc, subExpr->getRangeEnd()};
   }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
-  AnyValue emitConsume(AnyValue argValue, ValueDest &dest,
-                       ExprEmitter &emitter) const;
+  AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
+                        ExprEmitter &emitter) const;
 };
 
 /// This represents a chained comparison expression (ex. a < b <= c).
