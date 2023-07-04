@@ -20,12 +20,15 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/MemoryBufferRef.h"
 
 using namespace M;
 using namespace KGEN;
@@ -165,6 +168,7 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
 /// Lower an lit.func to kgen.generator.
 static LogicalResult
 lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
+             DenseMap<StringAttr, StringAttr> &renamedFuncs,
              Block::iterator symTableIt, const Twine &parentPrefix,
              ArrayRef<ParamDeclAttr> parentInputParams = {}) {
   auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(gen);
@@ -209,9 +213,49 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     signature = IndexRefRemapper::prependParams(signature, parentInputParams);
   }
 
-  OpBuilder b(gen);
+  // A small functor to ensure we handle replacing the lit.func correctly. We
+  // have to grab the current iterator, then remove, insert, and erase in that
+  // order to ensure we insert in the correct position.
+  auto replaceLitFunc = [&](Operation *newOp) {
+    Block::iterator genIter = gen->getIterator();
+    symbolTable.remove(gen);
+    symbolTable.insert(newOp, genIter);
+    gen.erase();
+  };
+
+  // If we're working with an extern func, then we replace it with the
+  // fully-elaborated bytecode.
+  if (gen.isExternal()) {
+    DenseResourceElementsAttr elaboratedBody =
+        gen.getPostElaborationBodyRefAttr();
+    assert(elaboratedBody &&
+           "externalized funcs must have already-elaborated bodies attached");
+    // Get the data for the elaborated body.
+    mlir::AsmResourceBlob *blob = elaboratedBody.getRawHandle().getBlob();
+    if (!blob) {
+      return gen->emitError(
+          "could not find the blob for postElaborationBodyRef");
+    }
+
+    ArrayRef<char> bytecode = blob->getData();
+    llvm::MemoryBufferRef bufferRef(
+        StringRef(bytecode.begin(), bytecode.size()), "");
+    if (failed(mlir::readBytecodeFile(bufferRef, gen->getBlock(),
+                                      gen->getContext())))
+      return failure();
+
+    // readBytecodeFile inserts at the end of the block, pull that op.
+    auto result = cast<KGEN::FuncOp>(gen->getBlock()->back());
+    // `gen` was renamed above if the parent prefix was non-empty, so we can use
+    // it as the key in the map's lookup.
+    renamedFuncs[gen.getNameAttr()] = result.getNameAttr();
+    // Replace `gen` with the new func we just created.
+    replaceLitFunc(result);
+    return success();
+  }
 
   // Directly lower since these operations are exactly identical right now.
+  OpBuilder b(gen->getContext());
   auto result = b.create<GeneratorOp>(
       gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
       gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
@@ -222,18 +266,16 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   gen.getBodyRegion().getBlocks().remove(bodyBlock);
   result.getBodyRegion().push_back(bodyBlock);
 
-  // Move over the symbol.
-  symbolTable.erase(gen);
-  gen = LIT::FuncOp(); // The line above also erases 'gen'.
-  symbolTable.insert(result);
-
+  // Move over the symbol, and we're done.
+  replaceLitFunc(result);
   return success();
 }
 
 /// Lower nested structures in lit.struct.decl away.
-static LogicalResult lowerStructDecl(StructDeclOp structDecl,
-                                     SymbolTable &symbolTable,
-                                     Block::iterator symTableIt) {
+static LogicalResult
+lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
+                DenseMap<StringAttr, StringAttr> &renamedFuncs,
+                Block::iterator symTableIt) {
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
@@ -260,21 +302,28 @@ static LogicalResult lowerStructDecl(StructDeclOp structDecl,
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(
-            func, symbolTable, structDecl->getIterator(),
+            func, symbolTable, renamedFuncs, structDecl->getIterator(),
             structName.getValue() + "::", structDecl.getInputParams())))
       return failure();
   }
   return success();
 }
 
-static void lowerAttributesAndTypes(Operation *op) {
+static void
+lowerAttributesAndTypes(Operation *op,
+                        const DenseMap<StringAttr, StringAttr> &renamedFuncs) {
   mlir::AttrTypeReplacer replacer;
 
   // Member functions are reference with nested symbol references. After
   // lowering, the symbol tree will be flat. Concatenate all nested symbol
-  // references in symbol constants.
-  replacer.addReplacement(
-      [](SymbolRefAttr ref) { return flattenSymbolRefAttr(ref); });
+  // references in symbol constants. If something was renamed, perform the
+  // renaming.
+  replacer.addReplacement([&renamedFuncs](SymbolRefAttr ref) {
+    auto flat = flattenSymbolRefAttr(ref);
+    if (StringAttr renamed = renamedFuncs.lookup(flat.getAttr()))
+      return SymbolRefAttr::get(renamed);
+    return flat;
+  });
 
   // Lower `!lit.none` to `list<i1[0]>`, which will eventually become nothing.
   auto emptyList =
@@ -336,10 +385,11 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
 }
 
 /// Lower the constructs within the body of a module decl.
-static LogicalResult lowerModuleDecl(Block *moduleBody,
-                                     SymbolTable &symbolTable,
-                                     Block::iterator symTableIt = {},
-                                     const Twine &parentPrefix = {}) {
+static LogicalResult
+lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
+                DenseMap<StringAttr, StringAttr> &renamedFuncs,
+                Block::iterator symTableIt = {},
+                const Twine &parentPrefix = {}) {
   bool isTopLevel = symTableIt == Block::iterator();
   for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
     // If we are already in the symbol table, use the the operations iterator.
@@ -348,15 +398,18 @@ static LogicalResult lowerModuleDecl(Block *moduleBody,
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
             .Case([&](LIT::FuncOp op) {
-              return lowerLITFunc(op, symbolTable, opSymTableIt, parentPrefix);
+              return lowerLITFunc(op, symbolTable, renamedFuncs, opSymTableIt,
+                                  parentPrefix);
             })
             .Case([&](StructDeclOp op) {
-              return lowerStructDecl(op, symbolTable, opSymTableIt);
+              return lowerStructDecl(op, symbolTable, renamedFuncs,
+                                     opSymTableIt);
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
-              if (failed(lowerModuleDecl(fileBody, symbolTable, opSymTableIt,
+              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedFuncs,
+                                         opSymTableIt,
                                          parentPrefix + op.getName() + "::")))
                 return failure();
 
@@ -400,9 +453,10 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     ModuleOp module = getOperation();
     SymbolTable &symbolTable =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-    if (failed(lowerModuleDecl(module.getBody(), symbolTable)))
+    DenseMap<StringAttr, StringAttr> renamedFuncs;
+    if (failed(lowerModuleDecl(module.getBody(), symbolTable, renamedFuncs)))
       return signalPassFailure();
-    lowerAttributesAndTypes(module);
+    lowerAttributesAndTypes(module, renamedFuncs);
   }
 };
 
