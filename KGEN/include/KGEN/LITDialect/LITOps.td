@@ -565,7 +565,7 @@ def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LetRegDeclOp / VarLetDeclOp
+// LetRegDeclOp
 //===----------------------------------------------------------------------===//
 
 def LIT_LetRegDeclOp : LITOp<"letreg.decl",
@@ -592,8 +592,12 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// VarLetDeclOp
+//===----------------------------------------------------------------------===//
+
 def LIT_VarLetDeclOp : LITOp<"varlet.decl",
-         [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
+    [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Addressible local let or var declaration";
   let description = [{
     This declaration is used for var and let declarations with an exposed
@@ -608,6 +612,69 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
     $name `,` `var``=`$isVar`,` `synth``=`$isSynthesized
           `:` type($result) attr-dict
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalVarDeclOp
+//===----------------------------------------------------------------------===//
+
+def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [NoTerminator]> {
+  let summary = "Global variable declaration.";
+  let description = [{
+    The `lit.globalvar.decl` operation corresponds to a global variable
+    declaration. It is referenced with a symbol name. It contains a constructor
+    and destructor region where the initializer expression and the destructor
+    call (if there is one) for the variable go.
+
+    Example:
+
+    ```mlir
+    lit.globalvar.decl @global_var : !kgen.declref<@String> isLet {
+      %0 = lit.globalvar.ref @global_var : @String
+      kgen.call @String::@__init__(%0)
+    }, {
+      %0 = lit.globalvar.ref @global_var : @String
+      kgen.call @String::@__del__(%0)
+    }
+    ```
+
+    `isLet` should be set if the global was declared with a `let` declaration
+    and is immutable.
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type,
+                       UnitAttr:$isLet);
+  let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
+
+  let assemblyFormat = [{
+    $sym_name `:` $type attr-dict-with-keyword (`isLet` $isLet^)?
+    custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalVarRefOp
+//===----------------------------------------------------------------------===//
+
+def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
+    [Pure, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Reference to a global variable.";
+  let description = [{
+    The `lit.globalvar.ref` operation forms a reference to a global variable.
+
+    Example:
+
+    ```mlir
+    %0 = lit.globalvar.ref @global_var : <@Int>
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$global);
+  let results = (outs POP_PointerType:$result);
+
+  let assemblyFormat = "$global attr-dict `:` type($result)";
 }
 
 //===----------------------------------------------------------------------===//

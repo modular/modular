@@ -343,3 +343,18 @@ lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
   // CHECK: lit.error_return %{{.*}} : <@Error, !lit.none>
   lit.error_return %2 : !pop.variant<@Error, !lit.none>
 }
+
+// CHECK: lit.globalvar.decl @global_var : !kgen.declref<@Error> {
+lit.globalvar.decl @global_var : !kgen.declref<@Error> {
+  // CHECK-NEXT: lit.globalvar.ref @global_var : <@Error>
+  %0 = lit.globalvar.ref @global_var : <@Error>
+// CHECK-NEXT: }, {
+}, {
+// CHECK-NEXT: }
+}
+
+// CHECK: lit.globalvar.decl @global_let : !kgen.declref<@Error> isLet
+lit.globalvar.decl @global_let : !kgen.declref<@Error> isLet {
+}, {
+  %0 = lit.globalvar.ref @global_let : <@Error>
+}
