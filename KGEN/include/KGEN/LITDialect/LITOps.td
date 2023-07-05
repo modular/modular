@@ -106,7 +106,7 @@ def LIT_FuncOp : LITOp<"func", [
     OpBuilder<(ins)>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "ArrayRef<StringAttr>":$argNames,
-                   "SpecialFunctionKind":$specialFnID)>,
+                   CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,
   ];
 
   let hasCustomAssemblyFormat = 1;

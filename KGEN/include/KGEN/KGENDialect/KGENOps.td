@@ -620,6 +620,10 @@ def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -990,7 +994,7 @@ def KGEN_ExportOp : KGENOp<"export", [
 // GlobalOp
 //===----------------------------------------------------------------------===//
 
-def POP_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
+def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Declare a global variable with an constructor.";
   let description = [{
