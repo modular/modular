@@ -7,13 +7,11 @@
 #ifndef SUPPORT_DRIVER_DRIVERSUPPORT_H
 #define SUPPORT_DRIVER_DRIVERSUPPORT_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Error.h"
-
-#include <string>
 
 namespace M {
 
@@ -51,7 +49,7 @@ public:
   void addCallback(StringRef subcommand, Callback callback);
   /// Attempts to return the callback function associated with the given
   /// subcommand name, or an error if no match can be found.
-  llvm::Expected<Callback> getCallback(StringRef subcommand);
+  ErrorOr<Callback> getCallback(StringRef subcommand);
 
 private:
   /// The backing store for subcommands and their callback functions.

@@ -5,6 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Driver/DriverSupport.h"
+#include "Support/ErrorOr.h"
+
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 
@@ -34,7 +38,7 @@ void SubcommandRegistry::addCallback(StringRef subcommand,
   callbacks.insert({cmd, callback});
 }
 
-llvm::Expected<SubcommandRegistry::Callback>
+ErrorOr<SubcommandRegistry::Callback>
 SubcommandRegistry::getCallback(StringRef subcommand) {
   auto it = callbacks.find(subcommand.str());
   if (it != callbacks.end())
@@ -57,6 +61,5 @@ SubcommandRegistry::getCallback(StringRef subcommand) {
   if (minDistance <= 2)
     message += ". Did you mean '" + nearest + "'?";
 
-  return llvm::make_error<llvm::StringError>(message,
-                                             llvm::inconvertibleErrorCode());
+  return Error(message);
 }
