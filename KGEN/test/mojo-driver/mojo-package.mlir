@@ -32,10 +32,11 @@ lit.package @mypackage {
   lit.package @inner2 {
     // CHECK: lit.file_module @myfile2
     lit.file_module @myfile2 {
-      // CHECK: lit.func @bar() attributes {postElaborationBodyRef = {{.*}}
-      lit.func @bar() {
+      // CHECK: lit.func @bar() -> index attributes {postElaborationBodyRef = {{.*}}
+      lit.func @bar() -> index {
+        %0 = kgen.param.constant = <3>
         // CHECK-NEXT: lit.extern_func
-        kgen.return
+        kgen.return %0 : index
       }
 
       kgen.export @mypackage::@inner2::@myfile2::@bar
@@ -47,6 +48,6 @@ lit.package @mypackage {
 // CHECK: dialect_resources
 // CHECK: builtin
 // CHECK: archive_{{.*}}: {{.*}}
-// CHECK: mojo-test-pkg::inner1::myfile::aStruct::foo_bytecode: {{.*}}
-// CHECK: mojo-test-pkg::inner2::myfile2::bar_bytecode: {{.*}}
+// CHECK: bytecode_{{.*}}: {{.*}}
+// CHECK: bytecode_{{.*}}: {{.*}}
 

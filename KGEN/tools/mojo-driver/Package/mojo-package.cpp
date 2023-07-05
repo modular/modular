@@ -30,6 +30,7 @@
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -248,15 +249,42 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
   // post-elaboration (a KGEN::FuncOp) and attaches the bytecode for the
   // lowered func to the high-level func as a resource attribute.
   auto attachElaboratedBytecodeToFunc =
-      [this](LIT::FuncOp hlFunc, KGEN::FuncOp llFunc) -> ErrorOrSuccess {
+      [this, exportedSymbols](LIT::FuncOp hlFunc,
+                              KGEN::FuncOp llFunc) -> ErrorOrSuccess {
+    // We have to update the symbol name on llFunc to match the exported name on
+    // hlFunc, since that is how users will refer to it when it's imported.
+    StringAttr currentName = llFunc.getSymNameAttr();
+    // Reset the name on the function when this scope exits.
+    auto resetName =
+        llvm::make_scope_exit([&] { llFunc.setSymNameAttr(currentName); });
+
+    // If the function is exported with an alias, modify it to use that name.
+    auto exported = exportedSymbols.find(currentName);
+    if (exported != exportedSymbols.end())
+      llFunc.setSymNameAttr(exported->second.alias);
+
+    // Attach a reference to the precompiled body to the KGEN::FuncOp. Make sure
+    // to remove the precompiled body attr from the function when this scope
+    // exits, though.
+    auto resetPrecompiledBody =
+        llvm::make_scope_exit([&] { llFunc.removePrecompiledBodyRefAttr(); });
+    llFunc.setPrecompiledBodyRefAttr(
+        SymbolRefAttr::get(thePackage.getSymNameAttr()));
+
+    // Write the function bytecode to a file.
     Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
     if (failed(mlir::writeBytecodeToFile(llFunc, *str)))
       return Error("could not write bytecode for kgen.func");
 
-    LIT::MangledSymbol mangled = LIT::MangledSymbol::mangle(hlFunc);
+    // Hash the bytecode itself - this will give us a unique'd attr name that
+    // shouldn't clash even when a large number of packages get imported - and
+    // if they do clash, they're guaranteed to be exactly the same.
+    auto hash = llvm::BLAKE3::hash(
+        ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                          (const uint8_t *)str->getBufferEnd()));
 
     hlFunc.setPostElaborationBodyRefAttr(createResourceAttr(
-        std::move(str), mangled.mangled.getValue() + "_bytecode"));
+        std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
     return success();
   };
 
