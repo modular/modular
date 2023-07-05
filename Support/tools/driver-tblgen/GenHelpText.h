@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_MOJOTBLGEN_GENHELPTEXT_H
-#define KGEN_TOOLS_MOJOTBLGEN_GENHELPTEXT_H
+#ifndef SUPPORT_TOOLS_DRIVERTBLGEN_GENHELPTEXT_H
+#define SUPPORT_TOOLS_DRIVERTBLGEN_GENHELPTEXT_H
 
 namespace M {
 
@@ -15,4 +15,4 @@ class BackendRegistry;
 void registerGenHelpTextBackend(BackendRegistry &registry);
 } // namespace M
 
-#endif // KGEN_TOOLS_MOJOTBLGEN_GENHELPTEXT_H
+#endif // SUPPORT_TOOLS_DRIVERTBLGEN_GENHELPTEXT_H

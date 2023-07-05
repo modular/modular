@@ -12,5 +12,6 @@ configure_lit_site_cfg(
 add_modular_testsuite(check-support
   TOOLS
   build-info
+  driver-tblgen
   support-dialect-opt
   system-info)

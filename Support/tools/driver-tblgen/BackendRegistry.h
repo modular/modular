@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_MOJOTBLGEN_BACKENDREGISTRY_H
-#define KGEN_TOOLS_MOJOTBLGEN_BACKENDREGISTRY_H
+#ifndef SUPPORT_TOOLS_DRIVERTBLGEN_BACKENDREGISTRY_H
+#define SUPPORT_TOOLS_DRIVERTBLGEN_BACKENDREGISTRY_H
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -62,4 +62,4 @@ private:
 };
 } // namespace M
 
-#endif // KGEN_TOOLS_MOJOTBLGEN_BACKENDREGISTRY_H
+#endif // SUPPORT_TOOLS_DRIVERTBLGEN_BACKENDREGISTRY_H

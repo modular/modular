@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-// RUN: %mojo-tblgen -gen-man-page %s 2>&1 >/dev/null | FileCheck %s
+// RUN: %driver-tblgen -gen-man-page %s 2>&1 >/dev/null | FileCheck %s
 
 include "Support/Driver/DriverCommand.td"
 
 // CHECK: warning: ignoring description
 def : CommandDescription<
-  "mojo-tblgen-test", "first-command-descriptions",
+  "driver-tblgen-test", "first-command-descriptions",
   "Test that this record is ignored",
   "Multiple command description records should not appear in a single input, "
   "since each one is meant to describe the command for which documentation is "
@@ -29,5 +29,5 @@ def : CommandDescription<
   "this record appears after the first, which will be ignored. Technically, "
   "this record will be selected, but, ideally users will not ignore warnings "
   "and ensure they only define a single description record.\n\n"
-  "This record also fails several of mojo-tblgen's validation checks",
+  "This record also fails several of driver-tblgen's validation checks",
   /*inputMetaVarName=*/"Path", /*requiresInput=*/true, /*variadicInput=*/false>;

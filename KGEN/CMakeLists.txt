@@ -42,7 +42,6 @@ add_subdirectory(tools/kgen-elaborate-opt)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)
-add_subdirectory(tools/mojo-tblgen)
 
 if(LLDB_FOUND)
   add_subdirectory(tools/mojo-jupyter-executor)

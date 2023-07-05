@@ -41,49 +41,8 @@ add_modular_tool(mojo-driver
 # An umbrella target for all driver TableGen targets.
 add_custom_target(MojoDriverOptions)
 
-# Given an input path "Foo.td" and a manual page name "foo", this creates 3
-# public TableGen targets:
-#
-# 1. "MojoDriverFoo", which when built outputs option parser definitions to a
-#    file "Foo.inc".
-# 2. "FooHelpText", which when built outputs a raw C++ string literal containing
-#    help text to a file "FooHelpText.inc".
-# 3. "man-foo", which when built generates a manual page file named "foo.1" ('1'
-#    is the "general commands" section for manual pages). That "foo.1" file is
-#    also copied to the build's share/man directory.
-#
-# Each of these TableGen targets is added to the driver option umbrella target.
-macro(add_driver_option_tablegen input manual_name)
-  get_filename_component(name "${input}" NAME_WE)
-
-  # 1. Option parser definitions
-  set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(LLVM "${name}.inc" -gen-opt-parser-defs)
-  add_public_tablegen_target("MojoDriver${name}")
-  add_dependencies(MojoDriverOptions "MojoDriver${name}")
-
-  # 2. Help text
-  set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(MOJO "${name}HelpText.inc" -gen-help-text)
-  add_public_tablegen_target("${name}HelpText")
-  add_dependencies(MojoDriverOptions "${name}HelpText")
-
-  # 3. Manual page
-  set(file_name "${name}.1")
-  set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(MOJO "${file_name}" -gen-man-page)
-  add_public_tablegen_target("man-${name}")
-
-  add_custom_command(TARGET "man-${name}" POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_CURRENT_BINARY_DIR}/${file_name}"
-    "${MODULAR_SHARE_DIR}/man/man1/${file_name}")
-
-  add_dependencies(MojoDriverOptions "man-${name}")
-endmacro()
-
 # Add targets to generate option definitions for the top-level driver.
-add_driver_option_tablegen(DriverOptions.td mojo-driver)
+add_driver_option_tablegen(Mojo DriverOptions.td mojo-driver)
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
