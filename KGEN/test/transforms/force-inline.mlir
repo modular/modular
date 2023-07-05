@@ -286,3 +286,18 @@ kgen.func @caller1() {
   kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator @dontinlineme
+kgen.generator @dontinlineme() always_inline {
+  %idx0 = index.constant 0
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @caller
+kgen.func @caller() {
+  // CHECK-NEXT: kgen.call @dontinlineme
+  kgen.call @dontinlineme() : () -> ()
+  kgen.return
+}
