@@ -11,13 +11,17 @@
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
@@ -61,6 +65,76 @@ struct TestDataFlowPass
 };
 } // namespace
 
+namespace {
+/// This pass generates a kgen.func that clones the body and adds a
+/// "_elaborated" suffix to the name for all the specified lit.funcs in the
+/// module. It's used to test the logic in LowerLIT that handles pre-elaborated
+/// funcs.
+struct TestGeneratePreElaboratedBody
+    : public mlir::PassWrapper<TestGeneratePreElaboratedBody,
+                               OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestGeneratePreElaboratedBody);
+
+  StringRef getArgument() const override {
+    return "test-generate-elaborated-body";
+  };
+
+  DenseResourceElementsAttr createResourceAttr(StringRef bytes, Twine name) {
+    mlir::MLIRContext *ctx = &getContext();
+
+    auto resourceManager =
+        mlir::DenseResourceElementsHandle::getManagerInterface(ctx);
+
+    // Pretend this is a "tensor" of data.
+    auto attrType =
+        RankedTensorType::get({(int64_t)bytes.size()},
+                              IntegerType::get(ctx, 8, IntegerType::Unsigned));
+    auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+        ArrayRef<char>(bytes.begin(), bytes.size()),
+        /*align=*/8);
+
+    // Some convenience typedefs to simplify this code a little bit.
+    using HandleTy = mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
+    auto *dialect = cast<mlir::BuiltinDialect>(resourceManager.getDialect());
+    return DenseResourceElementsAttr::get(
+        attrType, resourceManager.getBlobManager().insert<HandleTy>(
+                      dialect, name.str(), std::move(blob)));
+  }
+
+  void runOnOperation() override {
+    ModuleOp theModule = getOperation();
+    // Attach a kgen.func to the lit.func. This dummy function simply contains
+    // exactly the same operations as the lit.func, but has a slightly different
+    // name.
+    for (auto func : theModule.getOps<KGEN::LIT::FuncOp>()) {
+      // Allow the test to skip functions if they have the doNotExtern attr.
+      if (func->hasAttr("doNotExtern"))
+        continue;
+
+      OpBuilder b(func.getContext());
+      OwningOpRef<KGEN::FuncOp> fakeElaboratedBody = b.create<KGEN::FuncOp>(
+          func.getLoc(), (func.getSymName() + "_elaborated").str(),
+          func.getSignature(), KGEN::AlwaysInlineLevel::Disabled);
+
+      // Just clone the body in.
+      mlir::IRMapping map;
+      func.getBodyRegion().cloneInto(&fakeElaboratedBody->getBodyRegion(), map);
+
+      std::string str;
+      llvm::raw_string_ostream stream(str);
+      if (failed(mlir::writeBytecodeToFile(*fakeElaboratedBody, stream)))
+        return signalPassFailure();
+
+      func.setPostElaborationBodyRefAttr(createResourceAttr(
+          stream.str(),
+          "test_generated_post_elaboration_body_attr_" + Twine(counter++)));
+    }
+  }
+
+  size_t counter = 0;
+};
+} // namespace
+
 int main(int argc, char **argv) {
   DialectRegistry registry;
 
@@ -76,6 +150,7 @@ int main(int argc, char **argv) {
 
   // Register test passes.
   mlir::PassRegistration<TestDataFlowPass>{};
+  mlir::PassRegistration<TestGeneratePreElaboratedBody>{};
 
   // Register opt passes.
   KGEN::registerAlwaysInlineParametric();
