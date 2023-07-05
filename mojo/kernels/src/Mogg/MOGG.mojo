@@ -23,8 +23,9 @@ from List import Dim, DimList, VariadicList
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from Math import (
     add,
-    div,
     ceil,
+    div,
+    div_ceil,
     erf,
     exp,
     equal,
@@ -52,7 +53,14 @@ from BatchedMatmul import (
     batched_matmul_parallel_async,
     get_trace_information as get_trace_information_batched_matmul,
 )
-from MatmulUtils import GemmShape, get_trace_information
+from MatmulUtils import (
+    GemmShape,
+    get_trace_information,
+    is_critical_stride,
+    _get_tile_n_k_ND,
+    search_mm_config,
+)
+
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -96,6 +104,7 @@ fn MOGGExport():
     alias _floor = floor
     alias _gather = _gather_with_lambdas
     alias _gelu = gelu
+    alias _get_packed_b_shape = get_packed_b_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
     alias _isinf = isinf
@@ -1125,6 +1134,44 @@ fn _gather_with_lambdas[
 # ===----------------------------------------------------------------------===#
 # MOGG matmul
 # ===----------------------------------------------------------------------===#
+
+# TODO(16425): Unify with existing shim.
+@always_inline
+fn get_packed_b_shape[
+    type: DType, transpose_in_0: Bool
+](b_input: NDBuffer[2, DimList.create_unknown[2](), type],) -> StaticIntTuple[
+    2
+]:
+    """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
+    argument.
+
+    If transpose_b is True, this returns the un-transposed shape, since pack_b
+    will un-transpose `b_ref` as part of the packing layout transformation."""
+
+    var output = StaticIntTuple[2]()
+
+    let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
+    var tile_n_k = StaticIntTuple[2]()
+
+    if is_critical_stride(k):
+        alias config = search_mm_config[type, True, True]()
+        tile_n_k = _get_tile_n_k_ND[config, transpose_in_0, type](b_input)
+    else:
+        alias config2 = search_mm_config[type, True, False]()
+        tile_n_k = _get_tile_n_k_ND[config2, transpose_in_0, type](b_input)
+
+    @parameter
+    if transpose_in_0:
+        output[0] = b_input.dim(1)
+        output[1] = b_input.dim(0)
+    else:
+        output[0] = b_input.dim(0)
+        output[1] = b_input.dim(1)
+
+    output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
+    output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
+
+    return output
 
 
 @always_inline
