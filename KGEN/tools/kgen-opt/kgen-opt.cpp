@@ -160,6 +160,7 @@ int main(int argc, char **argv) {
   KGEN::registerCleanupCompilerGlobals();
   KGEN::registerConstraintReduction();
   KGEN::registerEliminateDeadSymbols();
+  KGEN::registerExternalizePrecompiledFunctions();
   KGEN::registerFoldGlobalConstLoads();
   KGEN::registerForceInline();
   KGEN::registerHoistTrivialInvariants();

@@ -233,6 +233,10 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // inferring.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
   pm.addNestedPass<FuncOp>(createLoopUnrolling());
+
+  // Externalize any functions that we've already compiled, so we don't send
+  // them to LLVM again.
+  pm.addPass(createExternalizePrecompiledFunctions());
 }
 
 //===----------------------------------------------------------------------===//
