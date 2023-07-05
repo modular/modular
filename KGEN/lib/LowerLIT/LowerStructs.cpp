@@ -265,76 +265,90 @@ Type StructOperationLowerer::replace(Type type) {
   if (iter != attrTypeReplaceCache.end())
     return Type::getFromOpaquePointer(iter->second);
 
-  Type result = type;
-
   bool foundRecursion = seenTypes.contains(type);
   if (foundRecursion && !eraseRecursivePointerField) {
     // Found illegal recursion.
     return nullptr;
   }
+
   bool cacheResult = true;
 
   // Keep track of types.
   seenTypes.insert(type);
+
+  auto processPointer = [&](POP::PointerType ptr) -> Type {
+    if (!foundRecursion)
+      return replaceImpl(ptr);
+    // Handle a struct (Foo) that has a pointer to a recursive struct, i.e.:
+    // 1. the pointer points to the struct itself Foo
+    // struct Foo:
+    //    var x: Pointer[Foo]
+    //
+    // 2. the pointer points to another struct that has a chain of field of
+    // structs that recurses back to Foo, and one of the field is a Pointer
+    // before Foo shows up again in the chain
+    //
+    // struct Foo:
+    //    var x: Pointer[Bar]
+    // struct Bar:
+    //    var x: Foo
+    //
+    // or
+    // struct Foo:
+    //    var x: Bar
+    // struct Bar:
+    //    var x: Pointer[Foo]
+    //
+    // or
+    // struct Foo:
+    //    var x: Pointer[Bar]
+    // struct Bar:
+    //    var x: Pointer[Foo]
+    cacheResult = false;
+    erasedType = true;
+    // Erase the type of Pointer[Foo] to Pointer[NoneType] to break the
+    // recursive chain.
+    return POP::PointerType::get(POP::SIMDType::get(
+        1, KGEN::DTypeConstantAttr::get(ptr.getContext(), DType::invalid)));
+  };
+
+  auto processDeclRefType = [&](DeclRefType ref) -> Type {
+    PointerUnion<POP::StructType, Type> result = substituteStructRef(ref);
+    if (erasedType) {
+      // If Pointer type erase happened, don't cache this type replacement
+      // result.
+      cacheResult = false;
+      erasedType = false;
+    }
+
+    if (!result)
+      return nullptr;
+
+    if (auto type = dyn_cast<Type>(result))
+      return type;
+
+    return cast<POP::StructType>(result);
+  };
+
+  // Signature processing checks to see if there are any lifetime parameters;
+  // if so, they are dropped.
+  auto processSignatureType = [&](SignatureType signature) -> Type {
+    // TODO: Need to remove the lifetime parameters as well as substituting them
+    // in with a dummy attribute into any !lit.ref<> types in the input/result
+    // type signature.  Unclear how to do this now that they are non-nominal.
+    return replaceImpl(signature);
+  };
+
+  Type result = type;
   if (auto ditype = dyn_cast<DebugInfo::DIType>(type)) {
     if (runDebugTypeConversion)
       result = debugTypeConverter.convertDebugType(ditype);
   } else if (auto ptr = dyn_cast<POP::PointerType>(type)) {
-    result = [&]() -> Type {
-      if (foundRecursion) {
-        // Handle a struct (Foo) that has a pointer to a recursive struct, i.e.:
-        // 1. the pointer points to the struct itself Foo
-        // struct Foo:
-        //    var x: Pointer[Foo]
-        //
-        // 2. the pointer points to another struct that has a chain of field of
-        // structs that recurses back to Foo, and one of the field is a Pointer
-        // before Foo shows up again in the chain
-        //
-        // struct Foo:
-        //    var x: Pointer[Bar]
-        // struct Bar:
-        //    var x: Foo
-        //
-        // or
-        // struct Foo:
-        //    var x: Bar
-        // struct Bar:
-        //    var x: Pointer[Foo]
-        //
-        // or
-        // struct Foo:
-        //    var x: Pointer[Bar]
-        // struct Bar:
-        //    var x: Pointer[Foo]
-
-        cacheResult = false;
-        erasedType = true;
-        // Erase the type of Pointer[Foo] to Pointer[NoneType] to break the
-        // recursive chain.
-        return POP::PointerType::get(POP::SIMDType::get(
-            1, KGEN::DTypeConstantAttr::get(ptr.getContext(), DType::invalid)));
-      }
-      return replaceImpl(ptr);
-    }();
+    result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
-    result = [&]() -> Type {
-      PointerUnion<POP::StructType, Type> result = substituteStructRef(ref);
-      if (erasedType) {
-        // If Pointer type erase happened, don't cache this type replacement
-        // result.
-        cacheResult = false;
-        erasedType = false;
-      }
-
-      if (!result)
-        return nullptr;
-
-      if (auto type = dyn_cast<Type>(result))
-        return type;
-
-      return cast<POP::StructType>(result);
-    }();
+    result = processDeclRefType(ref);
+  } else if (auto signature = dyn_cast<SignatureType>(type)) {
+    result = processSignatureType(signature);
   } else if (isa<LIT::LifetimeType>(type)) {
     // !lit.lifetime => !pop.struct<>
     result = emptyStructAttr.getType();
