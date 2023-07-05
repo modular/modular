@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJO_DRIVER_COMMONOPTIONS_TD
-#define MOJO_DRIVER_COMMONOPTIONS_TD
+#ifndef SUPPORT_DRIVER_COMMONOPTIONS_TD
+#define SUPPORT_DRIVER_COMMONOPTIONS_TD
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"
 include "llvm/Option/OptParser.td"
 
 def CommonOptionGroup : OptionGroup<"Common Options">, Index<99>;
@@ -25,4 +25,4 @@ def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<0>,
 
 def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>, Index<0>;
 
-#endif // MOJO_DRIVER_COMMONOPTIONS_TD
+#endif // SUPPORT_DRIVER_COMMONOPTIONS_TD

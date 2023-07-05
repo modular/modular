@@ -5,16 +5,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-repl.h"
-#include "../mojo-driver.h"
 
+#include "Support/Driver/DriverSupport.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/Program.h"
 
 using namespace M;
 
-#define MOJO_DRIVER_OPTIONS_PATH "REPL/REPLOptions.inc"
-#include "../OptTable.inc"
+#define DRIVER_OPTIONS_PATH "REPL/REPLOptions.inc"
+#include "Support/Driver/OptTable.inc"
 
 namespace {
 struct REPLOptTable : public llvm::opt::PrecomputedOptTable {

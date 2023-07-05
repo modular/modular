@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 include "../OptionsBase.td"
-include "../CommonOptions.td"
+include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
 // repl Command

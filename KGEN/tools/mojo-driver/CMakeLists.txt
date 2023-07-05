@@ -25,6 +25,7 @@ add_modular_tool(mojo-driver
   LITDialect
   LLCLRuntimeGlobals
   MojoParser
+  MSupportDriver
   MSupportGlobals
   KGENExecutionEngine
   KGENCompiler

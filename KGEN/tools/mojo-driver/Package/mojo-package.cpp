@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-package.h"
-#include "../mojo-driver.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
@@ -19,6 +18,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "Support/Driver/DriverSupport.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -49,8 +49,8 @@ using namespace M::KGEN;
 // Options includes + OptTable
 //===----------------------------------------------------------------------===//
 
-#define MOJO_DRIVER_OPTIONS_PATH "Package/PackageOptions.inc"
-#include "../OptTable.inc"
+#define DRIVER_OPTIONS_PATH "Package/PackageOptions.inc"
+#include "Support/Driver/OptTable.inc"
 
 namespace {
 struct PackageOptTable : public llvm::opt::PrecomputedOptTable {

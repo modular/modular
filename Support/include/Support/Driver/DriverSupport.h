@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJO_DRIVER_H
-#define MOJO_DRIVER_H
+#ifndef SUPPORT_DRIVER_DRIVERSUPPORT_H
+#define SUPPORT_DRIVER_DRIVERSUPPORT_H
 
 #include "Support/LLVMForwardDecls.h"
 
@@ -59,4 +59,4 @@ private:
 };
 } // namespace M
 
-#endif // MOJO_DRIVER_H
+#endif // SUPPORT_DRIVER_DRIVERSUPPORT_H
