@@ -598,6 +598,14 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         << spelling << "' directly; did you mean 'self.'?" << getRange()
         << FixIt::insertBeforeToken(getLoc(), "self.");
     return {};
+  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+    auto ref = emitter.builder->create<GlobalVarRefOp>(
+        emitter.translateLocation(getLoc()), globalOp);
+    mlirValue = ref;
+    if (globalOp.getIsLet())
+      value = MBValue(mlirValue);
+    else
+      value = SLValue(mlirValue);
   } else {
     emitter.emitError(getLoc(), "use of declaration \"")
         << spelling << "\" as a value isn't supported yet" << getRange();

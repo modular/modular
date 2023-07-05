@@ -1315,6 +1315,29 @@ struct DtorMemType:
 # CHECK-NEXT: %1 = kgen.call {{.*}}__del__{{.*}}(%0)
 var mem_dtor = DtorMemType()
 
+fn borrowGlobalInt(x: Int): pass
+fn borrowGlobalReg(x: RegType): pass
+fn mutGlobalReg(inout x: RegType): pass
+fn copyGlobalMem(owned x: MemType): pass
+
+fn refGlobals():
+    # CHECK: [[TRIVIAL:%.*]] = lit.globalvar.ref {{.*}}@trivial_global
+    # CHECK-NEXT: [[VALUE:%.*]] = pop.load [[TRIVIAL]]
+    # CHECK-NEXT: call {{.*}}borrowGlobalInt{{.*}}([[VALUE]])
+    borrowGlobalInt(trivial_global)
+    # CHECK: [[REG:%.*]] = lit.globalvar.ref {{.*}}@reg_global
+    # CHECK-NEXT: [[VALUE:%.*]] = pop.load [[REG]]
+    # CHECK-NEXT: call {{.*}}borrowGlobalReg{{.*}}([[VALUE]])
+    borrowGlobalReg(reg_global)
+    # CHECK: [[REG_REF:%.*]] = lit.globalvar.ref {{.*}}@reg_global
+    # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
+    mutGlobalReg(reg_global_implicit)
+    # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}}@MemType>
+    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
+    # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
+    copyGlobalMem(mem_global)
+
 ##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##
