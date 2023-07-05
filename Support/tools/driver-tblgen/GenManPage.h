@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_MOJOTBLGEN_GENMANPAGE_H
-#define KGEN_TOOLS_MOJOTBLGEN_GENMANPAGE_H
+#ifndef SUPPORT_TOOLS_DRIVERTBLGEN_GENMANPAGE_H
+#define SUPPORT_TOOLS_DRIVERTBLGEN_GENMANPAGE_H
 
 namespace M {
 
@@ -15,4 +15,4 @@ class BackendRegistry;
 void registerGenManPageBackend(BackendRegistry &registry);
 } // namespace M
 
-#endif // KGEN_TOOLS_MOJOTBLGEN_GENMANPAGE_H
+#endif // SUPPORT_TOOLS_DRIVERTBLGEN_GENMANPAGE_H

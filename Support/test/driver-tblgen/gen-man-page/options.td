@@ -4,16 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-// RUN: %mojo-tblgen -gen-man-page %s | FileCheck %s
+// RUN: %driver-tblgen -gen-man-page %s | FileCheck %s
 
-// RUN: %mojo-tblgen -gen-man-page %s 2>&1 >/dev/null | \
+// RUN: %driver-tblgen -gen-man-page %s 2>&1 >/dev/null | \
 // RUN:   FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 // CHECK-DIAG-NOT: warning
 
 include "Support/Driver/DriverCommand.td"
 
 def : CommandDescription<
-  "mojo-tblgen-test", "options", "Test that options are output in a man page",
+  "driver-tblgen-test", "options", "Test that options are output in a man page",
   "This command contains several option groups, each of which has several "
   "options, along with aliases.", /*inputMetaVarName=*/"input",
   /*requiresInput=*/false, /*variadicInput=*/false>;

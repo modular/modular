@@ -4,4 +4,4 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_driver_option_tablegen(DemangleOptions.td mojo-driver-demangle)
+add_driver_option_tablegen(Mojo DemangleOptions.td mojo-driver-demangle)

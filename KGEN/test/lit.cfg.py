@@ -31,16 +31,6 @@ def configure_lldb_tests(config):
         )
     )
 
-    config.substitutions.append(
-        (
-            "%mojo-tblgen",
-            (
-                'mojo-tblgen -I "{0}/KGEN/include" -I "{0}/Support/include" '
-                '-I "{0}/third-party/llvm-project/llvm/include"'
-            ).format(config.modular_src_root),
-        )
-    )
-
 
 # name: The name of this test suite.
 config.name = "KGEN"
@@ -70,7 +60,6 @@ tools = [
     "mojo",
     "mojo-driver",
     "mojo-lsp-server",
-    "mojo-tblgen",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

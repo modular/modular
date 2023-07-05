@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-// RUN: %mojo-tblgen -gen-man-page %s 2>&1 >/dev/null | FileCheck %s
+// RUN: %driver-tblgen -gen-man-page %s 2>&1 >/dev/null | FileCheck %s
 
 include "Support/Driver/DriverCommand.td"
 
 def : CommandDescription<
-  "mojo-tblgen-test", "option-validation", "Test option validation",
+  "driver-tblgen-test", "option-validation", "Test option validation",
   "Test that warnings are emitted when options do not include help text, or "
   "when they do not match the style we expect.",
   /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>;

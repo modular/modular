@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_MOJOTBLGEN_DRIVERCOMMAND_H
-#define KGEN_TOOLS_MOJOTBLGEN_DRIVERCOMMAND_H
+#ifndef SUPPORT_TOOLS_DRIVERTBLGEN_DRIVERCOMMAND_H
+#define SUPPORT_TOOLS_DRIVERTBLGEN_DRIVERCOMMAND_H
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
@@ -194,4 +194,4 @@ struct LessIndex {
 
 } // namespace M
 
-#endif // KGEN_TOOLS_MOJOTBLGEN_DRIVERCOMMAND_H
+#endif // SUPPORT_TOOLS_DRIVERTBLGEN_DRIVERCOMMAND_H
