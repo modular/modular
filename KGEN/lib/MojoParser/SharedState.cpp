@@ -101,7 +101,7 @@ struct SharedState::Impl {
 
   /// This is the AST type that corresponds to TypeCheckErrorType.
   ASTType typeCheckErrorType;
-  /// This is the decl for the builtin 'kgen.none' type.
+  /// This is the decl for the builtin 'lit.none' type/attr.
   ASTType noneType;
   NoneAttr noneAttr;
 
@@ -244,9 +244,9 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   MLIRContext *context = getContext();
 
   // Add a declarations for builtin types.
-  impl->noneType = LIT::NoneType::get(context);
-
-  impl->noneAttr = NoneAttr::get(context, impl->noneType.mlirType);
+  NoneType noneType = LIT::NoneType::get(context);
+  impl->noneType = noneType;
+  impl->noneAttr = NoneAttr::get(context, noneType);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
