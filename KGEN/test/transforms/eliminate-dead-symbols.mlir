@@ -44,15 +44,25 @@ kgen.func @B() {
 
 kgen.export @A
 
-// CHECK: @global_var_ctor
-kgen.func @global_var_ctor() {
+// CHECK: @global_var_fn
+kgen.func @global_var_fn() {
   kgen.return
 }
 
-// CHECK: @global_var_dtor
-kgen.func @global_var_dtor() {
+// CHECK-NOT: @unused_global_fn
+kgen.func @unused_global_fn() {
   kgen.return
 }
 
-// CHECK: kgen.global @global_var {{.*}} @global_var_ctor, @global_var_dtor
-kgen.global @global_var : i32 (2, @global_var_ctor, @global_var_dtor)
+// CHECK: kgen.global @global_var
+kgen.global @global_var : i32 (2, @global_var_fn, @global_var_fn)
+
+// CHECK-NOT: kgen.global @global_var
+kgen.global @unused_global : i64 (3, @unused_global_fn, @unused_global_fn)
+
+// CHECK: kgen.func @anchor_global
+kgen.export @anchor_global
+kgen.func @anchor_global() {
+  pop.global.address @global_var : <i32>
+  kgen.return
+}
