@@ -98,15 +98,10 @@ int main(int argc, char **argv) {
 
   // Find the callback for the subcommand name the user provided, or exit with
   // an error if no match is found.
-  llvm::Expected<SubcommandRegistry::Callback> callback =
+  ErrorOr<SubcommandRegistry::Callback> callback =
       registry.getCallback(firstArg->getAsString(args));
-  if (!callback) {
-    llvm::handleAllErrors(callback.takeError(),
-                          [&](const llvm::ErrorInfoBase &err) {
-                            state.reportError(err.message());
-                          });
-    return 1;
-  }
+  if (callback.isError())
+    return state.reportError(callback.getError());
 
   // If we found a matching subcommand, invoke its callback.
   return callback.get()(state);
