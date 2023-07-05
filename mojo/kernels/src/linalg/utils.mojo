@@ -706,3 +706,19 @@ fn dispatch_is_critical_stride[
         func[True]()
     else:
         func[False]()
+
+
+# TODO(16425): Unify this with the rest of the matmul impl
+@always_inline
+fn _get_tile_n_k_ND[
+    config: MatmulConfig, transpose_b: Bool, type: DType
+](b: NDBuffer[2, DimList.create_unknown[2](), type]) -> StaticIntTuple[2]:
+    @parameter
+    if not transpose_b:
+        return calculate_tile_n_k[
+            config.pack_data_size, config.pack_inner_size
+        ](b.dim(1), b.dim(0))
+    else:
+        return calculate_tile_n_k[
+            config.pack_data_size, config.pack_inner_size
+        ](b.dim(0), b.dim(1))
