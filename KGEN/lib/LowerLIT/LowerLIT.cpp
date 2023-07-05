@@ -26,6 +26,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <deque>
 
 using namespace M;
 using namespace KGEN;
@@ -134,6 +135,10 @@ static void lowerLITOps(LIT::FuncOp func,
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
+    } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
+      b.replaceOpWithNewOp<POP::GlobalAddressOp>(
+          globalRefOp, globalRefOp.getType(), globalRefOp.getGlobal());
     }
   });
 }
@@ -296,6 +301,100 @@ static void lowerAttributesAndTypes(Operation *op) {
       op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
 }
 
+/// Global variables have initializers that can reference other global
+/// variables. This function will pass over all global variable declarations and
+/// determine an initialization order based on the reference graph between
+/// global variables in their initializers. It is not possible for the parser to
+/// generate global variables that reference each other in a cycle.
+static LogicalResult orderAndLowerGlobalVariables(ModuleOp module) {
+  struct GlobalRefNode {
+    unsigned numRefs = 0;
+    unsigned numReady = 0;
+    SmallVector<GlobalRefNode *> refdBy;
+    GlobalVarDeclOp op = nullptr;
+  };
+
+  DenseMap<SymbolRefAttr, std::unique_ptr<GlobalRefNode>> state;
+  auto getOrCreate = [&](SymbolRefAttr ref) -> GlobalRefNode & {
+    std::unique_ptr<GlobalRefNode> &cur = state[ref];
+    if (!cur)
+      cur = std::make_unique<GlobalRefNode>();
+    return *cur;
+  };
+
+  module.walk([&](Operation *op) {
+    if (auto global = dyn_cast<GlobalVarDeclOp>(op)) {
+      // Ensure a node has been created for this global.
+      SymbolRefAttr symbol = getFullyResolvedSymbolRef(global);
+      GlobalRefNode &cur = getOrCreate(symbol);
+      cur.op = global;
+      // Find references to other globals.
+      global.walk([&](GlobalVarRefOp ref) {
+        // Global variables are allowed to reference themselves.
+        if (ref.getGlobal() == symbol)
+          return;
+        GlobalRefNode &refNode = getOrCreate(ref.getGlobal());
+        ++cur.numRefs;
+        refNode.refdBy.push_back(&cur);
+      });
+      // No global variable declarations inside the bodies.
+      return WalkResult::skip();
+    }
+
+    // Skip over the bodies of operations where global variables cannot exist.
+    if (isa<LIT::StructDeclOp, LIT::FuncOp>(op))
+      return WalkResult::skip();
+    return WalkResult::advance();
+  });
+
+  // Process nodes breadth-first.
+  std::deque<GlobalRefNode *> queue;
+  uint32_t initOrder = 0;
+  for (auto &[_, node] : state)
+    if (node->numRefs == node->numReady)
+      queue.push_back(node.get());
+
+  while (!queue.empty()) {
+    GlobalRefNode *node = queue.front();
+    queue.pop_front();
+
+    GlobalVarDeclOp op = node->op;
+    mlir::IRRewriter b{OpBuilder(op)};
+
+    // Outline the constructor and destructor into functions.
+    StringRef name = node->op.getSymName();
+    auto ctorFn = b.create<LIT::FuncOp>(
+        op.getLoc(), b.getStringAttr("(ctor_fn)" + name),
+        SignatureType::get(b.getContext(), {}, {}), std::nullopt);
+    auto dtorFn = b.create<LIT::FuncOp>(
+        op.getLoc(), b.getStringAttr("(dtor_fn)" + name),
+        SignatureType::get(b.getContext(), {}, {}), std::nullopt);
+    ctorFn.getBodyRegion().takeBody(op.getCtor());
+    dtorFn.getBodyRegion().takeBody(op.getDtor());
+    b.setInsertionPointToEnd(ctorFn.getBody());
+    b.create<KGEN::ReturnOp>(op.getLoc());
+    b.setInsertionPointToEnd(dtorFn.getBody());
+    b.create<KGEN::ReturnOp>(op.getLoc());
+
+    // Replace the `lit.globalvar.decl` operation with a `kgen.global`.
+    b.setInsertionPoint(op);
+    b.replaceOpWithNewOp<GlobalOp>(op, name, op.getType(), initOrder++,
+                                   getFullyResolvedSymbolRef(ctorFn),
+                                   getFullyResolvedSymbolRef(dtorFn));
+
+    for (GlobalRefNode *refdBy : node->refdBy)
+      if (++refdBy->numReady == refdBy->numRefs)
+        queue.push_back(refdBy);
+  }
+
+  if (initOrder != state.size()) {
+    return mlir::emitError(
+        module.getLoc(),
+        "cyclic dependencies between global variables in 'lower-lit' pass");
+  }
+  return success();
+}
+
 /// Add a kgen.link directive that shadows the package's name if the package was
 /// precompiled. If this package is a source package, do nothing.
 static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
@@ -400,6 +499,8 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     ModuleOp module = getOperation();
     SymbolTable &symbolTable =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+    if (failed(orderAndLowerGlobalVariables(module)))
+      return signalPassFailure();
     if (failed(lowerModuleDecl(module.getBody(), symbolTable)))
       return signalPassFailure();
     lowerAttributesAndTypes(module);
