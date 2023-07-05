@@ -740,3 +740,22 @@ def LoopUnrolling : Pass<"loop-unrolling", "KGEN::FuncOp"> {
 
   let dependentDialects = ["HLCF::HLCFDialect"];
 }
+
+//===----------------------------------------------------------------------===//
+// ExternalizePrecompiledFunctions
+//===----------------------------------------------------------------------===//
+
+def ExternalizePrecompiledFunctions:
+    Pass<"externalize-precompiled-functions"> {
+  let summary = "Externalize precompiled functions.";
+  let description = [{
+    The `externalize-precompiled-funcs` pass will find precompiled functions,
+    delete them, and replace calls to them with
+    `pop.external_call <func> from <lib>`.
+
+    When used in conjunction with packages, this should greatly reduce the
+    amount of code passed to LLVM.
+  }];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
