@@ -1249,6 +1249,71 @@ fn returnTup2a() -> (Int, FloatLiteral):
 fn returnTup2b() -> (Int, FloatLiteral):
   return 4, 2.0
 
+##===----------------------------------------------------------------------===##
+# Global Variables
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: lit.globalvar.decl @trivial_global : {{.*}}@Int
+# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <{{.*}}@Int>
+# CHECK-NEXT: %1 = kgen.param.constant
+# CHECK-NEXT: pop.store %1, %0
+var trivial_global: Int = 1
+# CHECK-LABEL: lit.globalvar.decl @trivial_global_implicit : {{.*}}@Int
+# CHECK-NEXT: %0 = lit.globalvar.ref
+# CHECK-NEXT: %1 = kgen.param.constant
+# CHECK-NEXT: pop.store %1, %0
+var trivial_global_implicit = 1
+
+@value
+@register_passable
+struct RegType: pass
+
+# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType> isLet
+# CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
+# CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
+# CHECK-NEXT: pop.store %0, %1
+let reg_global: RegType = RegType()
+# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : {{.*}}@RegType
+# CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
+# CHECK-NEXT: %1 = lit.globalvar.ref
+# CHECK-NEXT: pop.store %0, %1
+var reg_global_implicit = RegType()
+
+@value
+struct MemType: pass
+
+# CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}} isLet
+# CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
+# CHECK-NEXT: %0 = kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
+# CHECK-NEXT: %1 = lit.globalvar.ref
+# CHECK-NEXT: %2 = kgen.call {{.*}}__moveinit__{{.*}}(%1, %anonymous2A) :
+let mem_global: MemType = MemType()
+# CHECK-LABEL: lit.globalvar.decl @mem_global_implicit
+# CHECK-NEXT: %0 = lit.globalvar.ref
+# CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
+var mem_global_implicit = MemType()
+
+@register_passable
+@value
+struct DtorRegType:
+    fn __del__(owned self): pass
+
+# CHECK-LABEL: lit.globalvar.decl @reg_dtor
+# CHECK: }, {
+# CHECK-NEXT: %0 = lit.globalvar.ref {{.*}}@reg_dtor
+# CHECK-NEXT: %1 = lit.load.consume %0
+# CHECK-NEXT: %2 = kgen.call {{.*}}__del__{{.*}}(%1)
+var reg_dtor = DtorRegType()
+
+@value
+struct DtorMemType:
+    fn __del__(owned self): pass
+
+# CHECK-label: lit.globalvar.decl @mem_dtor : !kgen.declref<@"$decls"::@DtorMemType> {
+# CHECK: }, {
+# CHECK-NEXT: %0 = lit.globalvar.ref
+# CHECK-NEXT: %1 = kgen.call {{.*}}__del__{{.*}}(%0)
+var mem_dtor = DtorMemType()
 
 ##===----------------------------------------------------------------------===##
 # Exported Functions

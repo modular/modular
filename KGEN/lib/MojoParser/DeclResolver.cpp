@@ -651,16 +651,17 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
-              ParamDeclareOp, UnresolvedImportOp>([&](auto op) {
-          Lexer lexer(shared, decl.getCursor());
+              GlobalVarDeclOp, ParamDeclareOp, UnresolvedImportOp>(
+            [&](auto op) {
+              Lexer lexer(shared, decl.getCursor());
 
-          // Resolve the signature: on a parse error, we note that the decl
-          // is malformed and should not be referenced to silence downstream
-          // errors.
-          if (failed(resolveSignature(op, lexer, decl)))
-            decl.hasReferenceError = true;
-          decl.getCursor() = lexer.getCursor();
-        })
+              // Resolve the signature: on a parse error, we note that the decl
+              // is malformed and should not be referenced to silence downstream
+              // errors.
+              if (failed(resolveSignature(op, lexer, decl)))
+                decl.hasReferenceError = true;
+              decl.getCursor() = lexer.getCursor();
+            })
         .Case<LIT::FileModuleOp, ModuleOp, PackageOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
@@ -705,15 +706,15 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, PackageOp, StructDeclOp, StructFieldOp,
-              VarLetDeclOp, LetRegDeclOp, ParamDeclareOp, AliasForwardDeclOp>(
-            [&](auto op) {
-              // Parse the body of the declaration from the correct point.
-              Lexer lexer(shared, decl.getCursor());
-              if (resolveBody(op, lexer, decl))
-                return;
+              VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, ParamDeclareOp,
+              AliasForwardDeclOp>([&](auto op) {
+          // Parse the body of the declaration from the correct point.
+          Lexer lexer(shared, decl.getCursor());
+          if (resolveBody(op, lexer, decl))
+            return;
 
-              checkEndOfBodyCursor(lexer);
-            })
+          checkEndOfBodyCursor(lexer);
+        })
         .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           if (!decl.hasReferenceError)
@@ -2522,6 +2523,96 @@ ParseResult DeclResolver::resolveBody(VarLetDeclOp op, Lexer &lexer,
 }
 
 ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
+                                      ASTDecl &decl) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalVarDecl implementation
+//===----------------------------------------------------------------------===//
+
+LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
+                                             ASTDecl &decl) {
+  ParserBase p(lexer);
+  SmallVector<std::pair<ExprNode *, LexerCursor>> decoratorExprs =
+      p.parseDecorators(decl);
+
+  // Re-parse the preamble. The syntax should have been checked already.
+  if (!p.consumeIf(Token::kw_var) && !p.consumeIf(Token::kw_let)) {
+    return lexer.emitError(
+        decl.getLoc(), "internal error: should be checked by statement parser");
+  }
+  StringAttr name;
+  if (p.parseIdentifier(
+          name, "internal error: should be checked by statement parser"))
+    return failure();
+
+  // Parse the type if present.
+  ASTType parsedType;
+  ExprEmitter emitter(shared, *decl.getParentDecl(), EC_VarInit,
+                      /*varDeclCursor=*/nullptr);
+  if (p.consumeIf(Token::colon)) {
+    ExprNode *typeExpr = nullptr;
+    if (p.parseExpression(typeExpr, decl.getIndentation()))
+      return failure();
+    parsedType = emitter.emitExprType(typeExpr);
+    if (!parsedType)
+      return failure();
+  }
+
+  // Global variables require an initializer.
+  ExprNode *initExpr = nullptr;
+  if (p.parseToken(Token::equal, "expected '=' in global variable") ||
+      p.parseVarLetInitExpression(initExpr, decl.getIndentation()))
+    return failure();
+
+  // Emit the initializer into an initializer function. If we have a type, then
+  // emit directly into the LValue. Otherwise emit into the global to infer its
+  // type.
+  ValueDest dest;
+  ExprContext exprContext = op.getIsLet() ? EC_LetInit : EC_VarInit;
+  if (parsedType) {
+    op.setType(parsedType);
+    DLValue result(
+        LLCL::RCRef<GlobalDLValue>::create(op, parsedType, initExpr->getLoc()));
+    dest = ValueDest(result, exprContext);
+  } else {
+    // If we don't, we emit into the varOp itself, because this will infer the
+    // type of the varOp from the initializer expression.
+    dest = ValueDest(op, exprContext);
+  }
+
+  op.getCtor().push_back(new Block);
+  emitter.builder = OpBuilder::atBlockBegin(&op.getCtor().front());
+  if (!initExpr->emitIR(dest, emitter)) {
+    dest.resetForError();
+    return failure();
+  }
+  assert(!isa<UnresolvedType>(op.getType()) &&
+         "RValue emission should have inferred var type");
+
+  // Emit the destructor call, if present, into the destructor function.
+  OverloadSet dtorFn(ASTType(op.getType()), "__del__", initExpr,
+                     CallSyntax::kDestructor, shared,
+                     /*no error on failure*/ {});
+  op.getDtor().push_back(new Block);
+  if (!dtorFn.isNull()) {
+    emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
+    MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
+    PValue callee = dtorFn.filterOverloadSet(
+        {{owned, initExpr}}, /*allowImplicitConversion=*/true,
+        /*emitDiagnosticOnFailure=*/true, emitter);
+    if (!callee)
+      return failure();
+    ValueDest dest(EC_Destructor);
+    if (!emitter.emitIndirectCall(callee, {{owned, initExpr}}, dest, initExpr))
+      return failure();
+  }
+
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }

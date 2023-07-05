@@ -222,7 +222,7 @@ BaseDLValue::~BaseDLValue() {
 //===----------------------------------------------------------------------===//
 
 DiscardDLValue::DiscardDLValue(ASTType elementType, const ExprNode *expr)
-    : BaseDLValue(elementType, expr) {}
+    : BaseDLValue(elementType), expr(expr) {}
 
 void DiscardDLValue::print(raw_ostream &os) const { os << "discard pattern"; }
 
@@ -233,7 +233,8 @@ void DiscardDLValue::print(raw_ostream &os) const { os << "discard pattern"; }
 StoredAttributeRefDLValue::StoredAttributeRefDLValue(
     ASTExprAnd<DLValue> baseVal, StructFieldOp fieldOp, ASTType elementType,
     const ExprNode *expr)
-    : BaseDLValue(elementType, expr), baseVal(baseVal), fieldOp(fieldOp) {}
+    : BaseDLValue(elementType), expr(expr), baseVal(baseVal), fieldOp(fieldOp) {
+}
 
 StructFieldOp StoredAttributeRefDLValue::getField() const {
   return cast<StructFieldOp>(fieldOp);
@@ -251,7 +252,7 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 SubscriptDLValue::SubscriptDLValue(
     ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue, ASTType elementType,
     const ExprNode *expr)
-    : BaseDLValue(elementType, expr),
+    : BaseDLValue(elementType), expr(expr),
       selfAndIndicesValue(selfAndIndicesValue.begin(),
                           selfAndIndicesValue.end()) {}
 
@@ -271,7 +272,7 @@ void SubscriptDLValue::print(raw_ostream &os) const {
 
 TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
                            ASTType tupleType, const ExprNode *expr)
-    : BaseDLValue(tupleType, expr),
+    : BaseDLValue(tupleType), expr(expr),
       eltLValues(eltLValues.begin(), eltLValues.end()) {
   for (auto &elt : eltLValues)
     assert(elt.ir.getIfLValue() && "element must be an lvalue");
@@ -279,4 +280,20 @@ TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
 
 void TupleDLValue::print(raw_ostream &os) const {
   os << "(tuple lvalue): " << elementType << " ";
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalDLValue
+//===----------------------------------------------------------------------===//
+
+GlobalDLValue::GlobalDLValue(GlobalVarDeclOp op, ASTType type, SMLoc loc)
+    : BaseDLValue(type), op(op), loc(loc) {}
+
+GlobalVarDeclOp GlobalDLValue::getGlobal() const {
+  return cast<GlobalVarDeclOp>(op);
+}
+
+void GlobalDLValue::print(raw_ostream &os) const {
+  GlobalVarDeclOp opMut = getGlobal();
+  os << "(global lvalue): " << opMut.getSymName() << " : " << opMut.getType();
 }

@@ -37,6 +37,7 @@ class SharedState;
 class UnresolvedImportOp;
 class VarLetDeclOp;
 class LetRegDeclOp;
+class GlobalVarDeclOp;
 class StructDeclOp;
 class StructFieldOp;
 
@@ -177,6 +178,9 @@ private:
   LogicalResult resolveSignature(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(VarLetDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(LetRegDeclOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
+                                 ASTDecl &decl);
+  ParseResult resolveBody(GlobalVarDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(ParamDeclareOp op, Lexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(ParamDeclareOp op, Lexer &lexer, ASTDecl &decl);

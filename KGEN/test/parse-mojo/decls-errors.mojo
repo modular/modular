@@ -48,8 +48,6 @@ def var_decl():
   var x : Int  # expected-error {{invalid redefinition of 'x'}}
   x+4   # no follow-on error.
 
-var globalvar : __mlir_type.index # expected-error {{cannot declare value outside a function}}
-
 def err():
   var localVar = 42
   var y : localVar  # expected-error {{cannot use a dynamic value in type specification}}
@@ -72,7 +70,6 @@ fn badTypeErrorMessage():
   # expected-error @+1 {{cannot use a dynamic value in type specification}}
   let ptr: Pointer[Int].address_of(x)
 
-let global_thing = True # expected-error {{cannot declare value outside a function}}
 struct StructWithLets:
   let struct_thing : Int # expected-error {{'let' fields in structs are not supported yet}}
 
