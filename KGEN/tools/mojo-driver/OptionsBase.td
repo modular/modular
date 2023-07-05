@@ -7,7 +7,7 @@
 #ifndef MOJO_DRIVER_OPTIONS_BASE_TD
 #define MOJO_DRIVER_OPTIONS_BASE_TD
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"
 
 // A description of the Mojo top-level driver executable.
 class MojoDriverDescription<

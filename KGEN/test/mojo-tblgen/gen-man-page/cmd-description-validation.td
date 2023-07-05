@@ -6,7 +6,7 @@
 
 // RUN: %mojo-tblgen -gen-man-page %s 2>&1 >/dev/null | FileCheck %s
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"
 
 // CHECK: warning: ignoring description
 def : CommandDescription<

@@ -7,4 +7,4 @@
 // RUN: not %mojo-tblgen -gen-man-page %s 2>&1 | FileCheck %s
 // CHECK: error: you must define a 'CommandDescription' record
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"

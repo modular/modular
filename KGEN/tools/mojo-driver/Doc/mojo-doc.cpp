@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
-#include "../mojo-driver.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/MojoParser.h"
@@ -13,6 +12,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/Driver/DriverSupport.h"
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/FileUtilities.h"
@@ -29,8 +29,8 @@
 using namespace M;
 using namespace M::KGEN;
 
-#define MOJO_DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
-#include "../OptTable.inc"
+#define DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
+#include "Support/Driver/OptTable.inc"
 
 namespace {
 struct DocOptTable : public llvm::opt::PrecomputedOptTable {

@@ -10,7 +10,7 @@
 // RUN:   FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 // CHECK-DIAG-NOT: warning
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"
 
 // CHECK: .SH "SYNOPSIS"
 // CHECK-NEXT: \fBmojo\-tblgen\-test no\-options\fR \fIpath...\fR

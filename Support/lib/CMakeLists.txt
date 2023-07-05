@@ -51,6 +51,7 @@ unset(LLVM_TARGETS_BUILT)
 
 add_subdirectory(ADT)
 add_subdirectory(Benchmark)
+add_subdirectory(Driver)
 add_subdirectory(MDialect)
 add_subdirectory(ML)
 add_subdirectory(Compiler)

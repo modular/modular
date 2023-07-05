@@ -10,7 +10,7 @@
 // RUN:   FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 // CHECK-DIAG-NOT: warning
 
-include "KGEN/DriverCommand.td"
+include "Support/Driver/DriverCommand.td"
 
 def : CommandDescription<
   "mojo-tblgen-test", "options", "Test that options are output in a man page",

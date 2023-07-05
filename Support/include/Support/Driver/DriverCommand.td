@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_DRIVERCOMMAND_TD
-#define KGEN_DRIVERCOMMAND_TD
+#ifndef SUPPORT_DRIVER_DRIVERCOMMAND_TD
+#define SUPPORT_DRIVER_DRIVERCOMMAND_TD
 
 include "llvm/Option/OptParser.td"
 
@@ -75,4 +75,4 @@ class Index<int i> {
   int index = i;
 }
 
-#endif // KGEN_DRIVERCOMMAND_TD
+#endif // SUPPORT_DRIVER_DRIVERCOMMAND_TD

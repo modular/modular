@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-demangle.h"
-#include "../mojo-driver.h"
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "Support/CommandLine.h"
+#include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include "mlir/IR/DialectRegistry.h"
@@ -23,8 +23,8 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-#define MOJO_DRIVER_OPTIONS_PATH "Demangle/DemangleOptions.inc"
-#include "../OptTable.inc"
+#define DRIVER_OPTIONS_PATH "Demangle/DemangleOptions.inc"
+#include "Support/Driver/OptTable.inc"
 
 namespace {
 struct DemangleOptTable : public llvm::opt::PrecomputedOptTable {
