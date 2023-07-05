@@ -1121,3 +1121,19 @@ kgen.generator @call_it() {
   kgen.call @unreachable_and_early_ret() : () -> ()
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @dontinlineme() -> index
+kgen.func @dontinlineme() -> index always_inline {
+  // CHECK-NEXT: index.constant
+  %0 = index.constant 3
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @caller
+kgen.generator @caller() -> index {
+  // CHECK-NEXT: kgen.call @dontinlineme
+  %0 = kgen.call @dontinlineme() : () -> index
+  kgen.return %0 : index
+}
