@@ -109,6 +109,9 @@ const char *LIT::getContextMessage(ExprContext context) {
 ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
+ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
+    : representation(dest.getOperation()), context(context) {}
+
 /// Inspect the ValueDest to see if it implies a specific type for the value
 /// being computed, emiting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
@@ -211,11 +214,18 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
     representation = LValueBufferTaken(); // Buffer used!
 
-    auto varOp = cast<VarLetDeclOp>(opDest);
-    assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
-           "Cannot resolve an already-resolved vardecl");
-    varOp.getResult().setType(POP::PointerType::get(resultType));
-    return SLValue(varOp);
+    if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
+      assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
+             "Cannot resolve an already-resolved vardecl");
+      varOp.getResult().setType(POP::PointerType::get(resultType));
+      return SLValue(varOp);
+    }
+    auto globalOp = cast<GlobalVarDeclOp>(opDest);
+    assert(isa<UnresolvedType>(globalOp.getType()) &&
+           "Cannot resolve an already-resolved global");
+    globalOp.setType(resultType);
+    return DLValue(
+        LLCL::RCRef<GlobalDLValue>::create(globalOp, resultType, loc));
   }
 
   // Otherwise, we have one of a few cases where we can produce an LValue but
@@ -287,13 +297,26 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 }
 
 /// Return an SLValue for this destination of the specified type that we can
-/// initialize.  This uses and consumes the destination if it matches the type
-/// of the value dest.
+/// initialize. This uses and consumes the destination if it matches the type
+/// of the value dest. If the underlying value is a DLValue, attempt to coerce
+/// it to an SLValue if possible.
 SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
                                        ExprEmitter &emitter) {
+  // Save the operation if it is one so we can query the type of DLValue.
+  auto *op = dyn_cast<Operation *>(representation);
+
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
                          /*requireSLValue=*/true, emitter);
+
+  // Only a GlobalDLValue is possible at the moment.
+  if (lv.getIfDLValue()) {
+    // Get an SLValue by taking the address of the global.
+    auto global = cast<GlobalVarDeclOp>(op);
+    lv = SLValue(emitter.builder->create<GlobalVarRefOp>(
+        emitter.translateLocation(loc), global));
+  }
+
   assert(!lv || lv.getIfSLValue());
   return lv.getIfSLValue();
 }
@@ -1587,4 +1610,19 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
       return;
     }
   }
+}
+
+CValue GlobalDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
+  assert(emitter.builder && "cannot reference dynamic value");
+  auto global = emitter.builder->create<GlobalVarRefOp>(
+      emitter.translateLocation(loc), getGlobal());
+  return SLValue(global);
+}
+
+void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
+                              ExprEmitter &emitter) const {
+  assert(emitter.builder && "cannot reference dynamic value");
+  auto global = emitter.builder->create<GlobalVarRefOp>(
+      emitter.translateLocation(loc), getGlobal());
+  emitter.emitStoreToLValue(value, SLValue(global), EC_Assignment);
 }

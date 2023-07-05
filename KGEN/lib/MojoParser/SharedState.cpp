@@ -1380,6 +1380,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp, VarLetDeclOp>(
               [&](auto op) { addDeclForOp(op, op.getNameAttr()); })
+          .Case([&](GlobalVarDeclOp op) {
+            addDeclForOp(op, op.getSymNameAttr());
+          })
           .Case<FileModuleOp, PackageOp>([&](auto op) {
             addDeclForOp(
                 op, StringAttr::get(getContext(), op.getName().drop_front()));

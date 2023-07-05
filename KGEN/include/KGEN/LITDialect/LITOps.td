@@ -618,7 +618,7 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [NoTerminator]> {
+def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator]> {
   let summary = "Global variable declaration.";
   let description = [{
     The `lit.globalvar.decl` operation corresponds to a global variable
@@ -673,6 +673,13 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
 
   let arguments = (ins SymbolRefAttr:$global);
   let results = (outs POP_PointerType:$result);
+
+  let builders = [
+    OpBuilder<(ins "GlobalVarDeclOp":$op), [{
+      build($_builder, $_state, POP::PointerType::get(op.getType()),
+            getFullyResolvedSymbolRef(op));
+    }]>,
+  ];
 
   let assemblyFormat = "$global attr-dict `:` type($result)";
 }

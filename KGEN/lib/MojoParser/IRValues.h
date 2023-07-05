@@ -58,6 +58,7 @@ class OverloadSet;
 class FuncOp;
 class ValueDest;
 class StructFieldOp;
+class GlobalVarDeclOp;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -594,17 +595,13 @@ raw_ostream &operator<<(raw_ostream &os, AnyValue value);
 /// and setter.
 class BaseDLValue : public LLCL::NonAtomicallyReferenceCounted<BaseDLValue> {
 public:
-  BaseDLValue(ASTType elementType, const ExprNode *expr)
-      : elementType(elementType), expr(expr) {}
-  virtual ~BaseDLValue();
-
   /// This is the RValue type of the value being accessed if known.  It is
   /// inferred from the get/set.
   ASTType elementType;
 
-  /// This is the expression node we came from.
-  const ExprNode *expr;
+  BaseDLValue(ASTType elementType) : elementType(elementType) {}
 
+  virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
   virtual void emitStore(ASTExprAnd<CValue> value,
@@ -615,6 +612,8 @@ public:
 /// its result on store and produces an error if attempting to load it.
 class DiscardDLValue : public BaseDLValue {
 public:
+  const ExprNode *expr;
+
   DiscardDLValue(ASTType elementType, const ExprNode *expr);
 
   virtual void print(raw_ostream &os) const override;
@@ -627,6 +626,7 @@ public:
 /// another DLValue, e.g. `swap(&a[i].x, ...)`.
 class StoredAttributeRefDLValue : public BaseDLValue {
 public:
+  const ExprNode *expr;
   ASTExprAnd<DLValue> baseVal;
   Operation *fieldOp; // StructFieldOp
 
@@ -648,6 +648,7 @@ public:
 /// We allow DLValues to have getter+setter or just setter.
 class SubscriptDLValue : public BaseDLValue {
 public:
+  const ExprNode *expr;
   // This is the self+name values for property access and the self+key values
   // for a subscript.
   std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
@@ -667,11 +668,29 @@ public:
 /// This DLValue implementation represents tuple lvalues, e.g. `(a[i], b) = x`.
 class TupleDLValue : public BaseDLValue {
 public:
+  const ExprNode *expr;
   // These are the LValues for the sub-elements.
   std::vector<ASTExprAnd<AnyValue>> eltLValues;
 
   TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues, ASTType tupleType,
                const ExprNode *expr);
+
+  virtual void print(raw_ostream &os) const override;
+  virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
+  virtual void emitStore(ASTExprAnd<CValue> value,
+                         ExprEmitter &emitter) const override;
+};
+
+/// This DLValue implementation represents a global variable reference.
+class GlobalDLValue : public BaseDLValue {
+public:
+  /// The global variable operation.
+  Operation *op;
+  SMLoc loc;
+
+  GlobalDLValue(GlobalVarDeclOp op, ASTType type, SMLoc loc);
+
+  GlobalVarDeclOp getGlobal() const;
 
   virtual void print(raw_ostream &os) const override;
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;

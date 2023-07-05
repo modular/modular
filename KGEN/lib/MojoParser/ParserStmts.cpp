@@ -1599,7 +1599,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // same indent level (or less) as the current definition.
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   } else if (isa<LIT::FuncOp>(getParentDecl())) {
-    // Otherwise this is a local let/var definition.
+    // This is a local let/var declaration.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
@@ -1607,9 +1607,9 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
                                           /*isSynth=*/false);
   } else {
-    emitError(loc, "cannot declare value outside a function");
+    // Otherwise this is a global let/var declaration.
+    declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType, !isVar);
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
-    return success(); // Continue parsing.
   }
 
   // Remember that we parsed this declaration so we can finish type checking it
