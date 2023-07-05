@@ -146,6 +146,24 @@ kgen.generator @use_struct_param(%arg0: !kgen.declref<@StructParam<param: @Struc
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @lifetime_lower
+// CHECK-SAME: <p: struct<>>(%arg0: !pop.struct<>) {
+kgen.generator @lifetime_lower<p: !lit.lifetime>(%a: !lit.lifetime) {
+
+  // CHECK: kgen.param.declare A: struct<> = <{ }>
+  kgen.param.declare A : !lit.lifetime = <#lit.lifetime>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @call_lifetime_lower
+kgen.generator @call_lifetime_lower() {
+  // CHECK: %struct = kgen.param.constant: struct<> = <{ }>
+  %cst = kgen.param.constant: lifetime = <#lit.lifetime>
+  // CHECK: kgen.call @lifetime_lower<:struct<> { }>(%struct) : (!pop.struct<>) -> ()
+  kgen.call @lifetime_lower<:lifetime #lit.lifetime>(%cst) : (!lit.lifetime) -> ()
+  kgen.return
+}
+
 // -----
 
 // CHECK-LABEL: kgen.generator @parameterized_declref_type

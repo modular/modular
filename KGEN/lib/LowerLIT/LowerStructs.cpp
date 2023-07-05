@@ -105,6 +105,9 @@ struct StructOperationLowerer : public mlir::IRRewriter {
   /// Set to the value of an invalid DeclRefType.
   DeclRefType errDeclRef;
 
+  /// The empty `#pop.struct<>` attribute, which has empty struct type.
+  POP::StructAttr emptyStructAttr;
+
   /// Cache to memorize AttrType replacement results.
   DenseMap<const void *, const void *> attrTypeReplaceCache;
 
@@ -132,6 +135,11 @@ struct StructOperationLowerer : public mlir::IRRewriter {
 StructOperationLowerer::StructOperationLowerer(MLIRContext *ctx,
                                                StructDeclarations &structDecls)
     : IRRewriter(ctx), structDecls(structDecls) {
+
+  // Get the empty `#pop.struct<>` attribute, which has empty struct type.
+  auto emptyStructType = POP::StructType::get(ctx, ArrayRef<Type>());
+  emptyStructAttr = POP::StructAttr::get({}, emptyStructType);
+
   // Build a converter to handle updating converted types within debug info
   // constructs.
   debugTypeConverter.addConversion([&](Type type) -> std::optional<Type> {
@@ -237,6 +245,9 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
           cast<TypedAttr>(structValue),
           IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
     }();
+  } else if (isa<LIT::LifetimeAttr>(attr)) {
+    // #lit.lifetime => #pop.struct<>
+    result = emptyStructAttr;
   } else {
     // Recursively replace attributes.
     result = replaceImpl<Attribute, Attribute>(attr);
@@ -324,6 +335,9 @@ Type StructOperationLowerer::replace(Type type) {
 
       return cast<POP::StructType>(result);
     }();
+  } else if (isa<LIT::LifetimeType>(type)) {
+    // !lit.lifetime => !pop.struct<>
+    result = emptyStructAttr.getType();
   } else {
     // Recursively replace types.
     result = replaceImpl(type);
@@ -333,9 +347,9 @@ Type StructOperationLowerer::replace(Type type) {
     attrTypeReplaceCache.try_emplace(type.getAsOpaquePointer(),
                                      result.getAsOpaquePointer());
   }
-  if (!foundRecursion) {
+
+  if (!foundRecursion)
     seenTypes.erase(type);
-  }
 
   return result;
 }

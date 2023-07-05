@@ -53,11 +53,29 @@ def NoneAttr : LITTypedAttr<"None", "none"> {
     This attribute represents None values.
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins AttributeSelfTypeParameter<"", "LIT::NoneType">:$type);
   let assemblyFormat = "";
 
   let builders = [AttrBuilder<(ins), [{
     return get(context, LIT::NoneType::get(context));
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
+// LifetimeAttr
+//===----------------------------------------------------------------------===//
+
+def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
+  let summary = "A !lit.lifetime value";
+  let description = [{
+    This attribute is a singleton used when lowering lifetimes.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"", "LIT::LifetimeType">:$type);
+  let assemblyFormat = "";
+
+  let builders = [AttrBuilder<(ins), [{
+    return get(context, LIT::LifetimeType::get(context));
   }]>];
 }
 

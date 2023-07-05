@@ -17,6 +17,8 @@ namespace M::KGEN {
 class DeclRefType;
 namespace LIT {
 class StructFieldOp;
+class NoneType;
+class LifetimeType;
 
 /// Mangle a parameter name with the line and column index where it's declared.
 inline std::string mangleParameter(StringRef name, unsigned line,

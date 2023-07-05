@@ -65,6 +65,18 @@ def LIT_NoneType : LITType<"None", "none"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LifetimeType
+//===----------------------------------------------------------------------===//
+
+def LIT_LifetimeType : LITType<"Lifetime", "lifetime"> {
+  let summary = "Lifetime type";
+  let description = [{
+    This type is used for lifetime parameters when tracking ownership and
+    provenance in a signature.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//
 
