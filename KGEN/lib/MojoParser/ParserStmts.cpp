@@ -12,6 +12,7 @@
 #include "DeclResolver.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "KGEN/MojoParser.h"
 #include "Lexer.h"
 #include "ParserBase.h"
 
@@ -1580,9 +1581,12 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   bool isVar = getToken().is(Token::kw_var);
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
+  SMLoc identifierLoc;
   StringAttr name;
-  if (parseIdentifier(name, isVar ? "expected name for 'var' declaration"
-                                  : "expected name for 'let' declaration"))
+  if (parseIdentifier(name,
+                      isVar ? "expected name for 'var' declaration"
+                            : "expected name for 'let' declaration",
+                      &identifierLoc))
     return failure();
 
   auto unresolvedType = UnresolvedType::get(getContext());
@@ -1713,6 +1717,15 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
   // Now mark the decl as fully resolved.
   decl.resolvedness = DeclResolvedness::fully;
+
+  if (shared.parserListener) {
+    // We notify the listener that a new let/var declaration has been
+    // resolved.
+    if (isVar)
+      shared.parserListener->onVarDecl(MojoASTDeclRef(&decl), identifierLoc);
+    else
+      shared.parserListener->onLetDecl(MojoASTDeclRef(&decl), identifierLoc);
+  }
   return success();
 }
 

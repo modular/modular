@@ -27,6 +27,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <filesystem>
 
@@ -50,18 +51,42 @@ Operation *MojoASTDeclRef::getIfOperation() const {
   return unwrapMojoASTDecl(impl)->getIfOperation();
 }
 
+MojoASTTypeRef MojoASTDeclRef::getType() const {
+  return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*unwrapMojoASTDecl(impl))
+      .Case<VarLetDeclOp, LetRegDeclOp>(
+          [&](auto op) { return MojoASTTypeRef(op.getType()); })
+      .Default([](auto &&) { return MojoASTTypeRef(nullptr); });
+}
+
+std::optional<StringRef> MojoASTDeclRef::getName() const {
+  return TypeSwitch<ASTDecl &, std::optional<StringRef>>(
+             *unwrapMojoASTDecl(impl))
+      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return op.getName(); });
+}
+
+llvm::SMLoc MojoASTDeclRef::getLoc() const {
+  return unwrapMojoASTDecl(impl)->getLoc();
+}
+
 //===----------------------------------------------------------------------===//
 // MojoASTTypeRef
 //===----------------------------------------------------------------------===//
 
 /// Unwrap a raw ASTDecl pointer.
-static ASTType *unwrapMojoASTType(void *declImpl) {
+static ASTType unwrapMojoASTType(void *declImpl) {
   assert(declImpl && "expected valid MojoASTDeclRef impl");
-  return reinterpret_cast<ASTType *>(declImpl);
+  return ASTType(Type::getFromOpaquePointer(declImpl));
 }
 
+MojoASTTypeRef::MojoASTTypeRef(const mlir::Type &type)
+    : MojoASTTypeRef(const_cast<void *>(type.getAsOpaquePointer())) {}
+
 MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &sharedState) {
-  return MojoASTDeclRef(unwrapMojoASTType(impl)->getDecl(sharedState));
+  return MojoASTDeclRef(unwrapMojoASTType(impl).getDecl(sharedState));
+}
+
+std::string MojoASTTypeRef::getAsString() const {
+  return unwrapMojoASTType(impl).getAsString(/*forDiag=*/true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -199,6 +224,21 @@ OwningOpRef<mlir::ModuleOp> M::importMojoFile(
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
+
+MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+
+  const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
+
+  StringRef filepath = sourceBuf->getBufferIdentifier();
+  auto fileLoc = FileLineColLoc::get(impl->sharedState.getContext(), filepath,
+                                     /*line=*/0, /*column=*/0);
+  std::string moduleName = std::filesystem::path(filepath.data()).stem();
+  ASTDecl &moduleDecl =
+      impl->sharedState.createModule(moduleName, sourceBuf, fileLoc);
+  impl->sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+  return MojoASTDeclRef(&moduleDecl);
+};
 
 LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
                                  MojoParserConfig &config,
