@@ -148,10 +148,11 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
 }
 
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
-             bool useMLIRDiagnostics)
+             bool useMLIRDiagnostics, int maxNotesPerDiagnostic)
     : sourceMgr(sourceMgr), context(context),
       bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)),
-      useMLIRDiagnostics(useMLIRDiagnostics) {
+      useMLIRDiagnostics(useMLIRDiagnostics),
+      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {
 
   if (!useMLIRDiagnostics)
     sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
@@ -252,6 +253,7 @@ void InflightDiag::emitMLIRDiagnostic() {
 void InflightDiag::emitSourceMgrDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
+  int nMessagesPrinted = 0;
   SourceMgr::DiagKind kind =
       isWarning ? SourceMgr::DK_Warning : SourceMgr::DK_Error;
   for (auto &message : messages) {
@@ -263,8 +265,17 @@ void InflightDiag::emitSourceMgrDiagnostic() {
     if (!loc.isValid())
       loc = sourceMgr.FindLocForLineAndColumn(sourceMgr.getMainFileID(), 0, 0);
 
-    sourceMgr.PrintMessage(loc, kind, message.text, message.ranges,
-                           message.fixIts);
+    // Limit number of notes to print
+    ++nMessagesPrinted;
+    llvm::raw_string_ostream text(message.text);
+    auto nOmitted = messages.size() - nMessagesPrinted;
+    if (nMessagesPrinted > diags->maxNotesPerDiagnostic && nOmitted > 0)
+      text << " (" << nOmitted << " more notes omitted.)";
+
+    sourceMgr.PrintMessage(loc, kind, text.str(), message.ranges, message.fixIts);
+    if (nMessagesPrinted > diags->maxNotesPerDiagnostic)
+      break;
+
     // Subsequent diagnostics are all notes.
     kind = SourceMgr::DK_Note;
   }

@@ -60,6 +60,9 @@ struct MojoParserConfig {
   /// For simplicity it is a single item, but it could evolve into a list of
   /// listeners.
   MojoParserListener *parserListener = nullptr;
+
+  /// Maximum number of notes to print per compiler error or warning.
+  int maxNotesPerDiagnostic = 10;
 };
 
 //===----------------------------------------------------------------------===//
