@@ -11,6 +11,7 @@
 #ifndef KGEN_POPDIALECT_POPOPS_H
 #define KGEN_POPDIALECT_POPOPS_H
 
+#include "KGEN/POPDialect/POPEnums.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpImplementation.h"
@@ -32,15 +33,11 @@ class DTypeType;
 } // namespace M::KGEN
 
 namespace M::KGEN::POP {
-enum class CmpPredicate : uint32_t;
 class CmpPredicateAttr;
-enum class AtomicOrdering : uint32_t;
 class AtomicOrderingAttr;
-enum class AtomicBinOp : uint32_t;
 class AtomicBinOpAttr;
-enum class PrefetchTag : uint32_t;
+class FastmathFlagsAttr;
 class PrefetchTagAttr;
-enum class PrefetchLocality : uint32_t;
 class PrefetchLocalityAttr;
 
 class ArrayType;

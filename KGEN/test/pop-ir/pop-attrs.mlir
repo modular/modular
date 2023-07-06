@@ -73,3 +73,10 @@ kgen.generator @variadic_constants<T: type, value: si32>() {
   kgen.param.constant: variadic<T> = <[]>
   kgen.return
 }
+
+// CHECK: f0 = #pop<fmf reassoc>
+// CHECK: f1 = #pop<fmf nnan|ninf|reassoc>
+"enums.op"() {
+  f0 = #pop<fmf reassoc>,
+  f1 = #pop<fmf reassoc|ninf|nnan>
+} : () -> ()

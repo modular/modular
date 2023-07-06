@@ -83,6 +83,26 @@ def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
                                    "bin_op">;
 
 //===----------------------------------------------------------------------===//
+// FastmathFlags
+//===----------------------------------------------------------------------===//
+
+def POP_FastmathFlags : I32BitEnumAttr<"FastmathFlags", "fastmath flags", [
+      I32BitEnumAttrCaseNone<"NONE", "none">,
+      I32BitEnumAttrCaseBit<"NNAN", 0, "nnan">,
+      I32BitEnumAttrCaseBit<"NINF", 1, "ninf">,
+      I32BitEnumAttrCaseBit<"NSZ", 2, "nsz">,
+      I32BitEnumAttrCaseBit<"ARCP", 3, "arcp">,
+      I32BitEnumAttrCaseBit<"CONTRACT", 4, "contract">,
+      I32BitEnumAttrCaseBit<"AFN", 5, "afn">,
+      I32BitEnumAttrCaseBit<"REASSOC", 6, "reassoc">
+    ]> {
+  let cppNamespace = "::M::KGEN::POP";
+  let genSpecializedAttr = 0;
+}
+
+def POP_FastmathFlagsAttr : EnumAttr<POPDialect, POP_FastmathFlags, "fmf">;
+
+//===----------------------------------------------------------------------===//
 // SIMDAttr
 //===----------------------------------------------------------------------===//
 
