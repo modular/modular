@@ -233,7 +233,8 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   StringRef filepath = sourceBuf->getBufferIdentifier();
   auto fileLoc = FileLineColLoc::get(impl->sharedState.getContext(), filepath,
                                      /*line=*/0, /*column=*/0);
-  std::string moduleName = std::filesystem::path(filepath.data()).stem();
+  std::string moduleName =
+      std::filesystem::path(filepath.data()).stem().string();
   ASTDecl &moduleDecl =
       impl->sharedState.createModule(moduleName, sourceBuf, fileLoc);
   impl->sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
