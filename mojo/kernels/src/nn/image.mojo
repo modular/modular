@@ -37,6 +37,7 @@ struct Image2DLayout:
     alias NHWC = Image2DLayout(0)  # channels last layout.
     alias NCHW = Image2DLayout(1)  # channels first layout.
     alias RSCF = Image2DLayout(2)  # TF filter layout for channels last input.
+    alias FRSCf = Image2DLayout(3)  # packed filter, adopted from oneDNN
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: Image2DLayout) -> Bool:

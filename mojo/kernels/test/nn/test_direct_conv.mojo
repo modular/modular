@@ -114,8 +114,16 @@ fn test[
     let filter = NDBuffer[4, DimList.create_unknown[4](), type](
         filter_ptr, Index(R, S, C, F), type
     )
-    let packed_filter = NDBuffer[4, DimList.create_unknown[4](), type](
-        packed_filter_ptr, Index(R, S, C, rounded_F), type
+    let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
+        packed_filter_ptr,
+        Index(
+            div_ceil(F, micro_kernel_width * simd_size),
+            R,
+            S,
+            C,
+            micro_kernel_width * simd_size,
+        ),
+        type,
     )
     let output = NDBuffer[4, DimList.create_unknown[4](), type](
         output_ptr, Index(N, HO, WO, F), type
@@ -154,17 +162,30 @@ fn test[
         dilation,
     )
 
-    let filter_test = packed_filter if filter_packed else filter
-
     # Test direct conv
     let direct_conv_chain = OwningOutputChainPtr(rt)
-    ConvDirectNHWC[
-        DimList.create_unknown[4](),
-        DimList.create_unknown[4](),
-        DimList.create_unknown[4](),
-        type,
-        filter_packed,
-    ].run(output, input, filter_test, conv_shape, direct_conv_chain.borrow())
+
+    @parameter
+    if filter_packed:
+        ConvDirectNHWC[
+            5,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[5](),
+            DimList.create_unknown[4](),
+            type,
+            True,
+        ].run(
+            output, input, packed_filter, conv_shape, direct_conv_chain.borrow()
+        )
+    else:
+        ConvDirectNHWC[
+            4,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            DimList.create_unknown[4](),
+            type,
+            False,
+        ].run(output, input, filter, conv_shape, direct_conv_chain.borrow())
     direct_conv_chain.wait()
 
     input_ptr.free()

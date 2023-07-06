@@ -8,6 +8,7 @@ from Assert import assert_param, debug_assert
 from Buffer import (
     NDBuffer,
     Buffer,
+    DynamicRankBuffer,
     _raw_stack_allocation,
     partial_simd_load,
     partial_simd_store,
@@ -2448,8 +2449,14 @@ struct ConvIm2ColNHWC[
         )
 
 
+# ===----------------------------------------------------------------------=== #
+# Direct Convolution                                                           #
+# ===----------------------------------------------------------------------=== #
+
+
 @value
 struct ConvDirectNHWC[
+    filter_rank: Int,
     shape_input: DimList,
     shape_filter: DimList,
     shape_output: DimList,
@@ -2469,7 +2476,7 @@ struct ConvDirectNHWC[
 
     var output: NDBuffer[4, shape_output, type]
     var input: NDBuffer[4, shape_input, type]
-    var filter: NDBuffer[4, shape_filter, type]
+    var filter: NDBuffer[filter_rank, shape_filter, type]
 
     var conv_shape: ConvShape
 
@@ -2486,7 +2493,7 @@ struct ConvDirectNHWC[
     fn run(
         output: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
-        filter: NDBuffer[4, shape_filter, type],
+        filter: NDBuffer[filter_rank, shape_filter, type],
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
@@ -2562,7 +2569,12 @@ struct ConvDirectNHWC[
             )
 
             let instance = ConvDirectNHWC[
-                shape_input, shape_filter, shape_output, type, filter_packed
+                filter_rank,
+                shape_input,
+                shape_filter,
+                shape_output,
+                type,
+                filter_packed,
             ](
                 task_output,
                 input,
@@ -3021,6 +3033,11 @@ struct ConvDirectNHWC[
         unroll[micro_kernel_height, micro_kernel_width, body]()
 
 
+# ===----------------------------------------------------------------------=== #
+# Direct Convolution Filter Packing                                            #
+# ===----------------------------------------------------------------------=== #
+
+
 fn pack_filter_rscf_to_cfrscf[
     micro_kernel_width: Int,
     simd_size: Int,
@@ -3091,6 +3108,28 @@ fn pack_filter_rscf_to_cfrscf[
                         packed_filter_ptr = packed_filter_ptr.offset(
                             micro_kernel_width * simd_size
                         )
+
+
+fn get_packed_filter_shape[
+    type: DType
+](R: Int, S: Int, C: Int, F: Int, inout shape_ref: DynamicRankBuffer):
+    """Compute the shape of packed filter. The packed layout is FRSCf.
+    shape_ref should be allocated with size 5 outside this kernel.
+    """
+    alias simd_size = simdwidthof[type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+
+    @always_inline
+    @parameter
+    fn dispatch_type[int_type: DType]():
+        let shape = shape_ref.to_ndbuffer[1, int_type]()
+        shape[0] = div_ceil(F, micro_kernel_width * simd_size)
+        shape[1] = R
+        shape[2] = S
+        shape[3] = C
+        shape[4] = micro_kernel_width * simd_size
+
+    shape_ref.type.dispatch_integral[dispatch_type]()
 
 
 fn pack_filter_rscf_to_frscf[

@@ -178,6 +178,65 @@ fn get_conv2d_shape[
     }
 
 
+fn get_conv2d_shape[
+    filter_rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
+    filter_shape: DimList,
+    type: DType,
+    data_layout: Image2DLayout,
+    filter_layout: Image2DLayout,
+](
+    output: NDBuffer[4, output_shape, type],
+    input: NDBuffer[4, input_shape, type],
+    filter: NDBuffer[filter_rank, filter_shape, type],
+    pad_h: StaticIntTuple[2],
+    pad_w: StaticIntTuple[2],
+    stride: StaticIntTuple[2],
+    dilation: StaticIntTuple[2],
+) -> ConvShape:
+    assert_param[data_layout == Image2DLayout.NHWC]()
+    assert_param[
+        (filter_rank == 4 and filter_layout == Image2DLayout.RSCF)
+        or (filter_rank == 5 and filter_layout == Image2DLayout.FRSCf)
+    ]()
+
+    @parameter
+    if filter_rank == 4 and filter_layout == Image2DLayout.RSCF:
+        return ConvShape {
+            n: input.dim[0](),
+            h: input.dim[1](),
+            w: input.dim[2](),
+            c: input.dim[3](),
+            out_h: output.dim[1](),
+            out_w: output.dim[2](),
+            f: filter.dim[3](),
+            r: filter.dim[0](),
+            s: filter.dim[1](),
+            stride: stride,
+            dilation: dilation,
+            pad_h: pad_h,
+            pad_w: pad_w,
+        }
+
+    # default case: filter is packed, FRSCf
+    return ConvShape {
+        n: input.dim[0](),
+        h: input.dim[1](),
+        w: input.dim[2](),
+        c: input.dim[3](),
+        out_h: output.dim[1](),
+        out_w: output.dim[2](),
+        f: output.dim[3](),
+        r: filter.dim[1](),
+        s: filter.dim[2](),
+        stride: stride,
+        dilation: dilation,
+        pad_h: pad_h,
+        pad_w: pad_w,
+    }
+
+
 fn get_conv_tile_size[type: DType]() -> Int:
     alias KB = 1024
 
