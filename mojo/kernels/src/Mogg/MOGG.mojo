@@ -1342,7 +1342,14 @@ fn matmul[
     @always_inline
     fn func(chain: OutputChainPtr):
         matmul_parallel_async[
-            type, transpose_a, transpose_b, b_packed, True, epilogue_wrapper
+            type,  # a_type
+            type,  # b_type
+            type,  # c_type
+            transpose_a,
+            transpose_b,
+            b_packed,
+            True,
+            epilogue_wrapper,
         ](
             c,
             a,
