@@ -95,8 +95,11 @@ static void genOptionName(raw_ostream &os, const llvm::Record *option,
   os.indent(indent) << CommandOption::getPreferredPrefix(option)
                     << option->getValueAsString("Name");
 
-  if (auto metaVarName = option->getValueAsOptionalString("MetaVarName"))
-    os << ' ' << *metaVarName;
+  if (auto metaVarName = option->getValueAsOptionalString("MetaVarName")) {
+    if (option->getValueAsDef("Kind")->getValueAsString("Name") != "Joined")
+      os << ' ';
+    os << '<' << *metaVarName << '>';
+  }
 }
 
 /// If there are 1 or more option groups present, outputs an "OPTIONS" section,
