@@ -647,7 +647,9 @@ fn mogg_concat[
     out_chain: OutputChainPtr,
     *variadic_ins: NDBuffer[rank, DimList.create_unknown[rank](), type],
 ):
-    let axis_int = axis[0].to_int()
+    var axis_int = axis[0].to_int()
+    if axis_int < 0:
+        axis_int = axis_int + rank
     let inputs = VariadicList(variadic_ins)
 
     @parameter
