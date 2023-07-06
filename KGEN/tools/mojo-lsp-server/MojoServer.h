@@ -45,6 +45,10 @@ public:
                       const mlir::lsp::CodeActionContext &context,
                       std::vector<mlir::lsp::CodeAction> &actions);
 
+  /// Get a `Hover` element corresponding to the given document position.
+  std::optional<mlir::lsp::Hover> onHover(const mlir::lsp::URIForFile &uri,
+                                          const mlir::lsp::Position &pos);
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl;

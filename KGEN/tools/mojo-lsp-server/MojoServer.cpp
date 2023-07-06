@@ -99,6 +99,12 @@ struct Symbol {
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
 
+  /// Return a human readable and complete representation of the declaration of
+  /// this symbol. It might differ from the actual declaration from the source
+  /// code, but it's guaranteed to be complete (e.g. it shows inferred types),
+  /// to aid the LSP user with the understanding the code at hand.
+  std::string getCompleteDeclarationAsString() const;
+
   /// Name of the symbol.
   std::string name;
 
@@ -112,6 +118,25 @@ struct Symbol {
   lsp::Range identifierRange;
 };
 } // namespace
+
+std::string Symbol::getCompleteDeclarationAsString() const {
+  auto getDeclKindAsString = [](DeclKind kind) {
+    switch (kind) {
+    case DeclKind::Let:
+      return "let";
+    case DeclKind::Var:
+      return "var";
+    }
+  };
+
+  std::string buff;
+  llvm::raw_string_ostream os(buff);
+  os << getDeclKindAsString(declKind) << " " << name;
+  if (auto typeRef = declRef.getType())
+    os << ": " << typeRef.getAsString();
+  return buff;
+}
+
 
 //===----------------------------------------------------------------------===//
 // SymbolIndex
@@ -250,6 +275,11 @@ public:
   void getCodeActions(const lsp::URIForFile &uri, const lsp::Range &pos,
                       const lsp::CodeActionContext &context,
                       std::vector<lsp::CodeAction> &actions);
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  std::optional<lsp::Hover> onHover(const lsp::Position &pos) const;
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -525,6 +555,26 @@ void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Language Features
+//===----------------------------------------------------------------------===//
+
+std::optional<lsp::Hover>
+MojoDocument::onHover(const lsp::Position &pos) const {
+  Symbol *symbol = symbolIndex.getSymbolAt(pos);
+  if (!symbol)
+    return std::nullopt;
+
+  lsp::Hover hover(symbol->identifierRange);
+  hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
+  hover.contents.value = llvm::formatv(
+      R"(```mojo
+{0}
+```)",
+      symbol->getCompleteDeclarationAsString());
+  return hover;
+}
+
+//===----------------------------------------------------------------------===//
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
@@ -635,4 +685,12 @@ void MojoServer::getCodeActions(const lsp::URIForFile &uri,
                                 std::vector<lsp::CodeAction> &actions) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
     doc->getCodeActions(uri, pos, context, actions);
+}
+
+std::optional<lsp::Hover> MojoServer::onHover(const lsp::URIForFile &uri,
+                                              const lsp::Position &pos) {
+  if (MojoDocument *doc = impl->findDocument(uri.file()))
+    return doc->onHover(pos);
+
+  return std::nullopt;
 }
