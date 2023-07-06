@@ -1,0 +1,67 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"mojo","capabilities":{},"trace":"off"}}
+// CHECK-LABEL: "id": 0
+// CHECK: "hoverProvider": true
+// -----
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///foo.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"from IO import print\nfn function():\n  let foo: Int = 420\n  var bar = 1 + foo\n  print(bar)"
+}}}
+// -----
+{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{
+  "textDocument":{"uri":"test:///foo.mojo"},
+  "position":{
+    "line":3,
+    "character":17
+  }
+}}
+// CHECK-LABEL: "id": 2
+// CHECK-NEXT: "jsonrpc": "2.0"
+// CHECK-NEXT:   "result": {
+// CHECK-NEXT:     "contents": {
+// CHECK-NEXT:       "kind": "markdown",
+// CHECK-NEXT:       "value": "```mojo\nlet foo: Int\n```"
+// CHECK-NEXT:     },
+// CHECK-NEXT:     "range": {
+// CHECK-NEXT:       "end": {
+// CHECK-NEXT:         "character": 9,
+// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:       },
+// CHECK-NEXT:       "start": {
+// CHECK-NEXT:         "character": 6,
+// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:       }
+// CHECK-NEXT:     }
+// CHECK-NEXT:   }
+// -----
+{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{
+  "textDocument":{"uri":"test:///foo.mojo"},
+  "position":{
+    "line":4,
+    "character":8
+  }
+}}
+// CHECK-LABEL: "id": 3
+// CHECK-NEXT: "jsonrpc": "2.0"
+// CHECK-NEXT:   "result": {
+// CHECK-NEXT:     "contents": {
+// CHECK-NEXT:       "kind": "markdown",
+// CHECK-NEXT:       "value": "```mojo\nvar bar: pointer<_\"$Int\"::_Int>\n```"
+// CHECK-NEXT:     },
+// CHECK-NEXT:     "range": {
+// CHECK-NEXT:       "end": {
+// CHECK-NEXT:         "character": 9,
+// CHECK-NEXT:         "line": 3
+// CHECK-NEXT:       },
+// CHECK-NEXT:       "start": {
+// CHECK-NEXT:         "character": 6,
+// CHECK-NEXT:         "line": 3
+// CHECK-NEXT:       }
+// CHECK-NEXT:     }
+// CHECK-NEXT:   }
+// -----
+{"jsonrpc":"2.0","id":4,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}
