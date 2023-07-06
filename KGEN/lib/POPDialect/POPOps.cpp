@@ -580,6 +580,22 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 // ExternalCallOp
 //===---------------------------------------------------------------------===//
 
+static ParseResult parseFuncAttrs(AsmParser &p, StringArrayAttr &funcAttrs) {
+  StringRef attr;
+  SmallVector<StringAttr> attrs;
+  while (succeeded(p.parseOptionalKeyword(&attr)))
+    attrs.push_back(p.getBuilder().getStringAttr(attr));
+  funcAttrs = StringArrayAttr::get(p.getContext(), attrs);
+  return success();
+}
+
+static void printFuncAttrs(AsmPrinter &p, Operation *op,
+                           StringArrayAttr funcAttrs) {
+  if (funcAttrs)
+    llvm::interleave(
+        funcAttrs, p, [&](StringRef attr) { p << attr; }, " ");
+}
+
 static ParseResult parseExternalCallee(AsmParser &p, TypedAttr &callee) {
   StringAttr concreteCallee;
   // Try `@foo`.
@@ -620,7 +636,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr());
+        TypeAttr(), FlatSymbolRefAttr(), StringArrayAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -628,7 +644,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, FunctionType variadicType) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType), FlatSymbolRefAttr());
+        TypeAttr::get(variadicType), FlatSymbolRefAttr(), StringArrayAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -636,17 +652,18 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, StringRef importedFrom) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom));
+        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom),
+        StringArrayAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            TypeRange results, StringRef func,
                            ValueRange operands, FunctionType variadicType,
                            StringRef importedFrom) {
-  build(b, state, results,
-        StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType),
-        FlatSymbolRefAttr::get(b.getContext(), importedFrom));
+  build(
+      b, state, results, StringAttr::get(func, StringType::get(b.getContext())),
+      operands, TypeAttr::get(variadicType),
+      FlatSymbolRefAttr::get(b.getContext(), importedFrom), StringArrayAttr());
 }
 
 LogicalResult

@@ -1574,12 +1574,33 @@ public:
         *funcType, op.getVariadicType().has_value(),
         getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
 
+    // Construct the passthrough attributes.
+    mlir::ArrayAttr passthrough;
+    if (std::optional<ArrayRef<StringAttr>> funcAttrs = op.getFuncAttrs()) {
+      SmallVector<Attribute> attrs;
+      llvm::append_range(attrs, *funcAttrs);
+      // Sort the attributes to keep them canonical.
+      llvm::sort(attrs, [](Attribute lhs, Attribute rhs) {
+        return cast<StringAttr>(lhs).getValue() <
+               cast<StringAttr>(rhs).getValue();
+      });
+      passthrough = rewriter.getArrayAttr(attrs);
+    }
+
     // Lookup an existing function.
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
-    if (func && func.getFunctionType() != signature)
-      return op.emitError("existing function with conflicting signature")
+    if (func && func.getFunctionType() != signature) {
+      return mlir::emitError(op.getLoc(),
+                             "existing function with conflicting signature")
                  .attachNote(func.getLoc())
              << "see function declaration here";
+    }
+    if (func && func.getPassthroughAttr() != passthrough) {
+      return mlir::emitError(op.getLoc(),
+                             "existing function with conflicting attributes")
+                 .attachNote(func.getLoc())
+             << "see function declaration here";
+    }
 
     // Create the function declaration if necessary.
     if (!func) {
@@ -1587,6 +1608,8 @@ public:
       rewriter.clearInsertionPoint();
       func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getCallee(),
                                                signature);
+      if (passthrough)
+        func.setPassthroughAttr(passthrough);
       symtab.insert(func);
     }
 
