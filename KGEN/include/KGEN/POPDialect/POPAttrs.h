@@ -8,6 +8,7 @@
 #define KGEN_POPDIALECT_POPATTRS_H
 
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
+#include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
@@ -79,8 +80,6 @@ private:
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
-
-#include "KGEN/POPDialect/POPEnums.h.inc"
 
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/POPDialect/POPAttrs.h.inc"

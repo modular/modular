@@ -688,8 +688,9 @@ kgen.func @array_repeat0(%a: i32, %b: i32) -> !pop.array<3, i32> {
 kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> !pop.scalar<f32> {
   // CHECK: %[[INP_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[RESULT:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]]) : (f32) -> f32
+  // CHECK-SAME: fastmathFlags = #llvm.fastmath<nnan, reassoc>
   // CHECK: %[[RES_CAST:.*]] = builtin.unrealized_conversion_cast %[[RESULT]]
-  %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) : (!pop.scalar<f32>) -> !pop.scalar<f32>
+  %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) {fastmathFlags = #pop<fmf reassoc|nnan>} : (!pop.scalar<f32>) -> !pop.scalar<f32>
   kgen.return %0 : !pop.scalar<f32>
 }
 

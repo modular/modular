@@ -1286,6 +1286,32 @@ struct ConvertPOPDTypeFromUI8 : public ConvertPOPToLLVMPattern<DTypeFromUI8> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPCallLLVMIntrinsic
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPCallLLVMIntrinsic
+    : public ConvertPOPToLLVMPattern<CallLLVMIntrinsicOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(CallLLVMIntrinsicOp op, CallLLVMIntrinsicOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
+      return failure();
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, types, cast<StringAttr>(op.getIntrin()).getValue(),
+        adaptor.getOperands(), convertFastmathFlags(op.getFastmathFlags()));
+    return success();
+  }
+
+  /// POP dialect fastmath flags match the LLVM ones.
+  static LLVM::FastmathFlags convertFastmathFlags(FastmathFlags fmf) {
+    return static_cast<LLVM::FastmathFlags>(fmf);
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1315,9 +1341,6 @@ using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
 using ConvertPOPPointerToIndex =
     mlir::OneToOneConvertToLLVMPattern<PointerToIndexOp, LLVM::PtrToIntOp>;
-using ConvertPOPCallLLVMIntrinsic =
-    mlir::OneToOneConvertToLLVMPattern<CallLLVMIntrinsicOp,
-                                       LLVM::CallIntrinsicOp>;
 
 } // namespace
 

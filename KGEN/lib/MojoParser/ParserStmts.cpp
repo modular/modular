@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ASTDecl.h"
+#include "CallEmission.h"
 #include "DeclResolver.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
@@ -16,13 +17,11 @@
 #include "Lexer.h"
 #include "ParserBase.h"
 
-#include "CallEmission.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/POPDialect/POPEnums.h.inc"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
