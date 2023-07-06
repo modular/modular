@@ -610,11 +610,6 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
       // Set the data layout on the module.
       module->setDataLayout((*machineOr)->createDataLayout());
 
-      // Set all external and defined functions to hidden visibility.
-      for (llvm::Function &func : module->getFunctionList())
-        if (!func.hasInternalLinkage() && !func.empty())
-          func.setVisibility(llvm::GlobalValue::HiddenVisibility);
-
       // Lower the LLVM to an object file.
       if (failed(compileLLVMToObject(*module, **machineOr, *buf, options))) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
