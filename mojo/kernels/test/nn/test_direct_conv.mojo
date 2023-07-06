@@ -18,7 +18,7 @@ from ConvUtils import (
 from Conv import (
     ConvDirectNHWC,
     Naive2dConvolution,
-    pack_filter_rscf_to_cfrscf,
+    pack_filter_rscf_to_frscf,
 )
 from DType import DType
 from IO import print
@@ -88,16 +88,12 @@ fn test[
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    let cf_tile_size = get_conv_tile_shape[type, micro_kernel_width](conv_shape)
-    # If the input channel is partitioned, the tile size in C
-    # may be reduced to fit the partition
+
     let num_threads = rt.parallelism_level()
     let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
     let num_partitions = get_conv_num_partitions[
         micro_kernel_height, micro_kernel_width * simd_size
     ](num_tasks, conv_shape)
-    # Actual tile size
-    let c_tile_size = min(conv_shape.c // num_partitions[1], cf_tile_size[0])
 
     # Rounded C and F size for pre-packed filter.
     let micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
@@ -106,11 +102,11 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter_rscf_to_cfrscf[
+        pack_filter_rscf_to_frscf[
             get_direct_conv_micro_kernel_width(),
             simd_size,
             type,
-        ](conv_shape, c_tile_size, filter_ptr, packed_filter_ptr)
+        ](conv_shape, filter_ptr, packed_filter_ptr)
 
     let input = NDBuffer[4, DimList.create_unknown[4](), type](
         input_ptr, Index(N, H, W, C), type

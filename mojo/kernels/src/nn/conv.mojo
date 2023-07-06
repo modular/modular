@@ -2686,12 +2686,25 @@ struct ConvDirectNHWC[
         @always_inline
         @parameter
         fn n_ho_wo_iteration[n_ho_wo_tile_size: Int](n_ho_wo: Int):
-            self._inner_loops[n_ho_wo_tile_size, micro_kernel_width](
-                f_tile_offset, f_tile_size, c_tile_offset, c_tile_size, n_ho_wo
-            )
+            @always_inline
+            @parameter
+            fn body[c_fully_cached: Bool]():
+                self._inner_loops[
+                    n_ho_wo_tile_size, micro_kernel_width, c_fully_cached
+                ](
+                    f_tile_offset,
+                    f_tile_size,
+                    c_tile_offset,
+                    c_tile_size,
+                    n_ho_wo,
+                )
 
-        # After the loop can't be stepped with micr0_kernel_height,
-        # it will step by 5, 4, 3, 2, 1. This works with mciro_kernel_height > 6
+            # c_fully_cached means the C dimension is fully covered in the
+            # cache tile.
+            unswitch[body](self.conv_shape.c == c_tile_size)
+
+        # After the loop can't be stepped with micro_kernel_height,
+        # it will step by 5, 4, 3, 2, 1. This works with micro_kernel_height > 6
         # but maybe not very efficient.
         tile[
             n_ho_wo_iteration,
@@ -2704,6 +2717,7 @@ struct ConvDirectNHWC[
     fn _inner_loops[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
+        c_fully_cached: Bool,
     ](
         self,
         f_tile_offset: Int,
@@ -2765,9 +2779,11 @@ struct ConvDirectNHWC[
             @parameter
             if filter_packed:
                 filter_ptr = self.filter.data.offset(
-                    self.conv_shape.r
+                    f
+                    * self.conv_shape.r
                     * self.conv_shape.s
-                    * (f * c_tile_size + c_tile_offset * self.conv_shape.f)
+                    * self.conv_shape.c
+                    + c_tile_offset * micro_kernel_f_size
                 )
 
             for r in range(self.conv_shape.r):
@@ -2790,15 +2806,21 @@ struct ConvDirectNHWC[
                         )
 
                     for c in range(c_tile_size):
-                        # prefetch
-                        alias prefetch_offset = 8 * micro_kernel_f_size
+                        # Prefetch. The offset specifies how much ahead in terms of
+                        # micro kernel width do we prefetch.
+                        alias prefetch_offset = 4
+                        # fmt: off
+                        let dist = prefetch_offset * micro_kernel_f_size \
+                                    if c_fully_cached or c < c_tile_size - prefetch_offset \
+                                    else ( \
+                                      prefetch_offset + self.conv_shape.c - c_tile_size \
+                                    ) * micro_kernel_f_size
+                        # fmt: on
 
                         @always_inline
                         @parameter
                         fn prefetch_body[idx: Int]():
-                            filter_ptr.offset(
-                                prefetch_offset + idx * simd_size
-                            ).prefetch[
+                            filter_ptr.offset(dist + idx * simd_size).prefetch[
                                 PrefetchOptions()
                                 .for_read()
                                 .high_locality()
@@ -2832,6 +2854,18 @@ struct ConvDirectNHWC[
 
                         input_offset += 1
 
+                    # If the C dimension is fully covered in cache tile, then
+                    # loop nests over RxSxc_tile_size fully covers RSC diemensions.
+                    # With FRSCf layout, this ensures all micro_kernel_f_size
+                    # segments are continously in memory. If not, we need to
+                    # reset filter_ptr to the next start of c segments in tile.
+                    @parameter
+                    if filter_packed and not c_fully_cached:
+                        filter_ptr = filter_ptr.offset(
+                            (self.conv_shape.c - c_tile_size)
+                            * micro_kernel_f_size
+                        )
+
             self._store_output_micro_tile[
                 micro_kernel_height, micro_kernel_width, simd_size
             ](n_ho_wo, f, output_micro_tile)
@@ -2849,7 +2883,7 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
-        """Initialize a mciro tile to zero.
+        """Initialize a micro tile to zero.
         Arguments:
             n_ho_wo: offset of micro tile in fused (n, ho, wo) dimension.
             f: offset of micro tile in F dimension.
@@ -2880,7 +2914,7 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
-        """Load a mciro tile from the output buffer.
+        """Load a micro tile from the output buffer.
         Arguments:
             n_ho_wo: offset of micro tile in fused (n, ho, wo) dimension.
             f: offset of micro tile in F dimension.
@@ -2959,7 +2993,7 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
-        """Store a mciro tile to the output buffer.
+        """Store a micro tile to the output buffer.
         Arguments:
             n_ho_wo: offset of micro tile in fused (n, ho, wo) dimension.
             f: offset of micro tile in F dimension.
@@ -3039,7 +3073,7 @@ fn pack_filter_rscf_to_cfrscf[
                         )
 
                         # F dimension is padded with zeros to make the packed F
-                        # multiple of micro_kernelf_size.
+                        # multiple of micro_kernel_f_size.
                         @always_inline
                         @parameter
                         fn body[idx: Int]():
@@ -3057,3 +3091,63 @@ fn pack_filter_rscf_to_cfrscf[
                         packed_filter_ptr = packed_filter_ptr.offset(
                             micro_kernel_width * simd_size
                         )
+
+
+fn pack_filter_rscf_to_frscf[
+    micro_kernel_width: Int,
+    simd_size: Int,
+    type: DType,
+](
+    conv_shape: ConvShape,
+    filter: DTypePointer[type],
+    packed_filter: DTypePointer[type],
+):
+    """This packs the filter form RSCF to FRSCf.
+    Args:
+        conv_shape: contains R, S, C, F.
+        filter: filter in RSCF layout.
+        packed_filter: packed filter in FRScf layout. Here,
+            F       - F tiles
+            R, S, C - original R, S, C
+            f       - c, f index with CF tile.
+
+    The buffer is padded so that F is multiple of micro_kernel_f_size.
+    The results from direct conv kernel will be incorrect if the original
+    F is not divisible over micro_kernel_f_size.
+
+    TODO: Address this when there is layout support.
+    """
+    var packed_filter_ptr = packed_filter
+
+    for f_tile_start in range(0, conv_shape.f, micro_kernel_width * simd_size):
+        packed_filter_ptr = packed_filter.offset(
+            f_tile_start * conv_shape.r * conv_shape.s * conv_shape.c
+        )
+        for r in range(conv_shape.r):
+            for s in range(conv_shape.s):
+                for c in range(conv_shape.c):
+                    let filter_ptr = filter.offset(
+                        f_tile_start
+                        + conv_shape.f
+                        * (c + conv_shape.c * (s + conv_shape.s * r))
+                    )
+
+                    # F dimension is padded with zeros to make the packed F
+                    # multiple of micro_kernel_f_size.
+                    @always_inline
+                    @parameter
+                    fn body[idx: Int]():
+                        var filter_vec = SIMD[type, simd_size](0.0)
+                        if idx * simd_size < conv_shape.f - f_tile_start:
+                            filter_vec = filter_ptr.offset(
+                                idx * simd_size
+                            ).simd_load[simd_size]()
+                        packed_filter_ptr.offset(idx * simd_size).simd_store[
+                            simd_size
+                        ](filter_vec)
+
+                    unroll[micro_kernel_width, body]()
+
+                    packed_filter_ptr = packed_filter_ptr.offset(
+                        micro_kernel_width * simd_size
+                    )
