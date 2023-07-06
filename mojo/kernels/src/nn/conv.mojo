@@ -1209,8 +1209,9 @@ struct ConvIm2ColNCHW[
                 DimList.create_unknown[2](),  # shape_a
                 DimList.create_unknown[2](),  # shape c
                 packed_shape,  # packed_shape
-                type,  # accum_type
-                type,  # value_type
+                type,  # a_type
+                type,  # b_type
+                type,  # c_type
                 simd_size,
                 RowSize,
                 m_loop_pack_inner_size,
