@@ -1731,8 +1731,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
 ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
                                            size_t stmtIndent) {
-  auto smLoc = consumeToken(Token::kw_alias).getLoc();
-  auto loc = translateLocation(smLoc);
+  SMLoc smLoc = consumeToken(Token::kw_alias).getLoc();
+  Location loc = translateLocation(smLoc);
   StringAttr name;
   if (parseIdentifier(name, "expected name for 'alias' declaration"))
     return failure();
@@ -1741,7 +1741,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   // UnresolvedAliasValueAttr.
   auto type = UnresolvedType::get(getContext());
   auto value = UnresolvedAliasValueAttr::get(type);
-  auto [line, col] = getSourceMgr().getLineAndColumn(curDeclScope->getLoc());
+  auto [line, col] = getSourceMgr().getLineAndColumn(smLoc);
   auto declOp = builder.create<ParamDeclareOp>(
       loc, ParamDeclAttr::get(mangleParameter(name, line, col), type), value);
 
