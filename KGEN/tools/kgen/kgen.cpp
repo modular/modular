@@ -366,21 +366,11 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return emitHeader(symtab, exportedSymbols, *compiler,
                       clOptions.outputFilename);
 
-  // If the module is empty, just return - don't bother trying codegen or
-  // emitting anything.
-  if (theModule->getOps().empty())
-    return mlir::success();
-
-  // If there are no exported symbols, then we won't codegen anything. That
-  // means we need to add an exported symbol if there aren't any. Use the first
-  // symbol op in the module just so we have something.
-  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
-  //   callstacks we want codegen'd. This requires updating tests.
-  if (exportedSymbols.empty()) {
-    auto firstFunc = *theModule->getOps<mlir::SymbolOpInterface>().begin();
-    exportedSymbols.insert(
-        {firstFunc.getNameAttr(), {firstFunc.getNameAttr(), false}});
-  }
+  // If there are no exported symbols, there's nothing to codegen. Report this
+  // as an error.
+  if (exportedSymbols.empty())
+    return failure(clOptions.reportError(
+        "module does not `@export` any symbols; nothing to codegen"));
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
