@@ -18,17 +18,17 @@ def FunOptionGroup : OptionGroup<"Fun Options">;
 
 // CHECK: warning: help text for publicly visible option 'chute' should not be empty
 // CHECK: warning: option 'chute' takes a value, but does not define a metavar name for that value
-def chute : Separate<["-"], "chute">, Group<FunOptionGroup>, Index<0>, Flags<[]>;
+def chute : Separate<["-"], "chute">, Group<FunOptionGroup>, Index<0>;
 
 // CHECK: warning: option 'ladder' metavar name should not be empty
 def ladder : Joined<["--"], "ladder">, Group<FunOptionGroup>, Index<1>,
-  Flags<[]>, HelpText<"The ladder to use.">, MetaVarName<"">;
+  HelpText<"The ladder to use.">, MetaVarName<"">;
 // CHECK: warning: alias 'l' has no index
-def l : Joined<["-"], "l">, Group<FunOptionGroup>, Flags<[]>, Alias<ladder>;
+def l : Joined<["-"], "l">, Group<FunOptionGroup>, Alias<ladder>;
 
 // CHECK: warning: option 'slide' metavar name should be uppercase
 // CHECK: warning: option 'slide' has no index
 def slide : JoinedOrSeparate<["--", "-"], "slide">, Group<FunOptionGroup>,
-  Flags<[]>, HelpText<"The slide to use.">, MetaVarName<"path">;
+  HelpText<"The slide to use.">, MetaVarName<"path">;
 
 // CHECK: warning: group 'Fun Options' has no index

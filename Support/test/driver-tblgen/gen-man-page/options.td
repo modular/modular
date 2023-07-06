@@ -22,7 +22,7 @@ def : CommandDescription<
 // CHECK: .SS "First Options"
 def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 
-// Note that the following options have difference indices than their source
+// Note that the following options have different indices than their source
 // order. We test here that they appear in ascending index order.
 // CHECK: \fB\-bar\fR, \fB\-\-baz\fR, \fB\-\-bazzer\fR, \fB\-\-bazzest\fR
 // CHECK-NEXT: .RS 4
@@ -35,15 +35,12 @@ def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
 def : JoinedOrSeparate<["--", "-"], "foo">, Group<FirstOptionGroup>, Index<1>,
-  Flags<[]>, MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">;
-def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>, Index<0>, Flags<[]>,
+  MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">;
+def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>, Index<0>,
   HelpText<"Turns on bar support.">;
-def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Index<2>, Flags<[]>,
-  Alias<bar>;
-def : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<0>, Flags<[]>,
-  Alias<bar>;
-def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Index<1>, Flags<[]>,
-  Alias<bar>;
+def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Index<2>, Alias<bar>;
+def : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<0>, Alias<bar>;
+def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Index<1>, Alias<bar>;
 
 // CHECK: .SS "Second Options"
 // CHECK-NEXT: Another \-\- potentially less useful \-\- set of options.
@@ -56,5 +53,5 @@ def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
 // CHECK-NEXT: Specify the "I", as in "igloo."
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-def : Joined<["-"], "I">, Group<SecondOptionGroup>, Index<0>, Flags<[]>,
+def : Joined<["-"], "I">, Group<SecondOptionGroup>, Index<0>,
   HelpText<"Specify the \"I\", as in \"igloo.\"">, MetaVarName<"IGLOO">;
