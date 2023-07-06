@@ -60,12 +60,14 @@ fn structured_for_loop() -> __mlir_type.index:
 
 # // -----
 
-# CHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"{{.*}}Int.mojo" in
+# CHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*Int.mojo]]" in
 
 # CHECK: lit.struct.decl @Int
 # CHECK-NEXT: lit.struct.field value : index loc(#[[LOC:loc[0-9]+]])
-fn caller():
-    let y = StringRef.__init__("woof")
 
+# CHECK: lit.func @"__init__(__mlir_type.index)"(%value: index loc("[[FILENAME]]":{{[0-9]+}}:{{[0-9]+}})
 
 # CHECK: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
+
+fn caller():
+    let y = StringRef.__init__("woof")

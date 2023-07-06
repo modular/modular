@@ -1954,7 +1954,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Handle argument effects and build the ASTDecls for the arguments.
   SmallVector<ValueInputConvention> inputConventions;
   for (const ParsedArgument &arg : args) {
-    argLocs.push_back(p.translateLocation(arg.loc));
+    argLocs.push_back(shared.diags.translateLocation(arg.loc));
     argNames.push_back(arg.name);
     inputConventions.push_back(arg.kgenConvention);
 
