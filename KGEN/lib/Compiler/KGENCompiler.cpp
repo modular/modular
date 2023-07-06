@@ -365,7 +365,8 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   llvm::orc::SymbolFlagsMap symbols;
 
   for (auto &[name, symbol] : exports)
-    symbols[mangler(symbol.alias.getValue())] = llvm::JITSymbolFlags::Callable;
+    symbols[mangler(symbol.alias.getValue())] =
+        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported;
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};
 }
