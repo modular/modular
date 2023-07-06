@@ -29,13 +29,17 @@ def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 // CHECK-NEXT: Turns on bar support.
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-// CHECK: \fB\-\-foo\fR \fIFOO\fR
+// CHECK: \fB\-\-foo\fR \fIFOO\fR, \fB\-F\fR\fIALSO\-FOO\fR
 // CHECK-NEXT: .RS 4
 // CHECK-NEXT: Takes a foo and does something with it.
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-def : JoinedOrSeparate<["--", "-"], "foo">, Group<FirstOptionGroup>, Index<1>,
-  MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">;
+def foo : JoinedOrSeparate<["--", "-"], "foo">, Group<FirstOptionGroup>,
+  Index<1>, MetaVarName<"FOO">,
+  HelpText<"Takes a foo and does something with it.">;
+def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<0>,
+  MetaVarName<"ALSO-FOO">, Alias<foo>;
+
 def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>, Index<0>,
   HelpText<"Turns on bar support.">;
 def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Index<2>, Alias<bar>;
