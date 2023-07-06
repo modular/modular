@@ -136,7 +136,8 @@ struct SharedState::Impl {
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                          bool enableCaching)
-    : diags(sourceMgr, config.context, config.useMLIRDiagnostics),
+    : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
+            config.maxNotesPerDiagnostic),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener),  runtime(config.runtime), impl(std::make_unique<Impl>(config.context)) {

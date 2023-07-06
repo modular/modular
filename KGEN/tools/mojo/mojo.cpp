@@ -58,6 +58,10 @@ public:
   cl::list<std::string> mojoExecuteArguments{
       llvm::cl::Sink,
       cl::desc("Arguments to be passed to mojo when executed.")};
+
+  cl::opt<int> maxNotesPerDiagnostic{
+      "max-notes-per-diagnostic", cl::desc("Maximum number of notes to print in diagnostics."),
+      cl::init(10)};
 };
 } // namespace
 
@@ -149,6 +153,7 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   MojoParserConfig parseConfig(ctx, *runtime, compilationOptions);
   parseConfig.validateDocStrings = clOptions.validateDocStrings;
+  parseConfig.maxNotesPerDiagnostic = clOptions.maxNotesPerDiagnostic;
 
   theModule = importMojoFile(mgr, parseConfig, mojoScope);
   if (!theModule)

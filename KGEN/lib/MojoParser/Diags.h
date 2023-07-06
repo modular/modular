@@ -34,7 +34,7 @@ class SharedState;
 
 class Diags {
 public:
-  Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics);
+  Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics, int maxNotesPerDiagnostic);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
@@ -95,6 +95,9 @@ private:
   /// This is set to true if any diagnostic occurred at any point processing the
   /// file.
   bool diagnosticEmitted = false;
+
+  /// Configuration for how many notes to print for a diagnostic.
+  int maxNotesPerDiagnostic;
 };
 
 /// This class represents a diagnostic that is built up by the parser and
