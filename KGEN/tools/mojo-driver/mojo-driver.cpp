@@ -39,22 +39,22 @@ int main(int argc, char **argv) {
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
 
-  // Store command line arguments and  record the program name.
+  // Store command line arguments and record the program name.
   SmallVector<const char *, 256> argvStorage(argv, argv + argc);
   const char *programName = argvStorage.front();
   ArrayRef<const char *> arguments = ArrayRef(argvStorage).slice(1);
 
-  const std::string usage =
-      llvm::formatv("{0} <command> [options]", programName);
+  // Register subcommands and their options.
+  SubcommandRegistry registry;
+  registerDemangleSubcommand(registry);
+  registerDocSubcommand(registry);
+  registerPackageSubcommand(registry);
+  registerREPLSubcommand(registry);
 
-  if (argc <= 1) {
-    // The user hasn't provided any arguments; print usage and exit.
-    return State(programName, arguments)
-        .reportError(llvm::formatv("no command provided\n\n"
-                                   "usage: {0}\n\n"
-                                   "For more information, try '{1} --help'.",
-                                   usage, programName));
-  }
+  // If the user hasn't provided any arguments, treat this as the `repl`
+  // subcommand.
+  if (arguments.empty())
+    return registry.getCallback("repl").get()(State(programName, arguments));
 
   // Otherwise, parse the first argument: it's either a subcommand, or one of a
   // handful of top-level driver options that we allow in this first position.
@@ -85,13 +85,6 @@ int main(int argc, char **argv) {
                                    firstArg->getAsString(args)));
   }
   }
-
-  // Register subcommands and their options.
-  SubcommandRegistry registry;
-  registerDemangleSubcommand(registry);
-  registerDocSubcommand(registry);
-  registerPackageSubcommand(registry);
-  registerREPLSubcommand(registry);
 
   // Store the program name and subcommand arguments in the driver state object.
   State state(programName, arguments.slice(index));

@@ -33,7 +33,7 @@ setup:
 $ build mojo-driver
 
 # Launch the REPL.
-$ mojo-driver repl
+$ mojo-driver
 ```
 
 Once run, you'll be provided with a REPL environment where you can immediately

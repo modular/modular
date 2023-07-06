@@ -4,10 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Invoking the driver without specifying any subcommands results in an error.
-# RUN: not mojo-driver 2>&1 | FileCheck %s
-# CHECK: mojo-driver{{.*}}: error: no command provided
-
 # Invoking the driver with an unknown subcommand also results in an error.
 # RUN: not mojo-driver unknown 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN
 # CHECK-UNKNOWN: mojo-driver{{.*}}: error: no such command 'unknown'
