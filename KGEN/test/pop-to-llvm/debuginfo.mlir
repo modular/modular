@@ -4,7 +4,7 @@
 !arrayTest = !pop.array<2, array<3, array<4, simd<8, bool>>>>
 !closureTest = !pop.closure<(index, ui8) -> ()>
 !coroutineTest = !pop.coroutine<() -> (i8, si8)>
-!packTest = !pop.pack<[ index,
+!packTest = !pop.pack<[index,
                        ui8, i8, si8,
                        ui16, i16, si16,
                        ui32, i32, si32,
@@ -13,6 +13,7 @@
                        f16, f32, f64, f80, f128, bf16,
                        !pop.array<5, f32>]>
 !pointerTest = !pop.pointer<scalar<bool>>
+!voidPointerTest = !pop.pointer<scalar<invalid>>
 !scalarTest = !pop.scalar<bool>
 !simdTest = !pop.simd<8, ui32>
 !structTest = !pop.struct<scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<pointer<scalar<bool>>, array<4, simd<8, si32>>>>
@@ -42,6 +43,7 @@
 // CHECK-DAG: !basic22 = !debuginfo.basic<bf16 {sizeInBits = 16, alignInBits = 16, encoding = DW_ATE_float}>
 // CHECK-DAG: !basic23 = !debuginfo.basic<ui32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_unsigned}>
 // CHECK-DAG: !basic24 = !debuginfo.basic<si32 {sizeInBits = 32, alignInBits = 32, encoding = DW_ATE_signed}>
+// CHECK-DAG: !unspecified = !debuginfo.unspecified<"void">
 // CHECK-DAG: !array = !debuginfo.array<5 x !basic18>
 // CHECK-DAG: !member = !debuginfo.member<m0: !basic1>
 // CHECK-DAG: !member1 = !debuginfo.member<m1: !basic2>
@@ -67,6 +69,7 @@
 // CHECK-DAG: !member21 = !debuginfo.member<m21: !basic22>
 // CHECK-DAG: !member22 = !debuginfo.member<m0: !basic>
 // CHECK-DAG: !ptr = !debuginfo.ptr<!basic {sizeInBits = 64, alignInBits = 64}>
+// CHECK-DAG: !ptr1 = !debuginfo.ptr<!unspecified {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: !subroutine = !debuginfo.subroutine<(!basic1, !basic2) -> (): DW_CC_normal>
 // CHECK-DAG: !subroutine1 = !debuginfo.subroutine<(!basic3, !basic4) -> (): DW_CC_normal>
 // CHECK-DAG: !vector = !debuginfo.vector<8 x !basic>
@@ -85,13 +88,14 @@
 // CHECK-DAG: !struct1 = !debuginfo.struct<struct(!member24, !member25)>
 // CHECK-DAG: !member27 = !debuginfo.member<m2: !struct1>
 // CHECK-DAG: !struct2 = !debuginfo.struct<struct(!member22, !member26, !member27)>
-// CHECK-DAG: !subroutine2 = !debuginfo.subroutine<(!array5, !subroutine, !subroutine1, !struct, !ptr, !basic, !vector1, !struct2) -> (): DW_CC_normal>
+// CHECK-DAG: !subroutine2 = !debuginfo.subroutine<(!array5, !subroutine, !subroutine1, !struct, !ptr, !ptr1, !basic, !vector1, !struct2) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(!debuginfo.unresolved<!arrayTest>,
                                !debuginfo.unresolved<!closureTest>,
                                !debuginfo.unresolved<!coroutineTest>,
                                !debuginfo.unresolved<!packTest>,
                                !debuginfo.unresolved<!pointerTest>,
+                               !debuginfo.unresolved<!voidPointerTest>,
                                !debuginfo.unresolved<!scalarTest>,
                                !debuginfo.unresolved<!simdTest>,
                                !debuginfo.unresolved<!structTest>) -> (): DW_CC_normal>

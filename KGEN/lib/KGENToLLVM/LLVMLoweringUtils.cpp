@@ -845,7 +845,7 @@ buildDebugTypeFromIntOrIndexOrFloatType(MLIRContext *ctx, Type type,
 }
 
 static DebugInfo::DIType
-buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, int64_t indexWidth) {
+buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, size_t indexWidth) {
   // Process various builtin dtypes.
   switch (dtype) {
   case DType::kBool:
@@ -906,6 +906,9 @@ buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, int64_t indexWidth) {
   case DType::tf32:
     return buildIntFpDebugType<DebugInfo::DIBasicFloatType>(ctx, "tf32", 32,
                                                             32);
+
+  case DType::invalid:
+    return DebugInfo::DIUnspecifiedType::get(ctx, "void");
 
   case KGENDType::index:
     return buildIntFpDebugType<DebugInfo::DIBasicUIntType>(
@@ -996,7 +999,7 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
   if (auto simdType = dyn_cast<POP::SIMDType>(type)) {
     int64_t size = *simdType.getResolvedSize();
     DebugInfo::DIType baseType =
-        buildDebugTypeFromDType(ctx, (*simdType.getResolvedDType()).getValue(),
+        buildDebugTypeFromDType(ctx, simdType.getResolvedDType()->getValue(),
                                 converter.getIndexTypeBitwidth());
 
     if (size == 1)
