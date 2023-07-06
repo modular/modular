@@ -52,9 +52,11 @@ macro(add_driver_option_tablegen prefix input manual_name)
   add_public_tablegen_target("man-${prefix}${name}")
 
   add_custom_command(TARGET "man-${prefix}${name}" POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${MODULAR_SHARE_DIR}/man/man1"
     COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_CURRENT_BINARY_DIR}/${file_name}"
-    "${MODULAR_SHARE_DIR}/man/man1/${file_name}")
+      "${CMAKE_CURRENT_BINARY_DIR}/${file_name}"
+      "${MODULAR_SHARE_DIR}/man/man1/${file_name}"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${file_name}")
 
   add_dependencies(${prefix}DriverOptions "man-${prefix}${name}")
 endmacro()
