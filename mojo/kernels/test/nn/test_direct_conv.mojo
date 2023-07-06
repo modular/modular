@@ -100,14 +100,6 @@ fn test[
     let rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
     let packed_filter_ptr = DTypePointer[type].alloc(R * S * C * rounded_F)
 
-    @parameter
-    if filter_packed:
-        pack_filter_rscf_to_frscf[
-            get_direct_conv_micro_kernel_width(),
-            simd_size,
-            type,
-        ](conv_shape, filter_ptr, packed_filter_ptr)
-
     let input = NDBuffer[4, DimList.create_unknown[4](), type](
         input_ptr, Index(N, H, W, C), type
     )
@@ -131,6 +123,10 @@ fn test[
     let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
         output_ref_ptr, Index(N, HO, WO, F), type
     )
+
+    @parameter
+    if filter_packed:
+        pack_filter_rscf_to_frscf[type](filter, packed_filter)
 
     # Reference: naive conv
     Naive2dConvolution[

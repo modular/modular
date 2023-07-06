@@ -2508,13 +2508,14 @@ struct ConvDirectNHWC[
 
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
         alias simd_size = simdwidthof[type]()
 
         # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
         let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
         let num_partitions = get_conv_num_partitions[
-            micro_kernel_height, micro_kernel_width * simd_size
+            micro_kernel_height, micro_kernel_f_size
         ](num_tasks, conv_shape)
 
         # This pointer is not properly captured by the following closure.
@@ -2547,7 +2548,7 @@ struct ConvDirectNHWC[
                 task_id_f,
                 num_partitions[2],
                 conv_shape.f,
-                micro_kernel_width * simd_size,
+                micro_kernel_f_size,
             )
 
             let task_tile_size = Index(
@@ -3068,12 +3069,12 @@ fn pack_filter_rscf_to_cfrscf[
     but it seems too complicated.
     TODO: Address this when there is layout support.
     """
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
     var packed_filter_ptr = packed_filter
 
     for c_tile_start in range(0, conv_shape.c, c_tile_size):
-        for f_tile_start in range(
-            0, conv_shape.f, micro_kernel_width * simd_size
-        ):
+        for f_tile_start in range(0, conv_shape.f, micro_kernel_f_size):
             for r in range(conv_shape.r):
                 for s in range(conv_shape.s):
                     for c in range(
@@ -3106,7 +3107,7 @@ fn pack_filter_rscf_to_cfrscf[
                         unroll[micro_kernel_width, body]()
 
                         packed_filter_ptr = packed_filter_ptr.offset(
-                            micro_kernel_width * simd_size
+                            micro_kernel_f_size
                         )
 
 
@@ -3118,32 +3119,30 @@ fn get_packed_filter_shape[
     """
     alias simd_size = simdwidthof[type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
 
     @always_inline
     @parameter
     fn dispatch_type[int_type: DType]():
         let shape = shape_ref.to_ndbuffer[1, int_type]()
-        shape[0] = div_ceil(F, micro_kernel_width * simd_size)
+        shape[0] = div_ceil(F, micro_kernel_f_size)
         shape[1] = R
         shape[2] = S
         shape[3] = C
-        shape[4] = micro_kernel_width * simd_size
+        shape[4] = micro_kernel_f_size
 
     shape_ref.type.dispatch_integral[dispatch_type]()
 
 
 fn pack_filter_rscf_to_frscf[
-    micro_kernel_width: Int,
-    simd_size: Int,
     type: DType,
 ](
-    conv_shape: ConvShape,
-    filter: DTypePointer[type],
-    packed_filter: DTypePointer[type],
+    filter: NDBuffer[4, DimList.create_unknown[4](), type],
+    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
 ):
     """This packs the filter form RSCF to FRSCf.
     Args:
-        conv_shape: contains R, S, C, F.
+        R, S, C, F - original filter dimensions
         filter: filter in RSCF layout.
         packed_filter: packed filter in FRScf layout. Here,
             F       - F tiles
@@ -3156,19 +3155,23 @@ fn pack_filter_rscf_to_frscf[
 
     TODO: Address this when there is layout support.
     """
-    var packed_filter_ptr = packed_filter
+    alias simd_size = simdwidthof[type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
 
-    for f_tile_start in range(0, conv_shape.f, micro_kernel_width * simd_size):
-        packed_filter_ptr = packed_filter.offset(
-            f_tile_start * conv_shape.r * conv_shape.s * conv_shape.c
-        )
-        for r in range(conv_shape.r):
-            for s in range(conv_shape.s):
-                for c in range(conv_shape.c):
-                    let filter_ptr = filter.offset(
-                        f_tile_start
-                        + conv_shape.f
-                        * (c + conv_shape.c * (s + conv_shape.s * r))
+    let R = filter.dim[0]()
+    let S = filter.dim[1]()
+    let C = filter.dim[2]()
+    let F = filter.dim[3]()
+
+    var packed_filter_ptr = packed_filter.data
+
+    for f_tile_start in range(0, F, micro_kernel_f_size):
+        for r in range(R):
+            for s in range(S):
+                for c in range(C):
+                    let filter_ptr = filter.data.offset(
+                        f_tile_start + F * (c + C * (s + S * r))
                     )
 
                     # F dimension is padded with zeros to make the packed F
@@ -3177,7 +3180,7 @@ fn pack_filter_rscf_to_frscf[
                     @parameter
                     fn body[idx: Int]():
                         var filter_vec = SIMD[type, simd_size](0.0)
-                        if idx * simd_size < conv_shape.f - f_tile_start:
+                        if idx * simd_size < F - f_tile_start:
                             filter_vec = filter_ptr.offset(
                                 idx * simd_size
                             ).simd_load[simd_size]()
@@ -3188,5 +3191,5 @@ fn pack_filter_rscf_to_frscf[
                     unroll[micro_kernel_width, body]()
 
                     packed_filter_ptr = packed_filter_ptr.offset(
-                        micro_kernel_width * simd_size
+                        micro_kernel_f_size
                     )
