@@ -329,3 +329,25 @@ fn get_conv_num_partitions[
     )
 
     return Index(num_row_tasks, num_channel_tasks, num_col_tasks)
+
+
+# ===----------------------------------------------------------------------===#
+# Convolution Algorithms Selection
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct ConvAlgorithm:
+    var value: Int
+    alias Default = ConvAlgorithm(0)  # statically unknown layout.
+    alias Im2Col = ConvAlgorithm(1)  # channels first layout.
+    alias Direct = ConvAlgorithm(2)  # TF filter layout for channels last input.
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: ConvAlgorithm) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: ConvAlgorithm) -> Bool:
+        return self.value != rhs.value
