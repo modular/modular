@@ -10,5 +10,6 @@
 # CHECK: {{.*}}.o: {{.*}}Int.mojo
 
 
+@export
 fn use_int(a: Int):
     return

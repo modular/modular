@@ -244,14 +244,6 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         "means that there was no `@export`ed function to use as a root - did "
         "you forget an `@export`?");
 
-  // Look up the first item in the exported symbols to trigger compilation.
-  // TODO(#10893): This behavior is sketchy. We should be exporting the roots of
-  //   callstacks we want codegen'd. This requires updating tests.
-  if (exports.empty()) {
-    StringAttr name = (*symbolRange.begin()).getNameAttr();
-    exports.insert({name, {name, false}});
-  }
-
   // Trigger compilation so we can pull out the archive.
   ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().second.alias);
   if (funcOr.isError())
