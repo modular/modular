@@ -142,7 +142,10 @@ class TensorSpec:
         return tensor_spec
 
     def __repr__(self) -> str:
-        return f"TensorSpec(shape={self.shape}, dtype={self.dtype})"
+        return (
+            f"TensorSpec(shape={self.shape}, dtype={self.dtype},"
+            f" name={self.name})"
+        )
 
     def __str__(self) -> str:
         mlir_shape = [str(dim) if dim else "-1" for dim in self.shape]
@@ -161,6 +164,11 @@ class TensorSpec:
     def dtype(self) -> DType:
         """A tensor data type."""
         return DType._from(self._impl.dtype)
+
+    @property
+    def name(self) -> str:
+        """A tensor name."""
+        return self._impl.name
 
 
 @dataclass
