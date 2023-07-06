@@ -113,12 +113,13 @@ struct GemmShape:
         shape_c: DimList,
         shape_a: DimList,
         shape_b: DimList,
-        accum_type: DType,
-        value_type: DType,
+        a_type: DType,
+        b_type: DType,
+        c_type: DType,
     ](
-        c: NDBuffer[2, shape_c, accum_type],
-        a: NDBuffer[2, shape_a, value_type],
-        b: NDBuffer[2, shape_b, value_type],
+        c: NDBuffer[2, shape_c, c_type],
+        a: NDBuffer[2, shape_a, a_type],
+        b: NDBuffer[2, shape_b, b_type],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 

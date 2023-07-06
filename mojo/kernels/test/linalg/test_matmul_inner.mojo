@@ -58,6 +58,7 @@ fn matmul_inner_loop(
         ),
         type,
         type,
+        type,
         simd_size,
         a_row_size,
         pack_inner_size * simd_size,

@@ -240,7 +240,9 @@ fn batched_matmul_parallel_async[
                 return
 
             _submatmul_sequential_sync[
-                type,
+                type,  # a_type
+                type,  # b_type
+                type,  # c_type
                 False,
                 adj_b,
                 False,  # b_packed

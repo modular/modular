@@ -781,8 +781,9 @@ struct MicroKernelInterface[
             DimList.create_unknown[2](),
             # shape packed_b
             DimList.create_unknown[3](),
-            data_type.accum_type,
             data_type.value_type,
+            data_type.value_type,
+            data_type.accum_type,
             static_state.simd_size,
             static_state.static_gemm_shape.M.get(),
             inner_size,
