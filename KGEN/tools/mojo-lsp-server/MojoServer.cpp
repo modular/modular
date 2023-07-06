@@ -73,6 +73,137 @@ getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
   return lsp::Location(*diagUri, getRangeFromDiag(mgr, diag));
 }
 
+/// Returns a `Range` for a given `text` that starts at the location `loc`.
+static lsp::Range getRangeForText(llvm::SourceMgr &sourceMgr, SMLoc loc,
+                                  StringRef text) {
+  auto [line, col] = sourceMgr.getLineAndColumn(loc);
+  return {lsp::Position(line - 1, col - 1),
+          lsp::Position(line - 1, col + text.size() - 1)};
+}
+
+//===----------------------------------------------------------------------===//
+// Symbol
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Common representation for any kind of symbol.
+struct Symbol {
+  /// Note: this might change when we add support for other kinds of symbols.
+  enum class DeclKind { Let, Var };
+
+  Symbol(MojoASTDeclRef declRef, StringRef name, Symbol::DeclKind declKind,
+         const lsp::Range &identifierRange)
+      : name(name), declKind(declKind), declRef(declRef),
+        identifierRange(identifierRange) {}
+
+  Symbol(const Symbol &) = delete;
+  Symbol &operator=(const Symbol &) = delete;
+
+  /// Name of the symbol.
+  std::string name;
+
+  /// Metadata related to how to declaration was specified.
+  DeclKind declKind;
+
+  /// API for accessing the internals of this decl.
+  MojoASTDeclRef declRef;
+
+  /// The document range where the symbol name was declared.
+  lsp::Range identifierRange;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// SymbolIndex
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Database of symbols in a single file.
+class SymbolIndex {
+public:
+  SymbolIndex() : rangeToSymbol(allocator) {}
+
+  /// Store a new symbol in this index.
+  template <typename... Args>
+  void registerSymbol(MojoASTDeclRef declRef, Args &&...args);
+
+  /// Store a new reference to a symbol in this index. No error is thrown if the
+  /// expected symbol doesn't exist in the index.
+  void registerRef(MojoASTDeclRef declRef, const lsp::Range &refRange);
+
+  /// Look for the symbol whose declaration or references contain the given
+  /// position in the document.
+  Symbol *getSymbolAt(const lsp::Position &position) const;
+
+  /// Remove all symbols and references in this index.
+  void clear();
+
+private:
+  using MapT = llvm::IntervalMap<
+      lsp::Position, Symbol *,
+      llvm::IntervalMapImpl::NodeSizer<lsp::Position, Symbol *>::LeafSize,
+      llvm::IntervalMapHalfOpenInfo<lsp::Position>>;
+
+  MapT::Allocator allocator;
+  MapT rangeToSymbol;
+  /// Mapping from an opaque pointer of a MojoASTDeclRef to an LSP Symbol.
+  llvm::DenseMap<void *, std::unique_ptr<Symbol>> symbolTable;
+};
+} // namespace
+
+template <typename... Args>
+void SymbolIndex::registerSymbol(MojoASTDeclRef declRef, Args &&...args) {
+  auto [it, _] = symbolTable.try_emplace(
+      declRef.getAsVoidPointer(), std::make_unique<Symbol>(declRef, args...));
+  Symbol *symbol = it->second.get();
+  rangeToSymbol.insert(symbol->identifierRange.start,
+                       symbol->identifierRange.end, symbol);
+}
+
+void SymbolIndex::registerRef(MojoASTDeclRef declRef,
+                              const lsp::Range &refRange) {
+  auto it = symbolTable.find(declRef.getAsVoidPointer());
+  if (it == symbolTable.end())
+    return;
+  rangeToSymbol.insert(refRange.start, refRange.end, it->getSecond().get());
+}
+
+Symbol *SymbolIndex::getSymbolAt(const lsp::Position &position) const {
+  return rangeToSymbol.lookup(position, nullptr);
+}
+
+void SymbolIndex::clear() {
+  symbolTable.clear();
+  rangeToSymbol.clear();
+}
+
+//===----------------------------------------------------------------------===//
+// LSPParserListener
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct MojoDocument;
+
+/// Class that is used to connect the LSP with the Mojo parser to enable
+/// features like symbol indices.
+class LSPParserListener : public MojoParserListener {
+public:
+  LSPParserListener(MojoDocument &mainDoc, llvm::SourceMgr &sourceMgr)
+      : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
+
+  void onLetDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
+  void onVarDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
+  void onRef(MojoASTDeclRef declRef, StringRef spelling, SMLoc loc) override;
+
+private:
+  /// The main doc for which parsing was initiated.
+  MojoDocument &mainDoc;
+  llvm::SourceMgr &sourceMgr;
+};
+}
+
 //===----------------------------------------------------------------------===//
 // MojoDocument
 //===----------------------------------------------------------------------===//
@@ -81,6 +212,7 @@ namespace {
 /// This class represents all of the information pertaining to a specific Mojo
 /// document.
 struct MojoDocument {
+public:
   MojoDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
                std::vector<lsp::Diagnostic> &diagnostics,
                LLCL::Runtime &runtime);
@@ -123,6 +255,37 @@ struct MojoDocument {
   // Fields
   //===--------------------------------------------------------------------===//
 
+  /// A collection of MLIR and Mojo related entities used to invoke the parser.
+  /// Its lifetime is tied to that of the AST objects gotten from the parser.
+  /// It also sets up a SourceMgr with the given MojoDocument as its main file.
+  struct Context {
+    Context(LLCL::Runtime &runtime, MojoDocument &mainDoc)
+        : mlirContext(MLIRContext::Threading::DISABLED),
+          parserConfig(&mlirContext, runtime, compilationOptions),
+          parserListener(mainDoc, sourceMgr) {
+      // We add the main doc to the SourceMgr here to ensure it's considered the
+      // "main" file.
+      auto buffer = llvm::MemoryBuffer::getMemBuffer(mainDoc.contents,
+                                                     mainDoc.uri.file());
+      sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
+
+      parserConfig.validateDocStrings = true;
+      parserConfig.parserListener = &parserListener;
+      parserContext =
+          std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
+    }
+
+    KGEN::CompilationOptions compilationOptions;
+    MLIRContext mlirContext;
+    MojoParserConfig parserConfig;
+    llvm::SourceMgr sourceMgr;
+    LSPParserListener parserListener;
+    std::unique_ptr<MojoParserContext> parserContext;
+  };
+
+  /// The uri of the file.
+  lsp::URIForFile uri;
+
   /// The full string contents of the file.
   std::string contents;
 
@@ -136,6 +299,12 @@ struct MojoDocument {
 
   /// The runtime used when parsing the file.
   LLCL::Runtime &runtime;
+
+  /// An index of all symbols in this document.
+  SymbolIndex symbolIndex;
+
+  /// The overall parser context.
+  std::unique_ptr<Context> context;
 };
 } // namespace
 
@@ -143,21 +312,12 @@ MojoDocument::MojoDocument(const lsp::URIForFile &uri, StringRef contents,
                            int64_t version,
                            std::vector<lsp::Diagnostic> &diagnostics,
                            LLCL::Runtime &runtime)
-    : contents(contents.str()), version(version), runtime(runtime) {
-  initialize(uri, diagnostics);
-}
+    : uri(uri), contents(contents.str()), version(version), runtime(runtime) {}
 
 void MojoDocument::initialize(const lsp::URIForFile &uri,
                               std::vector<lsp::Diagnostic> &diagnostics) {
-  auto memBuffer = llvm::MemoryBuffer::getMemBufferCopy(contents, uri.file());
-  if (!memBuffer) {
-    lsp::Logger::error("Failed to create memory buffer for {0}", uri.file());
-    return;
-  }
-
   // Reset the source manager and parse the file.
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(memBuffer), SMLoc());
+  context = std::make_unique<Context>(runtime, *this);
 
   // Build a wrapper diagnostic handler for the source manager to capture
   // diagnostics emitted when parsing the mojo file.
@@ -178,21 +338,14 @@ void MojoDocument::initialize(const lsp::URIForFile &uri,
     handlerCtx.smDiagnostics.push_back({diag});
   };
   DiagHandlerContext handlerCtx;
-  sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
+  context->sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
 
-  // Parse the mojo file. Ignore the result for now as we aren't doing anything
-  // other than collecting diagnostics at this point.
-  MLIRContext context(MLIRContext::Threading::DISABLED);
-  KGEN::CompilationOptions compilationOptions;
-  mlir::TimingScope ts;
-  MojoParserConfig parseConfig(&context, runtime, compilationOptions);
-  parseConfig.validateDocStrings = true;
-  M::importMojoFile(sourceMgr, parseConfig, ts);
+  context->parserContext->parseFile(context->sourceMgr.getMainFileID());
 
   // Process the collected diagnostics.
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
     if (auto lspDiag =
-            buildLspDiagnosticFromSMDiagnostic(sourceMgr, diags, uri))
+            buildLspDiagnosticFromSMDiagnostic(context->sourceMgr, diags, uri))
       diagnostics.push_back(*lspDiag);
   }
 }
@@ -207,6 +360,7 @@ MojoDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
   }
   version = newVersion;
   fixits.clear();
+  symbolIndex.clear();
 
   // If the file contents were properly changed, reinitialize the text file.
   // TODO: We shouldn't need to reinitialize the entire file here, we should be
@@ -371,10 +525,60 @@ void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
 }
 
 //===----------------------------------------------------------------------===//
+// LSPParserListener
+//===----------------------------------------------------------------------===//
+
+void LSPParserListener::onVarDecl(MojoASTDeclRef declRef,
+                                   SMLoc identifierLoc) {
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    return;
+
+  if (std::optional<StringRef> name = declRef.getName()) {
+    mainDoc.symbolIndex.registerSymbol(
+        declRef, *name, Symbol::DeclKind::Var,
+        getRangeForText(sourceMgr, identifierLoc, *name));
+  }
+}
+
+void LSPParserListener::onLetDecl(MojoASTDeclRef declRef,
+                                   SMLoc identifierLoc) {
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    return;
+
+  if (std::optional<StringRef> name = declRef.getName()) {
+    mainDoc.symbolIndex.registerSymbol(
+        declRef, *name, Symbol::DeclKind::Let,
+        getRangeForText(sourceMgr, identifierLoc, *name));
+  }
+}
+
+void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
+                               SMLoc loc) {
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, loc) ||
+      !isMainFileLoc(sourceMgr, declRef.getLoc()))
+    return;
+
+  mainDoc.symbolIndex.registerRef(declRef,
+                                  getRangeForText(sourceMgr, loc, spelling));
+}
+
+//===----------------------------------------------------------------------===//
 // MojoServer::Impl
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
+  /// Retrieve the document that matches completely the given filename. Return
+  /// `nullptr` if no document is found.
+  MojoDocument *findDocument(StringRef filename) {
+    auto it = files.find(filename);
+    if (it == files.end())
+      return nullptr;
+    return it->second.get();
+  }
+
   /// The runtime used when processing files.
   LLCL::Runtime runtime{LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue()};
@@ -388,13 +592,17 @@ struct MojoServer::Impl {
 //===----------------------------------------------------------------------===//
 
 MojoServer::MojoServer() : impl(std::make_unique<Impl>()) {}
+
 MojoServer::~MojoServer() = default;
 
 void MojoServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
                              int64_t version,
                              std::vector<lsp::Diagnostic> &diagnostics) {
-  impl->files[uri.file()] = std::make_unique<MojoDocument>(
-      uri, contents, version, diagnostics, impl->runtime);
+  auto [it, _] = impl->files.try_emplace(
+      uri.file(), std::make_unique<MojoDocument>(uri, contents, version,
+                                                 diagnostics, impl->runtime));
+  auto &document = *it->second;
+  document.initialize(uri, diagnostics);
 }
 
 void MojoServer::updateDocument(
@@ -425,7 +633,6 @@ void MojoServer::getCodeActions(const lsp::URIForFile &uri,
                                 const lsp::Range &pos,
                                 const lsp::CodeActionContext &context,
                                 std::vector<lsp::CodeAction> &actions) {
-  auto fileIt = impl->files.find(uri.file());
-  if (fileIt != impl->files.end())
-    fileIt->second->getCodeActions(uri, pos, context, actions);
+  if (MojoDocument *doc = impl->findDocument(uri.file()))
+    doc->getCodeActions(uri, pos, context, actions);
 }

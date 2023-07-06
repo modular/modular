@@ -139,7 +139,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
-      runtime(config.runtime), impl(std::make_unique<Impl>(config.context)) {
+      parserListener(config.parserListener),  runtime(config.runtime), impl(std::make_unique<Impl>(config.context)) {
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 

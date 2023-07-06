@@ -19,6 +19,7 @@
 
 namespace M {
 struct MojoParserConfig;
+class MojoParserListener;
 } // namespace M
 
 namespace M::DebugInfo {
@@ -80,6 +81,7 @@ public:
 
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
+  MojoParserListener *parserListener;
   LLCL::Runtime &runtime;
 
   const mlir::StringAttr bufferNameIdentifier;

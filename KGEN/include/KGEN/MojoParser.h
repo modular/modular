@@ -8,6 +8,7 @@
 #define KGEN_MOJOPARSER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include <string>
 
 namespace llvm {
@@ -28,6 +29,9 @@ class SharedState;
 namespace LLCL {
 class Runtime;
 } // namespace LLCL
+
+class MojoParserListener;
+class MojoASTTypeRef;
 
 /// This class provides the various configurations used to parse a .mojo file.
 struct MojoParserConfig {
@@ -51,13 +55,18 @@ struct MojoParserConfig {
 
   /// If true, this will process and validate the doc strings in the file.
   bool validateDocStrings = false;
+
+  /// An optional listener that is used to inspect certain events of the parser.
+  /// For simplicity it is a single item, but it could evolve into a list of
+  /// listeners.
+  MojoParserListener *parserListener = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
 // MojoASTDeclRef
 //===----------------------------------------------------------------------===//
 
-/// This class provides a view into an Mojo AST declaration.
+/// This class provides a view into a Mojo AST declaration.
 class MojoASTDeclRef {
 public:
   MojoASTDeclRef() : MojoASTDeclRef(nullptr) {}
@@ -72,8 +81,22 @@ public:
   /// Returns if the AST declaration is valid.
   operator bool() const { return impl != nullptr; }
 
-private:
+  /// Returns the underlying pointer to the implementation backed by this class.
+  /// It can be used as a unique ID for this declaration.
+  void *getAsVoidPointer() const { return impl; }
 
+  /// Returns the type corresponding to this declaration. If not availble, this
+  /// returns an invalid `MojoASTTypeRef`.
+  MojoASTTypeRef getType() const;
+
+  /// Get the name of the Mojo entity backed by this decl if available.
+  std::optional<StringRef> getName() const;
+
+  /// Get the location of the start token of this decl. It might not be the
+  /// identifier.
+  llvm::SMLoc getLoc() const;
+
+private:
   /// Allow MojoParserContext to access the internal implementation.
   friend class MojoParserContext;
 
@@ -88,25 +111,50 @@ private:
 
 /// This class provides a view into an Mojo AST type.
 class MojoASTTypeRef {
-  public:
-    MojoASTTypeRef() : MojoASTTypeRef(nullptr) {}
+public:
+  MojoASTTypeRef() : MojoASTTypeRef(nullptr) {}
+  MojoASTTypeRef(void *impl) : impl(impl){};
+  MojoASTTypeRef(const mlir::Type &type);
 
-    MojoASTTypeRef(void *impl) : impl(impl) {};
+  /// Returns if the AST declaration is valid.
+  operator bool() const { return impl != nullptr; }
 
-    /// Returns if the AST declaration is valid.
-    operator bool() const { return impl != nullptr; }
+  /// Returns a readable string representation of this type.
+  std::string getAsString() const;
 
-  private:
+private:
+  // Return the decl that defined this type.
+  MojoASTDeclRef getDecl(KGEN::LIT::SharedState &sharedState);
 
-    // Return the decl that defined this type.
-    MojoASTDeclRef getDecl(KGEN::LIT::SharedState& sharedState);
+  /// Allow MojoParserContext to access the internal implementation.
+  friend class MojoParserContext;
 
-    /// Allow MojoParserContext to access the internal implementation.
-    friend class MojoParserContext;
+  /// The internal implementation of the AST type.
+  void *impl;
+};
 
-    /// The internal implementation of the AST type.
-    void *impl;
+//===----------------------------------------------------------------------===//
+// MojoParserListener
+//===----------------------------------------------------------------------===//
 
+/// This class provides an interface for other language tools like LSP servers
+/// to inspect specific events in the parser.
+class MojoParserListener {
+public:
+  virtual ~MojoParserListener() = default;
+
+  /// Notify the listener that a new `let` declaration has been resolved by the
+  /// parser.
+  virtual void onLetDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) = 0;
+
+  /// Notify the listener that a new `var` declaration has been resolved by the
+  /// parser.
+  virtual void onVarDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) = 0;
+
+  /// Notify the listener that a new reference has been resolved by the parser,
+  /// i.e. its declaration is known.
+  virtual void onRef(MojoASTDeclRef declRef, StringRef spelling,
+                     llvm::SMLoc loc) = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -173,6 +221,12 @@ public:
 
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();
+
+  /// Parse a SourceMgr file given its id as a module.
+  ///
+  /// In the case of success, the decl corresponding to the module is returned.
+  /// In the case of an error, a null decl is returned.
+  MojoASTDeclRef parseFile(unsigned int fileId);
 
   //===--------------------------------------------------------------------===//
   // REPL

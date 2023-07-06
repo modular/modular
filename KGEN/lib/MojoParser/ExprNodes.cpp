@@ -23,6 +23,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+#include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -567,6 +568,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     mlirValue = letDecl.getResult();
     value = SBValue(mlirValue);
 
+    if (emitter.shared.parserListener) {
+      // We notify the listener that a new reference has been resolved.
+      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
+                                           getLoc());
+    }
+
     // Variable references resolve to an MBValue or LValue addressing the
     // memory.
   } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
@@ -574,6 +581,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // diagnose any problems.  This allows us to handle late-initialized lets.
     mlirValue = var.getResult();
     value = LValue(mlirValue);
+
+    if (emitter.shared.parserListener) {
+      // We notify the listener that a new reference has been resolved.
+      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
+                                           getLoc());
+    }
 
     // RValue's and LValues always resolve to their known value.
   } else if (auto rvalue = decl.getIfRValue()) {
