@@ -42,7 +42,7 @@ class Model:
         model._impl = _core_model
         return model
 
-    def execute(self, *args) -> None:
+    def execute(self, **kwargs) -> None:
         """Executes the model with the provided input and returns outputs.
 
         Parameters
@@ -60,7 +60,7 @@ class Model:
         RuntimeError
             If the input tensors don't match what the model expects.
         """
-        return self._impl.execute(*args)
+        return self._impl.execute(**kwargs)
 
     def __repr__(self) -> str:
         return f"Model(inputs={self.input_metadata})"
@@ -132,12 +132,12 @@ class TensorSpec:
 
     _impl: _TensorSpec
 
-    def __init__(self, shape: List[Optional[int]], dtype: DType):
-        self._impl = _TensorSpec(shape, dtype._to())
+    def __init__(self, shape: List[Optional[int]], dtype: DType, name: str):
+        self._impl = _TensorSpec(shape, dtype._to(), name)
 
     @classmethod
     def _init(cls, _core_tensor_spec):
-        tensor_spec = cls([], DType.bool)
+        tensor_spec = cls([], DType.bool, "")
         tensor_spec._impl = _core_tensor_spec
         return tensor_spec
 
