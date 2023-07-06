@@ -1496,18 +1496,22 @@ def POP_ExternalCallOp : POPOp<"external_call",
     %0 = pop.external_call @sqrt(%arg) from @libc
         : (!pop.scalar<f64>) -> !pop.scalar<f64>
     ```
+
+    The `funcAttrs` attribute specifies LLVM function attributes on the external
+    callee, such as `noinline` or `noreturn`.
   }];
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$func,
                        Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
-                       OptionalAttr<SymbolRefAttr>:$importedFrom);
+                       OptionalAttr<SymbolRefAttr>:$importedFrom,
+                       OptionalAttr<KGEN_StringArrayAttr>:$funcAttrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<ExternalCallee>($func) `(` operands `)` ($variadicType^)?
-    (`from` $importedFrom^)? attr-dict
-    `:` functional-type(operands, results)
+    custom<FuncAttrs>($funcAttrs) custom<ExternalCallee>($func) `(` operands `)`
+    ($variadicType^)?  (`from` $importedFrom^)? attr-dict-with-keyword `:`
+    functional-type(operands, results)
   }];
 
   let extraClassDeclaration = [{

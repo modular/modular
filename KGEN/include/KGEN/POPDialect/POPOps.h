@@ -26,10 +26,11 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN {
+class DTypeType;
+class StringArrayAttr;
 class StringType;
 class TypeArrayAttr;
 class VariadicType;
-class DTypeType;
 } // namespace M::KGEN
 
 namespace M::KGEN::POP {
