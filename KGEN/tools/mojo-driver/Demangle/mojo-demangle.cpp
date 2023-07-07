@@ -8,7 +8,6 @@
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "Support/CommandLine.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 
