@@ -21,6 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "llvm/ADT/StringRef.h"
 #include <atomic>
 
@@ -57,6 +58,12 @@ public:
 
   /// Return a reference to the profiler instance, if its been initialized.
   std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
+
+  /// Return a reference to this runtime's TelemetryContext instance. If
+  /// telemetry is disabled, this will return NOOP instruments.
+  M::Telemetry::TelemetryContext &getTelemetryContext() {
+    return telemetryContext;
+  }
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -115,6 +122,10 @@ private:
   /// An active profiler used for the runtime, or nullopt if profiling is
   /// disabled. This is only set when profileFilename is non-empty.
   std::optional<TimeTraceProfiler> profiler;
+
+  /// The TelemetryContext instance used by the runtime. It returns NOOP
+  /// instruments if telemetry is disabled.
+  M::Telemetry::TelemetryContext telemetryContext;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.
