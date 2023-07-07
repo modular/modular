@@ -8,8 +8,9 @@ add_modular_tool(mojo-driver
   mojo-driver.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
-  REPL/mojo-repl.cpp
   Package/mojo-package.cpp
+  REPL/mojo-repl.cpp
+  Run/mojo-run.cpp
 
   DEPENDS
   orc-rt-cas
@@ -20,6 +21,7 @@ add_modular_tool(mojo-driver
   AllTargetsCodeGens
   AllTargetsDescs
   AllTargetsInfos
+  OrcTargetProcess
 
   LINK_LIBS PRIVATE
   LITDialect
@@ -46,8 +48,9 @@ add_driver_option_tablegen(Mojo DriverOptions.td mojo-driver)
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
-add_subdirectory(REPL)
 add_subdirectory(Package)
+add_subdirectory(REPL)
+add_subdirectory(Run)
 
 # The driver depends on these option definitions.
 target_include_directories(mojo-driver PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

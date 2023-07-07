@@ -8,9 +8,10 @@
 #include "Doc/mojo-doc.h"
 #include "Package/mojo-package.h"
 #include "REPL/mojo-repl.h"
-#include "Support/Driver/DriverSupport.h"
+#include "Run/mojo-run.h"
 
 #include "Config/Version.h"
+#include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -50,6 +51,7 @@ int main(int argc, char **argv) {
   registerDocSubcommand(registry);
   registerPackageSubcommand(registry);
   registerREPLSubcommand(registry);
+  registerRunSubcommand(registry);
 
   // If the user hasn't provided any arguments, treat this as the `repl`
   // subcommand.

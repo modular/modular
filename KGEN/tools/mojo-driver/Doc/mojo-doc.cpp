@@ -73,33 +73,15 @@ static int doc(const State &state) {
         inputs[1]));
   }
 
-  // Reject input files that do not appear to be Mojo files (this includes stdin
-  // "-").
-  StringRef inputPath = args.getLastArgValue(options::OPT_INPUT);
-  if (!inputPath.ends_with(".mojo") && !inputPath.ends_with(".🔥"))
-    return state.reportError("cannot open '" + inputPath +
-                             "', since it does not appear to be a Mojo file "
-                             "(it does not end in '.mojo' or '.🔥')");
-
   // Open the input file, or exit with an error.
-  std::string inputError;
-  std::unique_ptr<llvm::MemoryBuffer> buffer =
-      mlir::openInputFile(inputPath, &inputError);
-  if (!buffer)
-    return state.reportError(inputError);
-
+  auto bufferOrErr =
+      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
+  if (bufferOrErr.isError())
+    return state.reportError(bufferOrErr.getError());
+  // Initialize the source manager with the input file buffer and all includes.
   llvm::SourceMgr sourceManager;
-  sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
-
-  // Collect only those include paths that actually refer to directories on the
-  // host filesystem. (Mojo's parser searches the source manager's include
-  // directories when resolving imports.)
-  std::vector<std::string> includeDirs;
-  includeDirs.reserve(args.getAllArgValues(options::OPT_I).size());
-  for (auto &path : args.getAllArgValues(options::OPT_I))
-    if (std::filesystem::is_directory(path))
-      includeDirs.push_back(path);
-  sourceManager.setIncludeDirs(includeDirs);
+  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
+  sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
   // We don't allow users to configure LLCL runtime options, such as the
   // allocator or the work queue threading model.

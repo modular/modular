@@ -13,7 +13,21 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringMap.h"
 
+#include <memory>
+
+namespace llvm {
+class MemoryBuffer;
+}
+
 namespace M {
+
+/// Open the Mojo source file at the given path for reading and return its
+/// buffer, or if an error occurs, return an error message.
+///
+/// Note that this function considers it an error if the given `path` does not
+/// end in a Mojo file extension (`.mojo` or `.🔥`), even if the `path` refers
+/// to `stdin` ("-").
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
 
 /// Additional driver state that is passed to each of the subcommand functions.
 struct State {

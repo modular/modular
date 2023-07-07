@@ -7,10 +7,38 @@
 #include "Support/Driver/DriverSupport.h"
 #include "Support/ErrorOr.h"
 
+#include "mlir/Support/FileUtilities.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <filesystem>
+
 using namespace M;
+
+//===----------------------------------------------------------------------===//
+// Helper functions
+//===----------------------------------------------------------------------===//
+
+ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+M::openMojoInputFile(StringRef path) {
+  if (!path.ends_with(".mojo") && !path.ends_with(".🔥"))
+    return Error(llvm::formatv(
+        "cannot open '{0}', since it does not appear to be a Mojo file "
+        "(it does not end in '.mojo' or '.🔥')",
+        path));
+
+  // Open the input file, or exit with an error.
+  std::string inputError;
+  std::unique_ptr<llvm::MemoryBuffer> buffer =
+      mlir::openInputFile(path, &inputError);
+  if (!buffer)
+    return Error(inputError);
+
+  return std::move(buffer);
+}
 
 //===----------------------------------------------------------------------===//
 // State
