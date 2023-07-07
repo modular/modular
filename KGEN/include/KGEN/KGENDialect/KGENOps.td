@@ -104,6 +104,51 @@ def KGEN_FuncOp : KGENOp<"func", [
 }
 
 //===----------------------------------------------------------------------===//
+// ExternFuncOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ExternFuncOp : KGENOp<"extern.func", [
+    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "External function declaration.";
+  let description = [{
+    The `kgen.extern.func` operation represents a concrete KGEN function that
+    is defined in an external library. It has no body. It cannot represent any
+    parametric functions.
+
+    Example:
+
+    ```mlir
+    kgen.link "libsomelib.a" as @importedLib
+
+    kgen.extern.func @someFn(%arg0: index) -> index from @importedLib
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
+                       SymbolRefAttr:$importedFrom);
+
+  let extraClassDeclaration = [{
+    /// Functions required to conform to FuncInterface and DeclInterface.
+    /// Those interfaces are required because otherwise SymbolConstantAttr
+    /// doesn't verify.
+    ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+    SignatureType getSignature() {
+      return SignatureType::get(getFunctionType());
+    }
+    AlwaysInlineLevel getAlwaysInlineLevel() {
+      return AlwaysInlineLevel::Disabled;
+    }
+  }];
+
+  let assemblyFormat = [{
+    $sym_name `` $function_type `from` $importedFrom attr-dict-with-keyword
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 

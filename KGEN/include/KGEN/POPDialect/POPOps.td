@@ -1487,16 +1487,6 @@ def POP_ExternalCallOp : POPOp<"external_call",
       : (!pop.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
     ```
 
-    If possible, it is recommended that the provenance of the function be
-    provided. This can be specified with:
-
-    ```mlir
-    kgen.link "libc.a" as @libc
-
-    %0 = pop.external_call @sqrt(%arg) from @libc
-        : (!pop.scalar<f64>) -> !pop.scalar<f64>
-    ```
-
     The `funcAttrs` attribute specifies LLVM function attributes on the external
     callee, such as `noinline` or `noreturn`. LLVM argument and result
     attributes can be attached to the operation through `argAttrs` and
@@ -1506,7 +1496,6 @@ def POP_ExternalCallOp : POPOp<"external_call",
   let arguments = (ins AttrOfType<KGEN_StringType>:$func,
                        Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
-                       OptionalAttr<SymbolRefAttr>:$importedFrom,
                        OptionalAttr<ArrayAttr>:$funcAttrs,
                        OptionalAttr<DictArrayAttr>:$argAttrs,
                        OptionalAttr<DictArrayAttr>:$resAttrs);
@@ -1514,7 +1503,7 @@ def POP_ExternalCallOp : POPOp<"external_call",
 
   let assemblyFormat = [{
     custom<ExternalCallee>($func) `(` operands `)`
-    ($variadicType^)?  (`from` $importedFrom^)? attr-dict-with-keyword `:`
+    ($variadicType^)? attr-dict-with-keyword `:`
     functional-type(operands, results)
   }];
 
@@ -1528,15 +1517,7 @@ def POP_ExternalCallOp : POPOp<"external_call",
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
                    "ValueRange":$operands)>,
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
-                   "ValueRange":$operands, "FunctionType":$variadicType)>,
-    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
-                     "ValueRange":$operands, "StringRef":$importedFrom)>,
-    OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
-                   "ValueRange":$operands, "FunctionType":$variadicType,
-                   "StringRef":$importedFrom)>,
-    OpBuilder<(ins "TypeRange":$results, "StringAttr":$func,
-                   "ValueRange":$operands, "TypeAttr":$variadicType,
-                   "SymbolRefAttr":$importedFrom)>
+                   "ValueRange":$operands, "FunctionType":$variadicType)>
   ];
 
   let hasVerifier = 1;

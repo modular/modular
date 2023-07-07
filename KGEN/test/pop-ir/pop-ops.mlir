@@ -651,8 +651,6 @@ kgen.generator @stack_allocation<size, type: type>() {
   kgen.return
 }
 
-kgen.link "some.lib" as @somelib
-
 // CHECK-LABEL: @external_call
 kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>, %b: !pop.scalar<dtype>) {
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
@@ -663,8 +661,6 @@ kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>
   pop.external_call @bar(%a, %b) (!kgen.paramref<type>) -> ()
     attributes {funcAttrs = ["noinline", ["alignstack", "16"]]}
     : (!kgen.paramref<type>, !pop.scalar<dtype>) -> ()
-  // CHECK: pop.external_call @baz() from @somelib : () -> ()
-  pop.external_call @baz() from @somelib : () -> ()
   kgen.return
 }
 
@@ -1080,17 +1076,4 @@ kgen.func @global_address() -> !pop.pointer<i32> {
   // CHECK-NEXT: pop.global.address @global_var : <i32>
   %0 = pop.global.address @global_var : <i32>
   kgen.return %0 : !pop.pointer<i32>
-}
-
-// -----
-
-// CHECK-LABEL: lit.file_module @module
-lit.file_module @module {
-  kgen.link "lib.a" as @lib
-
-  lit.func @main() {
-    // CHECK: external_call @func() from @module::@lib
-    pop.external_call @func() from @module::@lib : () -> ()
-    kgen.return
-  }
 }

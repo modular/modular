@@ -757,14 +757,6 @@ kgen.generator @variadic_get() {
 
 // -----
 
-kgen.generator @unknown_extern() {
-  // expected-error @below {{'from' directive does not reference a valid symbol: @unlinked}}
-  pop.external_call @unk() from @unlinked : () -> ()
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{see function here}}
 kgen.generator @bad_return() -> index {
   // expected-error @below {{'kgen.return' op specifies 0 results but surrounding function expects 1}}
@@ -788,6 +780,11 @@ kgen.func @global_dtor(%arg0: i32) -> i32 {
 
 // expected-error @below {{'kgen.global' op destructor @global_dtor does not reference a function with zero arguments and zero results}}
 kgen.global @global_var : i32 (2, @global_ctor, @global_dtor)
+
+// -----
+
+// expected-error @below {{expected '@nonExistent' to reference a valid kgen.link directive}}
+kgen.extern.func @imported() -> () from @nonExistent
 
 // -----
 
