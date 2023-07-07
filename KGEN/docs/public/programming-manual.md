@@ -668,7 +668,7 @@ pointer without ceremony, at some point you might want to transfer ownership to
 some other function. This is what the `^` "transfer" operator does:
 
 ```mojo
-fn usePointer():
+fn use_pointer():
     let ptr = SomeUniquePtr(...)
     use(ptr)        # Perfectly fine to pass to borrowing function.
     take_ptr(ptr^)  # Pass ownership of the `ptr` value to another function.
@@ -1027,7 +1027,7 @@ fn waldo[a: Int](b: Int): pass
 
 fn waldo[a: Int, T: AnyType](y: T): pass
 
-fn parameterOverloads[a: Int, b: Int, x: MyInt]():
+fn parameter_overloads[a: Int, b: Int, x: MyInt]():
     # `foo[x: MyInt, a: Int]()` is called because it requires no implicit
     # conversions, whereas `foo[x: MyInt, y: MyInt]()` requires one.
     foo[x, a]()
@@ -1049,7 +1049,7 @@ specifies the data type and `size` specifies the length of the SIMD vector (it
 must be a power of 2):
 
 ```mojo
-fn funWithSIMD():
+fn fun_with_simd():
     # Make a vector of 4 floats.
     let small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -1069,7 +1069,7 @@ value). Thus, just like how the `SIMD` struct is a generic type definition, the
 `cast()` method is a generic method definition that gets instantiated at
 compile-time instead of runtime, based on the parameter value.
 
-The `funWithSIMD()` function above shows the use of concrete types (that is, it
+The `fun_with_simd()` function above shows the use of concrete types (that is, it
 instantiates `SIMD` using known type values), but the major power of parameters
 comes from the ability to define parametric algorithms and types (code that
 uses the parameter values). For example, here's how to define a parametric
