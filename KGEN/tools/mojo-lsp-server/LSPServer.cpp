@@ -53,6 +53,9 @@ struct LSPServer {
   //===--------------------------------------------------------------------===//
   // Language Features
 
+  void onDefinition(const TextDocumentPositionParams &params,
+                    Callback<llvm::json::Value> reply);
+
   void onHover(const TextDocumentPositionParams &params,
                Callback<llvm::json::Value> reply);
 
@@ -80,6 +83,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
                              Callback<llvm::json::Value> reply) {
   // Send a response with the capabilities of this server.
   llvm::json::Object serverCaps{
+      {"definitionProvider", true},
       {"hoverProvider", true},
       {"textDocumentSync",
        llvm::json::Object{
@@ -171,6 +175,11 @@ void LSPServer::onCodeAction(const CodeActionParams &params,
 //===----------------------------------------------------------------------===//
 // Language Features
 
+void LSPServer::onDefinition(const TextDocumentPositionParams &params,
+                             Callback<llvm::json::Value> reply) {
+  reply(server.onDefinition(params.textDocument.uri, params.position));
+}
+
 void LSPServer::onHover(const TextDocumentPositionParams &params,
                         Callback<llvm::json::Value> reply) {
   reply(server.onHover(params.textDocument.uri, params.position));
@@ -205,6 +214,9 @@ mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(MojoServer &server,
 
   // Language Features
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
+
+  messageHandler.method("textDocument/definition", &lspServer,
+                        &LSPServer::onDefinition);
 
   // Diagnostics
   lspServer.publishDiagnostics =

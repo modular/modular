@@ -279,6 +279,8 @@ public:
   //===--------------------------------------------------------------------===//
   // Language Features
 
+  std::optional<lsp::Location> onDefinition(const lsp::Position &pos) const;
+
   std::optional<lsp::Hover> onHover(const lsp::Position &pos) const;
 
   //===--------------------------------------------------------------------===//
@@ -558,6 +560,14 @@ void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
 // MojoDocument: Language Features
 //===----------------------------------------------------------------------===//
 
+std::optional<lsp::Location>
+MojoDocument::onDefinition(const lsp::Position &pos) const {
+  if (Symbol *symbol = symbolIndex.getSymbolAt(pos))
+    return lsp::Location(uri, symbol->identifierRange);
+
+  return std::nullopt;
+}
+
 std::optional<lsp::Hover>
 MojoDocument::onHover(const lsp::Position &pos) const {
   Symbol *symbol = symbolIndex.getSymbolAt(pos);
@@ -685,6 +695,14 @@ void MojoServer::getCodeActions(const lsp::URIForFile &uri,
                                 std::vector<lsp::CodeAction> &actions) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
     doc->getCodeActions(uri, pos, context, actions);
+}
+
+std::optional<lsp::Location>
+MojoServer::onDefinition(const lsp::URIForFile &uri, const lsp::Position &pos) {
+  if (MojoDocument *doc = impl->findDocument(uri.file()))
+    return doc->onDefinition(pos);
+
+  return std::nullopt;
 }
 
 std::optional<lsp::Hover> MojoServer::onHover(const lsp::URIForFile &uri,
