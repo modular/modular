@@ -42,8 +42,8 @@ static int demangle(const State &state) {
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, missingIndex, missingCount);
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
+    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
 #include "Demangle/DemangleOptionsHelpText.inc"
     );
   }

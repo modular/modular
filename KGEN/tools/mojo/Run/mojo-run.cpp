@@ -93,8 +93,9 @@ static std::optional<int> parseArgs(const State &state,
   if (inputArgs.empty()) {
     // If we have no input argument, then that's normally an error -- unless the
     // user is invoking `--help`.
-    if (allArgs.hasArg(options::OPT_help)) {
+    if (allArgs.hasArg(options::OPT_help, options::OPT_help_text)) {
       return state.printHelp(
+          /*plainText=*/allArgs.hasArg(options::OPT_help_text),
 #include "Run/RunOptionsHelpText.inc"
       );
     }
@@ -109,8 +110,8 @@ static std::optional<int> parseArgs(const State &state,
 
   // If those arguments include `--help`, print help before checking any other
   // arguments.
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
+    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
 #include "Run/RunOptionsHelpText.inc"
     );
   }

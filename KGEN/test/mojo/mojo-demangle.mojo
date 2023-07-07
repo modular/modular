@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Invoking the subcommand with `--help` prints its help text.
-# RUN: mojo demangle --one -two --help | FileCheck %s --check-prefix CHECK-HELP
+# Invoking the subcommand with `--help-text` prints its help text.
+# RUN: mojo demangle --one -two --help-text | FileCheck %s --check-prefix CHECK-HELP
 # CHECK-HELP: Demangle the given name
 
 # Reject unknown options.
