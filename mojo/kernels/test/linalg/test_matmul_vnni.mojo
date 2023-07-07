@@ -14,7 +14,7 @@ from Range import range
 from DType import DType
 from Buffer import Buffer
 from SIMD import SIMD, Int32
-from IntelVNNI import vpdpbusd
+from VNNI import vpdpbusd_16
 from Memory import memcmp
 from IO import print, print_no_newline
 from TargetInfo import has_avx512_vnni
@@ -80,7 +80,7 @@ fn gemm_vnni(
                 16
             ]()
             if has_avx512_vnni():
-                cv = vpdpbusd(cv, av, bv)
+                cv = vpdpbusd_16(cv, av, bv)
             else:
                 cv = vpdpbusd_emulate(cv, av, bv)
 

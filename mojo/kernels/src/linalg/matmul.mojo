@@ -47,10 +47,11 @@ from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import has_neon, alignof, simdwidthof
+from TargetInfo import has_neon, alignof, simdwidthof, has_avx512_vnni
 from Transpose import transpose_inplace
 from TypeUtilities import rebind
 from Intrinsics import PrefetchOptions, external_call
+from VNNI import vpdpbusd
 from IO import print
 
 
@@ -582,6 +583,8 @@ struct MatmulInnerLoopBPacked[
     #  local tile, in (a_row_size, TileN).
     var c_bound: StaticIntTuple[2]
 
+    alias use_vnni = has_avx512_vnni() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
+
     fn __init__(
         inout self,
         c: NDBuffer[2, shape_c, c_type],
@@ -942,11 +945,114 @@ struct MatmulInnerLoopBPacked[
         unroll[a_row_size, pack_inner_size // simd_size, body]()
 
     @adaptive
+    fn _accumulate[
+        a_col_size: Int
+    ](
+        self,
+        c_local: NDBuffer[
+            2,
+            DimList(a_row_size, pack_inner_size),
+            c_type,
+        ],
+        tile_n_k_idx: StaticIntTuple[2],
+    ):
+        """Utility funcion on the inner loop. Launch one tile of fma on the
+        local accumulation buffer while processing a single column of A.
+
+        Args:
+            c_local(NDBuffer): pre-allocated local buffer for c partial
+                sums.
+            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
+                coordinates within the current processing tile to index the
+                packed B matrix.
+        """
+        assert_param[a_col_size == 0]()
+        # Seek outer indices in packed layout.
+        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+
+        # Global K index.
+        let global_k = self.global_offset.K + tile_n_k_idx[1]
+
+        var b_ptr = self.b_packed._offset(
+            Index(n_outer_idx, tile_n_k_idx[1], 0)
+        ).bitcast[DType.int32]()
+
+        # Prefetch B matrix.
+        @parameter
+        if prefetch_b_distance > 0:
+            alias prefetch_offset = prefetch_b_distance * pack_inner_size
+
+            @parameter
+            @always_inline
+            fn prefetch_body[idx: Int]():
+                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+                    PrefetchOptions().for_read().high_locality().to_data_cache()
+                ]()
+
+            unroll[pack_inner_size // simd_size, prefetch_body]()
+
+        # This inner kernels works with non-transposed A.
+        let K = self.a.dim(1)
+        var a_ptr = self.a.data.offset(
+            self.global_offset.M * K + global_k
+        ).bitcast[DType.int32]()
+
+        # Loop over local accumulator tiles.
+        @parameter
+        @always_inline
+        fn body[idx0: Int, idx1: Int]():
+            let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
+            alias alignment = alignof[SIMD[c_type, simd_size]]()
+            let c_idx = Index(idx0, idx1 * simd_size)
+            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
+            let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                simd_size, alignment
+            ]().cast[c_type]()
+            c_val = vpdpbusd[simd_size](c_val, a_val, b_val)
+            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+
+        unroll[a_row_size, pack_inner_size // simd_size, body]()
+
+    @adaptive
     fn _run_inner_loop(self):
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[not has_neon() or critical_stride]()
+        assert_param[use_vnni]()
+        debug_assert(
+            self.tile_n_k[1] % 0 == 0, "K dimension must be a multipel of 4"
+        )
+
+        # Allocate accumulation buffer.
+        let c_local = NDBuffer[
+            2,
+            DimList(a_row_size, pack_inner_size),
+            c_type,
+        ].aligned_stack_allocation[alignof[SIMD[c_type, simd_size]]()]()
+
+        for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
+            # Initialize accumulation buffer
+            #  either zero filling or load existing value.
+            if self.global_offset.K == 0:
+                self._initialize_c_tile(c_local)
+            else:
+                self._load_c_tile(c_local, Index(0, idx_n))
+
+            # Iterate on tile K dimension.
+            # Not unrolled on K path.
+
+            for idx_k in range(0, self.tile_n_k[1], 4):
+                # accumulate data for this (n, k) index
+                self._accumulate[1](c_local, Index(idx_n, idx_k))
+
+            self._store_c_tile(c_local, Index(0, idx_n))
+
+    @adaptive
+    fn _run_inner_loop(self):
+        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        (a_row_size, TileN, TileK) tile.
+        """
+        assert_param[not use_vnni and (not has_neon() or critical_stride)]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,

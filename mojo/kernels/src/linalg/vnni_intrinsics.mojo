@@ -12,6 +12,8 @@
 from DType import DType
 from SIMD import SIMD
 from Intrinsics import llvm_intrinsic
+from TypeUtilities import rebind
+from Assert import assert_param
 
 # ===----------------------------------------------------------------------===#
 # vpdpwssd
@@ -88,7 +90,7 @@ fn vpdpwssds(
 # ===----------------------------------------------------------------------===#
 
 
-fn vpdpbusd(
+fn vpdpbusd_16(
     src: SIMD[DType.int32, 16],
     a: SIMD[DType.int32, 16],
     b: SIMD[DType.int32, 16],
@@ -98,7 +100,7 @@ fn vpdpbusd(
     ](src.value, a.value, b.value)
 
 
-fn vpdpbusd(
+fn vpdpbusd_8(
     src: SIMD[DType.int32, 8],
     a: SIMD[DType.int32, 8],
     b: SIMD[DType.int32, 8],
@@ -108,7 +110,7 @@ fn vpdpbusd(
     ](src.value, a.value, b.value)
 
 
-fn vpdpbusd(
+fn vpdpbusd_4(
     src: SIMD[DType.int32, 4],
     a: SIMD[DType.int32, 4],
     b: SIMD[DType.int32, 4],
@@ -116,6 +118,41 @@ fn vpdpbusd(
     return llvm_intrinsic[
         "llvm.x86.avx512.vpdpbusd.128", __mlir_type.`!pop.simd<4, si32>`
     ](src.value, a.value, b.value)
+
+
+fn vpdpbusd[
+    width: Int,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+](
+    src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
+) -> SIMD[c_type, width]:
+    @parameter
+    if width == 16:
+        return rebind[SIMD[c_type, width]](
+            vpdpbusd_16(
+                rebind[SIMD[DType.int32, 16]](src),
+                rebind[SIMD[DType.int32, 16]](a),
+                rebind[SIMD[DType.int32, 16]](b),
+            )
+        )
+    if width == 8:
+        return rebind[SIMD[c_type, width]](
+            vpdpbusd_8(
+                rebind[SIMD[DType.int32, 8]](src),
+                rebind[SIMD[DType.int32, 8]](a),
+                rebind[SIMD[DType.int32, 8]](b),
+            )
+        )
+    assert_param[width == 4]()
+    return rebind[SIMD[c_type, width]](
+        vpdpbusd_4(
+            rebind[SIMD[DType.int32, 4]](src),
+            rebind[SIMD[DType.int32, 4]](a),
+            rebind[SIMD[DType.int32, 4]](b),
+        )
+    )
 
 
 # ===----------------------------------------------------------------------===#
