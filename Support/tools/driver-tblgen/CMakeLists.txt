@@ -13,13 +13,14 @@ add_tablegen(driver-tblgen DRIVER
   driver-tblgen.cpp
   DriverCommand.cpp
   GenHelpText.cpp
-  GenManPage.cpp)
+  GenManPage.cpp
+  GenMarkdown.cpp)
 
 # Set this on the global scope so that we don't have to pipe it up the stack manually.
 set(DRIVER_TABLEGEN_EXE $<TARGET_FILE:driver-tblgen> CACHE INTERNAL "DRIVER_TABLEGEN_EXE")
 
 # Given a prefix "Foo", an input path "Bar.td" and a manual page name "bar",
-# this creates 3 public TableGen targets:
+# this creates 4 public TableGen targets:
 #
 # 1. "FooDriverBar", which when built outputs option parser definitions to a
 #    file "Bar.inc".
@@ -28,6 +29,8 @@ set(DRIVER_TABLEGEN_EXE $<TARGET_FILE:driver-tblgen> CACHE INTERNAL "DRIVER_TABL
 # 3. "FooBarManPage", which when built generates a manual page file named
 #    "bar.1" ('1' is the "general commands" section for manual pages). That
 #    "bar.1" file is also copied to the build's share/man directory.
+# 4. "FooBarMarkdown", which when built generates a Markdown file named
+#    "Bar.md".
 #
 # Each of these TableGen targets is added to the driver option umbrella target.
 macro(add_driver_option_tablegen prefix input manual_name)
@@ -59,4 +62,10 @@ macro(add_driver_option_tablegen prefix input manual_name)
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${file_name}")
 
   add_dependencies(${prefix}DriverOptions "${prefix}${name}ManPage")
+
+  # 4. Markdown
+  set(LLVM_TARGET_DEFINITIONS "${input}")
+  tablegen(DRIVER "${name}.md" -gen-markdown)
+  add_public_tablegen_target("${prefix}${name}Markdown")
+  add_dependencies(${prefix}DriverOptions "${prefix}${name}Markdown")
 endmacro()
