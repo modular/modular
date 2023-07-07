@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Invoking the driver with an unknown subcommand also results in an error.
+# Invoking the driver with an unknown subcommand results in an error.
 # RUN: not mojo-driver unknown 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN
 # CHECK-UNKNOWN: mojo-driver{{.*}}: error: no such command 'unknown'
 
