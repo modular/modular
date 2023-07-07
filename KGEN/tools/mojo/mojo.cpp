@@ -57,7 +57,8 @@ int main(int argc, char **argv) {
   // If the user hasn't provided any arguments, treat this as the `repl`
   // subcommand.
   if (arguments.empty())
-    return registry.getCallback("repl").get()(State(programName, arguments));
+    return registry.getCallback("repl").get()(
+        State(programName, "repl", arguments));
 
   // Otherwise, parse the first argument; it could be:
   // - One of a handful of top-level driver options that we allow in this first
@@ -77,9 +78,12 @@ int main(int argc, char **argv) {
     return 0;
   }
   case options::OPT_help:
+  case options::OPT_help_text:
     // Print the top level driver help text and exit.
     return State(programName, ArrayRef(arguments).slice(1))
         .printHelp(
+            /*plainText=*/firstArg->getOption().getID() ==
+                options::OPT_help_text,
 #include "DriverOptionsHelpText.inc"
         );
   case options::OPT_INPUT: {
@@ -89,10 +93,11 @@ int main(int argc, char **argv) {
     ErrorOr<SubcommandRegistry::Callback> callback = registry.getCallback(arg);
     // If it's a subcommand, invoke its callback.
     if (succeeded(callback))
-      return callback.get()(State(programName, arguments.slice(index)));
+      return callback.get()(
+          State(programName, arg.c_str(), arguments.slice(index)));
 
     // If it looks like a Mojo source file, invoke the `run` subcommand.
-    State state(programName, arguments);
+    State state(programName, "run", arguments);
     StringRef argRef(arg);
     if (argRef.ends_with(".mojo") || argRef.ends_with(".🔥"))
       return registry.getCallback("run").get()(state);
@@ -103,6 +108,7 @@ int main(int argc, char **argv) {
   default:
     // This is some sort of option, so we'll pass it along to the `run` command
     // to parse. This allows for invocations such as `mojo -Ifoo Foo.mojo`.
-    return registry.getCallback("run").get()(State(programName, arguments));
+    return registry.getCallback("run").get()(
+        State(programName, "run", arguments));
   }
 }

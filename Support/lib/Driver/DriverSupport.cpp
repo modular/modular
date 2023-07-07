@@ -12,6 +12,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <filesystem>
@@ -49,7 +50,41 @@ int State::reportError(Twine errorMessage) const {
   return EXIT_FAILURE;
 }
 
-int State::printHelp(Twine helpText) const {
+int State::printHelp(bool plainText, Twine helpText) const {
+  llvm::ErrorOr<std::string> man = llvm::sys::findProgramByName("man");
+  if (!plainText && man) {
+    // Eventually, Mojo driver man pages will be installed at locations
+    // typically on the `man` search path, like `/usr/local/share/man`. However,
+    // in addition to these, `man` also searches for locations relative to
+    // paths in the user's PATH environment variable. So, for example, if a user
+    // has `PATH=/foo/bin`, `man` will search `/foo/share/man`.
+    //
+    // Currently, Mojo developers are the only ones with access to the mojo
+    // driver, and they all use start-modular shellscripts that inserts the
+    // build directory into their PATH. As a result, `man` can find the driver
+    // man pages relative to this directory, given only their name.
+    //
+    // We compute that name here: if it's a subcommand, append it to the program
+    // name.
+    std::string name = std::filesystem::path(programName).filename();
+    if (subcommand)
+      name = name + "-" + subcommand;
+
+    // `man` should be able to find the man page successfully, but just in case
+    // it can't (maybe the user's installation is messed up, or maybe they
+    // deleted the man page file accidentally), we still wish to print help
+    // text. Attempt to invoke `man` with its `stdin` and `stderr` disconnected,
+    // and if it fails, fallthrough to other backup behavior.
+    const std::optional<StringRef> redirects[] = {
+        /*stdin*/ "",
+        /*stdout*/ std::nullopt,
+        /*stderr*/ "",
+    };
+    if (!llvm::sys::ExecuteAndWait(man.get(), {man.get(), "1", name},
+                                   /*Env=*/std::nullopt, redirects))
+      return EXIT_SUCCESS;
+  }
+
   llvm::outs() << helpText;
   return EXIT_SUCCESS;
 }

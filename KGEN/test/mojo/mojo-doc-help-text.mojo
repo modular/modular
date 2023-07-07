@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: man-page
 
-# Invoking the subcommand with `--help` displays its help text.
-# RUN: mojo run -invalid-option --help | FileCheck %s --check-prefix CHECK-HELP
-# CHECK-HELP: MOJO-RUN(1)
+# Invoking the subcommand with `--help-text` prints its help text.
+# RUN: mojo doc -bad-option --doesnt-matter --help-text | FileCheck %s
+# CHECK: Compile doc strings

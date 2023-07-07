@@ -33,18 +33,31 @@ ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
 struct State {
   /// Initializes the driver state with the given program name and arguments.
   State(const char *programName, ArrayRef<const char *> arguments)
-      : programName(programName), arguments(arguments) {}
+      : programName(programName), subcommand(nullptr), arguments(arguments) {}
+
+  /// Initializes the driver state with the given program name, subcommand
+  /// name, and arguments.
+  State(const char *programName, const char *subcommand,
+        ArrayRef<const char *> arguments)
+      : programName(programName), subcommand(subcommand), arguments(arguments) {
+  }
 
   /// Write the given error message to stderr and return a non-zero exit code.
   int reportError(Twine errorMessage) const;
 
-  /// Prints the given `helpText` for the current command and returns a
-  /// successful exit code.
-  int printHelp(Twine helpText) const;
+  /// If `plainText` is false and the `man` executable is available, this
+  /// invokes that executable in order to display man pages for the given
+  /// command. Otherwise, we fall back to printing the given `helpText`. In
+  /// either case, a successful exit code is returned.
+  int printHelp(bool plainText, Twine helpText) const;
 
   /// The name of the executable that the user invoked.
   /// This is used for error reporting.
   const char *programName;
+
+  /// The name of the subcommand that the user selected, or null if the user
+  /// invoked the top-level driver.
+  const char *subcommand;
 
   /// The command line arguments that the user provided, excluding the program
   /// and subcommand names.
