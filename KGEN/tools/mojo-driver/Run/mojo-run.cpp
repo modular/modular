@@ -180,6 +180,9 @@ compileModule(const State &state, const llvm::opt::InputArgList &args,
   // Parse the input Mojo file into an MLIR module.
   MojoParserConfig parseConfig(&context, runtime, options);
   parseConfig.validateDocStrings = args.hasArg(options::OPT_doc_validate);
+  int maxNotes = 0;
+  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
+    parseConfig.maxNotesPerDiagnostic = maxNotes;
 
   TimingScope mojoScope = timing.nest("Import Mojo");
   moduleOp = importMojoFile(sourceManager, parseConfig, mojoScope);

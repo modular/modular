@@ -58,13 +58,20 @@ def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
   Alias<no_optimization>;
 
 //===----------------------------------------------------------------------===//
-// Validation Options
+// Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def ValidationOptionGroup : OptionGroup<"Validation Options">, Index<1>;
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<1>;
 
 def doc_validate : Flag<["--", "-"], "doc-validate">,
-  Group<ValidationOptionGroup>, Index<0>,
+  Group<DiagnosticOptionGroup>, Index<0>,
   HelpText<"Validate doc strings as they are parsed during compilation. When "
            "enabled, warning diagnostics are emitted as invalid doc strings "
            "are parsed.">;
+
+def max_notes : Separate<["--", "-"], "max-notes-per-diagnostic">,
+  Group<DiagnosticOptionGroup>, Index<1>, MetaVarName<"INTEGER">,
+  HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "
+           "notes with additional information. This option sets an upper "
+           "threshold on the number of notes that can be printed with a "
+           "diagnostic. If not specified, the default maximum is 10.">;
