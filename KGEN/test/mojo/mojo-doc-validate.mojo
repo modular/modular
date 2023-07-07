@@ -7,7 +7,7 @@
 # Validation itself is tested elsewhere; here we test only that the driver
 # passes the `-validate` option through to the parser (this file contains
 # validation warnings).
-# RUN: mojo-driver doc -validate %s -o /dev/null 2>&1 | FileCheck %s --check-prefix CHECK-VALIDATE
+# RUN: mojo doc -validate %s -o /dev/null 2>&1 | FileCheck %s --check-prefix CHECK-VALIDATE
 # CHECK-VALIDATE: mojo-doc-validate.mojo:{{.*}}warning: unknown argument
 
 

@@ -49,7 +49,6 @@ if(LLDB_FOUND)
 endif()
 
 add_subdirectory(tools/mojo)
-add_subdirectory(tools/mojo-driver)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}.
@@ -252,7 +251,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   add_custom_command(
     OUTPUT "${GEN_DOC_JSON_FILE}"
 
-    COMMAND $<TARGET_FILE:mojo-driver> doc
+    COMMAND $<TARGET_FILE:mojo> doc
     -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
     -I ${KERNELS_BINARY_DIR}/mojo/Python
 
@@ -306,7 +305,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   add_custom_command(
     OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
 
-    COMMAND $<TARGET_FILE:mojo-driver> doc -validate
+    COMMAND $<TARGET_FILE:mojo> doc -validate
     -o /dev/null ${KGEN_INCLUDE_FLAGS} ${doc_filename}
     -I ${KERNELS_BINARY_DIR}/mojo/Python
     > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1

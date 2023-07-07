@@ -22,7 +22,6 @@ add_modular_testsuite(check-kgen
   kgen-translate
   mojo-lsp-server
   mojo
-  mojo-driver
 )
 
 if(LLDB_FOUND)

@@ -4,6 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Reject unknown options.
-# RUN: not mojo-driver doc -one --two 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN
-# CHECK-UNKNOWN: mojo-driver{{.*}}: error: unrecognized argument '--two'
+# We can run this file with various targets.
+# RUN: not mojo -target-triple not-a-valid-target %s 2>&1 | FileCheck %s
+# CHECK: no target exists for 'not-a-valid-target'

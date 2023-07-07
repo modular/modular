@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo-driver run %s | FileCheck %s
+# We can run this file with optimizations disabled.
+# RUN: mojo --no-optimization %s
+# RUN: mojo -O0 %s
 
 from IO import print
 
 
 fn main() -> None:
-    # CHECK: ok
     print("ok")

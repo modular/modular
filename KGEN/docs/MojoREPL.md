@@ -30,10 +30,10 @@ setup:
 
 ```shell
 # Build the Mojo driver, along with the REPL and all of its dependencies.
-$ build mojo-driver
+$ build mojo
 
 # Launch the REPL.
-$ mojo-driver
+$ mojo
 ```
 
 Once run, you'll be provided with a REPL environment where you can immediately

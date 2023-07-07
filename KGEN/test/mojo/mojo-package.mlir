@@ -1,4 +1,4 @@
-// RUN: mojo-driver package %s --name mojo-test-pkg | FileCheck %s
+// RUN: mojo package %s --name mojo-test-pkg | FileCheck %s
 
 // CHECK: lit.package @"mojo-test-pkg" attributes {archiveBytes = {{.*}}, compiledFor = {{.*}}
 // We just use this package as a substitute for the frontend work that's going

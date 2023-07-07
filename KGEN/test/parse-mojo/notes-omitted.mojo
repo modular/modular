@@ -6,10 +6,9 @@
 
 # Test that the default value for `--max-notes-per-diagnostic` is 10.
 # RUN: not mojo %s 2>&1 | FileCheck %s
-# RUN: not mojo-driver run %s 2>&1 | FileCheck %s
 
 # Test that the option controls this setting.
-# RUN: not mojo-driver run --max-notes-per-diagnostic 5 %s \
+# RUN: not mojo --max-notes-per-diagnostic 5 %s \
 # RUN:   2>&1 | FileCheck %s --check-prefix CHECK-FIVE
 
 struct s1: pass

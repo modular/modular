@@ -4,6 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# The user must provide an input.
-# RUN: not mojo-driver doc 2>&1 | FileCheck %s --check-prefix CHECK-NO-INPUT
-# CHECK-NO-INPUT: mojo-driver{{.*}}: error: no input file provided
+# RUN: mojo %s | FileCheck %s
+
+from IO import print
+
+
+fn main() -> None:
+    # CHECK: ok
+    print("ok")
