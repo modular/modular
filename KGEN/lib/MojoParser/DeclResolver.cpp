@@ -2509,9 +2509,16 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // referenced.
   for (StringRef name : nestedModules) {
     StringAttr importName = builder.getStringAttr("." + name);
-    StringAttr boundName = builder.getStringAttr(name);
-
+    StringAttr boundName = builder.getStringAttr("$" + name);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
+        op->getLoc(), importName, boundName, /*declName=*/StringAttr());
+    getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
+                              LexerCursor(), LexerCursor(), /*indentation=*/-1);
+
+    // Create an alias for the unmangled module name to allow for simplified
+    // indexing into this module.
+    boundName = builder.getStringAttr(name);
+    importDecl = builder.create<LIT::UnresolvedImportOp>(
         op->getLoc(), importName, boundName, /*declName=*/StringAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);

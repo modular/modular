@@ -109,7 +109,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # Drill into rvalue without cloning intermediate values.
   # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: [[V2XX:%.*]] = lit.struct.gep [[V2X]][x]
-  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !pop.pointer<@"$Int"::@Int>
+  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !pop.pointer<{{.*}}@"$Int"::@Int>
   # CHECK-NEXT: lit.letreg.decl "v2xx" = [[VAL]]
   let v2xx = v2.x.x
 
@@ -160,7 +160,7 @@ struct M:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
   fn __init__(value: Int) -> M:
-  # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (!kgen.declref<@"$Int"::@Int>) -> !kgen.declref<@"$expressions"::@M>
+  # CHECK-NEXT: %0 = lit.struct.create(value=%value) : (!kgen.declref<{{.*}}@"$Int"::@Int>) -> !kgen.declref<@"$expressions"::@M>
     return M{value: value}
 
   fn __copyinit__(self) -> M:
@@ -178,9 +178,9 @@ struct M:
 
 # CHECK-LABEL: lit.func @"simpleMath
 fn simpleMath(a: Int, b: Int) -> Int:
-  # CHECK: %0 = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%b, %a)
-  # CHECK: %1 = kgen.call @"$Int"::@Int::@"__sub__{{.*}}(%a, %0)
-  # CHECK: lit.return %1 : !kgen.declref<@"$Int"::@Int>
+  # CHECK: %0 = kgen.call {{.*}}@"$Int"::@Int::@"__mul__{{.*}}(%b, %a)
+  # CHECK: %1 = kgen.call {{.*}}@"$Int"::@Int::@"__sub__{{.*}}(%a, %0)
+  # CHECK: lit.return %1 : !kgen.declref<{{.*}}@"$Int"::@Int>
   return a-b*a
 
 # CHECK-LABEL: lit.func @"precedence_associativity
@@ -193,43 +193,43 @@ fn precedence_associativity(a: Int):
   z = 17  # Implicit conversion
 
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW0:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
-  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
+  # CHECK-NEXT: %[[POW1:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = 2**(a**z)
   # CHECK-NEXT: %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT: %[[POW0:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
+  # CHECK-NEXT: %[[POW0:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__pow__{{.*}}(%a, %[[Z]])
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
-  # CHECK-NEXT: %[[POW1:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
+  # CHECK-NEXT: %[[POW1:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[POW0]])
   # CHECK-NEXT: pop.store %[[POW1]], %z
   z = 2**a**z
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: @"$Int"::@Int = <{{.*}} = -6}
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
+  # CHECK-NEXT:  %[[MUL:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <{{.*}} = -6}
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[MUL]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + 3 * -2
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: @"$Int"::@Int = <{{.*}} = -2}
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
+  # CHECK-NEXT:  %[[FLOOR_DIV:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <{{.*}} = -2}
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[FLOOR_DIV]])
   # CHECK-NEXT:  pop.store %[[ADD]], %z
   z = z + 3 // -2
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
   # CHECK-NEXT:  %[[INT_THREE:.*]] = kgen{{.*}}#lit.struct<{value = 3}>
-  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
+  # CHECK-NEXT:  %[[ADD:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__add__{{.*}}(%[[Z]], %[[INT_THREE]])
   # CHECK-NEXT:  %[[NEG:.*]] = kgen{{.*}}#lit.struct<{value = -2}>
-  # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
+  # CHECK-NEXT:  %[[MUL:.*]] =  kgen.call {{.*}}@"$Int"::@Int::@"__mul__{{.*}}(%[[ADD]], %[[NEG]])
   # CHECK-NEXT:  pop.store %[[MUL]], %z
   z = (z + 3) * -+2
   # CHECK-NEXT:  %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
   # CHECK-NEXT:  %[[Z:.*]] = pop.load %z
-  # CHECK-NEXT:  %[[POW:.*]] = kgen.call @"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
-  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call @"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
+  # CHECK-NEXT:  %[[POW:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__pow__{{.*}}(%[[INT_TWO]], %[[Z]])
+  # CHECK-NEXT:  %[[NEG:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__neg__{{.*}}(%[[POW]])
   # CHECK-NEXT:  pop.store %[[NEG]], %z
   z = -2**z
   # CHECK-NEXT: [[Z:%.*]] = pop.load %z
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value = 1}>
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"([[Z]], [[ONE]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__radd__({{.*}}$Int::Int,{{.*}}$Int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
   z = (1).value + z
 
@@ -242,40 +242,40 @@ fn precedence_associativity(a: Int):
 
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
-  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__radd__($Int::Int,$Int::Int)"
+  # CHECK: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__radd__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var z = (1).value + a
 
-  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rsub__($Int::Int,$Int::Int)"
+  # CHECK: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__rsub__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   z = (2).value - z
 
-  # CHECK: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__rmul__($Int::Int,$Int::Int)"
+  # CHECK: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__rmul__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   z = (3).value * z
 
   # div tests
   # CHECK: kgen.call {{.*}}__rtruediv__
-  # CHECK: kgen.call @"$Int"::@Int::@"__rfloordiv__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rfloordiv__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var r1 = 33.0 / Float32(42.0)
   z = (33).value // z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__rmod__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rmod__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var i0 = (10).value % z
 
-# CHECK: kgen.call @"$Int"::@Int::@"__rpow__($Int::Int,$Int::Int)"
+# CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rpow__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var i1 = (3).value ** z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__rlshift__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rlshift__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var i2 = (1).value << z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__rrshift__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rrshift__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   var i3 = (1).value >> z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__rand__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rand__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   z = (1).value & z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__ror__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__ror__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   z = (2).value | z
 
-  # CHECK: kgen.call @"$Int"::@Int::@"__rxor__($Int::Int,$Int::Int)"
+  # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__rxor__({{.*}}$Int::Int,{{.*}}$Int::Int)"
   z = (3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
@@ -293,28 +293,28 @@ fn precedence_matmul(z: M) -> M:
 # CHECK-LABEL: lit.func @"precedence_bitwise
 fn precedence_bitwise(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %[[INT_TWO:.*]] = kgen{{.*}}#lit.struct<{value = 2}>
-  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
-  # CHECK-NEXT: %[[AND:.*]] = kgen.call @"$Int"::@Int::@"__and__{{.*}}(%[[MUL]], %b)
+  # CHECK-NEXT: %[[MUL:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__mul__{{.*}}(%a, %[[INT_TWO]])
+  # CHECK-NEXT: %[[AND:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__and__{{.*}}(%[[MUL]], %b)
   # CHECK-NEXT: %[[INT_FOUR:.*]] = kgen{{.*}}#lit.struct<{value = 4}>
-  # CHECK-NEXT: %[[XOR:.*]] = kgen.call @"$Int"::@Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
-  # CHECK-NEXT: %[[OR:.*]] = kgen.call @"$Int"::@Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
+  # CHECK-NEXT: %[[XOR:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__xor__{{.*}}(%[[INT_FOUR]], %c)
+  # CHECK-NEXT: %[[OR:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__or__{{.*}}(%[[AND]], %[[XOR]])
   # CHECK-NEXT: lit.return %[[OR]]
   return a * 2 & b | 4 ^ c
 
 # CHECK-LABEL: @"comparisons
 fn comparisons(a: Int, b: Int):
    var res: Bool
-   # CHECK: kgen.call @"$Int"::@Int::@"__lt__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__lt__{{.*}}(%a, %b)
    res = a < b
-   # CHECK: kgen.call @"$Int"::@Int::@"__le__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__le__{{.*}}(%a, %b)
    res = a <= b
-   # CHECK: kgen.call @"$Int"::@Int::@"__gt__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__gt__{{.*}}(%a, %b)
    res = a > b
-   # CHECK: kgen.call @"$Int"::@Int::@"__ge__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__ge__{{.*}}(%a, %b)
    res = a >= b
-   # CHECK: kgen.call @"$Int"::@Int::@"__eq__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__eq__{{.*}}(%a, %b)
    res = a == b
-   # CHECK: kgen.call @"$Int"::@Int::@"__ne__{{.*}}(%a, %b)
+   # CHECK: kgen.call {{.*}}@"$Int"::@Int::@"__ne__{{.*}}(%a, %b)
    res = a != b
 
 @register_passable
@@ -329,17 +329,17 @@ struct MemBoolish:
 
 # CHECK-LABEL: @"unary
 fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
-  # CHECK: %0 = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"(%a)
-  # CHECK: %1 = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"(%0)
+  # CHECK: %0 = kgen.call {{.*}}@"$Bool"::@Bool::@"__bool__({{.*}}$Bool::Bool)"(%a)
+  # CHECK: %1 = kgen.call {{.*}}@"$Bool"::@Bool::@"__invert__({{.*}}$Bool::Bool)"(%0)
   _ = not a
 
-  # CHECK: [[EQ:%.*]] = kgen.call @"$Int"::@Int::@"__eq__($Int::Int,$Int::Int)"
-  # CHECK: [[EQBOOL:%.*]] = kgen.call @"$Bool"::@Bool::@"__bool__($Bool::Bool)"([[EQ]])
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[EQBOOL]])
+  # CHECK: [[EQ:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__eq__({{.*}}$Int::Int,{{.*}}$Int::Int)"
+  # CHECK: [[EQBOOL:%.*]] = kgen.call {{.*}}@"$Bool"::@Bool::@"__bool__({{.*}}$Bool::Bool)"([[EQ]])
+  # CHECK:  = kgen.call {{.*}}@"$Bool"::@Bool::@"__invert__({{.*}}$Bool::Bool)"([[EQBOOL]])
   _ = not b == 0
 
   # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%c)
-  # CHECK:  = kgen.call @"$Bool"::@Bool::@"__invert__($Bool::Bool)"([[BOOL]])
+  # CHECK:  = kgen.call {{.*}}@"$Bool"::@Bool::@"__invert__({{.*}}$Bool::Bool)"([[BOOL]])
   _ = not c
 
   # CHECK: [[BOOL:%.*]] = kgen.call {{.*}}@"__bool__{{.*}}(%d)
@@ -380,7 +380,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
 
   # CHECK-NEXT: [[ABOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%a)
   # CHECK-NEXT: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
-  # CHECK-NEXT:  = hlcf.if [[I1]] -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK-NEXT:  = hlcf.if [[I1]] -> !kgen.declref<{{.*}}@"$Bool"::@Bool> {
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[ABOOL:%.*]] = kgen.call {{.*}}__init__{{.*}}([[I1]])
@@ -392,7 +392,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
 
   # CHECK-NEXT: [[BBOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BI1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
-  # CHECK-NEXT: = hlcf.if [[BI1]] -> !kgen.declref<@"$Bool"::@Bool> {
+  # CHECK-NEXT: = hlcf.if [[BI1]] -> !kgen.declref<{{.*}}@"$Bool"::@Bool> {
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.call {{.*}}@Bool::@"__init__{{.*}}([[BI1]])
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT:  } else {
@@ -423,13 +423,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: kgen.param.declare {{.*}}c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[B]], [[A]])>
+  # CHECK: kgen.param.declare {{.*}}c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[B]], [[A]])>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: kgen.param.declare {{.*}}d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[A]], [[B]])>
+  # CHECK: kgen.param.declare {{.*}}d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[A]], [[B]])>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -437,9 +437,9 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: %z = lit.varlet.decl "z", var = true
   var z : Int
   # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}#lit.struct<{value = 5}>
-  # CHECK-NEXT: %[[MUL:.*]] = kgen.call @"$Int"::@Int::@"__mul__{{.*}}(%[[INT_5]], %a)
+  # CHECK-NEXT: %[[MUL:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__mul__{{.*}}(%[[INT_5]], %a)
   # CHECK-NEXT: %[[INT_42:.*]] = kgen{{.*}}#lit.struct<{value = 42}>
-  # CHECK-NEXT: %[[ADD:.*]] = kgen.call @"$Int"::@Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
+  # CHECK-NEXT: %[[ADD:.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__add__{{.*}}(%[[INT_42]], %[[MUL]])
   # CHECK-NEXT: pop.store %[[ADD]], %z
   z = 42 + 5*a
 
@@ -475,7 +475,7 @@ fn listValues():
 
 # CHECK-LABEL: lit.func @"initializers
 fn initializers():
-  # CHECK: %0 = kgen.param.constant: @"$Int"::@Int = <#lit.struct<{value = 42}>>
+  # CHECK: %0 = kgen.param.constant: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 42}>>
   # CHECK: lit.letreg.decl "a" = %0
   let a = Int{value: (42).value}
 
@@ -508,52 +508,52 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
         i += 1
 
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
-# CHECK-SAME: <[[COND:.*]]: @"$Bool"::@Bool>
+# CHECK-SAME: <[[COND:.*]]: {{.*}}@"$Bool"::@Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: kgen.param.declare [[I_ALIAS:.*]]: @"$Int"::@Int = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
+  # CHECK: kgen.param.declare [[I_ALIAS:.*]]: {{.*}}@"$Int"::@Int = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: kgen.param.declare {{.*}}j: @"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<@"$Bool"::@Bool> borrow) -> i1 @"$Bool"::@Bool::@"__mlir_i1__($Bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: kgen.param.declare {{.*}}j: {{.*}}@"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: @"$Int"::@Int = <[[I_ALIAS]]>
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <[[I_ALIAS]]>
   return i
 
-# CHECK-LABEL: lit.func @"callable_mv[fn($Int::Int) -> $Int::Int]($Int::Int)"
-# CHECK-SAME: <[[CALLABLE:.*]]: <>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}$Int::Int) -> {{.*}}$Int::Int]({{.*}}$Int::Int)"
+# CHECK-SAME: <[[CALLABLE:.*]]: <>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>>(%a: !kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: [[CALLABLE]]](%a)
+  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>: [[CALLABLE]]](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*]]: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>, [[B:.*]]: @"$Int"::@Int>(%a: !kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+# CHECK-SAME: [[CALLABLE:.*]]: <{{.*}}@"$Int"::@Int>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>, [[B:.*]]: {{.*}}@"$Int"::@Int>(%a: !kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>: bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> [[CALLABLE]], [[B]])](%a)
+  # CHECK-NEXT: kgen.call_param[<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>: bind_signature(:<{{.*}}@"$Int"::@Int>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int> [[CALLABLE]], [[B]])](%a)
   return callable[b](a)
 
-# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}a: @"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}a: {{.*}}@"$Int"::@Int>() -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn takeIndexParam[a: Int]() -> Int:
   return a + 1
 
-# CHECK-LABEL: lit.func @"returnIndex()"() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"returnIndex()"() -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn returnIndex() -> Int:
   return 0
 
-# CHECK-LABEL: lit.func @"returnIndex2()"() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"returnIndex2()"() -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn returnIndex2() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}"<:@"$Int"::@Int apply(:() -> !kgen.declref<@"$Int"::@Int> @"$expressions"::@"returnIndex()")>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}"<:{{.*}}@"$Int"::@Int apply(:() -> !kgen.declref<{{.*}}@"$Int"::@Int> @"$expressions"::@"returnIndex()")>() : () -> !kgen.declref<{{.*}}@"$Int"::@Int>
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.func @"callInParam[fn[$Int::Int]($Int::Int) -> $Int::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*]]: <@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>>() -> !kgen.declref<@"$Int"::@Int>
+# CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}$Int::Int]({{.*}}$Int::Int) -> {{.*}}$Int::Int]()"
+# CHECK-SAME: <[[CALLABLE:.*]]: <{{.*}}@"$Int"::@Int>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int>>() -> !kgen.declref<{{.*}}@"$Int"::@Int>
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:@"$Int"::@Int apply(:<>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> bind_signature(:<@"$Int"::@Int>(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int> [[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>() : () -> !kgen.declref<@"$Int"::@Int>
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:{{.*}}@"$Int"::@Int apply(:<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int> bind_signature(:<{{.*}}@"$Int"::@Int>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}@"$Int"::@Int> [[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>() : () -> !kgen.declref<{{.*}}@"$Int"::@Int>
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
-# CHECK-SAME: <[[A:.*]]: @"$Int"::@Int, [[A2:.*]]: @"$Int"::@Int>
+# CHECK-SAME: <[[A:.*]]: {{.*}}@"$Int"::@Int, [[A2:.*]]: {{.*}}@"$Int"::@Int>
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: kgen.param.declare {{.*}}b: {{.*}}@Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
   alias b = a-a
@@ -579,7 +579,7 @@ fn patterns():
   (someInt) += someInt
   # CHECK: %someInt = lit.varlet.decl "someInt", var = true
   # CHECK:  %1 = pop.load %someInt
-  # CHECK:  %2 = kgen.call @"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %1)
+  # CHECK:  %2 = kgen.call {{.*}}@"$Int"::@Int::@"__iadd__{{.*}}(%someInt, %1)
 
   # Discard pattern with different types.
   (_) = someInt
@@ -599,7 +599,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function($Int::Int,$Int::Int&)"(%a: !kgen.declref<@"$Int"::@Int> borrow, %b: !pop.pointer<@"$Int"::@Int> byref) -> !lit.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$Int::Int,{{.*}}$Int::Int&)"(%a: !kgen.declref<{{.*}}@"$Int"::@Int> borrow, %b: !pop.pointer<{{.*}}@"$Int"::@Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -620,9 +620,9 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"mvalueStructField()"
 fn mvalueStructField():
-  # CHECK: kgen.param.declare [[INT:.*]]: @"$Int"::@Int = <#lit.struct<{value = 4}>>
+  # CHECK: kgen.param.declare [[INT:.*]]: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 4}>>
   alias int = 4
-  # CHECK: kgen.param.declare {{.*}}value = <#lit.struct.extract<:@"$Int"::@Int [[INT]], "value">>
+  # CHECK: kgen.param.declare {{.*}}value = <#lit.struct.extract<:{{.*}}@"$Int"::@Int [[INT]], "value">>
   alias value = int.value
   alias foldToValue = (5).value
 
@@ -640,43 +640,43 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      %a_0 = lit.varlet.decl "a", var = true
   # CHECK:      %b_1 = lit.varlet.decl "b", var = true
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__iadd__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__iadd__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a += b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__isub__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__isub__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a -= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__imul__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__imul__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a *= b
   # HECK:      [[LOAD_C:%.*]] = pop.load %c_2  : !pop.pointer<@M>
-  # HECK-NEXT: [[RES:%.*]] = kgen.call @M::@"__imatmul__($Int::Int&,$Int::Int)"(%d_3, [[LOAD_C]])
+  # HECK-NEXT: [[RES:%.*]] = kgen.call @M::@"__imatmul__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%d_3, [[LOAD_C]])
   #d @= c
   # HECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # HECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__itruediv__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # HECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__itruediv__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   #a /= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ifloordiv__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__ifloordiv__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a //= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__imod__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__imod__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a %= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ipow__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__ipow__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a **= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__irshift__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__irshift__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a >>= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ilshift__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__ilshift__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a <<= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__iand__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__iand__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a &= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ixor__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__ixor__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a ^= b
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
-  # CHECK-NEXT: [[RES:%.*]] = kgen.call @"$Int"::@Int::@"__ior__($Int::Int&,$Int::Int)"(%a_0, [[LOAD_B]])
+  # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}@"$Int"::@Int::@"__ior__({{.*}}$Int::Int&,{{.*}}$Int::Int)"(%a_0, [[LOAD_B]])
   a |= b
 
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}value = 4
@@ -1098,7 +1098,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<@"$Bool"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<{{.*}}@"$Bool"::@Bool>
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
@@ -1117,26 +1117,26 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<@"$Bool"::@Bool>
+    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<{{.*}}@"$Bool"::@Bool>
     res = a < b < c and d < e
 
-# CHECK-LABEL: lit.func @"foo_adaptive[$Int::Int](){{.*}} {isAdaptive
+# CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$Int::Int](){{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
    return 0
 
-# CHECK-LABEL: lit.func @"foo_adaptive[$Int::Int]()_0{{.*}} {isAdaptive
+# CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$Int::Int]()_0{{.*}} {isAdaptive
 @adaptive
 fn foo_adaptive[x: Int]() -> Int:
   return 1
 
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
-    # CHECK: kgen.param.declare {{.*}}not_bound: variadic<!kgen.signature<<@"$Int"::@Int>() -> !kgen.declref<@"$Int"::@Int>>> =
-    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[$Int::Int]()", @"$expressions"::@"foo_adaptive[$Int::Int]()_0"]>
+    # CHECK: kgen.param.declare {{.*}}not_bound: variadic<!kgen.signature<<{{.*}}@"$Int"::@Int>() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
+    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
-    # CHECK-NEXT: kgen.param.declare {{.*}}bound: variadic<!kgen.signature<() -> !kgen.declref<@"$Int"::@Int>>> =
-    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[$Int::Int]()"<:@"$Int"::@Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[$Int::Int]()_0"<:@"$Int"::@Int {{.*}}1{{.*}}>]>
+    # CHECK-NEXT: kgen.param.declare {{.*}}bound: variadic<!kgen.signature<() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
+    # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()"<:{{.*}}@"$Int"::@Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()_0"<:{{.*}}@"$Int"::@Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
 fn lvalue_utilities(inout a: Int):
@@ -1171,24 +1171,24 @@ struct MemoryType:
 struct RegType: pass
 
 # CHECK-LABEL: lit.struct.decl @ParamType
-# CHECK-SAME: <[[A:.*]]: @"$Int"::@Int>
+# CHECK-SAME: <[[A:.*]]: {{.*}}@"$Int"::@Int>
 @register_passable
 struct ParamType[a: Int]: pass
 
 # CHECK-LABEL: lit.func @"function_types
-# CHECK-SAME: %float0: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) -> !kgen.declref<@"$Int"::@Int>
+# CHECK-SAME: %float0: {{.*}}(!kgen.declref<@"$Builtin"::@"$Int"::@Int> borrow) -> !kgen.declref<@"$Builtin"::@"$Int"::@Int>
 # CHECK-SAME: %float1: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> byref_result, !pop.pointer<@"$expressions"::@MemoryType> borrow_in_mem) -> !lit.none
 # CHECK-SAME: %float2: {{.*}}(!kgen.declref<@"$expressions"::@RegType>) ownedresult -> !kgen.declref<@"$expressions"::@RegType>
 # CHECK-SAME: %float3: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> owned_in_mem) -> !lit.none
-# CHECK-SAME: %float4: {{.*}}(!pop.pointer<@"$Int"::@Int> byref) -> !lit.none
-# CHECK-SAME: %float5: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float8: {{.*}}<@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: @"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
-# CHECK-SAME: %float9: {{.*}}<[] -> @"$Int"::@Int>() -> !lit.none
-# CHECK-SAME: %float10: {{.*}}<<@"$Int"::@Int, @"$expressions"::@ParamType<[[A]]: @"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float12: {{.*}}<(!kgen.declref<@"$Int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
+# CHECK-SAME: %float4: {{.*}}(!pop.pointer<{{.*}}@"$Int"::@Int> byref) -> !lit.none
+# CHECK-SAME: %float5: {{.*}}(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$Builtin"::@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$Builtin"::@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float8: {{.*}}<{{.*}}@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: {{.*}}@"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
+# CHECK-SAME: %float9: {{.*}}<[] -> {{.*}}@"$Int"::@Int>() -> !lit.none
+# CHECK-SAME: %float10: {{.*}}<<{{.*}}@"$Int"::@Int, @"$expressions"::@ParamType<[[A]]: {{.*}}@"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float12: {{.*}}<(!kgen.declref<{{.*}}@"$Int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<{{.*}}@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
   float0: fn(Int) -> Int,
   float1: fn(MemoryType) -> MemoryType,
@@ -1216,9 +1216,9 @@ struct TwoParamsStruct[a: Int, b: Int]:
         pass
 
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
-# CHECK-SAME: {{.*}}idx: @"$Int"::@Int, [[A:.*]]: variadic<@"$Int"::@Int>>
+# CHECK-SAME: {{.*}}idx: {{.*}}@"$Int"::@Int, [[A:.*]]: variadic<{{.*}}@"$Int"::@Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: declare {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<@"$Int"::@Int> [[A]], 2)>
+    # CHECK-NEXT: declare {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<{{.*}}@"$Int"::@Int> [[A]], 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%idx3]
     let v1 = a[3]

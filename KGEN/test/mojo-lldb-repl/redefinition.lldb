@@ -10,11 +10,11 @@
 
 # Initially define an integer value of 10.
 let value = 10
-# CHECK: ($Int::Int) value
+# CHECK: ({{.*}}$Int::Int) value
 
 # Check that we can redefine this in a followup expression.
 let value = True
-# CHECK: ($Bool::Bool) value
+# CHECK: ({{.*}}$Bool::Bool) value
 
 # Check that we can redefine a function that has a return type defined in the
 # same expression.

@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Int import Int
-
 
 struct Struct:
     fn parametric[a: Int](self) -> Int:

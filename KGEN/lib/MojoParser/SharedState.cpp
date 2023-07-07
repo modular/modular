@@ -130,6 +130,9 @@ struct SharedState::Impl {
   /// since these are uncommon.
   DenseMap<const ASTDecl *, std::vector<LexerCursor>> bodyDecorators;
 
+  /// The implicit builtin imports added to each module.
+  SmallVector<StringAttr> implicitBuiltinImports;
+
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
 };
@@ -743,13 +746,12 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 }
 
 static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
-                                        StringRef moduleName,
                                         StringRef typeName,
                                         SharedState &shared) {
   // Unresolved wildcard imports have been added for all builtin modules. Search
   // from the contextual ASTDecl.
   LookupResult lookup = shared.lookupAndResolveDecl(
-      typeName, loc, context, /*searchInParentScopes=*/true);
+      typeName, loc, context, /*searchParentScopes=*/true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty())
     return lookup.getIfSuccess()[0]->getSelfType();
 
@@ -758,45 +760,37 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
 }
 
 ASTType SharedState::getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinBoolModuleName, "Bool",
-                                  *this);
+  return resolveBuiltinModuleType(context, loc, "Bool", *this);
 }
 
 ASTType SharedState::getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinTupleModuleName,
-                                  "Tuple", *this);
+  return resolveBuiltinModuleType(context, loc, "Tuple", *this);
 }
 
 ASTType SharedState::getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinErrorModuleName,
-                                  "Error", *this);
+  return resolveBuiltinModuleType(context, loc, "Error", *this);
 }
 
 ASTType SharedState::getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinIntModuleName, "Int",
-                                  *this);
+  return resolveBuiltinModuleType(context, loc, "Int", *this);
 }
 
 ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
                                                  llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinStringModuleName,
-                                  "StringLiteral", *this);
+  return resolveBuiltinModuleType(context, loc, "StringLiteral", *this);
 }
 
 ASTType SharedState::getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinSliceModuleName,
-                                  "slice", *this);
+  return resolveBuiltinModuleType(context, loc, "slice", *this);
 }
 
 ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,
                                                llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinListModuleName,
-                                  "ListLiteral", *this);
+  return resolveBuiltinModuleType(context, loc, "ListLiteral", *this);
 }
 
 ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, kBuiltinDoubleModuleName,
-                                  "FloatLiteral", *this);
+  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
 }
 
 /// This returns an instance of Tuple[...] with the specified element types
@@ -898,6 +892,29 @@ void SharedState::loadModulesFromCache(
   }
 }
 
+void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
+  // Check if this is the first attempt at resolving the builtin modules.
+  if (impl->implicitBuiltinImports.empty()) {
+    ASTDecl &builtinsPackageDecl =
+        importModule("Builtin", impl->topLevelDecl, moduleDecl.getLoc());
+    if (failed(declResolver->resolveFully(builtinsPackageDecl,
+                                          moduleDecl.getLoc())))
+      return;
+
+    for (StringRef name :
+         llvm::make_first_range(builtinsPackageDecl.getDeclsInScope())) {
+      // Directly nested modules/packages look like `$foo`.
+      if (!name.consume_front("$"))
+        continue;
+      impl->implicitBuiltinImports.emplace_back(
+          StringAttr::get(getContext(), "Builtin." + name));
+    }
+  }
+
+  for (StringAttr import : impl->implicitBuiltinImports)
+    moduleDecl.addUnresolvedWildCardImport(import, moduleDecl.getLoc());
+}
+
 ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
@@ -942,11 +959,8 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
-  // Auto-import the core Lang modules.
-  for (StringRef moduleName : kBuiltinModuleNames) {
-    moduleDecl.addUnresolvedWildCardImport(
-        StringAttr::get(getContext(), moduleName), lexer.getToken().getLoc());
-  }
+  // Auto-import the core language modules.
+  importBuiltinModules(moduleDecl);
 
   auto it = parentState.nestedModules.insert(
       {mangledName, std::make_unique<ModuleState>(

@@ -102,14 +102,6 @@ MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
       *module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr, LexerCursor(),
       LexerCursor(), /*indentation=*/-1);
   sharedState.initialize(*topLevelDecl);
-
-  // Auto-import the core Lang modules.
-  for (StringRef moduleName : SharedState::kBuiltinModuleNames) {
-    auto builtinStrAttr = StringAttr::get(module->getContext(), moduleName);
-    if (failed(sharedState.declResolver->importModule(
-            *topLevelDecl, builtinStrAttr, builtinStrAttr, SMLoc())))
-      return;
-  }
 }
 
 //===----------------------------------------------------------------------===//
