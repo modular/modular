@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Bool import Bool
 from Buffer import NDBuffer
 from ConvUtils import (
     ConvShape,
