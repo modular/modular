@@ -2164,6 +2164,22 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   opsToRewrite.push_back(newFunc);
   collectOpsToProcess(&newFunc.getBodyRegion(), uses, opsToRewrite);
 
+  // Since the function will have a new name, we need to update the linkage name
+  // in the subprogram information.
+  if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(
+          newFunc.getLoc())) {
+    DebugInfo::DIAttrTypeReplacer replacer;
+    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+      if (sp != funcSp)
+        return sp;
+      return DebugInfo::DISubprogramAttr::get(
+          sp.getCompileUnit(), sp.getScope(), sp.getName(),
+          newFunc.getSymName(), sp.getFile(), sp.getLine(), sp.getScopeLine(),
+          sp.getSubprogramFlags(), sp.getType());
+    });
+    replacer.recursivelyReplaceElementsIn(newFunc);
+  }
+
   ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
                           [](ImplNode *) { return success(); }};
   newFuncNode->stack.push_back(std::move(item));
