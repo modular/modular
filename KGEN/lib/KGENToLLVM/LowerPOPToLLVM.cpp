@@ -1623,12 +1623,6 @@ public:
       symtab.insert(func);
     }
 
-    // Erase the link op now - we don't need it now the ExternalCall op is gone.
-    if (SymbolRefAttr importedFrom = op.getImportedFromAttr())
-      if (auto linkOp = symtab.lookup<LinkOp>(
-              cast<FlatSymbolRefAttr>(importedFrom).getAttr()))
-        symtab.erase(linkOp);
-
     auto call = rewriter.replaceOpWithNewOp<LLVM::CallOp>(
         op, func, adaptor.getOperands());
     call.setFastmathFlags(LLVM_FASTMATH_FLAGS);

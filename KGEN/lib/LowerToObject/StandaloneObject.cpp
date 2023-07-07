@@ -287,19 +287,25 @@ private:
 static void
 collectLinksAndUsers(ModuleOp theModule, const SymbolTable &symtab,
                      DenseMap<Attribute, llvm::StringSet<>> &linksAndUsers) {
-  theModule.walk([&](POP::ExternalCallOp call) {
-    auto importedFromAttr = call.getImportedFromAttr();
-    if (!importedFromAttr)
-      return;
-
-    auto link = symtab.lookup<LinkOp>(
-        cast<FlatSymbolRefAttr>(importedFromAttr).getAttr());
+  auto addLinkOp = [&](SymbolRefAttr linkRef, StringRef user) {
+    auto link =
+        symtab.lookup<LinkOp>(cast<FlatSymbolRefAttr>(linkRef).getAttr());
     assert(link && "There wasn't a valid LinkOp?");
     if (auto path = link.getLinkPathAttr())
-      linksAndUsers[path].insert(call.getCallee());
+      linksAndUsers[path].insert(user);
     else if (auto bytes = link.getLinkBytesAttr())
-      linksAndUsers[bytes].insert(call.getCallee());
-  });
+      linksAndUsers[bytes].insert(user);
+    else
+      llvm::report_fatal_error("unknown link directive");
+  };
+
+  // Get all LinkOps that were actually used. They're always referenced from
+  // kgen.extern.func.
+  for (auto func : theModule.getOps<ExternFuncOp>()) {
+    SymbolRefAttr linkRef = func.getImportedFrom();
+    assert(linkRef && "kgen.extern.func must have an importedFrom");
+    addLinkOp(linkRef, func.getSymName());
+  }
 }
 
 /// Given a binary in `bufferRef`, add all the required pieces of it to the list

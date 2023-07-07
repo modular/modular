@@ -620,7 +620,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr());
+        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -628,46 +628,12 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, FunctionType variadicType) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType), FlatSymbolRefAttr());
-}
-
-void ExternalCallOp::build(OpBuilder &b, OperationState &state,
-                           TypeRange results, StringRef func,
-                           ValueRange operands, StringRef importedFrom) {
-  build(b, state, results,
-        StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom));
-}
-
-void ExternalCallOp::build(OpBuilder &b, OperationState &state,
-                           TypeRange results, StringRef func,
-                           ValueRange operands, FunctionType variadicType,
-                           StringRef importedFrom) {
-  build(b, state, results,
-        StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType),
-        FlatSymbolRefAttr::get(b.getContext(), importedFrom));
-}
-
-void ExternalCallOp::build(OpBuilder &b, OperationState &state,
-                           TypeRange results, StringAttr func,
-                           ValueRange operands, TypeAttr variadicType,
-                           SymbolRefAttr importedFrom) {
-  build(b, state, results, func, operands, variadicType, importedFrom,
-        mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr());
+        TypeAttr::get(variadicType), mlir::ArrayAttr(), mlir::ArrayAttr(),
+        mlir::ArrayAttr());
 }
 
 LogicalResult
 ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  SymbolRefAttr importedFrom = getImportedFromAttr();
-  if (!importedFrom)
-    return success();
-
-  if (!symbolTable.lookupSymbolIn((*this)->getParentOfType<ModuleOp>(),
-                                  importedFrom))
-    return emitError() << "'from' directive does not reference a valid symbol: "
-                       << importedFrom;
-
   return success();
 }
 

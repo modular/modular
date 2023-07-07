@@ -39,8 +39,6 @@ lit.package @package {
 
     // CHECK: kgen.generator @"package::module::foo"()
     lit.func @foo() {
-      // CHECK: external_call @func() from @"package::module::lib"
-      pop.external_call @func() from @package::@module::@lib : () -> ()
       kgen.return
     }
 
