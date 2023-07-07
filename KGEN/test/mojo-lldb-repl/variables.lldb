@@ -16,7 +16,7 @@ print(bigValue)
 # CHECK: ($SIMD::SIMD[{f32}, {64}]) bigValue
 
 # Check that we can define variables with weird names.
-# CHECK: ($Int::Int) ^ weird name =
+# CHECK: ({{.*}}$Int::Int) ^ weird name =
 let `^ weird name` = 12
 
 # CHECK: 12

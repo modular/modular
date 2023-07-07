@@ -210,37 +210,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
-  /// The name of the builtin Bool module.
-  static constexpr StringLiteral kBuiltinBoolModuleName = "Bool";
-  /// The name of the builtin Tuple module.
-  static constexpr StringLiteral kBuiltinTupleModuleName = "Tuple";
-  /// The name of the builtin Error module.
-  static constexpr StringLiteral kBuiltinErrorModuleName = "Error";
-  /// The name of the builtin Int module.
-  static constexpr StringLiteral kBuiltinIntModuleName = "Int";
-  /// The name of the builtin aliases module.
-  static constexpr StringLiteral kBuiltinTypeAliasesModuleName = "TypeAliases";
-  /// The name of the builtin string module.
-  static constexpr StringLiteral kBuiltinStringModuleName = "StringLiteral";
-  /// The name of the builtin string ref module.
-  static constexpr StringLiteral kBuiltinStringRefModuleName = "StringRef";
-  /// The name of the builtin slice module.
-  static constexpr StringLiteral kBuiltinSliceModuleName = "BuiltinSlice";
-  /// The name of the builtin list module.
-  static constexpr StringLiteral kBuiltinListModuleName = "BuiltinList";
-  /// The name of the builtin FloatLiteral module.
-  static constexpr StringLiteral kBuiltinDoubleModuleName = "FloatLiteral";
-
-  /// All the builtin modules.
-  /// FIXME: We need a better way to include all the builtin modules. Perhaps
-  /// a proper Prolog module, but wildcard imports don't play nice togther.
-  static constexpr StringLiteral kBuiltinModuleNames[] = {
-      kBuiltinBoolModuleName,        kBuiltinTupleModuleName,
-      kBuiltinErrorModuleName,       kBuiltinIntModuleName,
-      kBuiltinTypeAliasesModuleName, kBuiltinStringModuleName,
-      kBuiltinSliceModuleName,       kBuiltinListModuleName,
-      kBuiltinDoubleModuleName,      kBuiltinStringRefModuleName};
-
   /// Get a builtin type, or emit an error and return null if invalid.
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc);
@@ -307,6 +276,9 @@ private:
   /// Attempt to get a cached version of the given modules. If loading from the
   /// cache fails, the modules will be processed as normal.
   void loadModulesFromCache(MutableArrayRef<ModuleState *> moduleStates);
+
+  /// Implicitly import the builtin modules into the given module decl.
+  void importBuiltinModules(ASTDecl &moduleDecl);
 
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;

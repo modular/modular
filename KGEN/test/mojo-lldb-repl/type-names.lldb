@@ -8,10 +8,10 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# CHECK: ($Int::Int) x =
+# CHECK: ({{.*}}$Int::Int) x =
 let x = 12
 
-# CHECK: ($StringLiteral::StringLiteral) y =
+# CHECK: ({{.*}}$StringLiteral::StringLiteral) y =
 let y = "foo"
 
 struct Bar:
