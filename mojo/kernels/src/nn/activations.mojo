@@ -44,7 +44,6 @@ struct ActivationType:
     alias TANH = ActivationType(8)
     alias GELU_APPROX_SIGMOID = ActivationType(9)
     alias ELU = ActivationType(10)
-    alias SIGMOID_GRAD = ActivationType(11)
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ActivationType) -> Bool:
@@ -76,8 +75,6 @@ struct ActivationType:
             func[ActivationType.GELU_APPROX_SIGMOID]()
         elif self == ActivationType.SIGMOID:
             func[ActivationType.SIGMOID]()
-        elif self == ActivationType.SIGMOID_GRAD:
-            func[ActivationType.SIGMOID_GRAD]()
         elif self == ActivationType.SIGN:
             func[ActivationType.SIGN]()
         elif self == ActivationType.TANH:
@@ -109,8 +106,6 @@ fn dispatch_activation_fn[
         return gelu_approximate_sigmoid(val)
     elif activation == ActivationType.SIGMOID:
         return sigmoid(val)
-    elif activation == ActivationType.SIGMOID_GRAD:
-        return sigmoid_grad(val)
     elif activation == ActivationType.SIGN:
         return sign(val)
     elif activation == ActivationType.TANH:
