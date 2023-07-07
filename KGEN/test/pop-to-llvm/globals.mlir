@@ -4,7 +4,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-LABEL: @external_call
   kgen.func @external_call(%a: !pop.simd<1, ui32>) -> !pop.simd<4, f64> {
     // CHECK: llvm.call @foo
-    %0 = pop.external_call noreturn noinline @foo(%a) : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
+    %0 = pop.external_call @foo(%a) attributes {funcAttrs = ["noinline", "noreturn"]} : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
     kgen.return %0 : !pop.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64> attributes {passthrough = ["noinline", "noreturn"]}
