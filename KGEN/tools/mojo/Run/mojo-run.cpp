@@ -336,23 +336,34 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
   if (exportsMain == ExportsMain::NoMain)
     return Error("could not find a 'main' function to execute");
 
-  ErrorOr<CompiledFunc> mainOrErr = engine->lookup("main");
-  if (failed(mainOrErr))
-    return Error(llvm::formatv(
-        "an internal error occurred when executing the 'main' function: {0}",
-        mainOrErr.getError()));
+  auto runFn = [exportsMain](void *fnPtr) -> ErrorOrSuccess {
+    // `fn main` is simple to handle, with no arguments and void result.
+    if (exportsMain == ExportsMain::IsFn) {
+      using FnType = void (*)();
+      ((FnType)fnPtr)();
+      return M::success();
+    }
 
-  if (exportsMain == ExportsMain::IsDef) {
-    size_t dummy[2] = {0, 0};
+    // The `variant<Error, None>` result is decomposed in the arguments. The
+    // error type just contains a Mojo `StringRef`.
+    struct MojoError {
+      const char *data;
+      ssize_t length;
+    };
+    MojoError err;
     uint8_t isNormalResult = false;
-    mainOrErr->invoke<void>(dummy, &isNormalResult);
-    if (!isNormalResult)
-      return Error("the 'main' function threw an error during execution");
-  } else {
-    mainOrErr->invoke<void>();
-  }
-
-  return {};
+    // The last argument is the discrminant, set to 0 if the result is an
+    // error variant.
+    using ErrorFnType = void (*)(MojoError *, uint8_t *);
+    ((ErrorFnType)fnPtr)(&err, &isNormalResult);
+    if (!isNormalResult) {
+      // Read out and report the error message.
+      StringRef errStr(err.data, err.length);
+      return Error("main function threw an error: " + errStr);
+    }
+    return M::success();
+  };
+  return engine->runProgram("exec", "main", runFn);
 }
 
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
