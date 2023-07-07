@@ -37,13 +37,10 @@ struct ActivationType:
     alias GELU = ActivationType(1)
     alias GELU_APPROX = ActivationType(2)
     alias RELU = ActivationType(3)
-    alias RELU_N1 = ActivationType(4)
-    alias RELU6 = ActivationType(5)
-    alias SIGMOID = ActivationType(6)
-    alias SIGN = ActivationType(7)
-    alias TANH = ActivationType(8)
-    alias GELU_APPROX_SIGMOID = ActivationType(9)
-    alias ELU = ActivationType(10)
+    alias SIGMOID = ActivationType(4)
+    alias SIGN = ActivationType(5)
+    alias TANH = ActivationType(6)
+    alias GELU_APPROX_SIGMOID = ActivationType(7)
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ActivationType) -> Bool:
@@ -59,14 +56,8 @@ struct ActivationType:
     ](self, out_chain: OutputChainPtr):
         if self == ActivationType.IDENTITY:
             func[ActivationType.IDENTITY]()
-        elif self == ActivationType.ELU:
-            func[ActivationType.ELU]()
         elif self == ActivationType.RELU:
             func[ActivationType.RELU]()
-        elif self == ActivationType.RELU6:
-            func[ActivationType.RELU6]()
-        elif self == ActivationType.RELU_N1:
-            func[ActivationType.RELU_N1]()
         elif self == ActivationType.GELU:
             func[ActivationType.GELU]()
         elif self == ActivationType.GELU_APPROX:
@@ -90,14 +81,8 @@ fn dispatch_activation_fn[
     @parameter
     if activation == ActivationType.IDENTITY:
         return identity(val)
-    elif activation == ActivationType.ELU:
-        return elu(val)
     elif activation == ActivationType.RELU:
         return relu(val)
-    elif activation == ActivationType.RELU6:
-        return relu6(val)
-    elif activation == ActivationType.RELU_N1:
-        return relu_n1(val)
     elif activation == ActivationType.GELU:
         return gelu(val)
     elif activation == ActivationType.GELU_APPROX:
