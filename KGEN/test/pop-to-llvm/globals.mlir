@@ -2,12 +2,15 @@
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call
-  kgen.func @external_call(%a: !pop.simd<1, ui32>) -> !pop.simd<4, f64> {
+  kgen.func @external_call(%a: !pop.simd<1, ui32>, %b: !pop.pointer<i32>) -> !pop.simd<4, f64> {
     // CHECK: llvm.call @foo
     %0 = pop.external_call @foo(%a) attributes {funcAttrs = ["noinline", "noreturn"]} : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
+    // CHECK: llvm.call @bar
+    %1 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = [{llvm.signext}]} : (!pop.pointer<i32>) -> i32
     kgen.return %0 : !pop.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64> attributes {passthrough = ["noinline", "noreturn"]}
+  // CHECK: llvm.func @bar(!llvm.ptr<i32> {llvm.noalias}) -> (i32 {llvm.signext})
 }
 
 // -----

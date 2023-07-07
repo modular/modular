@@ -1576,6 +1576,8 @@ public:
 
     // Get the passthrough attributes.
     mlir::ArrayAttr passthrough = op.getFuncAttrsAttr();
+    mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
+    mlir::ArrayAttr resAttrs = op.getResAttrsAttr();
 
     // Lookup an existing function.
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
@@ -1591,6 +1593,20 @@ public:
                  .attachNote(func.getLoc())
              << "see function declaration here";
     }
+    if (func && func.getArgAttrsAttr() != argAttrs) {
+      return mlir::emitError(
+                 op.getLoc(),
+                 "existing function with conflicting argument attributes")
+                 .attachNote(func.getLoc())
+             << "see function declaration here";
+    }
+    if (func && func.getResAttrsAttr() != resAttrs) {
+      return mlir::emitError(
+                 op.getLoc(),
+                 "existing function with conflicting result attributes")
+                 .attachNote(func.getLoc())
+             << "see function declaration here";
+    }
 
     // Create the function declaration if necessary.
     if (!func) {
@@ -1600,6 +1616,10 @@ public:
                                                signature);
       if (passthrough)
         func.setPassthroughAttr(passthrough);
+      if (argAttrs)
+        func.setArgAttrsAttr(argAttrs);
+      if (resAttrs)
+        func.setResAttrsAttr(resAttrs);
       symtab.insert(func);
     }
 
