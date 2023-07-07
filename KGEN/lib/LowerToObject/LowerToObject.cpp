@@ -17,6 +17,7 @@
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -392,91 +393,6 @@ static ExportMap getAllSymbols(ModuleOp theModule) {
   return exports;
 }
 
-/// Given a buffer ref to an object file, extract the symbols and delegate the
-/// symbols from `mr` to a new MaterializationResponsibility we can forward to
-/// JITLink. For symbols that are in the object, but not in `mr`, notify the
-/// delegate that these symbols are also being code-generated so that we don't
-/// re-emit anything. Returns nullptr if there were no symbols requiring
-/// materialization.
-static ErrorOr<std::unique_ptr<llvm::orc::MaterializationResponsibility>>
-processObjectFile(llvm::orc::MaterializationResponsibility &mr,
-                  llvm::orc::ExecutionSession &session,
-                  llvm::object::ObjectFile *obj) {
-  LLVM_DEBUG(llvm::dbgs() << "Processing object file '" << obj->getFileName()
-                          << "'\n");
-
-  // Pull out any symbols in the object that we want to delegate.
-  llvm::orc::SymbolNameSet symbolNames;
-  llvm::orc::SymbolFlagsMap symbolFlags;
-  for (auto symbol : obj->symbols()) {
-    auto name = symbol.getName();
-    if (!name)
-      return Error(llvm::toString(name.takeError()));
-
-    auto flagsOr = symbol.getFlags();
-    if (!flagsOr)
-      return Error(llvm::toString(flagsOr.takeError()));
-    uint32_t flags = *flagsOr;
-
-    // Check that it's both defined and a global symbol.
-    if (!(flags & llvm::object::BasicSymbolRef::SF_Global))
-      continue;
-    if ((flags & llvm::object::BasicSymbolRef::SF_Undefined))
-      continue;
-
-    // Check that it's a function symbol.
-    auto typeOr = symbol.getType();
-    if (!typeOr)
-      return Error(llvm::toString(typeOr.takeError()));
-    auto type = *typeOr;
-    if (type != llvm::object::SymbolRef::ST_Function)
-      continue;
-
-    llvm::orc::SymbolStringPtr namePtr = session.intern(*name);
-    // If the MR doesn't already have this symbol in it, add it as a
-    // callable. We're resolving it, so we may as well provide the
-    // definition we have.
-    if (!mr.getSymbols().contains(namePtr)) {
-      LLVM_DEBUG(llvm::dbgs() << "Notify MR that '" << *namePtr
-                              << "' will be materialized\n");
-      // Translate the symbol flags.
-      llvm::JITSymbolFlags symFlags = llvm::JITSymbolFlags::Callable;
-      if (flags & llvm::object::BasicSymbolRef::SF_Weak)
-        symFlags |= llvm::JITSymbolFlags::Weak;
-      if (flags & llvm::object::BasicSymbolRef::SF_Common)
-        symFlags |= llvm::JITSymbolFlags::Common;
-      if (flags & llvm::object::BasicSymbolRef::SF_Absolute)
-        symFlags |= llvm::JITSymbolFlags::Absolute;
-      if (flags & llvm::object::BasicSymbolRef::SF_Exported)
-        symFlags |= llvm::JITSymbolFlags::Exported;
-
-      symbolFlags[namePtr] = symFlags;
-    }
-
-    LLVM_DEBUG(llvm::dbgs() << "Delegating '" << *namePtr << "' to JITLink\n");
-    symbolNames.insert(namePtr);
-  }
-  if (symbolNames.empty() && symbolFlags.empty()) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "No symbols to delegate to JITLink from this file\n");
-    return nullptr;
-  }
-
-  // Define all these symbols as 'materializing'.
-  if (auto e = mr.defineMaterializing(symbolFlags))
-    return Error(llvm::toString(std::move(e)));
-
-  // Delegate the symbols for this object to a new
-  // MaterializationResponsibility object.
-  auto delegated = mr.delegate(symbolNames);
-  if (!delegated)
-    return Error(llvm::toString(delegated.takeError()));
-
-  // Return the new MR that we're gonna delegate, along with the buffer for this
-  // object.
-  return std::move(*delegated);
-}
-
 void ObjectCompilerLayer::emit(
     std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
     const SymbolTable &symtab, const ExportMap &exports) {
@@ -606,23 +522,46 @@ void ObjectCompilerLayer::emit(
     toDelegate.emplace_back(std::move(objectBin), std::move(objectBuf));
   }
 
-  // Now do the delegation in reverse - the objects will be added in the order:
-  // caller -> callee, so reversing ensures symbols will always be defined.
+  // Delegate each object file through its own materialization unit.
   for (auto &[bin, buf] : llvm::reverse(toDelegate)) {
-    auto *file = cast<llvm::object::ObjectFile>(bin.get());
-    // Now we can process this object file.
-    auto delegatedOr = processObjectFile(*mr, session, file);
-    if (delegatedOr.isError()) {
-      error = delegatedOr.takeError();
+    auto delMu = llvm::orc::BasicObjectLayerMaterializationUnit::Create(
+        baseLayer, std::move(buf));
+    if (!delMu) {
+      error = Error(llvm::toString(delMu.takeError()));
       return mr->failMaterialization();
     }
 
-    // No symbols to delegate, just keep going.
-    if (!*delegatedOr)
-      continue;
+    // Get a delegated materialization responsibility for the symbols defined by
+    // this object file.
+    llvm::orc::SymbolNameSet delegatedSymbols;
+    llvm::orc::SymbolFlagsMap symbolFlags = (*delMu)->getSymbols();
+    auto names = llvm::make_first_range(symbolFlags);
+    delegatedSymbols.insert(names.begin(), names.end());
 
-    // And delegate the symbols we just found in the object file to JITLink.
-    baseLayer.emit(std::move(*delegatedOr), std::move(buf));
+    // Remove symbols from the map that are already being defined.
+    for (auto &[symbol, _] : mr->getSymbols())
+      symbolFlags.erase(symbol);
+
+    // Mark all new symbols visible in the object file as materializing.
+    if (llvm::Error err = mr->defineMaterializing(symbolFlags)) {
+      error = Error(llvm::toString(std::move(err)));
+      return mr->failMaterialization();
+    }
+
+    // Now delegate all symbols in the object file to a new materialization
+    // responsibility.
+    auto delMr = mr->delegate(delegatedSymbols);
+    if (!delMr) {
+      error = Error(llvm::toString(delMr.takeError()));
+      return mr->failMaterialization();
+    }
+
+    // Replace the materialization responsibility with a new materialization
+    // unit.
+    if (llvm::Error err = (*delMr)->replace(std::move(*delMu))) {
+      error = Error(llvm::toString(std::move(err)));
+      return mr->failMaterialization();
+    }
   }
   LLVM_DEBUG(
       llvm::dbgs() << "MaterializationResponsibility leftover symbols (should "
