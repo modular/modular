@@ -294,9 +294,11 @@ private:
                                   StringRef packagePath,
                                   ModuleState &parentState, FileLineColLoc loc);
 
-  /// Create an error module state with the given mangled name.
-  ModuleState &createErrorModuleState(StringAttr mangledName,
-                                      ModuleState &parentState, SMLoc loc);
+  /// Create an error module state with the given mangled name, and emit the
+  /// given error message.
+  ModuleState &createErrorModuleState(SMLoc loc, StringAttr mangledName,
+                                      ASTDecl &errorContext,
+                                      const Twine &errorMsg);
 
   /// Resolve the dependencies of the given module.
   void resolveModuleDependencies(ModuleState &module, ASTDecl *parentDecl,

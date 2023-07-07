@@ -1431,16 +1431,26 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
 ParseResult StmtParser::parseFromImportStmt() {
   consumeToken(Token::kw_from);
 
-  // TODO: Support relative modules.
-
-  // Parse the relative module we are importing from.
-  if (getToken().isAny(Token::dot, Token::dot_dot_dot))
-    return emitTokenError(
-        "TODO: relative package imports are not yet supported");
   SMLoc importLoc = getToken().getLoc();
-  SmallVector<StringRef> moduleNames(1, getTokenSpelling());
+
+  // The individual name components making up a relative module.
+  SmallVector<StringRef> moduleNames;
+
+  // Parse the relative '.' indicators that resolve to a parent package. These
+  // push "" to the set to indicate relative resolution.
+  while (true) {
+    if (consumeIf(Token::dot))
+      moduleNames.push_back("");
+    else if (consumeIf(Token::dot_dot_dot))
+      llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
+    else
+      break;
+  }
+
+  moduleNames.push_back(getTokenSpelling());
   if (parseToken(Token::identifier, "expected module name"))
     return failure();
+
   // Parse nested module names.
   while (consumeIf(Token::dot)) {
     moduleNames.push_back(getTokenSpelling());
