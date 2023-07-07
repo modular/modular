@@ -105,6 +105,10 @@ public:
   cl::list<std::string> linkPaths{
       "L", cl::desc("Path to use to search for linked libraries/objects.")};
 
+  cl::list<std::string> defines{
+      "D",
+      cl::desc("Defines passed into Mojo through the environment parameter.")};
+
   cl::opt<bool> enableMLIRCrashReproducer{
       "enable-mlir-crash-repro",
       cl::desc("Enable MLIR pass manager crash reproducer generation."),

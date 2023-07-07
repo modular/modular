@@ -581,6 +581,62 @@ void BuildInfoParamAttr::print(AsmPrinter &p) const { getBuildInfo().print(p); }
 bool BuildInfoParamAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// EnvAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult EnvAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                              DictionaryAttr values) {
+  // Only index, string, and unit attributes are allowed.
+  for (const NamedAttribute &attr : values) {
+    Attribute value = attr.getValue();
+    if (auto intVal = ::dyn_cast<IntegerAttr>(value)) {
+      if (!::isa<IndexType>(intVal.getType()))
+        return emitError() << "environment value " << attr.getName()
+                           << " is an integer not of `index` type";
+    } else if (auto strVal = ::dyn_cast<StringAttr>(value)) {
+      if (!::isa<StringType>(strVal.getType()))
+        return emitError() << "environment value " << attr.getName()
+                           << " is a string not of `!kgen.string` type";
+    } else if (!::isa<mlir::UnitAttr>(value)) {
+      return emitError() << "environment value " << attr.getName()
+                         << " is neither an index, string, or unit attribute";
+    }
+  }
+  return success();
+}
+
+ErrorOr<EnvAttr> EnvAttr::parseDefines(MLIRContext *ctx,
+                                       ArrayRef<std::string> defines) {
+  NamedAttrList attrs;
+  Builder b(ctx);
+  for (StringRef define : defines) {
+    size_t idx = define.find("=");
+    // If '=' is not present in the string, then this is a unit define.
+    if (idx == StringRef::npos) {
+      if (attrs.set(define, b.getUnitAttr()))
+        return Error("'" + define + "' was defined more than once");
+      continue;
+    }
+    StringRef name = define.slice(0, idx);
+    StringRef value = define.slice(idx + 1, StringRef::npos);
+
+    // Try to convert the value to an integer.
+    APInt intVal(IndexType::kInternalStorageBitWidth, 0);
+    if (!value.getAsInteger(/*Radix=*/10, intVal)) {
+      if (attrs.set(name, b.getIndexAttr(intVal.getSExtValue())))
+        return Error("'" + define + "' was defined more than once");
+      continue;
+    }
+
+    // Otherwise, use it as a string value.
+    if (attrs.set(name, StringAttr::get(value, StringType::get(ctx))))
+      return Error("'" + define + "' was defined more than once");
+  }
+
+  return EnvAttr::get(attrs.getDictionary(ctx));
+}
+
+//===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 
@@ -644,11 +700,11 @@ LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::Rebind,
-                           POC::TargetHasFeature, POC::TargetGetField,
-                           POC::BuildInfoGetField, POC::GetSizeOf,
-                           POC::GetAlignOf, POC::VariadicGet, POC::Cond},
-                          opcode) &&
+  if (!llvm::is_contained(
+          {POC::BindSignature, POC::Apply, POC::Rebind, POC::TargetHasFeature,
+           POC::TargetGetField, POC::BuildInfoGetField, POC::GetSizeOf,
+           POC::GetAlignOf, POC::VariadicGet, POC::Cond, POC::GetEnv},
+          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -803,6 +859,16 @@ LogicalResult ParamOperatorAttr::verify(
                             "the same type";
     if (operands[1].getType() != type)
       return emitError() << "result type should match operands 1 and 2 types";
+    break;
+  case POC::GetEnv:
+    if (operands.size() != 1 || !::isa<StringType>(operands.front().getType()))
+      return emitError() << "'get_env' expects one string-typed operand";
+    if (auto intType = ::dyn_cast<IntegerType>(type)) {
+      if (!intType.isSignlessInteger(1))
+        return emitError() << "'get_env' must return index, i1, or string";
+    } else if (!::isa<IndexType, StringType>(type)) {
+      return emitError() << "'get_env' must return index, i1, or string";
+    }
     break;
   }
   return success();
@@ -1697,6 +1763,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::Cond:
     result = simplifyCond(operands);
     break;
+  case POC::GetEnv:
+    result = {};
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -1729,13 +1798,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(
-      llvm::is_contained({POC::BindSignature, POC::Apply, POC::TargetHasFeature,
-                          POC::TargetGetField, POC::BuildInfoGetField,
-                          POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet},
-                         opcode) ||
-      llvm::all_of(operandsIn.drop_front(),
-                   [&](auto op) { return op.getType() == resultType; }));
+  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
+                             POC::TargetHasFeature, POC::TargetGetField,
+                             POC::BuildInfoGetField, POC::GetSizeOf,
+                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv},
+                            opcode) ||
+         llvm::all_of(operandsIn.drop_front(),
+                      [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);

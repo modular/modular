@@ -64,7 +64,10 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"VariadicGet", 26, "variadic_get">,
 
   // Conditional expression.
-  I32EnumAttrCase<"Cond", 27, "cond">
+  I32EnumAttrCase<"Cond", 27, "cond">,
+
+  // Environment variables.
+  I32EnumAttrCase<"GetEnv", 28, "get_env">
 ]>;
 
 //===----------------------------------------------------------------------===//

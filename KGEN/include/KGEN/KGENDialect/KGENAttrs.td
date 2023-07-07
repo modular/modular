@@ -654,6 +654,47 @@ def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
 }
 
 //===----------------------------------------------------------------------===//
+// EnvAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
+  let summary = "Environment variable attribute.";
+  let description = [{
+    The `#kgen.env` attribute defines a generic dictionary of environment
+    parameters that can be accessed through parameter operators. The values
+    contained can be integers, represented with the `index` type, unit, the
+    presence of which indicates something, and strings, represented as
+    `!kgen.string` types.
+
+    Example:
+
+    ```mlir
+    #kgen<env{intVal = 1 : index, unitAttr, strVal = "hello" : !kgen.string}>
+    ```
+  }];
+
+  let parameters = (ins "DictionaryAttr":$values);
+  let assemblyFormat = "`<` $values `>`";
+  let genVerifyDecl = 1;
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "DictionaryAttr":$values), [{
+      return $_get(values.getContext(), values);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// This is the attribute name of the `#kgen.env` attribute attached to the
+    /// surrounding `ModuleOp`.
+    static llvm::StringLiteral getEnvAttrName() { return "kgen.env"; }
+
+    /// Parse a defines list and create the environment from that.
+    static ErrorOr<EnvAttr> parseDefines(MLIRContext *ctx,
+                                         ArrayRef<std::string> defines);
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 //===----------------------------------------------------------------------===//
 

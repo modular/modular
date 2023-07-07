@@ -788,3 +788,19 @@ kgen.func @global_dtor(%arg0: i32) -> i32 {
 
 // expected-error @below {{'kgen.global' op destructor @global_dtor does not reference a function with zero arguments and zero results}}
 kgen.global @global_var : i32 (2, @global_ctor, @global_dtor)
+
+// -----
+
+// expected-error @below {{environment value "value" is an integer not of `index` type}}
+module attributes {kgen.env = #kgen.env<{value = 1}>} {}
+
+
+// -----
+
+// expected-error @below {{environment value "str" is a string not of `!kgen.string` type}}
+module attributes {kgen.env = #kgen.env<{str = "hello"}>} {}
+
+// -----
+
+// expected-error @below {{environment value "fp" is neither an index, string, or unit attribute}}
+module attributes {kgen.env = #kgen.env<{fp = 2.0}>} {}

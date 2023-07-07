@@ -557,7 +557,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::BuildInfoGetField:
-    // Parse the BuildInfoGetField -- the first operand is a TargetType, the
+    // Parse the BuildInfoGetField -- the first operand is a BuildInfoType, the
     // second a StringType.
     if (parseParamValue(p, operands.emplace_back(),
                         BuildInfoType::get(p.getContext())) ||
@@ -634,6 +634,9 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
       return failure();
     return success();
+  case (uint32_t)POC::GetEnv:
+    return parseParamValue(p, operands.emplace_back(),
+                           StringType::get(p.getContext()));
   }
   llvm_unreachable("unknown operator");
 }

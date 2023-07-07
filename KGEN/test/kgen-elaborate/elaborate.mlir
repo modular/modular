@@ -2573,3 +2573,20 @@ kgen.func @preelaborated() {
   // CHECK-NEXT: kgen.return
   kgen.return
 }
+
+// -----
+
+module attributes {kgen.env = #kgen.env<{unit_value, int_value = 42 : index, str_value = "hello" : !kgen.string}>} {
+  // CHECK-LABEL: kgen.func @env_test
+  kgen.generator @env_test() {
+    // CHECK-NEXT: i1 = <0>
+    kgen.param.constant: i1 = <get_env("doesnt_exist")>
+    // CHECK-NEXT: i1 = <1>
+    kgen.param.constant: i1 = <get_env("unit_value")>
+    // CHECK-NEXT: <42>
+    kgen.param.constant = <get_env("int_value")>
+    // CHECK-NEXT: string = <"hello">
+    kgen.param.constant: string = <get_env("str_value")>
+    kgen.return
+  }
+}

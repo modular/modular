@@ -53,13 +53,8 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 }
 
 //===----------------------------------------------------------------------===//
-// IREvaluator
+// Expression Evaluation
 //===----------------------------------------------------------------------===//
-
-IREvaluator::IREvaluator(Elaborator &elaborator,
-                         DenseMap<StringAttr, Attribute> paramValues)
-    : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.getTarget()), elaborator(&elaborator) {}
 
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
@@ -70,60 +65,127 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
                                  TargetType::get(op.getContext()))};
   }
 
-  if (op.getOpcode() == POC::GetAllImpls) {
-    auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-    if (!symbol)
-      return failure();
-    std::vector<FuncOp> funcs;
-    std::optional<ErrorTreeOrSuccess> err = elaborator->getAllConcreteFunctions(
-        parent, *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
-        symbol.getParamValues(), funcs);
-    if (!err) {
-      return TypedAttr();
-    }
-    if (err->isError()) {
-      emitError(err->takeError());
-      return TypedAttr();
-    }
+  if (op.getOpcode() == POC::GetAllImpls)
+    return evaluateGetAllImpls(op);
 
-    std::vector<TypedAttr> refs;
-    refs.reserve(funcs.size());
-    for (FuncOp f : funcs)
-      refs.emplace_back(SymbolConstantAttr::get(
-          SymbolRefAttr::get(f.getSymNameAttr()), f.getFullSignature()));
+  if (op.getOpcode() == POC::Apply)
+    return evaluateApply(op);
 
-    return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
-  }
-
-  if (op.getOpcode() == POC::Apply) {
-    auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-    if (!symbol || !symbol.getType().getResultParamTypes().empty())
-      return failure();
-    ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
-    auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
-    if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
-      return failure();
-
-    // Lookup the symbol reference and resolve it.
-    std::optional<ErrorTreeOr<FuncOp>> func = elaborator->getConcreteFunction(
-        parent, *errorLoc, ref, symbol.getParamValues());
-    if (!func) {
-      return TypedAttr();
-    }
-    if (func->isError()) {
-      emitError(func->takeError());
-      return TypedAttr();
-    }
-
-    ErrorTreeOr<TypedAttr> result = evaluateFunction(**func, operands);
-    if (TypedAttr value = result.tryGetValue())
-      return value;
-    emitError(result.takeError());
-    return TypedAttr();
-  }
+  if (op.getOpcode() == POC::GetEnv)
+    return evaluateGetEnv(op);
 
   return failure();
 }
+
+FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+  if (!symbol)
+    return failure();
+  std::vector<FuncOp> funcs;
+  std::optional<ErrorTreeOrSuccess> err = elaborator->getAllConcreteFunctions(
+      parent, *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
+      symbol.getParamValues(), funcs);
+  if (!err) {
+    return TypedAttr();
+  }
+  if (err->isError()) {
+    emitError(err->takeError());
+    return TypedAttr();
+  }
+
+  std::vector<TypedAttr> refs;
+  refs.reserve(funcs.size());
+  for (FuncOp f : funcs)
+    refs.emplace_back(SymbolConstantAttr::get(
+        SymbolRefAttr::get(f.getSymNameAttr()), f.getFullSignature()));
+
+  return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateApply(ParamOperatorAttr op) {
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+  if (!symbol || !symbol.getType().getResultParamTypes().empty())
+    return failure();
+  ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
+  auto ref = dyn_cast<FlatSymbolRefAttr>(symbol.getSymbol());
+  if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant) || !ref)
+    return failure();
+
+  // Lookup the symbol reference and resolve it.
+  std::optional<ErrorTreeOr<FuncOp>> func = elaborator->getConcreteFunction(
+      parent, *errorLoc, ref, symbol.getParamValues());
+  if (!func) {
+    return TypedAttr();
+  }
+  if (func->isError()) {
+    emitError(func->takeError());
+    return TypedAttr();
+  }
+
+  ErrorTreeOr<TypedAttr> result = evaluateFunction(**func, operands);
+  if (TypedAttr value = result.tryGetValue())
+    return value;
+  emitError(result.takeError());
+  return TypedAttr();
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
+  // Grab the module from the elaborator. This is a read operation of memory
+  // that is not modified during elaboration, so no synchronization is needed.
+  auto module = cast<ModuleOp>(elaborator->getSymbolTable().get().getOp());
+  auto env = module->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName());
+  if (!env) {
+    emitError({*errorLoc, "module does not have an environment attached"});
+    return failure();
+  }
+
+  auto name = dyn_cast<StringAttr>(op.getOperands().front());
+  if (!name) {
+    emitError({*errorLoc, "'get_env' name did not narrow to a constant"});
+    return failure();
+  }
+
+  // Get the `StringRef` out of the `StringAttr` because the latter comes with
+  // a `StringType` type that makes pointer comparisons fails.
+  Attribute value = env.getValues().get(name.getValue());
+  if (isa<IndexType, StringType>(op.getType()) && !value) {
+    emitError({*errorLoc, "environment variable '" + name.getValue() +
+                              "' does not exist"});
+    return failure();
+  }
+
+  if (isa<IndexType>(op.getType())) {
+    if (auto intVal = dyn_cast<IntegerAttr>(value))
+      return {intVal};
+    emitError({*errorLoc, "environment variable '" + name.getValue() +
+                              "' is not an integer, got " +
+                              mlir::debugString(value)});
+    return failure();
+  }
+
+  if (isa<StringType>(op.getType())) {
+    if (auto strVal = dyn_cast<StringAttr>(value))
+      return {strVal};
+    emitError({*errorLoc, "environment variable '" + name.getValue() +
+                              "' is not a string, got " +
+                              mlir::debugString(value)});
+    return failure();
+  }
+
+  // This must be an `i1` type. Return true or false based on whether the
+  // environment variable is present.
+  assert(cast<IntegerType>(op.getType()).isSignlessInteger(1));
+  return {BoolAttr::get(op.getContext(), static_cast<bool>(value))};
+}
+
+//===----------------------------------------------------------------------===//
+// IREvaluator
+//===----------------------------------------------------------------------===//
+
+IREvaluator::IREvaluator(Elaborator &elaborator,
+                         DenseMap<StringAttr, Attribute> paramValues)
+    : ParameterEvaluator(std::move(paramValues)),
+      InterpreterState(elaborator.getTarget()), elaborator(&elaborator) {}
 
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if
