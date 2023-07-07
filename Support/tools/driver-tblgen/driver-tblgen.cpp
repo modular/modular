@@ -7,6 +7,7 @@
 #include "BackendRegistry.h"
 #include "GenHelpText.h"
 #include "GenManPage.h"
+#include "GenMarkdown.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
@@ -50,6 +51,7 @@ int main(int argc, char **argv) {
   BackendRegistry registry;
   registerGenHelpTextBackend(registry);
   registerGenManPageBackend(registry);
+  registerGenMarkdownBackend(registry);
 
   // Register the backend option and its option parser.
   llvm::cl::opt<const Backend *, false, BackendNameParser> backend(
