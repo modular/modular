@@ -55,13 +55,14 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*unwrapMojoASTDecl(impl))
       .Case<VarLetDeclOp, LetRegDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
-      .Default([](auto &&) { return MojoASTTypeRef(nullptr); });
+      .Default({});
 }
 
 std::optional<StringRef> MojoASTDeclRef::getName() const {
   return TypeSwitch<ASTDecl &, std::optional<StringRef>>(
              *unwrapMojoASTDecl(impl))
-      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return op.getName(); });
+      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return op.getName(); })
+      .Default({});
 }
 
 llvm::SMLoc MojoASTDeclRef::getLoc() const {

@@ -45,6 +45,12 @@ public:
                       const mlir::lsp::CodeActionContext &context,
                       std::vector<mlir::lsp::CodeAction> &actions);
 
+  /// Get the location of identifier of the declaration of the symbol that
+  /// contains the given position.
+  std::optional<mlir::lsp::Location>
+  onDefinition(const mlir::lsp::URIForFile &uri,
+               const mlir::lsp::Position &pos);
+
   /// Get a `Hover` element corresponding to the given document position.
   std::optional<mlir::lsp::Hover> onHover(const mlir::lsp::URIForFile &uri,
                                           const mlir::lsp::Position &pos);
