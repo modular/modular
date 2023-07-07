@@ -288,6 +288,15 @@ public:
   ErrorOr<CompiledFunc> lookup(StringRef symbol);
 
   //===--------------------------------------------------------------------===//
+  // JIT Execution
+  //===--------------------------------------------------------------------===//
+
+  /// Run the entry point in the specified library as the main function of a
+  /// program. This will invoke the entry point through the ORC RT if available.
+  ErrorOrSuccess runProgram(StringRef libName, StringRef entryPoint,
+                            function_ref<ErrorOrSuccess(void *)> runFn);
+
+  //===--------------------------------------------------------------------===//
   // Misc
   //===--------------------------------------------------------------------===//
 
