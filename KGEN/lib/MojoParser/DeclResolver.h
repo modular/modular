@@ -166,10 +166,9 @@ private:
   ParseResult resolveBody(LIT::FuncOp op, Lexer &lexer, ASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(PackageOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(PackageOp op, ASTDecl &decl);
 
-  ParseResult resolveSignature(LIT::UnresolvedImportOp op, Lexer &lexer,
-                               ASTDecl &decl);
+  ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl);
 
   LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);

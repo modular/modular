@@ -180,12 +180,16 @@ public:
                         const llvm::MemoryBuffer *moduleBuffer,
                         FileLineColLoc loc);
 
+  /// Create a new package with the given path and desired name.
+  ASTDecl &createPackage(StringRef path, StringRef name);
+
   /// Return the source path for the given module decl, or nullopt if the decl
   /// doesn't have a source path.
   std::optional<std::string> getModuleSourcePath(ASTDecl &module);
 
-  /// Returns true if the given local path corresponds with a module or package.
-  bool isModulePath(const std::filesystem::path &path);
+  /// Returns true if the given local path corresponds with a module or a
+  /// package.
+  static bool isModuleOrPackagePath(const std::filesystem::path &path);
 
   /// Cache the state of any modules that we parsed.
   void cacheParsedModules();

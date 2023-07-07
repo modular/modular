@@ -9,6 +9,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include <filesystem>
 #include <string>
 
 namespace llvm {
@@ -23,6 +24,7 @@ namespace M {
 namespace KGEN {
 class CompilationOptions;
 namespace LIT {
+class PackageOp;
 class SharedState;
 } // namespace LIT
 } // namespace KGEN
@@ -285,6 +287,9 @@ protected:
 // Driver Entry Points
 //===----------------------------------------------------------------------===//
 
+/// Returns true if the given file path corresponds to a mojo package.
+bool isMojoPackagePath(const std::filesystem::path &path);
+
 /// Parse a single .mojo file and return the MLIR module for it.
 ///
 /// If `includedFiles` is provided, it is set to the list of included files when
@@ -294,6 +299,18 @@ importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles = nullptr,
                bool enableCaching = true);
+
+/// Parse a single mojo package at the given path and return the full context
+/// MLIR module, and the corresponding PackageOp for it.
+///
+/// If `includedFiles` is provided, it is set to the list of included files when
+/// parsing imports.
+std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
+importMojoPackage(StringRef path, StringRef packageName,
+                  llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+                  mlir::TimingScope &ts,
+                  SmallVectorImpl<std::string> *includedFiles = nullptr,
+                  bool enableCaching = true);
 
 /// Parse a single .mojo file and produce an appropriate document detailing the
 /// API within the module. The generated documentation is piped into the

@@ -16,6 +16,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -63,11 +64,7 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
     return flatSym;
 
   // Flatten the symbol name into a single string.
-  SmallString<32> name = ref.getRootReference().getValue();
-  llvm::raw_svector_ostream nameOS(name);
-  for (FlatSymbolRefAttr sym : ref.getNestedReferences())
-    nameOS << "::" << sym.getValue();
-  return SymbolRefAttr::get(ref.getContext(), nameOS.str());
+  return SymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
 }
 
 static void lowerHandleVariant(HandleVariantOp handleVariantOp) {

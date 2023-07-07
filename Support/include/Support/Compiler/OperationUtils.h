@@ -26,6 +26,11 @@ bool operationIsIsolatedFromAbove(Operation *op,
 std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
                                 unsigned &counter);
 
+/// Flatten the given symbol reference into a single string, concatenating the
+/// namespaces and the symbol name. For example, given a symbol
+/// `@foo::@bar::@baz`, this function returns `foo::bar::baz`.
+std::string getFlattenedSymbolName(SymbolRefAttr symbol);
+
 /// Check if ident is a valid C identifier: it contains only the
 /// characters in the set [0-9a-zA-Z_] and it cannot start with a '_'.
 bool isCIdentifier(StringRef ident);
