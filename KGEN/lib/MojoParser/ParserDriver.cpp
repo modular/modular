@@ -137,62 +137,36 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
 // Driver
 //===----------------------------------------------------------------------===//
 
-/// Parse the specified Mojo file into the specified MLIR context. Returns the
-/// resultant IR, and the decl for the module represented by the input file.
+/// Parse a mojo module or package into the specified MLIR context. Returns the
+/// resultant IR, and the decl for the module or package. This abstracts away
+/// the shared setup between module and package parsing.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
-                   mlir::TimingScope &ts,
-                   SmallVectorImpl<std::string> *includedFiles = nullptr) {
-  auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
+               SharedState &sharedState, mlir::TimingScope &ts,
+               SmallVectorImpl<std::string> *includedFiles,
+               function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
 
   // This is the result module we are parsing into.
-  auto fileLoc =
-      FileLineColLoc::get(context, sourceBuf->getBufferIdentifier(), /*line=*/0,
-                          /*column=*/0);
+  auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,
+                                     /*column=*/0);
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));
 
-  // Ensure we finalize bytecode modules even in the case of failure.
-  auto clearOnError = llvm::make_scope_exit(
-      [&] { (void)sharedState.finalizeImportedBytecodeModules(); });
-
-  Lexer lexer(sharedState, sourceBuf);
-  auto startSMLoc = lexer.getToken().getLoc();
-
-  // Create the top-level outer decl, which will contain all things we parse.
-  ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
-      *module, startSMLoc, StringAttr(), /*parentDecl=*/nullptr,
-      lexer.getCursor(), LexerCursor::getEOF(sourceBuf), -1);
-  sharedState.initialize(topLevelDecl);
-
-  // If we are emitting debug info, create a file entry for this file.
-  DebugInfo::DIBuilder::ScopeGuard fileGuard;
-  if (sharedState.diBuilder)
-    fileGuard = sharedState.diBuilder->pushFile(fileLoc.getFilename(), "/");
-
-  // Grab a module name for the current input, choosing a dummy name if we don't
-  // have one that's valid.
-  std::string moduleName =
-      std::filesystem::path(fileLoc.getFilename().str()).stem().string();
-  if (moduleName.empty())
-    moduleName = "<input>";
-
-  // Parse the input module.
-  ASTDecl &moduleDecl =
-      sharedState.createModule(moduleName, sourceBuf, fileLoc);
+  // Build the decl for the main module.
+  ASTDecl &moduleDecl = buildDeclFn(*module);
 
   // Resolve everything within the main input module.
   sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+
+  // Finalize the imported bytecode now that we've resolved everything. This
+  // will drop bytecode operations that never got referenced.
+  if (failed(sharedState.finalizeImportedBytecodeModules()))
+    return {nullptr, nullptr};
 
   // We fail either if we have a non-recoverable parse error, or if we emitted
   // an error and then recovered.  In either case, the IR will not be valid and
   // the caller should not verify it.
   if (sharedState.diags.isErrorEmitted())
-    return {nullptr, nullptr};
-
-  // Finalize the imported bytecode now that we've resolved everything. This
-  // will drop bytecode operations that never got referenced.
-  if (failed(sharedState.finalizeImportedBytecodeModules()))
     return {nullptr, nullptr};
 
   // Make sure the parse module has no other structural problems detected by
@@ -202,7 +176,6 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
     if (failed(verify(*module)))
       return {};
   }
-  clearOnError.release();
 
   // Now that resolution is finished, cache the state of modules we have parsed.
   // TODO: We should be able to cache even in the presence of warnings and
@@ -214,6 +187,84 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
   if (includedFiles)
     llvm::append_range(*includedFiles, sharedState.getIncludedFiles());
   return {std::move(module), &moduleDecl};
+}
+
+/// Parse the specified Mojo file into the specified MLIR context. Returns the
+/// resultant IR, and the decl for the module represented by the input file.
+static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
+importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
+                   mlir::TimingScope &ts,
+                   SmallVectorImpl<std::string> *includedFiles = nullptr) {
+  auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+  StringRef bufName = sourceBuf->getBufferIdentifier();
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+
+  return importMojoImpl(
+      bufName, sourceMgr, sharedState, ts, includedFiles,
+      [&](ModuleOp module) -> ASTDecl & {
+        Lexer lexer(sharedState, sourceBuf);
+        auto startSMLoc = lexer.getToken().getLoc();
+
+        // Create the top-level outer decl, which will contain all things we
+        // parse.
+        ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
+            module, startSMLoc, StringAttr(), /*parentDecl=*/nullptr,
+            lexer.getCursor(), LexerCursor::getEOF(sourceBuf), -1);
+        sharedState.initialize(topLevelDecl);
+
+        // If we are emitting debug info, create a file entry for this file.
+        if (sharedState.diBuilder)
+          fileGuard = sharedState.diBuilder->pushFile(bufName, "/");
+
+        // Grab a module name for the current input, choosing a dummy name if we
+        // don't have one that's valid.
+        std::string moduleName =
+            std::filesystem::path(bufName.str()).stem().string();
+        if (moduleName.empty())
+          moduleName = "<input>";
+
+        // Build the input module.
+        return sharedState.createModule(moduleName, sourceBuf,
+                                        cast<FileLineColLoc>(module->getLoc()));
+      });
+}
+
+bool M::isMojoPackagePath(const std::filesystem::path &path) {
+  if (std::filesystem::is_directory(path)) {
+    return std::filesystem::exists(path / "__init__.mojo") ||
+           std::filesystem::exists(path / "__init__.🔥");
+  }
+  return false;
+}
+
+std::pair<OwningOpRef<ModuleOp>, PackageOp> M::importMojoPackage(
+    StringRef path, StringRef packageName, llvm::SourceMgr &sourceMgr,
+    MojoParserConfig &config, mlir::TimingScope &ts,
+    SmallVectorImpl<std::string> *includedFiles, bool enableCaching) {
+  // Emit an error if the path doesn't actually correspond with a package.
+  if (!isMojoPackagePath(path.str())) {
+    sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
+                           "provided path '" + path +
+                               "' does not correspond to a package");
+    return {};
+  }
+  SharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
+  auto [module, packageDecl] = importMojoImpl(
+      path, sourceMgr, sharedState, ts, includedFiles,
+      [&](ModuleOp module) -> ASTDecl & {
+        // Create the top-level outer decl, which will contain all things we
+        // parse.
+        ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
+            module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr,
+            LexerCursor(), LexerCursor(), /*indentation=*/-1);
+        sharedState.initialize(topLevelDecl);
+
+        // Build the package.
+        return sharedState.createPackage(path, packageName);
+      });
+  if (!module)
+    return {};
+  return {std::move(module), cast<PackageOp>(*packageDecl)};
 }
 
 OwningOpRef<mlir::ModuleOp> M::importMojoFile(

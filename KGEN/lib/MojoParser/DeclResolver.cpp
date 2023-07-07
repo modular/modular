@@ -651,17 +651,23 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
-              GlobalVarDeclOp, ParamDeclareOp, UnresolvedImportOp>(
-            [&](auto op) {
-              Lexer lexer(shared, decl.getCursor());
+              GlobalVarDeclOp, ParamDeclareOp>([&](auto op) {
+          Lexer lexer(shared, decl.getCursor());
 
-              // Resolve the signature: on a parse error, we note that the decl
-              // is malformed and should not be referenced to silence downstream
-              // errors.
-              if (failed(resolveSignature(op, lexer, decl)))
-                decl.hasReferenceError = true;
-              decl.getCursor() = lexer.getCursor();
-            })
+          // Resolve the signature: on a parse error, we note that the decl
+          // is malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, lexer, decl)))
+            decl.hasReferenceError = true;
+          decl.getCursor() = lexer.getCursor();
+        })
+        .Case<UnresolvedImportOp>([&](auto op) {
+          // Resolve the signature: on a parse error, we note that the decl
+          // is malformed and should not be referenced to silence downstream
+          // errors.
+          if (failed(resolveSignature(op, decl)))
+            decl.hasReferenceError = true;
+        })
         .Case<LIT::FileModuleOp, ModuleOp, PackageOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
@@ -705,7 +711,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, PackageOp, StructDeclOp, StructFieldOp,
+        .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
               VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, ParamDeclareOp,
               AliasForwardDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
@@ -715,6 +721,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
           checkEndOfBodyCursor(lexer);
         })
+        .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
         .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           if (!decl.hasReferenceError)
@@ -2468,8 +2475,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 // Package Decl implementation
 //===----------------------------------------------------------------------===//
 
-ParseResult DeclResolver::resolveBody(LIT::PackageOp op, Lexer &lexer,
-                                      ASTDecl &decl) {
+ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   // A source package corresponds to a directory, resolving the body requires
   // iterating the filesystem directory and importing the corresponding
   // children.
@@ -2486,23 +2492,29 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, Lexer &lexer,
 
   // Iterate the directory and import nested modules.
   OpBuilder builder = decl.getDeclEndBuilder();
+  SmallVector<std::string> nestedModules;
   for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-    if (!shared.isModulePath(entry.path()))
+    if (!SharedState::isModuleOrPackagePath(entry.path()))
       continue;
-    std::string name =
-        entry.path().filename().replace_extension().generic_string();
+    nestedModules.emplace_back(
+        entry.path().filename().replace_extension().generic_string());
+  }
 
-    // Create an unresolved relative import for this module. That way we only
-    // need to actually pull anything in from the filesystem if it gets
-    // referenced.
+  // Sort the nested modules to ensure that we get a deterministic filesystem
+  // ordering across the different platforms.
+  llvm::stable_sort(nestedModules);
+
+  // Create an unresolved relative import for each nested module. That way we
+  // only need to actually pull anything in from the filesystem if it gets
+  // referenced.
+  for (StringRef name : nestedModules) {
     StringAttr importName = builder.getStringAttr("." + name);
     StringAttr boundName = builder.getStringAttr(name);
 
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         op->getLoc(), importName, boundName, /*declName=*/StringAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
-                              lexer.getCursor(), lexer.getCursor(),
-                              /*indentation=*/-1);
+                              LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }
 
   return success();
@@ -3494,7 +3506,7 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
 //===----------------------------------------------------------------------===//
 
 ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
-                                           Lexer &lexer, ASTDecl &decl) {
+                                           ASTDecl &decl) {
   // Check if we are importing a specific decl within the module, or the
   // module itself.
   if (auto declName = op.getDeclNameAttr()) {

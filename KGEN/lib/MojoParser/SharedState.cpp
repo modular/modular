@@ -912,6 +912,15 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
   return *state.decl;
 }
 
+ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
+  auto fileLoc =
+      FileLineColLoc::get(getContext(), path, /*line=*/0, /*column=*/0);
+  StringAttr mangledName = getMangledModuleName(getContext(), name);
+  ModuleState &state = createPackageState(mangledName, mangledName, path,
+                                          *impl->topLevelModuleState, fileLoc);
+  return *state.decl;
+}
+
 std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   auto it = impl->moduleStates.find(&module);
   if (it == impl->moduleStates.end())
@@ -919,12 +928,10 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   return it->second->sourcePath;
 }
 
-bool SharedState::isModulePath(const std::filesystem::path &path) {
-  if (std::filesystem::is_directory(path)) {
-    return std::filesystem::exists(path / "__init__.mojo") ||
-           std::filesystem::exists(path / "__init__.🔥");
-  }
-  return path.extension() == ".mojo" || path.extension() == ".🔥";
+bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
+  if (path.extension() == ".mojo" || path.extension() == ".🔥")
+    return true;
+  return isMojoPackagePath(path);
 }
 
 SharedState::ModuleState &
@@ -1296,8 +1303,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     } else if (auto unresolvedImport = dyn_cast<UnresolvedImportOp>(declOp)) {
       // Let the normal decl resolver handling insert aliases and other import
       // behavior.
-      Lexer lexer(*this, decl.getCursor());
-      if (failed(declResolver->resolveSignature(unresolvedImport, lexer, decl)))
+      if (failed(declResolver->resolveSignature(unresolvedImport, decl)))
         return failure();
     }
   }

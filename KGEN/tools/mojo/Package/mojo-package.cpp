@@ -18,6 +18,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -31,6 +32,7 @@
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -68,9 +70,8 @@ namespace {
 /// compilation pipeline.
 class PackageBuilder {
 public:
-  /// Construct the PackageBuilder. This requires knowing the name of the
-  /// package, and the module from which we are constructing said package.
-  PackageBuilder(StringRef packageName, ModuleOp theModule);
+  /// Construct the PackageBuilder from the parsed package op.
+  PackageBuilder(LIT::PackageOp parsedPackageOp);
 
   /// Set the target on the new package.
   void setTarget(TargetInfoAttr target) {
@@ -130,18 +131,34 @@ private:
 // PackageBuilder Implementation
 //===----------------------------------------------------------------------===//
 
-/// Construct the PackageBuilder.
-PackageBuilder::PackageBuilder(StringRef packageName, ModuleOp theModule) {
-  packageModule = ModuleOp::create(theModule->getLoc());
+/// Returns true if the given function can be externalized.
+static bool canExternalize(LIT::FuncOp func) {
+  // If the function is marked as always inline, we can't externalize it.
+  if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+    return false;
+
+  // Check for parameters.
+  SignatureType signature = func.getSignature();
+  if (!signature.getInputParamTypes().empty() ||
+      !signature.getResultParamTypes().empty())
+    return false;
+  // Check if a parent has parameters.
+  LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
+  while (parentStruct) {
+    if (!parentStruct.getInputParams().empty() ||
+        parentStruct.getParamVarargs())
+      return false;
+    parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
+  }
+  return true;
+}
+
+PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
+  packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
-  thePackage = b.create<LIT::PackageOp>(packageModule->getLoc(),
-                                        b.getStringAttr(packageName));
-  b.setInsertionPointToStart(thePackage.getBody());
 
   // Clone the relevant operations into the package.
   std::stack<SmartVariant<Operation *, OpBuilder::InsertPoint>> worklist;
-  for (Operation &op : theModule.getOps())
-    worklist.emplace(&op);
 
   // Clone an op without its regions, and ensure that once that op is finished
   // processing, we reset the OpBuilder's insert point to where it was before we
@@ -153,6 +170,7 @@ PackageBuilder::PackageBuilder(StringRef packageName, ModuleOp theModule) {
     auto clonedOp = b.cloneWithoutRegions(op);
     clonedOp.getBodyRegion().push_back(new Block);
     b.setInsertionPointToStart(clonedOp.getBody());
+    return clonedOp;
   };
 
   // Push the ops in `opList` onto the worklist, while preserving their original
@@ -170,6 +188,10 @@ PackageBuilder::PackageBuilder(StringRef packageName, ModuleOp theModule) {
     }
   };
 
+  // Clone the parsed package operation and push its ops onto the worklist.
+  thePackage = cloneWithoutRegions(parsedPackageOp);
+  pushOpsOntoWorklist(parsedPackageOp.getOps());
+
   while (!worklist.empty()) {
     auto listFront = worklist.top();
     worklist.pop();
@@ -177,67 +199,53 @@ PackageBuilder::PackageBuilder(StringRef packageName, ModuleOp theModule) {
       b.restoreInsertionPoint(cast<OpBuilder::InsertPoint>(listFront));
       continue;
     }
-    Operation *front = cast<Operation *>(listFront);
+    TypeSwitch<Operation *>(cast<Operation *>(listFront))
+        // Always clone and recurse in the case of a package, module, or struct.
+        .Case<LIT::PackageOp, LIT::FileModuleOp, LIT::StructDeclOp>(
+            [&](auto op) {
+              cloneWithoutRegions(op);
+              pushOpsOntoWorklist(op.getOps());
+            })
+        // It's a func? OK - non-parametric funcs get elided, parametric funcs
+        // are cloned as-is.
+        .Case([&](LIT::FuncOp func) {
+          // If the function is non-parametric, drop its body.
+          LIT::FuncOp clonedFunc;
+          if (canExternalize(func)) {
+            // This will reset the insertion point to where it was before we
+            // entered the function.
+            OpBuilder::InsertionGuard guard(b);
 
-    // If it's a package, we might want to clone it, but we definitely want to
-    // put the ops onto the worklist.
-    if (auto package = dyn_cast<LIT::PackageOp>(front)) {
-      if (package->getParentOp() != theModule)
-        cloneWithoutRegions(package);
+            Block *bodyBlock = new Block();
+            for (BlockArgument arg : func.getArguments())
+              bodyBlock->addArgument(arg.getType(), arg.getLoc());
 
-      pushOpsOntoWorklist(package.getOps());
-      continue;
-    }
+            // Add a block that only contains a lit.extern_func in it.
+            clonedFunc = b.cloneWithoutRegions(func);
+            clonedFunc.getBodyRegion().push_back(bodyBlock);
+            b.setInsertionPointToStart(clonedFunc.getBody());
+            b.create<LIT::ExternFuncOp>(clonedFunc.getLoc());
+          } else {
+            clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
+          }
 
-    // It's a file? Clone it without its regions and push the ops onto the
-    // worklist.
-    if (auto file = dyn_cast<LIT::FileModuleOp>(front)) {
-      cloneWithoutRegions(file);
-      pushOpsOntoWorklist(file.getOps());
-      continue;
-    }
-
-    // It's a struct? Same as a file.
-    if (auto structDecl = dyn_cast<LIT::StructDeclOp>(front)) {
-      cloneWithoutRegions(structDecl);
-      pushOpsOntoWorklist(structDecl.getOps());
-      continue;
-    }
-
-    // It's a func? OK - non-parametric funcs get elided, parametric funcs are
-    // cloned as-is.
-    if (auto func = dyn_cast<LIT::FuncOp>(front)) {
-      SignatureType sig = func.getSignature();
-      // If the function is non-parametric, drop its body.
-      LIT::FuncOp clonedFunc;
-      if (sig.getInputParamTypes().empty() &&
-          sig.getResultParamTypes().empty()) {
-        // This will reset the insertion point to where it was before we entered
-        // the function.
-        OpBuilder::InsertionGuard guard(b);
-
-        // Add a block that only contains a lit.end_func in it.
-        clonedFunc = b.cloneWithoutRegions(func);
-        clonedFunc.getBodyRegion().push_back(new Block);
-        b.setInsertionPointToStart(clonedFunc.getBody());
-        b.create<LIT::ExternFuncOp>(clonedFunc.getLoc());
-      } else {
-        clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
-      }
-
-      // Use the mangled version of the original func, because that's what
-      // its name will be post-elaboration.
-      auto mangled = LIT::MangledSymbol::mangle(func);
-      flattenedNameToFunc.try_emplace(mangled.mangled, clonedFunc);
-      continue;
-    }
-
-    // Drop export ops unconditionally.
-    if (auto exportOp = dyn_cast<KGEN::ExportOp>(front))
-      continue;
-
-    // None of the cases matched? Just clone the op directly.
-    b.clone(*front);
+          // Use the mangled version of the original func, because that's what
+          // its name will be post-elaboration.
+          auto mangled = LIT::MangledSymbol::mangle(func);
+          flattenedNameToFunc.try_emplace(mangled.mangled, clonedFunc);
+        })
+        // Drop export ops unconditionally.
+        .Case([&](ExportOp op) { /* do nothing */ })
+        .Case([&](LIT::UnresolvedImportOp op) {
+          // Drop unresolved imports within packages that were used to lazily
+          // pull in nested modules. These aren't needed during packaging
+          // because everything is recursively resolved.
+          if (isa<LIT::PackageOp>(op->getParentOp()))
+            return;
+          b.clone(*op);
+        })
+        // None of the cases matched? Just clone the op directly.
+        .Default([&](auto op) { b.clone(*op); });
   }
 }
 
@@ -438,12 +446,10 @@ struct PackageArgs {
 static ErrorOrSuccess parsePackageArgs(const State &state,
                                        const llvm::opt::InputArgList &args,
                                        PackageArgs &pkgArgs) {
-  // TODO: Once the frontend is set up, this should be a directory, not a single
-  //       file.
   if (!args.hasArg(options::OPT_INPUT))
-    return Error("no input file provided");
+    return Error("no input directory provided");
   if (args.hasMultipleArgs(options::OPT_INPUT))
-    return Error("too many input files, expected exactly one");
+    return Error("too many inputs, expected exactly one");
 
   if (!args.hasArg(options::OPT_name))
     return Error("must provide a package name");
@@ -452,15 +458,13 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   pkgArgs.name = args.getLastArgValue(options::OPT_name);
 
-  // Reject input files that do not appear to be mlir files (this includes stdin
-  // "-").
-  StringRef inputPath = args.getLastArgValue(options::OPT_INPUT);
-  if (!inputPath.ends_with(".mlir")) {
-    return Error(
-        "cannot open '" + inputPath +
-        "', this command temporarily only supports manually-formed packages.");
+  // Reject input files that do not appear to be mojo package directories (this
+  // includes stdin "-").
+  pkgArgs.inputPath = args.getLastArgValue(options::OPT_INPUT).str();
+  if (!isMojoPackagePath(pkgArgs.inputPath)) {
+    return Error("'" + pkgArgs.inputPath +
+                 "' does not correspond to a Mojo package");
   }
-  pkgArgs.inputPath = inputPath.str();
 
   pkgArgs.outputPath = args.getLastArgValue(options::OPT_o, "-");
 
@@ -519,14 +523,25 @@ static void setupMLIRContext(mlir::MLIRContext &ctx) {
 
 /// We have all the arguments and all the state we need, we can now start
 /// building the package itself.
-static ErrorOrSuccess buildPackage(PackageArgs packageArgs, ModuleOp theModule,
-                                   llvm::ToolOutputFile &out) {
-  // Set up the LLCL runtime here, it's the first place we need it.
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
-
+static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
+                                   ModuleOp theModule,
+                                   LIT::PackageOp parsedPackageOp,
+                                   llvm::ToolOutputFile &out,
+                                   LLCL::Runtime &runtime) {
   // Set up the package builder.
-  PackageBuilder packageBuilder(packageArgs.name, theModule);
+  PackageBuilder packageBuilder(parsedPackageOp);
+
+  // For now we implicilty export everything in the package, so add exports to
+  // the main module for the contents of the module.
+  OpBuilder exportBuilder = OpBuilder::atBlockEnd(theModule.getBody());
+  parsedPackageOp.walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
+    if (!canExternalize(func))
+      return WalkResult::skip();
+    SymbolRefAttr fullName = LIT::getFullyResolvedSymbolRef(func);
+    exportBuilder.create<ExportOp>(func.getLoc(), fullName,
+                                   getFlattenedSymbolName(fullName));
+    return WalkResult::skip();
+  });
 
   mlir::MLIRContext *ctx = packageBuilder.getContext();
   // Initialize targets first - we rely on this for getTargetInfo as well as for
@@ -646,16 +661,12 @@ static int package(const State &state) {
   mlir::MLIRContext ctx;
   setupMLIRContext(ctx);
 
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
   //===--------------------------------------------------------------------===//
   // Build the package
   //===--------------------------------------------------------------------===//
-
-  // Open the input file, or exit with an error.
-  std::string inputError;
-  std::unique_ptr<llvm::MemoryBuffer> buffer =
-      mlir::openInputFile(packageArgs.inputPath, &inputError);
-  if (!buffer)
-    return state.reportError(inputError);
 
   // Open the output file, or exit with an error.
   std::string outputError;
@@ -664,18 +675,20 @@ static int package(const State &state) {
   if (!out)
     return state.reportError(outputError);
 
-  llvm::SourceMgr sourceManager;
-  sourceManager.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
-
-  // Parse the mlir file.
-  OwningOpRef<ModuleOp> theModule =
-      mlir::parseSourceFile<ModuleOp>(sourceManager, &ctx);
-  if (!theModule)
-    return state.reportError("could not parse the provided source file");
+  // Parse the package.
+  mlir::TimingScope parseTimeScope;
+  MojoParserConfig parserConfig(&ctx, runtime, packageArgs.compileOptions);
+  llvm::SourceMgr sourceMgr;
+  auto [ownedModuleOp, packageOp] =
+      M::importMojoPackage(packageArgs.inputPath, packageArgs.name, sourceMgr,
+                           parserConfig, parseTimeScope);
+  if (!ownedModuleOp)
+    return state.reportError("could not parse the provided package");
 
   // Build the package from the inputs we just parsed, and write the output to
   // `out`.
-  if (auto err = buildPackage(packageArgs, *theModule, *out))
+  if (auto err =
+          buildPackage(packageArgs, *ownedModuleOp, packageOp, *out, runtime))
     return state.reportError(err.getError());
 
   out->keep();

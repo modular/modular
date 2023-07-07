@@ -53,6 +53,19 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
   return uniqueName;
 }
 
+std::string M::getFlattenedSymbolName(SymbolRefAttr symbol) {
+  // If the symbol is already flat, there is nothing to do.
+  if (auto flatSym = dyn_cast<FlatSymbolRefAttr>(symbol))
+    return flatSym.getValue().str();
+
+  // Flatten the symbol name into a single string.
+  SmallString<32> name = symbol.getRootReference().getValue();
+  llvm::raw_svector_ostream nameOS(name);
+  for (FlatSymbolRefAttr sym : symbol.getNestedReferences())
+    nameOS << "::" << sym.getValue();
+  return nameOS.str().str();
+}
+
 bool M::isCIdentifier(StringRef ident) {
   if (ident.empty() || !(llvm::isAlpha(ident[0]) || ident[0] == '_'))
     return false;
