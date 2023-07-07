@@ -657,8 +657,12 @@ kgen.link "some.lib" as @somelib
 kgen.generator @external_call<type: type, dtype: dtype>(%a: !kgen.paramref<type>, %b: !pop.scalar<dtype>) {
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
   %0 = pop.external_call @foo(%a, %b) : (!kgen.paramref<type>, !pop.scalar<dtype>) -> !pop.simd<4, f32>
-  // CHECK: pop.external_call noinline noreturn @bar(%{{.*}}, %{{.*}}) (!kgen.paramref<type>) -> ()
-  pop.external_call noinline noreturn @bar(%a, %b) (!kgen.paramref<type>) -> () : (!kgen.paramref<type>, !pop.scalar<dtype>) -> ()
+  // CHECK: pop.external_call @bar(%arg0, %arg1)
+  // CHECK-SAME: (!kgen.paramref<type>) -> ()
+  // CHECK-SAME: attributes {funcAttrs = ["noinline", ["alignstack", "16"]]}
+  pop.external_call @bar(%a, %b) (!kgen.paramref<type>) -> ()
+    attributes {funcAttrs = ["noinline", ["alignstack", "16"]]}
+    : (!kgen.paramref<type>, !pop.scalar<dtype>) -> ()
   // CHECK: pop.external_call @baz() from @somelib : () -> ()
   pop.external_call @baz() from @somelib : () -> ()
   kgen.return

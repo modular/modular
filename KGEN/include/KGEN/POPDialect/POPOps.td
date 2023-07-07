@@ -1505,11 +1505,11 @@ def POP_ExternalCallOp : POPOp<"external_call",
                        Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
                        OptionalAttr<SymbolRefAttr>:$importedFrom,
-                       OptionalAttr<KGEN_StringArrayAttr>:$funcAttrs);
+                       OptionalAttr<ArrayAttr>:$funcAttrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    custom<FuncAttrs>($funcAttrs) custom<ExternalCallee>($func) `(` operands `)`
+    custom<ExternalCallee>($func) `(` operands `)`
     ($variadicType^)?  (`from` $importedFrom^)? attr-dict-with-keyword `:`
     functional-type(operands, results)
   }];

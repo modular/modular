@@ -1574,18 +1574,8 @@ public:
         *funcType, op.getVariadicType().has_value(),
         getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
 
-    // Construct the passthrough attributes.
-    mlir::ArrayAttr passthrough;
-    if (std::optional<ArrayRef<StringAttr>> funcAttrs = op.getFuncAttrs()) {
-      SmallVector<Attribute> attrs;
-      llvm::append_range(attrs, *funcAttrs);
-      // Sort the attributes to keep them canonical.
-      llvm::sort(attrs, [](Attribute lhs, Attribute rhs) {
-        return cast<StringAttr>(lhs).getValue() <
-               cast<StringAttr>(rhs).getValue();
-      });
-      passthrough = rewriter.getArrayAttr(attrs);
-    }
+    // Get the passthrough attributes.
+    mlir::ArrayAttr passthrough = op.getFuncAttrsAttr();
 
     // Lookup an existing function.
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
