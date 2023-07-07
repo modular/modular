@@ -620,7 +620,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr(), mlir::ArrayAttr());
+        TypeAttr(), FlatSymbolRefAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -628,7 +628,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, FunctionType variadicType) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType), FlatSymbolRefAttr(), mlir::ArrayAttr());
+        TypeAttr::get(variadicType), FlatSymbolRefAttr());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -636,18 +636,25 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands, StringRef importedFrom) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom),
-        mlir::ArrayAttr());
+        TypeAttr(), FlatSymbolRefAttr::get(b.getContext(), importedFrom));
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            TypeRange results, StringRef func,
                            ValueRange operands, FunctionType variadicType,
                            StringRef importedFrom) {
-  build(
-      b, state, results, StringAttr::get(func, StringType::get(b.getContext())),
-      operands, TypeAttr::get(variadicType),
-      FlatSymbolRefAttr::get(b.getContext(), importedFrom), mlir::ArrayAttr());
+  build(b, state, results,
+        StringAttr::get(func, StringType::get(b.getContext())), operands,
+        TypeAttr::get(variadicType),
+        FlatSymbolRefAttr::get(b.getContext(), importedFrom));
+}
+
+void ExternalCallOp::build(OpBuilder &b, OperationState &state,
+                           TypeRange results, StringAttr func,
+                           ValueRange operands, TypeAttr variadicType,
+                           SymbolRefAttr importedFrom) {
+  build(b, state, results, func, operands, variadicType, importedFrom,
+        mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr());
 }
 
 LogicalResult
@@ -661,6 +668,28 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return emitError() << "'from' directive does not reference a valid symbol: "
                        << importedFrom;
 
+  return success();
+}
+
+LogicalResult ExternalCallOp::verify() {
+  if (mlir::ArrayAttr argAttrs = getArgAttrsAttr()) {
+    size_t numArgs;
+    if (std::optional<FunctionType> fnType = getVariadicType())
+      numArgs = fnType->getNumInputs();
+    else
+      numArgs = getNumOperands();
+    if (argAttrs.size() != numArgs) {
+      return mlir::emitError(getLoc(), "external callee has ")
+             << numArgs << " arguments but " << argAttrs.size()
+             << " argument attributes specified";
+    }
+  }
+  if (mlir::ArrayAttr resAttrs = getResAttrsAttr()) {
+    if (getNumResults() != resAttrs.size())
+      return mlir::emitError(getLoc(), "external callee has ")
+             << getNumResults() << " results but " << resAttrs.size()
+             << " result attributes specified";
+  }
   return success();
 }
 

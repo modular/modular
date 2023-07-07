@@ -1498,14 +1498,18 @@ def POP_ExternalCallOp : POPOp<"external_call",
     ```
 
     The `funcAttrs` attribute specifies LLVM function attributes on the external
-    callee, such as `noinline` or `noreturn`.
+    callee, such as `noinline` or `noreturn`. LLVM argument and result
+    attributes can be attached to the operation through `argAttrs` and
+    `resAttrs` as well.
   }];
 
   let arguments = (ins AttrOfType<KGEN_StringType>:$func,
                        Variadic<AnyType>:$operands,
                        OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
                        OptionalAttr<SymbolRefAttr>:$importedFrom,
-                       OptionalAttr<ArrayAttr>:$funcAttrs);
+                       OptionalAttr<ArrayAttr>:$funcAttrs,
+                       OptionalAttr<DictArrayAttr>:$argAttrs,
+                       OptionalAttr<DictArrayAttr>:$resAttrs);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
@@ -1529,8 +1533,13 @@ def POP_ExternalCallOp : POPOp<"external_call",
                      "ValueRange":$operands, "StringRef":$importedFrom)>,
     OpBuilder<(ins "TypeRange":$results, "StringRef":$func,
                    "ValueRange":$operands, "FunctionType":$variadicType,
-                   "StringRef":$importedFrom)>
+                   "StringRef":$importedFrom)>,
+    OpBuilder<(ins "TypeRange":$results, "StringAttr":$func,
+                   "ValueRange":$operands, "TypeAttr":$variadicType,
+                   "SymbolRefAttr":$importedFrom)>
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
