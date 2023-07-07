@@ -164,6 +164,13 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: constant: scalar<index> = <cond(int1, 1, 2)>
   kgen.param.constant: scalar<index> = <cond(int1, #pop.simd<1>, #pop.simd<2>)>
 
+  // CHECK: declare env_test: i1 = <get_env("NDEBUG")>
+  kgen.param.declare env_test: i1 = <get_env("NDEBUG")>
+  // CHECK: declare env_int = <get_env("OPT_LEVEL")>
+  kgen.param.declare env_int = <get_env("OPT_LEVEL")>
+  // CHECK: declare env_str: string = <get_env("PROC_NAME")>
+  kgen.param.declare env_str: string = <get_env("PROC_NAME")>
+
   kgen.return
 }
 

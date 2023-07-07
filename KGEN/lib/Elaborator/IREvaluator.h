@@ -61,6 +61,13 @@ public:
                                           ArrayRef<TypedAttr> inputs);
 
 private:
+  /// Evaluate a `get_all_impls` operator.
+  FailureOr<TypedAttr> evaluateGetAllImpls(ParamOperatorAttr op);
+  /// Evaluate an `apply` operator.
+  FailureOr<TypedAttr> evaluateApply(ParamOperatorAttr op);
+  /// Evaluate a `get_env` operator.
+  FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
+
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
   }

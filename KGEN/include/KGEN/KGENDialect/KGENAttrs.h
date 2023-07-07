@@ -14,6 +14,7 @@
 #define KGEN_KGENDIALECT_KGENATTRS_H
 
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
+#include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace mlir {

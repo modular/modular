@@ -231,6 +231,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return failure(clOptions.reportError("could not parse the module"));
 
+  // Tag the module with the environment parsed from the defines.
+  ctx->loadDialect<KGENDialect>();
+  ErrorOr<EnvAttr> env = EnvAttr::parseDefines(ctx, clOptions.defines);
+  if (env.isError())
+    return failure(clOptions.reportError(env.takeError().get()));
+  theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());
+
   // If we are generating a dependency file, do so now.
   if (!clOptions.dependencyFilename.empty()) {
     if (failed(createDependencyFile(clOptions, includedFiles)))

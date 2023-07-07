@@ -159,6 +159,13 @@ static int runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!theModule)
     return clOptions.reportError("could not parse the module");
 
+  // Tag the module with the environment.
+  ctx->loadDialect<KGENDialect>();
+  ErrorOr<EnvAttr> env = EnvAttr::parseDefines(ctx, clOptions.defines);
+  if (env.isError())
+    return clOptions.reportError(env.takeError().get());
+  theModule.get()->setAttr(EnvAttr::getEnvAttrName(), env.takeValue());
+
   // Initialize the host target.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmParser();
