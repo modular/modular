@@ -189,6 +189,18 @@ compileModule(const State &state, const llvm::opt::InputArgList &args,
   if (!moduleOp)
     return state.reportError("could not parse the module");
 
+  // Tag the module with the environment, which includes any definitions the
+  // user may have specified on the command line.
+  context.loadDialect<KGENDialect>();
+  ErrorOr<EnvAttr> envOrErr =
+      EnvAttr::parseDefines(&context, args.getAllArgValues(options::OPT_D));
+  if (failed(envOrErr))
+    return state.reportError(
+        llvm::formatv("an internal error occurred when initializing the Mojo "
+                      "MLIR module: {0}",
+                      envOrErr.getError()));
+  moduleOp.get()->setAttr(EnvAttr::getEnvAttrName(), *envOrErr);
+
   return {};
 }
 
