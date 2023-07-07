@@ -4,12 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# We can run this file with optimizations disabled.
-# RUN: mojo-driver run --no-optimization %s
-# RUN: mojo-driver run -O0 %s
-
-from IO import print
-
-
-fn main() -> None:
-    print("ok")
+# '-o /dev/null' works as expected.
+# RUN: mojo doc %s -o /dev/null

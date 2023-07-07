@@ -13,14 +13,14 @@ include "Support/Driver/DriverCommand.td"
 class MojoDriverDescription<
   string summary, string description, string inputMetaVarName,
   bit requiresInput, bit variadicInput>
-    : DriverDescription</*executable=*/"mojo-driver", summary, description,
+    : DriverDescription</*executable=*/"mojo", summary, description,
                         inputMetaVarName, requiresInput, variadicInput>;
 
 // A description of a Mojo driver subcommand.
 class MojoCommandDescription<
   string subcommand, string summary, string description,
   string inputMetaVarName, bit requiresInput, bit variadicInput>
-    : CommandDescription</*executable=*/"mojo-driver", subcommand, summary,
+    : CommandDescription</*executable=*/"mojo", subcommand, summary,
                          description, inputMetaVarName, requiresInput,
                          variadicInput>;
 

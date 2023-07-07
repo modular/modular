@@ -4,6 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# We can run this file with various targets.
-# RUN: not mojo-driver run -target-triple not-a-valid-target %s 2>&1 | FileCheck %s
-# CHECK: no target exists for 'not-a-valid-target'
+# RUN: mojo %s | FileCheck %s
+
+from IO import print
+
+
+def main() -> None:
+    # CHECK: ok
+    print("ok")

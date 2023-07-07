@@ -24,10 +24,7 @@ def configure_lldb_tests(config):
     config.substitutions.append(
         (
             "%repl",
-            (
-                f"{lldb_env} mojo-driver repl --source-quietly -S"
-                f" {config.lit_lldb_init}"
-            ),
+            f"{lldb_env} mojo repl --source-quietly -S {config.lit_lldb_init}",
         )
     )
 
@@ -58,7 +55,6 @@ tools = [
     "kgen-opt",
     "kgen-translate",
     "mojo",
-    "mojo-driver",
     "mojo-lsp-server",
 ]
 

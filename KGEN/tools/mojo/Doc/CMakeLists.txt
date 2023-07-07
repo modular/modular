@@ -4,4 +4,4 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_driver_option_tablegen(Mojo DocOptions.td mojo-driver-doc)
+add_driver_option_tablegen(Mojo DocOptions.td mojo-doc)

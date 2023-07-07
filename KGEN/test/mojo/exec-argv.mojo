@@ -7,9 +7,6 @@
 # RUN: mojo %s | FileCheck %s --check-prefix=NO_ARGS
 # RUN: mojo %s --arg1 --arg2=10 --arg3="arg3" | FileCheck %s --check-prefix=ARGS
 
-# RUN: mojo-driver run %s | FileCheck %s --check-prefix=NO_ARGS
-# RUN: mojo-driver run %s --arg1 --arg2=10 --arg3="arg3" | FileCheck %s --check-prefix=ARGS
-
 from IO import print
 from Range import range
 from Sys import argv

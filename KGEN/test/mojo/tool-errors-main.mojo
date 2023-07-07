@@ -8,7 +8,7 @@
 
 from SIMD import Float32
 
-# CHECK: could not find 'fn main()'
+# CHECK: could not find a 'main' function to execute
 @export
 fn main() -> Float32:
     return 0.0

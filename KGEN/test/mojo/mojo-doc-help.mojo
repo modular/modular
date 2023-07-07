@@ -4,5 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# '-o /dev/null' works as expected.
-# RUN: mojo-driver doc %s -o /dev/null
+# Invoking the subcommand with `--help` prints its help text.
+# RUN: mojo doc -bad-option --doesnt-matter --help | FileCheck %s
+# CHECK: Compile doc strings

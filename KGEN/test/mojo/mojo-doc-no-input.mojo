@@ -4,6 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Invoking the subcommand with `--help` prints its help text.
-# RUN: mojo-driver doc -bad-option --doesnt-matter --help | FileCheck %s
-# CHECK: Compile doc strings
+# The user must provide an input.
+# RUN: not mojo doc 2>&1 | FileCheck %s --check-prefix CHECK-NO-INPUT
+# CHECK-NO-INPUT: mojo{{.*}}: error: no input file provided
