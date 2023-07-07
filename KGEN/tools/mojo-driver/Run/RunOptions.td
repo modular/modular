@@ -49,8 +49,15 @@ def L : JoinedOrSeparate<["-"], "L">, Group<CompilationOptionGroup>, Index<4>,
   HelpText<"Append the given path to the list of directories to search for "
            "linked libraries.">;
 
+def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<5>,
+  MetaVarName<"KEY=VALUE">,
+  HelpText<"Define a named value that can be used from within the Mojo source "
+           "file being executed. For example, `-D foo=42` defines a name `foo` "
+           "that, when queried with the `ParamEnv` module from within the Mojo "
+           "program, would yield the value 42 at execution time.">;
+
 def no_optimization : Flag<["--", "-"], "no-optimization">,
-  Group<CompilationOptionGroup>, Index<5>,
+  Group<CompilationOptionGroup>, Index<6>,
   HelpText<"Whether to disable compiler optimizations. This may reduce the "
            "amount of time it takes to compile the Mojo source file. It may "
            "also reduce the runtime performance of the compiled executable.">;
