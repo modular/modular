@@ -4,9 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# Test that the default value for `--max-notes-per-diagnostic` is 10.
 # RUN: not mojo %s 2>&1 | FileCheck %s
+# RUN: not mojo-driver run %s 2>&1 | FileCheck %s
 
-# Testing default --max-notes-per-diagnostic=10
+# Test that the option controls this setting.
+# RUN: not mojo-driver run --max-notes-per-diagnostic 5 %s \
+# RUN:   2>&1 | FileCheck %s --check-prefix CHECK-FIVE
 
 struct s1: pass
 struct s2: pass
@@ -45,6 +49,8 @@ fn go11(x: s11): pass
 
 fn main():
   # CHECK-NOT: {{.*}} (0 more notes omitted.)
+  # CHECK-FIVE: {{.*}} (5 more notes omitted.)
   go10(0)
   # CHECK: {{.*}} (1 more notes omitted.)
+  # CHECK-FIVE: {{.*}} (6 more notes omitted.)
   go11(0)
