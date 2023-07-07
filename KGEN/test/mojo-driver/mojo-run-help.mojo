@@ -13,6 +13,7 @@
 # Check that passing the `--help` option after the input argument passes it
 # along to the underlying Mojo program.
 # RUN: mojo-driver run %s --help | FileCheck %s --check-prefix CHECK-NOT-HELP
+# RUN: mojo-driver %s --help | FileCheck %s --check-prefix CHECK-NOT-HELP
 
 from IO import print
 from Sys import argv

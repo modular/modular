@@ -12,6 +12,7 @@
 
 #include "Config/Version.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/LogicalResult.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -58,8 +59,11 @@ int main(int argc, char **argv) {
   if (arguments.empty())
     return registry.getCallback("repl").get()(State(programName, arguments));
 
-  // Otherwise, parse the first argument: it's either a subcommand, or one of a
-  // handful of top-level driver options that we allow in this first position.
+  // Otherwise, parse the first argument; it could be:
+  // - One of a handful of top-level driver options that we allow in this first
+  //   position.
+  // - One of the registered subcommands.
+  // - A positional ("input") argument, or an option, that we don't recognize.
   DriverOptTable options;
   llvm::opt::InputArgList args(arguments.begin(), arguments.end());
   unsigned index = 0;
@@ -73,31 +77,32 @@ int main(int argc, char **argv) {
     return 0;
   }
   case options::OPT_help:
+    // Print the top level driver help text and exit.
     return State(programName, ArrayRef(arguments).slice(1))
         .printHelp(
 #include "DriverOptionsHelpText.inc"
         );
-  case options::OPT_INPUT:
-    // This isn't an option; we'll interpret it as a subcommand.
-    break;
-  default: {
-    // Otherwise, we don't know what this is. Report an error.
-    return State(programName, ArrayRef(arguments).slice(1))
-        .reportError(llvm::formatv("unrecognized option '{0}'",
-                                   firstArg->getAsString(args)));
-  }
-  }
+  case options::OPT_INPUT: {
+    // This could be a subcommand, or it could be an input file for the `run`
+    // subcommand.
+    std::string arg = firstArg->getAsString(args);
+    ErrorOr<SubcommandRegistry::Callback> callback = registry.getCallback(arg);
+    // If it's a subcommand, invoke its callback.
+    if (succeeded(callback))
+      return callback.get()(State(programName, arguments.slice(index)));
 
-  // Store the program name and subcommand arguments in the driver state object.
-  State state(programName, arguments.slice(index));
+    // If it looks like a Mojo source file, invoke the `run` subcommand.
+    State state(programName, arguments);
+    StringRef argRef(arg);
+    if (argRef.ends_with(".mojo") || argRef.ends_with(".🔥"))
+      return registry.getCallback("run").get()(state);
 
-  // Find the callback for the subcommand name the user provided, or exit with
-  // an error if no match is found.
-  ErrorOr<SubcommandRegistry::Callback> callback =
-      registry.getCallback(firstArg->getAsString(args));
-  if (callback.isError())
+    // Otherwise, we don't know what this is; return an error.
     return state.reportError(callback.getError());
-
-  // If we found a matching subcommand, invoke its callback.
-  return callback.get()(state);
+  }
+  default:
+    // This is some sort of option, so we'll pass it along to the `run` command
+    // to parse. This allows for invocations such as `mojo -Ifoo Foo.mojo`.
+    return registry.getCallback("run").get()(State(programName, arguments));
+  }
 }
