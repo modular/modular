@@ -629,8 +629,10 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
   std::optional<std::string> modulePath;
   StringAttr declName = mangledName;
   if (parentState->decl != impl->topLevelDecl) {
-    if (!parentState->sourcePath)
-      return createErrorModuleState(mangledName, *parentState, loc);
+    if (!parentState->sourcePath) {
+      return createErrorModuleState(loc, mangledName, *parentState->decl,
+                                    "unable to locate module '" + name + "'");
+    }
     modulePath = resolveModulePath(name, *parentState->sourcePath);
 
     // If the parent is a package, use the normal name for the decl. This allows
@@ -642,8 +644,8 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
         resolveModulePath(name, impl->autoImportDirs, getSourceMgr(), loc);
   }
   if (!modulePath) {
-    emitError(loc, "unable to locate module '") << name << "'";
-    return createErrorModuleState(mangledName, *parentState, loc);
+    return createErrorModuleState(loc, mangledName, *parentState->decl,
+                                  "unable to locate module '" + name + "'");
   }
   auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
 
@@ -673,23 +675,25 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
 SharedState::ModuleState &
 SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
                                        llvm::SMLoc loc) {
-  auto createErrorState = [&]() -> ModuleState & {
-    return createErrorModuleState(getMangledModuleName(getContext(), name),
-                                  *impl->moduleStates[parentDecl], loc);
+  auto emitError = [&](const Twine &message = "") -> ModuleState & {
+    return createErrorModuleState(loc, getMangledModuleName(getContext(), name),
+                                  *parentDecl, message);
   };
 
   // If the name starts with a `.`, it is relative to the current package.
   if (name.consume_front(".")) {
     // Find the current package.
-    if (!isa<PackageOp>(*parentDecl)) {
-      while (parentDecl->parentDecl && !isa<PackageOp>(*parentDecl->parentDecl))
-        parentDecl = parentDecl->parentDecl;
-    }
+    while (!isa<PackageOp>(*parentDecl) && parentDecl->parentDecl)
+      parentDecl = parentDecl->parentDecl;
+    if (!isa<PackageOp>(*parentDecl))
+      return emitError("cannot import relative to a top-level package");
 
     // Otherwise, this is a package relative to the current parent.
     while (name.consume_front(".")) {
-      if (!parentDecl->parentDecl || !isa<PackageOp>(*parentDecl->parentDecl))
-        return createErrorState();
+      if (!parentDecl->parentDecl || !isa<PackageOp>(*parentDecl->parentDecl)) {
+        return emitError(
+            "attempted relative import with no known parent package");
+      }
       parentDecl = parentDecl->parentDecl;
     }
   } else {
@@ -701,32 +705,26 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
   // The rest of the name resolves a nested module or package from the current
   // parent.
-  StringRef remainingParentNames;
-  std::tie(remainingParentNames, name) = name.rsplit('.');
-  if (name.empty())
-    std::swap(name, remainingParentNames);
-  while (!remainingParentNames.empty()) {
-    StringRef parentName;
-    std::tie(parentName, remainingParentNames) =
-        remainingParentNames.split('.');
-
+  SmallVector<StringRef> remainingNames;
+  name.split(remainingNames, '.');
+  name = remainingNames.pop_back_val();
+  for (StringRef parentName : remainingNames) {
     // Lookup the next decl in the chain.
     auto lookupResult = lookupAndResolveDecl(parentName, loc, *parentDecl,
                                              /*searchParentScopes*/ false);
-    if (!lookupResult.isSuccess() || lookupResult.getIfSuccess().empty())
-      return createErrorState();
+    if (lookupResult.getIfSuccess().empty())
+      return emitError("'" + parentName +
+                       "' does not refer to a nested package");
     parentDecl = lookupResult.getIfSuccess()[0];
-    if (!isa<FileModuleOp, PackageOp>(*parentDecl)) {
-      emitError(loc) << "'" << parentName
-                     << "' does not refer to a package or module";
-      return createErrorState();
-    }
+    if (!isa<PackageOp>(*parentDecl))
+      return emitError("'" + parentName +
+                       "' does not refer to a nested package");
   }
 
   // Now we can import the final decl. If the parent package has an unresolved
   // import, mark it as resolved and import the state for the module.
   if (failed(declResolver->resolveFully(*parentDecl, loc)))
-    return createErrorState();
+    return emitError();
   TinyPtrVector<ASTDecl *> &existingDecls =
       parentDecl->declsInScope[StringAttr::get(getContext(), name)];
   if (!existingDecls.empty()) {
@@ -737,11 +735,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       return *impl->moduleStates[existingDecl];
 
     // If the decl isn't an unresolved import, emit an error.
-    if (!isa<UnresolvedImportOp>(*existingDecl)) {
-      emitError(loc) << "'" << name
-                     << "' does not refer to a package or module";
-      return createErrorState();
-    }
+    if (!isa<UnresolvedImportOp>(*existingDecl))
+      return emitError("'" + name + "' does not refer to a package or module");
     existingDecls.clear();
   }
   return importSubModuleState(name, parentDecl, loc);
@@ -1011,14 +1006,25 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
 }
 
 SharedState::ModuleState &
-SharedState::createErrorModuleState(StringAttr mangledName,
-                                    ModuleState &parentState, SMLoc loc) {
-  ASTDecl &moduleDecl =
-      declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
-  auto it = impl->topLevelModuleState->nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>(&moduleDecl)});
-  ModuleState &state = *it.first->second;
-  impl->moduleStates[&moduleDecl] = &state;
+SharedState::createErrorModuleState(SMLoc loc, StringAttr mangledName,
+                                    ASTDecl &errorContext,
+                                    const Twine &errorMsg) {
+  // If the error context hasn't already had an error, emit the provided
+  // message.
+  if (!std::exchange(errorContext.hasReferenceError, true))
+    emitError(loc, errorMsg);
+
+  // Check if we already have an error decl with this name.
+  auto [it, inserted] = impl->topLevelModuleState->nestedModules.insert(
+      {mangledName, std::make_unique<ModuleState>()});
+  if (!inserted)
+    return *it->second;
+  ModuleState &state = *it->second;
+
+  // Otherwise, create one.
+  state.decl =
+      &declResolver->addErroneousDecl(mangledName, loc, impl->topLevelDecl);
+  impl->moduleStates[state.decl] = &state;
   return state;
 }
 

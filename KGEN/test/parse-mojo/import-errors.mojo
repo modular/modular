@@ -21,16 +21,6 @@ import there_cant_be_a_module_named_this
 
 # // -----
 
-# expected-error @+1 {{TODO: relative package imports are not yet supported}}
-from .
-
-# // -----
-
-# expected-error @+1 {{TODO: relative package imports are not yet supported}}
-from ...
-
-# // -----
-
 # expected-error @+1 {{expected module name}}
 from --
 
@@ -70,6 +60,16 @@ from imported_module import *
 
 fn import_of_import(arg: Float64):
   pass
+
+# // -----
+
+# expected-error @below {{cannot import relative to a top-level package}}
+from .module import foo
+
+# // -----
+
+# expected-error @below {{unable to locate module 'unknown_nested_module'}}
+from test_package.unknown_nested_module import bar
 
 # // -----
 
