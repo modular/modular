@@ -61,6 +61,17 @@ bool DILocalScopeAttr::classof(Attribute attr) {
 }
 
 //===----------------------------------------------------------------------===//
+// DISubprogramAttr
+//===----------------------------------------------------------------------===//
+
+DISubprogramAttr DISubprogramAttr::cloneWith(StringRef name,
+                                             StringRef linkageName) const {
+  return DebugInfo::DISubprogramAttr::get(
+      getCompileUnit(), getScope(), name, linkageName, getFile(), getLine(),
+      getScopeLine(), getSubprogramFlags(), getType());
+};
+
+//===----------------------------------------------------------------------===//
 // Support
 //===----------------------------------------------------------------------===//
 

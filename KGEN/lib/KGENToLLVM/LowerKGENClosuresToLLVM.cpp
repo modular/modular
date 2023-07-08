@@ -271,17 +271,7 @@ public:
       return failure();
 
     // Update the subprogram scopes within the wrapper function.
-    if (auto sp =
-            DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(wrapperFn)) {
-      auto newSp = DebugInfo::DISubprogramAttr::get(
-          sp.getContext(), sp.getCompileUnit(), sp.getScope(), name, name,
-          sp.getFile(), sp.getLine(), sp.getScopeLine(),
-          sp.getSubprogramFlags(), sp.getType());
-      DebugInfo::DIAttrTypeReplacer replacer;
-      replacer.addReplacement(
-          [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
-      replacer.recursivelyReplaceElementsIn(wrapperFn);
-    }
+    DebugInfo::renameSubprogramsInScopes(name, wrapperFn);
 
     return success();
   }

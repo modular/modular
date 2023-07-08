@@ -182,18 +182,14 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     // If this function has a subprogram attached, update its information to
     // account for the new name.
     if (funcSpAttr) {
-      auto newSpAttr = DebugInfo::DISubprogramAttr::get(
-          funcSpAttr.getContext(), funcSpAttr.getCompileUnit(),
-          funcSpAttr.getScope(), funcSpAttr.getName(), newName,
-          funcSpAttr.getFile(), funcSpAttr.getLine(), funcSpAttr.getScopeLine(),
-          funcSpAttr.getSubprogramFlags(), funcSpAttr.getType());
-
+      DebugInfo::DISubprogramAttr newSp =
+          funcSpAttr.cloneWith(funcSpAttr.getName(), newName);
       DebugInfo::DIAttrTypeReplacer replacer;
       replacer.addReplacement([&](DebugInfo::DISubprogramAttr attr) {
-        return attr == funcSpAttr ? newSpAttr : attr;
+        return attr == funcSpAttr ? newSp : attr;
       });
       replacer.recursivelyReplaceElementsIn(gen);
-      funcSpAttr = newSpAttr;
+      funcSpAttr = newSp;
     }
   }
 

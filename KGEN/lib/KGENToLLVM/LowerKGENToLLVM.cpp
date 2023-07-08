@@ -404,10 +404,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
       if (sp != funcSp)
         return sp;
       // The symbol name corresponds to the linkage name.
-      return DebugInfo::DISubprogramAttr::get(
-          sp.getCompileUnit(), sp.getScope(), sp.getName(), wrapperName,
-          sp.getFile(), sp.getLine(), sp.getScopeLine(),
-          sp.getSubprogramFlags(), sp.getType());
+      return sp.cloneWith(sp.getName(), wrapperName);
     });
     loc = cast<Location>(replacer.replace(loc));
   }
@@ -472,10 +469,7 @@ static void updateExportedFunctionNameAndLinkage(
       if (sp != funcSp)
         return sp;
       // The symbol name corresponds to the linkage name.
-      return DebugInfo::DISubprogramAttr::get(
-          sp.getCompileUnit(), sp.getScope(), sp.getName(), aliasName,
-          sp.getFile(), sp.getLine(), sp.getScopeLine(),
-          sp.getSubprogramFlags(), sp.getType());
+      return sp.cloneWith(sp.getName(), aliasName);
     });
     replacer.recursivelyReplaceElementsIn(func);
   }

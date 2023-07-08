@@ -290,21 +290,6 @@ struct CoroutineInfo {
 };
 } // namespace
 
-static void updateSubprogramScope(LLVMFuncOp func) {
-  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
-  if (!sp)
-    return;
-
-  auto newSp = DebugInfo::DISubprogramAttr::get(
-      sp.getContext(), sp.getCompileUnit(), sp.getScope(),
-      func.getSymNameAttr(), func.getSymNameAttr(), sp.getFile(), sp.getLine(),
-      sp.getScopeLine(), sp.getSubprogramFlags(), sp.getType());
-  DebugInfo::DIAttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
-  replacer.recursivelyReplaceElementsIn(func);
-}
-
 /// Create a coroutine function by moving the body of the async function into a
 /// new function containing the coroutine machinery. In the original function,
 /// generate the code to form the coroutine context and handle. If the coroutine
@@ -389,7 +374,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Move the body of the coroutine into the new async function.
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
-  updateSubprogramScope(asyncFn);
+  DebugInfo::renameSubprogramsInScopes(asyncFn.getSymNameAttr(), asyncFn);
   BlockArgument asyncCtxArg =
       asyncFnBody.addArgument(cache.i8PtrType, asyncFn.getLoc());
 
@@ -547,7 +532,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
   suspendFn.getBody().takeBody(op.getBody());
-  updateSubprogramScope(suspendFn);
+  DebugInfo::renameSubprogramsInScopes(suspendFn.getSymNameAttr(), suspendFn);
   b.setLoc(suspendFn.getLoc());
   b.setInsertionPointToEnd(&suspendFn.getBody().front());
   b.create<ReturnOp>(ValueRange());
