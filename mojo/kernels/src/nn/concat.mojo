@@ -5,22 +5,60 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, DynamicRankBuffer
+from Buffer import Buffer, DynamicRankBuffer, NDBuffer
 from BuildInfo import is_kernels_debug_build
 from DType import DType
 from Functional import async_parallelize
 from Index import product
-from List import Dim, VariadicList
+from List import Dim, VariadicList, DimList
 from LLCL import OutputChainPtr
 from Math import align_down, align_up, div_ceil, max, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
 from TargetInfo import sizeof
+from Vector import InlinedFixedVector
 
 # ===----------------------------------------------------------------------===#
 # concat
 # ===----------------------------------------------------------------------===#
+
+
+struct ConcatInputs[rank: Int, type: DType]:
+    alias stack_capacity = 20
+    alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
+    alias StorageType = InlinedFixedVector[stack_capacity, BufferType]
+    var storage: StorageType
+
+    fn __init__(inout self, num_inputs: Int):
+        self.storage = StorageType(num_inputs)
+
+    fn __init__(inout self, *inputs: DynamicRankBuffer):
+        self.__init__(VariadicList[DynamicRankBuffer](inputs))
+
+    fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
+        self.storage = StorageType(input_list.__len__())
+        for i in range(input_list.__len__()):
+            self.storage.append(input_list[i].to_ndbuffer[rank, type]())
+
+    fn __init__(inout self, *inputs: BufferType):
+        self.__init__(VariadicList[BufferType](inputs))
+
+    fn __init__(inout self, input_list: VariadicList[BufferType]):
+        self.storage = StorageType(input_list.__len__())
+        for i in range(input_list.__len__()):
+            self.storage.append(input_list[i])
+
+    fn __getitem__(
+        self, idx: Int
+    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+        return self.storage[idx]
+
+    fn __len__(self) -> Int:
+        return self.storage.__len__()
+
+    fn __del__(owned self):
+        return self.storage._del_old()
 
 
 @value
@@ -50,28 +88,24 @@ struct _CanonicallyReshapedBuffer:
     var c: Int
 
 
-fn _canonical_reshape(
-    buf: DynamicRankBuffer, axis: Int
+fn _canonical_reshape[
+    rank: Int, type: DType
+](
+    buf: NDBuffer[rank, DimList.create_unknown[rank](), type], axis: Int
 ) -> _CanonicallyReshapedBuffer:
-    var elsize = -1
-
-    @parameter
-    fn know_type[type: DType]():
-        elsize = sizeof[type]()
-
-    buf.type.dispatch_arithmetic[know_type]()
-    debug_assert(elsize > 0, "unknown dtype size")
-    let rank = buf.rank
-    let h = product(buf.shape, 0, axis)
+    let shape = buf.get_shape()
+    let h = product(shape, 0, axis)
     let w = buf.dim(axis)
-    let c = product(buf.shape, axis + 1, rank) * elsize
+    let c = product(shape, axis + 1, rank) * sizeof[type]()
     return _CanonicallyReshapedBuffer(buf.data.bitcast[DType.uint8](), h, w, c)
 
 
-fn _canonical_reshape_output(
-    out_buf: DynamicRankBuffer,
+fn _canonical_reshape_output[
+    rank: Int, type: DType
+](
+    out_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[DynamicRankBuffer],
+    inputs: ConcatInputs[rank, type],
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -85,10 +119,12 @@ fn _canonical_reshape_output(
     )
 
 
-fn _concat_parallel(
-    output: DynamicRankBuffer,
+fn _concat_parallel[
+    rank: Int, type: DType
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[DynamicRankBuffer],
+    inputs: ConcatInputs[rank, type],
     out_chain: OutputChainPtr,
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
@@ -200,12 +236,13 @@ fn _concat_parallel(
     async_parallelize[do_chunk](out_chain, num_chunks)
 
 
+@always_inline
 fn _concat[
-    type: DType
+    rank: Int, type: DType
 ](
-    output: Buffer[Dim(), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[DynamicRankBuffer],
+    inputs: ConcatInputs[rank, type],
 ):
     """Concatenate inputs along axis and store in output.
 
@@ -219,9 +256,8 @@ fn _concat[
 
     """
 
-    let rank = inputs[0].rank
-    let h = product(inputs[0].shape, 0, axis)
-    let c = product(inputs[0].shape, axis + 1, rank)
+    let h = product(inputs[0].get_shape(), 0, axis)
+    let c = product(inputs[0].get_shape(), axis + 1, rank)
 
     var w_out: Int = 0
     for i in range(inputs.__len__()):
@@ -234,12 +270,11 @@ fn _concat[
     for i in range(inputs.__len__()):
         # copy one w x c slice along h at a time
         let w = inputs[i].dim(axis)
-        let in_buf = inputs[i].to_buffer[type]()
         for j in range(h):
             let input_offset = j * w * c
             let output_offset = j * stride_h_out + w_offset * stride_w_out
             let in_slice = Buffer[Dim(), type](
-                in_buf.data + input_offset, w * c
+                inputs[i].data + input_offset, w * c
             )
             let out_slice = Buffer[Dim(), type](
                 output.data + output_offset, w * c
@@ -249,32 +284,36 @@ fn _concat[
         w_offset += w
 
 
+@always_inline
 fn _concat_inner[
-    type: DType, axis: Int
-](output: Buffer[Dim(), type], inputs: VariadicList[DynamicRankBuffer],):
+    rank: Int, type: DType, axis: Int
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    inputs: ConcatInputs[rank, type],
+):
     assert_param[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(inputs.__len__()):
-        let input_buf = inputs[i].to_buffer[type]()
-        let buffer_len = input_buf.__len__()
-        let output_buffer_offset = Buffer[Dim(), type](
-            output.data.offset(num_elems_copied), buffer_len
+        let buffer_len = inputs[i].size()
+        memcpy[type](
+            output.data.offset(num_elems_copied), inputs[i].data, buffer_len
         )
-        memcpy[type](output_buffer_offset, input_buf)
         num_elems_copied += buffer_len
 
 
-fn _check_input_consistency(axis: Int, inputs: VariadicList[DynamicRankBuffer]):
+fn _check_input_consistency[
+    rank: Int, type: DType
+](axis: Int, inputs: ConcatInputs[rank, type],):
     @parameter
     if not is_kernels_debug_build():
         return
     # check inputs have same rank and same dims except for axis dim
     for i in range(inputs.__len__()):
         debug_assert(
-            inputs[0].rank == inputs[i].rank,
+            inputs[0].get_rank() == inputs[i].get_rank(),
             "all concat inputs must have the same rank",
         )
-        for j in range(inputs[i].rank):
+        for j in range(inputs[i].get_rank()):
             debug_assert(
                 j == axis or inputs[0].dim(j) == inputs[i].dim(j),
                 (
@@ -284,46 +323,46 @@ fn _check_input_consistency(axis: Int, inputs: VariadicList[DynamicRankBuffer]):
             )
 
 
+@always_inline
 fn _concat_serial[
-    type: DType
+    rank: Int, type: DType
 ](
-    output: Buffer[Dim(), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[DynamicRankBuffer],
+    inputs: ConcatInputs[rank, type],
 ):
     _check_input_consistency(axis, inputs)
 
     if axis == 0:
-        _concat_inner[type, 0](output, inputs)
+        _concat_inner[rank, type, 0](output, inputs)
         return
 
-    _concat[type](output, axis, inputs)
+    _concat[rank, type](output, axis, inputs)
 
 
-fn concat(
-    output: DynamicRankBuffer,
+@always_inline
+fn concat[
+    rank: Int,
+    type: DType,
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: VariadicList[DynamicRankBuffer],
+    borrowed inputs: ConcatInputs[rank, type],
     out_chain: OutputChainPtr,
 ):
     _check_input_consistency(axis, inputs)
 
     @always_inline
     @parameter
-    fn dispatch_serial[type: DType](unused_thread_idx: Int):
-        _concat_serial[type](output.to_buffer[type](), axis, inputs)
+    fn dispatch_serial(unused_thread_idx: Int):
+        _concat_serial[rank, type](output, axis, inputs)
 
-    @always_inline
-    @parameter
-    fn dispatch_on_dtype[type: DType]():
-        alias KB = 1024
-        alias min_work_for_parallel = 128 * KB  # TODO: autotune
+    alias KB = 1024
+    alias min_work_for_parallel = 128 * KB  # TODO: autotune
 
-        let output_bytes = output.num_elements() * sizeof[type]()
+    let output_bytes = output.num_elements() * sizeof[type]()
 
-        if output_bytes < min_work_for_parallel:
-            async_parallelize[dispatch_serial[type]](out_chain, 1)
-        else:
-            _concat_parallel(output, axis, inputs, out_chain)
-
-    output.type._dispatch_mo_arithmetic[dispatch_on_dtype](out_chain)
+    if output_bytes < min_work_for_parallel:
+        async_parallelize[dispatch_serial](out_chain, 1)
+    else:
+        _concat_parallel(output, axis, inputs, out_chain)

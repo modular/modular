@@ -5,61 +5,58 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo %s | FileCheck %s
 
-from Buffer import Buffer, NDBuffer, DynamicRankBuffer, _MAX_RANK
+from Buffer import Buffer, NDBuffer, DynamicRankBuffer
 from IO import print
 from Concat import concat, _concat_parallel
 from DType import DType
 from Pointer import DTypePointer
 from Index import StaticIntTuple
 from Range import range
-from List import Dim, VariadicList
+from List import Dim, VariadicList, DimList
 from LLCL import Runtime, OwningOutputChainPtr
 
 
 fn test_concat():
     print("== test_concat")
-    alias x1_sz = 2 * 2 * 1 * 2
-    alias x2_sz = 2 * 2 * 2 * 2
-    alias x3_sz = 2 * 2 * 3 * 2
 
     alias type = DType.float32.value
     alias rank = 4
     alias concat_axis = 2
 
-    let x1 = Buffer[x1_sz, type].stack_allocation()
+    alias s1 = DimList(2, 2, 1, 2, 0)
+    alias s2 = DimList(2, 2, 2, 2, 0)
+    alias s3 = DimList(2, 2, 3, 2, 0)
+
+    let x1 = NDBuffer[rank, s1, type].stack_allocation()
+    let x2 = NDBuffer[rank, s2, type].stack_allocation()
+    let x3 = NDBuffer[rank, s3, type].stack_allocation()
     x1.fill(0)
-    let x2 = Buffer[x2_sz, type].stack_allocation()
     x2.fill(1)
-    let x3 = Buffer[x3_sz, type].stack_allocation()
     x3.fill(2)
-    let s1 = StaticIntTuple[_MAX_RANK](2, 2, 1, 2, 0)
-    let s2 = StaticIntTuple[_MAX_RANK](2, 2, 2, 2, 0)
-    let s3 = StaticIntTuple[_MAX_RANK](2, 2, 3, 2, 0)
-
-    let x1_dyn = DynamicRankBuffer(
-        x1.data.bitcast[DType.invalid.value](), rank, s1, type
+    let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x1.data, s1, type
     )
-    let x2_dyn = DynamicRankBuffer(
-        x2.data.bitcast[DType.invalid.value](), rank, s2, type
+    let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x2.data, s2, type
     )
-    let x3_dyn = DynamicRankBuffer(
-        x3.data.bitcast[DType.invalid.value](), rank, s3, type
+    let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x3.data, s3, type
     )
 
-    alias out_sz = x1_sz + x2_sz + x3_sz
-    let _output = Buffer[out_sz, type].stack_allocation()
-    _output.fill(-1)
-    let output = Buffer[Dim(), type](_output.data, _output.__len__())
-
-    let output_dyn = DynamicRankBuffer(
-        output.data.bitcast[DType.invalid.value](), rank, out_sz, type
+    alias out_shape = DimList(2, 2, 6, 2, 0)
+    let output = NDBuffer[rank, out_shape, type].stack_allocation()
+    output.fill(-1)
+    let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        output.data, out_shape, type
     )
 
-    let input_list = VariadicList[DynamicRankBuffer](x1_dyn, x2_dyn, x3_dyn)
+    let input_list = VariadicList[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ](x1_dyn, x2_dyn, x3_dyn)
 
     let rt = Runtime(4)
     let out_chain = OwningOutputChainPtr(rt)
-    concat(output_dyn, concat_axis, input_list, out_chain.borrow())
+    concat[rank, type](output_dyn, concat_axis, input_list, out_chain.borrow())
     out_chain.wait()
 
     # CHECK: == test_concat
@@ -72,54 +69,53 @@ fn test_concat():
     # CHECK-COUNT-2: 0.0
     # CHECK-COUNT-4: 1.0
     # CHECK-COUNT-6: 2.0
-    for i in range(out_sz):
-        print(output[i])
+    for i in range(out_shape.product[rank]().get()):
+        print(output.flatten()[i])
 
 
 fn test_concat_parallel():
     print("== test_concat_parallel")
-    alias x1_sz = 2 * 2 * 1 * 2
-    alias x2_sz = 2 * 2 * 2 * 2
-    alias x3_sz = 2 * 2 * 3 * 2
 
     alias type = DType.float32.value
     alias rank = 4
     alias concat_axis = 2
 
-    let x1 = Buffer[x1_sz, type].stack_allocation()
+    alias s1 = DimList(2, 2, 1, 2, 0)
+    alias s2 = DimList(2, 2, 2, 2, 0)
+    alias s3 = DimList(2, 2, 3, 2, 0)
+
+    let x1 = NDBuffer[rank, s1, type].stack_allocation()
+    let x2 = NDBuffer[rank, s2, type].stack_allocation()
+    let x3 = NDBuffer[rank, s3, type].stack_allocation()
     x1.fill(0)
-    let x2 = Buffer[x2_sz, type].stack_allocation()
     x2.fill(1)
-    let x3 = Buffer[x3_sz, type].stack_allocation()
     x3.fill(2)
-    let s1 = StaticIntTuple[_MAX_RANK](2, 2, 1, 2, 0)
-    let s2 = StaticIntTuple[_MAX_RANK](2, 2, 2, 2, 0)
-    let s3 = StaticIntTuple[_MAX_RANK](2, 2, 3, 2, 0)
-
-    let x1_dyn = DynamicRankBuffer(
-        x1.data.bitcast[DType.invalid.value](), rank, s1, type
+    let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x1.data, s1, type
     )
-    let x2_dyn = DynamicRankBuffer(
-        x2.data.bitcast[DType.invalid.value](), rank, s2, type
+    let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x2.data, s2, type
     )
-    let x3_dyn = DynamicRankBuffer(
-        x3.data.bitcast[DType.invalid.value](), rank, s3, type
+    let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        x3.data, s3, type
     )
 
-    alias out_sz = x1_sz + x2_sz + x3_sz
-    let _output = Buffer[out_sz, type].stack_allocation()
-    _output.fill(-1)
-    let output = Buffer[Dim(), type](_output.data, _output.__len__())
-
-    let output_dyn = DynamicRankBuffer(
-        output.data.bitcast[DType.invalid.value](), rank, out_sz, type
+    alias out_shape = DimList(2, 2, 6, 2, 0)
+    let output = NDBuffer[rank, out_shape, type]().stack_allocation()
+    output.fill(-1)
+    let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
+        output.data, out_shape, type
     )
 
-    let input_list = VariadicList[DynamicRankBuffer](x1_dyn, x2_dyn, x3_dyn)
+    let input_list = VariadicList[
+        NDBuffer[rank, DimList.create_unknown[rank](), type]
+    ](x1_dyn, x2_dyn, x3_dyn)
 
     let rt = Runtime(4)
     let out_chain = OwningOutputChainPtr(rt)
-    _concat_parallel(output_dyn, concat_axis, input_list, out_chain.borrow())
+    _concat_parallel[rank, type](
+        output_dyn, concat_axis, input_list, out_chain.borrow()
+    )
     out_chain.wait()
 
     # CHECK: == test_concat_parallel
@@ -132,8 +128,8 @@ fn test_concat_parallel():
     # CHECK-COUNT-2: 0.0
     # CHECK-COUNT-4: 1.0
     # CHECK-COUNT-6: 2.0
-    for i in range(out_sz):
-        print(output[i])
+    for i in range(out_shape.product[rank]().get()):
+        print(output.flatten()[i])
 
 
 fn main():
