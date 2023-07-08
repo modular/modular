@@ -66,7 +66,7 @@ int State::printHelp(bool plainText, Twine helpText) const {
     //
     // We compute that name here: if it's a subcommand, append it to the program
     // name.
-    std::string name = std::filesystem::path(programName).filename();
+    std::string name = std::filesystem::path(programName).filename().string();
     if (subcommand)
       name = name + "-" + subcommand;
 
