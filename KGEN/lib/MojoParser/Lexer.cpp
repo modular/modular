@@ -69,8 +69,8 @@ Lexer::Lexer(SharedState &shared, const llvm::MemoryBuffer *buffer)
   lexToken();
 }
 
-static StringRef getBuffer(SharedState &sharedState,
-                           const LexerCursor &cursor) {
+static StringRef findBuffer(SharedState &sharedState,
+                            const LexerCursor &cursor) {
   auto &sourceMgr = sharedState.getSourceMgr();
   unsigned cursorBufferId =
       sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
@@ -80,7 +80,7 @@ static StringRef getBuffer(SharedState &sharedState,
 }
 
 Lexer::Lexer(SharedState &shared, const LexerCursor &cursor)
-    : SharedStateUser(shared), curBuffer(getBuffer(shared, cursor)),
+    : SharedStateUser(shared), curBuffer(findBuffer(shared, cursor)),
       curToken(Token::eof, {}, 0) {
   cursor.restore(*this);
 }
@@ -857,4 +857,86 @@ size_t Lexer::getTokenLength(SharedState &shared, SMLoc loc) {
 
   Lexer lexer(shared, StringRef(curPtr, ~0ULL), curPtr);
   return lexer.getToken().getSpelling().size();
+}
+
+//===----------------------------------------------------------------------===//
+// LexerCrashReporter
+//===----------------------------------------------------------------------===//
+
+void LexerCrashReporter::print(raw_ostream &os) const {
+  os << "Crash " << message << " at "
+     << lexer.shared.diags.translateLocation(SMLoc::getFromPointer(startPtr))
+     << '\n';
+
+  // We know where the statement started, though the statement may not be the
+  // first token on the line.  We know the current lexer position which is the
+  // first token we haven't processed (generally the next statement, but might
+  // be in the middle of a statement.
+  StringRef buffer = lexer.getBuffer();
+
+  // Figure out where the current unconsumed token is: if it is on something
+  // that is the start of a line, back it up to the end of the previous line.
+  const char *curTokenPtr = lexer.getToken().getSpelling().data();
+  auto curLineWithoutWhitespace =
+      buffer.drop_back(buffer.end() - curTokenPtr).rtrim(" \t");
+  if (curLineWithoutWhitespace.rtrim("\n\r") != curLineWithoutWhitespace)
+    curTokenPtr =
+        lexer.findEndOfPreviousLine(lexer.getToken().getLoc()).getPointer();
+
+  // This helper prints a line of the source buffer with highlighting to keep
+  // track of where things are.
+  auto printSourceLine = [&](StringRef sourceLine) {
+    os << "    >> " << sourceLine << '\n';
+    // Print out ^'s at the start and current token pointer if they exist in the
+    // line.
+    if (startPtr < sourceLine.begin() && curTokenPtr > sourceLine.end())
+      return; // Don't print fully "." lines.
+
+    os << "       ";
+    for (const char &c : sourceLine) {
+      char charToPrint;
+      if (&c == startPtr)
+        charToPrint = '^';
+      else if (&c == curTokenPtr)
+        charToPrint = '<';
+      else if (&c > startPtr && &c < curTokenPtr)
+        charToPrint = '.';
+      else if (c == '\t')
+        charToPrint = '\t';
+      else
+        charToPrint = ' ';
+      os << charToPrint;
+    }
+    // The next token pointer is typically at the \n of the current line.
+    if (sourceLine.end() == curTokenPtr)
+      os << '<';
+    os << '\n';
+  };
+
+  // Start by printing the first line of code
+  // that we started on, being careful to stay in the source file.
+  size_t stmtStartOffset = startPtr - buffer.data();
+
+  size_t prevNewLine = buffer.find_last_of("\n\r", stmtStartOffset);
+  prevNewLine = prevNewLine == StringRef::npos ? 0 : prevNewLine + 1;
+  size_t nextNewLine = buffer.find_first_of("\n\r", stmtStartOffset);
+  nextNewLine = nextNewLine == StringRef::npos ? buffer.size() : nextNewLine;
+
+  StringRef sourceLine =
+      StringRef(buffer.data() + prevNewLine, nextNewLine - prevNewLine);
+  printSourceLine(sourceLine);
+
+  // If the current token position isn't in the first line, then print a few
+  // more lines of context just in case.
+  size_t numLinesPrinted = 0;
+  while (curTokenPtr > sourceLine.end() && numLinesPrinted++ < 4 &&
+         nextNewLine != buffer.size()) {
+    size_t nextNextNewLine = buffer.find_first_of("\n\r", nextNewLine + 1);
+    nextNextNewLine =
+        nextNextNewLine == StringRef::npos ? buffer.size() : nextNextNewLine;
+    sourceLine = StringRef(buffer.data() + nextNewLine + 1,
+                           nextNextNewLine - (nextNewLine + 1));
+    printSourceLine(sourceLine);
+    nextNewLine = nextNextNewLine;
+  }
 }

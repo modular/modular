@@ -14,6 +14,7 @@
 #include "SharedState.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
 
 namespace M::KGEN::LIT {
@@ -136,6 +137,9 @@ public:
   /// length of the token by re-lex'ing it.  This is efficient.
   static size_t getTokenLength(SharedState &shared, SMLoc loc);
 
+  /// Return the current buffer we are lexing from.
+  StringRef getBuffer() const { return curBuffer; }
+
 private:
   void formToken(Token::Kind kind, const char *tokStart, ssize_t indentation,
                  size_t tokenStartOffset = 0) {
@@ -219,6 +223,30 @@ private:
 };
 
 inline LexerCursor Lexer::getCursor() const { return LexerCursor(*this); }
+
+/// This crash reporter snapshots the current token a lexer is at.  If a crash
+/// happens, it then prints out a region of code from that location to the
+/// next-unconsumed token to make it easier to debug parser/typechecker/IR
+/// emission related bugs.
+///
+/// The lexer passed in must outlive this crash reporter.
+class LexerCrashReporter : public llvm::PrettyStackTraceEntry {
+public:
+  LexerCrashReporter(Lexer &lexer, const char *message)
+      : startPtr(lexer.getToken().getSpelling().data()), lexer(lexer),
+        message(message) {}
+
+  LexerCrashReporter(Lexer &lexer, SMLoc loc, const char *message)
+      : startPtr(loc.getPointer()), lexer(lexer), message(message) {}
+
+  /// print - Emit information about this stack frame to OS.
+  virtual void print(raw_ostream &os) const override;
+
+public:
+  const char *startPtr;
+  Lexer &lexer;
+  const char *message;
+};
 
 } // namespace M::KGEN::LIT
 
