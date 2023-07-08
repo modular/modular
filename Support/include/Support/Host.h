@@ -159,8 +159,7 @@ struct HostMachineInfo {
   std::string osName;
   std::string cpuArch;
   std::string cpuModelName;
-  // This is the SIMD bit-width of the host system. Unlike the build-info, it
-  // could change as one moves the binary across systems.
+  // This is the SIMD bit-width of the host system.
   size_t simdBitWidth;
   std::vector<std::string> cpuFeatures;
   size_t numPhysicalCores;
