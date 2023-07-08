@@ -781,7 +781,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
-  if (parseExpression(condExp, std::nullopt) ||
+  if (parseAssignExpression(condExp, curIndent) ||
       parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
@@ -1325,7 +1325,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   ExprNode *condExp = nullptr;
-  if (parseExpression(condExp, std::nullopt) ||
+  if (parseAssignExpression(condExp, curIndent) ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
 
@@ -1393,7 +1393,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
     Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
-    if (parseExpression(condExp, std::nullopt) ||
+    if (parseAssignExpression(condExp, std::nullopt) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
 
