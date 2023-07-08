@@ -164,7 +164,7 @@ public:
 
   void DumpValue(lldb::opaque_compiler_type_t type,
                  lldb_private::ExecutionContext *exeCtx,
-                 lldb_private::Stream *s, lldb::Format format,
+                 lldb_private::Stream &s, lldb::Format format,
                  const lldb_private::DataExtractor &data,
                  lldb::offset_t dataOffset, size_t dataByteSize,
                  uint32_t bitfieldBitSize, uint32_t bitfieldBitOffset,
@@ -173,11 +173,11 @@ public:
 
   void DumpSummary(lldb::opaque_compiler_type_t type,
                    lldb_private::ExecutionContext *exeCtx,
-                   lldb_private::Stream *s,
+                   lldb_private::Stream &s,
                    const lldb_private::DataExtractor &data,
                    lldb::offset_t dataOffset, size_t dataByteSize) override {}
 
-  bool DumpTypeValue(lldb::opaque_compiler_type_t type, lldb_private::Stream *s,
+  bool DumpTypeValue(lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
                      lldb::Format format,
                      const lldb_private::DataExtractor &data,
                      lldb::offset_t dataOffset, size_t dataByteSize,
@@ -201,7 +201,7 @@ public:
   /// source-like representation of the type, whereas eDescriptionLevelVerbose
   /// does a dump of the underlying AST if applicable.
   void DumpTypeDescription(
-      lldb::opaque_compiler_type_t type, lldb_private::Stream *s,
+      lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
       lldb::DescriptionLevel level = lldb::eDescriptionLevelFull) override {}
 
   //===--------------------------------------------------------------------===//

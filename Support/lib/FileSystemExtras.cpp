@@ -22,11 +22,10 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
 
   // A helper function to write the content into the file.
   auto writeFile = [&]() -> ErrorOr<std::filesystem::path> {
-    llvm::Error err = llvm::writeFileAtomically(
-        filePathStr + "-%%%%%%%%", filePathStr, [&](raw_ostream &os) {
-          writeContent(os);
-          return llvm::Error::success();
-        });
+    llvm::Error err = llvm::writeToOutput(filePathStr, [&](raw_ostream &os) {
+      writeContent(os);
+      return llvm::Error::success();
+    });
     if (err)
       return Error(llvm::toString(std::move(err)));
     return filePath;
