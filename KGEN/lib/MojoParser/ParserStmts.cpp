@@ -346,6 +346,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///
 ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                                   size_t stmtIndent) {
+  // Generate pretty stack traces if a crash happens in this scope.
+  LexerCrashReporter crashReporter(getLexer(), "parsing statement");
+
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
   LexerCursor startCursor = getLexer().getCursor();

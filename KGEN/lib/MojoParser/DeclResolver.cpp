@@ -654,6 +654,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               GlobalVarDeclOp, ParamDeclareOp>([&](auto op) {
           Lexer lexer(shared, decl.getCursor());
 
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl signature");
+
           // Resolve the signature: on a parse error, we note that the decl
           // is malformed and should not be referenced to silence downstream
           // errors.
@@ -716,6 +720,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               AliasForwardDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           Lexer lexer(shared, decl.getCursor());
+
+          // Generate pretty stack traces if a crash happens in this scope.
+          LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                           "resolving decl body");
+
           if (resolveBody(op, lexer, decl))
             return;
 
