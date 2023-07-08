@@ -359,7 +359,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("could not open .s output file"));
 
     auto standaloneOr = objLayer.getRawCompiler().produceStandaloneAssembly(
-        symtab, exportedSymbols, target, outFile->os());
+        symtab, exportedSymbols, outFile->os());
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
@@ -381,20 +381,21 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // If we're emitting the archive, do it.
   if (clOptions.cmd == Command::kEmit) {
-    // Notify the object layer that this is not for immediate execution.
-    objLayer.notForImmediateExecution();
     // Look up the first item in the exported symbols to trigger archive
     // generation.
-    ErrorOr<CompiledFunc> funcOr =
-        engine->lookup(exportedSymbols.front().second.alias);
-    if (funcOr.isError())
-      return failure(clOptions.reportError(funcOr.getError()));
-    // And lookup the archive.
-    std::optional<Cache::BufferRef> archive =
-        engine->getLayer<ObjectCompilerLayer>().lookupArchive(*theModule);
-    if (!archive.has_value())
-      return failure(clOptions.reportError("compiled archive was missing"));
-    return clOptions.emitArchive((*archive)->getBuffer());
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".o");
+    if (!outFile)
+      return failure(clOptions.reportError("could not open .o output file"));
+
+    auto standaloneOr = objLayer.getRawCompiler().produceStandaloneArchive(
+        symtab, exportedSymbols, /*isJIT=*/false);
+    if (failed(standaloneOr))
+      return failure(
+          clOptions.reportError("could not produce standalone asm: " +
+                                Twine(standaloneOr.getError())));
+    outFile->os() << standaloneOr.get()->getBuffer();
+    outFile->keep();
+    return mlir::success();
   }
 
   // Helper to execute a func.

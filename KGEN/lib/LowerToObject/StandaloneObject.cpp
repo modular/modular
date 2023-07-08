@@ -158,19 +158,17 @@ public:
     // artifacts).
     DenseSet<const llvm::Value *> splitValues;
     SmallVector<std::unique_ptr<llvm::Module>> splitModules;
-    for (auto &fn : mainModule.functions()) {
-      if (fn.isDeclaration() || !fn.hasExternalLinkage())
-        continue;
+    auto splitValue = [&](const llvm::Value *root) {
       // If the function is already split, e.g. if it was a dependency of
       // another function, skip it.
-      if (splitValues.count(&fn))
-        continue;
+      if (splitValues.count(root))
+        return;
 
-      auto &valueInfo = valueInfos[&fn];
+      auto &valueInfo = valueInfos[root];
       llvm::ValueToValueMapTy valueMap;
       std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
           mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
-            return globalVal == &fn || valueInfo.dependencies.count(globalVal);
+            return globalVal == root || valueInfo.dependencies.count(globalVal);
           }));
       if (splitModule->empty())
         splitModule->setModuleInlineAsm("");
@@ -181,16 +179,32 @@ public:
       for (auto &func : llvm::make_early_inc_range(*splitModule))
         if (func.isDeclaration() && func.use_empty())
           func.eraseFromParent();
-      for (auto &globalVar : llvm::make_early_inc_range(splitModule->globals()))
+      for (auto &globalVar :
+           llvm::make_early_inc_range(splitModule->globals())) {
         if (globalVar.isDeclaration() && globalVar.use_empty())
           globalVar.eraseFromParent();
+      }
 
       splitModules.emplace_back(std::move(splitModule));
 
       // Record the split values.
-      splitValues.insert(&fn);
+      splitValues.insert(root);
       splitValues.insert(valueInfo.dependencies.begin(),
                          valueInfo.dependencies.end());
+    };
+
+    for (auto &global : mainModule.globals()) {
+      if (global.hasInternalLinkage())
+        continue;
+      // TODO: Add special handling for `llvm.global_ctors` and
+      // `llvm.global_dtors`, because otherwise they end up tying almost all
+      // symbols into the same split.
+      splitValue(&global);
+    }
+    for (auto &fn : mainModule.functions()) {
+      if (fn.isDeclaration() || !fn.hasExternalLinkage())
+        continue;
+      splitValue(&fn);
     }
 
     // If we had no functions to split, just process the main module.
@@ -217,6 +231,7 @@ private:
   /// Collect all of the immediate global value users of `value`.
   void collectValueUsers(const llvm::Value *value) {
     SmallVector<const llvm::User *> worklist(value->users());
+
     while (!worklist.empty()) {
       const llvm::User *userIt = worklist.pop_back_val();
 
@@ -227,11 +242,12 @@ private:
       }
 
       if (const auto *inst = dyn_cast<llvm::Instruction>(userIt)) {
-        valueInfos[value].users.insert(inst->getParent()->getParent());
-        valueInfos[inst->getParent()->getParent()].dependencies.insert(value);
+        const llvm::Function *func = inst->getParent()->getParent();
+        valueInfos[value].users.insert(func);
+        valueInfos[func];
       } else if (const auto *globalVal = dyn_cast<llvm::GlobalValue>(userIt)) {
         valueInfos[value].users.insert(globalVal);
-        valueInfos[globalVal].dependencies.insert(value);
+        valueInfos[globalVal];
       } else {
         llvm_unreachable("unexpected user of global value");
       }
@@ -246,29 +262,52 @@ private:
 
   /// Propagate use information through the module.
   void propagateUseInfo() {
-    // Propagate use information through the module.
-    for (bool changed = true; changed;) {
-      changed = false;
+    std::vector<ValueInfo *> worklist;
+    // Each value depends on itself. Seed the iteration with that.
+    for (auto &[value, info] : valueInfos) {
+      info.dependencies.insert(value);
+      worklist.push_back(&info);
+      // If a value cannot be split, its users are also its dependencies.
+      if (!info.canBeSplit)
+        llvm::set_union(info.dependencies, info.users);
+    }
 
-      // Propagate uses through the module.
-      for (auto [value, info] : valueInfos) {
-        for (const auto *user : info.users) {
-          auto &userInfo = valueInfos[user];
-          changed |= llvm::set_union(userInfo.dependencies, info.dependencies);
+    while (!worklist.empty()) {
+      ValueInfo *info = worklist.back();
+      worklist.pop_back();
 
-          // Handle unsplittable values.
-          if (!info.canBeSplit) {
-            // If this value can't be cloned, users of it can't be cloned
-            // either.
-            if (userInfo.canBeSplit) {
-              changed = true;
-              userInfo.canBeSplit = false;
-            }
+      // Propagate the dependencies of this value to its users.
+      for (const llvm::Value *user : info->users) {
+        ValueInfo &userInfo = valueInfos.find(user)->second;
+        if (info == &userInfo)
+          continue;
+        bool changed = false;
+        // If there is a change, add the user info to the worklist.
+        if (llvm::set_union(userInfo.dependencies, info->dependencies))
+          changed = true;
 
-            // Add all users of this value as dependencies.
-            changed |= llvm::set_union(userInfo.dependencies, info.users);
-          }
+        // If the value cannot be split, its users cannot be split either.
+        if (!info->canBeSplit && userInfo.canBeSplit) {
+          userInfo.canBeSplit = false;
+          changed = true;
+          // If a value cannot be split, its users are also its dependencies.
+          llvm::set_union(userInfo.dependencies, userInfo.users);
         }
+
+        if (changed)
+          worklist.push_back(&userInfo);
+      }
+
+      if (info->canBeSplit)
+        continue;
+      // If a value cannot be split, propagate its dependencies up to its
+      // dependencies.
+      for (const llvm::Value *dep : info->dependencies) {
+        ValueInfo &depInfo = valueInfos.find(dep)->second;
+        if (info == &depInfo)
+          continue;
+        if (llvm::set_union(depInfo.dependencies, info->dependencies))
+          worklist.push_back(&depInfo);
       }
     }
   }
@@ -678,9 +717,10 @@ ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
 // produceStandaloneAssembly
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess ObjectCompiler::produceStandaloneAssembly(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols,
-    TargetInfoAttr target, llvm::raw_pwrite_stream &os) {
+ErrorOrSuccess
+ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
+                                          const ExportMap &exportedSymbols,
+                                          llvm::raw_pwrite_stream &os) {
   TimeTraceScope<> traceScope("produce-standalone-assembly");
 
   OwningOpRef<ModuleOp> slicedModule =
