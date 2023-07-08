@@ -198,6 +198,8 @@ public:
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpression(ExprNode *&expr,
                               std::optional<size_t> stmtIndent);
+  ParseResult parseAssignExpression(ExprNode *&expr,
+                                    std::optional<size_t> stmtIndent);
   ParseResult parseVarLetInitExpression(ExprNode *&expr, size_t stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a

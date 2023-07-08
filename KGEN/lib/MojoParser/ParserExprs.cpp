@@ -1043,6 +1043,12 @@ ParseResult ParserBase::parseExpression(ExprNode *&result,
   return ExprParser(getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kExpression);
 }
+ParseResult
+ParserBase::parseAssignExpression(ExprNode *&result,
+                                  std::optional<size_t> stmtIndent) {
+  return ExprParser(getLexer(), stmtIndent)
+      .parseExpression(result, Precedence::kAssignExpr);
+}
 
 ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
   return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);

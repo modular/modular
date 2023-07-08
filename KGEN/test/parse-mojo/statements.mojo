@@ -75,14 +75,27 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT:       }
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     }
+    # CHECK-NEXT: %z = lit.varlet.decl "z"
+    # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
+    # CHECK-NEXT: store [[FOUR]], %z
     var z: Int = 4
+
+    # Walrus operator in if's.
+    # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant{{.*}}5
+    # CHECK-NEXT: store [[FIVE]], %z
+    # CHECK-NEXT: [[BOOL:%.*]] = kgen.call {{.*}}__bool__{{.*}}([[FIVE]])
+    # CHECK-NEXT: [[I1:%.*]] = kgen.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
+    # CHECK-NEXT: hlcf.if [[I1]] {
+    if z := 5:
+        return a
+
     return a
 
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   %[[I1:.*]] = kgen.call @"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__($Builtin::$Bool::Bool)"(%a)
-    # CHECK-NEXT:              hlcf.if %[[I1]]
+    # CHECK-NEXT:   [[I1:%.*]] = kgen.call @"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__($Builtin::$Bool::Bool)"(%a)
+    # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
         var inside_a: Int
