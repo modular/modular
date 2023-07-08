@@ -24,27 +24,6 @@ using namespace KGEN;
 using namespace POP;
 
 //===----------------------------------------------------------------------===//
-// updateSubprogramScope
-//===----------------------------------------------------------------------===//
-
-/// Update the subprogram attribute of a derivative function, if there is one,
-/// with the new function name.
-static void updateSubprogramScope(StringAttr name, FuncOp func) {
-  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
-  if (!sp)
-    return;
-
-  auto newSp = DebugInfo::DISubprogramAttr::get(
-      sp.getContext(), sp.getCompileUnit(), sp.getScope(), name, name,
-      sp.getFile(), sp.getLine(), sp.getScopeLine(), sp.getSubprogramFlags(),
-      sp.getType());
-  DebugInfo::DIAttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
-  replacer.recursivelyReplaceElementsIn(func);
-}
-
-//===----------------------------------------------------------------------===//
 // liftClosureRegion
 //===----------------------------------------------------------------------===//
 
@@ -139,7 +118,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   op.replaceAllUsesWith(call);
   op.erase();
 
-  updateSubprogramScope(name, lifted);
+  DebugInfo::renameSubprogramsInScopes(name, lifted);
 }
 
 //===----------------------------------------------------------------------===//
@@ -192,7 +171,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 
-  updateSubprogramScope(name, lifted);
+  DebugInfo::renameSubprogramsInScopes(name, lifted);
 }
 
 //===----------------------------------------------------------------------===//

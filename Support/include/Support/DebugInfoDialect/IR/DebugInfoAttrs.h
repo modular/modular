@@ -86,6 +86,22 @@ public:
   /// Replace elements within the given operation, and any nested operations.
   void recursivelyReplaceElementsIn(Operation *op);
 };
+
+/// If the op has a subprogram scope, change the name and linkage name to that
+/// given, and replace all nested subprogram attributes recursively with it.
+template <typename OpTy>
+void renameSubprogramsInScopes(StringAttr name, OpTy op) {
+  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op);
+  if (!sp)
+    return;
+
+  DebugInfo::DISubprogramAttr newSp = sp.cloneWith(name, name);
+  DebugInfo::DIAttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
+  replacer.recursivelyReplaceElementsIn(op);
+}
+
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H

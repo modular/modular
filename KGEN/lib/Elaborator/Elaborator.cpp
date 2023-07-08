@@ -2172,10 +2172,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
       if (sp != funcSp)
         return sp;
-      return DebugInfo::DISubprogramAttr::get(
-          sp.getCompileUnit(), sp.getScope(), sp.getName(),
-          newFunc.getSymName(), sp.getFile(), sp.getLine(), sp.getScopeLine(),
-          sp.getSubprogramFlags(), sp.getType());
+      return sp.cloneWith(sp.getName(), newFunc.getSymName());
     });
     replacer.recursivelyReplaceElementsIn(newFunc);
   }

@@ -243,6 +243,11 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
     }]>
   ];
   let assemblyFormat = "`<` struct(params) `>`";
+
+  let extraClassDeclaration = [{
+    /// Returns a clone with a new name and linkage name.
+    DISubprogramAttr cloneWith(StringRef name, StringRef linkageName) const;
+  }];
 }
 
 #endif
