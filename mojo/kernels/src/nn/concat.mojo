@@ -10,6 +10,7 @@ from BuildInfo import is_kernels_debug_build
 from DType import DType
 from Functional import async_parallelize
 from Index import product
+from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
 from LLCL import OutputChainPtr
 from Math import align_down, align_up, div_ceil, max, min
@@ -234,6 +235,9 @@ fn _concat_parallel[
         )
 
     async_parallelize[do_chunk](out_chain, num_chunks)
+    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+        out_chain.ptr
+    )
 
 
 @always_inline
@@ -364,5 +368,8 @@ fn concat[
 
     if output_bytes < min_work_for_parallel:
         async_parallelize[dispatch_serial](out_chain, 1)
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+            out_chain.ptr
+        )
     else:
         _concat_parallel(output, axis, inputs, out_chain)
