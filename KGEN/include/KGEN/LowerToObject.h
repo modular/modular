@@ -77,7 +77,6 @@ public:
   /// assembly file. The assembly output is written to the provided stream.
   ErrorOrSuccess produceStandaloneAssembly(const SymbolTable &symtab,
                                            const ExportMap &exportedSymbols,
-                                           TargetInfoAttr target,
                                            llvm::raw_pwrite_stream &os);
 
   /// Writes function declarations for all exported symbols.
