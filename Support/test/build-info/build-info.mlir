@@ -3,7 +3,6 @@
 // RUN: build-info --query=build-type | FileCheck %s --check-prefix=CHECK-BUILD_TYPE
 // RUN: build-info --query=kernels-build-type | FileCheck %s --check-prefix=CHECK-KERNELS-BUILD-TYPE
 // RUN: build-info --query=llcl-max-profiling-level | FileCheck %s --check-prefix=CHECK-LLCL-MAX-PROFILING-LEVEL
-// RUN: build-info --query=simd-bitwidth | FileCheck %s --check-prefix=CHECK-SIMD-WIDTH
 // RUN: build-info --query=preferred-memory-alignment | FileCheck %s --check-prefix=CHECK-PREFERRED-MEM-ALIGNMENT
 // RUN: build-info --query=llvm-targets | FileCheck %s --check-prefix=CHECK-LLVM-TARGETS
 
@@ -12,6 +11,5 @@
 // CHECK-BUILD_TYPE: {{.*}}
 // CHECK-KERNELS-BUILD-TYPE: {{.*}}
 // CHECK-LLCL-MAX-PROFILING-LEVEL: {{[0-9]+}}
-// CHECK-SIMD-WIDTH: {{[0-9]+}}
 // CHECK-PREFERRED-MEM-ALIGNMENT: {{[0-9]+}}
 // CHECK-LLVM-TARGETS: {{.*}}

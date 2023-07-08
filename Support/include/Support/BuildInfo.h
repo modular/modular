@@ -29,7 +29,6 @@ enum class BuildProperty {
   BuildType,
   KernelsBuildType,
   LLCLMaxProfilingLevel,
-  SIMDBitWidth,
   PreferredMemoryAlignment,
   LLVMTargets,
 };
@@ -40,12 +39,6 @@ struct BuildInfo {
   std::string buildType;
   std::string kernelsBuildType;
   int llclMaxProfilingLevel;
-  // This is the SIMD bit-width Modular was built for (aka
-  // kPreferredSIMDBitWidth, controlled by compiler flags at compile-time), and
-  // does not change if you move the binary between machines.  It does not take
-  // into account any detected processor capabilities at run-time (it is not
-  // host info).
-  size_t simdBitWidth;
   size_t preferredMemoryAlignment;
   SmallVector<StringRef> llvmTargets;
 

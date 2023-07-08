@@ -39,8 +39,6 @@ struct BuildInfoCLIOptions {
                     clEnumValN(BuildProperty::LLCLMaxProfilingLevel,
                                "llcl-max-profiling-level",
                                "Maximum profiling level built into LLCL"),
-                    clEnumValN(BuildProperty::SIMDBitWidth, "simd-bitwidth",
-                               "Host SIMD bitwidth"),
                     clEnumValN(BuildProperty::LLVMTargets, "llvm-targets",
                                "The LLVM targets Modular is built with"),
                     clEnumValN(BuildProperty::PreferredMemoryAlignment,
