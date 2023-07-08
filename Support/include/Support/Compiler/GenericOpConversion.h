@@ -7,10 +7,49 @@
 #ifndef SUPPORT_COMPILER_GENERICOPCONVERSION_H
 #define SUPPORT_COMPILER_GENERICOPCONVERSION_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 namespace M {
+
+/// Converts a graph-like op of type `SourceOp` to a graph-like op of type
+/// `TargetOp` in another dialect.
+template <typename SourceOp, typename TargetOp>
+ErrorOr<TargetOp> convertGraphOp(SourceOp op,
+                                 ConversionPatternRewriter &rewriter,
+                                 TypeConverter *typeConverter) {
+  auto fnType = op.getFunctionType();
+
+  TypeConverter::SignatureConversion signatureConverter(fnType.getNumInputs());
+  for (const auto &argType : enumerate(fnType.getInputs())) {
+    auto convertedType = typeConverter->convertType(argType.value());
+    if (!convertedType)
+      return Error("argument type cannot be converted");
+
+    signatureConverter.addInputs(argType.index(), convertedType);
+  }
+
+  SmallVector<Type> resultTypes;
+  if (failed(typeConverter->convertTypes(fnType.getResults(), resultTypes)))
+    return Error("result types cannot be converted");
+
+  auto newOp = rewriter.create<TargetOp>(op.getLoc(), op.getName(),
+                                         signatureConverter.getConvertedTypes(),
+                                         resultTypes);
+
+  // The builder should automatically add a body, so we remove it, and replace
+  // it with the body of the source op.
+  newOp.eraseBody();
+  rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(), newOp.end());
+
+  if (failed(rewriter.convertRegionTypes(&newOp.getBody(), *typeConverter,
+                                         &signatureConverter)))
+    return Error("block argument types cannot be converted");
+
+  rewriter.eraseOp(op);
+  return newOp;
+}
 
 /// Conversion pattern to use when converting containers for graph-like models.
 template <typename SourceOp, typename TargetOp>
@@ -21,41 +60,11 @@ public:
   LogicalResult
   matchAndRewrite(SourceOp op, typename SourceOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto fnType = op.getFunctionType();
+    auto newOpOr = convertGraphOp<SourceOp, TargetOp>(op, rewriter,
+                                                      this->getTypeConverter());
+    if (newOpOr.isError())
+      return rewriter.notifyMatchFailure(op, newOpOr.getError());
 
-    TypeConverter::SignatureConversion signatureConverter(
-        fnType.getNumInputs());
-    auto *typeConverter = this->getTypeConverter();
-    for (const auto &argType : enumerate(fnType.getInputs())) {
-      auto convertedType = typeConverter->convertType(argType.value());
-      if (!convertedType) {
-        return rewriter.notifyMatchFailure(op,
-                                           "argument type cannot be converted");
-      }
-      signatureConverter.addInputs(argType.index(), convertedType);
-    }
-
-    SmallVector<Type> resultTypes;
-    if (failed(typeConverter->convertTypes(fnType.getResults(), resultTypes))) {
-      return rewriter.notifyMatchFailure(op,
-                                         "result types cannot be converted");
-    }
-
-    auto newOp = rewriter.create<TargetOp>(
-        op.getLoc(), op.getName(), signatureConverter.getConvertedTypes(),
-        resultTypes);
-
-    // The builder should automatically add a body, so we remove it, and replace
-    // it with the body of the source op.
-    newOp.eraseBody();
-    rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(), newOp.end());
-
-    if (failed(rewriter.convertRegionTypes(&newOp.getBody(), *typeConverter,
-                                           &signatureConverter))) {
-      return rewriter.notifyMatchFailure(
-          op, "block argument types cannot be converted");
-    }
-    rewriter.eraseOp(op);
     return success();
   }
 };
