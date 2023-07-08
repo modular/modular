@@ -1,8 +1,5 @@
 // REQUIRES: MODEL
-// RUN: python3 -m %modeltool execute --framework modular-tf-api %modelsdir/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir --exported-name serving_default --input-names input --output-names output | FileCheck %s --check-prefix=CHECK-EXPORTED
-
-// REQUIRES: disabled
-// RUN: python3 -m %modeltool execute --framework modular-onnx-api %modelsdir/resnet50-pytorch.yaml --weights-dir %api_executor_models_dir | FileCheck %s --check-prefix=CHECK-NOT-EXPORTED
+// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir
+// RUN: modular-api-executor --model-specification=%modelsdir/resnet50-v1.5.yaml --input-shapes=1x224x224x3 --input-names input --output-names output --model-inputs=zeros --allocator=malloc --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED
 
 // CHECK-EXPORTED: 'benchmark' returned tensor{{.*}}
-// CHECK-NOT-EXPORTED: 'benchmark' returned tensor{{.*}}
