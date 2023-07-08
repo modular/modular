@@ -524,41 +524,53 @@ void ObjectCompilerLayer::emit(
 
   // Delegate each object file through its own materialization unit.
   for (auto &[bin, buf] : llvm::reverse(toDelegate)) {
-    auto delMu = llvm::orc::BasicObjectLayerMaterializationUnit::Create(
-        baseLayer, std::move(buf));
-    if (!delMu) {
-      error = Error(llvm::toString(delMu.takeError()));
+    // Get all the symbols defined by the object file.
+    auto itf =
+        llvm::orc::getObjectFileInterface(session, buf->getMemBufferRef());
+    if (!itf) {
+      error = Error(llvm::toString(itf.takeError()));
       return mr->failMaterialization();
     }
 
-    // Get a delegated materialization responsibility for the symbols defined by
-    // this object file.
-    llvm::orc::SymbolNameSet delegatedSymbols;
-    llvm::orc::SymbolFlagsMap symbolFlags = (*delMu)->getSymbols();
-    auto names = llvm::make_first_range(symbolFlags);
-    delegatedSymbols.insert(names.begin(), names.end());
+    // Get all new symbols defined by the object file by removing the existing
+    // symbols from the MU's symbol map.
+    SmallVector<llvm::orc::SymbolFlagsMap::value_type> existing;
+    for (auto &[symbol, flags] : mr->getSymbols()) {
+      if (itf->SymbolFlags.erase(symbol))
+        existing.emplace_back(symbol, flags);
+    }
 
-    // Remove symbols from the map that are already being defined.
-    for (auto &[symbol, _] : mr->getSymbols())
-      symbolFlags.erase(symbol);
-
-    // Mark all new symbols visible in the object file as materializing.
-    if (llvm::Error err = mr->defineMaterializing(symbolFlags)) {
+    // Ask the MR to define the new symbols as materializing. The MR may reject
+    // some of the symbols.
+    if (llvm::Error err = mr->defineMaterializing(itf->SymbolFlags)) {
       error = Error(llvm::toString(std::move(err)));
       return mr->failMaterialization();
     }
+    itf->SymbolFlags.insert(existing.begin(), existing.end());
 
-    // Now delegate all symbols in the object file to a new materialization
-    // responsibility.
+    // Construct a set of all symbols in the object file that were not rejected
+    // by the MR, and then delegate them from the MR.
+    llvm::orc::SymbolNameSet delegatedSymbols;
+    llvm::orc::SymbolFlagsMap symbolFlags;
+    for (auto &[symbol, flags] : itf->SymbolFlags) {
+      if (!mr->getSymbols().contains(symbol))
+        continue;
+      delegatedSymbols.insert(symbol);
+      symbolFlags.try_emplace(symbol, flags);
+    }
     auto delMr = mr->delegate(delegatedSymbols);
     if (!delMr) {
       error = Error(llvm::toString(delMr.takeError()));
       return mr->failMaterialization();
     }
+    itf->SymbolFlags = std::move(symbolFlags);
 
     // Replace the materialization responsibility with a new materialization
-    // unit.
-    if (llvm::Error err = (*delMr)->replace(std::move(*delMu))) {
+    // unit consisting of the accepted object file symbols.
+    auto delMu =
+        std::make_unique<llvm::orc::BasicObjectLayerMaterializationUnit>(
+            baseLayer, std::move(buf), std::move(*itf));
+    if (llvm::Error err = (*delMr)->replace(std::move(delMu))) {
       error = Error(llvm::toString(std::move(err)));
       return mr->failMaterialization();
     }
