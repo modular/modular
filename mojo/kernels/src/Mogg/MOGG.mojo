@@ -6,6 +6,7 @@
 
 from Activations import relu, gelu, sigmoid
 from Buffer import NDBuffer
+from Concat import concat as _concat
 from DType import DType
 from Functional import (
     _elementwise_impl,
@@ -96,7 +97,7 @@ fn MOGGExport():
     alias _add = add
     alias _cast = cast
     alias _ceil = ceil
-    alias _concat = mogg_concat
+    alias _concat = concat
     alias _div = div
     alias _erf = erf
     alias _exp = exp
@@ -635,7 +636,7 @@ fn cast[
 
 
 @always_inline
-fn mogg_concat[
+fn concat[
     type: DType,
     rank: Int,
     simd_width: Int,
@@ -650,82 +651,15 @@ fn mogg_concat[
     var axis_int = axis[0].to_int()
     if axis_int < 0:
         axis_int = axis_int + rank
-    let inputs = VariadicList(variadic_ins)
 
     @parameter
     @always_inline
-    fn concat_lambda[
-        simd_width: Int, rank: Int
-    ](out_index: StaticIntTuple[rank]):
-
-        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
-        # [:, 60, :] so when the target dim is:
-        #   0 >= target_dim < 10: We are loading from first input.
-        #   10 >= target_dim < 20: We are loading from second input.
-        #   20 >= target_dim < 30: We are loading from third input.
-        # The output will always be storing to the full index but we load from
-        # an offset.
-
-        var target_dim = out_index[axis_int]
-
-        # Iterate through the inputs to find the one we should be storing to.
-        for i in range(inputs.__len__()):
-            let input = inputs[i]
-
-            # This is the input we should be loading/storing.
-            if target_dim < input.dynamic_shape[axis_int]:
-                var in_index = out_index
-                in_index[axis_int] = target_dim
-                let load = simd_load[type, simd_width, rank](
-                    rebind[
-                        NDBuffer[rank, DimList.create_unknown[rank](), type]
-                    ](input),
-                    in_index,
-                )
-                simd_store[type, simd_width, rank](
-                    rebind[
-                        NDBuffer[rank, DimList.create_unknown[rank](), type]
-                    ](output),
-                    out_index,
-                    load,
-                )
-                return
-            else:
-                # Keep looking...
-                target_dim -= input.dynamic_shape[axis_int]
-
-    alias unroll_factor = 1
-
-    # We need to check it's safe to simd_load from each input.
-    var inputs_simd_aligned = True
-    for i in range(inputs.__len__()):
-        if inputs[i].dynamic_shape[rank - 1] % simd_width != 0:
-            inputs_simd_aligned = False
-
-    # If we are concat'ing along the last dimension we can do a simd load.
-    if axis_int == rank - 1 and inputs_simd_aligned:
-        _elementwise_impl[
-            rank,
-            simd_width,
-            unroll_factor,
-            single_thread_blocking_override,
-            concat_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
+    fn func(out_chain: OutputChainPtr):
+        _concat[rank, type](
+            output, axis_int, VariadicList(variadic_ins), out_chain
         )
-    else:
-        # Otherwise we must run scalar.
-        _elementwise_impl[
-            rank,
-            1,
-            unroll_factor,
-            single_thread_blocking_override,
-            concat_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
-        )
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
     # If we aren't using the trivial kernel we actually still have to wait.
     # The variadics fall off the stack when captured by the lambda.
