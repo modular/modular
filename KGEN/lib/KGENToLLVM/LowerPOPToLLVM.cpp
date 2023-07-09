@@ -1515,8 +1515,8 @@ namespace {
 // convertGlobals
 //===----------------------------------------------------------------------===//
 
-static LogicalResult convertGlobals(ModuleOp module,
-                                    POPToLLVMTypeConverter &tc) {
+static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
+                                    bool disableGlobalDtors) {
   SmallVector<Attribute> ctors, dtors, priorities;
 
   for (auto global : llvm::make_early_inc_range(module.getOps<GlobalOp>())) {
@@ -1546,8 +1546,10 @@ static LogicalResult convertGlobals(ModuleOp module,
   mlir::ArrayAttr prioritiesAttr = b.getArrayAttr(priorities);
   b.create<LLVM::GlobalCtorsOp>(module.getLoc(), b.getArrayAttr(ctors),
                                 prioritiesAttr);
-  b.create<LLVM::GlobalDtorsOp>(module.getLoc(), b.getArrayAttr(dtors),
-                                prioritiesAttr);
+  // FIXME(#16605): Global destructors don't work in JIT mode.
+  if (!disableGlobalDtors)
+    b.create<LLVM::GlobalDtorsOp>(module.getLoc(), b.getArrayAttr(dtors),
+                                  prioritiesAttr);
   return success();
 }
 
@@ -1743,7 +1745,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Convert global ops and generator global constructors and destructors.
-  if (failed(convertGlobals(theModule, typeConverter)))
+  if (failed(convertGlobals(theModule, typeConverter, disableGlobalDtors)))
     return signalPassFailure();
 
   // Populate patterns and run the conversion.
