@@ -549,7 +549,9 @@ ExecutionEngine::~ExecutionEngine() {
   // through the JITLink LinkGraph allocation actions.
   const llvm::Triple &triple = executionSession->getTargetTriple();
   if (executionSession->getPlatform() &&
-      (triple.isOSBinFormatELF() || triple.isOSBinFormatCOFF())) {
+      // FIXME: On Windows, this complains about symbol not found. The Windows
+      // build seems happy even without the shutdown, so disable it for now.
+      (triple.isOSBinFormatELF() /*|| triple.isOSBinFormatCOFF()*/)) {
     ErrorOr<CompiledFunc> shutdown =
         lookup(triple.isOSBinFormatELF() ? "__orc_rt_elfnix_platform_shutdown"
                                          : "__orc_rt_coff_platform_shutdown");
