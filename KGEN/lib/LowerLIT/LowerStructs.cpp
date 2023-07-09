@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -200,7 +201,6 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   if (iter != attrTypeReplaceCache.end())
     return Attribute::getFromOpaquePointer(iter->second);
 
-  Attribute result = attr;
   bool foundRecursion = seenAttrs.contains(attr);
   if (foundRecursion && !eraseRecursivePointerField) {
     // Found illegal recursion.
@@ -210,44 +210,91 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
   // Keep track of ancestor attributes.
   seenAttrs.insert(attr);
 
+  auto processStructAttr = [&](LIT::StructAttr attr) -> Attribute {
+    PointerUnion<POP::StructType, Type> newType =
+        substituteStructRef(attr.getType());
+    // Flatten single-element structs.
+    if (auto type = dyn_cast<Type>(newType)) {
+      ParameterEvaluator evaluator(attr.getType().getParamValues());
+      Attribute value =
+          evaluator.getReboundAttribute(std::get<1>(attr.getValues()[0]));
+
+      return replace(value);
+    }
+
+    SmallVector<TypedAttr> values;
+    for (auto [name, value] : attr.getValues())
+      values.push_back(cast<TypedAttr>(replace(value)));
+    return POP::StructAttr::get(values, cast<POP::StructType>(newType));
+  };
+
+  auto processStructExtractAttr =
+      [&](LIT::StructExtractAttr attr) -> Attribute {
+    auto litStructType = cast<DeclRefType>(attr.getStructValue().getType());
+    int64_t fieldNo = getField(attr.getField(), litStructType);
+
+    Attribute structValue = replace(attr.getStructValue());
+
+    // If this is an extract of element 0, check to see if it
+    // is a flattened struct.
+    if (fieldNo == 0)
+      if (isa<Type>(substituteStructRef(litStructType)))
+        return structValue;
+
+    return POP::StructExtractAttr::get(
+        cast<TypedAttr>(structValue),
+        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
+  };
+
+  auto processSymbolConstantAttr = [&](SymbolConstantAttr attr) -> Attribute {
+    // Strip out any lifetime parameters being bound.
+    SmallVector<TypedAttr> paramValues;
+    for (auto param : attr.getParamValues())
+      if (!isa<LIT::LifetimeType>(param.getType()))
+        paramValues.push_back(param);
+    if (paramValues.size() != attr.getParamValues().size())
+      attr = SymbolConstantAttr::get(attr.getSymbol(), paramValues,
+                                     attr.getType());
+    return replaceImpl<Attribute, Attribute>(attr);
+  };
+
+  auto processParamOperatorAttr = [&](ParamOperatorAttr attr) -> Attribute {
+    Attribute result = attr;
+    if (attr.getOpcode() == POC::BindSignature) {
+
+      // Strip out any lifetime parameters being bound by a "bind" operator,
+      // KGEN will drop this entirely if all the operands are removed.
+      SmallVector<TypedAttr> operands;
+      for (auto param : attr.getOperands())
+        if (!isa<LIT::LifetimeType>(param.getType()))
+          operands.push_back(param);
+      if (operands.size() != attr.getOperands().size())
+        result = ParamOperatorAttr::get(POC::BindSignature, operands);
+    }
+    return replaceImpl<Attribute, Attribute>(result);
+  };
+
+  Attribute result = attr;
   if (auto sattr = dyn_cast<LIT::StructAttr>(attr)) {
-    result = [&]() -> Attribute {
-      PointerUnion<POP::StructType, Type> newType =
-          substituteStructRef(sattr.getType());
-      // Flatten single-element structs.
-      if (auto type = dyn_cast<Type>(newType)) {
-        ParameterEvaluator evaluator(sattr.getType().getParamValues());
-        Attribute value =
-            evaluator.getReboundAttribute(std::get<1>(sattr.getValues()[0]));
-
-        return replace(value);
-      }
-
-      SmallVector<TypedAttr> values;
-      for (auto [name, value] : sattr.getValues())
-        values.push_back(cast<TypedAttr>(replace(value)));
-      return POP::StructAttr::get(values, cast<POP::StructType>(newType));
-    }();
+    result = processStructAttr(sattr);
   } else if (auto sattr = dyn_cast<LIT::StructExtractAttr>(attr)) {
-    result = [&]() -> Attribute {
-      auto litStructType = cast<DeclRefType>(sattr.getStructValue().getType());
-      int64_t fieldNo = getField(sattr.getField(), litStructType);
-
-      Attribute structValue = replace(sattr.getStructValue());
-
-      // If this is an extract of element 0, check to see if it
-      // is a flattened struct.
-      if (fieldNo == 0)
-        if (isa<Type>(substituteStructRef(litStructType)))
-          return structValue;
-
-      return POP::StructExtractAttr::get(
-          cast<TypedAttr>(structValue),
-          IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
-    }();
+    result = processStructExtractAttr(sattr);
+  } else if (auto symbolConstant = dyn_cast<SymbolConstantAttr>(attr)) {
+    result = processSymbolConstantAttr(symbolConstant);
+  } else if (auto paramOperator = dyn_cast<ParamOperatorAttr>(attr)) {
+    result = processParamOperatorAttr(paramOperator);
   } else if (isa<LIT::LifetimeAttr>(attr)) {
-    // #lit.lifetime => #pop.struct<>
-    result = emptyStructAttr;
+    result = emptyStructAttr; // #lit.lifetime => #pop.struct<>
+  } else if (auto paramDRE = dyn_cast<ParamDeclRefAttr>(attr)) {
+    // References to parameters of lifetime type are folded to their singleton
+    // value, completely eliminating any use of them, allowing us to just delete
+    // them from signatures.
+    if (isa<LIT::LifetimeType>(paramDRE.getType())) {
+      // p => #pop.struct<>
+      result = emptyStructAttr;
+    } else {
+      result = replaceImpl<Attribute, Attribute>(attr);
+    }
   } else {
     // Recursively replace attributes.
     result = replaceImpl<Attribute, Attribute>(attr);
@@ -333,9 +380,18 @@ Type StructOperationLowerer::replace(Type type) {
   // Signature processing checks to see if there are any lifetime parameters;
   // if so, they are dropped.
   auto processSignatureType = [&](SignatureType signature) -> Type {
-    // TODO: Need to remove the lifetime parameters as well as substituting them
-    // in with a dummy attribute into any !lit.ref<> types in the input/result
-    // type signature.  Unclear how to do this now that they are non-nominal.
+    // Just remove any lifetime parameters.
+    SmallVector<Type, 8> inputParamTypes;
+    for (auto type : signature.getInputParamTypes()) {
+      if (!isa<LIT::LifetimeType>(type))
+        inputParamTypes.push_back(type);
+    }
+    if (inputParamTypes.size() != signature.getInputParamTypes().size())
+      signature = SignatureType::get(
+          TypeArrayAttr::get(signature.getContext(), inputParamTypes),
+          signature.getResultParamTypes(), signature.getValues(),
+          signature.getMetadata());
+
     return replaceImpl(signature);
   };
 
@@ -352,6 +408,9 @@ Type StructOperationLowerer::replace(Type type) {
   } else if (isa<LIT::LifetimeType>(type)) {
     // !lit.lifetime => !pop.struct<>
     result = emptyStructAttr.getType();
+  } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
+    // !lit.ref<@T, life> => !pop.pointer<@T>
+    result = POP::PointerType::get(ref.getElementType());
   } else {
     // Recursively replace types.
     result = replaceImpl(type);
@@ -587,6 +646,22 @@ void StructOperationLowerer::replaceElementsIn(Operation *op) {
   }
 }
 
+/// Do any lowerings needed for a function op.
+static LogicalResult lowerFuncOp(GeneratorOp func) {
+  // The only specific lowering we do here is to remove input parameters of
+  // lifetime type from the signature of the function.  This is because this
+  // pass strips the lifetime parameters out.
+  SmallVector<ParamDeclAttr, 8> inputParams;
+  for (ParamDeclAttr paramDecl : func.getInputParams()) {
+    if (!isa<LIT::LifetimeType>(paramDecl.getType()))
+      inputParams.push_back(paramDecl);
+  }
+  if (inputParams.size() != func.getInputParams().size())
+    func.setInputParams(inputParams);
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // LowerStructsPass
 //===----------------------------------------------------------------------===//
@@ -632,6 +707,7 @@ void LowerStructsPass::runOnOperation() {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
+        .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });
   });
   structLowerer.eraseRecursivePointerField = false;
