@@ -274,10 +274,6 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
       return Error(toString(generator.takeError()));
   }
 
-  // TODO: (#10184) Ensure we have no memory leaks on linux platforms.
-  if (tt.isOSBinFormatELF())
-    return success();
-
   if (tt.isOSBinFormatMachO()) {
     if (auto platform = llvm::orc::MachOPlatform::Create(
             session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
@@ -544,9 +540,33 @@ ExecutionEngine::ExecutionEngine(
       dataLayout(dl.getStringRepresentation()) {}
 
 ExecutionEngine::~ExecutionEngine() {
-  if (executionSession)
-    if (auto Err = executionSession->endSession())
-      executionSession->reportError(std::move(Err));
+  if (!executionSession)
+    return;
+
+  // If the execution engine has initialized the ORC runtime, the ELFNix and
+  // COFF platform implementations need manual shutdown. The MachOPlatform
+  // implementation is more sophisticated and performs shutdown automatically
+  // through the JITLink LinkGraph allocation actions.
+  const llvm::Triple &triple = executionSession->getTargetTriple();
+  if (executionSession->getPlatform() &&
+      (triple.isOSBinFormatELF() || triple.isOSBinFormatCOFF())) {
+    ErrorOr<CompiledFunc> shutdown =
+        lookup(triple.isOSBinFormatELF() ? "__orc_rt_elfnix_platform_shutdown"
+                                         : "__orc_rt_coff_platform_shutdown");
+    if (shutdown.isError()) {
+      llvm::report_fatal_error(
+          Twine("failed to find ELF/COFF platform shutdown function: ") +
+          shutdown.takeError().get());
+    }
+    struct OrcRTCWrapperFunctionResult {
+      char *data;
+      size_t size;
+    };
+    shutdown->invoke<OrcRTCWrapperFunctionResult, char *, size_t>(nullptr, 0);
+  }
+
+  if (auto Err = executionSession->endSession())
+    executionSession->reportError(std::move(Err));
 }
 
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
