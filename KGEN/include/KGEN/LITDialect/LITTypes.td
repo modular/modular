@@ -76,6 +76,46 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime"> {
   }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// RefType
+//===----------------------------------------------------------------------===//
+
+def LIT_RefType : LITType<"Ref", "ref"> {
+  let summary = "lifetime-bound reference type";
+  let description = [{
+    This type represents a typed reference to a memory object with a lifetime.
+    This is lowered to a !pop.pointer after CheckLifetimes verifies that the
+    uses of it are all correct.  Examples:
+
+    ```mlir
+    // A reference to a scalar.
+    !lit.ref<f32, some_lifetime>
+    ```
+  }];
+
+  let parameters = (ins "BoolAttr":$isMutable,
+                        "TypedAttr":$elementType, "TypedAttr":$lifetime);
+  let assemblyFormat = [{
+    `<` custom<MutFlag>($isMutable) `` custom<PrettyType>($elementType) `,`
+        custom<LifetimeParamValue>($lifetime) `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
+                                        "TypedAttr":$elementType,
+                                        "TypedAttr":$lifetime)>,
+    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
+                                        "Type":$elementType,
+                                        "TypedAttr":$lifetime)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the elementType attribute as a type.
+    Type getElementAsType();
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Types for magic declarations.
 //===----------------------------------------------------------------------===//

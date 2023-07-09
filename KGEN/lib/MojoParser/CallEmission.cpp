@@ -954,8 +954,8 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
 }
 
 /// Add explanation for why this candidate doesn't work to the specified
-/// diagnostic. isMethodCall indicates whether the call was written with
-/// `foo(x,y)` syntax or `x.foo(y)` syntax.
+/// diagnostic. callable.syntax indicates whether the call was written with
+/// (e.g.) `foo(x,y)` or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
                                ArrayRef<ASTExprAnd<AnyValue>> operands,

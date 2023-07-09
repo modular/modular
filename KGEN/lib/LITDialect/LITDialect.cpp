@@ -74,10 +74,53 @@ void LITDialect::initialize() {
       >();
 }
 
-#define GET_TYPEDEF_CLASSES
-#include "KGEN/LITDialect/LITTypes.cpp.inc"
-
 Operation *LITDialect::materializeConstant(OpBuilder &b, Attribute value,
                                            Type type, Location loc) {
   return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
 }
+
+//===----------------------------------------------------------------------===//
+// Type implementations.
+//===----------------------------------------------------------------------===//
+
+RefType RefType::get(bool isMutable, TypedAttr elementType,
+                     TypedAttr lifetime) {
+  auto *ctx = elementType.getContext();
+  return get(ctx, BoolAttr::get(ctx, isMutable), elementType, lifetime);
+}
+
+RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime) {
+  return get(isMutable, TypeConstantAttr::get(elementType), lifetime);
+}
+
+Type RefType::getElementAsType() {
+  TypedAttr elemType = getElementType();
+  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
+    return typeCst.getValue();
+  assert(::isa<MLIRTypeType>(elemType.getType()) &&
+         "parameter expr must have metatype type");
+  return ParamRefType::get(elemType);
+}
+
+/// Print/Parse a parameter value that is known to have `lifetime` type.
+static void printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
+  printParamValue(p, value);
+}
+static ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value,
+                         LifetimeType::get(p.getBuilder().getContext()));
+}
+
+/// Print/Parse the 'mut' keyword as 1, and its absence as 0.
+static void printMutFlag(AsmPrinter &p, BoolAttr value) {
+  if (value.getValue())
+    p << "mut ";
+}
+static ParseResult parseMutFlag(AsmParser &p, BoolAttr &value) {
+  value =
+      BoolAttr::get(p.getContext(), succeeded(p.parseOptionalKeyword("mut")));
+  return success();
+}
+
+#define GET_TYPEDEF_CLASSES
+#include "KGEN/LITDialect/LITTypes.cpp.inc"
