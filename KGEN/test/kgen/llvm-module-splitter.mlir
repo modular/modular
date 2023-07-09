@@ -4,6 +4,8 @@
 // CHECK-LABEL: (0.o):
 // CHECK-DAG: kgen_main
 // CHECK-DAG: kgen_use
+// CHECK-DAG: kgen_global_ctor
+// CHECK-DAG: kgen_global_dtor
 
 // CHECK-LABEL: (1.o):
 // CHECK-DAG: kgen_split
@@ -18,19 +20,19 @@ kgen.func @keep1(%arg0: !pop.pointer<i32>) {
   kgen.return
 }
 
-kgen.func @ctor() {
+kgen.func @kgen_global_ctor() {
   %0 = pop.global.address @global : <i32>
   kgen.call @keep0(%0) : (!pop.pointer<i32>) -> ()
   kgen.return
 }
 
-kgen.func @dtor() {
+kgen.func @kgen_global_dtor() {
   %0 = pop.global.address @global : <i32>
   kgen.call @keep0(%0) : (!pop.pointer<i32>) -> ()
   kgen.return
 }
 
-kgen.global @global : i32 (2, @ctor, @dtor)
+kgen.global @global : i32 (2, @kgen_global_ctor, @kgen_global_dtor)
 
 kgen.export @kgen_main
 kgen.func @kgen_main() {

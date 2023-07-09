@@ -74,6 +74,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
+  llvmOptions.isJIT = isJIT;
   buildLowerToLLVMPipeline(*mgr, llvmOptions);
   if (failed(mgr->run(module)))
     return nullptr;

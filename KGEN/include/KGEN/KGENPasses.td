@@ -285,6 +285,11 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+  // FIXME(#16605): Global destructors don't work in JIT mode.
+  let options = [
+    Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
+           "If true, global destructors are not generated.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//
