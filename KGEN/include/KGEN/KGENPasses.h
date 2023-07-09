@@ -84,15 +84,9 @@ struct LowerToLLVMOptions
                                   "llvm",
                                   "Generate debug info for the LLVM level."))};
 
-  Option<std::string> topLevelKernel{
-      *this, "top-level-kernel",
-      llvm::cl::desc("The name of the top-level kernel. If specified, the "
-                     "signature of the kernel is altered to be C-compatible")};
-  Option<bool> emitOpaqueWrappers{
-      *this, "emit-opaque-wrappers",
-      llvm::cl::desc("Whether to emit opaque function wrappers. If "
-                     "specified, all contained functions will receive a "
-                     "wrapper with arguments and results tightly packed.")};
+  Option<bool> isJIT{
+      *this, "is-jit",
+      llvm::cl::desc("True if the module is being compiled for JIT mode.")};
 };
 
 /// Build the pass pipeline to convert post-elaboration KGEN IR to LLVM IR.
