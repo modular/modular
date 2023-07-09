@@ -284,35 +284,6 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
 }
 
 //===----------------------------------------------------------------------===//
-// getTargetInfoFor
-//===----------------------------------------------------------------------===//
-
-ErrorOr<TargetInfoAttr> KGEN::getTargetInfoFor(MLIRContext *ctx,
-                                               StringRef targetTriple,
-                                               StringRef cpu,
-                                               StringRef features) {
-  std::string errorMessage;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
-  if (!target)
-    return Error("could not construct host target info: " + errorMessage);
-
-  std::unique_ptr<llvm::TargetMachine> machine(
-      target->createTargetMachine(targetTriple, cpu, features, /*Options=*/{},
-                                  /*RM=*/llvm::Reloc::Model::PIC_));
-  if (!machine)
-    return Error("failed to create target machine for data layout lookup");
-
-  ErrorOr<DataLayout> dl =
-      DataLayout::parse(machine->createDataLayout().getStringRepresentation());
-  assert(!dl.isError() && "failed to parse LLVM data layout?");
-
-  // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
-                             std::move(*dl), simdWidthFromFeatures(features));
-}
-
-//===----------------------------------------------------------------------===//
 // ObjectCompilerMaterializationUnit
 //===----------------------------------------------------------------------===//
 

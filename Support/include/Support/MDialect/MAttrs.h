@@ -319,6 +319,10 @@ void setTargetInfo(ModuleOp module, TargetInfoAttr target);
 /// Look for a target info specification in the nearest surrounding module from
 /// the provided operation. Returns null if one cannot be found.
 TargetInfoAttr lookupTargetInfo(Operation *from);
+/// Get the target info for the specified target.
+ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
+                                         StringRef targetTriple, StringRef cpu,
+                                         StringRef features);
 
 //===----------------------------------------------------------------------===//
 // BuildInfoAttr
