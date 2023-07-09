@@ -27,3 +27,11 @@ kgen.generator @caller() {
   kgen.call @lifetime_lower<:lifetime #lit.lifetime>(%cst) : (!lit.lifetime) -> ()
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @ref_type<p: lifetime>(
+// CHECK-SAME: %arg0: !lit.ref<@Foo, p>
+// CHECK-SAME: %arg1: !lit.ref<mut @Foo, p>)
+kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
+                                           %b: !lit.ref<mut @Foo, p>) {
+  kgen.return
+}
