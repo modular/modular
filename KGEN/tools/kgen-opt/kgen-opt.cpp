@@ -9,17 +9,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
-#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -157,8 +153,6 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, mlir::index::IndexDialect,
-                  mlir::LLVM::LLVMDialect>();
 
   // Register the standard passes we want.
   mlir::registerCSEPass();

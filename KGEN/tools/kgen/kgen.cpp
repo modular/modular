@@ -4,12 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Cache/CacheDialect/CacheDialect.h"
 #include "Config/Version.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/EmitFuncHeader.h"
 #include "KGEN/ExecutionEngine.h"
-#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -20,11 +18,8 @@
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -171,8 +166,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  index::IndexDialect, LLVM::LLVMDialect>();
 
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
