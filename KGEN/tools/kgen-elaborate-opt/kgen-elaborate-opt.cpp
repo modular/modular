@@ -5,17 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
-#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -30,8 +26,6 @@ int main(int argc, char **argv) {
 
   // Register MLIR stuff
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, mlir::index::IndexDialect,
-                  mlir::LLVM::LLVMDialect>();
 
   // The elaborator requires LLVM lowering to run the generated functions.
   mlir::registerBuiltinDialectTranslation(registry);

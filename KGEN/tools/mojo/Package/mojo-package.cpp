@@ -21,8 +21,6 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Driver/DriverSupport.h"
 
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
@@ -507,8 +505,6 @@ static void setupMLIRContext(mlir::MLIRContext &ctx) {
   // Register the various dialects we need.
   DialectRegistry dialectRegistry;
   registerAllKGENDialects(dialectRegistry);
-  dialectRegistry.insert<DebugInfo::DebugInfoDialect, mlir::index::IndexDialect,
-                         mlir::LLVM::LLVMDialect>();
 
   mlir::registerBuiltinDialectTranslation(dialectRegistry);
   mlir::registerLLVMDialectTranslation(dialectRegistry);

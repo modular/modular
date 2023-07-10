@@ -18,6 +18,7 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -147,6 +148,9 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  config.context->appendDialectRegistry(registry);
   config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                               POP::POPDialect, LITDialect,
                               mlir::index::IndexDialect, KGENDialect>();

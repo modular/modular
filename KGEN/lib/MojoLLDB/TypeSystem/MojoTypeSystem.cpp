@@ -10,7 +10,6 @@
 #include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
-#include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
@@ -22,8 +21,6 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
-#include "mlir/Dialect/Index/IR/IndexDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -43,8 +40,6 @@ struct MojoTypeSystem::Impl {
     // Register all of the various dialect state.
     DialectRegistry registry;
     registerAllKGENDialects(registry);
-    registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                    mlir::index::IndexDialect, mlir::LLVM::LLVMDialect>();
     mlir::registerBuiltinDialectTranslation(registry);
     mlir::registerLLVMDialectTranslation(registry);
 

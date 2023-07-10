@@ -155,8 +155,6 @@ compileModule(const State &state, const llvm::opt::InputArgList &args,
   // Initialize the MLIR context.
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  registry.insert<DebugInfo::DebugInfoDialect, Cache::CacheDialect,
-                  index::IndexDialect, LLVM::LLVMDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
   context.appendDialectRegistry(registry);
