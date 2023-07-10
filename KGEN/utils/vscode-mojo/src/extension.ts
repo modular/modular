@@ -32,6 +32,12 @@ export function activate(context: vscode.ExtensionContext) {
         mojoContext.dispose();
         await mojoContext.activate(outputChannel);
       }));
+  context.subscriptions.push(
+      vscode.commands.registerCommand('mojo.restart-suspended', async () => {
+        // Dispose and reactivate the context.
+        mojoContext.dispose();
+        await mojoContext.activate(outputChannel, /*launchSuspended=*/ true);
+      }));
 
   mojoContext.activate(outputChannel);
 }

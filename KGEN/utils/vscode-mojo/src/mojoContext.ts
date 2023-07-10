@@ -14,12 +14,14 @@ export class MOJOContext implements vscode.Disposable {
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   outputChannel: vscode.OutputChannel;
+  launchSuspended: boolean;
 
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(outputChannel: vscode.OutputChannel) {
+  async activate(outputChannel: vscode.OutputChannel, launchSuspended: boolean = false) {
     this.outputChannel = outputChannel;
+    this.launchSuspended = launchSuspended;
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
@@ -128,10 +130,14 @@ export class MOJOContext implements vscode.Disposable {
       return [ null, serverPath ];
     }
 
+    let args = [];
+    if (this.launchSuspended)
+      args.push("--suspended");
+
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
       command : serverPath,
-      args : [],
+      args,
     };
 
     // Configure file patterns relative to the workspace folder.

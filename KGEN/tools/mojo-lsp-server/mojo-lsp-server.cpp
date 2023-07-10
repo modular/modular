@@ -10,7 +10,9 @@
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
+#include <csignal>
 
 using namespace mlir::lsp;
 using namespace M::KGEN::LIT;
@@ -52,6 +54,12 @@ int main(int argc, char **argv) {
       llvm::cl::desc("Pretty-print JSON output"),
       llvm::cl::init(false),
   };
+  llvm::cl::opt<bool> suspended{
+      "suspended",
+      llvm::cl::desc("Launch the server in a suspended state waiting for a "
+                     "debugger to attach"),
+      llvm::cl::init(false),
+  };
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo LSP Language Server");
 
@@ -69,6 +77,15 @@ int main(int argc, char **argv) {
   // Configure the transport used for communication.
   llvm::sys::ChangeStdinToBinary();
   JSONTransport transport(stdin, llvm::outs(), inputStyle, prettyPrint);
+
+  if (suspended) {
+    Logger::info(
+        "The server has been launched in a suspended state. It's pid "
+        "is {0} and you can use a debugger to attach to it with, for example, "
+        "`lldb -p {0}`.",
+        llvm::sys::Process::getProcessId());
+    std::raise(SIGSTOP);
+  }
 
   // Start the server.
   MojoServer server;
