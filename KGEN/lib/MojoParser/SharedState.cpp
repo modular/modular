@@ -55,14 +55,13 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 /// standard library cannot be found.
 static void getAutoImportPaths(SmallVector<std::string> &paths) {
   // Check if we already have the path set.
-  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
-    paths.push_back(
-        (std::filesystem::path(*envDir) / "Kernels" / "mojo").string());
-
   if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH"))
     paths.push_back(
         (std::filesystem::path(*envDir) / "build" / "Kernels" / "mojo")
             .string());
+  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
+    paths.push_back(
+        (std::filesystem::path(*envDir) / "Kernels" / "mojo").string());
 
   // If a path was specified via envvar, we're done here.
   if (!paths.empty())
@@ -72,8 +71,8 @@ static void getAutoImportPaths(SmallVector<std::string> &paths) {
   std::filesystem::path path = std::filesystem::current_path();
   while (!path.empty()) {
     if (path.stem() == "modular") {
-      paths = {(path / "Kernels" / "mojo").string(),
-               (path / ".derived" / "build" / "Kernels" / "mojo").string()};
+      paths = {(path / ".derived" / "build" / "Kernels" / "mojo").string(),
+               (path / "Kernels" / "mojo").string()};
       return;
     }
     if (!path.has_parent_path())
@@ -533,14 +532,13 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
                                                     StringRef includeDir) {
   // Check if we have a source package with this name.
   auto name = std::filesystem::path(includeDir.str()) / moduleName.str();
-  if (std::filesystem::is_directory(name)) {
-    if (std::filesystem::exists(name / "__init__.mojo") ||
-        std::filesystem::exists(name / "__init__.🔥"))
-      return name.generic_string();
-    return std::nullopt;
-  }
+  if (isMojoSourcePackagePath(name))
+    return name.generic_string();
+
   // Otherwise, check for a source module with this name.
-  if (std::filesystem::exists(name.replace_extension("mojo")) ||
+  if (std::filesystem::exists(name.replace_extension("mojopkg")) ||
+      std::filesystem::exists(name.replace_extension("📦")) ||
+      std::filesystem::exists(name.replace_extension("mojo")) ||
       std::filesystem::exists(name.replace_extension("🔥")))
     return name.string();
   return std::nullopt;
@@ -659,6 +657,12 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     return createPackageState(declName, mangledName, *modulePath, *parentState,
                               fileLoc);
   }
+
+  // Check if the path is a binary package.
+  StringRef pathRef(*modulePath);
+  if (pathRef.ends_with(".mojopkg") || pathRef.ends_with(".📦"))
+    return createBinaryPackageState(loc, declName, mangledName, *modulePath,
+                                    *parentState);
 
   // Open the module file within the source manager.
   std::string fullPath;
@@ -941,9 +945,11 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
 }
 
 bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
+  // Handle source files.
   if (path.extension() == ".mojo" || path.extension() == ".🔥")
     return true;
-  return isMojoPackagePath(path);
+  // Handle source packages.
+  return isMojoSourcePackagePath(path);
 }
 
 SharedState::ModuleState &
@@ -1015,6 +1021,56 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
       {mangledName, std::make_unique<ModuleState>(&decl, packagePath)});
   ModuleState &moduleState = *it.first->second;
   impl->moduleStates[&decl] = &moduleState;
+
+  return moduleState;
+}
+
+SharedState::ModuleState &SharedState::createBinaryPackageState(
+    SMLoc loc, StringAttr declName, StringAttr mangledName,
+    StringRef packagePath, ModuleState &parentState) {
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
+      llvm::MemoryBuffer::getFile(packagePath);
+  if (!packageBuffer) {
+    return createErrorModuleState(loc, mangledName, *parentState.decl,
+                                  "unable to open package file '" +
+                                      packagePath + "'");
+  }
+
+  // Insert a new module decl.
+  ASTDecl &decl = declResolver->addDecl(
+      PValue(BoolAttr::get(getContext(), false)), SMLoc(), declName,
+      parentState.decl, parentState.decl->getCursor(),
+      parentState.decl->getCursor(), /*indentation=*/-1);
+  auto it = parentState.nestedModules.insert(
+      {mangledName, std::make_unique<ModuleState>(&decl)});
+  ModuleState &moduleState = *it.first->second;
+  impl->moduleStates[&decl] = &moduleState;
+
+  // Read the cached package.
+  Block *block = parentState.decl->getDeclEndBuilder().getBlock();
+  {
+    TimeTraceScope<> timeScope("readBytecodeFile");
+    auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+    sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
+    const llvm::MemoryBuffer *memoryBuf =
+        sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+    moduleState.bytecodeReader.emplace(memoryBuf->getMemBufferRef(),
+                                       impl->bytecodeParserContext,
+                                       /*lazyLoad=*/true, sourceMgr);
+
+    // Read in the cached bytecode.
+    if (failed(moduleState.bytecodeReader->readTopLevel(block))) {
+      emitError(loc) << "unable to load package '" << packagePath << "'";
+      decl.hasReferenceError = true;
+      return moduleState;
+    }
+  }
+
+  // Initialize the decl with the bytecode IR. The loaded package is the last
+  // operation in the block.
+  decl.setIRValue(&block->back());
+  decl.loadedFromBytecode = true;
+  decl.resolvedness = DeclResolvedness::signature;
 
   return moduleState;
 }
@@ -1384,6 +1440,11 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     return newDecl;
   };
 
+  // If this decl is a package, this is its corresponding module state.
+  ModuleState *packageState = nullptr;
+  if (isa<PackageOp>(declOp))
+    packageState = impl->moduleStates[&decl];
+
   // Process the parsed region bodies, generating any necessary nested decls.
   SmallVector<Operation *> deferredOps;
   for (Region &region : declOp->getRegions()) {
@@ -1411,8 +1472,21 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             addDeclForOp(op, op.getSymNameAttr());
           })
           .Case<FileModuleOp, PackageOp>([&](auto op) {
-            addDeclForOp(
-                op, StringAttr::get(getContext(), op.getName().drop_front()));
+            assert(packageState &&
+                   "FileModule or Package nested in non-package");
+            StringAttr name = op.getNameAttr();
+            ASTDecl &decl = addDeclForOp(op, name);
+
+            // Alias this without the `$` to allow users to resolve this nested
+            // package/module using the name.
+            packageState->decl->declsInScope.insert(
+                {StringAttr::get(getContext(), name.getValue().drop_front()),
+                 {&decl}});
+
+            // Record a nested module state for this decl.
+            auto it = packageState->nestedModules.insert(
+                {name, std::make_unique<ModuleState>(&decl)});
+            impl->moduleStates[&decl] = &*it.first->second;
           })
           .Default([&](Operation *op) { deferredOps.push_back(op); });
     }

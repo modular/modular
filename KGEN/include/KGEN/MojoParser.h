@@ -288,7 +288,7 @@ protected:
 //===----------------------------------------------------------------------===//
 
 /// Returns true if the given file path corresponds to a mojo package.
-bool isMojoPackagePath(const std::filesystem::path &path);
+bool isMojoSourcePackagePath(const std::filesystem::path &path);
 
 /// Parse a single .mojo file and return the MLIR module for it.
 ///

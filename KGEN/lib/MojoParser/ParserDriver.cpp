@@ -222,7 +222,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
       });
 }
 
-bool M::isMojoPackagePath(const std::filesystem::path &path) {
+bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
   if (std::filesystem::is_directory(path)) {
     return std::filesystem::exists(path / "__init__.mojo") ||
            std::filesystem::exists(path / "__init__.🔥");
@@ -235,7 +235,7 @@ std::pair<OwningOpRef<ModuleOp>, PackageOp> M::importMojoPackage(
     MojoParserConfig &config, mlir::TimingScope &ts,
     SmallVectorImpl<std::string> *includedFiles, bool enableCaching) {
   // Emit an error if the path doesn't actually correspond with a package.
-  if (!isMojoPackagePath(path.str())) {
+  if (!isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
                            "provided path '" + path +
                                "' does not correspond to a package");
