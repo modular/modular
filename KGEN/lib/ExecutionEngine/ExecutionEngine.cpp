@@ -274,6 +274,9 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
       return Error(toString(generator.takeError()));
   }
 
+  if (tt.isOSBinFormatELF())
+    return success();
+
   if (tt.isOSBinFormatMachO()) {
     if (auto platform = llvm::orc::MachOPlatform::Create(
             session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
