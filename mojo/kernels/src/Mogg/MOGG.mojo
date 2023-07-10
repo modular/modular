@@ -105,7 +105,7 @@ fn MOGGExport():
     alias _floor = floor
     alias _gather = _gather_with_lambdas
     alias _gelu = gelu
-    alias _get_packed_b_shape = get_packed_b_shape
+    alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _greater = greater
     alias _greater_equal = greater_equal
     alias _isinf = isinf
@@ -1073,8 +1073,8 @@ fn _gather_with_lambdas[
 
 # TODO(16425): Unify with existing shim.
 @always_inline
-fn get_packed_b_shape[
-    type: DType, transpose_in_0: Bool
+fn pack_matmul_b_shape_func[
+    type: DType, transpose_in_0: Bool, single_thread_blocking_override: Bool
 ](b_input: NDBuffer[2, DimList.create_unknown[2](), type],) -> StaticIntTuple[
     2
 ]:
