@@ -6,6 +6,7 @@
 # UNSUPPORTED: windows
 
 # RUN: cache-mgr -base-dir=%t -input="%S/Inputs/some_file.txt" | FileCheck %s --check-prefix=PUT
+# RUN: cache-mgr -base-dir=%t -input="%S/Inputs/some_file.txt" --output-hex | FileCheck %s --check-prefix=PUT-HEX
 # RUN: cache-mgr -base-dir=%t -input="23LV1Ne+kVjEsryIN85fThPq1J7KqaRoTL9YkYkoHeE=" | FileCheck %s --check-prefix=GET
 # RUN: cache-mgr -base-dir=%t -input="23LV1Ne+kVjEsryIN85fThPq1J7KqaRoTL9YkYkoHeE=" -o=%t/some_file_from_cas.txt && cat %t/some_file_from_cas.txt | FileCheck %s --check-prefix=GET-FILE
 
@@ -13,7 +14,9 @@
 # To reproduce: `echo "23LV1Ne+kVjEsryIN85fThPq1J7KqaRoTL9YkYkoHeE=" | base64 -d | xxd -p`
 # RUN: cache-mgr -base-dir=%t -input="db72d5d4d7be9158c4b2bc8837ce5f4e13ead49ecaa9a4684cbf589189281de1" -o=%t/some_file_from_cas.txt && cat %t/some_file_from_cas.txt | FileCheck %s --check-prefix=GET-FILE-HEX
 
+# These two are exactly the same, just one is hex.
 # PUT: 23LV1Ne+kVjEsryIN85fThPq1J7KqaRoTL9YkYkoHeE=
+# PUT-HEX: db72d5d4d7be9158c4b2bc8837ce5f4e13ead49ecaa9a4684cbf589189281de1
 
 # GET: hello
 # GET: I

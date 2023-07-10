@@ -65,9 +65,13 @@ public:
       "o", cl::desc("File path to use for program outputs."),
       llvm::cl::init("-")};
 
-  cl::opt<bool> append{"append",
-                       cl::desc("Append to the output file."),
+  cl::opt<bool> append{"append", cl::desc("Append to the output file."),
                        cl::init(false)};
+
+  cl::opt<bool> outputHex{
+      "output-hex",
+      cl::desc("write the output hash in hex, rather than base64"),
+      cl::init(false)};
 
   /// Get the filesystem path for the CAS. Defaults to a temporary directory.
   std::filesystem::path getFsPath() const;
@@ -153,22 +157,27 @@ std::filesystem::path CLOptions::getFsPath() const {
   return out;
 }
 
-static AsyncValueRef<std::string> putObjectsIntoCache(
-    BinaryBlobCacheKey::KeyTy key, Cache::BufferRef value, StringRef input,
-    RCRef<BlobCache<BinaryBlobCacheKey>> &cache, LLCL::Runtime &runtime) {
+static AsyncValueRef<std::string>
+putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, Cache::BufferRef value,
+                    StringRef input,
+                    RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
+                    LLCL::Runtime &runtime, bool useHex) {
 
   AsyncValueRef<std::string> insert =
       cache->insert(std::move(key), std::move(value));
   auto outCh = AsyncValueRef<std::string>::allocate(runtime);
   std::move(insert).andThenSync(
       [outCh = outCh.copy(),
-       input = Buffer::get(input)](AsyncValueRef<std::string> &&hash) mutable {
+       input = Buffer::get(input), useHex](AsyncValueRef<std::string> &&hash) mutable {
         // If we have an error, report it.
         if (hash.isError())
           return std::move(outCh).setToError(hash.takeDiagnostic());
 
         // Otherwise, emplace the string so that we can report it to the
         // user.
+        if (useHex)
+          return std::move(outCh).emplace(llvm::toHex(*hash, /*LowerCase=*/true));
+
         std::move(outCh).emplace(llvm::encodeBase64(*hash));
       });
   return outCh;
@@ -237,8 +246,9 @@ int main(int argc, char **argv) {
       return clOptions.reportError(bufOr.getError());
     std::string keyToWrite =
         key.empty() ? wrapKey((*bufOr).copy(), clOptions.target) : key;
-    AsyncValueRef<std::string> outCh = putObjectsIntoCache(
-        keyToWrite, (*bufOr).copy(), clOptions.input, cache, runtime);
+    AsyncValueRef<std::string> outCh =
+        putObjectsIntoCache(keyToWrite, (*bufOr).copy(), clOptions.input, cache,
+                            runtime, clOptions.outputHex);
     await(outCh);
     if (outCh.isError()) {
       operationResult.getUnderlyingStorage().emplace<EncodedDiagnostic>(
