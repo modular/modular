@@ -70,6 +70,10 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
+
+  // At the end of the LIT lowering pipeline, pull in the bodies of constructs
+  // that were already elaborated.
+  pm.addPass(createLowerPreElaboratedLIT());
 }
 
 /// A default specialization evaluator that JITs and invokes the specialized

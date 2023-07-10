@@ -211,44 +211,12 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     signature = IndexRefRemapper::prependParams(signature, parentInputParams);
   }
 
-  // A small functor to ensure we handle replacing the lit.func correctly. We
-  // have to grab the current iterator, then remove, insert, and erase in that
-  // order to ensure we insert in the correct position.
-  auto replaceLitFunc = [&](Operation *newOp) {
-    Block::iterator genIter = gen->getIterator();
-    symbolTable.remove(gen);
-    symbolTable.insert(newOp, genIter);
-    gen.erase();
-  };
-
-  // If we're working with an extern func, then we replace it with the
-  // fully-elaborated bytecode.
+  // External functions don't get lowered until later in the pipeline, for now
+  // just ensure the function gets renamed properly.
   if (gen.isExternal()) {
-    DenseResourceElementsAttr elaboratedBody =
-        gen.getPostElaborationBodyRefAttr();
-    assert(elaboratedBody &&
-           "externalized funcs must have already-elaborated bodies attached");
-    // Get the data for the elaborated body.
-    mlir::AsmResourceBlob *blob = elaboratedBody.getRawHandle().getBlob();
-    if (!blob) {
-      return gen->emitError(
-          "could not find the blob for postElaborationBodyRef");
-    }
-
-    ArrayRef<char> bytecode = blob->getData();
-    llvm::MemoryBufferRef bufferRef(
-        StringRef(bytecode.begin(), bytecode.size()), "");
-    if (failed(mlir::readBytecodeFile(bufferRef, gen->getBlock(),
-                                      gen->getContext())))
-      return failure();
-
-    // readBytecodeFile inserts at the end of the block, pull that op.
-    auto result = cast<KGEN::FuncOp>(gen->getBlock()->back());
-    // `gen` was renamed above if the parent prefix was non-empty, so we can use
-    // it as the key in the map's lookup.
-    renamedFuncs[gen.getNameAttr()] = result.getNameAttr();
-    // Replace `gen` with the new func we just created.
-    replaceLitFunc(result);
+    StringAttr newName = gen.getPostElaborationNameAttr();
+    renamedFuncs[gen.getNameAttr()] = newName;
+    gen.setSymName(newName);
     return success();
   }
 
@@ -265,7 +233,10 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   result.getBodyRegion().push_back(bodyBlock);
 
   // Move over the symbol, and we're done.
-  replaceLitFunc(result);
+  Block::iterator genIter = gen->getIterator();
+  symbolTable.remove(gen);
+  symbolTable.insert(result, genIter);
+  gen.erase();
   return success();
 }
 
@@ -463,8 +434,9 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   }
 
   OpBuilder b(package.getContext());
-  auto linkOp = b.create<KGEN::LinkOp>(
-      package.getLoc(), package.getSymNameAttr(), StringAttr(), bytes);
+  auto linkOp = b.create<PackageLinkOp>(
+      package.getLoc(), package.getSymNameAttr(), *compiledFor, bytes,
+      package.getPostElaborationModuleAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do

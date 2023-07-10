@@ -246,12 +246,6 @@ lit.func @lexical_terminators(%cond: i1, %err: !kgen.declref<@Error>) throws -> 
   lit.end_func
 }
 
-// CHECK-LABEL: lit.func @extern()
-lit.func @extern() {
-  // CHECK: lit.extern_func
-  lit.extern_func
-}
-
 // CHECK-LABEL: lit.func @async_fn() async
 lit.func @async_fn() async {
   lit.end_func

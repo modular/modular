@@ -529,6 +529,17 @@ LogicalResult LIT::FuncOp::verify() {
   // types.
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
+
+  if (getPostElaborationModuleRef().has_value() !=
+      getPostElaborationName().has_value())
+    return emitOpError("expected post elaboration reference and name to be "
+                       "specified together or not at all");
+  if (isExternal()) {
+    if (!llvm::hasSingleElement(*getBody()) ||
+        !isa<LIT::ExternFuncOp>(&getBody()->front()))
+      return emitOpError("expected external function body to contain a single "
+                         "`lit.extern_func`");
+  }
   return success();
 }
 
@@ -616,8 +627,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(),
         AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled),
-        builder.getI8IntegerAttr(uint8_t(specialFnKind)),
-        DenseResourceElementsAttr{});
+        builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
+        StringAttr());
 
   result.regions[0]->push_back(new Block());
 }
@@ -1251,6 +1262,16 @@ LogicalResult ErrorReturnOp::verify() {
   if (getVariant().getType().getNumTypes() != 2)
     return emitOpError(
         "expected two types in the variant: an error type and a success type.");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ExternFuncOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::ExternFuncOp::verify() {
+  if (!getParentOp().isExternal())
+    return emitOpError("expected an external parent function");
   return success();
 }
 

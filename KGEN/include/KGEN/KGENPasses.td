@@ -143,6 +143,20 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerPreElaboratedLIT
+//===----------------------------------------------------------------------===//
+
+def LowerPreElaboratedLIT : Pass<"lower-preelaborated-lit", "mlir::ModuleOp"> {
+  let summary = "Lower the pre-elaborated `lit` dialect to the `kgen` dialect.";
+  let description = [{
+    This pass lowers high level abstractions, that have already been elaborated,
+    from "lit" to "kgen" and diagnoses any errors that are found along the way.
+  }];
+
+  let dependentDialects = ["KGENDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerClosures
 //===----------------------------------------------------------------------===//
 
