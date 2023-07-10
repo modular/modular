@@ -1493,12 +1493,11 @@ def POP_ExternalCallOp : POPOp<"external_call",
     `resAttrs` as well.
   }];
 
-  let arguments = (ins AttrOfType<KGEN_StringType>:$func,
-                       Variadic<AnyType>:$operands,
-                       OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
-                       OptionalAttr<ArrayAttr>:$funcAttrs,
-                       OptionalAttr<DictArrayAttr>:$argAttrs,
-                       OptionalAttr<DictArrayAttr>:$resAttrs);
+  let arguments = (ins
+    AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
+    OptionalAttr<TypeAttrOf<FunctionType>>:$variadicType,
+    OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
+    OptionalAttr<DictArrayAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{

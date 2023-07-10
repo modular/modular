@@ -1580,6 +1580,7 @@ public:
     mlir::ArrayAttr passthrough = op.getFuncAttrsAttr();
     mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
     mlir::ArrayAttr resAttrs = op.getResAttrsAttr();
+    auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
 
     // Lookup an existing function.
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
@@ -1589,23 +1590,12 @@ public:
                  .attachNote(func.getLoc())
              << "see function declaration here";
     }
-    if (func && func.getPassthroughAttr() != passthrough) {
+    if (func &&
+        std::make_tuple(func.getPassthroughAttr(), func.getArgAttrsAttr(),
+                        func.getResAttrsAttr(), func.getMemoryAttr()) !=
+            std::make_tuple(passthrough, argAttrs, resAttrs, memory)) {
       return mlir::emitError(op.getLoc(),
                              "existing function with conflicting attributes")
-                 .attachNote(func.getLoc())
-             << "see function declaration here";
-    }
-    if (func && func.getArgAttrsAttr() != argAttrs) {
-      return mlir::emitError(
-                 op.getLoc(),
-                 "existing function with conflicting argument attributes")
-                 .attachNote(func.getLoc())
-             << "see function declaration here";
-    }
-    if (func && func.getResAttrsAttr() != resAttrs) {
-      return mlir::emitError(
-                 op.getLoc(),
-                 "existing function with conflicting result attributes")
                  .attachNote(func.getLoc())
              << "see function declaration here";
     }
@@ -1622,6 +1612,8 @@ public:
         func.setArgAttrsAttr(argAttrs);
       if (resAttrs)
         func.setResAttrsAttr(resAttrs);
+      if (memory)
+        func.setMemoryAttr(memory);
       symtab.insert(func);
     }
 

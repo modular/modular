@@ -620,7 +620,8 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
                            ValueRange operands) {
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr());
+        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
+        Attribute());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state,
@@ -629,7 +630,7 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state,
   build(b, state, results,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
         TypeAttr::get(variadicType), mlir::ArrayAttr(), mlir::ArrayAttr(),
-        mlir::ArrayAttr());
+        mlir::ArrayAttr(), Attribute());
 }
 
 LogicalResult
