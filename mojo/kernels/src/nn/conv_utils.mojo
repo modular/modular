@@ -384,7 +384,7 @@ fn get_conv_num_partitions[
     let max_num_channel_tasks = max(conv_shape.c // min_c_per_task, 1)
     let num_channel_tasks = min(
         max_num_channel_tasks,
-        div_ceil(num_tasks, num_row_tasks * num_col_tasks),
+        num_tasks // (num_row_tasks * num_col_tasks),
     )
 
     return Index(num_row_tasks, num_channel_tasks, num_col_tasks)

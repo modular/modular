@@ -433,6 +433,8 @@ fn main():
             rt,
         )
 
+        # Top resnet shapes, all pre-packed
+
         # likely to partition C
         test[DType.float32, True](
             1,  # N
@@ -443,6 +445,156 @@ fn main():
             3,  # S
             256,  # F
             Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            58,  # H
+            58,  # W
+            64,  # C
+            3,  # R
+            3,  # S
+            64,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            30,  # H
+            30,  # W
+            128,  # C
+            3,  # R
+            3,  # S
+            128,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            9,  # H
+            9,  # W
+            512,  # C
+            3,  # R
+            3,  # S
+            512,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            230,  # H
+            230,  # W
+            3,  # C
+            7,  # R
+            7,  # S
+            64,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            58,  # H
+            58,  # W
+            128,  # C
+            3,  # R
+            3,  # S
+            128,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            30,  # H
+            30,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            256,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            16,  # H
+            16,  # W
+            512,  # C
+            3,  # R
+            3,  # S
+            512,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            56,  # H
+            56,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            512,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            14,  # H
+            14,  # W
+            1024,  # C
+            3,  # R
+            3,  # S
+            2048,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            28,  # H
+            28,  # W
+            512,  # C
+            3,  # R
+            3,  # S
+            1024,  # F
+            Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
