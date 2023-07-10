@@ -1562,6 +1562,16 @@ PValue OverloadSet::emitAsPValue(ExprEmitter *emitter,
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
+  // Verify that the target has no result parameters.  We have no way to bind
+  // these indirectly.
+  if (!resultParams.empty()) {
+    emitter.emitError(
+        expr->getLoc(),
+        "calls with result parameter bindings must be called directly")
+        << expr->getRange();
+    return {};
+  }
+
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a CRValue.  Try to resolve it based on the destination's type.
   PValue directSymbolAttr;
@@ -1584,17 +1594,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
       return {};
   }
 
-  // Verify that the target has no result parameters.  We have no way to bind
-  // these indirectly.
-  auto calleeSignature =
-      cast<SignatureType>(directSymbolAttr.getType().mlirType);
-  if (!calleeSignature.getResultParamTypes().empty()) {
-    emitter.emitError(expr->getLoc(),
-                      "calls with result parameters must be called directly")
-        << expr->getRange();
-    return {};
-  }
-
   // If we have no base value, then we are just a symbol, return it.
   if (!baseValue)
     return emitter.emitCResult(directSymbolAttr, expr, dest);
@@ -1603,6 +1602,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
+  auto calleeSignature =
+      cast<SignatureType>(directSymbolAttr.getType().mlirType);
   Type firstArgIRType = calleeSignature.getValueInputs()[0];
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
   Value firstArgValue;

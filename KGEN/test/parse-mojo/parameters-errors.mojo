@@ -175,11 +175,8 @@ fn useResultParams():
   hasResultParam[1 -> varNotAlias]()
 
   alias g: Int
-  # expected-error @+1 {{calls with result parameters must be called directly}}
+  # expected-error @+1 {{calls with result parameter bindings must be called directly}}
   _ = hasResultParam[1 -> g]
-
-  # expected-error @+1 {{calls with result parameters must be called directly}}
-  _ = hasResultParam
 
   # expected-error-re @+1 {{cannot use parameterized function of type 'fn[Int]() -> None' without binding all its parameters}}
   var float1 = hasInputParam

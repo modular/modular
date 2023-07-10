@@ -258,9 +258,13 @@ fn just_result_params[() -> a: __mlir_type.index]():
   param_return[(42).value]
 
 
-# A bit grotty, but effective way to provide a kgen.param.fork over three
-# values.  This should be made variadic and generic and moved to the standard
-# library at some point.
+# CHECK-LABEL: lit.func @"result_param_ref()"
+fn result_param_ref():
+    # CHECK: unbound_ref: <[] -> index>() -> !lit.none = <{{.*}}@"just_result_params()">
+    alias unbound_ref = just_result_params
+    # CHECK: bound_ref: <[] -> {{.*}}Int, {{.*}}Int>() -> {{.*}}Int> = <{{.*}}idx_result_params{{.*}}<:{{.*}}Int #lit.struct<{value = 1}>>>
+    alias bound_ref = idx_result_params[1]
+
 
 # CHECK-LABEL: lit.func @"search3{{.*}}"<{{.*}}a: {{.*}}@"$Int"::@Int, {{.*}}b: {{.*}}@"$Int"::@Int, {{.*}}c: {{.*}}@"$Int"::@Int -> {{.*}}d: {{.*}}@"$Int"::@Int>()
 fn search3[a: Int, b: Int, c: Int -> d: Int]():
