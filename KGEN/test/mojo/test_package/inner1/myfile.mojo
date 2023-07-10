@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from IO import print
+
 
 struct Struct:
     fn parametric[a: Int](self) -> Int:
@@ -16,3 +18,7 @@ struct Struct:
 struct ParametricStruct[a: Int]:
     fn foo(self):
         return
+
+
+fn print10():
+    print(10)

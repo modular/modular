@@ -464,7 +464,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // Reject input files that do not appear to be mojo package directories (this
   // includes stdin "-").
   pkgArgs.inputPath = args.getLastArgValue(options::OPT_INPUT).str();
-  if (!isMojoPackagePath(pkgArgs.inputPath)) {
+  if (!isMojoSourcePackagePath(pkgArgs.inputPath)) {
     return Error("'" + pkgArgs.inputPath +
                  "' does not correspond to a Mojo package");
   }

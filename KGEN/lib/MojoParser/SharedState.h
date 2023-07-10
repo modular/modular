@@ -263,6 +263,12 @@ private:
                                   StringRef packagePath,
                                   ModuleState &parentState, FileLineColLoc loc);
 
+  /// Create a new module state for a binary package with the given name.
+  ModuleState &createBinaryPackageState(SMLoc loc, StringAttr declName,
+                                        StringAttr mangledName,
+                                        StringRef packagePath,
+                                        ModuleState &parentState);
+
   /// Create an error module state with the given mangled name, and emit the
   /// given error message.
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr mangledName,
