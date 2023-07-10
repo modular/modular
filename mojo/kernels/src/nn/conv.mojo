@@ -52,6 +52,7 @@ from MatmulUtils import (
     PartitionHeuristic,
     partition_work,
 )
+from Memory import memset_zero
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -3150,11 +3151,13 @@ fn pack_filter_rscf_to_frscf[
             R, S, C - original R, S, C
             f       - c, f index with CF tile.
 
-    The buffer is padded so that F is multiple of micro_kernel_f_size.
-    The results from direct conv kernel will be incorrect if the original
-    F is not divisible over micro_kernel_f_size.
+    The packed buffer may be larger than the filter because it's padded so
+    that its last dimension is multiple of micro_kernel_f_size. This function
+    only copies R*S*C*F elements. The values in the remaining memory are set
+    to zero.
 
-    TODO: Address this when there is layout support.
+    This function has the same assumption as direct conv that F is multiple of
+    simd_size. If violated, it could result in segmentation fault.
     """
     alias simd_size = simdwidthof[type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
@@ -3165,9 +3168,14 @@ fn pack_filter_rscf_to_frscf[
     let C = filter.dim[2]()
     let F = filter.dim[3]()
 
-    var packed_filter_ptr = packed_filter.data
+    debug_assert(F % simd_size == 0, "F must be multiple of simd size.")
 
-    for f_tile_start in range(0, F, micro_kernel_f_size):
+    @always_inline
+    @parameter
+    fn pack[f_tile_size: Int](f_tile_start: Int):
+        var packed_filter_ptr = packed_filter.data.offset(
+            f_tile_start * R * S * C
+        )
         for r in range(R):
             for s in range(S):
                 for c in range(C):
@@ -3175,22 +3183,26 @@ fn pack_filter_rscf_to_frscf[
                         f_tile_start + F * (c + C * (s + S * r))
                     )
 
-                    # F dimension is padded with zeros to make the packed F
-                    # multiple of micro_kernel_f_size.
                     @always_inline
                     @parameter
                     fn body[idx: Int]():
-                        var filter_vec = SIMD[type, simd_size](0.0)
-                        if idx * simd_size < F - f_tile_start:
-                            filter_vec = filter_ptr.offset(
-                                idx * simd_size
-                            ).simd_load[simd_size]()
+                        # Assume F is multiple of simd_size so that loading
+                        # simd_size elements doesn't exceed bound.
+                        let filter_vec = filter_ptr.offset(
+                            idx * simd_size
+                        ).simd_load[simd_size]()
                         packed_filter_ptr.offset(idx * simd_size).simd_store[
                             simd_size
                         ](filter_vec)
 
-                    unroll[micro_kernel_width, body]()
+                    unroll[f_tile_size // simd_size, body]()
 
-                    packed_filter_ptr = packed_filter_ptr.offset(
-                        micro_kernel_f_size
-                    )
+                    packed_filter_ptr = packed_filter_ptr.offset(f_tile_size)
+
+    tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](0, F)
+
+    # Set the remaining memory to zero.
+    let filter_size = filter.num_elements()
+    let remaining = packed_filter.num_elements() - filter_size
+    if remaining > 0:
+        memset_zero[type](packed_filter.data.offset(filter_size), remaining)
