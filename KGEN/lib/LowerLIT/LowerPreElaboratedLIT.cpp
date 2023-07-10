@@ -1,0 +1,176 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENPasses.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
+#include "mlir/IR/Threading.h"
+#include "llvm/Support/MemoryBufferRef.h"
+
+using namespace M;
+using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// Registration
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERPREELABORATEDLIT
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
+// Inflation
+//===----------------------------------------------------------------------===//
+
+/// Read the given operation from bytecode, and pull in any of its dependencies.
+static LogicalResult readFromBytecode(Operation *op,
+                                      mlir::BytecodeReader &reader,
+                                      SymbolTable &symTab,
+                                      const SymbolTable &bytecodeSymTab) {
+  if (reader.isMaterializable(op)) {
+    if (failed(reader.materialize(op, [&](Operation *op) { return true; })))
+      return failure();
+  }
+
+  // Extract a dependency from the bytecode module and move it into the main
+  // module, if it doesn't already exist there. If a symbol was moved, return
+  // it.
+  auto extractDependency = [&](StringAttr name) -> Operation * {
+    // Don't move the symbol if it already exists in the main module.
+    if (Operation *existingOp = symTab.lookup(name))
+      return nullptr;
+    Operation *symbol = bytecodeSymTab.lookup(name);
+    assert(symbol && "expected valid symbol reference");
+
+    // Move the symbol into the main module.
+    symbol->moveAfter(op);
+    symTab.insert(symbol);
+    return symbol;
+  };
+
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](FlatSymbolRefAttr ref) -> WalkResult {
+    if (Operation *decl = extractDependency(ref.getAttr()))
+      return readFromBytecode(decl, reader, symTab, bytecodeSymTab);
+    return WalkResult::advance();
+  });
+  auto result = op->walk([&](Operation *op) {
+    // Extract references to type declarations.
+    if (walker.walk(op->getAttrDictionary()).wasInterrupted())
+      return WalkResult::interrupt();
+    for (Type type : op->getResultTypes())
+      if (walker.walk(type).wasInterrupted())
+        return WalkResult::interrupt();
+    for (Region &region : op->getRegions()) {
+      for (Type type : region.getArgumentTypes())
+        if (walker.walk(type).wasInterrupted())
+          return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(result.wasInterrupted());
+}
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct LowerPreElaboratedLITPass
+    : M::KGEN::impl::LowerPreElaboratedLITBase<LowerPreElaboratedLITPass> {
+  void runOnOperation() override {
+    auto theModule = cast<ModuleOp>(getOperation());
+    SymbolTable &symtab =
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+    // Collect the functions that need inflation, and the source containing
+    // their bodies.
+    llvm::MapVector<StringAttr, SmallVector<LIT::FuncOp>> toInflate;
+    for (auto func : theModule.getOps<LIT::FuncOp>()) {
+      if (func.isExternal()) {
+        toInflate[func.getPostElaborationModuleRefAttr().getAttr()]
+            .emplace_back(func);
+      }
+    }
+
+    mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
+    for (auto &[elaboratedModuleRef, funcs] : toInflate) {
+      LIT::PackageLinkOp elaboratedModuleLink =
+          symtab.lookup<LIT::PackageLinkOp>(elaboratedModuleRef);
+      if (!elaboratedModuleLink) {
+        funcs[0].emitOpError(
+            "unable to find the link for postElaborationModuleRef");
+        return signalPassFailure();
+      }
+      DenseResourceElementsAttr elaboratedBody =
+          elaboratedModuleLink.getPostElaborationModule();
+
+      // Get the data for the elaborated body.
+      mlir::AsmResourceBlob *blob = elaboratedBody.getRawHandle().getBlob();
+      if (!blob) {
+        funcs[0].emitError(
+            "unable to find the blob for postElaborationModuleRef");
+        return signalPassFailure();
+      }
+      ArrayRef<char> bytecode = blob->getData();
+      llvm::MemoryBufferRef bufferRef(
+          StringRef(bytecode.begin(), bytecode.size()), "");
+
+      // Start lazy loading the bytecode for the function bodies.
+      mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/true);
+      Block block;
+      if (failed(reader.readTopLevel(&block)))
+        return signalPassFailure();
+      ModuleOp bytecodeModule = cast<ModuleOp>(block.front());
+      if (failed(reader.materialize(bytecodeModule)))
+        return signalPassFailure();
+
+      // Collect the symbols within the bytecode.
+      SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
+
+      // Replace the high level functions with the elaborated counter parts in
+      // the bytecode module.
+      SmallVector<Operation *> operationsToInflate;
+      for (LIT::FuncOp func : funcs) {
+        auto result = bytecodeSymtab.lookup<KGEN::FuncOp>(func.getName());
+        if (!result) {
+          func.emitError() << "unable to find " << func.getName()
+                           << " in post-elaboration bytecode";
+          return signalPassFailure();
+        }
+        operationsToInflate.push_back(result);
+        result->moveAfter(func);
+
+        // Replace the original function with the parsed KGEN Func.
+        symtab.erase(func);
+        symtab.insert(result);
+      }
+
+      // Now that we've replaced the high level functions with the bytecode
+      // functions, inflate them and pull in all of the dependencies.
+      for (Operation *op : operationsToInflate)
+        if (failed(readFromBytecode(op, reader, symtab, bytecodeSymtab)))
+          return signalPassFailure();
+
+      // Finalize the bytecode reader, dropping anything that wasn't
+      // materialized.
+      if (failed(reader.finalize()))
+        return signalPassFailure();
+
+      // Convert the package link to a kgen link directive.
+      OpBuilder b(elaboratedModuleLink);
+      auto linkOp = b.create<KGEN::LinkOp>(
+          elaboratedModuleLink.getLoc(), elaboratedModuleLink.getSymNameAttr(),
+          StringAttr(), elaboratedModuleLink.getArchiveBytesAttr());
+      symtab.erase(elaboratedModuleLink);
+      symtab.insert(linkOp);
+    }
+  }
+};
+} // namespace

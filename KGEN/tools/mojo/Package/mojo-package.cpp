@@ -253,50 +253,53 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
 ErrorOrSuccess
 PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
                                          const ExportMap &exportedSymbols) {
-  // This lambda takes a LIT::FuncOp and the thing it turns into
-  // post-elaboration (a KGEN::FuncOp) and attaches the bytecode for the
-  // lowered func to the high-level func as a resource attribute.
-  auto attachElaboratedBytecodeToFunc =
-      [this, exportedSymbols](LIT::FuncOp hlFunc,
-                              KGEN::FuncOp llFunc) -> ErrorOrSuccess {
-    // We have to update the symbol name on llFunc to match the exported name on
-    // hlFunc, since that is how users will refer to it when it's imported.
-    StringAttr currentName = llFunc.getSymNameAttr();
-    // Reset the name on the function when this scope exits.
-    auto resetName =
-        llvm::make_scope_exit([&] { llFunc.setSymNameAttr(currentName); });
+  ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
 
+  // The list of names we need to reset after we're done.
+  // TODO: `export` in mojo is a bit overloaded, it munges many different
+  // concepts into one (including linkage, renaming, and exporting). We should
+  // clean up the abstraction model, and the renaming should generally happen
+  // earlier in the compilation pipeline.
+  SmallVector<std::pair<FuncOp, StringAttr>> namesToReset;
+  auto resetNames = llvm::make_scope_exit([&] {
+    for (auto [func, name] : namesToReset)
+      func.setSymNameAttr(name);
+  });
+
+  // Prepare the functions within the module for use when importing the package.
+  auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
+  for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
     // If the function is exported with an alias, modify it to use that name.
-    auto exported = exportedSymbols.find(currentName);
-    if (exported != exportedSymbols.end())
-      llFunc.setSymNameAttr(exported->second.alias);
+    auto exported = exportedSymbols.find(func.getSymNameAttr());
+    if (exported != exportedSymbols.end()) {
+      namesToReset.emplace_back(func, exported->first);
+      func.setSymNameAttr(exported->second.alias);
+    }
 
-    // Attach a reference to the precompiled body to the KGEN::FuncOp. Make sure
-    // to remove the precompiled body attr from the function when this scope
-    // exits, though.
-    auto resetPrecompiledBody =
-        llvm::make_scope_exit([&] { llFunc.removePrecompiledBodyRefAttr(); });
-    llFunc.setPrecompiledBodyRefAttr(
-        SymbolRefAttr::get(thePackage.getSymNameAttr()));
+    // Attach a reference to the precompiled body to the KGEN::FuncOp.
+    func.setPrecompiledBodyRefAttr(packageName);
+  }
 
-    // Write the function bytecode to a file.
-    Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
-    if (failed(mlir::writeBytecodeToFile(llFunc, *str)))
-      return Error("could not write bytecode for kgen.func");
+  // Write the package bytecode to the given buffer. This will be attached to
+  // the exported high level functions.
+  Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
+  if (failed(mlir::writeBytecodeToFile(symtab.getOp(), *str)))
+    return Error("could not write bytecode for package module");
 
-    // Hash the bytecode itself - this will give us a unique'd attr name that
-    // shouldn't clash even when a large number of packages get imported - and
-    // if they do clash, they're guaranteed to be exactly the same.
-    auto hash = llvm::BLAKE3::hash(
-        ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
-                          (const uint8_t *)str->getBufferEnd()));
+  // Reset the precompiled references now that we've written to bytecode.
+  for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>())
+    func.removePrecompiledBodyRefAttr();
 
-    hlFunc.setPostElaborationBodyRefAttr(createResourceAttr(
-        std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
-    return success();
-  };
+  // Hash the bytecode itself - this will give us a unique'd attr name that
+  // shouldn't clash even when a large number of packages get imported - and
+  // if they do clash, they're guaranteed to be exactly the same.
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                        (const uint8_t *)str->getBufferEnd()));
+  DenseResourceElementsAttr bytecodeResource = createResourceAttr(
+      std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true));
 
-  for (auto [symName, _] : exportedSymbols) {
+  for (auto [symName, exportSym] : exportedSymbols) {
     LIT::FuncOp hlFunc = flattenedNameToFunc.lookup(symName);
     if (!hlFunc)
       return Error("could not find lit.func with name " + symName.getValue());
@@ -304,15 +307,15 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
     // If the thing is parametric, then we don't care about it.
     if (!isa_and_nonnull<LIT::ExternFuncOp>(hlFunc.getBody()->getTerminator()))
       continue;
-
-    auto func = symtab.lookup<KGEN::FuncOp>(symName);
-    if (!func)
+    // Make sure we actually compiled this function.
+    if (!symtab.lookup<KGEN::FuncOp>(symName))
       return Error("could not find kgen.func with name " + symName.getValue());
 
-    if (auto err = attachElaboratedBytecodeToFunc(hlFunc, func))
-      return Error(err.getError());
+    hlFunc.setPostElaborationModuleRefAttr(packageName);
+    hlFunc.setPostElaborationNameAttr(exportSym.alias);
   }
 
+  thePackage.setPostElaborationModuleAttr(bytecodeResource);
   return success();
 }
 

@@ -11,6 +11,7 @@ add_modular_conversion_library(LowerLIT
   ConstraintSet.cpp
   LowerClosures.cpp
   LowerLIT.cpp
+  LowerPreElaboratedLIT.cpp
   LowerStructs.cpp
   LowerSemanticCF.cpp
 

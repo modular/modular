@@ -1,6 +1,6 @@
 // RUN: mojo package %S/test_package --name mojo-test-pkg | FileCheck %s
 
-// CHECK: lit.package @"$mojo-test-pkg" attributes {archiveBytes = {{.*}}, compiledFor = {{.*}}
+// CHECK: lit.package @"$mojo-test-pkg" attributes {archiveBytes = {{.*}}, compiledFor = {{.*}}, postElaborationModule = {{.*}}
 
 // CHECK: lit.package @"$inner1"
 // CHECK:   lit.file_module @"$myfile"
@@ -8,7 +8,7 @@
 // CHECK:       lit.func @"parametric{{.*}}"<{{.*}}>
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
-// CHECK:       lit.func @"foo{{.*}}"{{.*}} postElaborationBodyRef = {{.*}}
+// CHECK:       lit.func @"foo{{.*}}"{{.*}} postElaborationModuleRef = {{.*}}
 // CHECK-NEXT:    lit.extern_func
 
 // CHECK: lit.struct.decl @ParametricStruct<{{.*}}: {{.*}}@"$Int"::@Int>
@@ -18,12 +18,11 @@
 
 // CHECK: lit.package @"$inner2"
 // CHECK:   lit.file_module @"$myfile2"
-// CHECK:     lit.func @"bar()"{{.*}} postElaborationBodyRef = {{.*}}
+// CHECK:     lit.func @"bar()"{{.*}} postElaborationModuleRef = {{.*}}, postElaborationName = "bar"
 // CHECK-NEXT: lit.extern_func
 
 // CHECK: {-#
 // CHECK: dialect_resources
 // CHECK: builtin
 // CHECK: archive_{{.*}}: {{.*}}
-// CHECK: bytecode_{{.*}}: {{.*}}
 // CHECK: bytecode_{{.*}}: {{.*}}

@@ -103,6 +103,8 @@ struct TestGeneratePreElaboratedBody
 
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
+    TargetInfoAttr target = M::lookupTargetInfo(theModule);
+
     // Attach a kgen.func to the lit.func. This dummy function simply contains
     // exactly the same operations as the lit.func, but has a slightly different
     // name.
@@ -112,22 +114,37 @@ struct TestGeneratePreElaboratedBody
         continue;
 
       OpBuilder b(func.getContext());
-      OwningOpRef<KGEN::FuncOp> fakeElaboratedBody = b.create<KGEN::FuncOp>(
+      OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
+      OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
+      KGEN::FuncOp fakeElaboratedBody = fakeBuilder.create<KGEN::FuncOp>(
           func.getLoc(), (func.getSymName() + "_elaborated").str(),
           func.getSignature(), KGEN::AlwaysInlineLevel::Disabled);
 
       // Just clone the body in.
       mlir::IRMapping map;
-      func.getBodyRegion().cloneInto(&fakeElaboratedBody->getBodyRegion(), map);
+      func.getBodyRegion().cloneInto(&fakeElaboratedBody.getBodyRegion(), map);
 
+      // Generate the bytecode for the module bytecode.
       std::string str;
       llvm::raw_string_ostream stream(str);
-      if (failed(mlir::writeBytecodeToFile(*fakeElaboratedBody, stream)))
+      if (failed(mlir::writeBytecodeToFile(*fakeModule, stream)))
         return signalPassFailure();
 
-      func.setPostElaborationBodyRefAttr(createResourceAttr(
+      // Externalize the function and attach the post elaboration metadata.
+      func.getBody()->clear();
+      OpBuilder::atBlockBegin(func.getBody())
+          .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
+      StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
+      func.setPostElaborationModuleRefAttr(FlatSymbolRefAttr::get(linkName));
+      func.setPostElaborationNameAttr(fakeElaboratedBody.getSymNameAttr());
+
+      // Generate a package link to the fake module.
+      OpBuilder linkBuilder(func);
+      auto elaborationAttr = createResourceAttr(
           stream.str(),
-          "test_generated_post_elaboration_body_attr_" + Twine(counter++)));
+          "test_generated_post_elaboration_body_attr_" + Twine(counter++));
+      linkBuilder.create<KGEN::LIT::PackageLinkOp>(
+          func.getLoc(), linkName, target, elaborationAttr, elaborationAttr);
     }
   }
 
@@ -172,6 +189,7 @@ int main(int argc, char **argv) {
   KGEN::registerLowerKGENCoroutinesAsync();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();
+  KGEN::registerLowerPreElaboratedLIT();
   KGEN::registerLowerPOPToLLVM();
   KGEN::registerLowerRuntimeClosures();
   KGEN::registerLowerSemanticCF();
