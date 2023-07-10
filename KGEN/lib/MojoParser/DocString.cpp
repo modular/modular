@@ -418,9 +418,8 @@ private:
   void generateJSONFor(ASTDecl &decl, ParamDeclareOp paramOp) {
     os.object([&] {
       os.attribute("kind", "alias");
-      os.attribute(
-          "name",
-          demangleIfNeeded(paramOp.getParamDecl()).getName().getValue());
+      os.attribute("name",
+                   demangleParameterName(paramOp.getParamDecl().getName()));
 
       // Pretty print the value.
       std::string valueStr;
@@ -997,7 +996,7 @@ private:
     // Grab the parameters to the function.
     llvm::MapVector<StringRef, SMLoc> seenParameters;
     for (ParamDeclAttr decl : funcOp.getInputParams())
-      seenParameters.insert({demangleIfNeeded(decl).getName(), SMLoc()});
+      seenParameters.insert({demangleParameterName(decl.getName()), SMLoc()});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, SMLoc> sections = {

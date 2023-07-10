@@ -26,16 +26,24 @@ inline std::string mangleParameter(StringRef name, unsigned line,
   return ("_" + Twine(line) + "x" + Twine(col) + "_" + name).str();
 }
 
+/// Demangle a mangled parameter name if it is mangled.
+inline StringRef demangleParameterName(StringRef name) {
+  llvm::Regex re("^_[0-9]+x[0-9]+_");
+  if (!re.match(name))
+    return name;
+  // Strip the prefix. Drop the leading underscore and the drop until the second
+  // underscore. This way, the function can avoid returning a `std::string`.
+  name = name.drop_front();
+  return name.drop_front(name.find('_') + 1);
+}
+
 /// Recursively demangle the parameter names (declaration of references) in the
 /// given mlir type or attribute, if necessary.
 template <typename AttrOrType>
-static AttrOrType demangleIfNeeded(AttrOrType arg) {
+AttrOrType demangleIfNeeded(AttrOrType arg) {
   auto demangle = [](auto declOrRef) {
-    llvm::Regex re("^_[0-9]+x[0-9]+_");
-    if (StringRef name = declOrRef.getName(); re.match(name))
-      return decltype(declOrRef)::get(re.sub("", name),
-                                      demangleIfNeeded(declOrRef.getType()));
-    return declOrRef;
+    return decltype(declOrRef)::get(demangleParameterName(declOrRef.getName()),
+                                    demangleIfNeeded(declOrRef.getType()));
   };
 
   mlir::AttrTypeReplacer replacer;

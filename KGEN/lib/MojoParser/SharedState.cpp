@@ -142,7 +142,8 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
             config.maxNotesPerDiagnostic),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
-      parserListener(config.parserListener),  runtime(config.runtime), impl(std::make_unique<Impl>(config.context)) {
+      parserListener(config.parserListener), runtime(config.runtime),
+      impl(std::make_unique<Impl>(config.context)) {
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 
@@ -1464,7 +1465,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
           })
           .Case([&](ParamDeclareOp op) {
-            addDeclForOp(op, demangleIfNeeded(op.getParamDecl()).getName());
+            addDeclForOp(op, StringAttr::get(op.getContext(),
+                                             demangleParameterName(
+                                                 op.getParamDecl().getName())));
           })
           .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp, VarLetDeclOp>(
               [&](auto op) { addDeclForOp(op, op.getNameAttr()); })
