@@ -1043,7 +1043,7 @@ struct MatmulInnerLoopBPacked[
 
             for idx_k in range(0, self.tile_n_k[1], 4):
                 # accumulate data for this (n, k) index
-                self._accumulate[1](c_local, Index(idx_n, idx_k))
+                self._accumulate[0](c_local, Index(idx_n, idx_k))
 
             self._store_c_tile(c_local, Index(0, idx_n))
 

@@ -137,7 +137,7 @@ fn vpdpbusd[
                 rebind[SIMD[DType.int32, 16]](b),
             )
         )
-    if width == 8:
+    elif width == 8:
         return rebind[SIMD[c_type, width]](
             vpdpbusd_8(
                 rebind[SIMD[DType.int32, 8]](src),
@@ -145,14 +145,15 @@ fn vpdpbusd[
                 rebind[SIMD[DType.int32, 8]](b),
             )
         )
-    assert_param[width == 4]()
-    return rebind[SIMD[c_type, width]](
-        vpdpbusd_4(
-            rebind[SIMD[DType.int32, 4]](src),
-            rebind[SIMD[DType.int32, 4]](a),
-            rebind[SIMD[DType.int32, 4]](b),
+    else:
+        assert_param[width == 4]()
+        return rebind[SIMD[c_type, width]](
+            vpdpbusd_4(
+                rebind[SIMD[DType.int32, 4]](src),
+                rebind[SIMD[DType.int32, 4]](a),
+                rebind[SIMD[DType.int32, 4]](b),
+            )
         )
-    )
 
 
 # ===----------------------------------------------------------------------===#
