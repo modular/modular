@@ -255,13 +255,9 @@ PValue ParameterInferenceState::infer(SignatureType signature,
         if (auto c = operand.ir.getIfCValue())
           return matchTypes(c.getRValueType(), expectedType);
         // Consider the types of ORValues with single candidates.
-        if (auto o = operand.ir.getIfORValue()) {
-          if (o->fnDecls.size() == 1) {
-            return matchTypes(
-                cast<LIT::FuncOp>(*o->fnDecls.front()).getSignature(),
-                expectedType);
-          }
-        }
+        if (auto o = operand.ir.getIfORValue())
+          if (auto p = o->emitAsPValue())
+            return matchTypes(p.getType(), expectedType);
         return success();
       }
     };
@@ -840,18 +836,10 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         // right type.
         CValue argVal;
         if (auto orValue = operand.ir.getIfORValue()) {
-          // If the overload set contains just a single candidate, it can be
-          // used in implicit conversions. Materialize the function as a PValue.
-          if (orValue->fnDecls.size() == 1) {
-            argVal = orValue->fnDecls.front()->getFuncAsPValue();
-          } else {
-            argVal = orValue->filterOverloadSetForValueType(
-                expectedType, /*emitDiagnosticOnFailure=*/false, emitter);
-            if (!argVal)
-              return {kArgWrongType, providedValueIdx, expectedType,
-                      newBindings};
-            break;
-          }
+          // Try to refine the ORValue into a PValue.
+          argVal = orValue->emitAsPValue(&emitter, expectedType);
+          if (!argVal)
+            return {kArgWrongType, providedValueIdx, expectedType, newBindings};
         } else {
           argVal = operand.ir.getIfCValue();
           assert(argVal && "we handled ORValue above");
@@ -987,13 +975,12 @@ void OverloadFitness::diagnose(SignatureType signature,
   // This adds a string describing the type of the payload operand to the
   // diagnostic.
   auto getPayloadRValueType = [&] {
-    if (auto cValue = operands[payload].ir.getIfCValue())
+    AnyValue value = operands[payload].ir;
+    if (auto cValue = value.getIfCValue())
       return cValue.getRValueType();
-    // If this is a single element overload set, then we can use the only
-    // candidates type since it must not have worked out.
-    const OverloadSet &ovset = *operands[payload].ir.getIfORValue();
-    if (ovset.fnDecls.size() == 1)
-      return ASTType(cast<LIT::FuncOp>(*ovset.fnDecls[0]).getSignature());
+    // Otherwise, try to narrow an overload set to a PValue.
+    if (auto pValue = value.getIfORValue()->emitAsPValue())
+      return pValue.getType();
     return ASTType();
   };
   auto addPayloadRValueTypeName = [&]() {
@@ -1532,6 +1519,44 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   return ovSet.filterOverloadSet(operands, /*allowImplicitConversions=*/true,
                                  /*emitDiagnosticOnFailure=*/shouldPrintError,
                                  emitter);
+}
+
+PValue OverloadSet::emitAsPValue(ExprEmitter *emitter,
+                                 ASTType expectedType) const {
+  // Overload sets with base values cannot be emitted as PValues since they
+  // depend on a dynamic value.
+  // TODO: A conversion can be emitted if the base value is a PValue.
+  if (baseValue)
+    return {};
+
+  // If no expected type was provided, then only single candidate overload sets
+  // can be emitted. Also handle all single candidate overloads sets here.
+  if (!expectedType || fnDecls.size() == 1) {
+    PValue result;
+    if (fnDecls.size() != 1)
+      return {};
+
+    // If an emitter was not provided, then only unbound references can be
+    // emitted in this context.
+    if (!emitter) {
+      if (!inputParamBindings.bindings.empty())
+        return {};
+      result = cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
+    } else {
+      // Otherwise, emit the bound function reference.
+      result = getBoundConstantAttr(*emitter);
+    }
+    return result;
+  }
+
+  // Without an emitter, multiple candidates cannot be refined.
+  // FIXME: Adaptive overload sets can be emitted as PValues too.
+  if (!emitter)
+    return {};
+
+  // Okay, try to refine multiple candidates to a single one with a value type.
+  return filterOverloadSetForValueType(
+      expectedType, /*emitDiagnosticOnFailure=*/true, *emitter);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity

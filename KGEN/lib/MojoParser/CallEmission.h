@@ -23,6 +23,7 @@ class TypeArrayAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class FuncOp;
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
@@ -204,6 +205,13 @@ public:
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
+
+  /// Try to emit the overload set as a PValue if possible. Implicit conversions
+  /// are only considered if an emitter is provided, in which case errors will
+  /// be emitted as well. If a type is provided, it will be used to filter the
+  /// overload set.
+  PValue emitAsPValue(ExprEmitter *emitter = nullptr,
+                      ASTType expectedType = {}) const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.

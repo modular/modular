@@ -144,6 +144,8 @@ struct DummyFunc:
     fn __init__(inout self, f: def(Int)):
         pass
 
+fn func_arg_conversion(f: DummyFunc): pass
+
 # CHECK-LABEL: lit.func @"implicit_func_conversion()"
 fn implicit_func_conversion():
     @noncapturing
@@ -153,6 +155,10 @@ fn implicit_func_conversion():
     # CHECK: %0 = kgen.create_closure
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%f, %0)
     var f: DummyFunc = take_int
+    # CHECK: %2 = kgen.create_closure
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%anonymous2A, %2)
+    # CHECK: call {{.*}}func_arg_conversion{{.*}}(%anonymous2A)
+    func_arg_conversion(take_int)
 
 # CHECK-LABEL: lit.struct.decl @M
 @register_passable
