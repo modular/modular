@@ -1229,6 +1229,7 @@ fn matmul[
     type: DType,
     transpose_in_1: Bool,  # matches name of MO attribute
     single_thread_blocking_override: Bool,
+    lambdas_have_fusion: Bool,
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
@@ -1282,7 +1283,7 @@ fn matmul[
             transpose_a,
             transpose_b,
             b_packed,
-            True,
+            lambdas_have_fusion,
             epilogue_wrapper,
         ](
             c,
