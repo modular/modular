@@ -30,6 +30,7 @@ struct ConfigA {
 
 struct ConfigB {
   bool b = true;
+  char lots[26]; // Give this struct a large but unaligned size
 
   ConfigB() = default;
 };

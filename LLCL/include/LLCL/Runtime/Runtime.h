@@ -117,11 +117,12 @@ public:
   /// below begin execution.
   template <typename T, typename... Args>
   T &emplaceConfig(Args &&...args) {
-    auto ptr = std::make_unique<Config<T>>(std::forward<Args>(args)...);
-    assert(!configs.contains(ptr->typeId.getDenseIndex()) &&
+    auto typeId = TypeID::get<T>();
+    assert(!configs.contains(typeId.getDenseIndex()) &&
            "Runtime already holds configuration of type");
+    auto ptr = std::make_unique<Config<T>>(std::forward<Args>(args)...);
     T &result = ptr->payload;
-    configs.insert({ptr->typeId.getDenseIndex(), std::move(ptr)});
+    configs.insert({typeId.getDenseIndex(), std::move(ptr)});
     return result;
   }
 
@@ -177,19 +178,16 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
-  // Expected size of ConfigBase after padding below.
-  // Chosen such that all of our compilers will place Config::payload at the
-  // right place.
-  static const size_t kConfigBase = 4;
-
   /// Base class for configuration objects.
   struct ConfigBase {
-    TypeID typeId;
-    // Force ConfigBase to have a size such that Config::payload will always
-    // be placed immediately after the end of Config.
-    uint8_t padding[kConfigBase - sizeof(TypeID)];
-    ConfigBase(TypeID typeId) : typeId(typeId) {}
-    ~ConfigBase() { typeId.getValueDestructor()(this + 1); }
+    ConfigBase() = default;
+
+    /// Though we have TypeID::getValueDestructor, and could with a bit of
+    /// hackery destroy any Config<T> given only TypeID::get<T>(), it requires
+    /// ensuring Config::payload is always placed after this object. I think
+    /// that's too obscure to be worth avoiding the vtable, and adds a ton
+    /// of padding anyways.
+    virtual ~ConfigBase() = default;
   };
 
   /// Holds the payload for configuration object of type T.
@@ -197,22 +195,8 @@ private:
   struct Config : public ConfigBase {
     T payload;
     template <typename... Args>
-    Config(Args &&...args)
-        : ConfigBase(TypeID::get<T>()), payload(std::forward<Args>(args)...) {
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-      static_assert(sizeof(ConfigBase) == kConfigBase);
-      static_assert(offsetof(Config<T>, payload) == kConfigBase,
-                    "Offset of Config::payload needs to be aligned");
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-    }
-    ~Config() {
-      assert(false && "intended to be destroyed by ~ConfigBase only");
-    }
+    Config(Args &&...args) : payload(std::forward<Args>(args)...) {}
+    ~Config() override = default;
   };
 
   /// A map from globally unique type identifiers TypeID::get<T>() (using
