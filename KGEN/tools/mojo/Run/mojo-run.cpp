@@ -287,10 +287,9 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
     return state.reportError(machineOrErr.getError());
   std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOrErr);
 
+  // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
   auto engineOrErr = ExecutionEngine::createWithStandardLayers(
-      {/*registerDebugPlugins=*/options.debugLevel !=
-       CompilationOptions::DebugInfoLevel::kNoDebug},
-      *machine);
+      {/*registerDebugPlugins=*/false}, *machine);
   if (failed(engineOrErr))
     return state.reportError(engineOrErr.getError());
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOrErr);
