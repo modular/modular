@@ -39,3 +39,17 @@ add_modular_library(KGENCompilerRTShared SHARED
 )
 
 target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)
+
+# A fully-staticized version of KGENCompilerRT that we can use for standalone
+# mojo executables.
+add_modular_library(KGENCompilerRT-static
+  ${SOURCES}
+
+  LINK_LIBS PRIVATE
+  MSupport
+  MSupportGlobals-static
+  LLCLRuntime
+  LLCLRuntimeGlobals-static
+)
+
+target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT)
