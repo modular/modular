@@ -54,10 +54,12 @@ fn test_concat():
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ](x1_dyn, x2_dyn, x3_dyn)
 
-    let rt = Runtime(4)
-    let out_chain = OwningOutputChainPtr(rt)
-    concat[rank, type](output_dyn, concat_axis, input_list, out_chain.borrow())
-    out_chain.wait()
+    with Runtime(4) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        concat[rank, type](
+            output_dyn, concat_axis, input_list, out_chain.borrow()
+        )
+        out_chain.wait()
 
     # CHECK: == test_concat
     # CHECK-COUNT-2: 0.0
@@ -111,12 +113,12 @@ fn test_concat_parallel():
         NDBuffer[rank, DimList.create_unknown[rank](), type]
     ](x1_dyn, x2_dyn, x3_dyn)
 
-    let rt = Runtime(4)
-    let out_chain = OwningOutputChainPtr(rt)
-    _concat_parallel[rank, type](
-        output_dyn, concat_axis, input_list, out_chain.borrow()
-    )
-    out_chain.wait()
+    with Runtime(4) as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        _concat_parallel[rank, type](
+            output_dyn, concat_axis, input_list, out_chain.borrow()
+        )
+        out_chain.wait()
 
     # CHECK: == test_concat_parallel
     # CHECK-COUNT-2: 0.0
