@@ -18,7 +18,7 @@
 
 // CHECK: lit.package @"$inner2"
 // CHECK:   lit.file_module @"$myfile2"
-// CHECK:     lit.func @"bar()"{{.*}} linkageName = "bar", postElaborationModuleRef = {{.*}}
+// CHECK:     lit.func export C @"bar()"{{.*}} linkageName = "bar", postElaborationModuleRef = {{.*}}
 // CHECK-NEXT: lit.extern_func
 
 // CHECK: {-#

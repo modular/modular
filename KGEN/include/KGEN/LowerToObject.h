@@ -91,7 +91,7 @@ private:
                  CompilationOptions options);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
-  /// provided kgen.export ops.
+  /// provided exported ops.
   OwningOpRef<ModuleOp>
   produceStandaloneModule(const SymbolTable &symtab,
                           const ExportMap &exportedSymbols);

@@ -5,11 +5,9 @@
 // COM: Check the header file.
 // RUN: kgen %s -emit-header | FileCheck %s -check-prefix=HDR
 
-kgen.generator @my_exported_kernel(%arg0: f32) -> f32 {
+kgen.generator export C @my_exported_kernel(%arg0: f32) -> f32 {
   kgen.return %arg0 : f32
 }
-
-kgen.export @my_exported_kernel to C
 
 // EXEC: --- 'my_exported_kernel' returned 1.0
 

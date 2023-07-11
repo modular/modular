@@ -14,10 +14,8 @@ kgen.func @global_dtor() {
 
 kgen.global @global_var : f32 (0, @global_init, @global_dtor)
 
-kgen.func @kernel() -> f32 {
+kgen.func export C @kernel() -> f32 {
   %0 = pop.global.address @global_var : <f32>
   %1 = pop.load %0 : !pop.pointer<f32>
   kgen.return %1 : f32
 }
-
-kgen.export @kernel to C

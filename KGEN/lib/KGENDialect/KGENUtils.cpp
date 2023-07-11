@@ -22,6 +22,7 @@
 #include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1334,6 +1335,26 @@ void KGEN::printOptionalAlwaysInline(OpAsmPrinter &p,
     p << " always_inline_no_debug";
 }
 
+ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
+  ExportKind value = ExportKind::NotExported;
+  if (succeeded(p.parseOptionalKeyword("export"))) {
+    value = ExportKind::Exported;
+    if (succeeded(p.parseOptionalKeyword("C")))
+      value = ExportKind::CExported;
+  }
+  exportKind = ExportKindAttr::get(p.getContext(), value);
+  return success();
+}
+
+void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
+                             ExportKindAttr exportKind) {
+  if (static_cast<int>(exportKind.getValue()) & 1) {
+    p << " export";
+    if (exportKind.getValue() == ExportKind::CExported)
+      p << " C";
+  }
+}
+
 /// Parse either a kgen.generator or kgen.func declaration, depending on what
 /// `isGenerator` is set to.
 ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
@@ -1826,9 +1847,10 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
 llvm::MapVector<StringAttr, ExportedSymbol>
 KGEN::getExportedSymbols(ModuleOp module) {
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
-  for (auto e : module.getOps<ExportOp>()) {
-    exportedSymbols.insert({cast<FlatSymbolRefAttr>(e.getExported()).getAttr(),
-                            ExportedSymbol(e.getIsCExport())});
+  for (auto op : module.getOps<ExportInterface>()) {
+    if (op.isExported())
+      exportedSymbols.insert(
+          {op.getLinkageNameAttr(), ExportedSymbol(op.isCExported())});
   }
   return exportedSymbols;
 }

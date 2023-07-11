@@ -36,7 +36,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
-    FuncInterface, FunctionLike]> {
+    FuncInterface, FunctionLike, ExportInterface]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no
@@ -73,8 +73,9 @@ def KGEN_FuncOp : KGENOp<"func", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
-                       // If the body was precompiled, this will hold a reference
-                       // to the link directive.
+                       KGEN_ExportKindAttr:$exportKind,
+                       // If the body was precompiled, this will hold a
+                       // reference to the link directive.
                        OptionalAttr<SymbolRefAttr>:$precompiledBodyRef);
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -89,14 +90,12 @@ def KGEN_FuncOp : KGENOp<"func", [
   let builders = [
     // Builder to be used when there is no precompiled body.
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
-                   "AlwaysInlineLevel":$alwaysInlineLevel), [{
-      build($_builder, $_state, name, signature, alwaysInlineLevel, {});
+                   CArg<"AlwaysInlineLevel",
+                        "AlwaysInlineLevel::Disabled">:$alwaysInlineLevel,
+                   CArg<"ExportKind", "ExportKind::NotExported">:$exportKind), [{
+      build($_builder, $_state, name, signature, alwaysInlineLevel,
+            exportKind, /*precompiledBodyRef=*/{});
     }]>,
-    // Builder to be used when there is no precompiled body.
-    OpBuilder<(ins "StringRef":$name, "SignatureType":$signature,
-                   "AlwaysInlineLevel":$alwaysInlineLevel), [{
-      build($_builder, $_state, name, signature, alwaysInlineLevel, {});
-    }]>
   ];
 
   let hasCustomAssemblyFormat = 1;
@@ -109,7 +108,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
 def KGEN_ExternFuncOp : KGENOp<"extern.func", [
     HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    ExportInterface, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "External function declaration.";
   let description = [{
     The `kgen.extern.func` operation represents a concrete KGEN function that
@@ -127,6 +126,7 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
+                       KGEN_ExportKindAttr:$exportKind,
                        SymbolRefAttr:$importedFrom);
 
   let extraClassDeclaration = [{
@@ -144,7 +144,8 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
   }];
 
   let assemblyFormat = [{
-    $sym_name `` $function_type `from` $importedFrom attr-dict-with-keyword
+    custom<SymbolExport>($exportKind) $sym_name `` $function_type
+    `from` $importedFrom attr-dict-with-keyword
   }];
 }
 
@@ -155,7 +156,7 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
     SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
-    FuncInterface, FunctionLike]> {
+    FuncInterface, FunctionLike, ExportInterface]> {
   let summary = "Function generator definition.";
   let description = [{
     The `kgen.generator` operation defines a function generator. A generator is
@@ -185,7 +186,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        ConstraintArrayAttr:$constraints,
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel);
+                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+                       KGEN_ExportKindAttr:$exportKind);
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let extraClassDeclaration = [{
@@ -198,7 +200,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
-            resultParams, {}, {});
+            resultParams, /*constraints=*/{}, AlwaysInlineLevel::Disabled,
+            ExportKind::NotExported);
+    }]>,
+    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+                   "FunctionType":$functionType), [{
+      build($_builder, $_state, name, signature, functionType, {}, {});
     }]>
   ];
 
@@ -992,34 +999,6 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
   ];
 
   let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ExportOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExportOp : KGENOp<"export", [
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Declare an exported symbol.";
-  let description = [{
-    The `kgen.export` operation specifies an exported symbol from a
-    given module. The provided alias name will be used as the actual
-    symbol name during code generation. If `isCExport` is set, the
-    symbol will be exported as a C symbol, and its arguments and results will
-    be changed to conform to C calling convention.
-
-    Example:
-
-    ```mlir
-    kgen.export @foo
-
-    // Export using C linkage and calling convention rules.
-    kgen.export @foo to C
-    ```
-  }];
-
-  let arguments = (ins SymbolRefAttr:$exported, UnitAttr:$isCExport);
-  let assemblyFormat = "$exported (`to` `C` $isCExport^)? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

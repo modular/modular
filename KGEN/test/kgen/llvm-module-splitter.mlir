@@ -34,15 +34,13 @@ kgen.func @kgen_global_dtor() {
 
 kgen.global @global : i32 (2, @kgen_global_ctor, @kgen_global_dtor)
 
-kgen.export @kgen_main
-kgen.func @kgen_main() {
+kgen.func export @kgen_main() {
   %0 = pop.global.address @global : <i32>
   kgen.call @keep1(%0) : (!pop.pointer<i32>) -> ()
   kgen.return
 }
 
-kgen.export @kgen_use
-kgen.func @kgen_use() -> !pop.pointer<i32> {
+kgen.func export @kgen_use() -> !pop.pointer<i32> {
   %0 = pop.global.address @global : <i32>
   kgen.return %0 : !pop.pointer<i32>
 }
@@ -57,8 +55,7 @@ kgen.func @split_callee() {
   kgen.return
 }
 
-kgen.export @kgen_split
-kgen.func @kgen_split() {
+kgen.func export @kgen_split() {
   kgen.call @split_callee() : () -> ()
   kgen.return
 }

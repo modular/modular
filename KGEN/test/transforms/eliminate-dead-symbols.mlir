@@ -21,17 +21,15 @@ kgen.func @someOp() {
 }
 
 // CHECK: @exported
-kgen.func @exported() {
+kgen.func export @exported() {
   kgen.call @used() : () -> ()
   kgen.call @addr() : () -> ()
   "some.op"() {foo=@someOp} : () -> ()
   kgen.return
 }
 
-kgen.export @exported
-
 // CHECK: @A
-kgen.func @A() {
+kgen.func export @A() {
   kgen.call @B() : () -> ()
   kgen.return
 }
@@ -41,8 +39,6 @@ kgen.func @B() {
   kgen.call @A() : () -> ()
   kgen.return
 }
-
-kgen.export @A
 
 // CHECK: @global_var_fn
 kgen.func @global_var_fn() {
@@ -60,9 +56,8 @@ kgen.global @global_var : i32 (2, @global_var_fn, @global_var_fn)
 // CHECK-NOT: kgen.global @global_var
 kgen.global @unused_global : i64 (3, @unused_global_fn, @unused_global_fn)
 
-// CHECK: kgen.func @anchor_global
-kgen.export @anchor_global
-kgen.func @anchor_global() {
+// CHECK: kgen.func export @anchor_global
+kgen.func export @anchor_global() {
   pop.global.address @global_var : <i32>
   kgen.return
 }

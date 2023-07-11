@@ -23,6 +23,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/ThreadPlanCallFunction.h"
 #include "lldb/Utility/LLDBLog.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -702,13 +703,13 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // thrashing on the current parser state.
   LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
   exprFn.setLinkageName(exprFnName);
-  OwningOpRef<ModuleOp> module = parserContext.getModule().clone();
+  mlir::IRMapping mapping;
+  OwningOpRef<ModuleOp> module =
+      cast<ModuleOp>(parserContext.getModule()->clone(mapping));
 
-  // Ensure the expression function gets exported.
-  OpBuilder exportBuilder = OpBuilder::atBlockEnd(module->getBody());
-  exportBuilder.create<ExportOp>(exprFn.getLoc(),
-                                 LIT::getFullyResolvedSymbolRef(exprFn),
-                                 /*isCExport=*/true);
+  // Ensure the expression function in the cloned module gets exported.
+  auto clonedExprFn = cast<LIT::FuncOp>(mapping.lookup(&*exprFn));
+  clonedExprFn.setCExported();
 
   // Log the pre-elaboration module.
   std::string preElaborationModule;

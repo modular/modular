@@ -584,11 +584,18 @@ static void printCallOpParams(OpAsmPrinter &p, Operation *op,
 
 /// Parses a KGEN Generator.
 ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
+  ExportKindAttr exportKind;
+  if (parseSymbolExport(parser, exportKind))
+    return failure();
+  result.addAttribute(getExportKindAttrName(result.name), exportKind);
   return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::generator);
 }
 
 // Print the GeneratorOp using the shared printing logic.
-void GeneratorOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
+void GeneratorOp::print(OpAsmPrinter &p) {
+  printSymbolExport(p, *this, getExportKindAttr());
+  printGeneratorOrFunc(p, *this);
+}
 
 LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
 
@@ -612,12 +619,19 @@ ArrayAttr GeneratorOp::getCallableResAttrs() { return nullptr; }
 ///   `kgen.func` function-signature function-attributes? function-body
 ///
 ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
+  ExportKindAttr exportKind;
+  if (parseSymbolExport(parser, exportKind))
+    return failure();
+  result.addAttribute(getExportKindAttrName(result.name), exportKind);
   return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::func);
 }
 
 /// Print the FuncOp. We use a shared printer with the GeneratorOp since it is
 /// a superset of what a func is.
-void FuncOp::print(OpAsmPrinter &p) { printGeneratorOrFunc(p, *this); }
+void FuncOp::print(OpAsmPrinter &p) {
+  printSymbolExport(p, *this, getExportKindAttr());
+  printGeneratorOrFunc(p, *this);
+}
 
 LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
@@ -903,26 +917,6 @@ LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
   if (cur == op)
     return failure();
   rewriter.updateRootInPlace(op, [&] { op.setOperand(cur.getOperand()); });
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ExportOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-
-  // Just ensure we're exporting a symbol we can see.
-  auto module = KGENModule::from(*this, symbolTable);
-  SymbolRefAttr exported = getExported();
-  auto func = module.lookup<FuncInterface>(exported);
-  if (!func)
-    return emitOpError("could not find referenced symbol '") << exported << "'";
-  if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled) {
-    return func.emitError("function marked 'always_inline' cannot be exported")
-               .attachNote(getLoc())
-           << "function exported here";
-  }
   return success();
 }
 

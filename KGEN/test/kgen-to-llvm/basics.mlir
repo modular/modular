@@ -108,8 +108,7 @@ kgen.func @test_unreachable() -> !pop.simd<1, f32> {
 }
 
 // CHECK: llvm.func internal @used_internally_c_wrapped
-kgen.export @used_internally to C
-kgen.func @used_internally() -> !pop.struct<i32, i32>{
+kgen.func export C @used_internally() -> !pop.struct<i32, i32>{
   kgen.unreachable
 }
 

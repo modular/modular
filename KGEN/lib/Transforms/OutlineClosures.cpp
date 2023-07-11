@@ -164,7 +164,8 @@ void OutlineClosuresPass::runOnOperation() {
           ParamDeclArrayAttr::get(&getContext(), inputParamDecls),
           regionDecl.getResultParamsAttr(),
           ConstraintArrayAttr::get(&getContext(), {}),
-          regionDecl.getAlwaysInlineLevelAttr());
+          regionDecl.getAlwaysInlineLevelAttr(),
+          ExportKindAttr::get(&getContext(), ExportKind::NotExported));
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(
           SymbolRefAttr::get(liftedWrapper.getNameAttr()), wrapperSignature);

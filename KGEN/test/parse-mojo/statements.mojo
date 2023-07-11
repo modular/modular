@@ -309,8 +309,8 @@ struct MyList:
     fn __iter__(self) -> my_iter: return my_iter()
 
 
-# CHECK-LABEL: lit.func @"main()"
-fn main():
+# CHECK-LABEL: lit.func @"for_range_loop()"
+fn for_range_loop():
     let my_list = MyList()
 
     # CHECK: %$RANGE = lit.varlet.decl "$RANGE"

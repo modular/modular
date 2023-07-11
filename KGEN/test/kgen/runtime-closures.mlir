@@ -13,7 +13,7 @@ kgen.func @capturing_region(%arg0: index) -> index {
     kgen.return %1 : index
 }
 
-kgen.func @main_capturing_region() -> index {
+kgen.func export @main_capturing_region() -> index {
     %idx3 = index.constant 3
     %0 = kgen.call @capturing_region(%idx3) : (index) -> index
     kgen.return %0 : index
@@ -24,7 +24,7 @@ kgen.func @take_closure_no_args(%arg0: !kgen.signature<() capturing -> index>) -
     kgen.return %0 : index
 }
 
-kgen.func @closure_arg() -> index {
+kgen.func export @closure_arg() -> index {
     %idx4 = index.constant 98
     %0 = kgen.stage_closure = () capturing -> index {
       %4 = pop.cast_from_builtin %idx4 : index to !pop.scalar<index>
@@ -45,9 +45,6 @@ kgen.func @closure_arg() -> index {
     %2 = kgen.call @take_closure_no_args(%0) : (!kgen.signature<() capturing -> index>) -> index
     kgen.return %2 : index
 }
-
-kgen.export @main_capturing_region
-kgen.export @closure_arg
 
 // CHECK: --- 'main_capturing_region' returned 7
 // CHECK: --- 'closure_arg' returned 101

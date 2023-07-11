@@ -265,12 +265,6 @@ struct ConvertKGENUndef : public ConvertPOPToLLVMPattern<UndefOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static LogicalResult removeExportOps(ExportOp exportOp,
-                                     PatternRewriter &rewriter) {
-  rewriter.eraseOp(exportOp);
-  return success();
-}
-
 static LogicalResult removeLinkOps(LinkOp linkOp, PatternRewriter &rewriter) {
   rewriter.eraseOp(linkOp);
   return success();
@@ -294,8 +288,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENExternFunc
       // clang-format on
       >(typeConverter, symtab);
-  // Just remove ExportOps and LinkOps.
-  patterns.add(removeExportOps);
+  // Just remove LinkOps.
   patterns.add(removeLinkOps);
 }
 
@@ -549,7 +542,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<KGEN::CreateClosureOp>();
   target.addLegalOp<KGEN::GlobalOp>();
 
-  // Capture all the public symbols declared by kgen.export declarations.
+  // Capture all the exported symbols.
   llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =
       getExportedSymbols(theModule);
 

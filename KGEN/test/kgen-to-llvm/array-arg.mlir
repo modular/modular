@@ -2,7 +2,7 @@
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
-kgen.func @array_arg(%arr: !pop.array<4, i32>) {
+kgen.func export C @array_arg(%arr: !pop.array<4, i32>) {
   "use"(%arr) : (!pop.array<4, i32>) -> ()
   kgen.return
 }
@@ -13,7 +13,7 @@ kgen.func @array_arg(%arr: !pop.array<4, i32>) {
 // CHECK-NEXT: %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[V]]
 // CHECK-NEXT: "use"(%[[CAST]])
 
-kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
+kgen.func export C @array_in_struct(%s: !pop.struct<array<4, i32>>) {
   "use"(%s) : (!pop.struct<array<4, i32>>) -> ()
   kgen.return
 }
@@ -25,8 +25,5 @@ kgen.func @array_in_struct(%s: !pop.struct<array<4, i32>>) {
 // CHECK-NEXT: %[[ARG:.*]] = llvm.insertvalue %[[ARR]], %[[UNDEF]][0]
 // CHECK-NEXT: %[[CAST:.*]] = builtin.unrealized_conversion_cast %[[ARG]]
 // CHECK-NEXT: "use"(%[[CAST]])
-
-kgen.export @array_arg to C
-kgen.export @array_in_struct to C
 
 }

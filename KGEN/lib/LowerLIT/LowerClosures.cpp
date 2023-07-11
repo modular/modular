@@ -100,7 +100,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure");
   auto sig = SignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getType()));
-  auto lifted = b.create<FuncOp>(name, sig, AlwaysInlineLevel::Disabled);
+  auto lifted = b.create<FuncOp>(name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -153,8 +153,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
     name = nameMaybe;
   else
     name = b.getStringAttr(parent.getSymName() + "_closure");
-  auto lifted =
-      b.create<FuncOp>(op->getLoc(), name, sig, AlwaysInlineLevel::Disabled);
+  auto lifted = b.create<FuncOp>(op->getLoc(), name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which

@@ -104,22 +104,25 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
   // Create a new symbol table for the sliced module.
   SymbolTable sliceSymtab(*singleModule);
 
-  // Re-export exported functions.
-  auto builder = OpBuilder::atBlockBegin(singleModule->getBody());
-
   for (auto [sym, exportVal] : exportedSymbols) {
-    builder.create<ExportOp>(module->getLoc(), FlatSymbolRefAttr::get(sym),
-                             exportVal.isCExport);
-    auto func = symtab.lookup<FuncOp>(sym);
+    auto func = symtab.lookup<ExportInterface>(sym);
     assert(func && "Unknown exported symbol");
 
     // Traverse the call graph and clone all the callees into this module.
     sliceDependencies(func, sliceSymtab, symtab);
 
     // Clone the func into this new module. We don't want to remove it from
-    // the current module.
-    if (!sliceSymtab.lookup(sym))
-      sliceSymtab.insert(func.clone());
+    // the current module. Make sure the function is also exported in the slice.
+    auto sliceFn = sliceSymtab.lookup<ExportInterface>(sym);
+    if (!sliceFn) {
+      sliceFn = func.clone();
+      sliceSymtab.insert(sliceFn);
+    }
+    ExportKind kind = func.getExportKind();
+    if (kind == ExportKind::NotExported)
+      sliceFn.setExported();
+    else
+      sliceFn.setExportKind(kind);
   }
 
   return singleModule;

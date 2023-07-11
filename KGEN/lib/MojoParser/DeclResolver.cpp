@@ -645,6 +645,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto shimMainFn = cast<FuncOp>(builder.clone(*mainShimProtoFn));
   shimMainFn.setSymNameAttr(mainAttr);
   shimMainFn.setLinkageNameAttr(mainAttr);
+  shimMainFn.setCExported();
   shimMainFn.getBody()->clear();
 
   // Populate the body of the shim. For this we designate the internal
@@ -673,10 +674,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   shimBodyBuilder.create<ReturnOp>(loc, wrappedCall.getResults());
   shimBodyBuilder.create<EndFuncOp>(loc);
 
-  // Generate an export for the shim.
-  auto exportOp = builder.create<ExportOp>(
-      loc, getFullyResolvedSymbolRef(shimMainFn), /*isCExport=*/true);
-  exportedSymbolNames.insert({mainAttr, exportOp.getLoc()});
+  exportedSymbolNames.insert({mainAttr, shimMainFn.getLoc()});
 }
 
 /// Resolve the specified declaration to at least the specified level of
@@ -1814,24 +1812,10 @@ void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
     return;
   }
 
-  // Handle the unique case of main. We implicitly export main, so this is
-  // simply checking that the user didn't try to export it as something else.
-  if (aliasName == kMainSymbolName) {
-    if (unmangledName != kMainSymbolName)
-      emitError(loc, "only 'main' can be exported as 'main'");
-    return;
-  }
-  if (unmangledName == kMainSymbolName) {
-    emitError(loc, "'main' can only be exported as 'main'");
-    return;
-  }
-
-  auto symbolName = getFullyResolvedSymbolRef(funcOp);
   funcOp.setLinkageName(aliasName);
+  // TODO: Allow non-C export.
+  funcOp.setCExported();
 
-  ASTDecl *containingDecl = decl.getParentDecl();
-  auto builder = containingDecl->getDeclEndBuilder();
-  builder.create<ExportOp>(loc, symbolName, /*isCExport=*/true);
   getDeclResolver().registerAndCheckExport(aliasName, loc);
 }
 

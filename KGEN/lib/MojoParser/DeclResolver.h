@@ -21,7 +21,6 @@ namespace M::KGEN {
 class ParamBindArrayAttr;
 class ParamDeclAttr;
 class ParamDeclareOp;
-class ExportOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {

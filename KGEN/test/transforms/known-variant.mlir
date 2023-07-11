@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -split-input-file -prune-impossible-variants | FileCheck %s
 
-// CHECK-LABEL: kgen.func @known_true_or_false
-kgen.func @known_true_or_false(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
+// CHECK-LABEL: kgen.func export @known_true_or_false
+kgen.func export @known_true_or_false(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   %0 = pop.variant.create %arg0 : i32 -> !pop.variant<i8, i32>
   // CHECK: %[[TRUE:.*]] = kgen.param.constant: i1 = <1>
   %1 = pop.variant.is i32, %0 : !pop.variant<i8, i32>
@@ -19,12 +19,10 @@ kgen.func @known_true_or_false(%arg0: i32, %arg1: f32, %arg2: i8) -> i1 {
   kgen.return %5 : i1
 }
 
-kgen.export @known_true_or_false
-
 // -----
 
-// CHECK-LABEL: kgen.func @known_false
-kgen.func @known_false(%arg0: i32, %arg1: i8, %arg2: i1) -> i1 {
+// CHECK-LABEL: kgen.func export @known_false
+kgen.func export @known_false(%arg0: i32, %arg1: i8, %arg2: i1) -> i1 {
   %0 = hlcf.if %arg2 -> !pop.variant<i8, i32, f32> {
     %1 = pop.variant.create %arg0 : i32 -> !pop.variant<i8, i32, f32>
     hlcf.yield %1 : !pop.variant<i8, i32, f32>
@@ -37,8 +35,6 @@ kgen.func @known_false(%arg0: i32, %arg1: i8, %arg2: i1) -> i1 {
   // CHECK: return %[[FALSE]]
   kgen.return %2 : i1
 }
-
-kgen.export @known_false
 
 // -----
 
@@ -75,10 +71,8 @@ kgen.func @entry() -> !pop.variant<i8, i32> {
   kgen.return %2 : !pop.variant<i8, i32>
 }
 
-kgen.export @public
-
-// CHECK-LABEL: kgen.func @public
-kgen.func @public() {
+// CHECK-LABEL: kgen.func export @public
+kgen.func export @public() {
   // CHECK-NEXT: @entry() : () -> i32
   %0 = kgen.call @entry() : () -> !pop.variant<i8, i32>
   kgen.return
@@ -94,14 +88,12 @@ kgen.func @do_not_rewrite() -> !pop.variant<index> {
   kgen.return %1 : !pop.variant<index>
 }
 
-// CHECK-LABEL: kgen.func @call
-kgen.func @call() {
+// CHECK-LABEL: kgen.func export @call
+kgen.func export @call() {
   // CHECK-NEXT: constant: () -> !pop.variant<index> = <@do_not_rewrite>
   %0 = kgen.param.constant: () -> !pop.variant<index> = <@do_not_rewrite>
   kgen.return
 }
-
-kgen.export @call
 
 // -----
 
@@ -123,23 +115,20 @@ kgen.func @always_i32(%a: i32) -> !pop.variant<i32, f32> {
 
 // Make sure all callsites are rewritten.
 
-// CHECK-LABEL: kgen.func @first_callsite
-kgen.func @first_callsite(%a: i32) {
+// CHECK-LABEL: kgen.func export @first_callsite
+kgen.func export @first_callsite(%a: i32) {
   // CHECK: @always_i32(%arg0) : (i32) -> i32
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @second_callsite
-kgen.func @second_callsite(%a: i32) {
+// CHECK-LABEL: kgen.func export @second_callsite
+kgen.func export @second_callsite(%a: i32) {
   // CHECK: @always_i32(%arg0) : (i32) -> i32
   %0 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   %1 = kgen.call @always_i32(%a) : (i32) -> !pop.variant<i32, f32>
   kgen.return
 }
-
-kgen.export @first_callsite
-kgen.export @second_callsite
 
 // -----
 
@@ -169,12 +158,10 @@ kgen.func @multiple_returns(%a: i32, %b: i64) -> !pop.variant<i32, i64> {
   kgen.return %1 : !pop.variant<i32, i64>
 }
 
-// CHECK-LABEL: @call_it
-kgen.func @call_it(%a: i32, %b: i64) {
+// CHECK-LABEL: kgen.func export @call_it
+kgen.func export @call_it(%a: i32, %b: i64) {
   // CHECK: kgen.call @multiple_returns
   // CHECK-SAME: (i32, i64) -> i32
   %0 = kgen.call @multiple_returns(%a, %b) : (i32, i64) -> !pop.variant<i32, i64>
   kgen.return
 }
-
-kgen.export @call_it

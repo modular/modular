@@ -1883,9 +1883,8 @@ kgen.generator @err() {
   kgen.return
 }
 
-kgen.export @main
-// CHECK-LABEL: kgen.func @main
-kgen.generator @main() {
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
   // CHECK-NEXT: call @getattr
   kgen.call @getattr() : () -> ()
   // CHECK-NEXT: call @call
@@ -2255,9 +2254,8 @@ kgen.generator @async_fn() async {
   kgen.return
 }
 
-kgen.export @nonparametric_async_call
-// CHECK-LABEL: kgen.func @nonparametric_async_call
-kgen.generator @nonparametric_async_call() {
+// CHECK-LABEL: kgen.func export @nonparametric_async_call
+kgen.generator export @nonparametric_async_call() {
   // CHECK-NEXT: call[<>() async -> (): @async_fn]
   lit.async.call[<>() async -> (): @async_fn]()
   kgen.return
@@ -2501,9 +2499,8 @@ kgen.generator @f()
   kgen.return
 }
 
-kgen.export @top
-// CHECK-LABEL: kgen.func @top
-kgen.generator @top() {
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
   // CHECK-NEXT: call @f
   kgen.call @f() : () -> ()
   kgen.return
@@ -2511,9 +2508,8 @@ kgen.generator @top() {
 
 // -----
 
-kgen.export @main
-// CHECK-LABEL: kgen.func @main
-kgen.generator @main() {
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
   kgen.param.declare impls: variadic<!kgen.signature<() -> ()>> = <get_all_impls(@foo)>
   kgen.return
 }
@@ -2543,9 +2539,8 @@ kgen.generator @cost_of<fn: (i1) -> index>() -> index {
   kgen.return %0 : index
 }
 
-kgen.export @main
-// CHECK-LABEL: kgen.func @main
-kgen.generator @main() {
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
   // CHECK-NEXT: <6>
   %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
   kgen.return
