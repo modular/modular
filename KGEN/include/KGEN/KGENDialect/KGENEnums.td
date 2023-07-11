@@ -91,7 +91,7 @@ def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
 def KGEN_ExportKind : I32EnumAttr<"ExportKind", "export kind", [
   I32EnumAttrCase<"NotExported", 0, "not_exported">,
   I32EnumAttrCase<"Exported", 1, "exported">,
-  I32EnumAttrCase<"CExported", 3, "c_exported">,
+  I32EnumAttrCase<"CExported", 2, "c_exported">,
 ]> {
   let cppNamespace = "::M::KGEN";
   let genSpecializedAttr = 0;

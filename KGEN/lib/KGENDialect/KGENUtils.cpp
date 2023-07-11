@@ -1348,7 +1348,7 @@ ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
 
 void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
                              ExportKindAttr exportKind) {
-  if (static_cast<int>(exportKind.getValue()) & 1) {
+  if (exportKind.getValue() != ExportKind::NotExported) {
     p << " export";
     if (exportKind.getValue() == ExportKind::CExported)
       p << " C";
