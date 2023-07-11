@@ -14,6 +14,10 @@
 #include "llvm/Support/Program.h"
 #include <csignal>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace mlir::lsp;
 using namespace M::KGEN::LIT;
 
@@ -84,7 +88,12 @@ int main(int argc, char **argv) {
         "is {0} and you can use a debugger to attach to it with, for example, "
         "`lldb -p {0}`.",
         llvm::sys::Process::getProcessId());
+#ifdef _WIN32
+    while (!IsDebuggerPresent())
+      Sleep(1000);
+#else
     std::raise(SIGSTOP);
+#endif
   }
 
   // Start the server.
