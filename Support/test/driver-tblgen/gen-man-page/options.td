@@ -13,10 +13,20 @@
 include "Support/Driver/DriverCommand.td"
 
 def : CommandDescription<
-  "driver-tblgen-test", "options", "Test that options are output in a man page",
+  "driver-tblgen-test", /*subcommand=*/"",
+  "Test that options are output in a man page",
   "This command contains several option groups, each of which has several "
   "options, along with aliases.", /*inputMetaVarName=*/"input",
   /*requiresInput=*/false, /*variadicInput=*/false>;
+
+// CHECK: .SH "COMMANDS"
+// CHECK: \fBsubcommand\fR \[em] Test that subcommands are output in a man page
+def : CommandDescription<
+  "driver-tblgen-test", "subcommand",
+  "Test that subcommands are output in a man page",
+  "This is the description of a subcommand.",
+  /*inputMetaVarName=*/"input", /*requiresInput=*/false,
+  /*variadicInput=*/false>, Index<0>;
 
 // CHECK: .SH "OPTIONS"
 // CHECK: .SS "First Options"

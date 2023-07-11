@@ -13,10 +13,20 @@
 include "Support/Driver/DriverCommand.td"
 
 def : CommandDescription<
-  "driver-tblgen-test", "options", "Test that options are output in help text",
+  "driver-tblgen-test", /*subcommand=*/"",
+  "Test that options are output in help text",
   "This command contains an option group with options.",
   /*inputMetaVarName=*/"input", /*requiresInput=*/false,
   /*variadicInput=*/false>;
+
+// CHECK: COMMANDS
+// CHECK: subcommand — Test that subcommands are output in help text
+def : CommandDescription<
+  "driver-tblgen-test", "subcommand",
+  "Test that subcommands are output in help text",
+  "This is the description of a subcommand.",
+  /*inputMetaVarName=*/"input", /*requiresInput=*/false,
+  /*variadicInput=*/false>, Index<0>;
 
 // CHECK: OPTIONS
 // CHECK: First Options

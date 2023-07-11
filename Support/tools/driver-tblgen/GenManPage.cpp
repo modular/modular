@@ -76,6 +76,21 @@ static void genDescriptionSection(raw_ostream &os,
   os << ".SH \"DESCRIPTION\"\n" << escape(cmd.getDescription()) << '\n';
 }
 
+/// If the given command has subcommands, outputs a section named "COMMANDS"
+/// that lists each of them.
+static void genSubcommandsSection(raw_ostream &os,
+                                  const CommandDescription &cmd) {
+  ArrayRef<const llvm::Record *> subcommands = cmd.getSubcommands();
+  if (subcommands.empty())
+    return;
+
+  os << ".SH \"COMMANDS\"\n";
+  for (const llvm::Record *sub : subcommands)
+    os << "\\fB" << escape(sub->getValueAsString("subcommand"))
+       << "\\fR \\[em] " << escape(sub->getValueAsString("summary"))
+       << "\n.sp\n";
+}
+
 /// Output the given LLVM `Option` record's prefix and name, followed by its
 /// `MetaVarName` if present.
 static void genOptionName(raw_ostream &os, const llvm::Record *option) {
@@ -140,19 +155,21 @@ static void genSeeAlsoSection(raw_ostream &os, const CommandDescription &cmd) {
 }
 
 static bool genManPage(raw_ostream &os, const llvm::RecordKeeper &records) {
-  ErrorOr<CommandDescription> cmd = CommandDescription::get(records);
-  if (cmd.isError()) {
-    llvm::PrintError(cmd.getError());
+  ErrorOr<CommandDescription> cmdOrErr = CommandDescription::get(records);
+  if (failed(cmdOrErr)) {
+    llvm::PrintError(cmdOrErr.getError());
     return true;
   }
+  CommandDescription cmd = *cmdOrErr;
   std::vector<CommandOptionGroup> groups = CommandOptionGroup::getAll(records);
 
-  genTitle(os, *cmd);
-  genNameSection(os, *cmd);
-  genSynopsisSection(os, *cmd, groups);
-  genDescriptionSection(os, *cmd);
+  genTitle(os, cmd);
+  genNameSection(os, cmd);
+  genSynopsisSection(os, cmd, groups);
+  genDescriptionSection(os, cmd);
+  genSubcommandsSection(os, cmd);
   genOptionsSection(os, groups);
-  genSeeAlsoSection(os, *cmd);
+  genSeeAlsoSection(os, cmd);
   return false;
 }
 

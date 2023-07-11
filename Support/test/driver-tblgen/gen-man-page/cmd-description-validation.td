@@ -8,15 +8,16 @@
 
 include "Support/Driver/DriverCommand.td"
 
-// CHECK: warning: ignoring description
-def : CommandDescription<
-  "driver-tblgen-test", "first-command-descriptions",
-  "Test that this record is ignored",
-  "Multiple command description records should not appear in a single input, "
-  "since each one is meant to describe the command for which documentation is "
-  "being generated. Since another description record appears below this one, "
-  "this record is ignored.", /*inputMetaVarName=*/"path",
-  /*requiresInput=*/true, /*variadicInput=*/false>;
+// CHECK: warning: command executable name should not be empty
+// CHECK: warning: command summary should begin with a capital letter
+// CHECK: warning: command summary should not end with a period
+// CHECK: warning: command description should begin with a capital letter
+// CHECK: warning: command description should end with a period
+// CHECK: warning: command input metavar name should be lowercase
+def TopLevelDescription : CommandDescription<
+  /*executable=*/"", /*subcommand=*/"", "test this record produces warnings.",
+  "this is a top-level driver record, since it does not have a subcommand name",
+  /*inputMetaVarName=*/"Path", /*requiresInput=*/true, /*variadicInput=*/false>;
 
 // CHECK: warning: command executable name should not be empty
 // CHECK: warning: command summary should begin with a capital letter
@@ -24,10 +25,19 @@ def : CommandDescription<
 // CHECK: warning: command description should begin with a capital letter
 // CHECK: warning: command description should end with a period
 // CHECK: warning: command input metavar name should be lowercase
-def : CommandDescription<
-  "", "second-command-description", "test that this record is not ignored.",
-  "this record appears after the first, which will be ignored. Technically, "
-  "this record will be selected, but, ideally users will not ignore warnings "
-  "and ensure they only define a single description record.\n\n"
-  "This record also fails several of driver-tblgen's validation checks",
-  /*inputMetaVarName=*/"Path", /*requiresInput=*/true, /*variadicInput=*/false>;
+// CHECK: warning: subcommand 'sub-one' has no index
+def SubcommandOneDescription : CommandDescription<
+  "", "sub-one", "test this record also produces warnings.",
+  "this is a subcommand record", /*inputMetaVarName=*/"FOO",
+  /*requiresInput=*/true, /*variadicInput=*/false>;
+
+// CHECK: warning: subcommand '{{.*}}' has index 1, which has already been used
+// CHECK: note: subcommand '{{.*}}' has already been defined with index 1 here
+def SubcommandTwoDescription : CommandDescription<
+  "exec", "sub-two", "Test this record is warned about because of its index",
+  "This record shares an index with the one below.", /*inputMetaVarName=*/"x",
+  /*requiresInput=*/true, /*variadicInput=*/true>, Index<1>;
+def SubcommandThreeDescription : CommandDescription<
+  "exec", "sub-three", "Test this record is warned about because of its index",
+  "This record shares an index with the one above.", /*inputMetaVarName=*/"x",
+  /*requiresInput=*/true, /*variadicInput=*/true>, Index<1>;

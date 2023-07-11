@@ -28,9 +28,22 @@ class CommandOption;
 /// `get` member function to construct one based on parsed TableGen records.
 class CommandDescription {
 public:
-  /// Given a set of parsed TableGen records, return either a concrete command
-  /// description, or an error if none could be found. This also emits warning
-  /// diagnostics if more than one command description is found.
+  /// Given a set of parsed TableGen records, either returns a concrete command
+  /// description, or an error if none could be found. This also returns an
+  /// error if more than one viable command description is found.
+  ///
+  /// The logic for finding the one viable command description is this:
+  /// * Find all description records. If ANY describe a top-level command (their
+  ///   `subcommand` field is an empty string), then the viable record will be a
+  ///   top-level command (all subcommand records are ignored).
+  ///   * If more than one record describes a top-level command, a warning is
+  ///     emitted. In all cases, there should only be one top-level command
+  ///     description.
+  /// * If NO records describe a top-level command, then the viable record wll
+  ///   be a subcommand description.
+  ///   * If more than one record describes a subcommand, a warning is emitted.
+  ///     In the subcommand case, there should only be one subcommand
+  ///     description.
   static ErrorOr<CommandDescription> get(const llvm::RecordKeeper &records);
 
   StringRef getExecutable() const {
@@ -59,6 +72,10 @@ public:
     return record->getValueAsBit("variadicInput");
   }
 
+  /// Returns all of the command description records that are subcommands of
+  /// this record.
+  ArrayRef<const llvm::Record *> getSubcommands() const { return subcommands; }
+
   /// Given an joining string, joins the command description record's executable
   /// and subcommand values by that string.
   std::string getName(Twine join = "-") const {
@@ -67,13 +84,19 @@ public:
   }
 
 private:
-  /// Initializes the wrapper with the given `CommandDescription` record.
-  CommandDescription(const llvm::Record *record) : record(record) {
+  /// Initializes the wrapper with the given `CommandDescription` record, as
+  /// well as any subcommand records.
+  CommandDescription(const llvm::Record *record,
+                     ArrayRef<const llvm::Record *> subcommands)
+      : record(record), subcommands(subcommands) {
     assert(record->isSubClassOf("CommandDescription") &&
            "unexpected record class");
   }
 
+  /// The underlying record representing this command description.
   const llvm::Record *record;
+  /// This command's subcommands, if any.
+  SmallVector<const llvm::Record *> subcommands;
 };
 
 /// A wrapper around an LLVM `OptionGroup` record, as well as all of the

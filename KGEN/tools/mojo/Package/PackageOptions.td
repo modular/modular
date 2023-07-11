@@ -4,17 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "../OptionsBase.td"
+include "Package/PackageDescription.td"
 include "Support/Driver/CommonOptions.td"
-
-//===----------------------------------------------------------------------===//
-// package Command
-//===----------------------------------------------------------------------===//
-
-def PackageDescription : MojoCommandDescription<
-  "package", "Compile a package",
-  "Translate a mojo source package into a precompiled package.",
-  /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>;
 
 //===----------------------------------------------------------------------===//
 // Compilation Options

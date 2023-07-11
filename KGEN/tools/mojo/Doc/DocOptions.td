@@ -4,17 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "../OptionsBase.td"
+include "Doc/DocDescription.td"
 include "Support/Driver/CommonOptions.td"
-
-//===----------------------------------------------------------------------===//
-// doc Command
-//===----------------------------------------------------------------------===//
-
-def DocDescription : MojoCommandDescription<
-  "doc", "Compile doc strings",
-  "Translate Mojo source file doc strings to a structured output format.",
-  /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>;
 
 //===----------------------------------------------------------------------===//
 // Compilation Options

@@ -34,24 +34,34 @@ set(DRIVER_TABLEGEN_EXE $<TARGET_FILE:driver-tblgen> CACHE INTERNAL "DRIVER_TABL
 #
 # Each of these TableGen targets is added to the driver option umbrella target.
 macro(add_driver_option_tablegen prefix input manual_name)
+  cmake_parse_arguments(ARG "" "" "EXTRA_INCLUDES" ${ARGN})
+  set(tblgen_includes)
+  list(APPEND tblgen_includes ${ARG_EXTRA_INCLUDES})
+  # Filter out empty items before prepending each entry with -I
+  list(REMOVE_ITEM tblgen_includes "")
+  list(TRANSFORM tblgen_includes PREPEND -I)
+
   get_filename_component(name "${input}" NAME_WE)
 
   # 1. Option parser definitions
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(LLVM "${name}.inc" -gen-opt-parser-defs)
+  tablegen(LLVM "${name}.inc" -gen-opt-parser-defs
+    EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}Driver${name}")
   add_dependencies(${prefix}DriverOptions "${prefix}Driver${name}")
 
   # 2. Help text
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${name}HelpText.inc" -gen-help-text)
+  tablegen(DRIVER "${name}HelpText.inc" -gen-help-text
+    EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}HelpText")
   add_dependencies(${prefix}DriverOptions "${prefix}${name}HelpText")
 
   # 3. Manual page
   set(file_name "${manual_name}.1")
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${file_name}" -gen-man-page)
+  tablegen(DRIVER "${file_name}" -gen-man-page
+    EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}ManPage")
 
   add_custom_command(TARGET "${prefix}${name}ManPage" POST_BUILD
@@ -65,7 +75,8 @@ macro(add_driver_option_tablegen prefix input manual_name)
 
   # 4. Markdown
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${name}.md" -gen-markdown)
+  tablegen(DRIVER "${name}.md" -gen-markdown
+    EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}Markdown")
   add_dependencies(${prefix}DriverOptions "${prefix}${name}Markdown")
 endmacro()

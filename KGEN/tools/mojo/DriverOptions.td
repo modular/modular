@@ -4,16 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "OptionsBase.td"
+include "DriverDescription.td"
 include "Support/Driver/CommonOptions.td"
-
-//===----------------------------------------------------------------------===//
-// Top-Level Command
-//===----------------------------------------------------------------------===//
-
-def : MojoDriverDescription<
-  "The Mojo🔥 command line interface", "Interface with Mojo's various features.",
-  /*metaVarName=*/"command", /*requiresInput=*/false, /*variadicInput=*/false>;
 
 //===----------------------------------------------------------------------===//
 // Diagnostic Options

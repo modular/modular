@@ -8,6 +8,7 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
@@ -60,36 +61,107 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
   if (descriptions.empty())
     return Error("you must define a 'CommandDescription' record");
 
-  for (llvm::Record *ignored : llvm::drop_end(descriptions))
-    llvm::PrintWarning(ignored->getLoc(),
-                       "ignoring description since other 'CommandDescription' "
-                       "records exist; you should define only one");
+  const llvm::Record *topLevel = nullptr;
+  std::vector<const llvm::Record *> subcommands;
+  for (const llvm::Record *record : descriptions) {
+    if (record->getValueAsString("subcommand").empty()) {
+      if (topLevel) {
+        llvm::PrintError(
+            record->getLoc(),
+            "a second top-level 'CommandDescription' record is defined here");
+        llvm::PrintNote(topLevel->getLoc(),
+                        "a top-level 'CommandDescription' record has "
+                        "already been defined here");
+        return Error(
+            "cannot define a second top-level 'CommandDescription' record");
+      }
+      topLevel = record;
+    } else {
+      subcommands.push_back(record);
+    }
+  }
+  if (!topLevel && subcommands.size() > 1) {
+    llvm::PrintError(
+        subcommands.back()->getLoc(),
+        "a second subcommand 'CommandDescription' is defined here");
+    llvm::PrintNote(
+        subcommands.front()->getLoc(),
+        "a subcommand 'CommandDescription' has already been defined here");
+    return Error("cannot define a second subcommand 'CommandDescription'");
+  }
 
-  llvm::Record *record = descriptions.back();
-  CommandDescription description(record);
+  const llvm::Record *record = nullptr;
+  if (topLevel) {
+    record = topLevel;
+  } else {
+    record = subcommands.back();
+    subcommands.clear();
+  }
 
-  if (description.getExecutable().empty())
-    llvm::PrintWarning(record->getLoc(),
-                       "command executable name should not be empty");
+  // Now that we have our description and its subcommands, perform some
+  // validation.
+  auto validateDescription = [](const llvm::Record *record) {
+    if (record->getValueAsString("executable").empty())
+      llvm::PrintWarning(record->getLoc(),
+                         "command executable name should not be empty");
 
-  validateCapitalized(description.getSummary(), record->getLoc(),
-                      "command summary");
-  if (description.getSummary().ends_with("."))
-    llvm::PrintWarning(record->getLoc(),
-                       "command summary should not end with a period");
+    StringRef summary = record->getValueAsString("summary");
+    validateCapitalized(summary, record->getLoc(), "command summary");
+    if (summary.ends_with("."))
+      llvm::PrintWarning(record->getLoc(),
+                         "command summary should not end with a period");
 
-  validateCapitalized(description.getDescription(), record->getLoc(),
-                      "command description");
-  if (!description.getDescription().ends_with("."))
-    llvm::PrintWarning(record->getLoc(),
-                       "command description should end with a period");
+    StringRef description = record->getValueAsString("description");
+    validateCapitalized(description, record->getLoc(), "command description");
+    if (!description.ends_with("."))
+      llvm::PrintWarning(record->getLoc(),
+                         "command description should end with a period");
 
-  if (description.getInputMetaVarName().lower() !=
-      description.getInputMetaVarName())
-    llvm::PrintWarning(record->getLoc(),
-                       "command input metavar name should be lowercase");
+    StringRef metaVarName = record->getValueAsString("inputMetaVarName");
+    if (metaVarName.lower() != metaVarName)
+      llvm::PrintWarning(record->getLoc(),
+                         "command input metavar name should be lowercase");
+  };
 
-  return description;
+  // First validate the main description.
+  validateDescription(record);
+
+  // Then, validate any subcommands it may have.
+  DenseMap<int64_t, const llvm::Record *> indices;
+  for (const llvm::Record *sub : subcommands) {
+    validateDescription(sub);
+
+    // In addition to the standard validations applied to all descriptions,
+    // subcommands must also be ordered by index.
+    std::optional<int64_t> index = getValueAsOptionalIndex(sub);
+    if (!index) {
+      llvm::PrintWarning(
+          sub->getLoc(),
+          llvm::formatv(
+              "subcommand '{0}' has no index with which to order it by; "
+              "it will appear in a non-deterministic order",
+              sub->getValueAsString("subcommand")));
+      continue;
+    }
+
+    if (!indices.insert({*index, sub}).second) {
+      llvm::PrintWarning(
+          sub->getLoc(),
+          llvm::formatv(
+              "subcommand '{0}' has index {1}, which has already been "
+              "used; it will appear in a non-deterministic order",
+              sub->getValueAsString("subcommand"), *index));
+      const llvm::Record *previous = indices[*index];
+      llvm::PrintNote(
+          previous->getLoc(),
+          llvm::formatv(
+              "subcommand '{0}' has already been defined with index {1} here",
+              previous->getValueAsString("subcommand"), *index));
+    }
+  }
+
+  llvm::sort(subcommands, LessIndex());
+  return CommandDescription(record, subcommands);
 }
 
 //===----------------------------------------------------------------------===//
