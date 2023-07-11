@@ -461,7 +461,7 @@ fn get_partitioned_matmul_mojo[
     micro_kernel_m: Int,
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    # Based on current performance measuremnt of DLRM. Row-wise Partition
+    # Based on current performance measurement of DLRM. Row-wise Partition
     # leads to better performance for (m == n and k < m). The reason is not
     # in the shape but how we set cache size (hardcoded for now) and
     # decide tile shape.

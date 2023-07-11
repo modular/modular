@@ -859,7 +859,7 @@ struct MatmulGenerator[
         dynamic_state: MatmulDynamicState[data_type],
         action_tile_shapes: VariadicList[TileShape],
     ):
-        """Dispatching utility for each of the static tiling acions.
+        """Dispatching utility for each of the static tiling actions.
 
         Args:
             static_state(MatmulStaticState): The current static state before
@@ -1176,7 +1176,7 @@ struct TiledMatmulGenerated[
         Args:
             c(NDBuffer): Pre-allocated buffer space for result.
             a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the mamtul.
+            b(NDBuffer): Operand B of the matmul.
             global_tile_offset(GemmShape): tile offset on the original buffer.
             global_tile_shape(GemmShape): tile shape this call will process.
         """
@@ -1282,7 +1282,7 @@ struct TiledMatmulBiasGenerated[
         Args:
             c(NDBuffer): Pre-allocated buffer space for result.
             a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the mamtul.
+            b(NDBuffer): Operand B of the matmul.
             global_tile_offset(GemmShape): tile offset on the original buffer.
             global_tile_shape(GemmShape): tile shape this call will process.
         """

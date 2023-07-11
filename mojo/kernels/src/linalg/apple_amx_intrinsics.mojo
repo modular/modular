@@ -403,7 +403,7 @@ struct amx_detail:
         #     C = A^T * B
         #
         # Where the dimensions of the matrices are all 16x16. The A matrix is
-        # assumed to be transposed and all matricies are stored in row-major
+        # assumed to be transposed and all matrices are stored in row-major
         # order.
 
         let a_pointer = a.data

@@ -468,9 +468,9 @@ fn _simplify_transpose_perms[
     In some cases a permutation can be modeled by another permutation of a smaller rank.
     For instance, if we have
         shape=[1,3,200,200], perm = [0, 2, 3, 1]
-    Then it is equvalent to:
+    Then it is equivalent to:
         shape=[1,3,40000], perm = [0, 2, 1]
-    Which in its turn is equvalent to:
+    Which in its turn is equivalent to:
         shape=[3,40000], perm = [1, 0]
 
     This function takes the original shape, permutation, and rank by reference,
@@ -594,7 +594,7 @@ fn _transpose_2d_serial_tiled[
     # The input tile is MxN, the output tile is NxM.
     # We want to do:
     #   output[m, n] = input[n, m]
-    # This is equvalent to:
+    # This is equivalent to:
     #   output[n*M + m] = input[m*N + n]
     # And we also have a global offset which needs to be added to both output
     # and input pointers.
@@ -1213,7 +1213,7 @@ fn transpose[
     # the desired permutation.
     # E.g.
     #   shape=[1,3,200,200], perm = [0, 2, 3, 1]
-    # is equvalent to
+    # is equivalent to
     #   shape=[1,3,40000], perm = [0, 2, 1]
     #
     # And that just swaps two inner dimensions.
