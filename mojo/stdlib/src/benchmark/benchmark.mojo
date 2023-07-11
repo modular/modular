@@ -40,7 +40,7 @@ struct Benchmark:
         """Constructs a new benchmark object.
 
         Given a function the benchmark object will benchmark it until
-        min_tims_ns has elapsed and either max_time_ns OR max_iters is hit.
+        min_time_ns has elapsed and either max_time_ns OR max_iters is hit.
 
         Args:
             num_warmup: Number of warmup iterations to run before starting
@@ -58,7 +58,7 @@ struct Benchmark:
     fn run[func: fn () capturing -> None](self) -> Int:
         """Benchmarks the given function.
 
-        Benchmarking continues until min_tims_ns has elapsed and either
+        Benchmarking continues until min_time_ns has elapsed and either
         `max_time_ns` or `max_iters` is achieved.
 
         Parameters:
