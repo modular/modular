@@ -88,6 +88,29 @@ static void genDescriptionSection(raw_ostream &os,
   os << "\n\n";
 }
 
+/// If the given command has subcommands, outputs a section named "COMMANDS"
+/// that lists each of them, in 2 columns: the name of the subcommand, and its
+/// summary. The summaries are vertically aligned.
+static void genSubcommandsSection(raw_ostream &os,
+                                  const CommandDescription &cmd) {
+  ArrayRef<const llvm::Record *> subcommands = cmd.getSubcommands();
+  if (subcommands.empty())
+    return;
+
+  size_t maxSize = 0;
+  for (const llvm::Record *sub : subcommands)
+    maxSize = std::max(maxSize, sub->getValueAsString("subcommand").size());
+
+  os << "COMMANDS\n";
+  for (const llvm::Record *sub : subcommands) {
+    StringRef name = sub->getValueAsString("subcommand");
+    os.indent(8) << name;
+    os.indent(maxSize - name.size());
+    os << " — " << sub->getValueAsString("summary") << '\n';
+  }
+  os << '\n';
+}
+
 /// Output the given LLVM `Option` record's prefix and name, followed by its
 /// `MetaVarName` if present.
 static void genOptionName(raw_ostream &os, const llvm::Record *option,
@@ -137,17 +160,19 @@ static void genOptionsSection(raw_ostream &os,
 }
 
 static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
-  ErrorOr<CommandDescription> cmd = CommandDescription::get(records);
-  if (cmd.isError()) {
-    llvm::PrintError(cmd.getError());
+  ErrorOr<CommandDescription> cmdOrErr = CommandDescription::get(records);
+  if (failed(cmdOrErr)) {
+    llvm::PrintError(cmdOrErr.getError());
     return true;
   }
+  CommandDescription cmd = *cmdOrErr;
   std::vector<CommandOptionGroup> groups = CommandOptionGroup::getAll(records);
 
   os << "u8R\"(";
-  genNameSection(os, *cmd);
-  genSynopsisSection(os, *cmd, groups);
-  genDescriptionSection(os, *cmd);
+  genNameSection(os, cmd);
+  genSynopsisSection(os, cmd, groups);
+  genDescriptionSection(os, cmd);
+  genSubcommandsSection(os, cmd);
   genOptionsSection(os, groups);
   os << ")\"";
   return false;
