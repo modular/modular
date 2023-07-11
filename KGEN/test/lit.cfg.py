@@ -30,26 +30,6 @@ def configure_lldb_tests(config):
     )
 
 
-def configure_man_page_tests(config):
-    """Adds "man-page" if it's an available feature.
-
-    On GitHub's CI machines and other environments, `man` is available in the
-    `PATH`, but it is actually a wrapper object that prints "This system has
-    been minimized by removing packages" to stdout before exiting with a
-    successful exit code. This confounds Modular driver tools, which attempt to
-    invoke `man` if it's available in the `PATH`, and fall back to plain text if
-    it exits unsuccessfully.
-
-    To work around this, add "man-page" to `config.available_features` iff it
-    can successfully print its own manual page.
-    """
-    try:
-        if b"MAN(1)" in subprocess.check_output(["man", "1", "man"]):
-            config.available_features.add("man-page")
-    except:
-        pass
-
-
 # name: The name of this test suite.
 config.name = "KGEN"
 
@@ -63,7 +43,6 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
 configure_lldb_tests(config)
-configure_man_page_tests(config)
 
 tool_dirs = [
     config.modular_tools_dir,
