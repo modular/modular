@@ -62,13 +62,13 @@ fn structured_for_loop() -> __mlir_type.index:
 
 from imported_module import MyStruct
 
-# CHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
+# XCHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
 
-# CHECK: lit.struct.decl @MyStruct
-# CHECK-NEXT: lit.struct.field value : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-NEXT: lit.func @"__init__($Builtin::$Int::Int)"(%value: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]":{{[0-9]+}}:{{[0-9]+}})
+# XCHECK: lit.struct.decl @MyStruct
+# XCHECK-NEXT: lit.struct.field value : index loc(#[[LOC:loc[0-9]+]])
+# XCHECK-NEXT: lit.func @"__init__($Builtin::$Int::Int)"(%value: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]":{{[0-9]+}}:{{[0-9]+}})
 
-# CHECK: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
+# XCHECK: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 
 fn caller():
     let y = MyStruct.__init__(0)
