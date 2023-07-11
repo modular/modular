@@ -77,7 +77,8 @@ struct RunOptTable : public llvm::opt::PrecomputedOptTable {
 /// 2. `args`: the command line arguments preceding and including the input
 ///    argument ("Foo.mojo" from the example above).
 static std::optional<int> parseArgs(const State &state,
-                                    llvm::opt::InputArgList &args) {
+                                    llvm::opt::InputArgList &args,
+                                    llvm::SourceMgr &sourceManager) {
   // First, parse all arguments, in order to find the index of the input
   // argument.
   RunOptTable options;
@@ -126,6 +127,18 @@ static std::optional<int> parseArgs(const State &state,
     return result;
   }
 
+  // Open the provided input file path, or exit with an error if it's not a
+  // valid argument that can be opened.
+  auto bufferOrErr =
+      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
+  if (failed(bufferOrErr))
+    return state.reportError(bufferOrErr.getError());
+
+  // Initialize the source manager with the input file buffer and all includes
+  // provided on the command line.
+  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
+  sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
+
   return {};
 }
 
@@ -139,18 +152,8 @@ static std::optional<int> parseArgs(const State &state,
 static std::optional<int>
 compileModule(const State &state, const llvm::opt::InputArgList &args,
               LLCL::Runtime &runtime, MLIRContext &context,
-              CompilationOptions &options, OwningOpRef<ModuleOp> &moduleOp) {
-  // We're done parsing arguments, and can move on to actually building the
-  // input: start by opening the input file, or exiting with an error.
-  auto bufferOrErr =
-      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
-  if (failed(bufferOrErr))
-    return state.reportError(bufferOrErr.getError());
-
-  // Initialize the source manager with the input file buffer and all includes.
-  llvm::SourceMgr sourceManager;
-  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
-  sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
+              llvm::SourceMgr &sourceManager, CompilationOptions &options,
+              OwningOpRef<ModuleOp> &moduleOp) {
 
   // Initialize the MLIR context.
   DialectRegistry registry;
@@ -158,8 +161,6 @@ compileModule(const State &state, const llvm::opt::InputArgList &args,
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
   context.appendDialectRegistry(registry);
-  // Reset the context's diagnostic handler.
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
 
   // We don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
@@ -468,7 +469,8 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 static int run(const State &state) {
   // Parse arguments.
   llvm::opt::InputArgList args;
-  if (std::optional<int> exitCode = parseArgs(state, args))
+  llvm::SourceMgr sourceManager;
+  if (std::optional<int> exitCode = parseArgs(state, args, sourceManager))
     return *exitCode;
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
@@ -478,10 +480,11 @@ static int run(const State &state) {
 
   // Lower the input file to an MLIR module.
   MLIRContext context;
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
   CompilationOptions options;
   OwningOpRef<ModuleOp> moduleOp;
-  if (std::optional<int> exitCode =
-          compileModule(state, args, runtime, context, options, moduleOp))
+  if (std::optional<int> exitCode = compileModule(
+          state, args, runtime, context, sourceManager, options, moduleOp))
     return *exitCode;
 
   // Execute the Mojo program.
