@@ -4,9 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from sys import version_info
+from typing import Any, Optional, Type, Union
+
+import numpy as np
 
 import modular.engine.core as _mecore
 from modular.engine.core import DType as _DType
@@ -15,12 +19,11 @@ from modular.engine.core import Model as _Model
 from modular.engine.core import TensorSpec as _TensorSpec
 
 if version_info.minor <= 8:
-    from typing import List
+    from typing import Dict, List, Tuple
 else:
+    Dict = dict
     List = list
-
-from dataclasses import asdict, dataclass, field
-from typing import Any, Optional, Tuple, Union
+    Tuple = tuple
 
 version_string = _mecore.__version__
 
@@ -42,7 +45,7 @@ class Model:
         model._impl = _core_model
         return model
 
-    def execute(self, **kwargs) -> None:
+    def execute(self, **kwargs) -> Dict[str, np.ndarray]:
         """Executes the model with the provided input and returns outputs.
 
         Parameters
@@ -182,10 +185,12 @@ class TorchLoadOptions:
     """
 
 
-def _unwrap_pybind_objects_dict_factory(data: List[Tuple[str, Any]]):
+def _unwrap_pybind_objects_dict_factory(
+    data: List[Tuple[str, Any]]
+) -> Dict[str, Any]:
     """Unwraps pybind objects from python class wrappers."""
 
-    def convert(value):
+    def convert(value: Any) -> Union[List[Any], _TensorSpec, Any]:
         if isinstance(value, list):
             return [convert(v) for v in value]
         if isinstance(value, TensorSpec):
@@ -270,7 +275,7 @@ class InferenceSession:
         return Model._init(_model)
 
 
-def remove_annotations(cls):
+def remove_annotations(cls: Type) -> Type:
     del cls.__annotations__
     return cls
 
