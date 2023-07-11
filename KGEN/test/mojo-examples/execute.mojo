@@ -6,7 +6,7 @@
 
 # RUN: mojo %s | FileCheck %s
 
-from prolog import Float32
+from SIMD import Float32
 from IO import print
 
 

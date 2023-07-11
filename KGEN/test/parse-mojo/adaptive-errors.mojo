@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -verify-diagnostics -I %S/../mojo-examples/
+# RUN: kgen-translate -import-mojo %s -verify-diagnostics
 
 
 @adaptive

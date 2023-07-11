@@ -4,9 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
+# RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from prolog import DType, Error, Float32, Int, object
+from Object import object
+from DType import DType
+from SIMD import Float32
 from IO import print
 from Range import range
 

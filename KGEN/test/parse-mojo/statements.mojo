@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -import-mojo -verify-diagnostics -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate %s -import-mojo -verify-diagnostics | FileCheck %s
 
 from IO import print
-from prolog import object, range
+from Object import object
+from Range import range
 
 ##===----------------------------------------------------------------------===##
 # pass

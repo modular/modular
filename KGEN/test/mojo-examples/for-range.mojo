@@ -6,7 +6,7 @@
 
 # RUN: mojo %s | FileCheck %s
 
-from prolog import range
+from Range import range
 from IO import print
 
 

@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -verify-diagnostics -import-mojo %s -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate -verify-diagnostics -import-mojo %s | FileCheck %s
 
 # CHECK: module {
 
-from prolog import Float32, SIMD, DType, object
+from DType import DType
+from SIMD import Float32, SIMD
+from Object import object
 
 fn noop(): pass
 

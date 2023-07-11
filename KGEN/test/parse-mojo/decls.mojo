@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -verify-diagnostics -import-mojo -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate %s -verify-diagnostics -import-mojo | FileCheck %s
 
-from prolog import Float32, object
+from SIMD import Float32
+from Object import object
 from Range import range
 
 ##===----------------------------------------------------------------------===##
