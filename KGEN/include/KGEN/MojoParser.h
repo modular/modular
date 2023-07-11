@@ -148,13 +148,10 @@ class MojoParserListener {
 public:
   virtual ~MojoParserListener() = default;
 
-  /// Notify the listener that a new `let` declaration has been resolved by the
-  /// parser.
-  virtual void onLetDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) = 0;
-
-  /// Notify the listener that a new `var` declaration has been resolved by the
-  /// parser.
-  virtual void onVarDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) = 0;
+  /// Notify the listener that a new `let` or `var` declaration has been
+  /// resolved by the parser.
+  virtual void onVariableDecl(MojoASTDeclRef declRef,
+                              llvm::SMLoc identifierLoc) = 0;
 
   /// Notify the listener that a new reference has been resolved by the parser,
   /// i.e. its declaration is known.

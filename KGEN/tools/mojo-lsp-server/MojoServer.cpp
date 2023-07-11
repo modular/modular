@@ -88,13 +88,9 @@ static lsp::Range getRangeForText(llvm::SourceMgr &sourceMgr, SMLoc loc,
 namespace {
 /// Common representation for any kind of symbol.
 struct Symbol {
-  /// Note: this might change when we add support for other kinds of symbols.
-  enum class DeclKind { Let, Var };
-
-  Symbol(MojoASTDeclRef declRef, StringRef name, Symbol::DeclKind declKind,
+  Symbol(MojoASTDeclRef declRef, StringRef name,
          const lsp::Range &identifierRange)
-      : name(name), declKind(declKind), declRef(declRef),
-        identifierRange(identifierRange) {}
+      : name(name), declRef(declRef), identifierRange(identifierRange) {}
 
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
@@ -108,9 +104,6 @@ struct Symbol {
   /// Name of the symbol.
   std::string name;
 
-  /// Metadata related to how to declaration was specified.
-  DeclKind declKind;
-
   /// API for accessing the internals of this decl.
   MojoASTDeclRef declRef;
 
@@ -120,23 +113,19 @@ struct Symbol {
 } // namespace
 
 std::string Symbol::getCompleteDeclarationAsString() const {
-  auto getDeclKindAsString = [](DeclKind kind) {
-    switch (kind) {
-    case DeclKind::Let:
-      return "let";
-    case DeclKind::Var:
-      return "var";
-    }
-  };
-
   std::string buff;
   llvm::raw_string_ostream os(buff);
-  os << getDeclKindAsString(declKind) << " " << name;
+
+  if (auto varLetOp = dyn_cast<VarLetDeclOp>(declRef.getIfOperation()))
+    os << (varLetOp.getIsVar() ? "var" : "let");
+  else if (auto letRegOp = dyn_cast<LetRegDeclOp>(declRef.getIfOperation()))
+    os << "let";
+
+  os << " " << name;
   if (auto typeRef = declRef.getType())
     os << ": " << typeRef.getAsString();
   return buff;
 }
-
 
 //===----------------------------------------------------------------------===//
 // SymbolIndex
@@ -216,9 +205,7 @@ public:
   LSPParserListener(MojoDocument &mainDoc, llvm::SourceMgr &sourceMgr)
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
 
-  void onLetDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
-
-  void onVarDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onVariableDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
   void onRef(MojoASTDeclRef declRef, StringRef spelling, SMLoc loc) override;
 
@@ -227,7 +214,7 @@ private:
   MojoDocument &mainDoc;
   llvm::SourceMgr &sourceMgr;
 };
-}
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoDocument
@@ -588,34 +575,20 @@ MojoDocument::onHover(const lsp::Position &pos) const {
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
-void LSPParserListener::onVarDecl(MojoASTDeclRef declRef,
-                                   SMLoc identifierLoc) {
+void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
+                                       SMLoc identifierLoc) {
   // For now we don't index files other than the main one.
   if (!isMainFileLoc(sourceMgr, identifierLoc))
     return;
 
   if (std::optional<StringRef> name = declRef.getName()) {
     mainDoc.symbolIndex.registerSymbol(
-        declRef, *name, Symbol::DeclKind::Var,
-        getRangeForText(sourceMgr, identifierLoc, *name));
-  }
-}
-
-void LSPParserListener::onLetDecl(MojoASTDeclRef declRef,
-                                   SMLoc identifierLoc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> name = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *name, Symbol::DeclKind::Let,
-        getRangeForText(sourceMgr, identifierLoc, *name));
+        declRef, *name, getRangeForText(sourceMgr, identifierLoc, *name));
   }
 }
 
 void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
-                               SMLoc loc) {
+                              SMLoc loc) {
   // For now we don't index files other than the main one.
   if (!isMainFileLoc(sourceMgr, loc) ||
       !isMainFileLoc(sourceMgr, declRef.getLoc()))
