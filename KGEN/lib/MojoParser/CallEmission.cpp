@@ -1521,6 +1521,43 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
                                  emitter);
 }
 
+PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
+                                    ASTType expectedType) const {
+  // Verify that the target has no result parameters.  We have no way to bind
+  // these indirectly.
+  if (!resultParams.empty()) {
+    if (emitter) {
+      emitter->emitError(
+          expr->getLoc(),
+          "calls with result parameter bindings must be called directly")
+          << expr->getRange();
+    }
+    return {};
+  }
+
+  // Handle the case of a single candidate.
+  if (fnDecls.size() == 1) {
+    // This is an unbound function. Just return a reference.
+    if (inputParamBindings.bindings.empty())
+      return cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
+    if (!emitter)
+      return {};
+    // Bind the parameters.
+    return getBoundConstantAttr(*emitter);
+  }
+
+  // With an emitter and an expected type, the overload set can definitely be
+  // resolved to a single candidate or not.
+  if (expectedType && emitter) {
+    return filterOverloadSetForValueType(
+        expectedType, /*emitDiagnosticOnFailure=*/true, *emitter);
+  }
+  // Otherwise, emit the bind if possible.
+  if (!emitter)
+    return {};
+  return getBoundConstantAttr(*emitter);
+}
+
 PValue OverloadSet::emitAsPValue(ExprEmitter *emitter,
                                  ASTType expectedType) const {
   // Overload sets with base values cannot be emitted as PValues since they
@@ -1529,70 +1566,26 @@ PValue OverloadSet::emitAsPValue(ExprEmitter *emitter,
   if (baseValue)
     return {};
 
-  // If no expected type was provided, then only single candidate overload sets
-  // can be emitted. Also handle all single candidate overloads sets here.
-  if (!expectedType || fnDecls.size() == 1) {
-    PValue result;
-    if (fnDecls.size() != 1)
-      return {};
-
-    // If an emitter was not provided, then only unbound references can be
-    // emitted in this context.
-    if (!emitter) {
-      if (!inputParamBindings.bindings.empty())
-        return {};
-      result = cast<LIT::FuncOp>(*fnDecls.front()).getBoundReference();
-    } else {
-      // Otherwise, emit the bound function reference.
-      result = getBoundConstantAttr(*emitter);
-    }
-    return result;
-  }
-
-  // Without an emitter, multiple candidates cannot be refined.
-  // FIXME: Adaptive overload sets can be emitted as PValues too.
-  if (!emitter)
-    return {};
-
-  // Okay, try to refine multiple candidates to a single one with a value type.
-  return filterOverloadSetForValueType(
-      expectedType, /*emitDiagnosticOnFailure=*/true, *emitter);
+  return getDirectSymbol(emitter, expectedType);
 }
 
 /// Emit this as a CRValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
 CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
-  // Verify that the target has no result parameters.  We have no way to bind
-  // these indirectly.
-  if (!resultParams.empty()) {
-    emitter.emitError(
-        expr->getLoc(),
-        "calls with result parameter bindings must be called directly")
-        << expr->getRange();
-    return {};
-  }
-
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a CRValue.  Try to resolve it based on the destination's type.
-  PValue directSymbolAttr;
+  ASTType expectedType;
   if (fnDecls.size() > 1) {
-    if (ASTType expectedType = dest.resolveImpliedType(
-            expr->getLoc(), /*no implied type*/ Type(), emitter)) {
-      directSymbolAttr = filterOverloadSetForValueType(
-          expectedType, /*emitDiagnosticOnFailure=*/true, emitter);
-      if (!directSymbolAttr)
-        return {};
-    }
+    expectedType = dest.resolveImpliedType(expr->getLoc(),
+                                           /*no implied type*/ Type(), emitter);
   }
 
   // We allow unbound symbols here which can be emitted as an PValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  if (!directSymbolAttr) {
-    directSymbolAttr = getBoundConstantAttr(emitter);
-    if (!directSymbolAttr)
-      return {};
-  }
+  PValue directSymbolAttr = getDirectSymbol(&emitter, expectedType);
+  if (!directSymbolAttr)
+    return {};
 
   // If we have no base value, then we are just a symbol, return it.
   if (!baseValue)

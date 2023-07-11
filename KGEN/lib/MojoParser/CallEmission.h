@@ -206,10 +206,12 @@ public:
                            bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
 
-  /// Try to emit the overload set as a PValue if possible. Implicit conversions
-  /// are only considered if an emitter is provided, in which case errors will
-  /// be emitted as well. If a type is provided, it will be used to filter the
-  /// overload set.
+  /// Try to resolve the overload set to a single function candidate, using the
+  /// expected type if provided or using current bindings if an emitter is
+  /// provided.
+  PValue getDirectSymbol(ExprEmitter *emitter, ASTType expectedType) const;
+
+  /// Try to emit the overload set as a PValue.
   PValue emitAsPValue(ExprEmitter *emitter = nullptr,
                       ASTType expectedType = {}) const;
 
