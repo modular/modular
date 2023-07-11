@@ -24,9 +24,19 @@ fn num_cores() -> Int:
     """Returns the number of cores on the system.
 
     Returns:
-        Int: The number of cores on the system
+        Int: The number of cores on the system.
     """
-    return external_call["KGEN_CompilerRT_CoreCount", __mlir_type.index]()
+    return __mlir_op.`pop.external_call`[
+        func : "KGEN_CompilerRT_CoreCount".value,
+        resAttrs : __mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs : __mlir_attr.`["willreturn"]`,
+        memory : __mlir_attr[
+            `#llvm.memory_effects<other = read, `,
+            `argMem = read, `,
+            `inaccessibleMem = read>`,
+        ],
+        _type : __mlir_type.index,
+    ]()
 
 
 # ===----------------------------------------------------------------------===#
