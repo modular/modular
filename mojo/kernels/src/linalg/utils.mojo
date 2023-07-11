@@ -236,6 +236,7 @@ struct GemmShape:
 
 # Helper heuristic function to decide on tile size
 #  Returns (TileN, TileK)
+@always_inline
 fn calculate_tile_n_k[
     # Max number of element to cache.
     pack_cache_size: Int,
