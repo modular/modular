@@ -70,14 +70,12 @@ static void getAutoImportPaths(SmallVector<std::string> &paths) {
 
   // Otherwise, try to find modular relative to the current directory.
   std::filesystem::path path = std::filesystem::current_path();
-  while (!path.empty()) {
+  while (path != path.root_path()) {
     if (path.stem() == "modular") {
       paths = {(path / ".derived" / "build" / "Kernels" / "mojo").string(),
                (path / "Kernels" / "mojo").string()};
       return;
     }
-    if (!path.has_parent_path())
-      break;
     path = path.parent_path();
   }
 }
