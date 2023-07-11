@@ -80,6 +80,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, ORValue value) {
 raw_ostream &LIT::operator<<(raw_ostream &os, CRValue value) {
   return printStorage(os, value.getStorage());
 }
+raw_ostream &LIT::operator<<(raw_ostream &os, URValue value) {
+  return printStorage(os, value.getStorage());
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, RValue value) {
   return printStorage(os, value.getStorage());
 }
@@ -99,6 +102,9 @@ void CValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void CRValue::dump() const {
+  printStorage(llvm::errs(), getStorage(), true) << '\n';
+}
+void URValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 void RValue::dump() const {
