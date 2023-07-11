@@ -144,8 +144,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
 }
 
 /// Emit the C signature of a KGEN func.
-static LogicalResult emitSignature(raw_ostream &os, FuncOp func,
-                                   StringAttr symName) {
+static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   SmallVector<std::string> argTys, resTys;
   for (Type type : func.getArgumentTypes())
     if (failed(getCTypeForType(func, type, argTys)))
@@ -167,7 +166,7 @@ static LogicalResult emitSignature(raw_ostream &os, FuncOp func,
   // FIXME: This assumes the C wrapper that eventually gets generated is not
   // renamed due to a symbol name conflict. Header emission happens too early
   // in the pipeline.
-  os << ' ' << symName.getValue() << '(';
+  os << ' ' << func.getSymName() << '(';
   llvm::interleaveComma(argTys, os);
   if (resTys.size() > 1) {
     if (!argTys.empty())
@@ -189,8 +188,7 @@ ObjectCompiler::produceFunctionDecls(const SymbolTable &symtab,
     if (itExported == exportedSymbols.end() || !itExported->second.isCExport)
       continue;
     // The symbol was exported, use its alias name.
-    StringAttr aliasName = itExported->second.alias;
-    if (failed(emitSignature(os, f, aliasName)))
+    if (failed(emitSignature(os, f)))
       return mlir::emitError(f.getLoc(),
                              "during header emission for this function");
     os << "\n";

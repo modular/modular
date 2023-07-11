@@ -1346,6 +1346,6 @@ fn refGlobals():
 # this testcase.
 
 @export("my_named_export")
-# CHECK: kgen.export @"$decls"::@"export_me()" to C as @my_named_export
+# CHECK: kgen.export @"$decls"::@"export_me()" to C
 def export_me() -> None:
     ...

@@ -243,8 +243,8 @@ getOrConstructTargetInfo(MLIRContext &context, ModuleOp moduleOp,
 
 /// Returns whether the given module exports a `main` function.
 static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
-  for (ExportOp exportOp : theModule.getOps<ExportOp>())
-    if (exportOp.getAlias() == "main")
+  for (auto funcOp : theModule.getOps<FuncOp>())
+    if (funcOp.getSymName() == "main")
       return true;
   return false;
 }
@@ -346,7 +346,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
         "module does not `@export` any symbols; nothing to codegen");
 
   // Trigger compilation so we can pull out the archive.
-  ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().second.alias);
+  ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().first);
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
 

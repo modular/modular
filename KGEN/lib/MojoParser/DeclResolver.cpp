@@ -581,16 +581,13 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   } while (parsedDeclIt != parsedDeclList.size());
 }
 
-void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
-  StringAttr aliasName = exportOp.getAliasAttr();
-  auto it = exportedSymbolNames.find(aliasName);
-  if (it != exportedSymbolNames.end()) {
-    auto diag = emitError(exportOp.getLoc(), "invalid re-export of ")
-                << aliasName.getValue();
-    diag.attachNote(it->getSecond()) << "previous export here";
+void DeclResolver::registerAndCheckExport(StringRef aliasName, Location loc) {
+  auto [it, inserted] = exportedSymbolNames.try_emplace(aliasName, loc);
+  if (!inserted) {
+    auto diag = emitError(loc, "invalid re-export of ") << aliasName;
+    diag.attachNote(it->second) << "previous export here";
     return;
   }
-  exportedSymbolNames.insert({aliasName, exportOp.getLoc()});
 }
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
@@ -647,6 +644,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
   auto shimMainFn = cast<FuncOp>(builder.clone(*mainShimProtoFn));
   shimMainFn.setSymNameAttr(mainAttr);
+  shimMainFn.setPostElaborationNameAttr(mainAttr);
   shimMainFn.getBody()->clear();
 
   // Populate the body of the shim. For this we designate the internal
@@ -677,7 +675,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // Generate an export for the shim.
   auto exportOp = builder.create<ExportOp>(
-      loc, getFullyResolvedSymbolRef(shimMainFn), mainAttr, /*isCExport=*/true);
+      loc, getFullyResolvedSymbolRef(shimMainFn), /*isCExport=*/true);
   exportedSymbolNames.insert({mainAttr, exportOp.getLoc()});
 }
 
@@ -1800,7 +1798,19 @@ void FnDecorators::apply(
 void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
                                    StringRef aliasName) {
   if (isa<StructDeclOp>(*decl.getParentDecl())) {
-    emitError(funcOp.getLoc(), "methods cannot be exported");
+    emitError(funcOp.getLoc(), "structs cannot be exported");
+    return;
+  }
+
+  // Handle the unique case of main. We implicitly export main, so this is
+  // simply checking that the user didn't try to export it as something else.
+  if (aliasName == kMainSymbolName) {
+    if (unmangledName != kMainSymbolName)
+      emitError(loc, "only 'main' can be exported as 'main'");
+    return;
+  }
+  if (unmangledName == kMainSymbolName) {
+    emitError(loc, "'main' can only be exported as 'main'");
     return;
   }
 
@@ -1817,13 +1827,12 @@ void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
   }
 
   auto symbolName = getFullyResolvedSymbolRef(funcOp);
+  funcOp.setPostElaborationName(aliasName);
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();
-  auto exportOp = builder.create<ExportOp>(
-      loc, symbolName, StringAttr::get(getContext(), aliasName),
-      /*isCExport=*/true);
-  getDeclResolver().registerAndCheckExport(exportOp);
+  builder.create<ExportOp>(loc, symbolName, /*isCExport=*/true);
+  getDeclResolver().registerAndCheckExport(aliasName, loc);
 }
 
 void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,

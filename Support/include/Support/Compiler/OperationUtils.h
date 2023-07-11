@@ -25,6 +25,9 @@ bool operationIsIsolatedFromAbove(Operation *op,
 /// which is incremented until a unique name is found.
 std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
                                 unsigned &counter);
+/// Generate a unique flat symbol name with respect to the provided symbol table
+/// given a base name. This version starts the counter from 0.
+std::string getUniqueSymbolName(std::string baseName, SymbolTable &symtab);
 
 /// Flatten the given symbol reference into a single string, concatenating the
 /// namespaces and the symbol name. For example, given a symbol

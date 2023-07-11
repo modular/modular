@@ -110,7 +110,7 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto e : funcsToCompile) {
     StringAttr symName = e.getSymNameAttr();
-    exportedSymbols.insert({symName, ExportedSymbol(symName)});
+    exportedSymbols.insert({symName, ExportedSymbol()});
   }
 
   // Add the exported symbols to the ObjectCompilerLayer. This will not actually
@@ -251,7 +251,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 static ExportMap getAllSymbols(ModuleOp theModule) {
   ExportMap exports;
   for (auto sym : theModule.getOps<mlir::SymbolOpInterface>())
-    exports.insert({sym.getNameAttr(), {sym.getNameAttr(), false}});
+    exports.insert({sym.getNameAttr(), {false}});
   return exports;
 }
 
@@ -369,7 +369,7 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   llvm::orc::SymbolFlagsMap symbols;
 
   for (auto &[name, symbol] : exports)
-    symbols[mangler(symbol.alias.getValue())] =
+    symbols[mangler(name)] =
         llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported;
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};

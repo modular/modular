@@ -123,6 +123,9 @@ struct MojoUserExpression::Impl {
   ResultDelegate resultDelegate;
   PersistentVariableDelegate persistentVariableDelegate;
 
+  /// The name of the expression function once it has been set.
+  std::optional<std::string> exprFnName;
+
   /// The name of the python module that wraps the expression, if the expression
   /// is a Python expression, nullopt otherwise.
   std::optional<std::string> pythonModuleName;
@@ -317,6 +320,16 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
 
 //===----------------------------------------------------------------------===//
 // Python expression parsing and execution
+
+const char *MojoUserExpression::FunctionName() {
+  assert(impl->exprFnName && "expected a function name");
+  return impl->exprFnName->c_str();
+}
+
+void MojoUserExpression::setFunctionName(std::string exprFnName) {
+  assert(!impl->exprFnName && "unexpected function name");
+  impl->exprFnName = std::move(exprFnName);
+}
 
 const std::optional<std::string> &MojoUserExpression::getPythonModuleName() {
   return impl->pythonModuleName;

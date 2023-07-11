@@ -1011,28 +1011,15 @@ def KGEN_ExportOp : KGENOp<"export", [
     Example:
 
     ```mlir
-    kgen.export @foo as @my_foo
-
-    // The two examples below are equivalent.
-    kgen.export @foo as @foo
     kgen.export @foo
 
     // Export using C linkage and calling convention rules.
     kgen.export @foo to C
-    kgen.export @foo to C as @foo
     ```
   }];
 
-  let arguments = (ins
-    SymbolRefAttr:$exported,
-    SymbolNameAttr:$alias,
-    UnitAttr:$isCExport
-  );
-  let assemblyFormat = [{
-    $exported (`to` `C` $isCExport^)? custom<ExportOp>(ref($exported), $alias)
-    attr-dict
-  }];
-  let hasVerifier = 1;
+  let arguments = (ins SymbolRefAttr:$exported, UnitAttr:$isCExport);
+  let assemblyFormat = "$exported (`to` `C` $isCExport^)? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

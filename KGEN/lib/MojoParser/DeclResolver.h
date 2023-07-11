@@ -149,7 +149,7 @@ public:
   /// returns an existing function if there is a redefinition problem.
   Operation *finalizeFuncSignature(LIT::FuncOp funcOp, ASTDecl &decl);
 
-  void registerAndCheckExport(ExportOp exportOp);
+  void registerAndCheckExport(StringRef aliasName, Location loc);
   void exportMain(ASTDecl &funcDecl);
 
   ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const {
@@ -209,7 +209,7 @@ private:
   /// we can check if they are unique.
   /// Note: these StringRef keys cannot dangle because they point to the parsed
   /// source buffer, we don't need to use StringMap here.
-  DenseMap<StringRef, Location> exportedSymbolNames;
+  llvm::StringMap<Location> exportedSymbolNames;
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;

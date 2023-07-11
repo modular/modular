@@ -910,23 +910,6 @@ LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
 // ExportOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseExportOp(OpAsmParser &p, SymbolRefAttr &exported,
-                                 StringAttr &alias) {
-  if (p.parseOptionalKeyword("as")) {
-    alias = exported.getLeafReference();
-    return success();
-  }
-  return p.parseSymbolName(alias);
-}
-
-static void printExportOp(OpAsmPrinter &p, Operation *op,
-                          SymbolRefAttr exported, StringAttr alias) {
-  if (exported.getLeafReference().getValue() == alias)
-    return;
-  p << " as ";
-  p.printSymbolName(alias);
-}
-
 LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 
   // Just ensure we're exporting a symbol we can see.
@@ -939,14 +922,6 @@ LogicalResult ExportOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
     return func.emitError("function marked 'always_inline' cannot be exported")
                .attachNote(getLoc())
            << "function exported here";
-  }
-  return success();
-}
-
-LogicalResult ExportOp::verify() {
-  if (getIsCExport() && !isCIdentifier(getAlias())) {
-    return emitError("The alias name is not a valid C identifier, allowed "
-                     "characters: [a-zA-Z0-9_]");
   }
   return success();
 }

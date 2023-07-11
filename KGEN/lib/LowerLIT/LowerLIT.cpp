@@ -211,14 +211,14 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     signature = IndexRefRemapper::prependParams(signature, parentInputParams);
   }
 
-  // External functions don't get lowered until later in the pipeline, for now
-  // just ensure the function gets renamed properly.
-  if (gen.isExternal()) {
-    StringAttr newName = gen.getPostElaborationNameAttr();
+  // If the function has an alias name, rename it.
+  if (StringAttr newName = gen.getPostElaborationNameAttr()) {
     renamedFuncs[gen.getNameAttr()] = newName;
     gen.setSymName(newName);
-    return success();
   }
+  // If the function is external, it will get lowered later.
+  if (gen.isExternal())
+    return success();
 
   // Directly lower since these operations are exactly identical right now.
   OpBuilder b(gen->getContext());

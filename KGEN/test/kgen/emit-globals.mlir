@@ -20,4 +20,4 @@ kgen.func @kernel() -> f32 {
   kgen.return %1 : f32
 }
 
-kgen.export @kernel to C as @kernel
+kgen.export @kernel to C

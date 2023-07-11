@@ -166,7 +166,7 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
     StringAttr symName = e.getSymNameAttr();
     typeSystem->debugLog("[evaluateSpecializations] Exporting {0}",
                          symName.getValue());
-    exports.insert({symName, ExportedSymbol(symName)});
+    exports.insert({symName, ExportedSymbol()});
   }
 
   // Create the target machine so we can run the optimizer.
@@ -643,13 +643,16 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   collectPersistentVariables(state, variables);
 
   // Parse the expression.
-  std::string expressionId = state.getNextExpressionModuleName();
-  LLDBMojoREPLListener listener(expressionId, *impl->typeSystem, impl->expr,
+  auto [expressionId, exprModuleName] = state.getNextExpressionModuleName();
+  LLDBMojoREPLListener listener(exprModuleName, *impl->typeSystem, impl->expr,
                                 diagnosticManager, impl->options,
                                 impl->newPersistentVariables);
-  StringRef exprFnName = impl->expr.FunctionName();
+  // Create a function name for the expression. This string must be a valid Mojo
+  // identifier.
+  std::string exprFnName = ("__lldb_expr__" + Twine(expressionId)).str();
+  impl->expr.setFunctionName(exprFnName);
   MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpresion(
-      listener, expressionId, impl->expr.Text(), exprFnName, variables);
+      listener, exprModuleName, impl->expr.Text(), exprFnName, variables);
 
   // If the parser supplied a fixed expression, abort processing and use that
   // expression instead.
@@ -697,14 +700,15 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
+  LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
+  exprFn.setPostElaborationName(exprFnName);
   OwningOpRef<ModuleOp> module = parserContext.getModule().clone();
 
   // Ensure the expression function gets exported.
-  LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
   OpBuilder exportBuilder = OpBuilder::atBlockEnd(module->getBody());
   exportBuilder.create<ExportOp>(exprFn.getLoc(),
                                  LIT::getFullyResolvedSymbolRef(exprFn),
-                                 exprFnName, /*isCExport=*/true);
+                                 /*isCExport=*/true);
 
   // Log the pre-elaboration module.
   std::string preElaborationModule;
