@@ -38,7 +38,7 @@ kgen.generator @raiseClosure_wrapper<C, A, B -> E>() -> index always_inline {
 // CHECK: kgen.param.constant = <13>
 // CHECK-NEXT: kgen.return
 
-kgen.generator @raiseClosure<() -> E>() -> (index, index) {
+kgen.generator export @raiseClosure<() -> E>() -> (index, index) {
   %idx0 = index.constant 0
   kgen.param.declare C = <15>
   %0 = pop.struct.create(%idx0) : !pop.struct<index>
@@ -50,5 +50,3 @@ kgen.generator @raiseClosure<() -> E>() -> (index, index) {
   kgen.param.result_bind<Result>
   kgen.return %1, %2 : index, index
 }
-
-kgen.export @raiseClosure

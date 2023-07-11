@@ -38,9 +38,9 @@ void ExternalizePrecompiledFunctionsPass::runOnOperation() {
 
     // Replace it with a kgen.extern.func.
     b.setInsertionPoint(func);
-    auto externFunc = b.create<ExternFuncOp>(func.getLoc(), func.getNameAttr(),
-                                             func.getSignature().getValues(),
-                                             func.getPrecompiledBodyRefAttr());
+    auto externFunc = b.create<ExternFuncOp>(
+        func.getLoc(), func.getNameAttr(), func.getSignature().getValues(),
+        func.getExportKind(), func.getPrecompiledBodyRefAttr());
     symtab.remove(func);
     symtab.insert(externFunc);
     func->erase();

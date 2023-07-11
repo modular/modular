@@ -29,11 +29,9 @@ void EliminateDeadSymbolsPass::runOnOperation() {
   auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
 
   DenseSet<StringAttr> usedSymbols;
-  theModule.walk([&](ExportOp exportOp) {
-    // The base of the export set is the used symbols.
-    usedSymbols.insert(
-        cast<FlatSymbolRefAttr>(exportOp.getExported()).getAttr());
-  });
+  for (auto symbol : theModule.getOps<ExportInterface>())
+    if (symbol.isExported())
+      usedSymbols.insert(symbol.getLinkageNameAttr());
 
   // Now walk the used symbols and find symbols that they use.
   llvm::SetVector<StringAttr> worklist = {usedSymbols.begin(),

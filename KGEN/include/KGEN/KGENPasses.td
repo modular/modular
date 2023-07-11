@@ -211,11 +211,10 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
     `kgen.func` ops and kgen types to the corresponding LLVM-dialect
     structures/types/ops.
 
-    Functions marked as exported by a `kgen.export` operation are marked as
-    external. All other functions are marked as internal linkage. For exported
-    functions, wrapper functions are generated with C-compatible calling
-    conventions. This breaks up argument and results structs in-place and
-    converts arrays to be pass-by-reference.
+    Functions marked as exported are marked as external. All other functions are
+    marked as internal linkage. For exported functions, wrapper functions are
+    generated with C-compatible calling conventions. This breaks up argument and
+    results structs in-place and converts arrays to be pass-by-reference.
 
     For example, consider the following function that accepts and returns a
     buffer:

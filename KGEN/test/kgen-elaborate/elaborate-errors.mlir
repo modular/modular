@@ -140,9 +140,8 @@ kgen.generator @paramRecurse<() -> out>() {
   kgen.return
 }
 
-kgen.export @caller
 // expected-error @below {{no viable expansions found}}
-kgen.generator @caller() {
+kgen.generator export @caller() {
   // expected-note @below {{call expansion failed - no concrete specializations}}
   kgen.call @paramRecurse<[] -> v>() : () -> ()
   kgen.return
@@ -258,9 +257,8 @@ kgen.generator @no_valid_specializations() {
   kgen.return
 }
 
-kgen.export @entry
 // expected-error @below {{no viable expansions found}}
-kgen.generator @entry() {
+kgen.generator export @entry() {
   // expected-note @below {{call expansion failed - no concrete specialization}}
   kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
     [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
@@ -278,9 +276,8 @@ kgen.generator @one() {
   kgen.return
 }
 
-kgen.export @entry
 // expected-error @below {{no viable expansions found}}
-kgen.generator @entry() {
+kgen.generator export @entry() {
   // expected-note @below {{user-provided evaluator returned an out-of-bounds result: 1}}
   kgen.param.evaluate f: () -> () = [@one] with
     [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
@@ -290,13 +287,11 @@ kgen.generator @entry() {
 // -----
 
 // expected-error @below {{no viable expansions found}}
-kgen.generator @export_constraint()
+kgen.generator export @export_constraint()
     // expected-note @below {{constraint failed: False}}
     constraints <[apply(:(i1) -> i1 @pass, 0), "False"]> {
   kgen.return
 }
-
-kgen.export @export_constraint
 
 kgen.generator @pass(%arg0: i1) -> i1 {
   kgen.return %arg0: i1
@@ -304,11 +299,9 @@ kgen.generator @pass(%arg0: i1) -> i1 {
 
 // -----
 
-kgen.export @multiversioned
-
 // expected-error @below {{primary generator with more than one successful implementation}}
 // expected-note @below {{select one implementation using search or remove forks in the implementation}}
-kgen.generator @multiversioned() {
+kgen.generator export @multiversioned() {
   kgen.param.fork N = <[1, 2]>
   kgen.return
 }

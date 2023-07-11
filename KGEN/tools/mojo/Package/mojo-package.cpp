@@ -236,7 +236,6 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
           flattenedNameToFunc.try_emplace(postElaborationName, clonedFunc);
         })
         // Drop export ops unconditionally.
-        .Case([&](ExportOp op) { /* do nothing */ })
         .Case([&](LIT::UnresolvedImportOp op) {
           // Drop unresolved imports within packages that were used to lazily
           // pull in nested modules. These aren't needed during packaging
@@ -517,12 +516,9 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
 
   // For now we implicilty export everything in the package, so add exports to
   // the main module for the contents of the module.
-  OpBuilder exportBuilder = OpBuilder::atBlockEnd(theModule.getBody());
   parsedPackageOp.walk<mlir::WalkOrder::PreOrder>([&](LIT::FuncOp func) {
-    if (!canExternalize(func))
-      return WalkResult::skip();
-    SymbolRefAttr fullName = LIT::getFullyResolvedSymbolRef(func);
-    exportBuilder.create<ExportOp>(func.getLoc(), fullName);
+    if (canExternalize(func))
+      func.setExported();
     return WalkResult::skip();
   });
 

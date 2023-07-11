@@ -386,13 +386,19 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "constraints",       "implements",      "signature",   "functionType",
-    "sym_name",          "valueParamNames", "evaluator",   "defaultImpl",
-    "alwaysInlineLevel", "paramDecl",       "inputParams", "resultParams"};
+    "exportKind",  "isCExported",  "constraints",       "implements",
+    "signature",   "functionType", "sym_name",          "valueParamNames",
+    "evaluator",   "defaultImpl",  "alwaysInlineLevel", "paramDecl",
+    "inputParams", "resultParams"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   Builder &builder = parser.getBuilder();
+
+  ExportKindAttr exportKind;
+  if (parseSymbolExport(parser, exportKind))
+    return failure();
+  result.addAttribute(getExportKindAttrName(result.name), exportKind);
 
   // Parse the name as a symbol or a parameter declaration.
   StringAttr nameAttr;
@@ -474,15 +480,13 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 void LIT::FuncOp::print(OpAsmPrinter &p) {
   using namespace mlir::function_interface_impl;
 
-  FuncInterface op = cast<FuncInterface>(getOperation());
-  auto func = cast<mlir::FunctionOpInterface>(*op);
   // Print the operation and the function name.
+  printSymbolExport(p, *this, getExportKindAttr());
   p << ' ';
-
   if (ParamDeclAttr decl = getParamDeclAttr())
     printParamName(p, decl.getName());
   else
-    p.printSymbolName(func.getName());
+    p.printSymbolName(getSymName());
   printFunctionSignature(p, getBodyRegion(), getInputParams(),
                          getResultParams(), getFunctionType(), getSignature());
   printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
@@ -491,11 +495,11 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
 
-  printFunctionAttributes(p, op, ignoredAttrNames);
-  printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
+  printFunctionAttributes(p, *this, ignoredAttrNames);
+  printOptionalConstraints(p, *this, getConstraints());
 
   p << ' ';
-  p.printRegion(func.getFunctionBody(), /*printEntryBlockArgs=*/false);
+  p.printRegion(getBodyRegion(), /*printEntryBlockArgs=*/false);
 }
 
 // Name the arguments of the region with the valueParamNames.
@@ -590,6 +594,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // real name is set.
   result.addAttribute("sym_namex", emptyParamNames);
 
+  result.addAttribute(getExportKindAttrName(result.name),
+                      ExportKindAttr::get(context, ExportKind::NotExported));
   result.addAttribute(getValueParamNamesAttrName(result.name), emptyParamNames);
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signatureType));
@@ -613,16 +619,17 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name, SignatureType signature,
                         ArrayRef<StringAttr> argNames,
                         SpecialFunctionKind specialFnKind) {
-  auto context = builder.getContext();
+  MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclAttr(),
-        StringArrayAttr::get(context, argNames), TypeAttr::get(signature),
+        StringArrayAttr::get(ctx, argNames), TypeAttr::get(signature),
         TypeAttr::get(signature.getValues()),
-        /*paramDecls=*/ParamDeclArrayAttr::get(context, {}),
-        /*resultParams=*/ParamDeclArrayAttr::get(context, {}),
-        ConstraintArrayAttr::get(context, {}), /*isStatic=*/mlir::UnitAttr(),
+        /*paramDecls=*/ParamDeclArrayAttr::get(ctx, {}),
+        /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
+        ConstraintArrayAttr::get(ctx, {}), /*isStatic=*/mlir::UnitAttr(),
         /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
         /*isDef=*/mlir::UnitAttr(),
-        AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled),
+        ExportKindAttr::get(ctx, ExportKind::NotExported),
+        AlwaysInlineLevelAttr::get(ctx, AlwaysInlineLevel::Disabled),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr());
 

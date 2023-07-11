@@ -8,6 +8,7 @@
 #define KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/SymbolInterfaces.td"
 
 def DeclInterface : OpInterface<"DeclInterface"> {
   let description = [{
@@ -186,6 +187,39 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   }];
 
   let dependentTraits = [DeclInterface];
+}
+
+def ExportInterface : OpInterface<"ExportInterface"> {
+  let description = [{
+    This interface allows a symbol-defining operation to specify its export
+    semantics via a `#kgen.export_kind` attribute.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the exported symbol name.
+    }], "StringAttr", "getLinkageNameAttr", (ins), [{}], [{
+      return $_op.getSymNameAttr();
+    }]>,
+    InterfaceMethod<[{
+      Return the export kind.
+    }], "ExportKind", "getExportKind", (ins), [{}]>,
+    InterfaceMethod<[{
+      Set the export kind.
+    }], "void", "setExportKind", (ins "ExportKind":$exportKind), [{}]>
+  ];
+
+  let dependentTraits = [Symbol];
+  let verify = [{ return impl::verifyExportInterface($_op); }];
+
+  let extraSharedClassDeclaration = [{
+    bool isExported() { return static_cast<int>($_op.getExportKind()) & 1; }
+    bool isCExported() { return $_op.getExportKind() == ExportKind::CExported; }
+    void setNotExported() { $_op.setExportKind(ExportKind::NotExported); }
+    void setExported() { $_op.setExportKind(ExportKind::Exported); }
+    void setCExported() { $_op.setExportKind(ExportKind::CExported); }
+  }];
 }
 
 def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {

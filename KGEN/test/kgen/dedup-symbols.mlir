@@ -15,12 +15,10 @@ kgen.func @dependency() {
   kgen.return
 }
 
-kgen.func @kernel() {
+kgen.func export @kernel() {
   kgen.call @dependency() : () -> ()
   kgen.call @dependency() : () -> ()
   kgen.return
 }
-
-kgen.export @kernel
 
 // CHECK: --- 'kernel' finished

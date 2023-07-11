@@ -9,12 +9,10 @@ kgen.func @KGEN_CompilerRT_Initialize() -> i1 attributes {precompiledBodyRef = @
   kgen.return %0 : i1
 }
 
-kgen.generator @main() -> i1 {
+kgen.generator export C @main() -> i1 {
   %0 = kgen.call @KGEN_CompilerRT_Initialize(): () -> i1
   kgen.return %0 : i1
 }
-
-kgen.export @main to C
 
 // CHECK-LABEL: Initialize.cpp.o
 // CHECK: KGEN_CompilerRT_Initialize

@@ -16,11 +16,10 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK: llvm.store %[[DTYPE_RESULT]], %[[DTYPE_OUT]]
   // CHECK: llvm.return
 
-  kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
+  kgen.func export C @kernel(%a: !pop.struct<index, pointer<simd<1, invalid>>, dtype>) -> !pop.struct<index, pointer<simd<1, invalid>>, dtype> {
     kgen.return %a : !pop.struct<index, pointer<simd<1, invalid>>, !kgen.dtype>
   }
 
-  kgen.export @kernel to C
 }
 
 // -----
@@ -40,11 +39,9 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK: %[[V_RESULT:.*]] = llvm.extractvalue %[[S4]][0]
   // CHECK: llvm.store %[[V_RESULT]], %[[V_OUT]]
 
-  kgen.func @kernel(%a: !nestedStruct) -> !nestedStruct {
+  kgen.func export C @kernel(%a: !nestedStruct) -> !nestedStruct {
     kgen.return %a : !nestedStruct
   }
-
-  kgen.export @kernel to C
 }
 
 // -----
@@ -54,11 +51,9 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-SAME: %[[I:.*]]: f32
   // CHECK: llvm.return
 
-  kgen.func @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
+  kgen.func export C @kernel(%i: f32, %a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) {
     kgen.return
   }
-
-  kgen.export @kernel to C
 }
 
 // -----
@@ -69,12 +64,10 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK: %[[RESULT:.*]] = llvm.mlir.constant(1 : i64) : i64
   // CHECK: llvm.return %[[RESULT]]
 
-  kgen.func @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
+  kgen.func export C @kernel(%a: !pop.struct<index, pointer<simd<1, f32>>, dtype>) -> i64 {
     %0 = llvm.mlir.constant(1 : i64) : i64
     kgen.return %0 : i64
   }
-
-  kgen.export @kernel to C
 }
 
 // -----
@@ -83,28 +76,23 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-LABEL: @kernel
   // CHECK-SAME: (%[[ARG:.*]]: f32) -> f32
   // CHECK-NEXT: return %[[ARG]] : f32
-  kgen.func @kernel(%a: f32) -> f32 {
+  kgen.func export C @kernel(%a: f32) -> f32 {
     kgen.return %a : f32
   }
-
-  kgen.export @kernel to C
 }
 
 // -----
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @foo() {
+  kgen.func export C @foo() {
     kgen.return
   }
 
   // CHECK-LABEL: llvm.func @foo
   // CHECK-LABEL: llvm.func @call_foo
 
-  kgen.func @call_foo() {
+  kgen.func export C @call_foo() {
     kgen.call @foo() : () -> ()
     kgen.return
   }
-
-  kgen.export @foo to C
-  kgen.export @call_foo to C
 }

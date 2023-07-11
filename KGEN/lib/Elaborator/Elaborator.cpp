@@ -964,6 +964,12 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
         }
         return success();
       });
+  // C-exported functions are required to have valid C identifiers. During
+  // elaboration, mangled function names may trigger a verifier error. Names are
+  // updated after elaboration but reset them here temporarily.
+  StringAttr mangledName = func.getSymNameAttr();
+  func.setSymNameAttr(node->parent->gen.getSymNameAttr());
+  auto reset = llvm::make_scope_exit([&] { func.setSymNameAttr(mangledName); });
   // Verify the function.
   if (failed(verify(func))) {
     node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
@@ -2124,7 +2130,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
       SignatureType::get(TypeArrayAttr::get(generator.getContext(), {}),
                          TypeArrayAttr::get(generator.getContext(), {}),
                          generator.getFunctionType(), generator.getMetadata()),
-      generator.getAlwaysInlineLevel());
+      generator.getAlwaysInlineLevel(), generator.getExportKind());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -2606,8 +2612,8 @@ public:
           cast<FlatSymbolRefAttr>(ref).getValue()));
     };
     for (Operation &op : theModule.getOps()) {
-      if (auto e = dyn_cast<ExportOp>(op)) {
-        addAsRoot(e.getExported());
+      if (auto gen = dyn_cast<GeneratorOp>(op); gen && gen.isExported()) {
+        roots.insert(gen);
       } else if (auto global = dyn_cast<GlobalOp>(op)) {
         addAsRoot(global.getCtor());
         addAsRoot(global.getDtor());

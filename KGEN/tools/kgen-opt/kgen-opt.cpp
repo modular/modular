@@ -113,7 +113,7 @@ struct TestGeneratePreElaboratedBody
       OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
       OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
       KGEN::FuncOp fakeElaboratedBody = fakeBuilder.create<KGEN::FuncOp>(
-          func.getLoc(), (func.getSymName() + "_elaborated").str(),
+          func.getLoc(), b.getStringAttr(func.getSymName() + "_elaborated"),
           func.getSignature(), KGEN::AlwaysInlineLevel::Disabled);
 
       // Just clone the body in.

@@ -1342,10 +1342,8 @@ fn refGlobals():
 # Exported Functions
 ##===----------------------------------------------------------------------===##
 
-# NOTE: Exports are put at the end of the MLIR file so this must be the end of
-# this testcase.
-
 @export("my_named_export")
-# CHECK: kgen.export @"$decls"::@"export_me()" to C
+# CHECK: lit.func export C @"export_me()"
+# CHECK-SAME: linkageName = "my_named_export"
 def export_me() -> None:
     ...

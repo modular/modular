@@ -138,19 +138,10 @@ void PruneImpossibleVariantsPass::runOnOperation() {
       .load<HLCF::SparseDataFlowAnalysis<VariantState, KnownVariantAnalysis>>();
   solver.load<ConstantPropagation>();
 
-  // Find the exported symbols. Mark these are public and all others as private
-  // so the dead code analysis understands them correctly.
-  SmallPtrSet<StringAttr, 4> exportedSymbols;
-  for (auto e : getOperation().getOps<ExportOp>())
-    exportedSymbols.insert(cast<FlatSymbolRefAttr>(e.getExported()).getAttr());
-
-  std::vector<FuncOp> funcs;
-  for (auto func : getOperation().getOps<FuncOp>()) {
-    // Set the visibility appropriately.
-    func.setVisibility(exportedSymbols.contains(func.getSymNameAttr())
-                           ? SymbolTable::Visibility::Public
-                           : SymbolTable::Visibility::Private);
-    funcs.push_back(func);
+  // Set the correct visibility to make the analysis behave as intended.
+  for (FuncOp func : getOperation().getOps<FuncOp>()) {
+    if (!func.isExported())
+      func.setPrivate();
   }
 
   if (failed(solver.initializeAndRun(getOperation())))
@@ -185,15 +176,13 @@ void PruneImpossibleVariantsPass::runOnOperation() {
   // Rewrite the signatures of operations that return variants that are known to
   // be a particular type.
   DenseMap<StringAttr, SmallVector<std::pair<unsigned, Type>>> rewrites;
-  for (FuncOp func : funcs) {
-    // Clear the visibility attribute by setting the visibility to public, which
-    // is the default error.
-    func.setVisibility(SymbolTable::Visibility::Public);
+  for (FuncOp func : getOperation().getOps<FuncOp>()) {
+    // Reset the visibility to the default.
+    func.setPublic();
 
     // Don't rewrite functions indirectly referenced or which are exported,
     // since this changes the signature of the function.
-    if (refd.contains(func.getSymNameAttr()) ||
-        exportedSymbols.contains(func.getSymNameAttr()))
+    if (refd.contains(func.getSymNameAttr()) || func.isExported())
       continue;
 
     // Reduce the known variant types across all returns.

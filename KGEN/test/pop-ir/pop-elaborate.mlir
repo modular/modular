@@ -74,10 +74,8 @@ kgen.generator @bitcast_offset() -> !pop.struct<scalar<ui8>, scalar<ui8>>{
   kgen.return %5 : !pop.struct<scalar<ui8>, scalar<ui8>>
 }
 
-kgen.export @do_it
-
-// CHECK-LABEL: kgen.func @do_it
-kgen.generator @do_it() {
+// CHECK-LABEL: kgen.func export @do_it
+kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
   kgen.param.constant: i32 = <apply(
     :(i32) -> i32 @store_load_pointer, 555)>

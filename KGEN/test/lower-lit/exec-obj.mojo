@@ -16,7 +16,7 @@ fn getSize() -> __mlir_type.index:
 
 
 # COM: Check that the mangled function name doesn't contain "@"
-# CHECK: lit.func @"testMangledName
+# CHECK: lit.func export C @"testMangledName
 # CHECK-NOT: {{.*}}@{{.*}}
 # COM: Match the first argument of the function.
 # CHECK-SAME: "(%{{.*}}:

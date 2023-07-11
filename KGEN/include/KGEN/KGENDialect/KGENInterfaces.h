@@ -85,6 +85,7 @@ void scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
 LogicalResult verifyGeneratorUser(GeneratorUserOpInterface op);
 LogicalResult verifyIfTopLevel(DeclInterface decl,
                                SymbolTableCollection &symtab);
+LogicalResult verifyExportInterface(Operation *op);
 } // namespace impl
 } // namespace M::KGEN
 

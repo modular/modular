@@ -226,6 +226,10 @@ void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
 
 enum class GeneratorOrFuncKind { func, generator };
 
+/// Parse and print an export kind.
+ParseResult parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind);
+void printSymbolExport(AsmPrinter &p, Operation *op, ExportKindAttr exportKind);
+
 /// Parse the MLIR syntax for a kgen.generator, kgen.func and related
 /// operators.
 ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,

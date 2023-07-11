@@ -37,13 +37,10 @@ lit.package @package {
     // CHECK: kgen.link "lib.a" as @"package::module::lib"
     kgen.link "lib.a" as @lib
 
-    // CHECK: kgen.generator @"package::module::foo"()
-    lit.func @foo() {
+    // CHECK: kgen.generator export @"package::module::foo"()
+    lit.func export @foo() {
       kgen.return
     }
-
-    // CHECK: kgen.export @"package::module::foo"
-    kgen.export @package::@module::@foo
   }
 }
 

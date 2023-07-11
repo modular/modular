@@ -14,6 +14,7 @@ mlir_tablegen(POPAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=pop)
 add_public_tablegen_target(MLIRPOPAttrsIncGen)
 add_dependencies(MLIRPOPIncGen MLIRPOPAttrsIncGen)
 
+set(LLVM_TARGET_DEFINITIONS POPAttrs.td)
 mlir_tablegen(POPEnums.h.inc -gen-enum-decls)
 mlir_tablegen(POPEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(MLIRPOPEnumsIncGen)

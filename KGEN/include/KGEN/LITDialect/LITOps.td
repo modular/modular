@@ -40,7 +40,7 @@ def LIT_FuncOp : LITOp<"func", [
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
-    DeclInterface, FuncInterface]> {
+    DeclInterface, FuncInterface, ExportInterface]> {
   let summary = "High level generator definition";
   let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
@@ -65,6 +65,7 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isAdaptive,
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
+    KGEN_ExportKindAttr:$exportKind,
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // Used for binary packages, a reference to the symbol containing the

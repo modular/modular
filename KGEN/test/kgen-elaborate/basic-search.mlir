@@ -120,9 +120,8 @@ kgen.generator @pickSecondB() -> index {
   kgen.return %0 : index
 }
 
-kgen.export @test
-// CHECK-LABEL: kgen.func @test
-kgen.generator @test() {
+// CHECK-LABEL: kgen.func export @test
+kgen.generator export @test() {
   // CHECK-NEXT: kgen.call @pickSecond
   %0 = kgen.call @pickSecond() : () -> index
   kgen.return

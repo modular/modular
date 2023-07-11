@@ -488,11 +488,6 @@ kgen.generator @doIt<SomeParam>() {
 
 // -----
 
-// expected-error @below {{could not find referenced symbol '@doesNotExist'}}
-kgen.export @doesNotExist
-
-// -----
-
 kgen.generator @apply_error() {
   // expected-error @below {{custom op 'kgen.param.declare' expected a signature type for 'apply'}}
   kgen.param.declare fn = <apply(5, 5)>

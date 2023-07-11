@@ -3,8 +3,6 @@
 // expected-error@-3 {{could not find func '@badkernel'}}
 
 // expected-error@below {{command-line specified signature does not match the IR signature}}
-kgen.generator @some_func(%arg0: f32) -> (f32, f32) {
+kgen.generator export @some_func(%arg0: f32) -> (f32, f32) {
   kgen.return %arg0, %arg0 : f32, f32
 }
-
-kgen.export @some_func

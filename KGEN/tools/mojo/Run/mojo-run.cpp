@@ -243,8 +243,8 @@ getOrConstructTargetInfo(MLIRContext &context, ModuleOp moduleOp,
 
 /// Returns whether the given module exports a `main` function.
 static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
-  for (auto funcOp : theModule.getOps<FuncOp>())
-    if (funcOp.getSymName() == "main")
+  for (auto funcOp : theModule.getOps<ExportInterface>())
+    if (funcOp.getLinkageNameAttr() == "main")
       return true;
   return false;
 }

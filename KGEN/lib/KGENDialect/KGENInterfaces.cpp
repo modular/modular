@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "Support/Compiler/OperationUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -55,6 +56,27 @@ LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
            << " but callee has " << type;
   }
 
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ExportInterface
+//===----------------------------------------------------------------------===//
+
+LogicalResult impl::verifyExportInterface(Operation *op) {
+  auto itf = cast<ExportInterface>(op);
+  if (itf.isCExported()) {
+    StringAttr exportName = itf.getLinkageNameAttr();
+    if (!exportName)
+      return op->emitOpError("is C exported but lacks an export symbol alias");
+    if (!isCIdentifier(exportName)) {
+      return mlir::emitError(
+                 op->getLoc(),
+                 "C exported function name is not a valid C identifier, "
+                 "allowed characters: [a-zA-Z0-9_]: ")
+             << exportName.getValue();
+    }
+  }
   return success();
 }
 

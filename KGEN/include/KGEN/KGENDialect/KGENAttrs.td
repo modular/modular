@@ -13,8 +13,10 @@
 
 include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/KGENDialect/KGENDialect.td"
+include "KGEN/KGENDialect/KGENEnums.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/EnumAttr.td"
 
 class AttrOfType<Type type> : ConfinedAttr<TypedAttrInterface, [
   AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
@@ -779,7 +781,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
 // MLIROpAttr
 //===----------------------------------------------------------------------===//
 
-def MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
+def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
   let summary = "an MLIR operation as a parameter expression";
   let description = [{
     The `#kgen.param.mlir_op` attribute represents an MLIR operation as a
@@ -831,7 +833,7 @@ def MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
 }
 
 //===----------------------------------------------------------------------===//
-// KGEN_RegionAttr
+// RegionAttr
 //===----------------------------------------------------------------------===//
 
 def KGEN_RegionAttr
@@ -861,6 +863,32 @@ def KGEN_RegionAttr
     `<` $regionName `,` `[` custom<ParameterValues>($paramValues) `]` `,`
     `isolated` `=` $isolated `>`
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// ExportKindAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
+  let summary = "Defines the export semantics of a symbol.";
+  let description = [{
+    The `#kgen.export` attribute defines the export semantics of a symbol. A
+    symbol can be:
+
+    - Not exported: its linkage is internal and its visibility is hidden.
+    - Exported: its linkage is external and its visibility is public.
+    - C exported: like `exported`, but with a C-compatible name and ABI
+
+    Example:
+
+    ```mlir
+    #kgen.export_kind<not_exported>
+    #kgen.export_kind<exported>
+    #kgen.export_kind<c_exported>
+    ```
+  }];
+
+  let assemblyFormat = "`<` $value `>`";
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
