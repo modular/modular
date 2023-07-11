@@ -8,13 +8,16 @@ from sys import version_info
 from enum import Enum
 from typing import Union, Optional
 
+import numpy as np
+
 if version_info.minor <= 8:
-    from typing import List
+    from typing import Dict, List
 else:
+    Dict = dict
     List = list
 
 class Model:
-    def execute(self, *args) -> None: ...
+    def execute(self, **kwargs) -> Dict[str, np.ndarray]: ...
     def init(self) -> None: ...
 
 class InferenceSession:
