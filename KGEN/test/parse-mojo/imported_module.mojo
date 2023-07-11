@@ -20,9 +20,9 @@ fn _ignored_wildcard_fn():
 
 @value
 @register_passable("trivial")
-struct MyStruct:
-    var value: __mlir_type.index
+struct VeryUniqueStruct:
+    var very_unique_field: __mlir_type.index
 
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> MyStruct:
-        return Self {value: value.__as_mlir_index()}
+    @staticmethod
+    fn very_unique_func(value: Int) -> VeryUniqueStruct:
+        return Self {very_unique_field: value.__as_mlir_index()}
