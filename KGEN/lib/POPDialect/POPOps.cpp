@@ -679,6 +679,11 @@ LogicalResult GlobalAddressOp::verifySymbolUses(SymbolTableCollection &symtab) {
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 
+void GlobalConstantOp::build(OpBuilder &b, OperationState &state, Type result,
+                             TypedAttr value) {
+  build(b, state, result, value, TypedAttr{});
+}
+
 static ParseResult parseGlobalConstantOpValue(OpAsmParser &p, TypedAttr &value,
                                               Type &resultType) {
   Type elementType;
