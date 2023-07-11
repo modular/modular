@@ -594,18 +594,90 @@ void DeclResolver::registerAndCheckExport(ExportOp exportOp) {
 }
 
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
-  ASTDecl *containingDecl = funcDecl.getParentDecl();
-  auto symbolName = getFullyResolvedSymbolRef(cast<LIT::FuncOp>(funcDecl));
+  LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
+  SignatureType userMainSignature = userMainFn.getSignature();
+  Location loc = userMainFn.getLoc();
 
-  StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
-  // If main has an explicit @export decorator we are done.
-  if (exportedSymbolNames.count(mainAttr))
+  // Validate that main has the expected signature.
+  if (!userMainSignature.getInputParamTypes().empty() ||
+      !userMainSignature.getResultParamTypes().empty()) {
+    shared.emitError(loc, "expected 'main' function to have no parameters");
     return;
-  // main was not exported explicitly, export it.
+  }
+  if (!userMainSignature.getValueInputs().empty()) {
+    shared.emitError(loc, "expected 'main' function to have no arguments");
+    return;
+  }
+  if (!ASTType(userMainFn.getUserResultType()).isNoneType()) {
+    shared.emitError(loc, "expected 'main' function to return 'None'");
+    return;
+  }
+
+  // Utility for resolving a decl within the Startup module.
+  ASTDecl &startupModule =
+      shared.importModule("Builtin.Startup", &funcDecl, funcDecl.getLoc());
+  auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
+    auto result = shared.lookupAndResolveDecl(
+        name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);
+    if (result.getIfSuccess().empty()) {
+      if (result.isFailure()) {
+        shared.emitError(
+            funcDecl.getLoc(),
+            "unable to resolve `Builtin.Startup` module when exporting 'main'");
+      }
+      return nullptr;
+    }
+    return result.getIfSuccess().front();
+  };
+
+  // Generate a shim for main that handles parsing command line arguments,
+  // capturing uncaught exceptions, and returning the exit code. The shim
+  // defines a C-ABI compatible function that sets up the mojo runtime.
+  ASTDecl *containingDecl = funcDecl.getParentDecl();
   OpBuilder builder = containingDecl->getDeclEndBuilder();
+
+  // The Startup module provides a stubbed out shim for us to use, so pull that
+  // in.
+  ASTDecl *mainShimProtoDecl = resolveStartDecl("__mojo_main_prototype");
+  if (!mainShimProtoDecl)
+    return;
+  FuncOp mainShimProtoFn = cast<FuncOp>(*mainShimProtoDecl);
+
+  // Builder function.
+  StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
+  auto shimMainFn = cast<FuncOp>(builder.clone(*mainShimProtoFn));
+  shimMainFn.setSymNameAttr(mainAttr);
+  shimMainFn.getBody()->clear();
+
+  // Populate the body of the shim. For this we designate the internal
+  // implementation to either `__wrap_and_execute_main` or
+  // `__wrap_and_execute_raising_main` in the Startup module, depending on
+  // how the user specified their main function.
+  OpBuilder shimBodyBuilder = OpBuilder::atBlockBegin(shimMainFn.getBody());
+  bool isRaisingMain = userMainSignature.isThrows();
+  ASTDecl *mainWrapperDecl =
+      resolveStartDecl(isRaisingMain ? "__wrap_and_execute_raising_main"
+                                     : "__wrap_and_execute_main");
+  if (!mainWrapperDecl)
+    return;
+  FuncOp mainWrapperFn = cast<FuncOp>(*mainWrapperDecl);
+
+  // Generate a reference to the main wrapper function, which expects the user
+  // main to be provided via an input parameter.
+  SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
+      getFullyResolvedSymbolRef(mainWrapperFn),
+      {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
+                               userMainSignature)},
+      mainWrapperFn.getSignature().dropParamValues());
+  auto wrappedCall = shimBodyBuilder.create<CallOp>(
+      loc, shimMainFn.getArgumentTypes()[0], wrapperFnRef,
+      ArrayRef<ParamDeclAttr>(), shimMainFn.getArguments());
+  shimBodyBuilder.create<ReturnOp>(loc, wrappedCall.getResults());
+  shimBodyBuilder.create<EndFuncOp>(loc);
+
+  // Generate an export for the shim.
   auto exportOp = builder.create<ExportOp>(
-      builder.getUnknownLoc(), symbolName,
-      StringAttr::get(getContext(), kMainSymbolName), /*isCExport=*/true);
+      loc, getFullyResolvedSymbolRef(shimMainFn), mainAttr, /*isCExport=*/true);
   exportedSymbolNames.insert({mainAttr, exportOp.getLoc()});
 }
 
@@ -1665,8 +1737,10 @@ struct FnDecorators : public SharedStateUser {
 
 private:
   void applyAdaptive(const DeclRefNode &node);
-  void applyLateExport(Location loc, StringRef aliasName);
-  void applyLateExport(Location loc, const CallNode &callNode);
+  void applyLateExport(Location loc, StringRef unmangledName,
+                       StringRef aliasName);
+  void applyLateExport(Location loc, StringRef unmangledName,
+                       const CallNode &callNode);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1723,9 +1797,22 @@ void FnDecorators::apply(
   decoratorExprs = unprocessed;
 }
 
-void FnDecorators::applyLateExport(Location loc, StringRef aliasName) {
+void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
+                                   StringRef aliasName) {
   if (isa<StructDeclOp>(*decl.getParentDecl())) {
     emitError(funcOp.getLoc(), "methods cannot be exported");
+    return;
+  }
+
+  // Handle the unique case of main. We implicitly export main, so this is
+  // simply checking that the user didn't try to export it as something else.
+  if (aliasName == kMainSymbolName) {
+    if (unmangledName != kMainSymbolName)
+      emitError(loc, "only 'main' can be exported as 'main'");
+    return;
+  }
+  if (unmangledName == kMainSymbolName) {
+    emitError(loc, "'main' can only be exported as 'main'");
     return;
   }
 
@@ -1739,7 +1826,8 @@ void FnDecorators::applyLateExport(Location loc, StringRef aliasName) {
   getDeclResolver().registerAndCheckExport(exportOp);
 }
 
-void FnDecorators::applyLateExport(Location loc, const CallNode &node) {
+void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
+                                   const CallNode &node) {
   if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
       !isa<StringLiteralNode>(node.args[0].expr)) {
     emitError(
@@ -1754,7 +1842,7 @@ void FnDecorators::applyLateExport(Location loc, const CallNode &node) {
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;
   }
-  applyLateExport(loc, aliasName);
+  applyLateExport(loc, unmangledName, aliasName);
 }
 
 void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
@@ -1763,7 +1851,7 @@ void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export") {
-      applyLateExport(loc, unmangledName);
+      applyLateExport(loc, unmangledName, unmangledName);
     } else if (declRef->spelling == "noncapturing") {
       signature = signature.getWithFnEffects(
           bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
@@ -1780,24 +1868,12 @@ void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
       if (declRef->spelling == "export") {
-        applyLateExport(loc, *callNode);
+        applyLateExport(loc, unmangledName, *callNode);
         return;
       }
   }
   emitError(decorator->getLoc(), "unsupported decorator")
       << decorator->getRange();
-}
-
-/// A valid main function must have signature main().
-/// No parameters are allowed and here must be only one main in the final
-/// object file.
-static bool isMainFunction(StringAttr &name, LIT::FuncOp func,
-                           SharedState &shared) {
-  SignatureType signature = func.getSignature();
-  return name == kMainSymbolName && signature.getInputParamTypes().empty() &&
-         signature.getResultParamTypes().empty() &&
-         signature.getValueInputs().empty() &&
-         ASTType(func.getUserResultType()).isNoneType();
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
@@ -2043,7 +2119,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // If have a main function, fn main(), export it automatically.
-  if (!structDecl && isMainFunction(baseName, funcOp, shared))
+  if (!structDecl && baseName == kMainSymbolName)
     getDeclResolver().exportMain(decl);
 
   // Generate a debug subprogram for this function.

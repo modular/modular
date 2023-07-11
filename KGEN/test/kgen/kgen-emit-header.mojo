@@ -16,6 +16,6 @@ fn call_me() -> Float32:
     return 1.0
 
 
-# CHECK: extern void main();
+# CHECK: extern int32_t main(int32_t, void *);
 fn main():
     _ = call_me()

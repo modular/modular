@@ -12,6 +12,6 @@ from IO import print
 
 @export("bar")
 # CHECK: extern float bar();
-fn main() -> Float32:
+fn foo() -> Float32:
     # OK to alias, not proper main
     return 0.0

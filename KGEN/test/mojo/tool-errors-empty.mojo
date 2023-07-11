@@ -9,5 +9,5 @@
 from SIMD import Float32
 
 # CHECK: module does not `@export` any symbols; nothing to codegen
-fn main() -> Float32:
+fn foo() -> Float32:
     return 0.0
