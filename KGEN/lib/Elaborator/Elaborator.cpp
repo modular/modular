@@ -732,9 +732,12 @@ private:
   /// Complete processing of a generator user by resolving any bound result
   /// types or parameters in the parent scope. This is the step that propagates
   /// result parameters from the inner scope to the outer scope.
+  ///
+  /// See function definition for the meaning of `invertLockOrder`.
   ElaborationState completeCallProcessing(GeneratorUserOpInterface user,
                                           ArrayRef<ParamDeclAttr> decls,
-                                          ImplNode *thisNode, ImplNode *node);
+                                          ImplNode *thisNode, ImplNode *node,
+                                          bool invertLockOrder = false);
 
   /// Complete generator user processing with a list of valid concrete
   /// implementations with consistent bindings. Multi-version the currente node
@@ -1440,22 +1443,39 @@ static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
   return ElaborationState::advance();
 }
 
-ElaborationState
-ElaboratorImpl::completeCallProcessing(GeneratorUserOpInterface user,
-                                       ArrayRef<ParamDeclAttr> decls,
-                                       ImplNode *thisNode, ImplNode *node) {
+ElaborationState ElaboratorImpl::completeCallProcessing(
+    GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
+    ImplNode *thisNode, ImplNode *node, bool invertLockOrder) {
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
   if (thisNode != node) {
-    thisNode->bindings.read([node](auto &thisNodeBindings) {
-      node->bindings.modify([&](auto &nodeBindings) {
-        for (const auto &[k, v] : thisNodeBindings) {
-          auto &oldV = nodeBindings[k];
-          assert(!oldV || oldV == v);
-          oldV = v;
-        }
+    // NOTE: The mutexes on `bindings` must be acquired in the same order as in
+    // `collectConcreteImplementations`, where the parent (caller node) acquires
+    // the mutexes of callee nodes. Otherwise, a deadlock can occur if two
+    // threads each hit one of the two pieces of code with the same nodes at the
+    // same time. In normal call completion, acquire the parent lock first. When
+    // breaking recursion, however, `invertLockOrder` is set to reverse the
+    // order, because in breaking recursion, the child node becomes a parent.
+    auto addBindings = [](auto &nodeBindings, auto &thisNodeBindings) {
+      for (const auto &[k, v] : thisNodeBindings) {
+        auto &oldV = nodeBindings[k];
+        assert(!oldV || oldV == v);
+        oldV = v;
+      }
+    };
+    if (invertLockOrder) {
+      thisNode->bindings.read([node, addBindings](auto &thisNodeBindings) {
+        node->bindings.modify([&](auto &nodeBindings) {
+          addBindings(nodeBindings, thisNodeBindings);
+        });
       });
-    });
+    } else {
+      node->bindings.modify([thisNode, addBindings](auto &nodeBindings) {
+        thisNode->bindings.read([&](auto &thisNodeBindings) {
+          addBindings(nodeBindings, thisNodeBindings);
+        });
+      });
+    }
   }
 
   if (thisNode->error) {
@@ -2289,9 +2309,10 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
         }
       } else {
         assert(genNode->impls.size() == 1 && "expected at least 1 child");
-        // Break the cycle.
+        // Break the cycle. Set `invertLockOrder` as recursion processes nodes
+        // in reverse order.
         (void)completeCallProcessing(call, {}, genNode->impls.front().get(),
-                                     inode);
+                                     inode, /*invertLockOrder=*/true);
         completed.set(idx);
         anyBroken = true;
       }
