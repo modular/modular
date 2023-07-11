@@ -80,7 +80,7 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn __init__() -> Self:
         """Default initializer for Buffer. By default the fields are all
-        inialized to 0.
+        initialized to 0.
 
         Returns:
             The NDBuffer object.
@@ -617,7 +617,7 @@ struct NDBuffer[
     @always_inline
     fn __init__() -> Self:
         """Default initializer for NDBuffer. By default the fields are all
-        inialized to 0.
+        initialized to 0.
 
         Returns:
             The NDBuffer object.
