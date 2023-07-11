@@ -107,8 +107,8 @@ public:
       std::vector<lldb::ExpressionVariableSP> &&variables,
       std::optional<std::string> pythonModuleName);
 
-  /// Return the next name to use for a expression module.
-  std::string getNextExpressionModuleName();
+  /// Return the next name to use for a expression module and ID.
+  std::pair<size_t, std::string> getNextExpressionModuleName();
 
   /// Return if the given module name is an expression module name.
   static bool isExpressionModuleName(StringRef moduleName);

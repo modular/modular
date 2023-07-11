@@ -53,6 +53,11 @@ std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab,
   return uniqueName;
 }
 
+std::string M::getUniqueSymbolName(std::string baseName, SymbolTable &symtab) {
+  unsigned counter = 0;
+  return getUniqueSymbolName(baseName, symtab, counter);
+}
+
 std::string M::getFlattenedSymbolName(SymbolRefAttr symbol) {
   // If the symbol is already flat, there is nothing to do.
   if (auto flatSym = dyn_cast<FlatSymbolRefAttr>(symbol))

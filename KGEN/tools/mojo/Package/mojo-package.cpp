@@ -227,10 +227,13 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
             clonedFunc = cast<LIT::FuncOp>(b.clone(*func));
           }
 
-          // Use the mangled version of the original func, because that's what
-          // its name will be post-elaboration.
-          auto mangled = LIT::MangledSymbol::mangle(func);
-          flattenedNameToFunc.try_emplace(mangled.mangled, clonedFunc);
+          // Map the function to the alias it will have. Otherwise, use the
+          // mangled version of the original func, because that's what its name
+          // will be post-elaboration.
+          StringAttr name = func.getPostElaborationNameAttr();
+          if (!name)
+            name = LIT::MangledSymbol::mangle(func).mangled;
+          flattenedNameToFunc.try_emplace(name, clonedFunc);
         })
         // Drop export ops unconditionally.
         .Case([&](ExportOp op) { /* do nothing */ })
@@ -253,27 +256,9 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
                                          const ExportMap &exportedSymbols) {
   ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
 
-  // The list of names we need to reset after we're done.
-  // TODO: `export` in mojo is a bit overloaded, it munges many different
-  // concepts into one (including linkage, renaming, and exporting). We should
-  // clean up the abstraction model, and the renaming should generally happen
-  // earlier in the compilation pipeline.
-  SmallVector<std::pair<FuncOp, StringAttr>> namesToReset;
-  auto resetNames = llvm::make_scope_exit([&] {
-    for (auto [func, name] : namesToReset)
-      func.setSymNameAttr(name);
-  });
-
   // Prepare the functions within the module for use when importing the package.
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
   for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
-    // If the function is exported with an alias, modify it to use that name.
-    auto exported = exportedSymbols.find(func.getSymNameAttr());
-    if (exported != exportedSymbols.end()) {
-      namesToReset.emplace_back(func, exported->first);
-      func.setSymNameAttr(exported->second.alias);
-    }
-
     // Attach a reference to the precompiled body to the KGEN::FuncOp.
     func.setPrecompiledBodyRefAttr(packageName);
   }
@@ -310,7 +295,7 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
       return Error("could not find kgen.func with name " + symName.getValue());
 
     hlFunc.setPostElaborationModuleRefAttr(packageName);
-    hlFunc.setPostElaborationNameAttr(exportSym.alias);
+    hlFunc.setPostElaborationNameAttr(symName);
   }
 
   thePackage.setPostElaborationModuleAttr(bytecodeResource);
@@ -537,8 +522,7 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
     if (!canExternalize(func))
       return WalkResult::skip();
     SymbolRefAttr fullName = LIT::getFullyResolvedSymbolRef(func);
-    exportBuilder.create<ExportOp>(func.getLoc(), fullName,
-                                   getFlattenedSymbolName(fullName));
+    exportBuilder.create<ExportOp>(func.getLoc(), fullName);
     return WalkResult::skip();
   });
 
@@ -588,8 +572,7 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
 
   // Look up the first item in the exported symbols to trigger archive
   // generation.
-  ErrorOr<CompiledFunc> funcOr =
-      engine->lookup(exportedSymbols.front().second.alias);
+  ErrorOr<CompiledFunc> funcOr = engine->lookup(exportedSymbols.front().first);
   if (funcOr.isError())
     return funcOr.takeError();
   // And lookup the archive.

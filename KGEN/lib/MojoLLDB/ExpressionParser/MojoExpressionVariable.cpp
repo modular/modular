@@ -98,8 +98,10 @@ void MojoPersistentExpressionState::registerExpressionInstance(
       std::move(pythonModuleName)));
 }
 
-std::string MojoPersistentExpressionState::getNextExpressionModuleName() {
-  return ("Expression [" + Twine(nextExpressionModuleID++) + "]").str();
+std::pair<size_t, std::string>
+MojoPersistentExpressionState::getNextExpressionModuleName() {
+  size_t nextID = nextExpressionModuleID++;
+  return {nextID, ("Expression [" + Twine(nextID) + "]").str()};
 }
 
 bool MojoPersistentExpressionState::isExpressionModuleName(

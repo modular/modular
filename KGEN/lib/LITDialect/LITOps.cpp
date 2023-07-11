@@ -530,10 +530,6 @@ LogicalResult LIT::FuncOp::verify() {
   if (getValueParamNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
-  if (getPostElaborationModuleRef().has_value() !=
-      getPostElaborationName().has_value())
-    return emitOpError("expected post elaboration reference and name to be "
-                       "specified together or not at all");
   if (isExternal()) {
     if (!llvm::hasSingleElement(*getBody()) ||
         !isa<LIT::ExternFuncOp>(&getBody()->front()))

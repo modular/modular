@@ -414,12 +414,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Loop over the functions, executing as necessary.
   llvm::DenseSet<StringRef> foundFuncs;
   for (auto fn : theModule->getOps<FuncOp>()) {
-    StringAttr name = fn.getNameAttr();
-
-    // If this function was exported, grab the alias it was exported as.
-    auto it = exportedSymbols.find(name);
-    if (it != exportedSymbols.end())
-      name = it->second.alias;
+    StringAttr name = fn.getSymNameAttr();
 
     // If we were asked to handle this func, do so.
     if (std::optional<CommandLineFunc> clFunc =

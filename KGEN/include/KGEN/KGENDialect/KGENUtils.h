@@ -24,11 +24,7 @@ class FuncInterface;
 
 /// This struct represents the data for an exported symbol.
 struct ExportedSymbol {
-  ExportedSymbol(StringAttr alias, bool isCExport = false)
-      : alias(alias), isCExport(isCExport) {}
-
-  /// The alias name for the export.
-  StringAttr alias;
+  ExportedSymbol(bool isCExport = false) : isCExport(isCExport) {}
 
   /// A flag indicating whether the export is a C export.
   bool isCExport = false;

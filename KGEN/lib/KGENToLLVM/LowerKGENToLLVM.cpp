@@ -392,22 +392,24 @@ convertResultCallingConvention(Location loc, Block *body, Type resultTy) {
 /// Emit a wrapper for a function with the calling convention converted to C
 /// calling convention. The wrapper constructs the necessary structs and
 /// forwards them to the actual function.
-/// The wrapper name is assumed to be unique.
-static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
+static void emitCWrapper(LLVM::LLVMFuncOp func,
+                         mlir::SymbolUserMap &symbolUsers,
                          SymbolTable &symtab) {
-  // Generate a new subprogram scope if necessary.
-  assert(symtab.lookup(wrapperName) == nullptr && "wrapperName is not unique");
+  // The function has internal users. Update its symbol name so the wrapper can
+  // take its name.
+  StringAttr origName = func.getSymNameAttr();
+  auto newName = StringAttr::get(
+      func.getContext(),
+      getUniqueSymbolName((origName.getValue() + "_c_wrapped").str(), symtab));
+  symbolUsers.replaceAllUsesWith(func, newName);
+  symtab.remove(func);
+  func.setSymNameAttr(newName);
+  symtab.insert(func);
+
+  // Update the subprogram scope of the wrapped function if it has one, but save
+  // the location before it gets changed.
   Location loc = func.getLoc();
-  if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(loc)) {
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
-      if (sp != funcSp)
-        return sp;
-      // The symbol name corresponds to the linkage name.
-      return sp.cloneWith(sp.getName(), wrapperName);
-    });
-    loc = cast<Location>(replacer.replace(loc));
-  }
+  DebugInfo::renameSubprogramsInScopes(newName, func);
 
   // Create the wrapper body. Ownership of the block is handed to the function.
   auto *body = new Block;
@@ -436,59 +438,25 @@ static void emitCWrapper(LLVM::LLVMFuncOp func, StringAttr wrapperName,
 
   b.setInsertionPointAfter(func);
   auto wrapper = b.create<LLVM::LLVMFuncOp>(
-      wrapperName, LLVM::LLVMFunctionType::get(
-                       resultType, llvm::to_vector(body->getArgumentTypes())));
+      origName, LLVM::LLVMFunctionType::get(
+                    resultType, llvm::to_vector(body->getArgumentTypes())));
   wrapper.getBody().push_back(body);
 }
 
 /// Update the name and linkage of the given function, using the provided alias
 /// name.
-static void updateExportedFunctionNameAndLinkage(
-    LLVM::LLVMFuncOp func, StringAttr aliasName,
-    mlir::SymbolUserMap &symbolUsers, SymbolTable &symtab) {
-  MLIRContext *ctx = func.getContext();
-  NamedAttrList attrs(func->getAttrDictionary());
-
+static void
+updateExportedFunctionNameAndLinkage(LLVM::LLVMFuncOp func,
+                                     mlir::SymbolUserMap &symbolUsers,
+                                     SymbolTable &symtab) {
   // Update the linkage.
-  attrs.set(func.getLinkageAttrName(),
-            LLVM::LinkageAttr::get(ctx, LLVM::Linkage::External));
-
-  // If the name is the same, there's nothing more to do.
-  if (func.getSymNameAttr() == aliasName) {
-    func->setAttrs(attrs.getDictionary(ctx));
-    return;
-  }
-  assert(symtab.lookup(aliasName) == nullptr && "aliasName is not unique");
-
-  // Generate a new subprogram scope if necessary with the updated linkage
-  // name.
-  if (auto funcSp =
-          DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func.getLoc())) {
-    DebugInfo::DIAttrTypeReplacer replacer;
-    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
-      if (sp != funcSp)
-        return sp;
-      // The symbol name corresponds to the linkage name.
-      return sp.cloneWith(sp.getName(), aliasName);
-    });
-    replacer.recursivelyReplaceElementsIn(func);
-  }
-
-  // Update any uses of the function.
-  symbolUsers.replaceAllUsesWith(func, aliasName);
-
-  // Update the name within the symbol table.
-  symtab.remove(func);
-  attrs.set(func.getSymNameAttrName(), aliasName);
-  func->setAttrs(attrs.getDictionary(ctx));
-  symtab.insert(func);
+  func.setLinkage(LLVM::Linkage::External);
 }
 
 /// Process the given function which is exported to C. If possible this will try
 /// to update the function in place, otherwise a wrapper is emitted that
 /// internally invokes the provided function.
 static void processCExportedFunction(LLVM::LLVMFuncOp func,
-                                     StringAttr aliasName,
                                      mlir::SymbolUserMap &symbolUsers,
                                      SymbolTable &symtab) {
   // Check if we need to update the function arguments or results to be
@@ -505,10 +473,10 @@ static void processCExportedFunction(LLVM::LLVMFuncOp func,
   // change.
   bool hasInternalUsers = !symbolUsers.getUsers(func).empty();
   if ((needUpdatedArgTypes || needUpdatedResultType) && hasInternalUsers)
-    return emitCWrapper(func, aliasName, symtab);
+    return emitCWrapper(func, symbolUsers, symtab);
 
   // Otherwise, we can update the function in place.
-  updateExportedFunctionNameAndLinkage(func, aliasName, symbolUsers, symtab);
+  updateExportedFunctionNameAndLinkage(func, symbolUsers, symtab);
 
   // If we don't need to update the calling convention, we're done.
   if (!needUpdatedArgTypes && !needUpdatedResultType)
@@ -625,12 +593,11 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
     // If we aren't exporting to C, we just need to update the name and linkage.
     if (!exportSymbol.isCExport) {
-      updateExportedFunctionNameAndLinkage(func, exportSymbol.alias,
-                                           symbolUsers, symtab);
+      updateExportedFunctionNameAndLinkage(func, symbolUsers, symtab);
       continue;
     }
 
-    processCExportedFunction(func, exportSymbol.alias, symbolUsers, symtab);
+    processCExportedFunction(func, symbolUsers, symtab);
   }
 
   // Convert the debug info within the IR.

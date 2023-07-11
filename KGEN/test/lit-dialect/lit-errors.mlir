@@ -299,20 +299,6 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes
 
 // -----
 
-// expected-error@below {{expected post elaboration reference and name to be specified together or not at all}}
-lit.func @post_elaboration() attributes {postElaborationModuleRef = @package} {
-  lit.end_func
-}
-
-// -----
-
-// expected-error@below {{expected post elaboration reference and name to be specified together or not at all}}
-lit.func @post_elaboration() attributes {postElaborationName = "name"} {
-  lit.extern_func
-}
-
-// -----
-
 // expected-error@below {{expected external function body to contain a single `lit.extern_func`}}
 lit.func @post_elaboration() attributes {postElaborationModuleRef = @package, postElaborationName = "name"} {
   lit.end_func

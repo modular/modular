@@ -109,7 +109,7 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
 
   for (auto [sym, exportVal] : exportedSymbols) {
     builder.create<ExportOp>(module->getLoc(), FlatSymbolRefAttr::get(sym),
-                             exportVal.alias, exportVal.isCExport);
+                             exportVal.isCExport);
     auto func = symtab.lookup<FuncOp>(sym);
     assert(func && "Unknown exported symbol");
 

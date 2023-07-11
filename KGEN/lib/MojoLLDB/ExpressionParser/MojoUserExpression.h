@@ -36,7 +36,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Return the function name that should be used for executing the expression.
-  const char *FunctionName() override { return "__lldb_expr__"; }
+  const char *FunctionName() override;
+  /// Set the function name that should be used for executing the expression.
+  void setFunctionName(std::string exprFnName);
 
   /// Return the module name used to wrap the expression if it is a python
   /// expression. Returns nullopt if this is a pure mojo expression.

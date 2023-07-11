@@ -1827,9 +1827,8 @@ llvm::MapVector<StringAttr, ExportedSymbol>
 KGEN::getExportedSymbols(ModuleOp module) {
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto e : module.getOps<ExportOp>()) {
-    exportedSymbols.insert(
-        {cast<FlatSymbolRefAttr>(e.getExported()).getAttr(),
-         ExportedSymbol(e.getAliasAttr(), e.getIsCExport())});
+    exportedSymbols.insert({cast<FlatSymbolRefAttr>(e.getExported()).getAttr(),
+                            ExportedSymbol(e.getIsCExport())});
   }
   return exportedSymbols;
 }
