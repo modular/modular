@@ -644,7 +644,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   StringAttr mainAttr = StringAttr::get(getContext(), kMainSymbolName);
   auto shimMainFn = cast<FuncOp>(builder.clone(*mainShimProtoFn));
   shimMainFn.setSymNameAttr(mainAttr);
-  shimMainFn.setPostElaborationNameAttr(mainAttr);
+  shimMainFn.setLinkageNameAttr(mainAttr);
   shimMainFn.getBody()->clear();
 
   // Populate the body of the shim. For this we designate the internal
@@ -1827,7 +1827,7 @@ void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
   }
 
   auto symbolName = getFullyResolvedSymbolRef(funcOp);
-  funcOp.setPostElaborationName(aliasName);
+  funcOp.setLinkageName(aliasName);
 
   ASTDecl *containingDecl = decl.getParentDecl();
   auto builder = containingDecl->getDeclEndBuilder();

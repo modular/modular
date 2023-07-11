@@ -70,8 +70,9 @@ def LIT_FuncOp : LITOp<"func", [
     // Used for binary packages, a reference to the symbol containing the
     // post-elaboration module that contains this function.
     OptionalAttr<FlatSymbolRefAttr>:$postElaborationModuleRef,
-    // The name of this function within the compiled artifact.
-    OptionalAttr<StrAttr>:$postElaborationName
+    // The linkage name of this function within the compiled artifact. If null,
+    // the flattened full symbol reference of the function will be used.
+    OptionalAttr<StrAttr>:$linkageName
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

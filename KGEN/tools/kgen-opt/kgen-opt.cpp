@@ -132,7 +132,7 @@ struct TestGeneratePreElaboratedBody
           .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
       StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
       func.setPostElaborationModuleRefAttr(FlatSymbolRefAttr::get(linkName));
-      func.setPostElaborationNameAttr(fakeElaboratedBody.getSymNameAttr());
+      func.setLinkageName(fakeElaboratedBody.getSymNameAttr());
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);

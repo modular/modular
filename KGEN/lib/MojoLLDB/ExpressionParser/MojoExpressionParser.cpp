@@ -701,7 +701,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Create a clone of the parser module so that we can compile it without
   // thrashing on the current parser state.
   LIT::FuncOp exprFn = cast<LIT::FuncOp>(exprFnDecl.getIfOperation());
-  exprFn.setPostElaborationName(exprFnName);
+  exprFn.setLinkageName(exprFnName);
   OwningOpRef<ModuleOp> module = parserContext.getModule().clone();
 
   // Ensure the expression function gets exported.
