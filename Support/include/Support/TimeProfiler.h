@@ -296,6 +296,11 @@ struct ProfilerEntry<false> {
   withDetailSuffix(llvm::function_ref<std::string()> detailFn) const {
     return {};
   }
+  ProfilerEntry
+  withNameDetailSuffix(StringRef suffix,
+                       llvm::function_ref<std::string()> detailFn) const {
+    return {};
+  }
   template <typename Result>
   Result copy() const {
     return {};
@@ -401,6 +406,15 @@ struct ProfilerEntry<true> {
     if (name.empty())
       return {};
     return ProfilerEntry(name, Twine(getDetail()).concat(detailFn()).str());
+  }
+
+  ProfilerEntry
+  withNameDetailSuffix(StringRef suffix,
+                       llvm::function_ref<std::string()> detailFn) const {
+    if (name.empty())
+      return {};
+    return ProfilerEntry(Twine(name).concat(name).concat(Twine(suffix)).str(),
+                         Twine(getDetail()).concat(detailFn()).str());
   }
 
   template <typename Result>

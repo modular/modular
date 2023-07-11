@@ -41,9 +41,9 @@ void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
     // Merge the given details into the existing profile entry. This is useful
     // when we need to combine profile data contributed from both the C++
     // and Mojo sides.
-    profilerEntry.withNameSuffix(name);
-    if (detail)
-      profilerEntry.withDetailSuffix([&]() { return detail->str(); });
+    profilerEntry = detail ? profilerEntry.withNameDetailSuffix(
+                                 name, [&]() { return detail->str(); })
+                           : profilerEntry.withNameSuffix(name);
   }
   // (Re)establish the 'prototype' profile entry, which is only used
   // by executeAsTask() below.
