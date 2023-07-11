@@ -3,8 +3,28 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: man-page
 
 # Invoking the subcommand with `--help` displays its help text.
-# RUN: mojo run -invalid-option --help | FileCheck %s --check-prefix CHECK-HELP
-# CHECK-HELP: MOJO-RUN(1)
+# RUN: mojo run -invalid-option --help | FileCheck %s
+
+# Check that passing the `--help-text` option without an input argument, or
+# before the input argument, prints the `run` command's help text.
+# RUN: mojo run --help-text | FileCheck %s
+# RUN: mojo run --help-text %s | FileCheck %s
+
+# CHECK: Build and execute a Mojo file
+
+# Check that passing the `--help-text` option after the input argument passes it
+# along to the underlying Mojo program.
+# RUN: mojo run %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
+# RUN: mojo %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
+
+from IO import print
+from Sys import argv
+
+
+fn main() -> None:
+    # CHECK-NOT-HELP: mojo-run-help.mojo
+    # CHECK-NOT-HELP: --help-text
+    print(argv()[0])
+    print(argv()[1])
