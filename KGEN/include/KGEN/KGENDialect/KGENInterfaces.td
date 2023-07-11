@@ -214,7 +214,7 @@ def ExportInterface : OpInterface<"ExportInterface"> {
   let verify = [{ return impl::verifyExportInterface($_op); }];
 
   let extraSharedClassDeclaration = [{
-    bool isExported() { return static_cast<int>($_op.getExportKind()) & 1; }
+    bool isExported() { return $_op.getExportKind() != ExportKind::NotExported; }
     bool isCExported() { return $_op.getExportKind() == ExportKind::CExported; }
     void setNotExported() { $_op.setExportKind(ExportKind::NotExported); }
     void setExported() { $_op.setExportKind(ExportKind::Exported); }
