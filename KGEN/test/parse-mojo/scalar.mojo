@@ -6,7 +6,8 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s | FileCheck %s
 
-from prolog import DType, Float32, Scalar, SIMD
+from DType import DType
+from SIMD import Float32, SIMD
 
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>
@@ -23,6 +24,12 @@ from prolog import DType, Float32, Scalar, SIMD
 #     %t1 = pop.mul %t0, %x : !pop.scalar<type>
 #     lit.return %t1 : !pop.scalar<type>
 #   }
+
+
+@register_passable
+struct Scalar[type: DType]:
+    fn __copyinit__(self) -> Self:
+        return Self {}
 
 
 fn fma[

@@ -10,7 +10,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ | FileCheck %s
+# RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 # COM: This file
 

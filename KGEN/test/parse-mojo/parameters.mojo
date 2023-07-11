@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
+# RUN: kgen-translate -import-mojo %s -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
-from prolog import assert_param, SIMD
+from Assert import assert_param
+from SIMD import SIMD
 from DType import DType
 
 ##===----------------------------------------------------------------------===##

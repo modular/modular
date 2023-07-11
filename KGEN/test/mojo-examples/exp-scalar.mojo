@@ -6,7 +6,7 @@
 
 # RUN: mojo %s | FileCheck %s
 
-from prolog import Float32
+from SIMD import Float32
 from IO import print
 
 # Evaluates the exp function using 6th order taylor series expansion. This is

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo %s -I %S/../mojo-examples/ | kgen-opt -verify-parameters | FileCheck %s
+# RUN: kgen-translate -import-mojo %s | kgen-opt -verify-parameters | FileCheck %s
 
 @adaptive
 # CHECK: lit.func @"foo()"() -> !lit.none attributes {isAdaptive

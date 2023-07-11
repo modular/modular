@@ -4,9 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
+# RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from prolog import DType, Error, Float32, object
+from DType import DType
+from SIMD import Float32
+from Object import object
 
 fn testMLIR():
   var a : __mlir_type
