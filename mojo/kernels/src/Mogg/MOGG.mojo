@@ -72,6 +72,7 @@ from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
+from GatherScatter import scatter_nd as _scatter_nd
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
@@ -130,6 +131,7 @@ fn MOGGExport():
     alias _relu = relu
     alias _reshape = reshape
     alias _broadcast = broadcast_to_tensor
+    alias _scatter_nd = scatter_nd
     alias _slice = slice
     alias _simd_load = simd_load
     alias _simd_store = simd_store
@@ -1439,6 +1441,37 @@ fn matrix_solve[
     @always_inline
     fn func(chain: OutputChainPtr):
         return _matrix_solve[type, x_rank, a_rank, b_rank](a, b, x, chain)
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG scatter_nd
+# ===----------------------------------------------------------------------===#
+
+
+fn scatter_nd[
+    output_rank: Int,
+    updates_rank: Int,
+    indices_rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), DType.int32
+    ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        return _scatter_nd[type, updates_rank, indices_rank, output_rank](
+            updates, indices, output, chain
+        )
 
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
