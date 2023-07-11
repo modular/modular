@@ -96,6 +96,13 @@ struct Symbol {
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
 
+  /// Get the type of this symbol that resembles as closely as possible what is
+  /// written in the source code. In fact, the parser in some situations might
+  /// change the type of a decl to something different than what the code
+  /// specifies, e.g., vars are always converted to pointers to the original
+  /// type.
+  MojoASTTypeRef getDisplayType() const;
+
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
 
@@ -106,6 +113,13 @@ struct Symbol {
   lsp::Range identifierRange;
 };
 } // namespace
+
+MojoASTTypeRef Symbol::getDisplayType() const {
+  return TypeSwitch<Operation &, MojoASTTypeRef>(*declRef.getIfOperation())
+      .Case<VarLetDeclOp>(
+          [&](auto op) { return declRef.getType().getPointerElementType(); })
+      .Case<LetRegDeclOp>([&](auto op) { return declRef.getType(); });
+}
 
 //===----------------------------------------------------------------------===//
 // SymbolPrinter
@@ -146,12 +160,12 @@ std::string SymbolPrinter::getDeclarationCodeSnippet() const {
         os << (op.getIsVar() ? "var" : "let");
 
         os << " " << symbol.identifier;
-        if (auto typeRef = symbol.declRef.getType())
+        if (auto typeRef = symbol.getDisplayType())
           os << ": " << typeRef.getAsString();
       })
       .Case<LetRegDeclOp>([&](auto op) {
         os << "let " << symbol.identifier;
-        if (auto typeRef = symbol.declRef.getType())
+        if (auto typeRef = symbol.getDisplayType())
           os << ": " << typeRef.getAsString();
       });
   return buff;
