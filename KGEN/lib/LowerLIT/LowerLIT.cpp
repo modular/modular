@@ -212,7 +212,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   }
 
   // If the function has an alias name, rename it.
-  if (StringAttr newName = gen.getPostElaborationNameAttr()) {
+  if (StringAttr newName = gen.getLinkageNameAttr()) {
     renamedFuncs[gen.getNameAttr()] = newName;
     gen.setSymName(newName);
   }

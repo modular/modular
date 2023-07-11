@@ -230,10 +230,10 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
           // Map the function to the alias it will have. Otherwise, use the
           // mangled version of the original func, because that's what its name
           // will be post-elaboration.
-          StringAttr name = func.getPostElaborationNameAttr();
-          if (!name)
-            name = LIT::MangledSymbol::mangle(func).mangled;
-          flattenedNameToFunc.try_emplace(name, clonedFunc);
+          StringAttr postElaborationName = func.getLinkageNameAttr();
+          if (!postElaborationName)
+            postElaborationName = LIT::MangledSymbol::mangle(func).mangled;
+          flattenedNameToFunc.try_emplace(postElaborationName, clonedFunc);
         })
         // Drop export ops unconditionally.
         .Case([&](ExportOp op) { /* do nothing */ })
@@ -295,7 +295,7 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
       return Error("could not find kgen.func with name " + symName.getValue());
 
     hlFunc.setPostElaborationModuleRefAttr(packageName);
-    hlFunc.setPostElaborationNameAttr(symName);
+    hlFunc.setLinkageName(symName);
   }
 
   thePackage.setPostElaborationModuleAttr(bytecodeResource);
