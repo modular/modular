@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param
-from Buffer import NDBuffer, prod_dims
+from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
 from Functional import (
     vectorize,
@@ -17,7 +17,7 @@ from Functional import (
 from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
-from List import DimList
+from List import DimList, Dim
 from Math import div_ceil
 from Math import min
 from Range import range
@@ -320,3 +320,69 @@ fn gather[
                     ]
 
     async_parallelize[task_func](out_chain, 1)
+
+
+# ===----------------------------------------------------------------------===#
+# ScatterNd
+# ===----------------------------------------------------------------------===#
+
+
+fn scatter_nd[
+    type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+](
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), DType.int32
+    ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    """A specialized scatter for updates[i0][i1][i2][i3], indices[i0][i1][1],
+    output[o0][i2][i3]. TODO(#15445): Make this general."""
+
+    assert_param[type.is_float64(), "scatter_nd only supports F64 currently"]()
+    assert_param[
+        updates_rank == 4, "scatter_nd updates rank must be 4 currently"
+    ]()
+    assert_param[
+        indices_rank == 3, "scatter_nd indices rank must be 3 currently"
+    ]()
+    assert_param[
+        output_rank == 3, "scatter_nd output rank must be 3 currently"
+    ]()
+
+    let output_shape = output.get_shape()
+    let updates_shape = updates.get_shape()
+    let indices_shape = indices.get_shape()
+
+    if indices_shape[indices_rank - 1] != 1:
+        return out_chain.mark_error("unsupported indices shape")
+
+    if (
+        updates_shape[0] != indices_shape[0]
+        or updates_shape[1] != indices_shape[1]
+    ):
+        return out_chain.mark_error("updates and index shape prefix mismatch")
+
+    let N = updates_shape[0] * updates_shape[1]
+    let D = updates_shape[2] * updates_shape[3]
+
+    output.zero()
+
+    let output_1d = Buffer[Dim(), type](output.data, output.num_elements())
+    let indices_1d = Buffer[Dim(), DType.int32](
+        indices.data, indices.num_elements()
+    )
+    let updates_1d = Buffer[Dim(), type](updates.data, updates.num_elements())
+
+    for n in range(N):
+        let index = indices_1d[n].to_int()
+        for d in range(D):
+            output_1d[index * D + d] = updates_1d[n * D + d]
+
+    out_chain.mark_ready()
