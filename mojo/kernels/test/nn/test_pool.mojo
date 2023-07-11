@@ -3,10 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 # RUN: mojo %s | FileCheck %s
-# COM: Disabled due to flake: https://github.com/modularml/modular/actions/runs/5521768399/jobs/10070363413
-# UNSUPPORTED: system-linux
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
