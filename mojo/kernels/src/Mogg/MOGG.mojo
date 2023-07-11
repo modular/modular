@@ -687,7 +687,7 @@ fn pow_wrapped[
 # Max & min ops
 # ===----------------------------------------------------------------------===#
 
-# These need wrappers as we can't take an alias of the ambigious overload.
+# These need wrappers as we can't take an alias of the ambiguous overload.
 
 
 @always_inline
