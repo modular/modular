@@ -90,6 +90,10 @@ std::string MojoASTTypeRef::getAsString() const {
   return unwrapMojoASTType(impl).getAsString(/*forDiag=*/true);
 }
 
+MojoASTTypeRef MojoASTTypeRef::getPointerElementType() const {
+  return unwrapMojoASTType(impl).getPointerElementType().mlirType;
+}
+
 //===----------------------------------------------------------------------===//
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//
