@@ -104,14 +104,14 @@ struct Naive2dConvolution[
                 output(ImageData): Pre-allocated output tensor space.
                 input(ImageData): Batched image input to the conv2d operator.
                 filter(ImageData): Filters to apply in the conv2d operator.
-                pad_h(StaticIntTuple): Padding on the height dimension with assu-
-                    med tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                pad_w(StaticIntTuple): Padding on the width dimension with assum-
-                    ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
+                pad_h(StaticIntTuple): Padding on the height dimension with
+                    assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
+                pad_w(StaticIntTuple): Padding on the width dimension with
+                    assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
                 stride(StaticIntTuple): Strides on height and width dimensions
                     with assumed tuple def (StrideH, StrideW).
-                dilation(StaticIntTuple): Dilations on height and width dimensi-
-                    ons with assumed tuple def (dilation_h, dilation_w).
+                dilation(StaticIntTuple): Dilations on height and width
+                    dimensions with assumed tuple def (dilation_h, dilation_w).
         """
         # Create an instance of the convolution op.
         let naive2d_convolution = Naive2dConvolution[
@@ -462,7 +462,7 @@ struct PackIm2ColNCHW[
         # Makes sure the block size is vector compatible.
 
         # TODO: add this.
-        # assert_param[is_disivible_by[block_size, simd_size]()]
+        # assert_param[is_divisible_by[block_size, simd_size]()]
 
         # Convert output index to input index.
         let global_in_image_offset = self._output_to_input(
@@ -909,7 +909,7 @@ struct ConvIm2ColNCHW[
         }
 
     fn _run_implicit_matmul(inout self):
-        """Wrapper utility funciton: Allocates packing space on the stack and
+        """Wrapper utility function: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
         # Allocate buffer to pack transformed image.
@@ -1234,7 +1234,7 @@ struct ConvIm2ColNCHW[
         """Initializes the internal gemm operand tensors with the translated
         dynamic gemm shapes from convolution shapes.
         """
-        # Ouput shape [N, F, Ho, Wo]
+        # Output shape [N, F, Ho, Wo]
         let c_pointer = self.out._offset(Index(self.batch_idx, 0, 0, 0))
         self.c = NDBuffer[2, DimList.create_unknown[2](), type](
             c_pointer.address,
@@ -1713,7 +1713,7 @@ fn _m_to_n_ho_wo_nhwc(m: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
 
         Returns (StaticIntTuple):
             The translated 3d indices in (N, Hout, Wout) format.
-    TODO(Fixel): This utilty should be generalized into a im2col util
+    TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
     let n = m // (conv_shape.out_h * conv_shape.out_w)
@@ -1731,7 +1731,7 @@ fn _k_to_r_s_c_nhwc(k: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
 
         Returns (StaticIntTuple):
             The translated 3d indices in (R, S, C) format.
-    TODO(Fixel): This utilty should be generalized into a im2col util
+    TODO(Fixel): This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
     let r = k // (conv_shape.s * conv_shape.c)
@@ -1756,7 +1756,7 @@ fn _ho_wo_to_hi_wi(
 
         Returns (StaticIntTuple):
             The translated 3d indices in (R, S, C) format.
-    TODO(Fixel): This utilty should be generalized into a conv util
+    TODO(Fixel): This utility should be generalized into a conv util
     class with some additional layout agnostic logic.
     """
     let pad_left = Index(
@@ -2026,7 +2026,7 @@ struct ConvIm2ColNHWC[
         self.elementwise_epilogue_fn = elementwise_epilogue_fn
 
     fn _run_implicit_matmul(self):
-        """Wrapper utility funciton: Allocates packing space on the stack and
+        """Wrapper utility function: Allocates packing space on the stack and
         run the matmul routine on the whole problem space.
         """
         if self.total_row_count <= 0 or self.total_col_count <= 0:
@@ -2467,7 +2467,7 @@ struct ConvDirectNHWC[
 ]:
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
-    The tile factor for C and F are chosen by a heurisitic prioritizeing C.
+    The tile factor for C and F are chosen by a heuristic prioritizing C.
     n_ho_wo is tiled by micro kernel's height.
 
     If n_ho_wo is large enough to spill LLC, we may need to tile n_ho_wo as the
@@ -2665,7 +2665,7 @@ struct ConvDirectNHWC[
             )
 
         # The first tile size is based on cache size. Within the tile
-        # it's stepped by the micro kernel sizse in F. The rest is stepped
+        # it's stepped by the micro kernel size in F. The rest is stepped
         # by simd_size. This assumes F is multiple of simd_size.
         tile[
             VariadicList[Int](
@@ -2809,7 +2809,7 @@ struct ConvDirectNHWC[
                     # Unpacked version. For each (r, s), we first offset the
                     # filter pointer by (r, s) plus c_tile_offset. Later for
                     # each c, we access micro_kernel_f_size contiguous elements.
-                    # These contiguous segements are strided by F.
+                    # These contiguous segments are strided by F.
                     @parameter
                     if not filter_packed:
                         filter_ptr = self.filter.data.offset(
@@ -2872,7 +2872,7 @@ struct ConvDirectNHWC[
                     # If the C dimension is fully covered in cache tile, then
                     # loop nests over RxSxc_tile_size fully covers RSC diemensions.
                     # With FRSCf layout, this ensures all micro_kernel_f_size
-                    # segments are continously in memory. If not, we need to
+                    # segments are continuously in memory. If not, we need to
                     # reset filter_ptr to the next start of c segments in tile.
                     @parameter
                     if filter_packed and not c_fully_cached:
@@ -2971,7 +2971,7 @@ struct ConvDirectNHWC[
         @parameter
         @always_inline
         fn body[idx0: Int, idx1: Int]():
-            # Broadcast an scalar from inut to a simd vector.
+            # Broadcast an scalar from input to a simd vector.
             let input_val = self.input.data.offset(
                 input_base_offsets[idx0].value + input_offset
             ).simd_load[1]()

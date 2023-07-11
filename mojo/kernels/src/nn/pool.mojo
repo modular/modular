@@ -169,16 +169,16 @@ struct Pool2d[
         Args:
             output: Pre-allocated output tensor space.
             input: Batched image input to the pool2d operator.
-            pad_h: Padding on the height dimension with assu-
-              med tuple def (pad_lower, pad_lower).
-            pad_w: Padding on the width dimension with assum-
-              ed tuple def (pad_lower, pad_lower).
+            pad_h: Padding on the height dimension with assumed
+              tuple def (pad_lower, pad_lower).
+            pad_w: Padding on the width dimension with assumed
+              tuple def (pad_lower, pad_lower).
             filter_shape: Filter size on height and width
               dimensions with assumed tuple def (filter_h, filter_w).
             stride: Strides on height and width dimensions
               with assumed tuple def (stride_h, stride_w).
-            dilation: Dilations on height and width dimensi-
-              ons with assumed tuple def (dilation_h, dilation_w).
+            dilation: Dilations on height and width dimensions
+              with assumed tuple def (dilation_h, dilation_w).
             num_tasks: Number of tasks to run in parallel.
 
         Returns:

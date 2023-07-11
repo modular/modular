@@ -157,7 +157,7 @@ fn broadcast_impl[
         )
         next_input_offset += input_axis_stride
         next_output_offset += output_axis_stride
-    # dupicate data in output, e.g.,
+    # duplicate data in output, e.g.,
     #  broadcast([[1]]), shape (1, 1) to shape (2, 3):
     #     [[0, 0, 0], [0, 0, 0]]
     # --> [[1, 1, 1], [0, 0, 0]]   after recursive call to next axis
