@@ -241,125 +241,27 @@ getOrConstructTargetInfo(MLIRContext &context, ModuleOp moduleOp,
   return target;
 }
 
-/// Invoke the KGEN compiler runtime setter for argv to the underlying Mojo
-/// program, to pass along the given `arguments`.
-static ErrorOrSuccess setArgV(ExecutionEngine *engine,
-                              ArrayRef<const char *> arguments) {
-  ErrorOr<CompiledFunc> setterOrErr = engine->lookup("KGEN_CompilerRT_SetArgV");
-  if (failed(setterOrErr))
-    return Error(llvm::formatv("an internal error occurred when initializing "
-                               "arguments to the underlying Mojo program: {0}",
-                               setterOrErr.getError()));
-  setterOrErr->invoke<void>(arguments.size(), arguments.data());
-  return {};
-}
-
-namespace {
-/// Whether a module exports a `main` function.
-enum class ExportsMain {
-  /// The module does not export a `main` function.
-  NoMain,
-  /// The module exports a `def main` function.
-  IsDef,
-  /// The module exports a `fn main` function.
-  IsFn,
-};
-} // namespace
-
-/// Returns whether the given module exports a `main` function. If it doesn't,
-/// error diagnostics are emitted to point out why certain candidate functions
-/// are not viable.
-static ExportsMain moduleExportsMain(ModuleOp theModule,
-                                     const SymbolTable &symtab) {
-  MLIRContext *ctx = theModule.getContext();
-  auto noneType = POP::ArrayType::get(0, IntegerType::get(ctx, 1));
-
-  // Iterate over exported symbols named "main".
-  for (ExportOp exportOp :
-       llvm::make_filter_range(theModule.getOps<ExportOp>(), [](ExportOp op) {
-         return op.getAlias() == "main";
-       })) {
-    // It needs to be a function.
-    FuncOp funcOp =
-        symtab.lookup<FuncOp>(exportOp.getExported().getRootReference());
-    if (!funcOp)
-      continue;
-    // And that function needs to take zero arguments, and return a single
-    // result.
-    FunctionType fnType = funcOp.getFunctionType();
-    if (fnType.getNumInputs() != 0 || fnType.getNumResults() != 1)
-      continue;
-
-    // If it returns `None`, it's the `fn main` we're looking for.
-    if (fnType.getResult(0) == noneType)
-      return ExportsMain::IsFn;
-
-    // Otherwise, it could be a `def main()`, which returns a variant
-    // composed of the error and none types.
-    Type resultType = fnType.getResult(0);
-    auto emitInvalidReturnTypeError = [&]() -> ExportsMain {
-      mlir::emitError(funcOp.getLoc(),
-                      "'main' function has invalid return type '")
-          << resultType << "'; it must return 'None' or 'Error'";
-      return ExportsMain::NoMain;
-    };
-
-    auto varType = dyn_cast<POP::VariantType>(resultType);
-    if (!varType)
-      return emitInvalidReturnTypeError();
-
-    ArrayRef<TypedAttr> varElemTypes = varType.getTypes();
-    if (varElemTypes.size() != 2)
-      return emitInvalidReturnTypeError();
-
-    // The error type is `!pop.struct<pointer<scalar<si8>>, index>`.
-    Type errorType = POP::StructType::get(
-        ArrayRef<Type>{POP::PointerType::get(POP::SIMDType::get(
-                           1, DTypeConstantAttr::get(ctx, KGENDType::si8))),
-                       IndexType::get(ctx)});
-    if (varElemTypes[0] != ConcreteTypeConstantAttr::get(errorType))
-      return emitInvalidReturnTypeError();
-    if (varElemTypes[1] == ConcreteTypeConstantAttr::get(noneType))
-      return ExportsMain::IsDef;
-    return emitInvalidReturnTypeError();
-  }
-
-  return ExportsMain::NoMain;
+/// Returns whether the given module exports a `main` function.
+static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
+  for (ExportOp exportOp : theModule.getOps<ExportOp>())
+    if (exportOp.getAlias() == "main")
+      return true;
+  return false;
 }
 
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
-                                  ExecutionEngine *engine) {
-  ExportsMain exportsMain = moduleExportsMain(moduleOp, symtab);
-  if (exportsMain == ExportsMain::NoMain)
+                                  ExecutionEngine *engine,
+                                  ArrayRef<const char *> arguments) {
+  if (!moduleExportsMain(moduleOp, symtab))
     return Error("could not find a 'main' function to execute");
 
-  auto runFn = [exportsMain](void *fnPtr) -> ErrorOrSuccess {
-    // `fn main` is simple to handle, with no arguments and void result.
-    if (exportsMain == ExportsMain::IsFn) {
-      using FnType = void (*)();
-      ((FnType)fnPtr)();
-      return M::success();
-    }
+  auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
+    using FnType = int (*)(int, const char *const *);
 
-    // The `variant<Error, None>` result is decomposed in the arguments. The
-    // error type just contains a Mojo `StringRef`.
-    struct MojoError {
-      const char *data;
-      ssize_t length;
-    };
-    MojoError err;
-    uint8_t isNormalResult = false;
-    // The last argument is the discrminant, set to 0 if the result is an
-    // error variant.
-    using ErrorFnType = void (*)(MojoError *, uint8_t *);
-    ((ErrorFnType)fnPtr)(&err, &isNormalResult);
-    if (!isNormalResult) {
-      // Read out and report the error message.
-      StringRef errStr(err.data, err.length);
-      return Error("main function threw an error: " + errStr);
-    }
+    if (int result = ((FnType)fnPtr)(arguments.size(), arguments.data()))
+      return Error("execution exited with a non-zero result: " + Twine(result));
     return M::success();
   };
   return engine->runProgram("exec", "main", runFn);
@@ -448,14 +350,10 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
 
-  // Initialize the command line arguments to pass to the Mojo program.
-  ErrorOrSuccess argv = setArgV(engine.get(), arguments);
-  if (failed(argv))
-    return state.reportError(argv.getError());
-
   // Finally, execute the 'main' function of the Mojo program.
   TimeTraceScope<> traceScope("execute-main");
-  ErrorOrSuccess result = executeMain(moduleOp, symtab, engine.get());
+  ErrorOrSuccess result =
+      executeMain(moduleOp, symtab, engine.get(), arguments);
   if (failed(result))
     return state.reportError(result.getError());
 

@@ -54,8 +54,8 @@ fn foobar[w: Int]() -> TrivialStuff[w]:
     pass
 
 
-# CHECK: lit.func @"main[{{.*}}$Int::Int]()"<[[X:.*]]: {{.*}}@"$Int"::@Int
-fn main[x: Int]():
+# CHECK: lit.func @"main_func[{{.*}}$Int::Int]()"<[[X:.*]]: {{.*}}@"$Int"::@Int
+fn main_func[x: Int]():
     # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": () -> !lit.none = <[@{{.*}}::@"foo()", @{{.*}}::@"foo()_0"]>
     # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S0]]"]()
     foo()

@@ -71,12 +71,12 @@ KGEN_CompilerRT_GetArgV(ArgVList::RawList *result) {
 }
 
 COMPILERRT_EXPORT
-COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_SetArgV(size_t argc,
+COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_SetArgV(int argc,
                                                           char **argv) {
   ArgVList &argVList = ArgVList::get();
   argVList.args.resize(argc);
   argVList.argStrings.resize(argc);
-  for (size_t i = 0; i < argc; ++i)
+  for (int i = 0; i < argc; ++i)
     argVList.args[i] = argVList.argStrings[i] = argv[i];
 }
 

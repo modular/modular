@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -verify-diagnostics %s -I %S/../mojo-examples/
+# RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s -I %S/../mojo-examples/
 
 from prolog import DType, Float32, object, SIMD
 from Pointer import Pointer
@@ -690,3 +690,39 @@ struct Inner:
 @register_passable
 struct Outer: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
+
+##===----------------------------------------------------------------------===##
+# 'main' Function
+##===----------------------------------------------------------------------===##
+
+# // -----
+
+# expected-error @below {{expected 'main' function to have no arguments}}
+fn main(arg: Int):
+  return
+
+# // -----
+
+# expected-error @below {{expected 'main' function to return 'None'}}
+fn main() -> Int:
+  return 10
+
+# // -----
+
+# expected-error @below {{expected 'main' function to have no parameters}}
+fn main[input: Int]():
+  return
+
+# // -----
+
+# expected-error @below {{'main' can only be exported as 'main'}}
+@export("foo")
+fn main():
+  return
+
+# // -----
+
+# expected-error @below {{only 'main' can be exported as 'main'}}
+@export("main")
+fn foo():
+  return
