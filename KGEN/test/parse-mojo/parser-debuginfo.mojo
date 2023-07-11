@@ -60,15 +60,15 @@ fn structured_for_loop() -> __mlir_type.index:
 
 # // -----
 
-from imported_module import MyStruct
+from imported_module import VeryUniqueStruct
 
-# XCHECK: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
+# CHECK-DAG: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
 
-# XCHECK: lit.struct.decl @MyStruct
-# XCHECK-NEXT: lit.struct.field value : index loc(#[[LOC:loc[0-9]+]])
-# XCHECK-NEXT: lit.func @"__init__($Builtin::$Int::Int)"(%value: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]":{{[0-9]+}}:{{[0-9]+}})
+# CHECK-DAG: lit.struct.decl @VeryUniqueStruct
+# CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
+# CHECK-DAG: lit.func @"very_unique_func($Builtin::$Int::Int)"(%value: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]"
 
-# XCHECK: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
+# CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 
 fn caller():
-    let y = MyStruct.__init__(0)
+    let y = VeryUniqueStruct.very_unique_func(0)
