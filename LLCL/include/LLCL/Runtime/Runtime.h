@@ -22,7 +22,9 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "Support/Telemetry/Telemetry.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
+
 #include <atomic>
 
 namespace M {
@@ -34,9 +36,8 @@ class Allocator;
 class WorkQueue;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
-/// threads, a private heap for data, and a way of reporting errors.  This is
-/// also the natural unit for cancellation.
-///
+/// threads, a private heap for data, a way of reporting errors, and other
+/// global context. This is also the natural unit for task cancellation.
 class Runtime final {
 public:
   /// Construct runtime with allocator and workQueue. If profileFilename is
@@ -55,6 +56,10 @@ public:
   /// This can be used by logic that needs to flag that a side effect has
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
+
+  //===--------------------------------------------------------------------===//
+  // Profiling and Telemetry
+  //===--------------------------------------------------------------------===//
 
   /// Return a reference to the profiler instance, if its been initialized.
   std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
@@ -100,6 +105,39 @@ public:
     return cancelValue.load(std::memory_order_acquire);
   }
 
+  //===--------------------------------------------------------------------===//
+  // Configuration
+  //===--------------------------------------------------------------------===//
+
+  /// Emplaces a new configuration of type T into the runtime's set of
+  /// configurations and returns a reference to it. The runtime can hold at
+  /// most one configuration per T. The returned reference is stable for the
+  /// life of the runtime. This method is not thread safe, and it is expected
+  /// all required configurations are emplaced before any tasks using getConfig
+  /// below begin execution.
+  template <typename T, typename... Args>
+  T &emplaceConfig(Args &&...args) {
+    auto ptr = std::make_unique<Config<T>>(std::forward<Args>(args)...);
+    assert(!configs.contains(ptr->typeId.getDenseIndex()) &&
+           "Runtime already holds configuration of type");
+    T &result = ptr->payload;
+    configs.insert({ptr->typeId.getDenseIndex(), std::move(ptr)});
+    return result;
+  }
+
+  /// Returns a pointer to the configuration of type T held by the runtime,
+  /// or nullptr if no such configuration is held. This method is thread safe,
+  /// on the assumption no further calls to emplaceConfig will be made.
+  template <typename T>
+  const T *getConfig() const {
+    auto typeId = TypeID::get<T>();
+    auto itr = configs.find(typeId.getDenseIndex());
+    if (itr == configs.end())
+      return nullptr;
+    auto ptr = static_cast<Config<T> *>(itr->second.get());
+    return &ptr->payload;
+  }
+
 private:
   Runtime(const Runtime &) = delete;
   void operator=(const Runtime &) = delete;
@@ -138,6 +176,48 @@ private:
   /// If execution is cancelled, this holds the error value to forward into the
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
+
+  // Expected size of ConfigBase after padding below.
+  // Chosen such that all of our compilers will place Config::payload at the
+  // right place.
+  static const size_t kConfigBase = 4;
+
+  /// Base class for configuration objects.
+  struct ConfigBase {
+    TypeID typeId;
+    // Force ConfigBase to have a size such that Config::payload will always
+    // be placed immediately after the end of Config.
+    uint8_t padding[kConfigBase - sizeof(TypeID)];
+    ConfigBase(TypeID typeId) : typeId(typeId) {}
+    ~ConfigBase() { typeId.getValueDestructor()(this + 1); }
+  };
+
+  /// Holds the payload for configuration object of type T.
+  template <typename T>
+  struct Config : public ConfigBase {
+    T payload;
+    template <typename... Args>
+    Config(Args &&...args)
+        : ConfigBase(TypeID::get<T>()), payload(std::forward<Args>(args)...) {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
+#endif
+      static_assert(sizeof(ConfigBase) == kConfigBase);
+      static_assert(offsetof(Config<T>, payload) == kConfigBase,
+                    "Offset of Config::payload needs to be aligned");
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    }
+    ~Config() {
+      assert(false && "intended to be destroyed by ~ConfigBase only");
+    }
+  };
+
+  /// A map from globally unique type identifiers TypeID::get<T>() (using
+  /// their 'dense index' form) to an instance of Config<T>.
+  DenseMap<size_t, std::unique_ptr<ConfigBase>> configs;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };

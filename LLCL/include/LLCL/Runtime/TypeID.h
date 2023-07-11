@@ -237,6 +237,12 @@ public:
   /// Returns the destructor function for this type id, or null if invalid.
   ValueDestructorFn getValueDestructor() const;
 
+  /// Returns the underlying index representing the type id. This is in the
+  /// range [0..2^16-2].
+  uint16_t getDenseIndex() {
+    return id;
+  }
+
 private:
   explicit TypeID(Detail::RawTypeID id) : id(id) {}
 
