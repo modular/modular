@@ -1733,10 +1733,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   if (shared.parserListener) {
     // We notify the listener that a new let/var declaration has been
     // resolved.
-    if (isVar)
-      shared.parserListener->onVarDecl(MojoASTDeclRef(&decl), identifierLoc);
-    else
-      shared.parserListener->onLetDecl(MojoASTDeclRef(&decl), identifierLoc);
+    shared.parserListener->onVariableDecl(MojoASTDeclRef(&decl), identifierLoc);
   }
   return success();
 }
