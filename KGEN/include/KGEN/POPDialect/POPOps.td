@@ -1569,12 +1569,18 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$value);
+  let arguments = (ins TypedAttrInterface:$value, 
+                        OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs POP_PointerType:$result);
 
   let assemblyFormat = [{
-    `` custom<GlobalConstantOpValue>($value, type($result)) attr-dict
+    `` custom<GlobalConstantOpValue>($value, type($result))
+        custom<OptionalAlignmentParamValue>($alignment) attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "mlir::Type":$result, "TypedAttr":$value)>
+  ];
 
   let hasVerifier = 1;
 }

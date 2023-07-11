@@ -1636,9 +1636,10 @@ private:
 class ConvertPOPGlobalConstant
     : public ConvertPOPToLLVMPattern<GlobalConstantOp> {
 public:
-  ConvertPOPGlobalConstant(SymbolTable &symtab,
-                           DenseMap<TypedAttr, LLVM::GlobalOp> &constants,
-                           mlir::LLVMTypeConverter &typeConverter)
+  ConvertPOPGlobalConstant(
+      SymbolTable &symtab,
+      DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> &constants,
+      mlir::LLVMTypeConverter &typeConverter)
       : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
         constants(constants) {}
 
@@ -1646,7 +1647,8 @@ public:
   matchAndRewrite(GlobalConstantOp op, GlobalConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Unique the constant.
-    auto [it, inserted] = constants.try_emplace(op.getValue(), nullptr);
+    auto [it, inserted] = constants.try_emplace(
+        std::make_pair(op.getValue(), op.getAlignmentAttr()), nullptr);
     if (inserted) {
       // If the constant doesn't exist, create it and insert it in the module.
       OpBuilder::InsertionGuard guard(rewriter);
@@ -1655,10 +1657,13 @@ public:
       if (!type)
         return rewriter.notifyMatchFailure(
             op.getLoc(), "failed to convert constant result type");
-      auto global = rewriter.create<LLVM::GlobalOp>(
-          op.getLoc(), type.cast<LLVM::LLVMPointerType>().getElementType(),
-          true, LLVM::Linkage::Internal, "global_constant", Attribute());
 
+      auto ptrType = cast<LLVM::LLVMPointerType>(type);
+      LLVM::GlobalOp global = rewriter.create<LLVM::GlobalOp>(
+          op.getLoc(), ptrType.getElementType(), true, LLVM::Linkage::Internal,
+          "global_constant", Attribute(),
+          getAlignment(getTypeConverter(), ptrType,
+                       adaptor.getAlignmentAttr()));
       // Emit the constant using an initializer region.
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
@@ -1681,7 +1686,7 @@ private:
   /// The symbol table.
   SymbolTable &symtab;
   /// Uniqued constants.
-  DenseMap<TypedAttr, LLVM::GlobalOp> &constants;
+  DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> &constants;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1748,7 +1753,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPExternalCall>(symtab, typeConverter);
 
   // Convert global constants.
-  DenseMap<TypedAttr, LLVM::GlobalOp> constants;
+  DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
   target.addIllegalOp<GlobalConstantOp>();
   patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
   patterns.insert<ConvertPOPGlobalAddress>(typeConverter);

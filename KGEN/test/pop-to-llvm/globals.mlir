@@ -50,6 +50,37 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 // -----
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: @aligned_globals
+  kgen.func @aligned_globals() {
+
+    // Same value + same alignment = same constant.
+    // CHECK: llvm.mlir.addressof @global_constant
+    %0 = pop.global_constant: ui32 = <5> align 4
+    // CHECK: llvm.mlir.addressof @global_constant
+    %1 = pop.global_constant: ui32 = <5> align 4
+
+    // Same value + different alignment = different constant.
+    // CHECK: llvm.mlir.addressof @global_constant_0
+    %2 = pop.global_constant: ui32 = <5> align 16
+
+    // CHECK: llvm.mlir.addressof @global_constant_1
+    %3 = pop.global_constant: simd<2, si32> = <<2, 5>> align 64
+    kgen.return
+  }
+
+  // CHECK: llvm.mlir.global internal constant @global_constant() {addr_space = 0 : i32, alignment = 4 : i64} : i32 {
+  // CHECK-NEXT: %{{.*}} = llvm.mlir.constant(5 : i32) : i32
+
+  // CHECK: llvm.mlir.global internal constant @global_constant_0() {addr_space = 0 : i32, alignment = 16 : i64} : i32 {
+  // CHECK-NEXT: %{{.*}} = llvm.mlir.constant(5 : i32) : i32
+
+  // CHECK: llvm.mlir.global internal constant @global_constant_1() {addr_space = 0 : i32, alignment = 64 : i64} : vector<2xi32>
+  // CHECK-NEXT: %{{.*}} = llvm.mlir.constant(#M.dense_array<2, 5> : vector<2xi32>) : vector<2xi32>
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_array_constant
   kgen.func @global_array_constant() {
     // CHECK: llvm.mlir.addressof @global_constant

@@ -673,6 +673,15 @@ kgen.generator @global_constant() {
   kgen.return
 }
 
+// CHECK-LABEL: @global_constant_aligned
+kgen.generator @global_constant_aligned() {
+  // CHECK: pop.global_constant: i32 = <5> align 16 
+  pop.global_constant: i32 = <5> align 16
+  // CHECK: pop.global_constant: !M.array<4xui32> = <#M.dense_array<0, 1, 2, 3>>  align 64
+  pop.global_constant: !M.array<4xui32> = <#M.dense_array<0, 1, 2, 3>> align 64
+  kgen.return
+}
+
 // CHECK-LABEL: @pointer_to_index
 kgen.generator @pointer_to_index<type: type>(%a: !pop.pointer<type>,
                                              %b: !pop.pointer<scalar<f32>>,
