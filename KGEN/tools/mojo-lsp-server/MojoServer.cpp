@@ -88,21 +88,16 @@ static lsp::Range getRangeForText(llvm::SourceMgr &sourceMgr, SMLoc loc,
 namespace {
 /// Common representation for any kind of symbol.
 struct Symbol {
-  Symbol(MojoASTDeclRef declRef, StringRef name,
+  Symbol(MojoASTDeclRef declRef, StringRef identifier,
          const lsp::Range &identifierRange)
-      : name(name), declRef(declRef), identifierRange(identifierRange) {}
+      : identifier(identifier), declRef(declRef),
+        identifierRange(identifierRange) {}
 
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
 
-  /// Return a human readable and complete representation of the declaration of
-  /// this symbol. It might differ from the actual declaration from the source
-  /// code, but it's guaranteed to be complete (e.g. it shows inferred types),
-  /// to aid the LSP user with the understanding the code at hand.
-  std::string getCompleteDeclarationAsString() const;
-
-  /// Name of the symbol.
-  std::string name;
+  /// Identifier of the symbol as specified in the source code.
+  std::string identifier;
 
   /// API for accessing the internals of this decl.
   MojoASTDeclRef declRef;
@@ -112,19 +107,67 @@ struct Symbol {
 };
 } // namespace
 
-std::string Symbol::getCompleteDeclarationAsString() const {
+//===----------------------------------------------------------------------===//
+// SymbolPrinter
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Class used to print user readable representations of symbols and their
+/// metadata.
+class SymbolPrinter {
+public:
+  SymbolPrinter(const Symbol &symbol) : symbol(symbol) {}
+
+  /// Return a code snippet that summarized the declaration of the symbol.
+  std::string getDeclarationCodeSnippet() const;
+
+  /// Return a nicely formatted markdown text of the declaration of this symbol.
+  std::string getMarkdownDeclaration() const;
+
+  StringRef getSymbolKindAsString() const;
+
+private:
+  const Symbol &symbol;
+};
+} // namespace
+
+StringRef SymbolPrinter::getSymbolKindAsString() const {
+  return TypeSwitch<Operation &, StringRef>(*symbol.declRef.getIfOperation())
+      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return "variable"; });
+}
+
+std::string SymbolPrinter::getDeclarationCodeSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
-  if (auto varLetOp = dyn_cast<VarLetDeclOp>(declRef.getIfOperation()))
-    os << (varLetOp.getIsVar() ? "var" : "let");
-  else if (auto letRegOp = dyn_cast<LetRegDeclOp>(declRef.getIfOperation()))
-    os << "let";
+  auto &rawOp = *symbol.declRef.getIfOperation();
+  TypeSwitch<Operation &>(rawOp)
+      .Case<VarLetDeclOp>([&](auto op) {
+        os << (op.getIsVar() ? "var" : "let");
 
-  os << " " << name;
-  if (auto typeRef = declRef.getType())
-    os << ": " << typeRef.getAsString();
+        os << " " << symbol.identifier;
+        if (auto typeRef = symbol.declRef.getType())
+          os << ": " << typeRef.getAsString();
+      })
+      .Case<LetRegDeclOp>([&](auto op) {
+        os << "let " << symbol.identifier;
+        if (auto typeRef = symbol.declRef.getType())
+          os << ": " << typeRef.getAsString();
+      });
   return buff;
+}
+
+std::string SymbolPrinter::getMarkdownDeclaration() const {
+  return llvm::formatv(R"(### {0} `{1}`
+
+---
+
+###
+```mojo
+{2}
+```)",
+                       getSymbolKindAsString(), symbol.identifier,
+                       getDeclarationCodeSnippet());
 }
 
 //===----------------------------------------------------------------------===//
@@ -563,11 +606,7 @@ MojoDocument::onHover(const lsp::Position &pos) const {
 
   lsp::Hover hover(symbol->identifierRange);
   hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
-  hover.contents.value = llvm::formatv(
-      R"(```mojo
-{0}
-```)",
-      symbol->getCompleteDeclarationAsString());
+  hover.contents.value = SymbolPrinter(*symbol).getMarkdownDeclaration();
   return hover;
 }
 
@@ -581,9 +620,10 @@ void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
   if (!isMainFileLoc(sourceMgr, identifierLoc))
     return;
 
-  if (std::optional<StringRef> name = declRef.getName()) {
+  if (std::optional<StringRef> identifier = declRef.getName()) {
     mainDoc.symbolIndex.registerSymbol(
-        declRef, *name, getRangeForText(sourceMgr, identifierLoc, *name));
+        declRef, *identifier,
+        getRangeForText(sourceMgr, identifierLoc, *identifier));
   }
 }
 
