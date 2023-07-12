@@ -207,6 +207,9 @@ public:
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
 
+  /// Builds the debug info for a block argument if needed.
+  void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 

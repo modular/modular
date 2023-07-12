@@ -29,6 +29,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -1532,6 +1533,19 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
 
 ArrayRef<std::string> SharedState::getIncludedFiles() const {
   return impl->includedFiles;
+}
+
+void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
+                                    StringRef name) {
+  if (!diBuilder || options.debugLevel != CompilationOptions::kFullDebugInfo)
+    return;
+
+  auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
+  DebugInfo::DILocalVariableAttr varAttr = diBuilder->createLocalVariable(
+      name, diBuilder->createFile(argLoc), argLoc.getLine(),
+      arg.getArgNumber() + 1,
+      /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(arg.getType()));
+  builder.create<DebugInfo::ValueOp>(arg.getLoc(), arg, varAttr);
 }
 
 /// Given a pointer to the start of a token, find the end of it.
