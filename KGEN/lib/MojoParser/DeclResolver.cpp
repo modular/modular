@@ -2351,28 +2351,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   Block *bodyBlock = funcOp.getBody();
   auto builder = OpBuilder::atBlockEnd(bodyBlock);
 
-  // Functor used to build the debug info for an argument.
-  auto buildArgDIInfo = [&](Value argVal, StringRef name, unsigned argIdx) {
-    auto &diBuilder = shared.diBuilder;
-    if (!diBuilder ||
-        shared.options.debugLevel != CompilationOptions::kFullDebugInfo)
-      return;
-    auto bbArgLoc = argVal.getLoc()->findInstanceOf<FileLineColLoc>();
-
-    auto varAttr = diBuilder->createLocalVariable(
-        name, diBuilder->createFile(bbArgLoc), bbArgLoc.getLine(), argIdx + 1,
-        /*alignInBits=*/0,
-        DebugInfo::DIUnresolvedMLIRType::get(argVal.getType()));
-    builder.create<DebugInfo::ValueOp>(argVal.getLoc(), argVal, varAttr);
-  };
-
   SignatureType funcSignature = funcOp.getSignature();
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [argIndex, argName, bbArg, convention] :
-       llvm::zip(llvm::detail::index_stream(), funcOp.getValueParamNames(),
-                 funcOp.getBody()->getArguments(),
+  for (auto [argName, bbArg, convention] :
+       llvm::zip(funcOp.getValueParamNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getValueInputConventions())) {
 
     // Don't bind byref-result, it is handled specially by 'return'.
@@ -2402,11 +2386,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       }
     };
 
-    buildArgDIInfo(bbArg, argName, argIndex);
+    shared.buildArgDebugInfo(builder, bbArg, argName);
 
     // VarArg arguments are always treated as their pop.variadic type
     // by-value right now.  TODO(literals): Project to a list like thing.
-    if (funcSignature.isVararg(argIndex) ||
+    if (funcSignature.isVararg(bbArg.getArgNumber()) ||
         isa<POP::PackType>(bbArg.getType())) {
       setDecl(SRValue(bbArg));
       continue;

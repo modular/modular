@@ -26,7 +26,6 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/PatternMatch.h"
@@ -1845,16 +1844,8 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
   for (auto [regionArg, parsedArg] :
        llvm::zip(op.getRegion().addArguments(argTypes, argLocs), args)) {
     // Generate debug info for the region argument if requested.
-    DebugInfo::DIBuilder *diBuilder = shared.diBuilder.get();
-    if (diBuilder &&
-        shared.options.debugLevel == CompilationOptions::kFullDebugInfo) {
-      auto argLoc = regionArg.getLoc()->findInstanceOf<FileLineColLoc>();
-      DebugInfo::DILocalVariableAttr var = diBuilder->createLocalVariable(
-          parsedArg.name, diBuilder->createFile(argLoc), argLoc.getLine(),
-          regionArg.getArgNumber() + 1, /*alignInBits=*/0,
-          DebugInfo::DIUnresolvedMLIRType::get(regionArg.getType()));
-      builder.create<DebugInfo::ValueOp>(regionArg.getLoc(), regionArg, var);
-    }
+    shared.buildArgDebugInfo(builder, regionArg, parsedArg.name);
+
     // Add the declaration for the argument within the region declaration.
     getDeclResolver().addFullyResolvedDecl(SBValue(regionArg), parsedArg.name,
                                            parsedArg.loc, &decl);
