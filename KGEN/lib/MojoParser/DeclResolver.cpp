@@ -581,7 +581,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   } while (parsedDeclIt != parsedDeclList.size());
 }
 
-void DeclResolver::registerAndCheckExport(StringRef aliasName, Location loc) {
+void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
   auto [it, inserted] = exportedSymbolNames.try_emplace(aliasName, loc);
   if (!inserted) {
     auto diag = emitError(loc, "invalid re-export of ") << aliasName;
@@ -674,7 +674,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   shimBodyBuilder.create<ReturnOp>(loc, wrappedCall.getResults());
   shimBodyBuilder.create<EndFuncOp>(loc);
 
-  exportedSymbolNames.insert({mainAttr, shimMainFn.getLoc()});
+  exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }
 
 /// Resolve the specified declaration to at least the specified level of
@@ -1727,16 +1727,16 @@ struct FnDecorators : public SharedStateUser {
   FnDecorators(ASTDecl &decl, SharedState &shared)
       : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)) {}
 
-  void apply(SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs);
+  void apply(StringRef baseName,
+             SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs);
   void applyLate(StringRef unmangledName, ExprNode *decorator,
                  SignatureType &signature);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
-  void applyLateExport(Location loc, StringRef unmangledName,
-                       StringRef aliasName);
-  void applyLateExport(Location loc, StringRef unmangledName,
-                       const CallNode &callNode);
+  void applyExport(SMLoc loc, StringRef unmangledName, StringRef aliasName);
+  void applyExport(SMLoc loc, StringRef unmangledName,
+                   const CallNode &callNode);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
@@ -1753,6 +1753,7 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
 
 // Apply all signature decorators.
 void FnDecorators::apply(
+    StringRef baseName,
     SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs) {
   SmallVector<std::pair<ExprNode *, LexerCursor>> unprocessed;
   for (auto [decorator, cursor] : decoratorExprs) {
@@ -1761,7 +1762,9 @@ void FnDecorators::apply(
     // Process all the decorators we know about.
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       processedIt = true;
-      if (declRef->spelling == "staticmethod")
+      if (declRef->spelling == "export")
+        applyExport(decorator->getLoc(), baseName, baseName);
+      else if (declRef->spelling == "staticmethod")
         funcOp.setIsStatic(true);
       else if (declRef->spelling == "always_inline")
         funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
@@ -1782,6 +1785,8 @@ void FnDecorators::apply(
             callNode->args.size() == 1 &&
             callNode->args[0].isPositionalStringLiteral("nodebug"))
           funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+        else if (declRef->spelling == "export")
+          applyExport(decorator->getLoc(), baseName, *callNode);
         else
           processedIt = false;
       }
@@ -1793,10 +1798,10 @@ void FnDecorators::apply(
   decoratorExprs = unprocessed;
 }
 
-void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
-                                   StringRef aliasName) {
+void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
+                               StringRef aliasName) {
   if (isa<StructDeclOp>(*decl.getParentDecl())) {
-    emitError(funcOp.getLoc(), "structs cannot be exported");
+    emitError(funcOp.getLoc(), "methods cannot be exported");
     return;
   }
 
@@ -1819,8 +1824,8 @@ void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
   getDeclResolver().registerAndCheckExport(aliasName, loc);
 }
 
-void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
-                                   const CallNode &node) {
+void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
+                               const CallNode &node) {
   if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
       !isa<StringLiteralNode>(node.args[0].expr)) {
     emitError(
@@ -1835,17 +1840,14 @@ void FnDecorators::applyLateExport(Location loc, StringRef unmangledName,
     emitError(loc, aliasName) << " is not a valid C identifier";
     return;
   }
-  applyLateExport(loc, unmangledName, aliasName);
+  applyExport(loc, unmangledName, aliasName);
 }
 
 void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
                              SignatureType &signature) {
-  Location loc = translateLocation(decorator->getLoc());
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "export") {
-      applyLateExport(loc, unmangledName, unmangledName);
-    } else if (declRef->spelling == "noncapturing") {
+    if (declRef->spelling == "noncapturing") {
       signature = signature.getWithFnEffects(
           bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
     } else if (declRef->spelling == "closure") {
@@ -1856,14 +1858,6 @@ void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
           << declRef->spelling << declRef->getRange();
     }
     return;
-  }
-
-  if (auto callNode = dyn_cast<CallNode>(decorator)) {
-    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
-      if (declRef->spelling == "export") {
-        applyLateExport(loc, unmangledName, *callNode);
-        return;
-      }
   }
   emitError(decorator->getLoc(), "unsupported decorator")
       << decorator->getRange();
@@ -1961,8 +1955,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  // Okay, apply them now.
-  FnDecorators(decl, shared).apply(decoratorExprs);
+  FnDecorators(decl, shared).apply(baseName, decoratorExprs);
 
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
