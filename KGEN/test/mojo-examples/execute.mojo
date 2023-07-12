@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo %s | FileCheck %s
+# RUN: kgen %s -emit-llvm -debug-level=full -mlir-print-debuginfo -o /dev/null
+# COM: TODO(#16865): compile all the way to object file.
 
 from SIMD import Float32
 from IO import print
