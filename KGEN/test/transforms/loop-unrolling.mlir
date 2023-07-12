@@ -1,14 +1,13 @@
 // RUN: kgen-opt %s -pass-pipeline='builtin.module(kgen.func(loop-unrolling, canonicalize))' | FileCheck %s
 
 // CHECK-LABEL: @zero_starting_range
-kgen.func @zero_starting_range() -> !pop.array<0, i1> {
-  // CHECK: %idx1 = index.constant 1
-  // CHECK-NEXT: %idx0 = index.constant 0
-  // CHECK-NEXT: %array = kgen.param.constant: array<0, i1> = <[]>
+kgen.func @zero_starting_range() {
+  // CHECK: [[V1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[V0:%.*]] = index.constant 0
   // CHECK-NOT: hlcf.for
-  // CHECK-NEXT: %0 = kgen.call @"$IO::print($Int::Int)"(%idx0) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %1 = kgen.call @"$IO::print($Int::Int)"(%idx1) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: kgen.return %array : !pop.array<0, i1>
+  // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
+
   %index2 = kgen.param.constant = <2>
   %idx0 = index.constant 0
   %index1 = kgen.param.constant = <1>
@@ -16,46 +15,42 @@ kgen.func @zero_starting_range() -> !pop.array<0, i1> {
   hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     %1 = index.sub %index2, %arg0
-    %2 = kgen.call @"$IO::print($Int::Int)"(%1) : (index) -> !pop.array<0, i1>
-    hlcf.for.yield %0 : index
+    kgen.call @foo(%1) : (index) -> ()
+    hlcf.for.continue %0 : index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
-  kgen.return %array : !pop.array<0, i1>
+  kgen.return
 }
 
 // CHECK-LABEL: @sequential_range
-kgen.func @sequential_range() -> !pop.array<0, i1> {
-  // CHECK: %idx3 = index.constant 3
-  // CHECK-NEXT: %idx2 = index.constant 2
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  // CHECK-NEXT: %array = kgen.param.constant: array<0, i1> = <[]>
+kgen.func @sequential_range() {
+  // CHECK: [[V2:%.*]] = index.constant 3
+  // CHECK-NEXT: [[V1:%.*]] = index.constant 2
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant = <1>
   // CHECK-NOT: hlcf.for
-  // CHECK-NEXT: %0 = kgen.call @"$IO::print($Int::Int)"(%index1) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %1 = kgen.call @"$IO::print($Int::Int)"(%idx2) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %2 = kgen.call @"$IO::print($Int::Int)"(%idx3) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: kgen.return %array : !pop.array<0, i1>
+  // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
 
   %index1 = kgen.param.constant = <1>
   %index4 = kgen.param.constant = <4>
   %array = kgen.param.constant: array<0, i1> = <[]>
   hlcf.for [%index1 to %index4 step %index1] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index1
-    %1 = kgen.call @"$IO::print($Int::Int)"(%arg0) : (index) -> !pop.array<0, i1>
-    hlcf.for.yield %0 : index
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.for.continue %0 : index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
-  kgen.return %array : !pop.array<0, i1>
+  kgen.return
 }
 
 // CHECK-LABEL: @strided_range
-kgen.func @strided_range() -> !pop.array<0, i1> {
-  // CHECK: %idx5 = index.constant 5
-  // CHECK-NEXT: %idx3 = index.constant 3
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  // CHECK-NEXT: %array = kgen.param.constant: array<0, i1> = <[]>
+kgen.func @strided_range() {
+  // CHECK: [[V0:%.*]] = index.constant 5
+  // CHECK-NEXT: [[V1:%.*]] = index.constant 3
+  // CHECK-NEXT: [[V2:%.*]] = kgen.param.constant = <1>
   // CHECK-NOT: hlcf.for
-  // CHECK-NEXT: %0 = kgen.call @"$IO::print($Int::Int)"(%index1) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %1 = kgen.call @"$IO::print($Int::Int)"(%idx3) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %2 = kgen.call @"$IO::print($Int::Int)"(%idx5) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: kgen.return %array : !pop.array<0, i1>
+  // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
 
   %index1 = kgen.param.constant = <1>
   %index6 = kgen.param.constant = <6>
@@ -63,29 +58,27 @@ kgen.func @strided_range() -> !pop.array<0, i1> {
   %array = kgen.param.constant: array<0, i1> = <[]>
   hlcf.for [%index1 to %index6 step %index2] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index2
-    %1 = kgen.call @"$IO::print($Int::Int)"(%arg0) : (index) -> !pop.array<0, i1>
-    hlcf.for.yield %0 : index
+    kgen.call @foo(%arg0) : (index) -> ()
+    hlcf.for.continue %0 : index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
-  kgen.return %array : !pop.array<0, i1>
+  kgen.return
 }
 
 // CHECK-LABEL: @nested_unroll_loops
-kgen.func @nested_unroll_loops() -> !pop.array<0, i1> {
-  // CHECK:  %idx7 = index.constant 7
-  // CHECK-NEXT:  %idx5 = index.constant 5
-  // CHECK-NEXT:  %idx6 = index.constant 6
-  // CHECK-NEXT:  %idx1 = index.constant 1
-  // CHECK-NEXT:  %idx4 = index.constant 4
-  // CHECK-NEXT:  %idx0 = index.constant 0
-  // CHECK-NEXT:  %array = kgen.param.constant: array<0, i1> = <[]>
+kgen.func @nested_unroll_loops() {
+  // CHECK:  [[V0:%.*]] = index.constant 7
+  // CHECK-NEXT:  [[V1:%.*]] = index.constant 5
+  // CHECK-NEXT:  [[V2:%.*]] = index.constant 6
+  // CHECK-NEXT:  [[V3:%.*]] = index.constant 1
+  // CHECK-NEXT:  [[V4:%.*]] = index.constant 4
+  // CHECK-NEXT:  [[V5:%.*]] = index.constant 0
   // CHECK-NOT: hlcf.for
-  // CHECK-NEXT:  %0 = kgen.call @"$IO::print($Int::Int)"(%idx0) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  %1 = kgen.call @"$IO::print($Int::Int)"(%idx4) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  %2 = kgen.call @"$IO::print($Int::Int)"(%idx6) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  %3 = kgen.call @"$IO::print($Int::Int)"(%idx1) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  %4 = kgen.call @"$IO::print($Int::Int)"(%idx5) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  %5 = kgen.call @"$IO::print($Int::Int)"(%idx7) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT:  kgen.return %array : !pop.array<0, i1>
+  // CHECK-NEXT:  kgen.call @foo([[V5]]) : (index) -> ()
+  // CHECK-NEXT:  kgen.call @foo([[V4]]) : (index) -> ()
+  // CHECK-NEXT:  kgen.call @foo([[V2]]) : (index) -> ()
+  // CHECK-NEXT:  kgen.call @foo([[V3]]) : (index) -> ()
+  // CHECK-NEXT:  kgen.call @foo([[V1]]) : (index) -> ()
+  // CHECK-NEXT:  kgen.call @foo([[V0]]) : (index) -> ()
 
   %index2 = kgen.param.constant = <2>
   %index4 = kgen.param.constant = <4>
@@ -96,46 +89,44 @@ kgen.func @nested_unroll_loops() -> !pop.array<0, i1> {
   hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     %1 = index.sub %index2, %arg0
-    %2 = kgen.call @"$IO::print($Int::Int)"(%1) : (index) -> !pop.array<0, i1>
+    kgen.call @foo(%1) : (index) -> ()
     hlcf.for [%index4 to %index8 step %index2] (%arg1 = %index4 : index) {
       %3 = index.add %arg1, %index2
       %4 = index.add %1, %arg1
-      %5 = kgen.call @"$IO::print($Int::Int)"(%4) : (index) -> !pop.array<0, i1>
-      hlcf.for.yield %3 : index
+      kgen.call @foo(%4) : (index) -> ()
+      hlcf.for.continue %3 : index
     } {unrollFactor = #hlcf<loop_unroll_full full>}
-    hlcf.for.yield %0 : index
+    hlcf.for.continue %0 : index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
-  kgen.return %array : !pop.array<0, i1>
+  kgen.return
 }
 
 // CHECK-LABEL: @loop_carried_dependency
-kgen.func @loop_carried_dependency() -> !pop.array<0, i1> {
-  // CHECK: %idx40 = index.constant 40
-  // CHECK-NEXT: %idx13 = index.constant 13
-  // CHECK-NEXT: %idx11 = index.constant 11
-  // CHECK-NEXT: %idx16 = index.constant 16
-  // CHECK-NEXT: %idx9 = index.constant 9
-  // CHECK-NEXT: %idx7 = index.constant 7
-  // CHECK-NEXT: %idx5 = index.constant 5
-  // CHECK-NEXT: %idx3 = index.constant 3
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  // CHECK-NEXT: %array = kgen.param.constant: array<0, i1> = <[]>
+kgen.func @loop_carried_dependency() {
+  // CHECK: [[V0:%.*]] = index.constant 40
+  // CHECK-NEXT: [[V1:%.*]] = index.constant 13
+  // CHECK-NEXT: [[V2:%.*]] = index.constant 11
+  // CHECK-NEXT: [[V3:%.*]] = index.constant 16
+  // CHECK-NEXT: [[V4:%.*]] = index.constant 9
+  // CHECK-NEXT: [[V5:%.*]] = index.constant 7
+  // CHECK-NEXT: [[V6:%.*]] = index.constant 5
+  // CHECK-NEXT: [[V7:%.*]] = index.constant 3
+  // CHECK-NEXT: [[V8:%.*]] = kgen.param.constant = <1>
   // CHECK-NOT: hlcf.for
-  // CHECK-NEXT: %0 = kgen.call @"$IO::print($Int::Int)"(%index1) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %1 = kgen.call @"$IO::print($Int::Int)"(%idx5) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %2 = kgen.call @"$IO::print($Int::Int)"(%idx7) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %3 = kgen.call @"$IO::print($Int::Int)"(%idx3) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %4 = kgen.call @"$IO::print($Int::Int)"(%idx7) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %5 = kgen.call @"$IO::print($Int::Int)"(%idx9) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %6 = kgen.call @"$IO::print($Int::Int)"(%idx5) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %7 = kgen.call @"$IO::print($Int::Int)"(%idx9) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %8 = kgen.call @"$IO::print($Int::Int)"(%idx11) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %9 = kgen.call @"$IO::print($Int::Int)"(%idx7) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %10 = kgen.call @"$IO::print($Int::Int)"(%idx11) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %11 = kgen.call @"$IO::print($Int::Int)"(%idx13) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %12 = kgen.call @"$IO::print($Int::Int)"(%idx16) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: %13 = kgen.call @"$IO::print($Int::Int)"(%idx40) : (index) -> !pop.array<0, i1>
-  // CHECK-NEXT: kgen.return %array : !pop.array<0, i1>
+  // CHECK-NEXT: kgen.call @foo([[V8]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V6]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V5]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V7]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V5]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V4]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V6]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V4]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V5]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V3]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
 
   %index1 = kgen.param.constant = <1>
   %index9 = kgen.param.constant = <9>
@@ -146,18 +137,49 @@ kgen.func @loop_carried_dependency() -> !pop.array<0, i1> {
   %index0 = kgen.param.constant = <0>
   %0:2 = hlcf.for [%index1 to %index9 step %index2] (%arg0 = %index0 : index, %arg1 = %index0 : index, %arg2 = %index1 : index) -> (index, index) {
     %3 = index.add %arg2, %index2
-    %4 = kgen.call @"$IO::print($Int::Int)"(%arg2) : (index) -> !pop.array<0, i1>
+    kgen.call @foo(%arg2) : (index) -> ()
     %5 = index.add %arg0, %arg2
     %6 = hlcf.for [%index4 to %index8 step %index2] (%arg3 = %arg1 : index, %arg4 = %index4 : index) -> index {
       %7 = index.add %arg4, %index2
       %8 = index.add %arg2, %arg4
-      %9 = kgen.call @"$IO::print($Int::Int)"(%8) : (index) -> !pop.array<0, i1>
+      kgen.call @foo(%8) : (index) -> ()
       %10 = index.add %arg3, %arg4
-      hlcf.for.yield %10, %7 : index, index
+      hlcf.for.continue %10, %7 : index, index
     } {unrollFactor = #hlcf<loop_unroll_full full>}
-    hlcf.for.yield %5, %6, %3 : index, index, index
+    hlcf.for.continue %5, %6, %3 : index, index, index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
-  %1 = kgen.call @"$IO::print($Int::Int)"(%0#0) : (index) -> !pop.array<0, i1>
-  %2 = kgen.call @"$IO::print($Int::Int)"(%0#1) : (index) -> !pop.array<0, i1>
-  kgen.return %array : !pop.array<0, i1>
+  kgen.call @foo(%0#0) : (index) -> ()
+  kgen.call @foo(%0#1) : (index) -> ()
+  kgen.return
+}
+
+kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) -> index {
+  // CHECK: [[IDX:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
+  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
+  // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
+  // CHECK-NEXT: [[V4:%.*]] = pop.offset %0[[[IDX]]] : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] align 1  : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V6:%.*]] = pop.cast [[V5]] : !pop.scalar<f32> to !pop.scalar<index>
+  // CHECK-NEXT: [[V7:%.*]] = pop.cast_to_builtin [[V6]] : !pop.scalar<index> to index
+  // CHECK-NEXT: [[V8:%.*]] = index.add [[V3]], [[V7]]
+  // CHECK-NEXT: kgen.return [[V8]] : index
+
+  %index10 = kgen.param.constant = <2>
+  %idx0 = index.constant 0
+  %index1 = kgen.param.constant = <1>
+  %index0 = kgen.param.constant = <0>
+  %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
+  %1 = hlcf.for [%idx0 to %index10 step %index1] (%arg1 = %index0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>, %arg3 = %index10 : index) -> index {
+    %2 = index.cmp sgt(%arg3, %idx0)
+    %3 = index.sub %arg3, %index1
+    %4 = pop.load %arg2 align 1  : !pop.pointer<scalar<f32>>
+    %5 = pop.cast %4 : !pop.scalar<f32> to !pop.scalar<index>
+    %6 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
+    %7 = index.add %arg1, %6
+    %8 = pop.offset %arg2[%index1] : !pop.pointer<scalar<f32>>
+    hlcf.for.continue %7, %8, %3 : index, !pop.pointer<scalar<f32>>, index
+  } {unrollFactor = #hlcf<loop_unroll_full full>}
+  kgen.return %1 : index
 }

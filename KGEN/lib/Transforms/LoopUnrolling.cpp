@@ -57,12 +57,12 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
   cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (auto loop = dyn_cast<ForOp>(op); loop && loop != cur) {
       // Recurse in nested loops.
-      if (loop.getUnrollFactor().has_value()) {
-        if (auto unroll =
-                dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-            unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full)
-          loopsToUnrollInOrder.push_back(loop);
+      if (auto unroll =
+              dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
+          unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
+        loopsToUnrollInOrder.push_back(loop);
       }
+
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
       parentLoops.pop_back();
@@ -72,27 +72,10 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
   });
 }
 
-static std::optional<int64_t> getParamConstantIntegerValue(Value v,
-                                                           ForOp loop) {
-  std::optional<int64_t> result;
-  if (auto arg = dyn_cast<BlockArgument>(v)) {
-    Value input = loop.getInitArgs()[arg.getArgNumber()];
-    result = getParamConstantIntegerValue(input, loop);
-  } else {
-    IntegerAttr value;
-    if (mlir::matchPattern(v, mlir::m_Constant(&value)))
-      result = value.getInt();
-  }
-  return result;
-}
-
 LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
-  std::optional<int64_t> lowerBound =
-      getParamConstantIntegerValue(loop.getLowerBound(), loop);
-  std::optional<int64_t> upperBound =
-      getParamConstantIntegerValue(loop.getUpperBound(), loop);
-  std::optional<int64_t> step =
-      getParamConstantIntegerValue(loop.getStep(), loop);
+  std::optional<int64_t> lowerBound = loop.getLowerBoundAsInt();
+  std::optional<int64_t> upperBound = loop.getUpperBoundAsInt();
+  std::optional<int64_t> step = loop.getStepAsInt();
   if (!lowerBound || !upperBound || !step)
     return failure();
 
@@ -104,7 +87,7 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
   Region &scopeBody = loop->getParentOp()->getRegion(0);
   Block &body = loop.getBody().front();
 
-  ForYieldOp newForYield;
+  ForContinueOp newForContinue;
   SmallVector<Value> retValues;
   retValues = loop.getInitArgs();
 
@@ -120,9 +103,9 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
 
       Operation *prevOp = nullptr;
       for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-        if (auto y = dyn_cast<ForYieldOp>(op)) {
-          // Don't move last ForYieldOp.
-          newForYield = y;
+        if (auto y = dyn_cast<ForContinueOp>(op)) {
+          // Don't move last ForContinueOp.
+          newForContinue = y;
           continue;
         }
 
@@ -139,7 +122,7 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
       rewriter.inlineBlockBefore(block, loop, retValues);
 
       // Get result value of the loop.
-      retValues = newForYield.getOperands();
+      retValues = newForContinue.getOperands();
       break;
     }
 
@@ -148,23 +131,24 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
 
     for (Operation &op : body.getOperations()) {
       auto newOp = rewriter.clone(op, map);
-      if (auto y = dyn_cast<ForYieldOp>(newOp))
-        newForYield = y;
+      if (auto y = dyn_cast<ForContinueOp>(newOp))
+        newForContinue = y;
     }
 
     // Add unrolled block before the loop.
     rewriter.inlineBlockBefore(block, loop, retValues);
 
     // Update next iteration's inputs
-    retValues = newForYield.getOperands();
+    retValues = newForContinue.getOperands();
 
-    // Erase ForYieldOp.
-    rewriter.eraseOp(newForYield);
+    // Erase ForContinueOp.
+    rewriter.eraseOp(newForContinue);
   }
 
-  // Replace the loop return value, assuming the last operand of ForYieldOp is
-  // the induction variable.
-  loop.replaceAllUsesWith(llvm::drop_end(retValues));
+  // Replace the loop return value, assuming the last operand of ForContinueOp
+  // is the induction variable.
+  loop.replaceAllUsesWith(
+      llvm::drop_end(retValues, retValues.size() - loop.getNumResults()));
 
   // Erase the original loop.
   rewriter.eraseOp(loop);
@@ -179,12 +163,11 @@ void LoopUnrolling::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // unroll loops from inner to outer
   for (auto loop : llvm::reverse(loopsToUnrollInOrder)) {
-    if (loop.getUnrollFactor().has_value()) {
-      if (auto unroll =
-              dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-          unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full)
-        if (succeeded(fullUnrollForLoop(loop)))
-          continue;
+    if (auto unroll =
+            dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
+        unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
+      if (succeeded(fullUnrollForLoop(loop)))
+        continue;
       // TODO: unroll with a factor based on cost model if a for loop decorated
       // with fully unroll is not a loop that has no early exits.
     } else {

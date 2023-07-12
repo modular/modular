@@ -51,10 +51,10 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     the range includes the lower bound but does not include the upper bound.
 
     The body region must contain exactly one block that terminates with
-    `scf.for.yield`.
+    `scf.for.continue`.
 
     The operation can define loop-carried values and operation results. The
-    operand types of `hlcf.for.yield` operations in the immediate loop scope
+    operand types of `hlcf.for.continue` operations in the immediate loop scope
     must match the initArgs types of the operation. The operand types of
     `hlcf.break` in the immediate loop scope must match the result types of the
     operation.
@@ -64,7 +64,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     ```mlir
      hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
        %5 = index.add %arg0, %c2
-       hlcf.for.yield %5 : index
+       hlcf.for.continue %5 : index
      } {unrollFactor = #hlcf<loop_unroll_full full>}
     ```
 
@@ -75,7 +75,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                     (%arg0 = %i: index, %arg1 = %k: index) -> (index, index) {
          %3 = index.add %arg1, %index2
          %5 = index.add %arg0, %arg1
-         hlcf.for.yield %5, %3 : index, index, index
+         hlcf.for.continue %5, %3 : index, index, index
        } {unrollFactor = "full"}
     ```
   }];
@@ -84,20 +84,37 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                        Index:$upperBound,
                        Index:$step,
                        Variadic<AnyType>:$initArgs,
-                       OptionalAttr<StrAttr>:$label,
-                       OptionalAttr<AnyAttrOf<[
-                        HLCF_LoopUnrollFullAttr,
-                        IndexAttr]>>:$unrollFactor);
+                       AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>:$unrollFactor);
 
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    ($label^)? ``
     ` ``[` $lowerBound
     ` ``to` $upperBound
     ` ``step` $step `]`
     custom<For>($initArgs, type($initArgs), type($results), $body) attr-dict
+  }];
+
+  let builders =[
+    OpBuilder<(ins "TypeRange":$results,
+                   "Value":$lowerBound,
+                   "Value":$upperBound,
+                   "Value":$step,
+                   "ValueRange":$initArgs), [{
+      build($_builder, $_state, results, lowerBound, upperBound, step, initArgs,
+        HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
+    }]>];
+
+  let extraClassDeclaration = [{
+    // Get integer value for lowerBound.
+    std::optional<int64_t> getLowerBoundAsInt();
+    // Get integer value for upperBound.
+    std::optional<int64_t> getUpperBoundAsInt();
+    // Get integer value for step.
+    std::optional<int64_t> getStepAsInt();
+    // Get args that will be return values.
+    ValueRange getReturnValueArgs();
   }];
 
   let hasVerifier = 1;
@@ -174,7 +191,23 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     custom<Loop>($operands, type($operands), type($results), $body) attr-dict
   }];
 
-  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}, {}); }]>];
+
+  let builders = [
+    OpBuilder<(ins CArg<"bool", "false">:$isFullUnroll), [{
+       if(isFullUnroll)
+           build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
+               $_state.getContext(), HLCF::LoopUnrollFull::Full));
+       else
+           build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
+               $_state.getContext(), HLCF::LoopUnrollFull::None));
+    }]>,
+    OpBuilder<(ins "TypeRange":$results,
+                   "ValueRange":$operands,
+                   "StringAttr":$label), [{
+      build($_builder, $_state, results, operands, label,
+        HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
+    }]>
+  ];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -436,15 +469,15 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// ForYieldOp
+// ForContinueOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
+def HLCF_ForContinueOp : HLCFTerminatorOp<"for.continue", [
     ParentOneOf<["ForOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "yield operation in a for-loop";
+  let summary = "continue operation in a for-loop";
   let description = [{
-    The `hlcf.for.yield` operation is a control-flow terminator that transfers
+    The `hlcf.for.continue` operation is a control-flow terminator that transfers
     control-flow either back to the beginning or after the parent `hlcf.for`
     operation, depending on whether the for-loop continues or not.
     The operation expects its operand types to match the types of the
@@ -455,13 +488,19 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
     ```mlir
     hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
       %5 = index.add %arg0, %c2
-      hlcf.for.yield %5 : index
+      hlcf.for.continue %5 : index
     } {unrollFactor = #hlcf<loop_unroll_full full>}
     ```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands,
-                       OptionalAttr<StrAttr>:$label);
+  let extraClassDeclaration = [{
+    // Get the operand that is used as for-loop's induction variable.
+    Value getForInductionVariableOperand();
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let hasVerifier = 1;
 }
 
 #endif // HLCFOPS_TD
