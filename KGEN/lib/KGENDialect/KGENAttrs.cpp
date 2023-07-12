@@ -15,6 +15,7 @@
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
+#include "mlir/Dialect/PDL/IR/PDLOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
