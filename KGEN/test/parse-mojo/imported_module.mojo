@@ -24,5 +24,5 @@ struct VeryUniqueStruct:
     var very_unique_field: __mlir_type.index
 
     @staticmethod
-    fn very_unique_func(value: Int) -> VeryUniqueStruct:
-        return Self {very_unique_field: value.__as_mlir_index()}
+    fn very_unique_func(very_unique_arg: Int) -> VeryUniqueStruct:
+        return Self {very_unique_field: very_unique_arg.__as_mlir_index()}
