@@ -141,11 +141,22 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
       };
 }
 
+/// Return whether locations should be elaborated based on the debug level.
+static bool
+shouldElaborateLocations(CompilationOptions::DebugInfoLevel debugLevel) {
+  return debugLevel == CompilationOptions::kFullDebugInfo ||
+         debugLevel == CompilationOptions::kLineTablesOnly;
+}
+
 std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT(
     LLCL::Runtime &runtime, TargetInfoAttr target, BuildInfoAttr build,
     const CompilationOptions &options) {
+  ElaborateGeneratorsOptions elaboratorOptions;
+  elaboratorOptions.enableSearch = options.enableSearch;
+  elaboratorOptions.elaborateLocations =
+      shouldElaborateLocations(options.debugLevel);
   return createElaborateGenerators(
-      runtime, target, build, {options.enableSearch},
+      runtime, target, build, elaboratorOptions,
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
@@ -179,8 +190,12 @@ void KGEN::populateElaborateModulePasses(
   pm.addPass(createLiftAndFoldApply());
 
   // After elaboration, we have no use for the parameter verifier anymore.
-  pm.addPass(createElaborateGenerators(
-      runtime, target, build, {options.enableSearch}, evaluatorExecutorFn));
+  ElaborateGeneratorsOptions elaboratorOptions;
+  elaboratorOptions.enableSearch = options.enableSearch;
+  elaboratorOptions.elaborateLocations =
+      shouldElaborateLocations(options.debugLevel);
+  pm.addPass(createElaborateGenerators(runtime, target, build,
+                                       elaboratorOptions, evaluatorExecutorFn));
 
   populatePostElaborationPasses(pm, runtime, options);
 }
