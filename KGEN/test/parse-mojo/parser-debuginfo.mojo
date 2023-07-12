@@ -64,11 +64,16 @@ from imported_module import VeryUniqueStruct
 
 # CHECK-DAG: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
 
+# CHECK-DAG: #[[LOCAL_VAR:local_variable[0-9]+]] = #debuginfo.local_variable<scope = #[[SP:subprogram[0-9]+]], name = "very_unique_arg", file = #[[FILE]],
+
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func($Builtin::$Int::Int)"(%value: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]"
+# CHECK-DAG: lit.func @"very_unique_func($Builtin::$Int::Int)"(%very_unique_arg: !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc("[[FILENAME]]"
+# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !kgen.declref<@"$Builtin"::@"$Int"::@Int> loc(#[[VALUE_LOC:loc[0-9]+]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
+# CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC:loc[0-9]+]]])
+# CHECK-DAG: #[[LINE_LOC]] = loc("[[FILENAME]]"
 
 fn caller():
     let y = VeryUniqueStruct.very_unique_func(0)

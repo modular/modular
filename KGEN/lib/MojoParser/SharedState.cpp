@@ -1545,7 +1545,9 @@ void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
       name, diBuilder->createFile(argLoc), argLoc.getLine(),
       arg.getArgNumber() + 1,
       /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(arg.getType()));
-  builder.create<DebugInfo::ValueOp>(arg.getLoc(), arg, varAttr);
+  auto scopedLoc =
+      FusedLoc::get(varAttr.getContext(), {argLoc}, varAttr.getScope());
+  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr);
 }
 
 /// Given a pointer to the start of a token, find the end of it.
