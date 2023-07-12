@@ -869,7 +869,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = callArgs.size() + sigType.hasMemoryOnlyResult();
-    if (sigType.getValueInputs().size() <= setValueIdx) {
+    if (sigType.getNumInputs() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
       diag.attachNote(setter.fnDecls[0]->getLoc())
@@ -1472,10 +1472,10 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // If this is a signature-type PValue callable, this is binding parameter
       // values to a call.
       SmallVector<TypedAttr> bindOperands({callableMVal.get()});
-      if (indices.size() != sig.getInputParamTypes().size()) {
+      if (indices.size() != sig.getNumInputParams()) {
         emitter.emitError(getLoc(), "parametric callable expected ")
-            << sig.getInputParamTypes().size() << " parameter"
-            << plural(sig.getInputParamTypes().size()) << getIndexRange();
+            << sig.getNumInputParams() << " parameter"
+            << plural(sig.getNumInputParams()) << getIndexRange();
         return {};
       }
       for (auto [idx, type] : llvm::zip(indices, sig.getInputParamTypes())) {

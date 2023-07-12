@@ -187,7 +187,7 @@ static bool isVarargKind(SignatureType type, size_t index, FnEffects kind) {
   // Otherwise, it's the last.
   return (index + 1 +
           bitEnumContainsAny(type.getFnEffects(), FnEffects::KWVararg)) ==
-         type.getValueInputs().size();
+         type.getNumInputs();
 }
 
 bool SignatureType::isVararg(size_t index) {
@@ -201,7 +201,7 @@ bool SignatureType::isPackVararg(size_t index) {
 bool SignatureType::isKWVararg(size_t index) {
   if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg))
     return false;
-  return index + 1 == getValueInputs().size();
+  return index + 1 == getNumInputs();
 }
 
 /// Return true if this signature has a first argument is a result from the
