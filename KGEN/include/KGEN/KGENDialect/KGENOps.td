@@ -974,7 +974,7 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
   let summary = "Create a closure from variables and a function.";
   let description = [{
     The `kgen.create_closure` operation represents the instantiation of
-    a closure. This operation modelas closure creation in terms of a function
+    a closure. This operation models closure creation in terms of a function
     and local captured variables.
 
     ```mlir

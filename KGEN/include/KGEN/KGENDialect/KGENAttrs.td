@@ -833,6 +833,31 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
 }
 
 //===----------------------------------------------------------------------===//
+// DecoratorsAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_DecoratorsAttr
+    : KGEN_ArrayOfAttrsAttr<"Decorators", "decorators", "TypedAttr"> {
+  let summary = "Compile-time decorator invocations.";
+  let description = [{
+    The `#kgen.decorators` attribute represents a list of decorator invocations
+    attached to an operation. Decorators are closures where the first argument
+    of the function will be the operation the decorator is attached to. The
+    expected signature of the closure is:
+
+    ```mlir
+    (!pdl.operation) capturing -> !pdl.operation
+    ```
+
+    Decorators in the list are invoked on the operation from first to last.
+    Decorators may be invoked at different points in KGEN pass pipeline. Each
+    decorator contains a tag indicating when it should be invoked. Successive
+    decorators must have later invocation points than previous ones.
+    (TODO: Not implemented yet)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // RegionAttr
 //===----------------------------------------------------------------------===//
 
