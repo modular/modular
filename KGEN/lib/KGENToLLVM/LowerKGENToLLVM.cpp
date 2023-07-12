@@ -436,16 +436,6 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
   wrapper.getBody().push_back(body);
 }
 
-/// Update the name and linkage of the given function, using the provided alias
-/// name.
-static void
-updateExportedFunctionNameAndLinkage(LLVM::LLVMFuncOp func,
-                                     mlir::SymbolUserMap &symbolUsers,
-                                     SymbolTable &symtab) {
-  // Update the linkage.
-  func.setLinkage(LLVM::Linkage::External);
-}
-
 /// Process the given function which is exported to C. If possible this will try
 /// to update the function in place, otherwise a wrapper is emitted that
 /// internally invokes the provided function.
@@ -469,7 +459,7 @@ static void processCExportedFunction(LLVM::LLVMFuncOp func,
     return emitCWrapper(func, symbolUsers, symtab);
 
   // Otherwise, we can update the function in place.
-  updateExportedFunctionNameAndLinkage(func, symbolUsers, symtab);
+  func.setLinkage(LLVM::Linkage::External);
 
   // If we don't need to update the calling convention, we're done.
   if (!needUpdatedArgTypes && !needUpdatedResultType)
@@ -582,15 +572,15 @@ void LowerKGENToLLVMPass::runOnOperation() {
   // Process updates to any exported functions.
   mlir::SymbolUserMap symbolUsers(symtabAnalysis.getSymbolTables(), theModule);
   for (auto [sym, exportSymbol] : publicSymbols) {
-    LLVM::LLVMFuncOp func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
-
-    // If we aren't exporting to C, we just need to update the name and linkage.
-    if (!exportSymbol.isCExport) {
-      updateExportedFunctionNameAndLinkage(func, symbolUsers, symtab);
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
+    // If the function is not C exported, just update its linkage. Otherwise,
+    // generate a wrapper function.
+    if (!func)
       continue;
-    }
-
-    processCExportedFunction(func, symbolUsers, symtab);
+    else if (!exportSymbol.isCExport)
+      func.setLinkage(LLVM::Linkage::External);
+    else
+      processCExportedFunction(func, symbolUsers, symtab);
   }
 
   // Convert the debug info within the IR.

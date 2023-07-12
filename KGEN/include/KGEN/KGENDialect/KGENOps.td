@@ -1006,7 +1006,7 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure",
 //===----------------------------------------------------------------------===//
 
 def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>, ExportInterface]> {
   let summary = "Declare a global variable with an constructor.";
   let description = [{
     The `kgen.global` operation declares a global variable bound to a symbol
@@ -1031,10 +1031,11 @@ def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
 
   let arguments = (ins
     SymbolNameAttr:$sym_name, TypeAttr:$type, I32Attr:$priority,
-    SymbolRefAttr:$ctor, SymbolRefAttr:$dtor);
+    SymbolRefAttr:$ctor, SymbolRefAttr:$dtor, KGEN_ExportKindAttr:$exportKind);
 
   let assemblyFormat = [{
-    $sym_name `:` $type ` ` `(` $priority `,` $ctor `,` $dtor `)` attr-dict
+    `` custom<SymbolExport>($exportKind) $sym_name `:` $type
+    ` ` `(` $priority `,` $ctor `,` $dtor `)` attr-dict
   }];
 }
 

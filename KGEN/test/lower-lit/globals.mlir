@@ -34,6 +34,20 @@ lit.globalvar.decl @boo : index {
 }
 
 // -----
+
+lit.file_module @module {
+  // CHECK: kgen.global export @foo : index
+  lit.globalvar.decl export @exported : index attributes {linkageName = "foo"} {}, {}
+
+  // CHECK-LABEL: kgen.generator @"module::ref_exported"
+  lit.func @ref_exported() {
+    // CHECK-NEXT: pop.global.address @foo : <index>
+    %0 = lit.globalvar.ref @module::@exported : <index>
+    kgen.return
+  }
+}
+
+// -----
 // expected-error @-2 {{cyclic dependencies between global variables in 'lower-lit' pass}}
 
 lit.globalvar.decl @foo : index {
