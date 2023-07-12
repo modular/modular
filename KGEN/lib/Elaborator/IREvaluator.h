@@ -120,6 +120,7 @@ struct ImplNode {
   /// state dominated by this node.
   void setToError(ErrorTree &&err) {
     assert(!error && "impl node already has an error");
+    hasError.store(true);
     error = std::move(err);
   }
 
@@ -163,6 +164,9 @@ struct ImplNode {
   /// An error contained by this node. This allows us to delay error handling in
   /// cases where an error is recoverable.
   std::optional<ErrorTree> error;
+  /// An atomic indicating whether an error is present. This can be used to
+  /// check for an error when the ImplNode is shared.
+  std::atomic<bool> hasError = false;
 
   struct WorkItem {
     /// The operations to process.

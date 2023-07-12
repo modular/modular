@@ -1251,7 +1251,8 @@ LogicalResult ElaboratorImpl::collectConcreteImplementations(
   // parent's bindings for us to consider it. Remove nodes from the vector that
   // have bindings that are inconsistent with the parent.
   //
-  // NOTE: A race here is very unlikely. Use coarse-grained locking.
+  // NOTE: Concurrent access here is very unlikely. It can only happen after
+  // breaking recursion. Use coarse-grained locking for simplicity.
   parent->bindings.read([&](auto &parentBindings) {
     auto newEnd = llvm::remove_if(concrete, [&](ImplNode *node) {
       return node->bindings.read([&](auto &nodeBindings) {
@@ -1448,6 +1449,11 @@ ElaborationState ElaboratorImpl::completeCallProcessing(
     ImplNode *thisNode, ImplNode *node, bool invertLockOrder) {
   // Add the callee's bindings to the parent of the call. This ensures that we
   // don't re-bind something we've already bound.
+  //
+  // NOTE: Concurrent access here is very unlikely. It can only happen after
+  // breaking recursion. Use coarse-grained locking for simplicity. Also, the
+  // nodes may be the same in cases of recursion, in which case nothing needs to
+  // be done and avoid deadlocking.
   if (thisNode != node) {
     // NOTE: The mutexes on `bindings` must be acquired in the same order as in
     // `collectConcreteImplementations`, where the parent (caller node) acquires
@@ -1802,13 +1808,18 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
   // If the node resulted in an error or all outstanding dependencies are
   // done, complete node processing. Otherwise, if the node has an error state,
   // it could end up completing early. Avoid double-completion by using a flag.
-  if ((!inode->error && (--inode->numDependencies != 0)) ||
+  //
+  // NOTE: This is one of the two spots where an ImplNode may be accessed in
+  // parallel. Synchronize the error state check using an atomic. Any data race
+  // here is benign but this makes TSAN happy.
+  bool hasError = inode->hasError.load();
+  if ((!hasError && (--inode->numDependencies != 0)) ||
       inode->done.exchange(true)) {
     signalWorklist();
     return;
   }
 
-  if (!inode->error) {
+  if (!hasError) {
     // Complete processing of outstanding dependencies. Process in reverse with
     // `pop_back` so that forks will end up in the same state.
     while (!inode->dependencies.empty()) {
