@@ -664,7 +664,8 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator]> {
+def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
+    ExportInterface]> {
   let summary = "Global variable declaration.";
   let description = [{
     The `lit.globalvar.decl` operation corresponds to a global variable
@@ -689,13 +690,21 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator]> {
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type,
-                       UnitAttr:$isLet);
+                       UnitAttr:$isLet, KGEN_ExportKindAttr:$exportKind,
+                       OptionalAttr<StrAttr>:$linkageName);
   let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
 
   let assemblyFormat = [{
-    $sym_name `:` $type attr-dict-with-keyword (`isLet` $isLet^)?
-    custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
+    custom<SymbolExport>($exportKind) $sym_name `:` $type attr-dict-with-keyword
+    (`isLet` $isLet^)?  custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
   }];
+
+  let builders = [
+    OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isLet), [{
+      build($_builder, $_state, sym_name, type, isLet, ExportKind::NotExported,
+            StringAttr());
+    }]>
+  ];
 
   let hasVerifier = 1;
 }

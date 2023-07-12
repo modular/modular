@@ -170,7 +170,7 @@ static StringAttr flattenAndRenameSymbol(T op, SymbolTable &symbolTable,
 /// Lower an lit.func to kgen.generator.
 static LogicalResult
 lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
-             DenseMap<StringAttr, StringAttr> &renamedFuncs,
+             DenseMap<StringAttr, StringAttr> &renamedSymbols,
              Block::iterator symTableIt, const Twine &parentPrefix,
              ArrayRef<ParamDeclAttr> parentInputParams = {}) {
   auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(gen);
@@ -213,7 +213,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 
   // If the function has an alias name, rename it.
   if (StringAttr newName = gen.getLinkageNameAttr()) {
-    renamedFuncs[gen.getNameAttr()] = newName;
+    renamedSymbols[gen.getNameAttr()] = newName;
     gen.setSymName(newName);
   }
   // If the function is external, it will get lowered later.
@@ -244,7 +244,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
 /// Lower nested structures in lit.struct.decl away.
 static LogicalResult
 lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
-                DenseMap<StringAttr, StringAttr> &renamedFuncs,
+                DenseMap<StringAttr, StringAttr> &renamedSymbols,
                 Block::iterator symTableIt) {
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
@@ -272,25 +272,24 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
 
     // Lower renamed function as usual.
     if (failed(lowerLITFunc(
-            func, symbolTable, renamedFuncs, structDecl->getIterator(),
+            func, symbolTable, renamedSymbols, structDecl->getIterator(),
             structName.getValue() + "::", structDecl.getInputParams())))
       return failure();
   }
   return success();
 }
 
-static void
-lowerAttributesAndTypes(Operation *op,
-                        const DenseMap<StringAttr, StringAttr> &renamedFuncs) {
+static void lowerAttributesAndTypes(
+    Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols) {
   mlir::AttrTypeReplacer replacer;
 
   // Member functions are reference with nested symbol references. After
   // lowering, the symbol tree will be flat. Concatenate all nested symbol
   // references in symbol constants. If something was renamed, perform the
   // renaming.
-  replacer.addReplacement([&renamedFuncs](SymbolRefAttr ref) {
+  replacer.addReplacement([&renamedSymbols](SymbolRefAttr ref) {
     auto flat = flattenSymbolRefAttr(ref);
-    if (StringAttr renamed = renamedFuncs.lookup(flat.getAttr()))
+    if (StringAttr renamed = renamedSymbols.lookup(flat.getAttr()))
       return SymbolRefAttr::get(renamed);
     return flat;
   });
@@ -320,7 +319,9 @@ lowerAttributesAndTypes(Operation *op,
 /// determine an initialization order based on the reference graph between
 /// global variables in their initializers. It is not possible for the parser to
 /// generate global variables that reference each other in a cycle.
-static LogicalResult orderAndLowerGlobalVariables(ModuleOp module) {
+static LogicalResult
+orderAndLowerGlobalVariables(ModuleOp module,
+                             DenseMap<StringAttr, StringAttr> &renamedSymbols) {
   struct GlobalRefNode {
     unsigned numRefs = 0;
     unsigned numReady = 0;
@@ -376,7 +377,7 @@ static LogicalResult orderAndLowerGlobalVariables(ModuleOp module) {
     mlir::IRRewriter b{OpBuilder(op)};
 
     // Outline the constructor and destructor into functions.
-    StringRef name = node->op.getSymName();
+    StringRef name = op.getSymName();
     auto ctorFn = b.create<LIT::FuncOp>(
         op.getLoc(), b.getStringAttr("(ctor_fn)" + name),
         SignatureType::get(b.getContext(), {}, {}), std::nullopt);
@@ -390,11 +391,19 @@ static LogicalResult orderAndLowerGlobalVariables(ModuleOp module) {
     b.setInsertionPointToEnd(dtorFn.getBody());
     b.create<KGEN::ReturnOp>(op.getLoc());
 
+    // If the global had a linkage name, make sure it gets renamed.
+    StringAttr linkageName = op.getLinkageNameAttr();
+    if (linkageName) {
+      renamedSymbols.try_emplace(b.getStringAttr(getFlattenedSymbolName(
+                                     getFullyResolvedSymbolRef(op))),
+                                 linkageName);
+    }
+
     // Replace the `lit.globalvar.decl` operation with a `kgen.global`.
     b.setInsertionPoint(op);
-    b.replaceOpWithNewOp<GlobalOp>(op, name, op.getType(), initOrder++,
-                                   getFullyResolvedSymbolRef(ctorFn),
-                                   getFullyResolvedSymbolRef(dtorFn));
+    b.replaceOpWithNewOp<GlobalOp>(
+        op, name, op.getType(), initOrder++, getFullyResolvedSymbolRef(ctorFn),
+        getFullyResolvedSymbolRef(dtorFn), op.getExportKind());
 
     for (GlobalRefNode *refdBy : node->refdBy)
       if (++refdBy->numReady == refdBy->numRefs)
@@ -452,7 +461,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
 /// Lower the constructs within the body of a module decl.
 static LogicalResult
 lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
-                DenseMap<StringAttr, StringAttr> &renamedFuncs,
+                DenseMap<StringAttr, StringAttr> &renamedSymbols,
                 Block::iterator symTableIt = {},
                 const Twine &parentPrefix = {}) {
   bool isTopLevel = symTableIt == Block::iterator();
@@ -463,17 +472,17 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
     LogicalResult result =
         TypeSwitch<Operation *, LogicalResult>(&op)
             .Case([&](LIT::FuncOp op) {
-              return lowerLITFunc(op, symbolTable, renamedFuncs, opSymTableIt,
+              return lowerLITFunc(op, symbolTable, renamedSymbols, opSymTableIt,
                                   parentPrefix);
             })
             .Case([&](StructDeclOp op) {
-              return lowerStructDecl(op, symbolTable, renamedFuncs,
+              return lowerStructDecl(op, symbolTable, renamedSymbols,
                                      opSymTableIt);
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
-              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedFuncs,
+              if (failed(lowerModuleDecl(fileBody, symbolTable, renamedSymbols,
                                          opSymTableIt,
                                          parentPrefix + op.getName() + "::")))
                 return failure();
@@ -493,6 +502,13 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
             })
             .Case<ParamDeclareOp, LIT::UnresolvedImportOp>([&](auto op) {
               op->erase();
+              return mlir::success();
+            })
+            .Case([&](GlobalOp op) {
+              flattenAndRenameSymbol(op, symbolTable, opSymTableIt);
+              if (StringAttr linkageName =
+                      renamedSymbols.lookup(op.getSymNameAttr()))
+                op.setSymNameAttr(linkageName);
               return mlir::success();
             })
             .Case([&](mlir::SymbolOpInterface symbol) {
@@ -518,12 +534,12 @@ struct LowerLITPass : public impl::LowerLITBase<LowerLITPass> {
     ModuleOp module = getOperation();
     SymbolTable &symbolTable =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-    if (failed(orderAndLowerGlobalVariables(module)))
+    DenseMap<StringAttr, StringAttr> renamedSymbols;
+    if (failed(orderAndLowerGlobalVariables(module, renamedSymbols)))
       return signalPassFailure();
-    DenseMap<StringAttr, StringAttr> renamedFuncs;
-    if (failed(lowerModuleDecl(module.getBody(), symbolTable, renamedFuncs)))
+    if (failed(lowerModuleDecl(module.getBody(), symbolTable, renamedSymbols)))
       return signalPassFailure();
-    lowerAttributesAndTypes(module, renamedFuncs);
+    lowerAttributesAndTypes(module, renamedSymbols);
   }
 };
 

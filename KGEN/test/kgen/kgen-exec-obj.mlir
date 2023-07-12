@@ -5,13 +5,22 @@
 // COM: Check the header file.
 // RUN: kgen %s -emit-header | FileCheck %s -check-prefix=HDR
 
-kgen.generator export C @my_exported_kernel(%arg0: f32) -> f32 {
+kgen.func export C @my_exported_kernel(%arg0: f32) -> f32 {
   kgen.return %arg0 : f32
 }
 
+kgen.func @noop() {
+  kgen.return
+}
+
+kgen.global export @exported_global : i32 (0, @noop, @noop)
+
 // EXEC: --- 'my_exported_kernel' returned 1.0
 
-// OBJ-LABEL: SYMBOL TABLE
-// OBJ-DAG: my_exported_kernel
+// OBJ-LABEL: (0.o):
+// OBJ-LABEL: (1.o):
+// OBJ: my_exported_kernel
+// OBJ-LABEL: (2.o):
+// OBJ: exported_global
 
 // HDR-LABEL: extern float my_exported_kernel(float);

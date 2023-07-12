@@ -103,8 +103,8 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 // -----
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c], priorities = [2 : i32, 5 : i32]}
-  // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d], priorities = [2 : i32, 5 : i32]}
+  // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
+  // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
   llvm.func @foo_c() {
     llvm.return
   }
@@ -118,6 +118,16 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     llvm.return
   }
 
+  // CHECK: llvm.mlir.global internal @foo() {{.*}} : i32
   kgen.global @foo : i32 (2, @foo_c, @foo_d)
+  // CHECK: llvm.mlir.global internal @bar() {{.*}} : i64
   kgen.global @bar : i64 (5, @bar_c, @bar_d)
+
+  llvm.func @noop() {
+    llvm.return
+  }
+  // CHECK: llvm.mlir.global external @exported() {{.*}} : f32
+  // CHECK-NEXT: [[UNDEF:%.*]] = llvm.mlir.undef
+  // CHECK-NEXT: llvm.return [[UNDEF]]
+  kgen.global export @exported : f32 (0, @noop, @noop)
 }
