@@ -460,7 +460,8 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 //===----------------------------------------------------------------------===//
 
 /// Unknown operations are allowed to use types and attributes with parameter
-/// references.  Substitute in concrete values for their references.
+/// references. Substitute in concrete values for their references. Optionally
+/// elaborate their locations.
 static ElaborationState processGenericOp(ImplNode *inode, Operation *op) {
   // Scan all the attributes and types to look for uses of parameters.  We let
   // the walker scan the region hierarchy.
@@ -474,12 +475,6 @@ static ElaborationState processGenericOp(ImplNode *inode, Operation *op) {
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
-
-  {
-    Attribute value;
-    HANDLE_EVALUATOR_CONC(value, inode, op->getLoc(), op->getLoc());
-    op->setLoc(cast<Location>(value));
-  }
 
   // Check the types of results to find any parameters embedded in their
   // types.  We don't have to check operands because they are always checked
@@ -1991,6 +1986,8 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processEvaluateOp(node, evaluate);
   } else {
     TimeTraceScope<EnableTracing> traceScope("processGenericOp");
+    // NOTE: We only need to elaborate locations manually for generic ops if we
+    // don't do it globally.
     return processGenericOp(node, op);
   }
 }
@@ -1998,6 +1995,24 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
+
+/// Concretizes the location of an op or a block argument.
+template <typename ArgOrOp>
+static LogicalResult concretizeLoc(ArgOrOp &argOrOp, ImplNode *inode) {
+  Location loc = argOrOp.getLoc();
+  auto exprResult =
+      inode->getEvaluator().concretizeParameterExpr(inode, loc, loc, true);
+  if (exprResult.isError()) {
+    inode->setToError(exprResult.takeError());
+    return failure();
+  } else if (!*exprResult) {
+    inode->setToError(
+        ErrorTree(loc, "conretized parameter expression in location is null"));
+    return failure();
+  }
+  argOrOp.setLoc(cast<Location>(*exprResult));
+  return success();
+};
 
 /// Try extracting a short name from a mangled name.
 /// E.g. for the mangled name "$Math::log($SIMD::SIMD[type, simd_width])"
@@ -2214,8 +2229,39 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     replacer.recursivelyReplaceElementsIn(newFunc);
   }
 
+  std::function<LogicalResult(ImplNode *)> onComplete;
+  if (config.elaborateLocations) {
+    // We need to recursively elaborate locations within nested regions, both on
+    // ops and block arguments. We do this after the worklist is processed, to
+    // ensure that all parameter computation is completed, e.g. we have
+    // processed all kgen.param.decl ops.
+    onComplete = [&](ImplNode *inode) -> LogicalResult {
+      inode->func->walk([&](Operation *op) -> WalkResult {
+        if (failed(concretizeLoc(*op, inode)))
+          return WalkResult::interrupt();
+
+        // When elaboration is complete, only the first block in any region is
+        // valid (any other block may be illegal, e.g. due to how kgen.param.if
+        // is handled). So we only need to go through the region arguments.
+        for (Region &r : op->getRegions()) {
+          for (BlockArgument arg : r.getArguments())
+            if (failed(concretizeLoc(arg, inode)))
+              return WalkResult::interrupt();
+        }
+
+        return WalkResult::advance();
+      });
+
+      if (inode->error)
+        return failure();
+      return success();
+    };
+  } else {
+    onComplete = [](ImplNode *) { return success(); };
+  }
+
   ImplNode::WorkItem item{std::move(opsToRewrite), std::move(evaluator),
-                          [](ImplNode *) { return success(); }};
+                          std::move(onComplete)};
   newFuncNode->stack.push_back(std::move(item));
 
   if (addWaiter) {
@@ -2686,11 +2732,11 @@ public:
       setBuildInfo(theModule, build);
     }
 
-    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
-                                   primaryGenerators, evaluatorExecutorFn,
-                                   ElaborateGeneratorsOptions{enableSearch,
-                                                              testDiagnostics,
-                                                              maxDepth})))
+    if (failed(elaborateGenerators(
+            analysis, paramCache, *rt, target, primaryGenerators,
+            evaluatorExecutorFn,
+            ElaborateGeneratorsOptions{enableSearch, testDiagnostics, maxDepth,
+                                       elaborateLocations})))
       return signalPassFailure();
   }
 

@@ -349,6 +349,8 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
     Option<"maxDepth", "max-depth", "unsigned",
            "std::numeric_limits<unsigned>::max()",
            "The maximum elaborator instantiation depth.">,
+    Option<"elaborateLocations", "elaborate-locations", "bool", "false",
+           "If true, parameter references in locations will be concretized.">,
   ];
 }
 
