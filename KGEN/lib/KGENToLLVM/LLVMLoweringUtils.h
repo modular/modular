@@ -146,7 +146,8 @@ Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
 /// LLVM.
 struct POPToLLVMDebugInfoTypeConverter
     : public DebugInfo::DebugInfoTypeConverter {
-  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter, TargetInfoAttr target);
+  POPToLLVMDebugInfoTypeConverter(POPToLLVMTypeConverter &converter,
+                                  TargetInfoAttr target);
 };
 
 //===----------------------------------------------------------------------===//

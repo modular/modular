@@ -272,7 +272,8 @@ void InflightDiag::emitSourceMgrDiagnostic() {
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic && nOmitted > 0)
       text << " (" << nOmitted << " more notes omitted.)";
 
-    sourceMgr.PrintMessage(loc, kind, text.str(), message.ranges, message.fixIts);
+    sourceMgr.PrintMessage(loc, kind, text.str(), message.ranges,
+                           message.fixIts);
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic)
       break;
 

@@ -239,9 +239,7 @@ public:
 
   /// Returns the underlying index representing the type id. This is in the
   /// range [0..2^16-2].
-  uint16_t getDenseIndex() {
-    return id;
-  }
+  uint16_t getDenseIndex() { return id; }
 
 private:
   explicit TypeID(Detail::RawTypeID id) : id(id) {}

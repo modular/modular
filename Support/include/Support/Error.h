@@ -87,9 +87,7 @@ public:
   }
 
   /// Convert this Error into a LogicalResult.
-  /*implicit*/ operator LogicalResult() const {
-    return failure();
-  }
+  /*implicit*/ operator LogicalResult() const { return failure(); }
 
   Error &operator=(Error &&other) {
     if (&other != this) {

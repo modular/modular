@@ -92,13 +92,14 @@ public:
 
   /// Returns a variable with name name. Returns nullptr if the variable does
   /// not exist, or if expressionInstances is empty.
-  std::shared_ptr<lldb_private::ExpressionVariable> getVar(StringRef name) const {
+  std::shared_ptr<lldb_private::ExpressionVariable>
+  getVar(StringRef name) const {
     if (!expressionInstances.empty()) {
-      for (auto var: expressionInstances.back()->persistentVariables)
+      for (auto var : expressionInstances.back()->persistentVariables)
         if (var->GetName().GetStringRef() == name)
           return var;
     }
-   return nullptr;
+    return nullptr;
   }
 
   /// Register a new expression instance.
@@ -172,7 +173,6 @@ public:
   }
 
 private:
-
   /// Instance state associated with successful expression evaluations.
   std::vector<std::unique_ptr<ExpressionInstanceState>> expressionInstances;
 

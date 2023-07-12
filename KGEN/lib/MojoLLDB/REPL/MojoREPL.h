@@ -51,9 +51,7 @@ protected:
 
   lldb::LanguageType GetLanguage() override { return lldb::eLanguageTypeMojo; }
 
-  std::shared_ptr<MojoTypeSystem> getTypeSystem() {
-    return typeSystem;
-  }
+  std::shared_ptr<MojoTypeSystem> getTypeSystem() { return typeSystem; }
 
   //===--------------------------------------------------------------------===//
   // Source Code Handling
