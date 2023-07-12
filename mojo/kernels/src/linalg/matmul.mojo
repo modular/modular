@@ -35,6 +35,7 @@ from MatmulUtils import (
     MatmulOperandLayout,
     GemmShape,
     calculate_tile_n_k,
+    _get_tile_n_k_ND,
     get_min_task_size,
     get_partitioned_matmul,
     PartitionHeuristic,
@@ -1448,6 +1449,7 @@ struct TiledMatmul[
         )
 
 
+# TODO(16867): Merge this with pack_b_ndbuffer.
 fn pack_b[
     transpose_b: Bool,
     simd_size: Int,
@@ -1559,6 +1561,63 @@ fn pack_b[
                     Index(valid_n_t, valid_k_t),
                 )
                 dst_offset += tile_n * tile_k
+
+
+# TODO(16867): Merge this with pack_b.
+@always_inline
+fn pack_b_ndbuffer[
+    type: DType,
+    transposed: Bool,
+](
+    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+    """Performs the layout transformation on `b_input` expected by
+    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
+    `output_buffer`.
+
+    When transpose_b is True, this also un-transposes b_input as part of the layout
+    transformation."""
+
+    let k = b_input.dim(1) if transposed else b_input.dim(0)
+
+    # The config (in particular inner size and tile_k) needs to EXACTLY match the
+    # values used in the matmul algorithm consuming this packed b matrix
+    if is_critical_stride(k):
+        alias config = search_mm_config[type, True, True]()
+        let tile_n_k = _get_tile_n_k_ND[config, transposed, type](b_input)
+        pack_b[
+            transposed,
+            config.simd_size,
+            config.pack_inner_size,
+            type,
+            DimList.create_unknown[2](),
+            DimList.create_unknown[2](),
+        ](
+            output_buffer,
+            b_input,
+            tile_n_k[0],
+            tile_n_k[1],
+        )
+    else:
+        alias config2 = search_mm_config[type, True, False]()
+        let tile_n_k = _get_tile_n_k_ND[config2, transposed, type](b_input)
+        pack_b[
+            transposed,
+            config2.simd_size,
+            config2.pack_inner_size,
+            type,
+            DimList.create_unknown[2](),
+            DimList.create_unknown[2](),
+        ](
+            output_buffer,
+            b_input,
+            tile_n_k[0],
+            tile_n_k[1],
+        )
+
+    out_chain.mark_ready()
 
 
 @value
