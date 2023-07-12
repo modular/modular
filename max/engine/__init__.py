@@ -8,6 +8,7 @@ from .api import (
     DType,
     InferenceSession,
     Model,
+    TensorFlowLoadOptions,
     TensorSpec,
     TorchLoadOptions,
     version_string,

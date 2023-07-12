@@ -28,6 +28,19 @@ else:
 version_string = _mecore.__version__
 
 
+@dataclass
+class TensorFlowLoadOptions:
+    """Configures how to load TensorFlow models."""
+
+    exported_name: str = field(default="serving_default")
+    """The exported name from the TensorFlow model's signature."""
+
+
+@dataclass
+class TorchLoadOptions:
+    """Configures how to load PyTorch models."""
+
+
 class Model:
     """A loaded model that you can execute.
 
@@ -232,7 +245,9 @@ class InferenceSession:
     def load(
         self,
         model_path: Union[str, Path],
-        options: Optional[TorchLoadOptions] = None,
+        options: Optional[
+            Union[TensorFlowLoadOptions, TorchLoadOptions]
+        ] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -264,7 +279,9 @@ class InferenceSession:
             options_dict = asdict(
                 options, dict_factory=_unwrap_pybind_objects_dict_factory
             )
-            if isinstance(options, TorchLoadOptions):
+            if isinstance(options, TensorFlowLoadOptions):
+                options_dict["type"] = "tf"
+            elif isinstance(options, TorchLoadOptions):
                 options_dict["type"] = "torch"
             else:
                 raise TypeError("Invalid compilation options object.")
