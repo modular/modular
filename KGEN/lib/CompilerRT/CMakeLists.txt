@@ -45,11 +45,10 @@ target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILE
 add_modular_library(KGENCompilerRT-static
   ${SOURCES}
 
-  LINK_LIBS PRIVATE
-  MSupport
-  MSupportGlobals-static
-  LLCLRuntime
-  LLCLRuntimeGlobals-static
+  $<TARGET_OBJECTS:obj.MSupportGlobals-static>
+  $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
+  $<TARGET_OBJECTS:obj.MSupport>
+  $<TARGET_OBJECTS:obj.LLCLRuntime>
 )
 
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT)
