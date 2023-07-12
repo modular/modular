@@ -731,17 +731,7 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
                                        LexerCursor startCursor,
                                        size_t curIndent, Token::Kind kind,
                                        bool &isFullUnroll) {
-  std::string kindName = "";
-  switch (kind) {
-  case Token::kw_for:
-    kindName = "for";
-    break;
-  case Token::kw_while:
-    kindName = "while";
-    break;
-  default:
-    llvm_unreachable("Parsing loop decorator in a non-loop statement.");
-  }
+  StringRef kindName = parser.getToken().getSpelling();
   isFullUnroll = false;
 
   if (startCursor != parser.getLexer().getCursor()) {
@@ -749,9 +739,7 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
     for (auto [decorator, cursor] : parser.parseDecorators(curIndent)) {
       // Handle recognized decorators.
       if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
-        if (kind == Token::kw_for && dre->spelling == "unroll") {
-          // TODO: enable this for kw_while once we have support for while loop
-          // unrolling
+        if (dre->spelling == "unroll") {
           isFullUnroll = true;
           continue;
         }
@@ -792,11 +780,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  auto loopOp = builder.create<HLCF::LoopOp>(whileLoc);
-  if (isFullUnroll)
-    loopOp.setUnrollFactorAttr(HLCF::LoopUnrollFullAttr::get(
-        loopOp->getContext(), HLCF::LoopUnrollFull::Full));
-
+  auto loopOp = builder.create<HLCF::LoopOp>(whileLoc, isFullUnroll);
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
@@ -887,11 +871,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
   }
 
-  HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc);
-  if (isFullUnroll)
-    loopOp.setUnrollFactorAttr(HLCF::LoopUnrollFullAttr::get(
-        loopOp->getContext(), HLCF::LoopUnrollFull::Full));
-
+  HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc, isFullUnroll);
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 

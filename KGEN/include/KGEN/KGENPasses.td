@@ -738,7 +738,6 @@ def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
   let description = [{
     The `raise-for-loops` pass will transform simple `hlcf.loop` with no early exits
     into `hlcf.for` operation. This pass must run on concrete KGEN IR.
-    TODO: raise any LoopOp with or without an unroll factor if possible.
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];

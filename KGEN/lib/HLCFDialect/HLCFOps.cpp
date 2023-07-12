@@ -7,6 +7,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
@@ -67,10 +68,17 @@ LogicalResult ForOp::verify() {
     return emitOpError("operand types do not match body region argument types");
 
   for (auto [initarg, blockarg] :
-       llvm::zip(getInitArgs(), getBody().getArgumentTypes()))
+       llvm::zip(getInitArgs(), getBody().getArgumentTypes())) {
     if (initarg.getType() != blockarg)
       return emitOpError(
           "operand types do not match body region argument types");
+  }
+
+  for (auto [returnValueArg, resultType] :
+       llvm::zip(getReturnValueArgs(), getResultTypes())) {
+    if (returnValueArg.getType() != resultType)
+      return emitOpError("operand types do not match return types");
+  }
 
   return success();
 }
@@ -78,7 +86,24 @@ LogicalResult ForOp::verify() {
 void ForOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
-  targets.emplace_back(0, getOperands());
+
+  auto iter = dyn_cast_if_present<IntegerAttr>(operands.back());
+  auto upperBound = this->getUpperBoundAsInt();
+  auto step = this->getStepAsInt();
+
+  if (!iter || !upperBound || !step) {
+    targets.emplace_back(0, getOperands());
+    targets.emplace_back(std::nullopt, getResults());
+  }
+
+  if ((step.value() > 0 && iter.getInt() < upperBound.value()) ||
+      (step.value() < 0 && iter.getInt() > upperBound.value())) {
+    // for-loop continues.
+    targets.emplace_back(0, getOperands());
+  } else {
+    // for-loop exits.
+    targets.emplace_back(std::nullopt, getResults());
+  }
 }
 
 ValueRange ForOp::getEntryArguments(std::optional<unsigned> target) {
@@ -92,6 +117,34 @@ ErrorTreeOrSuccess ForOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
   state.transferControlFlowTo(&getBody().front(), operands);
   return success();
+}
+
+std::optional<int64_t> ForOp::getLowerBoundAsInt() {
+  Value lowerBound = getLowerBound();
+  IntegerAttr value;
+  if (mlir::matchPattern(lowerBound, mlir::m_Constant(&value)))
+    return value.getInt();
+  return {};
+}
+
+std::optional<int64_t> ForOp::getUpperBoundAsInt() {
+  Value upperBound = getUpperBound();
+  IntegerAttr value;
+  if (mlir::matchPattern(upperBound, mlir::m_Constant(&value)))
+    return value.getInt();
+  return {};
+}
+
+std::optional<int64_t> ForOp::getStepAsInt() {
+  Value upperBound = getStep();
+  IntegerAttr value;
+  if (mlir::matchPattern(upperBound, mlir::m_Constant(&value)))
+    return value.getInt();
+  return {};
+}
+
+ValueRange ForOp::getReturnValueArgs() {
+  return getInitArgs().take_front(getNumResults());
 }
 
 //===----------------------------------------------------------------------===//
@@ -387,24 +440,71 @@ ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// YieldOp
+// ForContinueOp
 //===----------------------------------------------------------------------===//
 
-bool ForYieldOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
+bool ForContinueOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
 
-void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
-                                  SmallVectorImpl<ControlFlowTarget> &targets) {
+void ForContinueOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
 
   assert(operands.size() == getNumOperands());
+
+  ForOp forLoop = this->getParentOp<ForOp>();
   // Branch to the beginning of the body region.
-  // Though `hlcf.for.yield` can exit when iter count meets upperbound.
   targets.emplace_back(0, getOperands());
+  // Though `hlcf.for.continue` can exit when iter count meets upperbound.
+  targets.emplace_back(std::nullopt,
+                       getOperands().take_front(forLoop.getNumResults()));
 }
 
-ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
-                                         InterpreterState &state) {
-  LoopOp loop = getParentLoop(*this, getLabelAttr());
-  state.transferControlFlowTo(&loop.getBody().front(), operands);
+ErrorTreeOrSuccess ForContinueOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  ForOp forLoop = this->getParentOp<ForOp>();
+  auto iter = dyn_cast_or_null<IntegerAttr>(
+      state.lookupValue(getForInductionVariableOperand()));
+  if (!iter)
+    return ErrorTree(getLoc(), "non-integer induction variable.");
+
+  auto upperBound =
+      dyn_cast_or_null<IntegerAttr>(state.lookupValue(forLoop.getUpperBound()));
+  if (!upperBound)
+    return ErrorTree(getLoc(), "non-integer parent for-loop upperBound.");
+
+  auto step =
+      dyn_cast_or_null<IntegerAttr>(state.lookupValue(forLoop.getStep()));
+  if (!step)
+    return ErrorTree(getLoc(), "non-integer parent for-loop step.");
+
+  bool continueFor =
+      (step.getInt() > 0 && iter.getInt() < upperBound.getInt()) ||
+      (step.getInt() < 0 && iter.getInt() > upperBound.getInt());
+
+  if (continueFor)
+    state.transferControlFlowTo(&forLoop.getBody().front(), operands);
+  else
+    state.transferControlFlowTo(forLoop->getParentOp());
+  return success();
+}
+
+Value ForContinueOp::getForInductionVariableOperand() {
+  return this->getOperands().back();
+}
+
+LogicalResult ForContinueOp::verify() {
+  ForOp parentFor = getParentOp<ForOp>();
+
+  if (getOperands().size() != parentFor.getBody().getNumArguments())
+    return emitOpError("operand types do not match parent for-loop's body "
+                       "region argument types");
+
+  for (auto [parentOperand, operand] :
+       llvm::zip(parentFor.getInitArgs(), getOperands())) {
+    if (parentOperand.getType() != operand.getType())
+      return emitOpError(
+          "operand types do not match parent for-loop's operand types");
+  }
+
   return success();
 }
 

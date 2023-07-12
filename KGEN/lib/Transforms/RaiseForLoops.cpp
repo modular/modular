@@ -32,6 +32,7 @@ namespace {
 
 /// This pass has to run after elaboration so that all parameter
 /// expressions have elaborated with known values.
+// TODO: raise any LoopOp with or without an unroll factor if possible.
 struct RaiseForLoops : impl::RaiseForLoopsBase<RaiseForLoops> {
   using RaiseForLoopsBase::RaiseForLoopsBase;
 
@@ -89,8 +90,17 @@ void RaiseForLoops::walkLoopsPreorder(Operation *cur) {
 
     if (auto loop = dyn_cast<LoopOp>(op); loop && loop != cur) {
       // Recurse in nested loops.
-      if (loop.getUnrollFactor().has_value())
-        loopsToRaiseInOrder.push_back(loop);
+
+      if (loop.getUnrollFactor().has_value()) {
+        if (auto unroll =
+                dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
+            unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
+          // TODO: add general support to lower ForOp back to LoopOp if
+          // LoopUnrolling pass can't unroll the for-loop, so we don't only
+          // raise LoopOp that is annotated to fully unroll here.
+          loopsToRaiseInOrder.push_back(loop);
+        }
+      }
 
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
@@ -111,15 +121,17 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
   return result;
 }
 
-// If the value v is a constant get the value, otherwise return a null Value.
 static Value getValueIfConstInteger(Value v, LoopOp loop) {
   Value result;
   if (auto arg = dyn_cast<BlockArgument>(v)) {
+    // Return the initial value of a block argument if it is constant.
     Value input = loop->getOperand(arg.getArgNumber());
     result = getValueIfConstInteger(input, loop);
   } else if (mlir::matchPattern(v, mlir::m_Constant())) {
+    // If the value v is a constant get the value.
     result = v;
   }
+  // Otherwise return a null Value.
   return result;
 }
 
@@ -199,18 +211,13 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
   if (iter->second.size() != 2)
     return;
 
-  SmallVector<BreakOp> breakOps = getOps<BreakOp, Operation *>(iter->second);
-  SmallVector<ContinueOp> continueOps =
-      getOps<ContinueOp, Operation *>(iter->second);
-
   // Only raise a loop with no early exits which should have only one BreakOp
   // and one ContinueOp.
-  if (breakOps.size() != 1)
-    return;
-
-  // only raise a loop with no early exits which should have only one BreakOp
-  // and one ContinueOp.
-  if (continueOps.size() != 1)
+  BreakOp breakOp = dyn_cast<BreakOp>(iter->second.front());
+  ContinueOp continueOp = dyn_cast<ContinueOp>(iter->second[!!breakOp]);
+  if (!breakOp)
+    breakOp = dyn_cast<BreakOp>(iter->second.back());
+  if (!continueOp || !breakOp)
     return;
 
   Block &body = loop.getBody().front();
@@ -219,11 +226,11 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
   if (!isa<ContinueOp>(term))
     return;
 
-  if (!isa<IfOp>(breakOps.front()->getParentOp()))
+  if (!isa<IfOp>(breakOp->getParentOp()))
     return;
 
   std::optional<ForLoopBoundsAndSteps> loopInfo =
-      inferLoopCount(loop, continueOps.front(), breakOps.front());
+      inferLoopCount(loop, continueOp, breakOp);
 
   if (!loopInfo.has_value())
     return;
@@ -233,7 +240,7 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
   ForOp forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
       loopInfo->upperBound, loopInfo->step, loop.getOperands(),
-      loop.getLabelAttr(), loop.getUnrollFactorAttr());
+      loop.getUnrollFactorAttr());
 
   Block *block = rewriter.createBlock(&forOp.getBody());
 
@@ -244,7 +251,7 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
 
   Operation *prevOp = nullptr;
   for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-    if (&op == breakOps.front()->getParentOp() && isa<IfOp>(op)) {
+    if (&op == breakOp->getParentOp() && isa<IfOp>(op)) {
       // Don't move the parent IfOp of the break to the ForOp body.
       continue;
     }
@@ -256,8 +263,7 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
       op.moveAfter(prevOp);
       if (auto c = dyn_cast<ContinueOp>(op)) {
         rewriter.setInsertionPointAfter(&op);
-        rewriter.create<HLCF::ForYieldOp>(op.getLoc(), c.getOperands(),
-                                          c.getLabelAttr());
+        rewriter.create<HLCF::ForContinueOp>(op.getLoc(), c.getOperands());
         c->dropAllReferences();
         rewriter.eraseOp(c);
       }
@@ -282,4 +288,3 @@ void RaiseForLoops::runOnOperation() {
     raiseForLoops(loop);
   }
 }
-

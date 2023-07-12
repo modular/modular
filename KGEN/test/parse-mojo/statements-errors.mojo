@@ -98,13 +98,6 @@ fn test_if_decorator(a: Bool):
   elif a:  # expected-error {{cannot use a dynamic value in '@parameter if' condition}}
     pass
 
-fn unroll_while():
-    let i = 1
-    # expected-error @below  {{unsupported decorator on 'while' statement}}
-    @unroll
-    while i < 4:
-        print(i)
-
 ##===----------------------------------------------------------------------===##
 # For
 ##===----------------------------------------------------------------------===##
