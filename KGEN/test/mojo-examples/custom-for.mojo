@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mojo %s | FileCheck %s
+# RUN: kgen %s -emit -debug-level=full --O0 -o /dev/null
 
 from Pointer import Pointer
 from IO import print
