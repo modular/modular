@@ -49,7 +49,7 @@ from Math import (
     abs,
     log1p,
 )
-from Matmul import matmul_parallel_async
+from Matmul import matmul_parallel_async, pack_b_ndbuffer
 from BatchedMatmul import (
     batched_matmul_parallel_async,
     get_trace_information as get_trace_information_batched_matmul,
@@ -112,6 +112,7 @@ fn MOGGExport():
     alias _isinf = isinf
     alias _isnan = isnan
     alias _log1p = log1p
+    alias _pack_b = pack_b_ndbuffer
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _mean = mean
