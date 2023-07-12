@@ -253,7 +253,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
           [&] { return p.parseComma(); }) ||
       p.parseRParen())
     return failure();
-  if (calleeType.getValueResults().size() != 1)
+  if (calleeType.getNumResults() != 1)
     return p.emitError(sigLoc, "expected callee to have 1 result");
   paramDecl =
       ParamDeclAttr::get(paramName, calleeType.getValueResults().front());
@@ -1019,15 +1019,15 @@ LogicalResult CreateClosureOp::inferReturnTypes(
         loc, "'create_closure' attribute 'callee' must have SignatureType");
 
   unsigned numArgs = captures.size();
-  if (numArgs > sig.getValueInputs().size()) {
+  if (numArgs > sig.getNumInputs()) {
     return mlir::emitOptionalError(loc, "provided ", numArgs,
                                    " operands but callee only has ",
-                                   sig.getValueInputs().size(), " to bind");
+                                   sig.getNumInputs(), " to bind");
   }
 
   SmallVector<Type> newArgTypes;
   SmallVector<ValueInputConvention> newInputConvs;
-  for (unsigned i = numArgs, e = sig.getValueInputs().size(); i != e; ++i) {
+  for (unsigned i = numArgs, e = sig.getNumInputs(); i != e; ++i) {
     newArgTypes.push_back(sig.getValueInputs()[i]);
     newInputConvs.push_back(sig.getValueInputConventions()[i]);
   }
@@ -1056,10 +1056,10 @@ parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
                        "expected type of callee to be SignatureType");
 
   unsigned numArgs = captures.size();
-  if (numArgs > sig.getValueInputs().size()) {
+  if (numArgs > sig.getNumInputs()) {
     return p.emitError(p.getCurrentLocation(), "provided ")
-           << numArgs << " operands but callee only has "
-           << sig.getValueInputs().size() << " to bind";
+           << numArgs << " operands but callee only has " << sig.getNumInputs()
+           << " to bind";
   }
 
   for (unsigned i = 0; i != numArgs; ++i)
@@ -1073,15 +1073,15 @@ static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
 
 LogicalResult CreateClosureOp::verify() {
   SignatureType sig = getCalleeType();
-  if (getNumOperands() > sig.getValueInputs().size()) {
+  if (getNumOperands() > sig.getNumInputs()) {
     return emitOpError("provided ")
            << getNumOperands() << " operands but callee only has "
-           << sig.getValueInputs().size() << " to bind";
+           << sig.getNumInputs() << " to bind";
   }
-  unsigned expectedArgs = sig.getValueInputs().size() - getNumOperands();
-  if (getType().getValueInputs().size() != expectedArgs) {
+  unsigned expectedArgs = sig.getNumInputs() - getNumOperands();
+  if (getType().getNumInputs() != expectedArgs) {
     return emitOpError("result signature has ")
-           << getType().getValueInputs().size() << " arguments but expected "
+           << getType().getNumInputs() << " arguments but expected "
            << expectedArgs;
   }
 

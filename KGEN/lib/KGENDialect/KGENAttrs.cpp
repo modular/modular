@@ -1872,7 +1872,7 @@ std::optional<bool> ParamOperatorAttr::isLessThan(Attribute rhs) const {
 LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  StringAttr name, DictionaryAttr attrs,
                                  SignatureType type) {
-  if (type.getValueResults().size() != 1)
+  if (type.getNumResults() != 1)
     return emitError()
            << "operation parameter expression must return one result";
   if (!type.isConcrete())

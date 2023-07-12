@@ -271,7 +271,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // emit a warning with a fix it hint suggesting that it get called.
   if (auto sig = dyn_cast<SignatureType>(valueType.mlirType)) {
     // TODO: This is incorrect for default arguments and varargs.
-    assert(sig.getValueResults().size() == 1);
+    assert(sig.getNumResults() == 1);
 
     // Get the result type without any error handling in the way.
     Type resultType = sig.getValueResults()[0];

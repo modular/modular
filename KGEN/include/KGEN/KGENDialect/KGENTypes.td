@@ -223,6 +223,15 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Returns true if the signature is a concrete callable.
     bool isConcrete();
+
+    /// Return the number of input parameters.
+    size_t getNumInputParams() { return getInputParamTypes().size(); }
+    /// Return the number of result parameters.
+    size_t getNumResultParams() { return getResultParamTypes().size(); }
+    /// Return the number of arguments.
+    size_t getNumInputs() { return getValueInputs().size(); }
+    /// Return the number of results.
+    size_t getNumResults() { return getValueResults().size(); }
   }];
 
   let genVerifyDecl = 1;

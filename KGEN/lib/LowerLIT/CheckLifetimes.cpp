@@ -2022,7 +2022,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // object without destroying it, and one that takes and destroys it.  The
   // former takes the operand as inout, the later as owned convention.
   auto moveSig = cast<SignatureType>(moveInit.getType());
-  assert(moveSig.getValueInputs().size() == 2 &&
+  assert(moveSig.getNumInputs() == 2 &&
          moveSig.getValueInputs()[0] == value.getType() &&
          moveSig.getValueInputs()[1] == value.getType());
 
@@ -2065,10 +2065,9 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
     return;
 
   SignatureType signature = cast<SignatureType>(dtor.getType());
-  assert(signature.getValueResults().size() == 1 &&
+  assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
-  assert(signature.getValueInputs().size() == 1 &&
-         "dtor should have one operand");
+  assert(signature.getNumInputs() == 1 && "dtor should have one operand");
 
   // We may have a @register_passable value indirect (e.g. because it is in a
   // var).  If so, it needs to be loaded to invoke the destructor.

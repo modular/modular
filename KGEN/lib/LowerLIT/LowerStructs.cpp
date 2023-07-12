@@ -386,7 +386,7 @@ Type StructOperationLowerer::replace(Type type) {
       if (!isa<LIT::LifetimeType>(type))
         inputParamTypes.push_back(type);
     }
-    if (inputParamTypes.size() != signature.getInputParamTypes().size())
+    if (inputParamTypes.size() != signature.getNumInputParams())
       signature = SignatureType::get(
           TypeArrayAttr::get(signature.getContext(), inputParamTypes),
           signature.getResultParamTypes(), signature.getValues(),

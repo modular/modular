@@ -675,7 +675,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   }
 
   // Check the result parameter count.
-  if (signature.getResultParamTypes().size() != callable.resultParams.size())
+  if (signature.getNumResultParams() != callable.resultParams.size())
     return {kResultParamCount, 0, ASTType(), newBindings};
 
   // If anything was bound, apply it to the signature so the expected argument
@@ -782,8 +782,8 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
       }
       // We don't need to provide value for this argument if it has a default
       // value.
-      if (expectedArgIdx >= signature.getValueInputs().size() -
-                                signature.getDefaultArguments().size())
+      if (expectedArgIdx >=
+          signature.getNumInputs() - signature.getDefaultArguments().size())
         // In the callee, arguments with default values must be followed only by
         // other arguments with default values, so we do not need to enumerate
         // any more of the callee arguments.
@@ -996,8 +996,8 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   case kParamCount: {
     size_t actualNumBindings = callable.inputParamBindings.bindings.size();
-    diag << "callee expects " << signature.getInputParamTypes().size()
-         << " input parameter" << plural(signature.getInputParamTypes().size())
+    diag << "callee expects " << signature.getNumInputParams()
+         << " input parameter" << plural(signature.getNumInputParams())
          << " but " << actualNumBindings
          << plural(actualNumBindings, " was", " were") << " provided";
     return;
@@ -1010,10 +1010,9 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   }
   case kResultParamCount:
-    diag << "callee expects " << signature.getResultParamTypes().size()
-         << " result parameter"
-         << plural(signature.getResultParamTypes().size()) << " but "
-         << callable.resultParams.size()
+    diag << "callee expects " << signature.getNumResultParams()
+         << " result parameter" << plural(signature.getNumResultParams())
+         << " but " << callable.resultParams.size()
          << plural(callable.resultParams.size(), " was", " were")
          << " provided";
     return;
@@ -1689,7 +1688,7 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
 
   // Check declarations for the result parameters and collect them here.
-  assert(calleeSig.getResultParamTypes().size() == resultParams.size() &&
+  assert(calleeSig.getNumResultParams() == resultParams.size() &&
          "We know that the callee is type checked");
 
   // Verify completion of forward declared alias declarations.  We know the
@@ -1896,7 +1895,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   Location loc = translateLocation(callExpr->getLoc());
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
 
-  assert(calleeSig.getResultParamTypes().size() == resultParams.size() &&
+  assert(calleeSig.getNumResultParams() == resultParams.size() &&
          "Type checking should be done");
 
   /// This struct accumulates information about IR to emit after the call, e.g.
@@ -2047,7 +2046,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // if the refined type is different than the expected type.
   ParserParamEvaluator evaluator(getDeclResolver());
   for (auto [idx, expectedTypeX, conventionX] : llvm::zip(
-           llvm::seq<unsigned>(0, calleeSig.getValueInputs().size()),
+           llvm::seq<unsigned>(0, calleeSig.getNumInputs()),
            calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
     // Work around lambda not being able to reference bindings.
     unsigned argIdx = idx;
@@ -2099,7 +2098,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
           {PValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callExpr});
       ++nextDefaultIdx;
       continue;
-    } else if (idx >= calleeSig.getValueInputs().size() -
+    } else if (idx >= calleeSig.getNumInputs() -
                           calleeSig.getDefaultArguments().size()) {
       // If we provided a value for an argument with a default value, advance
       // the index.
