@@ -24,6 +24,7 @@ target_compile_definitions(MSupportGlobals PRIVATE MODULAR_BUILDING_LIBRARY)
 
 # CAUTION: Only use this if you know that you won't be dlopen'ing another modular binary!
 add_modular_library(MSupportGlobals-static
+  OBJECT # Always generate an obj.${name} target.
   ${SOURCES}
 )
 target_include_directories(MSupportGlobals-static

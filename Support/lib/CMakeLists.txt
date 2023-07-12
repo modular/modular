@@ -4,6 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 add_modular_library(MSupport
+  OBJECT # Always generate an obj.${name} target.
+
   AlignedAlloc.cpp
   BuildInfo.cpp
   CommonCLOptions.cpp

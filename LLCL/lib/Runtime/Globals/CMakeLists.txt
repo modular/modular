@@ -29,6 +29,7 @@ target_compile_definitions(LLCLRuntimeGlobals PRIVATE MODULAR_BUILDING_LIBRARY)
 
 # CAUTION: Only use this if you know that you won't be dlopen'ing another modular binary!
 add_modular_library(LLCLRuntimeGlobals-static
+  OBJECT # Always generate an obj.${name} target.
   ${SOURCES}
 
   LINK_LIBS
