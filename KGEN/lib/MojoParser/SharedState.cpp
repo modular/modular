@@ -69,6 +69,25 @@ static void getAutoImportPaths(SmallVector<std::string> &paths) {
   if (!paths.empty())
     return;
 
+  // Try to see if we can find a `lib/mojo` directory in MODULAR_HOME. If we
+  // have it, use it as an auto-import path.
+  if (auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME")) {
+    for (auto &dir :
+         std::filesystem::recursive_directory_iterator{*modularHome}) {
+      // If we found a `lib/` dir, try and find a `mojo` dir inside it.
+      if (dir.is_directory() && dir.path().filename().string() == "lib") {
+        // If we have a `mojo` dir inside `lib`, then we're all done.
+        // std::filesystem::is_directory returns false unless the path exists
+        // *and* is a directory.
+        std::error_code ec;
+        if (std::filesystem::is_directory(dir.path() / "mojo", ec) && !ec) {
+          paths.push_back((dir.path() / "mojo").string());
+          return;
+        }
+      }
+    }
+  }
+
   // Otherwise, try to find modular relative to the current directory.
   std::filesystem::path path = std::filesystem::current_path();
   while (path != path.root_path()) {
