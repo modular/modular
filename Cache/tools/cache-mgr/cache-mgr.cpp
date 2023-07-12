@@ -166,20 +166,20 @@ putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, Cache::BufferRef value,
   AsyncValueRef<std::string> insert =
       cache->insert(std::move(key), std::move(value));
   auto outCh = AsyncValueRef<std::string>::allocate(runtime);
-  std::move(insert).andThenSync(
-      [outCh = outCh.copy(),
-       input = Buffer::get(input), useHex](AsyncValueRef<std::string> &&hash) mutable {
-        // If we have an error, report it.
-        if (hash.isError())
-          return std::move(outCh).setToError(hash.takeDiagnostic());
+  std::move(insert).andThenSync([outCh = outCh.copy(),
+                                 input = Buffer::get(input), useHex](
+                                    AsyncValueRef<std::string> &&hash) mutable {
+    // If we have an error, report it.
+    if (hash.isError())
+      return std::move(outCh).setToError(hash.takeDiagnostic());
 
-        // Otherwise, emplace the string so that we can report it to the
-        // user.
-        if (useHex)
-          return std::move(outCh).emplace(llvm::toHex(*hash, /*LowerCase=*/true));
+    // Otherwise, emplace the string so that we can report it to the
+    // user.
+    if (useHex)
+      return std::move(outCh).emplace(llvm::toHex(*hash, /*LowerCase=*/true));
 
-        std::move(outCh).emplace(llvm::encodeBase64(*hash));
-      });
+    std::move(outCh).emplace(llvm::encodeBase64(*hash));
+  });
   return outCh;
 }
 

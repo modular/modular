@@ -34,7 +34,8 @@ class SharedState;
 
 class Diags {
 public:
-  Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics, int maxNotesPerDiagnostic);
+  Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
+        int maxNotesPerDiagnostic);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
