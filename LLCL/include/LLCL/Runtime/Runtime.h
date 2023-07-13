@@ -21,6 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
+#include "LLCL/Support/GenericUniquePtr.h"
 #include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -115,12 +116,12 @@ public:
   /// below begin execution.
   template <typename T, typename... Args>
   T &emplaceConfig(Args &&...args) {
-    auto typeId = TypeID::get<T>();
-    assert(!configs.contains(typeId.getDenseIndex()) &&
+    auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
+    auto denseIndex = genericPtr.getTypeID().getDenseIndex();
+    assert(!configs.contains(denseIndex) &&
            "Runtime already holds configuration of type");
-    auto ptr = std::make_unique<Config<T>>(std::forward<Args>(args)...);
-    T &result = ptr->payload;
-    configs.insert({typeId.getDenseIndex(), std::move(ptr)});
+    T &result = *genericPtr.template get<T>();
+    configs.insert({denseIndex, std::move(genericPtr)});
     return result;
   }
 
@@ -129,12 +130,11 @@ public:
   /// on the assumption no further calls to emplaceConfig will be made.
   template <typename T>
   const T *getConfig() const {
-    auto typeId = TypeID::get<T>();
-    auto itr = configs.find(typeId.getDenseIndex());
+    auto denseIndex = TypeID::get<T>().getDenseIndex();
+    auto itr = configs.find(denseIndex);
     if (itr == configs.end())
       return nullptr;
-    auto ptr = static_cast<Config<T> *>(itr->second.get());
-    return &ptr->payload;
+    return itr->second.template get<T>();
   }
 
 private:
@@ -176,30 +176,10 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
-  /// Base class for configuration objects.
-  struct ConfigBase {
-    ConfigBase() = default;
-
-    /// Though we have TypeID::getValueDestructor, and could with a bit of
-    /// hackery destroy any Config<T> given only TypeID::get<T>(), it requires
-    /// ensuring Config::payload is always placed after this object. I think
-    /// that's too obscure to be worth avoiding the vtable, and adds a ton
-    /// of padding anyways.
-    virtual ~ConfigBase() = default;
-  };
-
-  /// Holds the payload for configuration object of type T.
-  template <typename T>
-  struct Config : public ConfigBase {
-    T payload;
-    template <typename... Args>
-    Config(Args &&...args) : payload(std::forward<Args>(args)...) {}
-    ~Config() override = default;
-  };
-
   /// A map from globally unique type identifiers TypeID::get<T>() (using
-  /// their 'dense index' form) to an instance of Config<T>.
-  DenseMap<size_t, std::unique_ptr<ConfigBase>> configs;
+  /// their 'dense index' form) to GenericUniquePtr holding the config object
+  /// of type T.
+  DenseMap<size_t, GenericUniquePtr> configs;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };
