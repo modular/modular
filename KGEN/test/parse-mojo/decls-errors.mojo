@@ -157,19 +157,6 @@ fn testThingWithStaticMethod():
 fn cant_raise_return(a: Error) raises -> Error:
   return a
 
-
-fn top_level_fn():
-    @noncapturing
-    # expected-error @below {{cannot mark a function with capturing closure parameters as @noncapturing}}
-    fn not_really_thin[func: fn() capturing -> Int]():
-        return
-    @noncapturing
-    @closure
-    # expected-error @below {{cannot mark function as both @noncapturing and @closure}}
-    fn both_decorators():
-        return
-    return
-
 # expected-note @+2 {{consider passing by reference instead}}
 # expected-error @+1 {{'def' requires argument type 'ThingWithStaticMethod' to be copyable, but it doesn't provide a '__copyinit__' method}}
 def use_non_copyable_type(a: ThingWithStaticMethod):
