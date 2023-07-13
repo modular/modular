@@ -19,6 +19,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -540,6 +541,15 @@ LogicalResult LIT::FuncOp::verify() {
       return emitOpError("expected external function body to contain a single "
                          "`lit.extern_func`");
   }
+
+  // If the scope is available in the location, we verify it's the right type.
+  if (DebugInfo::DIScopeAttr scope = DebugInfo::extractScope(getLoc())) {
+    if (!isa<DebugInfo::DISubprogramAttr>(scope)) {
+      return emitOpError("must have subprogram scope in location, but got ")
+             << scope;
+    }
+  }
+
   return success();
 }
 
