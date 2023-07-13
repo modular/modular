@@ -63,6 +63,8 @@ struct ForLoopBoundsAndSteps {
   Value lowerBound;
   Value upperBound;
   Value step;
+  // Position number in the BlockArgument list where the induction variable is.
+  int64_t inductionVarArgNumber;
 };
 
 } // namespace
@@ -121,12 +123,15 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
   return result;
 }
 
-static Value getValueIfConstInteger(Value v, LoopOp loop) {
+static Value
+getValueIfConstInteger(Value v, LoopOp loop,
+                       std::optional<int64_t> &inductionVarArgNumber) {
   Value result;
   if (auto arg = dyn_cast<BlockArgument>(v)) {
     // Return the initial value of a block argument if it is constant.
+    inductionVarArgNumber = arg.getArgNumber();
     Value input = loop->getOperand(arg.getArgNumber());
-    result = getValueIfConstInteger(input, loop);
+    result = getValueIfConstInteger(input, loop, inductionVarArgNumber);
   } else if (mlir::matchPattern(v, mlir::m_Constant())) {
     // If the value v is a constant get the value.
     result = v;
@@ -144,61 +149,116 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // This is pretty limited assumption to bootstrap loop unrolling.
   // This can be improved to support more general for loops.
 
-  // Infer loop stride from ContinueOp's input operand expression.
-  Value nextIter = continueOp.getOperand(continueOp.getNumOperands() - 1);
-  Value stride;
-  Operation *nextIterOp = nextIter.getDefiningOp();
-  if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
-    Value input0 = nextIterOp->getOperand(0);
-    Value input1 = nextIterOp->getOperand(1);
-    if (auto blockArg = dyn_cast<BlockArgument>(input0))
-      stride = getValueIfConstInteger(input1, loop);
-  }
-  // Bail if we can't match pattern to find the stride value.
-  if (!stride)
-    return {};
-
   // Infer loop start and end from BreakOp's parent IfOp's operand expression.
   // For example:
   // %index1 = kgen.param.constant = <1>
   // %index2 = kgen.param.constant = <2>
   // %index6 = kgen.param.constant = <6>
   // %idx0 = index.constant 0
-  // hlcf.loop (%arg0 = %index1 : index) {
-  //    %0 = index.cmp slt(%arg0, %index9) # start = 1, end = 9
-  //    hlcf.if %0 {
+  // %0 = hlcf.loop (%arg0 = %index1 : index, %arg1 = %index2: index, %arg2 =
+  // %index6) {
+  //    %1 = index.cmp slt(%arg0, %index9) # start = 1, end = 9
+  //    hlcf.if %1 {
   //      hlcf.yield
   //    } else {
-  //      hlcf.break
+  //      hlcf.break %arg1
   //    }
   //    %1 = index.add %arg0, %index2 # stride = 2
   //    ....
   //    hlcf.continue %1 : index
   // }
   //
+  // From hlcf.if %1, we can infer that %arg0 is the induction variable
+  // (inductionVarArgNumber = 0)
+  // From hlcf.break %arg1, we know that %arg1 is the return value, and the rest
+  // will be other loop carried variable
   IfOp ifOp = cast<IfOp>(breakOp->getParentOp());
   Value ifCond = ifOp.getOperand();
   Value start;
   Value end;
+  // Position number in the BlockArgument list where the induction variable is.
+  // Return empty value if we can't infer this number.
+  std::optional<int64_t> inductionVarArgNumber;
   if (auto cmp = dyn_cast<mlir::index::CmpOp>(ifCond.getDefiningOp())) {
     switch (cmp.getPred()) {
     case mlir::index::IndexCmpPredicate::SLT:
-      start = getValueIfConstInteger(cmp.getLhs(), loop);
-      end = getValueIfConstInteger(cmp.getRhs(), loop);
+      start = getValueIfConstInteger(cmp.getLhs(), loop, inductionVarArgNumber);
+      end = getValueIfConstInteger(cmp.getRhs(), loop, inductionVarArgNumber);
       break;
     case mlir::index::IndexCmpPredicate::SGT:
-      start = getValueIfConstInteger(cmp.getRhs(), loop);
-      end = getValueIfConstInteger(cmp.getLhs(), loop);
+      start = getValueIfConstInteger(cmp.getRhs(), loop, inductionVarArgNumber);
+      end = getValueIfConstInteger(cmp.getLhs(), loop, inductionVarArgNumber);
       break;
     default:
       return {};
     }
   }
 
-  if (start && end)
-    return ForLoopBoundsAndSteps{start, end, stride};
+  if (!start || !end || !inductionVarArgNumber)
+    return {};
 
-  return {};
+  // Infer loop stride from ContinueOp's input operand expression.
+  Value nextIter = continueOp.getOperand(inductionVarArgNumber.value());
+  Value stride;
+  std::optional<int64_t> argNum;
+  Operation *nextIterOp = nextIter.getDefiningOp();
+  if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
+    Value input0 = nextIterOp->getOperand(0);
+    Value input1 = nextIterOp->getOperand(1);
+    if (auto blockArg = dyn_cast<BlockArgument>(input0))
+      stride = getValueIfConstInteger(input1, loop, argNum);
+  }
+
+  // Bail if we can't match pattern to find the stride value.
+  if (!stride)
+    return {};
+
+  return ForLoopBoundsAndSteps{start, end, stride,
+                               inductionVarArgNumber.value()};
+}
+
+// Reorder values in the following order:
+// 1. Value at inductionVarArgNumber.
+// 2. Elements with indices in firstPartIndices.
+// 3. Everything else in between.
+static SmallVector<Value>
+reorderValues(ValueRange values,
+              const llvm::SetVector<int64_t> &firstPartIndices,
+              int64_t inductionVarArgNumber) {
+  SmallVector<Value> result;
+  SmallVector<Value> secondPart;
+  result.push_back(values[inductionVarArgNumber]);
+  for (int64_t i : llvm::seq<int64_t>(0, values.size())) {
+    if (!firstPartIndices.contains(i) && i != inductionVarArgNumber)
+      secondPart.push_back(values[i]);
+    else if (i != inductionVarArgNumber)
+      result.push_back(values[i]);
+  }
+
+  llvm::append_range(result, secondPart);
+  return result;
+}
+
+// Reorder values in the following order:
+// 1. Value at inductionVarArgNumber.
+// 2. Elements with indices in firstPartIndices.
+// 3. Everything else in between.
+// Each segment is a SmallVector so the hlcf.for.yield can use to create the
+// operation.
+static SmallVector<SmallVector<Value>>
+reorderValueIntoGroups(ValueRange values,
+                       const llvm::SetVector<int64_t> &firstPartIndices,
+                       int64_t inductionVarArgNumber) {
+  SmallVector<SmallVector<Value>> result(3);
+  result[0].push_back(values[inductionVarArgNumber]);
+
+  for (int64_t i = 0, e = values.size(); i != e; ++i) {
+    if (!firstPartIndices.contains(i) && i != inductionVarArgNumber)
+      result[2].push_back(values[i]);
+    else if (i != inductionVarArgNumber)
+      result[1].push_back(values[i]);
+  }
+  return result;
 }
 
 void RaiseForLoops::raiseForLoops(LoopOp loop) {
@@ -237,14 +297,38 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
 
   mlir::IRRewriter rewriter{OpBuilder(loop)};
   IRMapping map;
+
+  // Collect return value arg numbers (indices).
+  llvm::SetVector<int64_t> returnValueArgNumbers;
+  for (auto op : breakOp.getOperands()) {
+    if (auto arg = dyn_cast<BlockArgument>(op)) {
+      returnValueArgNumbers.insert(arg.getArgNumber());
+    } else {
+      // Assuming that we only handle break has operands that are all
+      // BlockArguments.
+      return;
+    }
+  }
+
+  // Reorder loop operands to put return values first, and iterator last.
+  SmallVector<Value> forOperands =
+      reorderValues(loop->getOperands(), returnValueArgNumbers,
+                    loopInfo->inductionVarArgNumber);
+
+  // Create the new ForOp with reordered operands.
   ForOp forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
-      loopInfo->upperBound, loopInfo->step, loop.getOperands(),
+      loopInfo->upperBound, loopInfo->step, forOperands,
       loop.getUnrollFactorAttr());
 
+  // Create the block for the new ForOp.
   Block *block = rewriter.createBlock(&forOp.getBody());
-
-  for (BlockArgument arg : body.getArguments()) {
+  // Reorder block arguments and add them to the new block so that they match
+  // ForOp's operands order.
+  SmallVector<Value> reorderedArgs =
+      reorderValues(body.getArguments(), returnValueArgNumbers,
+                    loopInfo->inductionVarArgNumber);
+  for (Value arg : reorderedArgs) {
     rewriter.replaceAllUsesWith(
         arg, block->addArgument(arg.getType(), arg.getLoc()));
   }
@@ -263,7 +347,17 @@ void RaiseForLoops::raiseForLoops(LoopOp loop) {
       op.moveAfter(prevOp);
       if (auto c = dyn_cast<ContinueOp>(op)) {
         rewriter.setInsertionPointAfter(&op);
-        rewriter.create<HLCF::ForContinueOp>(op.getLoc(), c.getOperands());
+
+        // Reorder ContinueOp's operands to match ForOp's operand order
+        // (return values first, loop interator last, and other loop carried
+        // variables in between.)
+        SmallVector<SmallVector<Value>> reorderedOperands =
+            reorderValueIntoGroups(c.getOperands(), returnValueArgNumbers,
+                                   loopInfo->inductionVarArgNumber);
+        // Create `hlcf.for.yield` with the reordered operands.
+        rewriter.create<HLCF::ForYieldOp>(
+            op.getLoc(), reorderedOperands[0].front(), reorderedOperands[1],
+            reorderedOperands[2]);
         c->dropAllReferences();
         rewriter.eraseOp(c);
       }

@@ -87,9 +87,9 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
   Region &scopeBody = loop->getParentOp()->getRegion(0);
   Block &body = loop.getBody().front();
 
-  ForContinueOp newForContinue;
+  ForYieldOp newForYield;
   SmallVector<Value> retValues;
-  retValues = loop.getInitArgs();
+  retValues = loop.getIterArgs();
 
   for (int64_t i = 0; i < count; ++i) {
     IRMapping map;
@@ -103,9 +103,9 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
 
       Operation *prevOp = nullptr;
       for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-        if (auto y = dyn_cast<ForContinueOp>(op)) {
-          // Don't move last ForContinueOp.
-          newForContinue = y;
+        if (auto y = dyn_cast<ForYieldOp>(op)) {
+          // Don't move last ForYieldOp.
+          newForYield = y;
           continue;
         }
 
@@ -122,7 +122,7 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
       rewriter.inlineBlockBefore(block, loop, retValues);
 
       // Get result value of the loop.
-      retValues = newForContinue.getOperands();
+      retValues = newForYield.getOperands();
       break;
     }
 
@@ -131,24 +131,24 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
 
     for (Operation &op : body.getOperations()) {
       auto newOp = rewriter.clone(op, map);
-      if (auto y = dyn_cast<ForContinueOp>(newOp))
-        newForContinue = y;
+      if (auto y = dyn_cast<ForYieldOp>(newOp))
+        newForYield = y;
     }
 
     // Add unrolled block before the loop.
     rewriter.inlineBlockBefore(block, loop, retValues);
 
     // Update next iteration's inputs
-    retValues = newForContinue.getOperands();
+    retValues = newForYield.getOperands();
 
-    // Erase ForContinueOp.
-    rewriter.eraseOp(newForContinue);
+    // Erase ForYieldOp.
+    rewriter.eraseOp(newForYield);
   }
 
-  // Replace the loop return value, assuming the last operand of ForContinueOp
-  // is the induction variable.
-  loop.replaceAllUsesWith(
-      llvm::drop_end(retValues, retValues.size() - loop.getNumResults()));
+  // Replace the loop return value, which are first group of operands of
+  // ForYieldOp.
+  loop.replaceAllUsesWith(llvm::drop_begin(
+      llvm::drop_end(retValues, retValues.size() - loop.getNumResults() - 1)));
 
   // Erase the original loop.
   rewriter.eraseOp(loop);

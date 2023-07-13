@@ -54,7 +54,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     `scf.for.continue`.
 
     The operation can define loop-carried values and operation results. The
-    operand types of `hlcf.for.continue` operations in the immediate loop scope
+    operand types of `hlcf.for.yield` operations in the immediate loop scope
     must match the initArgs types of the operation. The operand types of
     `hlcf.break` in the immediate loop scope must match the result types of the
     operation.
@@ -64,26 +64,32 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     ```mlir
      hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
        %5 = index.add %arg0, %c2
-       hlcf.for.continue %5 : index
+       hlcf.for.yield[induction_var (%5 : index)] [retvals ()] [iterargs ()]
      } {unrollFactor = #hlcf<loop_unroll_full full>}
     ```
 
     or
 
     ```mlir
-     %0:2 = hlcf.for [%lb to %up step %step]
-                    (%arg0 = %i: index, %arg1 = %k: index) -> (index, index) {
+     %0 = hlcf.for [%lb to %up step %step]
+                    (%arg1 = %k: index, %arg0 = %i: index) -> (index, index) {
          %3 = index.add %arg1, %index2
          %5 = index.add %arg0, %arg1
-         hlcf.for.continue %5, %3 : index, index, index
+         hlcf.for.yield[induction_var (%3 : index)] [retvals (%5: index)] [iterargs ()]
        } {unrollFactor = "full"}
     ```
+
+   The arg operands are ordered in three parts:
+   1. Induction variable (one value). (%arg1 = %k: index) in the example above.
+   2. Return value args. (%arg0 = %i: index) in the example above.
+   3. Other loop carried values. Zero value in the example above.
+
   }];
 
   let arguments = (ins Index:$lowerBound,
                        Index:$upperBound,
                        Index:$step,
-                       Variadic<AnyType>:$initArgs,
+                       Variadic<AnyType>:$iterArgs,
                        AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>:$unrollFactor);
 
   let results = (outs Variadic<AnyType>:$results);
@@ -93,7 +99,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     ` ``[` $lowerBound
     ` ``to` $upperBound
     ` ``step` $step `]`
-    custom<For>($initArgs, type($initArgs), type($results), $body) attr-dict
+    custom<For>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 
   let builders =[
@@ -101,10 +107,11 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                    "Value":$lowerBound,
                    "Value":$upperBound,
                    "Value":$step,
-                   "ValueRange":$initArgs), [{
-      build($_builder, $_state, results, lowerBound, upperBound, step, initArgs,
+                   "ValueRange":$iterArgs), [{
+      build($_builder, $_state, results, lowerBound, upperBound, step, iterArgs,
         HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
-    }]>];
+    }]>
+  ];
 
   let extraClassDeclaration = [{
     // Get integer value for lowerBound.
@@ -181,7 +188,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 
   let arguments = (ins Variadic<AnyType>:$operands,
                        OptionalAttr<StrAttr>:$label,
-                       OptionalAttr<AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>>:$unrollFactor);
+                       OptionalAttr<AnyAttrOf<
+                         [HLCF_LoopUnrollFullAttr, IndexAttr]>>:$unrollFactor);
 
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
@@ -205,7 +213,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
                    "ValueRange":$operands,
                    "StringAttr":$label), [{
       build($_builder, $_state, results, operands, label,
-        HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
+        HLCF::LoopUnrollFullAttr::get(
+          $_state.getContext(), HLCF::LoopUnrollFull::None));
     }]>
   ];
 
@@ -469,26 +478,32 @@ def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// ForContinueOp
+// ForYieldOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ForContinueOp : HLCFTerminatorOp<"for.continue", [
+def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
     ParentOneOf<["ForOp"]>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "continue operation in a for-loop";
+    DeclareOpInterfaceMethods<InterpreterOpInterface>, AttrSizedOperandSegments]> {
+  let summary = "yield operation in a for-loop";
   let description = [{
-    The `hlcf.for.continue` operation is a control-flow terminator that transfers
+    The `hlcf.for.yield` operation is a control-flow terminator that transfers
     control-flow either back to the beginning or after the parent `hlcf.for`
     operation, depending on whether the for-loop continues or not.
     The operation expects its operand types to match the types of the
     `initArgs` of `hlcf.for`.
+
+    There are three segments of operands:
+    1. Induction variable. There should always be one value.
+    2. Return value args. 0 - n values that return as results of the parent
+       for-loop when the induction variable exceeds the upperbound.
+    3. Other loop carried values. 0 - n values.
 
     Example:
 
     ```mlir
     hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
       %5 = index.add %arg0, %c2
-      hlcf.for.continue %5 : index
+      hlcf.for.yield[induction_var (%5 : index)] [retvals ()] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full full>}
     ```
   }];
@@ -498,7 +513,15 @@ def HLCF_ForContinueOp : HLCFTerminatorOp<"for.continue", [
     Value getForInductionVariableOperand();
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Index:$inductionVar,
+                       Variadic<AnyType>:$returnValues,
+                       Variadic<AnyType>:$otherIterValues);
+
+  let assemblyFormat =[{
+    ` ``[``induction_var`` ``(`$inductionVar `:` type($inductionVar)`)``]`
+    ` ``[``retvals`` ``(`($returnValues `:` type($returnValues)^)?`)``]`
+    `[``iterargs`` ``(`($otherIterValues `:` type($otherIterValues)^)?`)``]` attr-dict
+  }];
 
   let hasVerifier = 1;
 }

@@ -16,7 +16,7 @@ kgen.func @zero_starting_range() {
     %0 = index.sub %arg0, %index1
     %1 = index.sub %index2, %arg0
     kgen.call @foo(%1) : (index) -> ()
-    hlcf.for.continue %0 : index
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return
 }
@@ -37,7 +37,7 @@ kgen.func @sequential_range() {
   hlcf.for [%index1 to %index4 step %index1] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index1
     kgen.call @foo(%arg0) : (index) -> ()
-    hlcf.for.continue %0 : index
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return
 }
@@ -59,7 +59,7 @@ kgen.func @strided_range() {
   hlcf.for [%index1 to %index6 step %index2] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index2
     kgen.call @foo(%arg0) : (index) -> ()
-    hlcf.for.continue %0 : index
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return
 }
@@ -94,9 +94,9 @@ kgen.func @nested_unroll_loops() {
       %3 = index.add %arg1, %index2
       %4 = index.add %1, %arg1
       kgen.call @foo(%4) : (index) -> ()
-      hlcf.for.continue %3 : index
+      hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full full>}
-    hlcf.for.continue %0 : index
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return
 }
@@ -135,24 +135,25 @@ kgen.func @loop_carried_dependency() {
   %index8 = kgen.param.constant = <8>
   %array = kgen.param.constant: array<0, i1> = <[]>
   %index0 = kgen.param.constant = <0>
-  %0:2 = hlcf.for [%index1 to %index9 step %index2] (%arg0 = %index0 : index, %arg1 = %index0 : index, %arg2 = %index1 : index) -> (index, index) {
+  %0:2 = hlcf.for [%index1 to %index9 step %index2] (%arg2 = %index1 : index, %arg0 = %index0 : index, %arg1 = %index0 : index) -> (index, index) {
     %3 = index.add %arg2, %index2
     kgen.call @foo(%arg2) : (index) -> ()
     %5 = index.add %arg0, %arg2
-    %6 = hlcf.for [%index4 to %index8 step %index2] (%arg3 = %arg1 : index, %arg4 = %index4 : index) -> index {
+    %6 = hlcf.for [%index4 to %index8 step %index2] (%arg4 = %index4 : index, %arg3 = %arg1 : index) -> index {
       %7 = index.add %arg4, %index2
       %8 = index.add %arg2, %arg4
       kgen.call @foo(%8) : (index) -> ()
       %10 = index.add %arg3, %arg4
-      hlcf.for.continue %10, %7 : index, index
+      hlcf.for.yield [induction_var (%7 : index)] [retvals (%10: index)] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full full>}
-    hlcf.for.continue %5, %6, %3 : index, index, index
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%5: index)] [iterargs (%6: index)]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
   kgen.return
 }
 
+// CHECK-LABEL: @loop_has_side_effect
 kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) -> index {
   // CHECK: [[IDX:%.*]] = kgen.param.constant = <1>
   // CHECK-NEXT: [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
@@ -171,7 +172,7 @@ kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, 
   %index1 = kgen.param.constant = <1>
   %index0 = kgen.param.constant = <0>
   %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  %1 = hlcf.for [%idx0 to %index10 step %index1] (%arg1 = %index0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>, %arg3 = %index10 : index) -> index {
+  %1 = hlcf.for [%idx0 to %index10 step %index1] (%arg3 = %index10 : index, %arg1 = %index0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)
     %3 = index.sub %arg3, %index1
     %4 = pop.load %arg2 align 1  : !pop.pointer<scalar<f32>>
@@ -179,7 +180,8 @@ kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, 
     %6 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
     %7 = index.add %arg1, %6
     %8 = pop.offset %arg2[%index1] : !pop.pointer<scalar<f32>>
-    hlcf.for.continue %7, %8, %3 : index, !pop.pointer<scalar<f32>>, index
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !pop.pointer<scalar<f32>>)]
+
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return %1 : index
 }
