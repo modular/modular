@@ -24,6 +24,7 @@ add_modular_unittest(
   FunctionExtrasTest.cpp
   HostTest.cpp
   HMACTest.cpp
+  JSONTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
   TensorShapeTest.cpp

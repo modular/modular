@@ -13,6 +13,7 @@ add_modular_library(MSupport
   FileSystemExtras.cpp
   HMAC.cpp
   Host.cpp
+  JSON.cpp
   MicroBenchmark.cpp
   Target.cpp
   TimeProfiler.cpp
