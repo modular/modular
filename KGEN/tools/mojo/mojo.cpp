@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Build/mojo-build.h"
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
 #include "Package/mojo-package.h"
@@ -48,6 +49,7 @@ int main(int argc, char **argv) {
 
   // Register subcommands and their options.
   SubcommandRegistry registry;
+  registerBuildSubcommand(registry);
   registerDemangleSubcommand(registry);
   registerDocSubcommand(registry);
   registerPackageSubcommand(registry);
