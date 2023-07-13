@@ -635,13 +635,8 @@ def bar():
   ...
 
 # expected-error @+1 {{my+foo is not a valid C identifier}}
-@export("my+foo")
+@export("my+foo", ABI="C")
 def bad_name():
-  ...
-
-# expected-error @+1 {{10foo is not a valid C identifier}}
-@export("10foo")
-def number_name():
   ...
 
 # expected-note @+1 {{previous export here}}

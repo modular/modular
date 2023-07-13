@@ -10,7 +10,7 @@ from SIMD import Float32
 from IO import print
 
 
-@export("bar")
+@export("bar", ABI="C")
 # CHECK: extern float bar();
 fn foo() -> Float32:
     # OK to alias, not proper main

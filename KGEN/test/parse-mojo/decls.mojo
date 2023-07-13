@@ -1339,22 +1339,26 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)
 
-# CHECK: lit.globalvar.decl export C @exported_alias {{.*}} {linkageName = "exported_global"}
+# CHECK: lit.globalvar.decl export @exported_alias {{.*}} {linkageName = "exported_global"}
 @export("exported_global")
 var exported_alias = 1
 # CHECK: lit.globalvar.decl export C @exported_global_var {{.*}} {linkageName = "exported_global_var"}
-@export
+@export(ABI="C")
 var exported_global_var = 1
 
 ##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##
 
-@export("my_named_export")
+@export("my_named_export", ABI="C")
 # CHECK: lit.func export C @"export_me()"
 # CHECK-SAME: linkageName = "my_named_export"
 def export_me() -> None:
     ...
+
+@export
+# CHECK: lit.func export @"not_c_exported()"
+fn not_c_exported(): pass
 
 ##===----------------------------------------------------------------------===##
 # Decorators

@@ -1423,7 +1423,7 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
 /// state to ensure no duplicate exports.
 static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
                         StringRef unmangledName, StringRef aliasName,
-                        ExportInterface itf) {
+                        ExportInterface itf, bool isCExport = false) {
   if (isa<StructDeclOp>(*decl.getParentDecl())) {
     shared.emitError(loc, "methods cannot be exported");
     return;
@@ -1445,8 +1445,10 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 
   llvm::TypeSwitch<ASTDecl &, void>(decl).Case<LIT::FuncOp, GlobalVarDeclOp>(
       [aliasName](auto op) { op.setLinkageName(aliasName); });
-  // TODO: Allow non-C export.
-  itf.setCExported();
+  if (isCExport)
+    itf.setCExported();
+  else
+    itf.setExported();
 
   shared.declResolver->registerAndCheckExport(aliasName, loc);
 }
@@ -1456,21 +1458,40 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
                         StringRef unmangledName, const CallNode &node,
                         ExportInterface itf) {
-  if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
-      !isa<StringLiteralNode>(node.args[0].expr)) {
-    shared.emitError(
-        node.getLoc(),
-        "@export requires a string specifying the name of the exported symbol")
-        << node.getParenRange();
+  if (node.args.size() == 0 || node.args.size() > 2) {
+    shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
     return;
   }
-  std::string aliasName =
-      cast<StringLiteralNode>(node.args[0].expr)->getValue();
-  if (!isCIdentifier(aliasName)) {
-    shared.emitError(loc, aliasName) << " is not a valid C identifier";
+
+  std::optional<std::string> exportABI;
+  std::optional<std::string> aliasName;
+  for (const CallArgument &arg : node.args) {
+    if (arg.kind == CallArgument::kKeyword &&
+        isa<StringLiteralNode>(arg.expr) && arg.name == "ABI") {
+      exportABI = cast<StringLiteralNode>(arg.expr)->getValue();
+      if (*exportABI != "C") {
+        shared.emitError(arg.getLoc(),
+                         "only \"C\" ABI is supported at the moment");
+        return;
+      }
+    } else if (arg.kind == CallArgument::kPositional &&
+               isa<StringLiteralNode>(arg.expr)) {
+      aliasName = cast<StringLiteralNode>(arg.expr)->getValue();
+    } else {
+      shared.emitError(node.getLoc(),
+                       "@export requires a string specifying the "
+                       "name of the exported symbol");
+      return;
+    }
+  }
+
+  if (exportABI && aliasName && !isCIdentifier(*aliasName)) {
+    shared.emitError(loc, *aliasName) << " is not a valid C identifier";
     return;
   }
-  applyExport(loc, shared, decl, unmangledName, aliasName, itf);
+  applyExport(loc, shared, decl, unmangledName,
+              aliasName ? StringRef(*aliasName) : unmangledName, itf,
+              exportABI.has_value());
 }
 
 namespace {
