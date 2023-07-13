@@ -1728,9 +1728,7 @@ struct FnDecorators : public SharedStateUser {
       : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)) {}
 
   void apply(StringRef baseName,
-             SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs);
-  void applyLate(StringRef unmangledName, ExprNode *decorator,
-                 SignatureType &signature);
+             ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
@@ -1743,25 +1741,13 @@ private:
 };
 } // namespace
 
-void FnDecorators::applyAdaptive(const DeclRefNode &node) {
-  if (funcOp.getIsAdaptive())
-    emitError(node.getLoc(), "only one '@adaptive' decorator is allowed")
-        << node.getRange();
-
-  funcOp.setIsAdaptive(true);
-}
-
 // Apply all signature decorators.
 void FnDecorators::apply(
     StringRef baseName,
-    SmallVector<std::pair<ExprNode *, LexerCursor>> &decoratorExprs) {
-  SmallVector<std::pair<ExprNode *, LexerCursor>> unprocessed;
+    ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs) {
   for (auto [decorator, cursor] : decoratorExprs) {
-    bool processedIt = false;
-
     // Process all the decorators we know about.
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      processedIt = true;
       if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), baseName, baseName);
       else if (declRef->spelling == "staticmethod")
@@ -1772,14 +1758,19 @@ void FnDecorators::apply(
         applyAdaptive(*declRef);
       else if (declRef->spelling == "parameter")
         funcOp.setIsParametric(true);
+      else if (declRef->spelling == "noncapturing")
+        funcOp.setIsNoncapturing(true);
+      else if (declRef->spelling == "closure")
+        funcOp.setIsClosure(true);
       else
-        processedIt = false;
+        emitError(decorator->getLoc(), "unsupported decorator: @")
+            << declRef->spelling << declRef->getRange();
+      continue;
     }
 
     // `x()` forms.
     if (auto callNode = dyn_cast<CallNode>(decorator)) {
       if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-        processedIt = true;
         // @always_inline("nodebug")
         if (declRef->spelling == "always_inline" &&
             callNode->args.size() == 1 &&
@@ -1787,15 +1778,21 @@ void FnDecorators::apply(
           funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
         else if (declRef->spelling == "export")
           applyExport(decorator->getLoc(), baseName, *callNode);
-        else
-          processedIt = false;
+        continue;
       }
     }
 
-    if (!processedIt)
-      unprocessed.push_back({decorator, cursor});
+    emitError(decorator->getLoc(), "unsupported decorator")
+        << decorator->getRange();
   }
-  decoratorExprs = unprocessed;
+}
+
+void FnDecorators::applyAdaptive(const DeclRefNode &node) {
+  if (funcOp.getIsAdaptive())
+    emitError(node.getLoc(), "only one '@adaptive' decorator is allowed")
+        << node.getRange();
+
+  funcOp.setIsAdaptive(true);
 }
 
 void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
@@ -1843,24 +1840,45 @@ void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
   applyExport(loc, unmangledName, aliasName);
 }
 
-void FnDecorators::applyLate(StringRef unmangledName, ExprNode *decorator,
-                             SignatureType &signature) {
-  // Process all the decorators we know about.
-  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "noncapturing") {
-      signature = signature.getWithFnEffects(
-          bitEnumClear(signature.getFnEffects(), FnEffects::Capturing));
-    } else if (declRef->spelling == "closure") {
-      signature = signature.getWithFnEffects(signature.getFnEffects() |
-                                             FnEffects::Capturing);
-    } else {
-      emitError(decorator->getLoc(), "unsupported decorator: @")
-          << declRef->spelling << declRef->getRange();
-    }
-    return;
+/// Given a function with `isNoncapturing` or `closure` bits, its context, and
+/// its signature, determine whether the function effects needs to have
+/// `capturing` in it.
+/// FIXME: The language modeling here is a mess. It needs more thought.
+static FnEffects
+determineFunctionCaptureBit(ParserBase &p, LIT::FuncOp funcOp,
+                            FnEffects effects,
+                            ArrayRef<ParamDeclAttr> inputParamDecls,
+                            ArrayRef<ParamDeclAttr> resultParamDecls) {
+  // Nested functions are capturing by default.
+  if (funcOp->getParentOfType<LIT::FuncOp>() || funcOp.getIsClosure())
+    effects = effects | FnEffects::Capturing;
+  // Any function that contains a capturing closure as a parameter is itself
+  // capturing.
+  // TODO: Check struct elements too.
+  bool transitivelyCaptures = llvm::any_of(
+      llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls),
+      [](ParamDeclAttr decl) {
+        if (auto signature = dyn_cast<SignatureType>(decl.getType()))
+          return signature.isCapturing();
+        return false;
+      });
+  if (transitivelyCaptures) {
+    effects = effects | FnEffects::Capturing;
+    // If the user tried to mark a transitive capturing closure as thin, emit an
+    // error.
   }
-  emitError(decorator->getLoc(), "unsupported decorator")
-      << decorator->getRange();
+  if (funcOp.getIsNoncapturing()) {
+    if (transitivelyCaptures) {
+      p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
+                                   "closure parameters as @noncapturing");
+    } else if (funcOp.getIsClosure()) {
+      p.emitError(funcOp.getLoc(),
+                  "cannot mark function as both @noncapturing and @closure");
+    } else {
+      effects = bitEnumClear(effects, FnEffects::Capturing);
+    }
+  }
+  return effects;
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
@@ -1976,9 +1994,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   decl.hasReferenceError |= sigDecl.hasReferenceError;
   decl.declsInScope = std::move(sigDecl.declsInScope);
 
-  // Nested functions are capturing by default.
-  if (funcOp->getParentOfType<FuncOp>())
-    effects = effects | FnEffects::Capturing;
+  effects = determineFunctionCaptureBit(p, funcOp, effects, inputParamDecls,
+                                        resultParamDecls);
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
@@ -1992,19 +2009,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Handle function effects.
   SmallVector<Location> argLocs;
   SmallVector<StringAttr> argNames;
-
-  // Any function that contains a capturing closure as a parameter is itself
-  // capturing.
-  // TODO: Check struct elements too.
-  bool transitivelyCaptures = llvm::any_of(
-      llvm::concat<ParamDeclAttr>(inputParamDecls, resultParamDecls),
-      [](ParamDeclAttr decl) {
-        if (auto signature = dyn_cast<SignatureType>(decl.getType()))
-          return signature.isCapturing();
-        return false;
-      });
-  if (transitivelyCaptures)
-    effects = effects | FnEffects::Capturing;
 
   // If the function raises, it implicitly gets a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
@@ -2137,14 +2141,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
   }
 
-  // FIXME: Handle "late" decorators somehow else. They should be "body
-  // decorators" that are applied after the decl is fully resolved.
-  for (auto [decorator, cursor] : decoratorExprs) {
-    FnDecorators(decl, shared).applyLate(baseName, decorator, signature);
-    if (funcOp.getSignature() != signature)
-      funcOp.setSignature(signature);
-  }
-
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
   if (funcOp->getParentOfType<LIT::FuncOp>())
@@ -2152,12 +2148,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
-
-  // If the user tried to mark a transitive capturing closure as thin, emit an
-  // error.
-  if (transitivelyCaptures && !signature.isCapturing())
-    return p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
-                                        "closure parameters as @noncapturing");
 
   if (!funcOp->getParentOfType<FuncOp>() || !signature.isCapturing())
     funcOp.setIsParametric(true);

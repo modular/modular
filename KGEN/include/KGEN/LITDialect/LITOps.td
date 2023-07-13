@@ -64,6 +64,8 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isStatic,
     UnitAttr:$isAdaptive,
     UnitAttr:$isParametric,
+    UnitAttr:$isNoncapturing,
+    UnitAttr:$isClosure,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     KGEN_ExportKindAttr:$exportKind,
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
