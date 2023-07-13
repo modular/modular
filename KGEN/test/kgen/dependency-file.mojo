@@ -7,7 +7,7 @@
 # RUN: kgen -emit %s -o %t.o -d=%t.d
 # RUN: cat %t.d | FileCheck %s
 
-# CHECK: {{.*}}.o: {{.*}}Builtin.mojopkg
+# CHECK: {{.*}}.o: {{.*}}Int.mojo
 
 
 @export

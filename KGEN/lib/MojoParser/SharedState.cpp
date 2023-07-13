@@ -1087,9 +1087,6 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
       decl.hasReferenceError = true;
       return moduleState;
     }
-
-    // Add the package path to the set of included files.
-    impl->includedFiles.emplace_back(packagePath.str());
   }
 
   // Initialize the decl with the bytecode IR. The loaded package is the last
