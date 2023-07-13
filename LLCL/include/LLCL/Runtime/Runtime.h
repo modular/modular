@@ -21,7 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "Support/Telemetry/Telemetry.h"
+#include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -66,9 +66,7 @@ public:
 
   /// Return a reference to this runtime's TelemetryContext instance. If
   /// telemetry is disabled, this will return NOOP instruments.
-  M::Telemetry::TelemetryContext &getTelemetryContext() {
-    return telemetryContext;
-  }
+  RCRef<M::Telemetry::TelemetryContext> getTelemetryContext();
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -164,7 +162,7 @@ private:
 
   /// The TelemetryContext instance used by the runtime. It returns NOOP
   /// instruments if telemetry is disabled.
-  M::Telemetry::TelemetryContext telemetryContext;
+  RCRef<M::Telemetry::TelemetryContext> telemetryContext;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.

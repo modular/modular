@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -47,6 +48,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename),
+      telemetryContext(RCRef<M::Telemetry::TelemetryContext>::create()),
       runtimeIndex(M::LLCL::Globals::addRuntime(this)),
       readyChain(createReadyChain(*this)) {
 
@@ -72,6 +74,10 @@ Runtime::~Runtime() {
     if (auto E = profiler->write(profileFilename, "-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
+}
+
+RCRef<M::Telemetry::TelemetryContext> Runtime::getTelemetryContext() {
+  return telemetryContext.copy();
 }
 
 /// Cancel the current MEF Execution. This transitions this Runtime to the

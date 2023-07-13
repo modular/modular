@@ -23,6 +23,7 @@ add_modular_library(LLCLRuntime
   LLVMSupport
   MSupport
   Threads::Threads
+  MTelemetry
   )
 
 add_subdirectory(Globals)
