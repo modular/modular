@@ -6,6 +6,7 @@
 
 add_modular_tool(mojo
   mojo.cpp
+  Build/mojo-build.cpp
   Common/Compilation.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
@@ -16,6 +17,7 @@ add_modular_tool(mojo
   DEPENDS
   orc-rt-cas
   compiler-rt-cas
+  KGENCompilerRT-static
 
   LINK_COMPONENTS
   AllTargetsAsmParsers
@@ -50,6 +52,7 @@ add_driver_option_tablegen(Mojo DriverOptions.td
   MARKDOWN_NAME index
   EXTRA_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
 # Each subcommand generates its own option definitions.
+add_subdirectory(Build)
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
 add_subdirectory(Package)

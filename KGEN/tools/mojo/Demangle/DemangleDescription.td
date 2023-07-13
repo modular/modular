@@ -11,4 +11,4 @@ def DemangleDescription : MojoCommandDescription<
   "If the given name is a mangled Mojo symbol name, prints the demangled "
   "name. If no name is provided, one is read from standard input.",
   /*inputMetaVarName=*/"name", /*requiresInput=*/false,
-  /*variadicInput=*/false>, Index<4>;
+  /*variadicInput=*/false>, Index<5>;

@@ -51,3 +51,8 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.LLCLRuntime>
 )
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
+
+# Copy to the binary directory so that `mojo` can find this easily at runtime.
+add_custom_command(TARGET KGENCompilerRT-static POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:KGENCompilerRT-static> ${CMAKE_BINARY_DIR}/bin/
+)

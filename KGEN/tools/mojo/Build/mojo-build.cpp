@@ -1,0 +1,311 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "mojo-build.h"
+#include "../Common/Compilation.h"
+
+#include "Cache/CacheDialect/CacheDialect.h"
+#include "KGEN/CompilationOptions.h"
+#include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENCompiler.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
+#include "KGEN/LowerToObject.h"
+#include "KGEN/MojoParser.h"
+#include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/Driver/DriverSupport.h"
+#include "Support/FileSystemExtras.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "Support/MDialect/MAttrs.h"
+
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/FileUtilities.h"
+#include "mlir/Support/Timing.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/Program.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Target/TargetMachine.h"
+
+using namespace M;
+using namespace KGEN;
+using namespace mlir;
+
+//===----------------------------------------------------------------------===//
+// Command line argument parsing
+//===----------------------------------------------------------------------===//
+
+#define DRIVER_OPTIONS_PATH "Build/BuildOptions.inc"
+#include "Support/Driver/OptTable.inc"
+
+namespace {
+struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
+  BuildOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+};
+} // namespace
+
+/// Parses the command line arguments from the given `state` object.
+static std::optional<int> parseArgs(const State &state,
+                                    llvm::opt::InputArgList &args,
+                                    llvm::SourceMgr &sourceManager,
+                                    CompilationOptions &compilationOptions) {
+  // First, parse all arguments, in order to find the index of the input
+  // argument.
+  BuildOptTable options;
+  unsigned missingIndex = 0;
+  unsigned missingCount = 0;
+  args = options.ParseArgs(state.arguments, missingIndex, missingCount);
+
+  // If those arguments include `--help`, print help before checking any other
+  // arguments.
+  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
+    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
+#include "Build/BuildOptionsHelpText.inc"
+    );
+  }
+
+  if (args.hasArg(options::OPT_UNKNOWN)) {
+    int result = 1;
+    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
+      result = state.reportError("unrecognized argument '" +
+                                 arg->getSpelling() + "'\n");
+    return result;
+  }
+
+  if (!args.hasArg(options::OPT_INPUT))
+    return state.reportError("no input file provided");
+  if (args.hasMultipleArgs(options::OPT_INPUT)) {
+    std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
+    return state.reportError(llvm::formatv(
+        "too many input files, cannot process both '{0}' and '{1}'", inputs[0],
+        inputs[1]));
+  }
+
+  // Open the provided input file path, or exit with an error if it's not a
+  // valid argument that can be opened.
+  auto bufferOrErr =
+      openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
+  if (failed(bufferOrErr))
+    return state.reportError(bufferOrErr.getError());
+
+  // Initialize the source manager with the input file buffer.
+  sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
+
+  // Build the compilation options based on the provided arguments.
+  if (ErrorOrSuccess err = parseCompilationOptions(
+          state, args, compilationOptions, sourceManager, options::OPT_I,
+          options::OPT_L, options::OPT_target_triple, options::OPT_target_cpu,
+          options::OPT_target_features, options::OPT_no_optimization,
+          options::OPT_debug_level)) {
+    return state.reportError(err.getError());
+  }
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// Mojo program execution
+//===----------------------------------------------------------------------===//
+
+/// Given a module representing a Mojo program, compile the program to a static
+/// archive. Returns an unsuccessful exit code if the archive could not be
+/// created successfully, and nullopt otherwise.
+static std::optional<int>
+compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
+                       MLIRContext &context, const CompilationOptions &options,
+                       ModuleOp moduleOp, Cache::BufferRef &archive) {
+  mlir::PassManager pm(&context);
+  TargetInfoAttr target;
+  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
+      initializeExecutionEngine(runtime, pm, options, ExecutionEngineOptions(),
+                                /*isJIT=*/false, target);
+  if (failed(execEngineOr))
+    return state.reportError(execEngineOr.getError());
+  std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
+  auto &objectCompilerLayer = engine->getLayer<ObjectCompilerLayer>();
+  auto &compilerLayer = engine->getLayer<KGENCompilerLayer>();
+
+  // Add the module into the layer. This will actually compile it down to the
+  // post-elaboration phase, because before that phase we don't have flat
+  // symbols.
+  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp))
+    return state.reportError(err.getError());
+
+  // Generate a symbol table and an export map for the module post-compile.
+  SymbolTable symtab(moduleOp);
+  if (!symtab.lookup("main"))
+    return state.reportError("module does not contain a 'main' function");
+
+  // Generate an archive for the module.
+  auto standaloneOr =
+      objectCompilerLayer.getRawCompiler().produceStandaloneArchive(
+          symtab, getExportedSymbols(moduleOp), /*isJIT=*/false);
+  if (failed(standaloneOr))
+    return state.reportError("failed to produce an archive for the module: " +
+                             Twine(standaloneOr.getError()));
+  archive = std::move(*standaloneOr);
+  return std::nullopt;
+}
+
+/// Given a static archive generated from a mojo module, link an executable from
+/// that archive. Returns a successful exit code if the executable was linked
+/// successfully, otherwise returns a failure code.
+static int linkExecutable(const State &state,
+                          const llvm::opt::InputArgList &args,
+                          Cache::BufferRef &archive) {
+  // For now we just use the system C++ compiler as the linker on non-windows,
+  // which makes it a tad bit easier to link in the necessary system and runtime
+  // dependencies of KGENCompilerRT.
+#ifdef _WIN32
+  StringRef linkerFilename = "link.exe";
+  StringRef binaryExt = ".exe";
+  StringRef libExt = ".lib";
+  StringRef libPrefix = "";
+#else
+  StringRef linkerFilename = "c++";
+  StringRef binaryExt = "";
+  StringRef libExt = ".a";
+  StringRef libPrefix = "lib";
+#endif
+
+  // Resolve the path to the CompilerRT library.
+  std::optional<std::string> compilerRTLib = llvm::sys::Process::FindInEnvPath(
+      "PATH", (libPrefix + "KGENCompilerRT-static" + libExt).str());
+  if (!compilerRTLib)
+    return state.reportError("unable to locate Mojo CompilerRT library");
+
+  // Build a default output name based on the input file.
+  StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
+  std::string defaultOutputName =
+      (inputName.rsplit('.').first + binaryExt).str();
+
+  // Invoke the system linker to link the archive into an executable. The
+  // checked linked depends on the target platform.
+  StringRef outputName =
+      args.getLastArgValue(options::OPT_o, defaultOutputName);
+
+  // Resolve the linker path.
+  llvm::ErrorOr<std::string> linker =
+      llvm::sys::findProgramByName(linkerFilename);
+  if (!linker) {
+    return state.reportError(
+        "unable to find suitable c++ compiler for linking");
+  }
+
+  // Write the archive to a temporary file.
+  std::string archivePath;
+  if (auto err = writeTempFile("mojo_archive-%%%%%%%" + libExt,
+                               archive->getBuffer(), archivePath)) {
+    return state.reportError("unable to write temporary files for linking: " +
+                             Twine(err.getError()));
+  }
+
+  // Invoke the linker command.
+  SmallVector<StringRef> linkerArgs = {*linker, archivePath, *compilerRTLib};
+
+#ifdef _WIN32
+  std::string outputArg = ("/out:" + outputName).str();
+  linkerArgs.emplace_back(outputArg);
+  linkerArgs.emplace_back("/nologo");
+  linkerArgs.emplace_back("/SUBSYSTEM:CONSOLE");
+
+  // Ignore `no object files specified; libraries used` warnings.
+  linkerArgs.emplace_back("/IGNORE:4001");
+
+// Add the right VCRT to match the one used when building KGENCompilerRT.
+#if _DEBUG
+  linkerArgs.emplace_back("msvcrtd.lib");
+#else
+  linkerArgs.emplace_back("msvcrt.lib");
+#endif
+
+  // Mojo only supports X86_64 COFF right now.
+  linkerArgs.emplace_back("/machine:X64");
+#else
+  linkerArgs.emplace_back("-o");
+  linkerArgs.emplace_back(outputName);
+
+  // Add the necessary sanitizer flags.
+#if LLVM_ADDRESS_SANITIZER_BUILD
+  linkerArgs.emplace_back("-fsanitize=address");
+#elif LLVM_MEMORY_SANITIZER_BUILD
+  linkerArgs.emplace_back("-fsanitize=memory");
+#elif LLVM_THREAD_SANITIZER_BUILD
+  linkerArgs.emplace_back("-fsanitize=thread");
+#endif
+#endif
+
+  std::string errorMsg;
+  int linkExitCode = llvm::sys::ExecuteAndWait(
+      *linker, linkerArgs, /*Env=*/std::nullopt, /*Redirects=*/{},
+      /*SecondsToWait=*/0, /*MemoryLimit=*/0, /*ErrMsg=*/&errorMsg);
+  if (linkExitCode) {
+    if (!errorMsg.empty())
+      errorMsg.insert(0, ": ");
+    return state.reportError("failed to link executable" + errorMsg);
+  }
+
+  // Drop the temporary archive file now that we're done with it. We don't
+  // really care if this fails, since it's just a temporary file.
+  std::error_code ec;
+  std::filesystem::remove(archivePath, ec);
+  return EXIT_SUCCESS;
+}
+
+/// Given a path to a Mojo source file, open that file, and compile it to an
+/// executable. Returns an integer representing a successful exit code if the
+/// source file could be compiled without raising an error, otherwise returns a
+/// failure code.
+static int build(const State &state) {
+  CompilationOptions options;
+
+  // Parse arguments.
+  llvm::opt::InputArgList args;
+  llvm::SourceMgr sourceMgr;
+  if (std::optional<int> exitCode = parseArgs(state, args, sourceMgr, options))
+    return *exitCode;
+
+  // Initialize the LLCL runtime. We don't allow users to configure runtime
+  // options, such as the allocator or the work queue threading model.
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
+  // Lower the input file to an MLIR module.
+  MLIRContext context;
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
+  ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
+      state, args, options, &context, runtime, options::OPT_doc_validate,
+      options::OPT_max_notes, options::OPT_D,
+      [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
+        return importMojoFile(sourceMgr, parserConfig, ts);
+      });
+  if (failed(moduleOp))
+    return state.reportError(moduleOp.getError());
+
+  // Compile the module to a static archive.
+  Cache::BufferRef archive;
+  if (std::optional<int> exitCode = compileModuleToArchive(
+          state, runtime, context, options, **moduleOp, archive))
+    return *exitCode;
+
+  // Link an executable from the archive.
+  return linkExecutable(state, args, archive);
+}
+
+void M::registerBuildSubcommand(SubcommandRegistry &registry) {
+  registry.addCallback("build", build);
+}

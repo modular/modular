@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 include "DescriptionBase.td"
+include "Build/BuildDescription.td"
 include "Demangle/DemangleDescription.td"
 include "Doc/DocDescription.td"
 include "Package/PackageDescription.td"
