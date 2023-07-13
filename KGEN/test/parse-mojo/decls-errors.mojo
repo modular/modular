@@ -446,14 +446,14 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 # Decorators
 ##===----------------------------------------------------------------------===##
 
-@decorator  # expected-error {{unsupported decorator: @decorator}}
+@decorator  # expected-error {{use of unknown declaration 'decorator'}}
 struct DecoratedStruct: pass
 
 fn decoratorTest():
   @decorator
   var DecoratedVar: Int # expected-error {{'var' statement does not allow decorators}}
 
-@invalidDec # expected-error {{unsupported decorator: @invalidDec}}
+@invalidDec # expected-error {{use of unknown declaration 'invalidDec'}}
 def BadDecorator(): pass
 
 @staticmethod # expected-error @+1 {{only methods on structs may be declared static}}

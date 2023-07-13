@@ -1355,3 +1355,25 @@ var exported_global_var = 1
 # CHECK-SAME: linkageName = "my_named_export"
 def export_me() -> None:
     ...
+
+##===----------------------------------------------------------------------===##
+# Decorators
+##===----------------------------------------------------------------------===##
+
+fn decorator():
+    return
+
+fn decorator_arg(a: Int):
+    return
+
+# CHECK-LABEL: lit.func @"decorated_fn()"
+# CHECK-NEXT: decorators <:() -> !lit.none @{{.*}}::@"decorator()">
+@decorator
+fn decorated_fn():
+    pass
+
+# CHECK-LABEL: lit.struct.decl @DecoratedStruct
+# CHECK-NEXT: decorators <:!lit.none apply({{.*}}decorator_arg{{.*}}, #lit.struct<{value = 2}>
+@decorator_arg(2)
+struct DecoratedStruct:
+    pass
