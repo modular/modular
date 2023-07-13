@@ -428,7 +428,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return success();
   case Token::kw_let:
   case Token::kw_var:
-    rejectDecorator();
     return parseLetVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
@@ -1569,6 +1568,15 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 /// var_or_let    ::= "var" | "let"
 ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                         size_t stmtIndent) {
+  // Global var decls are allowed to have decorators, but nothing else.
+  bool hasDecorators = startCursor != getLexer().getCursor();
+  auto rejectDecorator = [&, declTok = getToken()]() {
+    if (!hasDecorators)
+      return;
+    emitError(declTok.getLoc()) << "'" << declTok.getSpelling()
+                                << "' statement does not allow decorators";
+  };
+
   bool isVar = getToken().is(Token::kw_var);
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
@@ -1584,6 +1592,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa<StructDeclOp>(getParentDecl())) {
+    rejectDecorator();
     // TODO: implement support for constant struct fields when we have a
     // stronger init model with Definitive Initialization.
     if (!isVar)
@@ -1594,6 +1603,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     // same indent level (or less) as the current definition.
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   } else if (isa<LIT::FuncOp>(getParentDecl())) {
+    rejectDecorator();
     // This is a local let/var declaration.
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly

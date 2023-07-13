@@ -2801,11 +2801,33 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
       return failure();
   }
 
+  // Run signature decorators, if any.
+  auto processDecorator = [&](ExprNode *decorator) -> LogicalResult {
+    if (auto ref = dyn_cast<DeclRefNode>(decorator);
+        ref && ref->spelling == "export") {
+      applyExport(ref->getLoc(), shared, decl, name, name, op);
+      return success();
+    }
+    if (auto call = dyn_cast<CallNode>(decorator)) {
+      if (auto ref = dyn_cast<DeclRefNode>(call->callee);
+          ref && ref->spelling == "export") {
+        applyExport(call->getLoc(), shared, decl, name, *call, op);
+        return success();
+      }
+    }
+    return failure();
+  };
+  Decorators(decl, shared)
+      .applySignatureDecorators(decoratorExprs, processDecorator);
+
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  Decorators(decl, shared).applyBodyDecorators([](ExprNode *decorator) {
+    return failure();
+  });
   return success();
 }
 
