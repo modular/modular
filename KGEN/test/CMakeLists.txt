@@ -21,7 +21,7 @@ add_modular_testsuite(check-kgen
   kgen-opt
   kgen-translate
   mojo-lsp-server
-  mojo
+  mojo-sdk
 )
 
 if(LLDB_FOUND)
