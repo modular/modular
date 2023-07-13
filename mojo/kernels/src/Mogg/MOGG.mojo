@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Activations import relu, gelu, sigmoid
+from Assert import assert_param
 from Buffer import NDBuffer
 from Concat import concat as _concat
 from DType import DType
@@ -1231,6 +1232,7 @@ fn small_matmul[
 fn matmul[
     type: DType,
     transpose_in_1: Bool,  # matches name of MO attribute
+    packed_in_1: Bool,
     single_thread_blocking_override: Bool,
     lambdas_have_fusion: Bool,
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
@@ -1244,8 +1246,16 @@ fn matmul[
 ):
     alias transpose_a = False
     alias transpose_b = transpose_in_1
-    alias b_packed = False
+    alias b_packed = packed_in_1
     alias simd_width = simdwidthof[type]()
+
+    assert_param[
+        not (b_packed and transpose_b),
+        (
+            "transpose_b and b_packed cannot both be true because pre-packing"
+            " transposes B"
+        ),
+    ]()
 
     @parameter
     @always_inline
