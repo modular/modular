@@ -58,13 +58,11 @@ TEST(RuntimeTest, Configurations) {
   EXPECT_EQ(configCPtr, nullptr);
 }
 
-#ifndef NDEBUG
 TEST(RuntimeTest, Configurations_ExpectDeath) {
   auto runtime = createRuntime();
 
   runtime->emplaceConfig<ConfigA>();
 
-  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceConfig<ConfigA>(),
-                            "Runtime already holds configuration of type");
+  EXPECT_DEATH(runtime->emplaceConfig<ConfigA>(),
+               "Runtime already holds configuration of type");
 }
-#endif
