@@ -163,7 +163,7 @@ def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", 
       name = "foo",
       file = #debuginfo.file<"foo.c" in "/mlir/">,
       line = 10,
-      arg = 0
+      arg = 1
     > : !debuginfo.unresolved<index>
     ```
   }];

@@ -35,6 +35,17 @@ ErrorTreeOrSuccess ValueOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+LogicalResult ValueOp::verify() {
+  DILocalVariableAttr varAttr = getValueInfo();
+  if (DIScopeAttr scope = extractScope(getLoc())) {
+    if (varAttr.getScope() != scope) {
+      return emitOpError("location scope must match variable scope: ")
+             << scope << " vs. " << varAttr.getScope();
+    }
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

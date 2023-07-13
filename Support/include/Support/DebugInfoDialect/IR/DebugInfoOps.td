@@ -43,6 +43,7 @@ def DebugInfo_ValueOp : DebugInfoOp<"value",
   let assemblyFormat = [{
     qualified($valueInfo) `=` $value `:` type($value) attr-dict
   }];
+  let hasVerifier = 1;
 }
 
 #endif // DEBUGINFOOPS_TD
