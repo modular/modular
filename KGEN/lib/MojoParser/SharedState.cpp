@@ -146,7 +146,7 @@ struct SharedState::Impl {
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
-  DenseMap<const ASTDecl *, std::vector<LexerCursor>> bodyDecorators;
+  DenseMap<const ASTDecl *, std::vector<ExprNode *>> bodyDecorators;
 
   /// The implicit builtin imports added to each module.
   SmallVector<StringAttr> implicitBuiltinImports;
@@ -333,7 +333,7 @@ Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
 
 /// Return any decorators that need to be processed as part of body resolution
 /// phase for a decl.
-ArrayRef<LexerCursor> ASTDecl::getBodyDecorators(SharedState &state) const {
+ArrayRef<ExprNode *> ASTDecl::getBodyDecorators(SharedState &state) const {
   if (!hasBodyDecorators)
     return {};
   return state.getImpl().bodyDecorators[this];
@@ -341,7 +341,7 @@ ArrayRef<LexerCursor> ASTDecl::getBodyDecorators(SharedState &state) const {
 
 /// During signature resolution, this is called with any decorators that need
 /// to persist until body resolution.
-void ASTDecl::setBodyDecorators(ArrayRef<LexerCursor> decorators,
+void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
                                 SharedState &state) {
   if (decorators.empty())
     return;
