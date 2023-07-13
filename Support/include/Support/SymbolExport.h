@@ -27,7 +27,13 @@
 #define MODULAR_EXPORT MODULAR_VISIBILITY_EXPORT
 #endif
 
+// We have to have a way to turn off exports when we're building as a static
+// lib - MSVC doesn't allow dllimport/dllexport on static library functions.
+#ifndef MODULAR_NO_EXPORT
 #define MODULAR_CXX_EXPORT MODULAR_VISIBILITY_EXPORT
+#else
+#define MODULAR_CXX_EXPORT
+#endif
 
 // For CompilerRT we need the runtime entry points to have unmangled names,
 // but currently do not wish to give them default visibility in any dylib
