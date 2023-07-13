@@ -1087,6 +1087,9 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
       decl.hasReferenceError = true;
       return moduleState;
     }
+
+    // Add the package path to the set of included files.
+    impl->includedFiles.emplace_back(packagePath.str());
   }
 
   // Initialize the decl with the bytecode IR. The loaded package is the last
@@ -1530,13 +1533,19 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 }
 
 LogicalResult SharedState::finalizeImportedBytecodeModules() {
-  // TODO: FuncOp is currently not isolated from above and thus can't be lazy
-  // loaded, so we need to erase it directly when it's unused.
   for (ASTDecl *decl : declResolver->parsedDeclList) {
-    if (isa<FuncOp>(*decl) && decl->loadedFromBytecode &&
-        decl->resolvedness == DeclResolvedness::unparsed) {
+    if (!decl->loadedFromBytecode ||
+        decl->resolvedness != DeclResolvedness::unparsed)
+      continue;
+
+    // TODO: FuncOp is currently not isolated from above and thus can't be
+    // lazy loaded, so we need to erase it directly when it's unused.
+    if (isa<FuncOp>(*decl))
       decl->getIfOperation()->erase();
-    }
+
+    // Clear out decls that weren't materialized to avoid dangling references
+    // after they get deleted.
+    decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
   }
   for (auto &module : llvm::make_second_range(impl->moduleStates)) {
     if (!module->bytecodeReader)
