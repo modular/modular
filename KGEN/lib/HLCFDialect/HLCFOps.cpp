@@ -16,11 +16,10 @@ using namespace HLCF;
 //===----------------------------------------------------------------------===//
 // ForOp
 //===----------------------------------------------------------------------===//
-
 static ParseResult
 parseFor(OpAsmParser &p,
-         SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-         SmallVectorImpl<Type> &operandTypes,
+         SmallVectorImpl<OpAsmParser::UnresolvedOperand> &initArgs,
+         SmallVectorImpl<Type> &initArgsTypes,
          SmallVectorImpl<Type> &resultTypes, Region &body) {
   SmallVector<OpAsmParser::Argument> loopArgs;
 
@@ -34,8 +33,8 @@ parseFor(OpAsmParser &p,
             p.parseColonType(arg.type))
           return failure();
         loopArgs.push_back(arg);
-        operands.push_back(operand);
-        operandTypes.push_back(arg.type);
+        initArgs.push_back(operand);
+        initArgsTypes.push_back(arg.type);
         return success();
       };
       if (p.parseCommaSeparatedList(parseEl) || p.parseRParen())
@@ -47,29 +46,30 @@ parseFor(OpAsmParser &p,
   return p.parseRegion(body, loopArgs);
 }
 
-static void printFor(OpAsmPrinter &p, Operation *op, ValueRange operands,
-                     TypeRange operandTypes, TypeRange resultTypes,
+static void printFor(OpAsmPrinter &p, Operation *op, ValueRange iterArgs,
+                     TypeRange iterArgsTypes, TypeRange resultTypes,
                      Region &body) {
-  if (!operandTypes.empty() || !resultTypes.empty()) {
+  if (!iterArgs.empty() || !resultTypes.empty()) {
     p << "(";
-    llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {
+    llvm::interleaveComma(llvm::enumerate(iterArgs), p, [&](auto it) {
       auto [i, operand] = it;
-      p << body.getArgument(i) << " = " << operand << " : " << operandTypes[i];
+      p << body.getArgument(i) << " = " << operand << " : " << iterArgsTypes[i];
     });
     p << ")";
     p.printOptionalArrowTypeList(resultTypes);
   }
+
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 LogicalResult ForOp::verify() {
-  if (getInitArgs().size() != getBody().getNumArguments())
+  if (getIterArgs().size() != getBody().getNumArguments())
     return emitOpError("operand types do not match body region argument types");
 
-  for (auto [initarg, blockarg] :
-       llvm::zip(getInitArgs(), getBody().getArgumentTypes())) {
-    if (initarg.getType() != blockarg)
+  for (auto [loopArgs, blockarg] :
+       llvm::zip(getIterArgs(), getBody().getArgumentTypes())) {
+    if (loopArgs.getType() != blockarg)
       return emitOpError(
           "operand types do not match body region argument types");
   }
@@ -144,7 +144,7 @@ std::optional<int64_t> ForOp::getStepAsInt() {
 }
 
 ValueRange ForOp::getReturnValueArgs() {
-  return getInitArgs().take_front(getNumResults());
+  return getIterArgs().drop_front().take_front(getNumResults());
 }
 
 //===----------------------------------------------------------------------===//
@@ -440,26 +440,26 @@ ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ForContinueOp
+// YieldOp
 //===----------------------------------------------------------------------===//
 
-bool ForContinueOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
+bool ForYieldOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
 
-void ForContinueOp::getBranchTargets(
-    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+void ForYieldOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<ControlFlowTarget> &targets) {
 
   assert(operands.size() == getNumOperands());
 
   ForOp forLoop = this->getParentOp<ForOp>();
   // Branch to the beginning of the body region.
   targets.emplace_back(0, getOperands());
-  // Though `hlcf.for.continue` can exit when iter count meets upperbound.
-  targets.emplace_back(std::nullopt,
-                       getOperands().take_front(forLoop.getNumResults()));
+  // Though `hlcf.for.yield` can exit when iter count meets upperbound.
+  targets.emplace_back(std::nullopt, getOperands().drop_front().take_front(
+                                         forLoop.getNumResults()));
 }
 
-ErrorTreeOrSuccess ForContinueOp::interpret(ArrayRef<Attribute> operands,
-                                            InterpreterState &state) {
+ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
   ForOp forLoop = this->getParentOp<ForOp>();
   auto iter = dyn_cast_or_null<IntegerAttr>(
       state.lookupValue(getForInductionVariableOperand()));
@@ -487,11 +487,11 @@ ErrorTreeOrSuccess ForContinueOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
-Value ForContinueOp::getForInductionVariableOperand() {
-  return this->getOperands().back();
+Value ForYieldOp::getForInductionVariableOperand() {
+  return this->getOperands().front();
 }
 
-LogicalResult ForContinueOp::verify() {
+LogicalResult ForYieldOp::verify() {
   ForOp parentFor = getParentOp<ForOp>();
 
   if (getOperands().size() != parentFor.getBody().getNumArguments())
@@ -499,7 +499,7 @@ LogicalResult ForContinueOp::verify() {
                        "region argument types");
 
   for (auto [parentOperand, operand] :
-       llvm::zip(parentFor.getInitArgs(), getOperands())) {
+       llvm::zip(parentFor.getIterArgs(), getOperands())) {
     if (parentOperand.getType() != operand.getType())
       return emitOpError(
           "operand types do not match parent for-loop's operand types");
