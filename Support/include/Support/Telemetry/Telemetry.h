@@ -7,7 +7,14 @@
 #ifndef SUPPORT_TELEMETRY_H
 #define SUPPORT_TELEMETRY_H
 
+#include "LLCL/Support/ReferenceCounted.h"
+#include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Instruments.h"
+#include "llvm/ADT/StringRef.h"
+#ifdef MODULAR_ENABLE_TELEMETRY
+#include "opentelemetry/metrics/meter.h"
+#include "opentelemetry/metrics/meter_provider.h"
+#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {
 
@@ -22,10 +29,12 @@ namespace M::Telemetry {
 /// attributes (e.g. CPU info, OS info, version of software components) without
 /// this information being passed to it explicitly through its API, but this is
 /// subject to change.
-class TelemetryContext {
+class TelemetryContext : public LLCL::ReferenceCounted<TelemetryContext> {
 public:
   // TODO: add options, like exporter options (HTTP URL, file name).
-  TelemetryContext() = default;
+  TelemetryContext();
+
+  ~TelemetryContext() = default;
 
   // XXX: not sure if it's better to allocate Counter and Histogram on the heap
   // or not. For Otel, the Counter struct will basically just contain a pointer
@@ -39,29 +48,54 @@ public:
     // returns a NOOP counter. Instead, we should probably try to assert that
     // the name is valid or that the returned counter is not NOOP. Same for
     // other instruments.
+#ifdef MODULAR_ENABLE_TELEMETRY
+    return Counter<uint64_t>(
+        meter->CreateUInt64Counter(name, description, unit));
+#else
     return Counter<uint64_t>();
+#endif
   }
 
   /// Create a Counter<double>.
   Counter<double> createDoubleCounter(StringRef name,
                                       StringRef description = "",
                                       StringRef unit = "") {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    return Counter<double>(meter->CreateDoubleCounter(name, description, unit));
+#else
     return Counter<double>();
+#endif
   }
 
   /// Create a Histogram<uint64_t>.
   Histogram<uint64_t> createUInt64Histogram(StringRef name,
                                             StringRef description = "",
                                             StringRef unit = "") {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    return Histogram<uint64_t>(
+        meter->CreateUInt64Histogram(name, description, unit));
+#else
     return Histogram<uint64_t>();
+#endif
   }
 
   /// Create a Histogram<double>.
   Histogram<double> createDoubleHistogram(StringRef name,
                                           StringRef description = "",
                                           StringRef unit = "") {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    return Histogram<double>(
+        meter->CreateDoubleHistogram(name, description, unit));
+#else
     return Histogram<double>();
+#endif
   }
+
+private:
+#ifdef MODULAR_ENABLE_TELEMETRY
+  std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
+  std::shared_ptr<opentelemetry::metrics::Meter> meter;
+#endif
 };
 
 } // namespace M::Telemetry
