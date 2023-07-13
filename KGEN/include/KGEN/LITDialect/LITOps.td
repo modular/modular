@@ -702,9 +702,10 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
   let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
 
   let assemblyFormat = [{
-    custom<SymbolExport>($exportKind) $sym_name `:` $type attr-dict-with-keyword
-    custom<OptionalDecorators>($decorators) (`isLet` $isLet^)?
-    custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
+    `` custom<SymbolExport>($exportKind) $sym_name `:` $type
+    attr-dict-with-keyword custom<OptionalDecorators>($decorators)
+    (`isLet` $isLet^)?  custom<NoArgRegion>($ctor) `,`
+    custom<NoArgRegion>($dtor)
   }];
 
   let builders = [

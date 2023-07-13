@@ -14,13 +14,13 @@ struct RegIntPair:
 
 
 # CHECK: extern ssize_t first_reg(ssize_t, ssize_t);
-@export
+@export(ABI="C")
 fn first_reg(pair: RegIntPair) -> Int:
     return pair.first
 
 
 # CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
-@export
+@export(ABI="C")
 fn make_reg_pair(first: Int, second: Int) -> RegIntPair:
     return RegIntPair {first: first, second: second}
 
@@ -36,12 +36,12 @@ struct MemIntPair:
 
 
 # CHECK: extern ssize_t first_mem(void *);
-@export
+@export(ABI="C")
 fn first_mem(pair: MemIntPair) -> Int:
     return pair.first
 
 
 # CHECK: extern void make_mem_pair(void *, ssize_t, ssize_t);
-@export
+@export(ABI="C")
 fn make_mem_pair(first: Int, second: Int) -> MemIntPair:
     return MemIntPair(first, second)

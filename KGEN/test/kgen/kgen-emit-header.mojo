@@ -10,7 +10,7 @@ from SIMD import Float32
 from IO import print
 
 
-@export
+@export(ABI="C")
 # CHECK: extern float call_me();
 fn call_me() -> Float32:
     return 1.0
