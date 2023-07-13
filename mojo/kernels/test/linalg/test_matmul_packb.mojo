@@ -25,7 +25,7 @@ alias K: Int = 128
 alias kc = 128
 
 
-@export
+@export(ABI="C")
 fn pack_b(
     packed_b: NDBuffer[
         3, DimList(width // tile_inner_size, K, tile_inner_size), type

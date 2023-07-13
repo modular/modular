@@ -35,7 +35,7 @@ alias K: Int = 64
 alias tile_inner_size: Int = pack_inner_size * simd_size
 
 
-@export
+@export(ABI="C")
 fn matmul_inner_loop(
     c: NDBuffer[2, DimList(M, N), c_type],
     a: NDBuffer[2, DimList(M, K), a_type],
