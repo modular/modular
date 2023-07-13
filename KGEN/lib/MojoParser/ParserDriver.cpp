@@ -116,7 +116,11 @@ MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
 MojoParserContext::MojoParserContext(SourceMgr &sourceMgr,
                                      MojoParserConfig &config)
     : impl(std::make_unique<Impl>(sourceMgr, config)) {}
-MojoParserContext::~MojoParserContext() = default;
+MojoParserContext::~MojoParserContext() {
+  // Finalize any imported bytecode now that we've resolved everything. This
+  // avoids dangling references to operations from the bytecode.
+  (void)impl->sharedState.finalizeImportedBytecodeModules();
+}
 
 ModuleOp MojoParserContext::getModule() {
   return cast<ModuleOp>(impl->topLevelDecl->getIfOperation());
