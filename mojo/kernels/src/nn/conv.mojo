@@ -828,24 +828,6 @@ struct ConvIm2ColNCHW[
             filter(NDBuffer): The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
         """
-        # TODO: Support stride and dilation.
-        # debug_assertions on the runtime shapes to guard against
-        #  unsupported cases yet.
-        # Assert same padding.
-        debug_assert(
-            conv_shape.out_h == conv_shape.h,
-            "output height must be the same as the input height",
-        )
-        debug_assert(
-            conv_shape.out_w == conv_shape.w,
-            "output width must be the same as the input width",
-        )
-        # Assert unit stride and padding.
-        debug_assert(conv_shape.stride == Index(1, 1), "stride must be [1,1]")
-        debug_assert(
-            conv_shape.dilation == Index(1, 1), "dilation must be [1,1]"
-        )
-
         var conv = ConvIm2ColNCHW[
             shape_input,
             shape_filter,
@@ -1944,9 +1926,6 @@ struct ConvIm2ColNHWC[
         )
         # We only support unit dilation. The data corresponds to conv_shape.s
         # channels are contiguous in memory.
-        debug_assert(
-            conv_shape.dilation == Index(1, 1), "Dilation must be [1, 1]."
-        )
         let contiguous_len = conv_shape.s * conv_shape.c
         # Round k to multiple of contiguous segments if applicable.
         if (
@@ -2499,11 +2478,6 @@ struct ConvDirectNHWC[
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
-        debug_assert(
-            (conv_shape.f % simdwidthof[type]() == 0),
-            "Only support F divisible by simd_size",
-        )
-
         let cf_tile_size = get_conv_tile_shape[
             type, get_direct_conv_micro_kernel_width()
         ](conv_shape)
