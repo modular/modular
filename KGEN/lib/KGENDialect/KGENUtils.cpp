@@ -1312,6 +1312,35 @@ void KGEN::printOptionalConstraints(OpAsmPrinter &p, Operation *op,
   p << ">";
 }
 
+ParseResult KGEN::parseOptionalDecorators(AsmParser &p,
+                                          DecoratorsAttr &decorators) {
+  SmallVector<TypedAttr> decoVals;
+  if (succeeded(p.parseOptionalKeyword("decorators"))) {
+    if (p.parseCommaSeparatedList(AsmParser::Delimiter::LessGreater, [&] {
+          return parseColonTypeParamValue(p, decoVals.emplace_back());
+        }))
+      return failure();
+  }
+  decorators = DecoratorsAttr::get(p.getContext(), decoVals);
+  return success();
+}
+
+void KGEN::printOptionalDecorators(OpAsmPrinter &p, Operation *op,
+                                   ArrayRef<TypedAttr> decorators) {
+  if (decorators.empty())
+    return;
+  p.printNewline();
+  p << "  decorators <";
+  llvm::interleaveComma(decorators, p, [&](TypedAttr decorator) {
+    if (decorators.size() > 1) {
+      p.printNewline();
+      p << "    ";
+    }
+    printColonTypeParamValue(p, decorator);
+  });
+  p << ">";
+}
+
 /// Parse the always_inline related keywords if present.
 ParseResult KGEN::parseOptionalAlwaysInline(OpAsmParser &parser,
                                             AlwaysInlineLevelAttr &attr) {

@@ -1566,13 +1566,36 @@ void Decorators::applyBodyDecorators(
       break;
     decoratorExprs = decoratorExprs.drop_front();
   }
-  // TODO: Reject everything else as an unknown decorator for now.
-  for (ExprNode *decorator : decoratorExprs) {
-    InflightDiag diag = emitError(decorator->getLoc(), "unsupported decorator");
-    if (auto ref = dyn_cast<DeclRefNode>(decorator))
-      diag << ": @" << ref->spelling;
-    diag << decorator->getRange();
+
+  // Emit the expressions and persist the resulting PValue into the IR. For now,
+  // assume that all decorators are "compiler" decorators.
+  // TODO: Emit an attempt to call the decorator value.
+  SmallVector<TypedAttr> decoPValues;
+  decoPValues.reserve(decoratorExprs.size());
+  ExprEmitter emitter(shared, decl, EC_Decorator, /*varDeclCursor=*/nullptr);
+  for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
+    // Make sure we don't have another body decorator.
+    if (failed(process(decorator))) {
+      if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator))
+        decoPValues.push_back(decoVal);
+      continue;
+    }
+    // If the decorator applies, we have an error.
+    InflightDiag diag =
+        emitError(decorator->getLoc(),
+                  "body decorator cannot come after compiler decorator")
+        << decorator->getRange();
+    ExprNode *bodyDecorator = decoratorExprs[i - 1];
+    diag.attachNote(bodyDecorator->getLoc())
+        << "previous compiler decorator applied here"
+        << bodyDecorator->getRange();
+    break;
   }
+
+  TypeSwitch<ASTDecl &, void>(decl)
+      .Case<LIT::FuncOp, StructDeclOp, GlobalVarDeclOp>([&](auto op) {
+        op.setDecoratorsAttr(DecoratorsAttr::get(op.getContext(), decoPValues));
+      });
 }
 
 //===----------------------------------------------------------------------===//

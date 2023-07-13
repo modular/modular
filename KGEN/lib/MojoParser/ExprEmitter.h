@@ -60,6 +60,7 @@ enum ExprContext {
   EC_ParameterList,         // something[x]
   EC_Destructor,            // Looking up T's destructor for `var x : T`
   EC_CaptureCopy,           // def f(): use(x)
+  EC_Decorator,             // @x
 };
 const char *getContextMessage(ExprContext context);
 

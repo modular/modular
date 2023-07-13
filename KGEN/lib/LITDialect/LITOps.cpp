@@ -390,7 +390,7 @@ static StringRef disallowedAttrNames[] = {
     "exportKind",  "isCExported",  "constraints",       "implements",
     "signature",   "functionType", "sym_name",          "valueParamNames",
     "evaluator",   "defaultImpl",  "alwaysInlineLevel", "paramDecl",
-    "inputParams", "resultParams"};
+    "inputParams", "resultParams", "decorators"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -419,13 +419,16 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   SignatureType signature;
   ConstraintArrayAttr constraints;
   AlwaysInlineLevelAttr alwaysInline;
+  DecoratorsAttr decorators;
   if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
                              functionType, signature) ||
       parseOptionalAlwaysInline(parser, alwaysInline) ||
-      parseOptionalConstraints(parser, constraints))
+      parseOptionalConstraints(parser, constraints) ||
+      parseOptionalDecorators(parser, decorators))
     return failure();
   result.addAttribute(getAlwaysInlineLevelAttrName(result.name), alwaysInline);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
+  result.addAttribute(getDecoratorsAttrName(result.name), decorators);
   result.addAttribute(getInputParamsAttrName(result.name), inputParams);
   result.addAttribute(getResultParamsAttrName(result.name), resultParams);
   result.addAttribute(getFunctionTypeAttrName(result.name),
@@ -498,6 +501,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
 
   printFunctionAttributes(p, *this, ignoredAttrNames);
   printOptionalConstraints(p, *this, getConstraints());
+  printOptionalDecorators(p, *this, getDecorators());
 
   p << ' ';
   p.printRegion(getBodyRegion(), /*printEntryBlockArgs=*/false);
@@ -615,6 +619,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addAttribute(getResultParamsAttrName(result.name), emptyParamDecls);
   result.addAttribute(getConstraintsAttrName(result.name),
                       ConstraintArrayAttr::get(context, {}));
+  result.addAttribute(getDecoratorsAttrName(result.name),
+                      DecoratorsAttr::get(context, {}));
   result.addAttribute(getSpecialFnKindAttrName(result.name),
                       builder.getI8IntegerAttr(0));
   result.addAttribute(
@@ -635,10 +641,10 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(signature.getValues()),
         /*paramDecls=*/ParamDeclArrayAttr::get(ctx, {}),
         /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
-        ConstraintArrayAttr::get(ctx, {}), /*isStatic=*/mlir::UnitAttr(),
-        /*isAdaptive=*/mlir::UnitAttr(), /*isParameter=*/mlir::UnitAttr(),
-        /*isNoncapturing=*/mlir::UnitAttr(), /*isClosure=*/mlir::UnitAttr(),
-        /*isDef=*/mlir::UnitAttr(),
+        ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
+        /*isStatic=*/mlir::UnitAttr(), /*isAdaptive=*/mlir::UnitAttr(),
+        /*isParameter=*/mlir::UnitAttr(), /*isNoncapturing=*/mlir::UnitAttr(),
+        /*isClosure=*/mlir::UnitAttr(), /*isDef=*/mlir::UnitAttr(),
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         AlwaysInlineLevelAttr::get(ctx, AlwaysInlineLevel::Disabled),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
@@ -677,9 +683,10 @@ LogicalResult StructDeclOp::verifyRegions() {
 
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
-  auto context = builder.getContext();
-  build(builder, result, name, ParamDeclArrayAttr::get(context, {}), false, 0,
-        /*destructor*/ nullptr, /*moveInit*/ nullptr);
+  MLIRContext *ctx = builder.getContext();
+  build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
+        DecoratorsAttr::get(ctx, {}), /*paramVarargs=*/false,
+        /*registerPassable=*/0, /*destructor=*/nullptr, /*moveInit=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

@@ -174,6 +174,11 @@ ParseResult parseOptionalConstraints(OpAsmParser &p,
 void printOptionalConstraints(OpAsmPrinter &p, Operation *op,
                               ArrayRef<ConstraintAttr> constraints);
 
+/// Parse and print a decorator list if present.
+ParseResult parseOptionalDecorators(AsmParser &p, DecoratorsAttr &decorators);
+void printOptionalDecorators(OpAsmPrinter &p, Operation *op,
+                             ArrayRef<TypedAttr> decorators);
+
 /// Parse and print a parameter binding list if present.
 ParseResult parseParamBinds(AsmParser &p, ParamBindArrayAttr &paramBinds);
 void printParamBinds(AsmPrinter &p, ArrayRef<ParamBindAttr> paramBinds);

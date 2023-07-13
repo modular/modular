@@ -61,6 +61,7 @@ def LIT_FuncOp : LITOp<"func", [
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
+    KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$isStatic,
     UnitAttr:$isAdaptive,
     UnitAttr:$isParametric,
@@ -280,6 +281,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_DecoratorsAttr:$decorators,
     UnitAttr:$paramVarargs,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
@@ -288,7 +290,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name `` custom<OptionalParameterSpec>($inputParams)
-    attr-dict-with-keyword
+    attr-dict-with-keyword custom<OptionalDecorators>($decorators)
     $fields
   }];
 
@@ -691,20 +693,26 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
     and is immutable.
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type,
-                       UnitAttr:$isLet, KGEN_ExportKindAttr:$exportKind,
-                       OptionalAttr<StrAttr>:$linkageName);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttr:$type,
+    UnitAttr:$isLet,
+    KGEN_ExportKindAttr:$exportKind,
+    KGEN_DecoratorsAttr:$decorators,
+    OptionalAttr<StrAttr>:$linkageName
+  );
   let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
 
   let assemblyFormat = [{
     custom<SymbolExport>($exportKind) $sym_name `:` $type attr-dict-with-keyword
-    (`isLet` $isLet^)?  custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
+    custom<OptionalDecorators>($decorators) (`isLet` $isLet^)?
+    custom<NoArgRegion>($ctor) `,` custom<NoArgRegion>($dtor)
   }];
 
   let builders = [
     OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isLet), [{
       build($_builder, $_state, sym_name, type, isLet, ExportKind::NotExported,
-            StringAttr());
+            DecoratorsAttr::get(type.getContext(), {}), {});
     }]>
   ];
 
