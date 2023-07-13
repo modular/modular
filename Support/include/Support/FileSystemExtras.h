@@ -30,6 +30,13 @@ ErrorOr<std::filesystem::path>
 writeFileAtomically(const std::filesystem::path &filePath,
                     llvm::function_ref<void(raw_ostream &)> writeContent);
 
+/// Safely process reading the file, taking into account that we may have
+/// another process writing this file in parallel. Returns an error if the file
+/// does not exist. The read callback is executed while the lock is held.
+ErrorOrSuccess readFileAtomically(
+    const std::filesystem::path &filePath,
+    llvm::function_ref<void(const std::filesystem::path &)> read);
+
 /// This class provides a tempfile implementation. The llvm::sys version has
 /// some really odd behavior that is tricky to manage, so we provide our own
 /// implementation.

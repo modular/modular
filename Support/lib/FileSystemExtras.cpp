@@ -10,10 +10,55 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 
 using namespace M;
+
+/// Do an atomic file operation - readFileAtomically and writeFileAtomically do
+/// almost exactly the same thing, so this keeps the common code common.
+template <typename T>
+static ErrorOr<T>
+doAtomicFileOperation(const std::filesystem::path &filePath,
+                      llvm::function_ref<ErrorOr<T>()> callable) {
+  std::string filePathStr = filePath.string();
+
+  // Lock or wait for the file to be able to operate on it.
+  while (true) {
+    llvm::LockFileManager lockManager(filePathStr);
+    switch (lockManager) {
+    case llvm::LockFileManager::LFS_Error:
+      return Error("unable to take lock file for '" + filePathStr +
+                   "': " + lockManager.getErrorMessage());
+    case llvm::LockFileManager::LFS_Owned:
+      // We got the lock, and can operate on the file.
+      return callable();
+
+    case llvm::LockFileManager::LFS_Shared:
+      // Another process is touching the file, handle the different
+      // outcomes of this below.
+      break;
+    }
+
+    // Wait for the other process to finish touching the file.
+    switch (lockManager.waitForUnlock()) {
+    case llvm::LockFileManager::Res_Success:
+      // We now have the lock file, and can proceed to operate on the file if
+      // the other process didn't do it.
+      return callable();
+    case llvm::LockFileManager::Res_OwnerDied:
+      // The owner died, try again to take the file.
+      continue;
+    case llvm::LockFileManager::Res_Timeout:
+      // We timed out when trying to acquire the lock for the file.
+      // TODO: We could try again, but the default timeout is 1.5 minutes.
+      return Error("timed out waiting for lock file for '" + filePathStr + "'");
+    }
+  }
+
+  llvm_unreachable("something has gone very wrong with the lock file manager");
+}
 
 ErrorOr<std::filesystem::path>
 M::writeFileAtomically(const std::filesystem::path &filePath,
@@ -31,39 +76,24 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
     return filePath;
   };
 
-  // Lock or wait for the file to be able to write to it.
-  while (true) {
-    llvm::LockFileManager lockManager(filePathStr);
-    switch (lockManager) {
-    case llvm::LockFileManager::LFS_Error:
-      return Error("unable to take lock file for '" + filePathStr +
-                   "': " + lockManager.getErrorMessage());
-    case llvm::LockFileManager::LFS_Owned:
-      // We got the lock, and can build the file.
-      return writeFile();
+  return doAtomicFileOperation<std::filesystem::path>(filePath, writeFile);
+}
 
-    case llvm::LockFileManager::LFS_Shared:
-      // Another process is touching the file, handle the different
-      // outcomes of this below.
-      break;
-    }
+ErrorOrSuccess M::readFileAtomically(
+    const std::filesystem::path &filePath,
+    llvm::function_ref<void(const std::filesystem::path &)> read) {
+  std::string filePathStr = filePath.string();
 
-    // Wait for the other process to finish touching the file.
-    switch (lockManager.waitForUnlock()) {
-    case llvm::LockFileManager::Res_Success:
-      // We now have the lock file, and can proceed to build the file if the
-      // other process didn't do it.
-      return writeFile();
-    case llvm::LockFileManager::Res_OwnerDied:
-      // The owner died, try again to take the file.
-      continue;
-    case llvm::LockFileManager::Res_Timeout:
-      // We timed out when trying to acquire the lock for the file.
-      // TODO: We could try again, but the default timeout is 1.5 minutes.
-      return Error("timed out waiting for lock file for '" + filePathStr + "'");
-    }
-  }
-  return filePath;
+  ErrorOr<Detail::Empty> err =
+      doAtomicFileOperation<Detail::Empty>(filePath, [&]() {
+        read(filePath);
+        return Detail::Empty();
+      });
+  // Apparently we can't convert from ErrorOr<Detail::Empty> to ErrorOrSuccess,
+  // so we do it manually here.
+  if (err)
+    return err.takeError();
+  return success();
 }
 
 // llvm::sys::Process has a function called `llvm::sys::Process::FindInEnvPath`
