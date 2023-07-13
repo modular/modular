@@ -302,6 +302,12 @@ struct FilesystemBackend : public BlobCacheBackend {
       : BlobCacheBackend(runtime), basePath(basePath.string()) {}
 
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
+    // Check if we already have the object - if we do, then don't bother writing
+    // it again.
+    ErrorOr<bool> containsOr = containsImpl(keyHash);
+    if (!containsOr.isError() && *containsOr)
+      return success();
+
     // Get the absolute path and create any directories we need to create.
     std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
     std::error_code dirErr;
