@@ -4,7 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_driver_option_tablegen(Mojo REPLOptions.td mojo-repl
+add_driver_option_tablegen(Mojo REPLOptions.td
+  MANUAL_NAME mojo-repl
+  MARKDOWN_NAME repl
   EXTRA_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 # The `repl` subcommand depends on Mojo's LLDB REPL.

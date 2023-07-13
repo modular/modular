@@ -45,7 +45,9 @@ add_modular_tool(mojo
 add_custom_target(MojoDriverOptions)
 
 # Add targets to generate option definitions for the top-level driver.
-add_driver_option_tablegen(Mojo DriverOptions.td mojo
+add_driver_option_tablegen(Mojo DriverOptions.td
+  MANUAL_NAME mojo
+  MARKDOWN_NAME index
   EXTRA_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
 # Each subcommand generates its own option definitions.
 add_subdirectory(Demangle)
@@ -53,6 +55,9 @@ add_subdirectory(Doc)
 add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
+
+# Copy all generated Markdown files to a convenient location.
+collect_driver_markdown(MojoDriverOptions)
 
 # The driver depends on these option definitions.
 target_include_directories(mojo PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
