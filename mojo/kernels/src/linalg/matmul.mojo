@@ -907,7 +907,7 @@ struct MatmulInnerLoopBPacked[
         # Global K index.
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
-        var b_ptr = self.b_packed._offset(
+        let b_ptr = self.b_packed._offset(
             Index(n_outer_idx, tile_n_k_idx[1], 0)
         )
 
@@ -916,34 +916,32 @@ struct MatmulInnerLoopBPacked[
         if prefetch_b_distance > 0:
             alias prefetch_offset = prefetch_b_distance * pack_inner_size
 
-            @parameter
-            @always_inline
-            fn prefetch_body[idx: Int]():
+            for idx in range(pack_inner_size // simd_size):
                 b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
-            unroll[pack_inner_size // simd_size, prefetch_body]()
-
         # This inner kernels works with non-transposed A.
         let K = self.a.dim(1)
-        var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+        let a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
-        @parameter
-        @always_inline
-        fn body[idx0: Int, idx1: Int]():
-            let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
-            alias alignment = alignof[SIMD[c_type, simd_size]]()
-            let c_idx = Index(idx0, idx1 * simd_size)
-            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
-            let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                simd_size, alignment
-            ]().cast[c_type]()
-            c_val = fma[c_type, simd_size](a_val, b_val, c_val)
-            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+        @unroll
+        for idx0 in range(a_row_size):
 
-        unroll[a_row_size, pack_inner_size // simd_size, body]()
+            @unroll
+            for idx1 in range(pack_inner_size // simd_size):
+                let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                let c_idx = Index(idx0, idx1 * simd_size)
+                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                    c_idx
+                )
+                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                    simd_size, alignment
+                ]().cast[c_type]()
+                c_val = fma[c_type, simd_size](a_val, b_val, c_val)
+                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
     @adaptive
     fn _accumulate[
@@ -974,7 +972,7 @@ struct MatmulInnerLoopBPacked[
         # Global K index.
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
-        var b_ptr = self.b_packed._offset(
+        let b_ptr = self.b_packed._offset(
             Index(n_outer_idx, tile_n_k_idx[1], 0)
         ).bitcast[DType.int32]()
 
@@ -983,36 +981,36 @@ struct MatmulInnerLoopBPacked[
         if prefetch_b_distance > 0:
             alias prefetch_offset = prefetch_b_distance * pack_inner_size
 
-            @parameter
-            @always_inline
-            fn prefetch_body[idx: Int]():
+            @unroll
+            for idx in range(pack_inner_size // simd_size):
                 b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
-            unroll[pack_inner_size // simd_size, prefetch_body]()
-
         # This inner kernels works with non-transposed A.
         let K = self.a.dim(1)
-        var a_ptr = self.a.data.offset(
+        let a_ptr = self.a.data.offset(
             self.global_offset.M * K + global_k
         ).bitcast[DType.int32]()
 
         # Loop over local accumulator tiles.
-        @parameter
-        @always_inline
-        fn body[idx0: Int, idx1: Int]():
-            let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
-            alias alignment = alignof[SIMD[c_type, simd_size]]()
-            let c_idx = Index(idx0, idx1 * simd_size)
-            var c_val = c_local.aligned_simd_load[simd_size, alignment](c_idx)
-            let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                simd_size, alignment
-            ]().cast[c_type]()
-            c_val = vpdpbusd[simd_size](c_val, a_val, b_val)
-            c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
-        unroll[a_row_size, pack_inner_size // simd_size, body]()
+        @unroll
+        for idx0 in range(a_row_size):
+
+            @unroll
+            for idx1 in range(pack_inner_size // simd_size):
+                let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                let c_idx = Index(idx0, idx1 * simd_size)
+                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                    c_idx
+                )
+                let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
+                    simd_size, alignment
+                ]().cast[c_type]()
+                c_val = vpdpbusd[simd_size](c_val, a_val, b_val)
+                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
     @adaptive
     fn _run_inner_loop(self):
