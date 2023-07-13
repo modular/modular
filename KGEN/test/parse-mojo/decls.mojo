@@ -1294,8 +1294,8 @@ let mem_global: MemType = MemType()
 # CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
 var mem_global_implicit = MemType()
 
-@register_passable
 @value
+@register_passable
 struct DtorRegType:
     fn __del__(owned self): pass
 

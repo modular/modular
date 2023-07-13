@@ -174,11 +174,11 @@ public:
 
   /// Return any decorators that need to be processed as part of body resolution
   /// phase for a decl.
-  ArrayRef<LexerCursor> getBodyDecorators(SharedState &state) const;
+  ArrayRef<ExprNode *> getBodyDecorators(SharedState &state) const;
 
   /// During signature resolution, this is called with any decorators that need
   /// to persist until body resolution.
-  void setBodyDecorators(ArrayRef<LexerCursor> decorators, SharedState &state);
+  void setBodyDecorators(ArrayRef<ExprNode *> decorators, SharedState &state);
 
 private:
   /// This is set to true if there is an entry for body-decorators in a backing

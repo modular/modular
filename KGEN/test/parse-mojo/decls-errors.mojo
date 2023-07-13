@@ -446,7 +446,7 @@ fn testAmbiguousConversions(a: Int, b: ConvertibleFromInt):
 # Decorators
 ##===----------------------------------------------------------------------===##
 
-@decorator  # expected-error {{unsupported decorator: '@decorator'}}
+@decorator  # expected-error {{unsupported decorator: @decorator}}
 struct DecoratedStruct: pass
 
 fn decoratorTest():

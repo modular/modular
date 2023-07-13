@@ -1401,6 +1401,9 @@ ParserBase::parseDecorators(ssize_t indentation) {
       skipUntilIndentation(indentation);
     }
   }
+  // Decorators are applied to a decl starting from the one closest to it, so
+  // reverse the vector.
+  std::reverse(result.begin(), result.end());
   return result;
 }
 
@@ -1414,6 +1417,158 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
                    "decorators not supported on this statement")
       << SourceRange(decoratorExprs.front().first->getRangeStart(),
                      decoratorExprs.back().first->getRangeEnd());
+}
+
+/// Apply `@export` to an exportable declaration and register it with the shared
+/// state to ensure no duplicate exports.
+static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
+                        StringRef unmangledName, StringRef aliasName,
+                        ExportInterface itf) {
+  if (isa<StructDeclOp>(*decl.getParentDecl())) {
+    shared.emitError(loc, "methods cannot be exported");
+    return;
+  }
+
+  // Handle the unique case of main. We implicitly export main, so this is
+  // simply checking that the user didn't try to export it as something else.
+  if (aliasName == kMainSymbolName) {
+    if (unmangledName != kMainSymbolName)
+      shared.emitError(loc, "only 'main' can be exported as 'main'");
+    if (!isa<LIT::FuncOp>(decl))
+      shared.emitError(loc, "exported 'main' must be a function");
+    return;
+  }
+  if (unmangledName == kMainSymbolName) {
+    shared.emitError(loc, "'main' can only be exported as 'main'");
+    return;
+  }
+
+  llvm::TypeSwitch<ASTDecl &, void>(decl).Case<LIT::FuncOp, GlobalVarDeclOp>(
+      [aliasName](auto op) { op.setLinkageName(aliasName); });
+  // TODO: Allow non-C export.
+  itf.setCExported();
+
+  shared.declResolver->registerAndCheckExport(aliasName, loc);
+}
+
+/// Apply `@export("linkageName")` to an exportable declaration and register it
+/// with the shared state to ensure no duplicate exports.
+static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
+                        StringRef unmangledName, const CallNode &node,
+                        ExportInterface itf) {
+  if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
+      !isa<StringLiteralNode>(node.args[0].expr)) {
+    shared.emitError(
+        node.getLoc(),
+        "@export requires a string specifying the name of the exported symbol")
+        << node.getParenRange();
+    return;
+  }
+  std::string aliasName =
+      cast<StringLiteralNode>(node.args[0].expr)->getValue();
+  if (!isCIdentifier(aliasName)) {
+    shared.emitError(loc, aliasName) << " is not a valid C identifier";
+    return;
+  }
+  applyExport(loc, shared, decl, unmangledName, aliasName, itf);
+}
+
+namespace {
+/// Decorators attached to a declaration may be "signature" decorators, "body"
+/// decorators, compiler decorators, or dynamic decorators.
+///
+/// - Signature decorators are applied during the resolution of the signature of
+///   a declaration before it is name bound.
+/// - Body decorators are applied after the body of the declaration is fully
+///   resolved.
+/// - Compiler decorators (TODO) are applied at some stage in the Mojo
+///   compilation pipeline.
+/// - Dynamic decorators (TODO) are applied at the object at runtime.
+///
+/// This is the base class for handling decorators on declarations. Signature
+/// decorators are processed first and then leftover decorators are persisted
+/// until body resolution is complete via the SharedState.
+struct Decorators : public SharedStateUser {
+  Decorators(ASTDecl &decl, SharedState &shared)
+      : SharedStateUser(shared), decl(decl) {}
+
+  /// Process signature decorators on the declaration using the provided
+  /// functor. The functor should return success if the decorator was processed
+  /// as a signature decorator.
+  void applySignatureDecorators(
+      ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
+      function_ref<LogicalResult(ExprNode *)> process);
+
+  /// Process body decorators on the declaration using the provided functor.
+  /// The functor should return success if the decorator was processed as a
+  /// signature decorator. Any leftover decorators are emitted and deferred to
+  /// the operation.
+  void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
+
+  /// The declaration this class is applying decorators to.
+  ASTDecl &decl;
+};
+} // namespace
+
+void Decorators::applySignatureDecorators(
+    ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
+    function_ref<LogicalResult(ExprNode *)> process) {
+  // Process decorators in the order they are seen. Stop at the first decorator
+  // that needs to be deferred.
+  while (true) {
+    // Return if we are out of decorators.
+    if (decoratorExprs.empty())
+      return;
+    if (failed(process(decoratorExprs.front().first)))
+      break;
+    decoratorExprs = decoratorExprs.drop_front();
+  }
+  // Ensure that there are no other signature decorators afterwards. This is
+  // an error.
+  SmallVector<ExprNode *> bodyDecorators;
+  bodyDecorators.push_back(decoratorExprs.front().first);
+  for (auto [i, decorator] :
+       llvm::enumerate(llvm::make_first_range(decoratorExprs.drop_front()))) {
+    if (failed(process(decorator))) {
+      bodyDecorators.push_back(decorator);
+      continue;
+    }
+    // If the decorator applies, we have an error.
+    InflightDiag diag =
+        emitError(decorator->getLoc(),
+                  "signature decorator cannot come after body decorator")
+        << decorator->getRange();
+    ExprNode *bodyDecorator = decoratorExprs[i].first;
+    diag.attachNote(bodyDecorator->getLoc())
+        << "previous body decorator applied here" << bodyDecorator->getRange();
+    break;
+  }
+  // Defer the rest of the decorators through the shared state.
+  decl.setBodyDecorators(bodyDecorators, shared);
+}
+
+void Decorators::applyBodyDecorators(
+    function_ref<LogicalResult(ExprNode *)> process) {
+  // Don't run decorators if the declaration is invalid.
+  if (decl.hasReferenceError)
+    return;
+
+  ArrayRef<ExprNode *> decoratorExprs = decl.getBodyDecorators(shared);
+  while (true) {
+    // If there are no decorators left, just exit.
+    if (decoratorExprs.empty())
+      return;
+    if (failed(process(decoratorExprs.front())))
+      break;
+    decoratorExprs = decoratorExprs.drop_front();
+  }
+  // TODO: Reject everything else as an unknown decorator for now.
+  for (ExprNode *decorator : decoratorExprs) {
+    InflightDiag diag = emitError(decorator->getLoc(), "unsupported decorator");
+    if (auto ref = dyn_cast<DeclRefNode>(decorator))
+      diag << ": @" << ref->spelling;
+    diag << decorator->getRange();
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1724,67 +1879,61 @@ static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
 
 namespace {
 struct FnDecorators : public SharedStateUser {
-  FnDecorators(ASTDecl &decl, SharedState &shared)
-      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)) {}
+  FnDecorators(ASTDecl &decl, SharedState &shared, StringRef baseName)
+      : SharedStateUser(shared), decl(decl), funcOp(cast<LIT::FuncOp>(decl)),
+        baseName(baseName) {}
 
-  void apply(StringRef baseName,
-             ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs);
+  /// Apply a function signature decorator.
+  LogicalResult apply(ExprNode *decorator);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
-  void applyExport(SMLoc loc, StringRef unmangledName, StringRef aliasName);
-  void applyExport(SMLoc loc, StringRef unmangledName,
-                   const CallNode &callNode);
 
   ASTDecl &decl;
   LIT::FuncOp funcOp;
+  StringRef baseName;
 };
 } // namespace
 
-// Apply all signature decorators.
-void FnDecorators::apply(
-    StringRef baseName,
-    ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs) {
-  for (auto [decorator, cursor] : decoratorExprs) {
-    // Process all the decorators we know about.
-    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-      if (declRef->spelling == "export")
-        applyExport(decorator->getLoc(), baseName, baseName);
-      else if (declRef->spelling == "staticmethod")
-        funcOp.setIsStatic(true);
-      else if (declRef->spelling == "always_inline")
-        funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
-      else if (declRef->spelling == "adaptive")
-        applyAdaptive(*declRef);
-      else if (declRef->spelling == "parameter")
-        funcOp.setIsParametric(true);
-      else if (declRef->spelling == "noncapturing")
-        funcOp.setIsNoncapturing(true);
-      else if (declRef->spelling == "closure")
-        funcOp.setIsClosure(true);
-      else
-        emitError(decorator->getLoc(), "unsupported decorator: @")
-            << declRef->spelling << declRef->getRange();
-      continue;
-    }
-
-    // `x()` forms.
-    if (auto callNode = dyn_cast<CallNode>(decorator)) {
-      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-        // @always_inline("nodebug")
-        if (declRef->spelling == "always_inline" &&
-            callNode->args.size() == 1 &&
-            callNode->args[0].isPositionalStringLiteral("nodebug"))
-          funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
-        else if (declRef->spelling == "export")
-          applyExport(decorator->getLoc(), baseName, *callNode);
-        continue;
-      }
-    }
-
-    emitError(decorator->getLoc(), "unsupported decorator")
-        << decorator->getRange();
+LogicalResult FnDecorators::apply(ExprNode *decorator) {
+  // Process all the decorators we know about.
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "export")
+      applyExport(decorator->getLoc(), shared, decl, baseName, baseName,
+                  funcOp);
+    else if (declRef->spelling == "staticmethod")
+      funcOp.setIsStatic(true);
+    else if (declRef->spelling == "always_inline")
+      funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
+    else if (declRef->spelling == "adaptive")
+      applyAdaptive(*declRef);
+    else if (declRef->spelling == "parameter")
+      funcOp.setIsParametric(true);
+    else if (declRef->spelling == "noncapturing")
+      funcOp.setIsNoncapturing(true);
+    else if (declRef->spelling == "closure")
+      funcOp.setIsClosure(true);
+    else
+      return failure();
+    return success();
   }
+
+  // `x()` forms.
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+      // @always_inline("nodebug")
+      if (declRef->spelling == "always_inline" && callNode->args.size() == 1 &&
+          callNode->args[0].isPositionalStringLiteral("nodebug"))
+        funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+      else if (declRef->spelling == "export")
+        applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
+                    funcOp);
+      else
+        return failure();
+      return success();
+    }
+  }
+  return failure();
 }
 
 void FnDecorators::applyAdaptive(const DeclRefNode &node) {
@@ -1793,51 +1942,6 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
         << node.getRange();
 
   funcOp.setIsAdaptive(true);
-}
-
-void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
-                               StringRef aliasName) {
-  if (isa<StructDeclOp>(*decl.getParentDecl())) {
-    emitError(funcOp.getLoc(), "methods cannot be exported");
-    return;
-  }
-
-  // Handle the unique case of main. We implicitly export main, so this is
-  // simply checking that the user didn't try to export it as something else.
-  if (aliasName == kMainSymbolName) {
-    if (unmangledName != kMainSymbolName)
-      emitError(loc, "only 'main' can be exported as 'main'");
-    return;
-  }
-  if (unmangledName == kMainSymbolName) {
-    emitError(loc, "'main' can only be exported as 'main'");
-    return;
-  }
-
-  funcOp.setLinkageName(aliasName);
-  // TODO: Allow non-C export.
-  funcOp.setCExported();
-
-  getDeclResolver().registerAndCheckExport(aliasName, loc);
-}
-
-void FnDecorators::applyExport(SMLoc loc, StringRef unmangledName,
-                               const CallNode &node) {
-  if (node.args.size() != 1 || node.args[0].kind != CallArgument::kPositional ||
-      !isa<StringLiteralNode>(node.args[0].expr)) {
-    emitError(
-        node.getLoc(),
-        "@export requires a string specifying the name of the exported symbol")
-        << node.getParenRange();
-    return;
-  }
-  std::string aliasName =
-      cast<StringLiteralNode>(node.args[0].expr)->getValue();
-  if (!isCIdentifier(aliasName)) {
-    emitError(loc, aliasName) << " is not a valid C identifier";
-    return;
-  }
-  applyExport(loc, unmangledName, aliasName);
 }
 
 /// Given a function with `isNoncapturing` or `closure` bits, its context, and
@@ -1973,7 +2077,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  FnDecorators(decl, shared).apply(baseName, decoratorExprs);
+  FnDecorators fnDecorators(decl, shared, baseName);
+  Decorators(decl, shared)
+      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+        return fnDecorators.apply(decorator);
+      });
 
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
@@ -2458,6 +2566,11 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // endop terminator.
   appendDefaultReturnAndEndOp(funcOp, decl, shared);
 
+  // Now that the body of the function is parsed, run any body decorators.
+  Decorators(decl, shared).applyBodyDecorators([](ExprNode *decorator) {
+    return failure();
+  });
+
   // Check that any alias forward declarations have been completed.
   if (!shared.diags.isErrorEmitted()) {
     bodyBlock->walk([&](AliasForwardDeclOp aliasFwdDeclOp) {
@@ -2789,15 +2902,13 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 //===----------------------------------------------------------------------===//
 
 /// Process a decorator that is resolved at the signature phase of resolution
-/// and return true, otherwise return false if it is an unknown or body
-/// decorator.
-static bool processStructSignatureDecorator(ExprNode *decorator,
-                                            StructDeclOp structOp,
-                                            DeclResolver &resolver) {
+/// and return success, otherwise failure if it is handled later.
+static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
+                                                     StructDeclOp structOp) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
-      return true;
+      return success();
     }
   }
 
@@ -2809,12 +2920,12 @@ static bool processStructSignatureDecorator(ExprNode *decorator,
           callNode->args.size() == 1 &&
           callNode->args[0].isPositionalStringLiteral("trivial")) {
         structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
-        return true;
+        return success();
       }
     }
   }
   // Not handled in signature phase.
-  return false;
+  return failure();
 }
 
 /// structdef ::=
@@ -2862,11 +2973,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setRegisterPassable(StructDeclOp::RP_MemoryOnly);
 
   // Now that we have the basic struct set up, process signature decorators.
-  SmallVector<LexerCursor> bodyDecorators;
-  for (auto [decorator, cursor] : decoratorExprs)
-    if (!processStructSignatureDecorator(decorator, structOp, *this))
-      bodyDecorators.push_back(cursor);
-  decl.setBodyDecorators(bodyDecorators, shared);
+  Decorators(decl, shared)
+      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+        return processStructSignatureDecorator(decorator, structOp);
+      });
   return success();
 }
 
@@ -3027,24 +3137,11 @@ struct StructBodyDecorators : public SharedStateUser {
         structDecl(structDecl), resolver(resolver), structFields(structFields) {
   }
 
-  void processBodyDecorator(LexerCursor decoratorCursor) {
-    // Don't run decorators if the struct is invalid.
-    if (structDecl.hasReferenceError)
-      return;
-
-    Lexer lexer(resolver.shared, decoratorCursor);
-    ParserBase parser(lexer);
-    ExprNode *expr = nullptr;
-    if (failed(parser.parseExpression(expr, structDecl.getIndentation())))
-      return;
-
-    processDecorator(expr);
-  }
+  LogicalResult processDecorator(ExprNode *expr);
 
 private:
   void processValueDecorator(SMLoc decoratorLoc);
   void processRegisterPassableDecorator(bool isTrivial);
-  void processDecorator(ExprNode *expr);
 
   StructDeclOp structOp;
   ASTDecl &structDecl;
@@ -3376,18 +3473,15 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
                            isMemoryOnly, structFields, resolver);
 }
 
-void StructBodyDecorators::processDecorator(ExprNode *decorator) {
+LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
-    if (declRef->spelling == "value")
-      return processValueDecorator(decorator->getRangeStart());
-
-    emitError(decorator->getLoc(), "unsupported decorator: '@")
-        << declRef->spelling << "'" << declRef->getRange();
-    return;
+    if (declRef->spelling == "value") {
+      processValueDecorator(decorator->getRangeStart());
+      return success();
+    }
+    return failure();
   }
-
-  emitError(decorator->getLoc(), "unsupported decorator")
-      << decorator->getRange();
+  return failure();
 }
 
 /// Process the @register_passable decorator on structs.  This finalizes
@@ -3494,10 +3588,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // If there are any body decorators, resolve them now.
-  for (auto decoratorCursor : structDecl.getBodyDecorators(shared)) {
-    StructBodyDecorators(structOp, structDecl, *this, structFields)
-        .processBodyDecorator(decoratorCursor);
-  }
+  StructBodyDecorators structDecorators(structOp, structDecl, *this,
+                                        structFields);
+  Decorators(structDecl, shared).applyBodyDecorators([&](ExprNode *decorator) {
+    return structDecorators.processDecorator(decorator);
+  });
 
   if (structDecl.hasReferenceError)
     return success();
