@@ -126,6 +126,33 @@ M::findDirInEnvPath(StringRef subdirName, StringRef envName, char separator) {
   return std::nullopt;
 }
 
+ErrorOrSuccess M::writeTempFile(const Twine &model,
+                                function_ref<void(raw_ostream &)> writeFn,
+                                std::string &outPath) {
+  std::error_code ec;
+  std::filesystem::path path = std::filesystem::temp_directory_path(ec);
+  if (ec)
+    return Error(ec.message());
+  path = path / model.str();
+
+  auto tmpFileOr = TempFile::create(path.string());
+  if (tmpFileOr.isError())
+    return tmpFileOr.takeError();
+
+  // Write the runtime to the temp file.
+  llvm::raw_fd_ostream tmpOS(tmpFileOr->getFD(), /*shouldClose=*/false);
+  writeFn(tmpOS);
+  tmpFileOr->keep();
+  outPath = tmpFileOr->getPath().string();
+
+  return success();
+}
+ErrorOrSuccess M::writeTempFile(const Twine &model, StringRef buffer,
+                                std::string &outPath) {
+  return writeTempFile(
+      model, [&](raw_ostream &os) { os << buffer; }, outPath);
+}
+
 ErrorOr<TempFile> TempFile::create(StringRef model) {
   int fd;
   SmallString<0> outFilePathVec;

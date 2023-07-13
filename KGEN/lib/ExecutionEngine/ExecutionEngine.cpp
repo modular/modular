@@ -218,34 +218,6 @@ static constexpr StringLiteral compilerRTlibName = "$compilerrt-lib";
 
 using Keys::ReadOnlyKey;
 
-/// Write the rt buffer to a temporary path so we can pass that path.
-static ErrorOrSuccess writeRTToFile(StringRef prefix, BufferRef buf,
-                                    std::string &outPath) {
-  std::error_code ec;
-  std::filesystem::path path = std::filesystem::temp_directory_path(ec);
-  if (ec)
-    return Error(ec.message());
-
-  // Write to a temporary file, but make it unique so that parallel running
-  // processes don't overwrite and corrupt the file.
-  path = path / (prefix + "_rt-%%%%%%%.a").str();
-  outPath = path.string();
-
-  auto tmpfileOr = TempFile::create(path.string());
-  if (tmpfileOr.isError())
-    return tmpfileOr.takeError();
-
-  // Write the runtime to the temp file.
-  llvm::raw_fd_ostream tmp(tmpfileOr->getFD(), /*shouldClose=*/false);
-  if (ec)
-    return Error(ec.message());
-
-  tmp << buf->getBuffer();
-  outPath = tmpfileOr->getPath().string();
-  tmpfileOr->keep();
-  return success();
-}
-
 /// Set up the ORC platform for the various different binary formats/platforms
 /// we support. This requires that we have an ExecutionSession *and* an
 /// ObjectLinkingLayer.
@@ -360,8 +332,8 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
   // If we have rtBuf we can write it to a file and use that. Otherwise, attempt
   // to read it from the build dir.
   if (rtBuf) {
-    if (auto err =
-            writeRTToFile("compilerrt", std::move(*rtBuf), compilerRTPath))
+    if (auto err = writeTempFile("compiler_rt-%%%%%%%.a", (*rtBuf)->getBuffer(),
+                                 compilerRTPath))
       return err.takeError();
   } else {
     // TODO: This solution prevents cross-compilation.
@@ -441,7 +413,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // TODO(#10097): Orc now supports passing in an archive, remove the usage of
   // files for the orcrt.
   if (haveOrcRT)
-    if (auto err = writeRTToFile("liborc", std::move(*rtBuf), orcRTPath))
+    if (auto err = writeTempFile("liborc_rt-%%%%%%%.a", (*rtBuf)->getBuffer(),
+                                 orcRTPath))
       return err.takeError();
 
   // Windows *requires* the orc runtime.
