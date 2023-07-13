@@ -163,6 +163,11 @@ fn top_level_fn():
     # expected-error @below {{cannot mark a function with capturing closure parameters as @noncapturing}}
     fn not_really_thin[func: fn() capturing -> Int]():
         return
+    @noncapturing
+    @closure
+    # expected-error @below {{cannot mark function as both @noncapturing and @closure}}
+    fn both_decorators():
+        return
     return
 
 # expected-note @+2 {{consider passing by reference instead}}
