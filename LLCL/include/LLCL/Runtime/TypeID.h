@@ -235,6 +235,11 @@ public:
   std::string_view getTypeName() const;
 
   /// Returns the destructor function for this type id, or null if invalid.
+  ///
+  /// CAUTION: The ValueDestructorFn will destroy the object in-place, but
+  ///          will not attempt to delete the object's memory. If the object
+  ///          has been new allocated then the underlying memory must be
+  ///          deleted by the caller.
   ValueDestructorFn getValueDestructor() const;
 
   /// Returns the underlying index representing the type id. This is in the
