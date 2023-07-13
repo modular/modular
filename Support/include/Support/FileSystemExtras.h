@@ -37,6 +37,15 @@ ErrorOrSuccess readFileAtomically(
     const std::filesystem::path &filePath,
     llvm::function_ref<void(const std::filesystem::path &)> read);
 
+/// Invokes the provided callback, writing the output to a temporary file whose
+/// name is based on the provided model. On success, `outPath` is populated with
+/// the path of temporary file.
+ErrorOrSuccess writeTempFile(const Twine &model,
+                             function_ref<void(raw_ostream &)> writeFn,
+                             std::string &outPath);
+ErrorOrSuccess writeTempFile(const Twine &model, StringRef buffer,
+                             std::string &outPath);
+
 /// This class provides a tempfile implementation. The llvm::sys version has
 /// some really odd behavior that is tricky to manage, so we provide our own
 /// implementation.
