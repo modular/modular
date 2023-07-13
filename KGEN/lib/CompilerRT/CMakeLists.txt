@@ -50,5 +50,4 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
 )
-
-target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT)
+target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)

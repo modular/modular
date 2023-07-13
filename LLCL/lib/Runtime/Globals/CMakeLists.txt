@@ -41,5 +41,6 @@ target_include_directories(LLCLRuntimeGlobals-static
   PUBLIC
   ${CMAKE_SOURCE_DIR}/LLCL/include
 )
-target_compile_definitions(LLCLRuntimeGlobals-static PRIVATE MODULAR_BUILDING_LIBRARY)
+target_compile_definitions(LLCLRuntimeGlobals-static PRIVATE MODULAR_NO_EXPORT)
+target_compile_definitions(obj.LLCLRuntimeGlobals-static PRIVATE MODULAR_NO_EXPORT)
 
