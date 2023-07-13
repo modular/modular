@@ -21,6 +21,7 @@ add_modular_dialect_library(LITDialect
   Support
 
   LINK_LIBS PUBLIC
+  DebugInfoDialect
   HLCFDialect
   KGENDialect
   POPDialect

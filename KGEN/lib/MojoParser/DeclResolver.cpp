@@ -1989,6 +1989,42 @@ determineFunctionCaptureBit(ParserBase &p, LIT::FuncOp funcOp,
   return effects;
 }
 
+/// Generate a debug subprogram for this function and set it in its location.
+static void
+setLocationDebugScope(SharedState &shared,
+                      DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
+                      LIT::FuncOp &funcOp, StringRef baseName) {
+  std::unique_ptr<DebugInfo::DIBuilder> &diBuilder = shared.diBuilder;
+  if (!diBuilder)
+    return;
+  FileLineColLoc fileLineCol =
+      funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
+
+  // Compute the subprogram flags.
+  /// If we have any optimizations, mark the subprogram as optimized.
+  DebugInfo::SubprogramFlags spFlags =
+      shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
+                                       : DebugInfo::SubprogramFlags::None;
+  /// If the function has a body, treat it as a definition.
+  if (!funcOp.isExternal())
+    spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
+
+  // Use unresolved types now for simplicity, these will get resolved during
+  // compilation.
+  auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
+    return DebugInfo::DIUnresolvedMLIRType::get(type);
+  };
+
+  auto type = DebugInfo::DISubroutineType::get(
+      funcOp.getContext(),
+      llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
+      llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
+  diScopeGuard = diBuilder->pushSubprogram(
+      baseName, funcOp.getNameAttr(), diBuilder->createFile(fileLineCol),
+      fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
+  funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
+}
+
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
@@ -2226,32 +2262,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto &diBuilder = shared.diBuilder) {
-    FileLineColLoc fileLineCol =
-        funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
-
-    // Compute the subprogram flags.
-    /// If we have any optimizations, mark the subprogram as optimized.
-    DebugInfo::SubprogramFlags spFlags =
-        shared.options.optimizationLevel ? DebugInfo::SubprogramFlags::Optimized
-                                         : DebugInfo::SubprogramFlags::None;
-    /// If the function has a body, treat it as a definition.
-    if (!funcOp.isExternal())
-      spFlags = spFlags | DebugInfo::SubprogramFlags::Definition;
-
-    // Use unresolved types now for simplicity, these will get resolved during
-    // compilation.
-    auto mapUnresolvedType = [](Type type) -> DebugInfo::DIType {
-      return DebugInfo::DIUnresolvedMLIRType::get(type);
-    };
-    auto type = DebugInfo::DISubroutineType::get(
-        getContext(), llvm::map_to_vector(argTypes, mapUnresolvedType),
-        mapUnresolvedType(resultType.mlirType));
-    diScopeGuard = diBuilder->pushSubprogram(
-        baseName, funcOp.getNameAttr(), diBuilder->createFile(fileLineCol),
-        fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
-    funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
-  }
+  setLocationDebugScope(shared, diScopeGuard, funcOp, baseName);
 
   // If this is a nested function, set its parameter declaration. It will be
   // referenced via parameter references instead of symbol references.
@@ -2987,13 +2998,12 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 /// This method creates a FuncOp for a method inside of a struct with the
 /// specified value signature information.  It handles the mechanics of creating
 /// the function but also of registering it with the DeclResolver.
-static std::pair<LIT::FuncOp, ASTDecl &>
-synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
-                         ArrayRef<ValueInputConvention> argConventions,
-                         ArrayRef<StringAttr> argNames, Type resultType,
-                         ImplicitLocOpBuilder &builder, ASTDecl &structDecl,
-                         DeclResolver &resolver,
-                         SpecialFunctionKind specialFnID) {
+static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
+    SharedState &shared, StringRef name, ArrayRef<Type> argTypes,
+    ArrayRef<ValueInputConvention> argConventions,
+    ArrayRef<StringAttr> argNames, Type resultType,
+    ImplicitLocOpBuilder &builder, ASTDecl &structDecl, DeclResolver &resolver,
+    SpecialFunctionKind specialFnID) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
 
   // Get the signature for the function.
@@ -3014,6 +3024,10 @@ synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
   StringAttr nameAttr = getMangledName(builder.getStringAttr(name), signature);
   auto funcOp =
       builder.create<LIT::FuncOp>(nameAttr, signature, argNames, specialFnID);
+
+  // Generate a debug subprogram for this function.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  setLocationDebugScope(shared, diScopeGuard, funcOp, name);
 
   // Register the method in the struct.
   ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
@@ -3092,7 +3106,8 @@ static TypedAttr lookupMoveInit(ASTDecl &structDecl, SharedState &shared) {
 /// one with an empty body.  This allows the CheckLifetimes pass to insert field
 /// dels as needed, and makes sure that anything that refers to this struct
 /// properly runs its destructor.
-static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
+static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
+                                     ASTDecl &structDecl,
                                      DeclResolver &resolver) {
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
@@ -3111,7 +3126,7 @@ static TypedAttr synthesizeEmptyDtor(StructDeclOp structOp, ASTDecl &structDecl,
 
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, funcDecl] =
-      synthesizeMethodInStruct("__del__", selfType.mlirType, convention,
+      synthesizeMethodInStruct(shared, "__del__", selfType.mlirType, convention,
                                selfName, resolver.shared.getNoneType(), builder,
                                structDecl, resolver, SpecialFunctionKind::kDel);
 
@@ -3213,7 +3228,8 @@ hasMemberwiseInit(SMLoc loc, ASTDecl &structDecl, bool isMemoryOnly,
 /// This synthesizes an __init__ method that accepts values for every field of
 /// a struct, making it easy for external clients to initialize it.
 static void synthesizeMemberwiseInit(
-    SMLoc decoratorLoc, ASTDecl &structDecl, bool isMemoryOnly,
+    SharedState &shared, SMLoc decoratorLoc, ASTDecl &structDecl,
+    bool isMemoryOnly,
     ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
     DeclResolver &resolver) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
@@ -3267,8 +3283,8 @@ static void synthesizeMemberwiseInit(
 
   // Create the FuncOp and ASTDecl for the method.
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      "__init__", argTypes, argConventions, argNames, resultType, builder,
-      structDecl, resolver, specialFnId);
+      shared, "__init__", argTypes, argConventions, argNames, resultType,
+      builder, structDecl, resolver, specialFnId);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -3326,7 +3342,8 @@ static void synthesizeMemberwiseInit(
 /// This synthesizes a __copyinit__/__moveinit__ method that recursively
 /// copies/moves each field of a struct.
 static void synthesizeCopyMoveInit(
-    bool isMove, SMLoc decoratorLoc, ASTDecl &structDecl, bool isMemoryOnly,
+    SharedState &shared, bool isMove, SMLoc decoratorLoc, ASTDecl &structDecl,
+    bool isMemoryOnly,
     ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields,
     DeclResolver &resolver) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
@@ -3371,9 +3388,10 @@ static void synthesizeCopyMoveInit(
     specialFnId = SpecialFunctionKind::kCopyInitReg;
 
   // Create the FuncOp and ASTDecl for the method.
-  auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      isMove ? "__moveinit__" : "__copyinit__", argTypes, argConventions,
-      argNames, resultType, builder, structDecl, resolver, specialFnId);
+  auto [funcOp, funcDecl] =
+      synthesizeMethodInStruct(shared, isMove ? "__moveinit__" : "__copyinit__",
+                               argTypes, argConventions, argNames, resultType,
+                               builder, structDecl, resolver, specialFnId);
 
   // Set up the body.
   Block *body = funcOp.getBody();
@@ -3459,21 +3477,21 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   // it has a memberwise initializer.
   if (!hasMemberwiseInit(decoratorLoc, structDecl, isMemoryOnly, structFields,
                          shared)) {
-    synthesizeMemberwiseInit(decoratorLoc, structDecl, isMemoryOnly,
+    synthesizeMemberwiseInit(shared, decoratorLoc, structDecl, isMemoryOnly,
                              structFields, resolver);
   }
 
   // If the struct is not already copyable, but its members are, add a
   // __copyinit__ method.
   if (isCopyable && !structDecl.getSelfType().isCopyable(decoratorLoc, shared))
-    synthesizeCopyMoveInit(/*isMove=*/false, decoratorLoc, structDecl,
+    synthesizeCopyMoveInit(shared, /*isMove=*/false, decoratorLoc, structDecl,
                            isMemoryOnly, structFields, resolver);
 
   // If the struct is not already movable and is memory-only, synthesize a move
   // operation.
   if (isMemoryOnly && isMovable &&
       !structDecl.getSelfType().isMovable(decoratorLoc, shared))
-    synthesizeCopyMoveInit(/*isMove=*/true, decoratorLoc, structDecl,
+    synthesizeCopyMoveInit(shared, /*isMove=*/true, decoratorLoc, structDecl,
                            isMemoryOnly, structFields, resolver);
 }
 
@@ -3610,7 +3628,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     // If one of the fields needs to be destroyed, then we synthesize an empty
     // del function so that lifetime checking can handle field destruction.
     structOp.setDestructorAttr(
-        synthesizeEmptyDtor(structOp, structDecl, *this));
+        synthesizeEmptyDtor(shared, structOp, structDecl, *this));
   }
   // Similarly, look up a __moveinit__ used by temporary elision.  This can't
   // be present for @register_passable types.
