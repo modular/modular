@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-package.h"
+#include "../Common/Compilation.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
@@ -353,66 +354,6 @@ PackageBuilder::createResourceAttr(Cache::BufferRef bytes, Twine name) {
 }
 
 //===----------------------------------------------------------------------===//
-// setupExecutionEngine
-//===----------------------------------------------------------------------===//
-
-/// This function sets up the ExecutionEngine. Its remit is initializing the
-/// LLVM MC targets, the target machine, the cache backends, and the execution
-/// engine itself. This function does not provide an ExecutionEngine suitable
-/// for JIT'ing - its purpose is solely to generate binaries for AOT
-/// consumption.
-static ErrorOr<std::unique_ptr<ExecutionEngine>>
-setupExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
-                     TargetInfoAttr target,
-                     const CompilationOptions &compilationOptions) {
-  // Now create the execution engine so we can JIT.
-  auto tmOr = KGEN::createTargetMachine(compilationOptions,
-                                        /*isJIT=*/false);
-  if (tmOr.isError())
-    return tmOr.takeError();
-
-  auto engineOr = KGEN::ExecutionEngine::create({}, **tmOr);
-  if (failed(engineOr))
-    return engineOr.takeError();
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
-  // Add the object compiler layer.
-  auto compiler =
-      ObjectCompiler::create(runtime, pm, ".kgen_cache", compilationOptions);
-  if (failed(compiler))
-    return compiler.takeError();
-
-  auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
-      std::move(*compiler), engine->getLinkingLayer());
-
-  // Notify the object layer that anything we build is not for immediate
-  // execution.
-  objLayer.notForImmediateExecution();
-
-  // Add the KGEN compiler layer.
-  // First though, get the backend chains to pass into the compile layer.
-  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
-      KGEN_VERSION_STRING);
-  if (transformCacheBackend.isError())
-    return transformCacheBackend.takeError();
-
-  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
-      KGEN_VERSION_STRING);
-  if (regionCacheBackend.isError())
-    return regionCacheBackend.takeError();
-
-  // Get the build info from the current build.
-  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(pm.getContext());
-
-  engine->addLayer<KGENCompilerLayer>(
-      pm, runtime, target, build, compilationOptions, objLayer,
-      std::move(*transformCacheBackend), std::move(*regionCacheBackend));
-  return std::move(engine);
-}
-
-//===----------------------------------------------------------------------===//
 // parsePackageArgs
 //===----------------------------------------------------------------------===//
 
@@ -430,6 +371,7 @@ struct PackageArgs {
 /// Parse the `package` subcommand arguments into a struct.
 static ErrorOrSuccess parsePackageArgs(const State &state,
                                        const llvm::opt::InputArgList &args,
+                                       llvm::SourceMgr &sourceMgr,
                                        PackageArgs &pkgArgs) {
   if (!args.hasArg(options::OPT_INPUT))
     return Error("no input directory provided");
@@ -453,67 +395,13 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 
   pkgArgs.outputPath = args.getLastArgValue(options::OPT_o, "-");
 
-  StringRef triple = args.getLastArgValue(options::OPT_triple);
-  if (args.hasMultipleArgs(options::OPT_triple))
-    return Error("too many specified target triples, expected exactly one");
-
-  StringRef cpu = args.getLastArgValue(options::OPT_cpu);
-  if (args.hasMultipleArgs(options::OPT_cpu))
-    return Error("too many specified target CPUs, expected exactly one");
-
-  StringRef features = args.getLastArgValue(options::OPT_features);
-  if (args.hasMultipleArgs(options::OPT_features))
-    return Error("too many specified target features, expected exactly one");
-
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  CompilationOptions &compilationOptions = pkgArgs.compileOptions;
-  if (args.hasArg(options::OPT_no_optimization))
-    compilationOptions.optimizationLevel = 0;
-
-  // If the user specified the triple, the target CPU, or the target feature
-  // set, use those to override the defaults.
-  if (!triple.empty())
-    compilationOptions.targetTriple = triple.str();
-  if (!cpu.empty())
-    compilationOptions.targetCpu = cpu.str();
-  if (!features.empty())
-    compilationOptions.targetFeatures = features.str();
-
-  // Setup the debug level.
-  StringRef level = args.getLastArgValue(options::OPT_debug_level, "none");
-  if (!llvm::is_contained({"none", "line", "full"}, level)) {
-    return Error("invalid debug level '" + level +
-                 "', expected one of: `none` (the default value), "
-                 "`line-tables`, or `full`");
-  }
-  compilationOptions.debugLevel =
-      llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
-          .Case("none", CompilationOptions::kNoDebug)
-          .Case("line-tables", CompilationOptions::kLineTablesOnly)
-          .Case("full", CompilationOptions::kFullDebugInfo);
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// setupMLIRContext
-//===----------------------------------------------------------------------===//
-
-/// Set up the MLIR context with all the dialects we need.
-static void setupMLIRContext(mlir::MLIRContext &ctx) {
-  // Register the various dialects we need.
-  DialectRegistry dialectRegistry;
-  registerAllKGENDialects(dialectRegistry);
-
-  mlir::registerBuiltinDialectTranslation(dialectRegistry);
-  mlir::registerLLVMDialectTranslation(dialectRegistry);
-
-  // Set up the dialects in the context.
-  ctx.appendDialectRegistry(dialectRegistry);
-  // Allow unregistered dialects, we will verify we know what to do with it
-  // later.
-  ctx.allowUnregisteredDialects();
+  return parseCompilationOptions(
+      state, args, pkgArgs.compileOptions, sourceMgr, options::OPT_I,
+      options::OPT_L, options::OPT_target_triple, options::OPT_target_cpu,
+      options::OPT_target_features, options::OPT_no_optimization,
+      options::OPT_debug_level);
 }
 
 //===----------------------------------------------------------------------===//
@@ -529,6 +417,8 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
                                    LLCL::Runtime &runtime) {
   // Set up the package builder.
   PackageBuilder packageBuilder(parsedPackageOp);
+  mlir::MLIRContext *ctx = packageBuilder.getContext();
+  const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 
   // For now we implicilty export everything in the package, so add exports to
   // the main module for the contents of the module.
@@ -538,35 +428,18 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
     return WalkResult::skip();
   });
 
-  mlir::MLIRContext *ctx = packageBuilder.getContext();
-  // Initialize targets first - we rely on this for getTargetInfo as well as for
-  // the ExecutionEngine.
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmParsers();
-  llvm::InitializeAllAsmPrinters();
-
-  // Pull out the compilation options.
-  const CompilationOptions &compilationOptions = packageArgs.compileOptions;
-
-  // Construct a target specification using the command line options.
-  ErrorOr<TargetInfoAttr> targetOr = getTargetInfoFor(
-      ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
-      compilationOptions.targetFeatures);
-  if (targetOr.isError())
-    return targetOr.takeError();
-  TargetInfoAttr target = targetOr.takeValue();
-  packageBuilder.setTarget(target);
-
   // Set up the ExecutionEngine with all the requisite layers.
   mlir::PassManager pm(ctx);
+  TargetInfoAttr target;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      setupExecutionEngine(runtime, pm, target, compilationOptions);
+      initializeExecutionEngine(runtime, pm, compilationOptions,
+                                ExecutionEngineOptions(), /*isJIT=*/false,
+                                target);
   if (failed(execEngineOr))
     return execEngineOr.takeError();
   std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
-  // Pull out references to the layers we're going to use later.
   auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
+  packageBuilder.setTarget(target);
 
   // This currently compiles the module, so we don't need to try to look
   // anything up just yet.
@@ -644,19 +517,10 @@ static int package(const State &state) {
     return result;
   }
 
+  llvm::SourceMgr sourceMgr;
   PackageArgs packageArgs;
-  if (auto err = parsePackageArgs(state, args, packageArgs))
+  if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());
-
-  //===--------------------------------------------------------------------===//
-  // MLIRContext/LLCL::Runtime setup
-  //===--------------------------------------------------------------------===//
-
-  mlir::MLIRContext ctx;
-  setupMLIRContext(ctx);
-
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
 
   //===--------------------------------------------------------------------===//
   // Build the package
@@ -669,20 +533,29 @@ static int package(const State &state) {
   if (!out)
     return state.reportError(outputError);
 
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
   // Parse the package.
-  mlir::TimingScope parseTimeScope;
-  MojoParserConfig parserConfig(&ctx, runtime, packageArgs.compileOptions);
-  llvm::SourceMgr sourceMgr;
-  auto [ownedModuleOp, packageOp] =
-      M::importMojoPackage(packageArgs.inputPath, packageArgs.name, sourceMgr,
-                           parserConfig, parseTimeScope);
-  if (!ownedModuleOp)
-    return state.reportError("could not parse the provided package");
+  mlir::MLIRContext ctx;
+  LIT::PackageOp packageOp;
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &ctx);
+  ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
+      state, args, packageArgs.compileOptions, &ctx, runtime,
+      options::OPT_doc_validate, options::OPT_max_notes, options::OPT_D,
+      [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
+        OwningOpRef<ModuleOp> moduleOp;
+        std::tie(moduleOp, packageOp) =
+            M::importMojoPackage(packageArgs.inputPath, packageArgs.name,
+                                 sourceMgr, parserConfig, ts);
+        return moduleOp;
+      });
+  if (failed(module))
+    return state.reportError(module.getError());
 
   // Build the package from the inputs we just parsed, and write the output to
   // `out`.
-  if (auto err =
-          buildPackage(packageArgs, *ownedModuleOp, packageOp, *out, runtime))
+  if (auto err = buildPackage(packageArgs, **module, packageOp, *out, runtime))
     return state.reportError(err.getError());
 
   out->keep();

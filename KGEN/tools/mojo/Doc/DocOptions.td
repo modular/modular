@@ -8,17 +8,22 @@ include "Doc/DocDescription.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
+// Output Options
+//===----------------------------------------------------------------------===//
+
+def OutputOptionGroup : OptionGroup<"Output Options">, Index<0>;
+
+def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
+  MetaVarName<"PATH">, HelpText<"The path to which an output file "
+  "will be written. If not provided, output is written to stdout">;
+
+//===----------------------------------------------------------------------===//
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation Options">, Index<0>;
+def CompilationOptionGroup : OptionGroup<"Compilation Options">, Index<1>;
 
-def o : JoinedOrSeparate<["-"], "o">, Group<CompilationOptionGroup>, Index<0>,
-  MetaVarName<"PATH">,
-  HelpText<"The path to which an output file will be written. If not "
-           "provided, output is written to stdout.">;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
   MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "
            "included Mojo files.">;
@@ -28,7 +33,7 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
 //===----------------------------------------------------------------------===//
 
 def ValidationOptionGroup :
-  OptionGroup<"Validation Options">, Index<1>,
+  OptionGroup<"Validation Options">, Index<2>,
   HelpText<
     "During translation of doc strings, this tool may emit warnings if those "
     "doc strings do not meet certain criteria. By default, warnings are "

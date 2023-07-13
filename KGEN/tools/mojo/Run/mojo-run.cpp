@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-run.h"
+#include "../Common/Compilation.h"
 
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/CompilationOptions.h"
@@ -78,7 +79,8 @@ struct RunOptTable : public llvm::opt::PrecomputedOptTable {
 ///    argument ("Foo.mojo" from the example above).
 static std::optional<int> parseArgs(const State &state,
                                     llvm::opt::InputArgList &args,
-                                    llvm::SourceMgr &sourceManager) {
+                                    llvm::SourceMgr &sourceManager,
+                                    CompilationOptions &compilationOptions) {
   // First, parse all arguments, in order to find the index of the input
   // argument.
   RunOptTable options;
@@ -134,112 +136,22 @@ static std::optional<int> parseArgs(const State &state,
   if (failed(bufferOrErr))
     return state.reportError(bufferOrErr.getError());
 
-  // Initialize the source manager with the input file buffer and all includes
-  // provided on the command line.
+  // Initialize the source manager with the input file buffer.
   sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
-  sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// Mojo to MLIR compilation
-//===----------------------------------------------------------------------===//
-
-/// Given a list of arguments that includes an input file path, reads the Mojo
-/// file at that path and translates it into an MLIR module. Returns an failure
-/// exit code should an error occur, and nullopt otherwise.
-static std::optional<int>
-compileModule(const State &state, const llvm::opt::InputArgList &args,
-              LLCL::Runtime &runtime, MLIRContext &context,
-              llvm::SourceMgr &sourceManager, CompilationOptions &options,
-              OwningOpRef<ModuleOp> &moduleOp) {
-
-  // Initialize the MLIR context.
-  DialectRegistry registry;
-  registerAllKGENDialects(registry);
-  registerBuiltinDialectTranslation(registry);
-  registerLLVMDialectTranslation(registry);
-  context.appendDialectRegistry(registry);
-
-  // We don't allow users to configure the time profiler.
-  mlir::DefaultTimingManager timingManager;
-  mlir::TimingScope timing = timingManager.getRootScope();
-
-  // Build the compilation options based on the provided arguments.
-  options.targetTriple = llvm::Triple::normalize(args.getLastArgValue(
-      options::OPT_targetTriple, llvm::sys::getDefaultTargetTriple()));
-  options.targetCpu =
-      args.getLastArgValue(options::OPT_targetCpu, llvm::sys::getHostCPUName());
-  options.targetFeatures =
-      args.getLastArgValue(options::OPT_targetFeatures, getHostCPUFeatures());
-  if (args.hasArg(options::OPT_no_optimization))
-    options.optimizationLevel = 0;
-  options.linkDirs = args.getAllArgValues(options::OPT_L);
-
-  // Parse the input Mojo file into an MLIR module.
-  MojoParserConfig parseConfig(&context, runtime, options);
-  parseConfig.validateDocStrings = args.hasArg(options::OPT_doc_validate);
-  int maxNotes = 0;
-  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
-    parseConfig.maxNotesPerDiagnostic = maxNotes;
-
-  TimingScope mojoScope = timing.nest("Import Mojo");
-  moduleOp = importMojoFile(sourceManager, parseConfig, mojoScope);
-  if (!moduleOp)
-    return state.reportError("could not parse the module");
-
-  // Tag the module with the environment, which includes any definitions the
-  // user may have specified on the command line.
-  context.loadDialect<KGENDialect>();
-  ErrorOr<EnvAttr> envOrErr =
-      EnvAttr::parseDefines(&context, args.getAllArgValues(options::OPT_D));
-  if (failed(envOrErr))
-    return state.reportError(
-        llvm::formatv("an internal error occurred when initializing the Mojo "
-                      "MLIR module: {0}",
-                      envOrErr.getError()));
-  moduleOp.get()->setAttr(EnvAttr::getEnvAttrName(), *envOrErr);
-
+  if (ErrorOrSuccess err = parseCompilationOptions(
+          state, args, compilationOptions, sourceManager, options::OPT_I,
+          options::OPT_L, options::OPT_target_triple, options::OPT_target_cpu,
+          options::OPT_target_features, options::OPT_no_optimization,
+          options::OPT_debug_level)) {
+    return state.reportError(err.getError());
+  }
   return {};
 }
 
 //===----------------------------------------------------------------------===//
 // Mojo program execution
 //===----------------------------------------------------------------------===//
-
-/// Either extract the target info from the given module or, if the info isn't
-/// available, construct target info based on the given compilation options. If
-/// target info could not be constructed, a diagnostic is emitted and a null
-/// attribute is returned.
-static TargetInfoAttr
-getOrConstructTargetInfo(MLIRContext &context, ModuleOp moduleOp,
-                         const CompilationOptions &options) {
-  TargetInfoAttr target = getTargetInfo(moduleOp);
-  if (target) {
-    if (target.getTripleStr() != options.targetTriple ||
-        target.getCpu() != options.targetCpu ||
-        target.getFeatures() != options.targetFeatures) {
-      mlir::emitWarning(moduleOp.getLoc(),
-                        "module target does not match command line "
-                        "specification and will be overwritten");
-      target = nullptr;
-    }
-  }
-
-  if (!target) {
-    ErrorOr<TargetInfoAttr> targetOr =
-        getTargetInfoFor(&context, options.targetTriple, options.targetCpu,
-                         options.targetFeatures);
-    if (failed(targetOr)) {
-      mlir::emitError(moduleOp.getLoc(), targetOr.getError());
-      return {};
-    }
-    target = targetOr.takeValue();
-  }
-
-  return target;
-}
 
 /// Returns whether the given module exports a `main` function.
 static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
@@ -275,61 +187,17 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          MLIRContext &context,
                          const CompilationOptions &options, ModuleOp moduleOp,
                          ArrayRef<const char *> arguments) {
-  // Now, move on to lowering the MLIR module to LLVM.
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmParser();
-  llvm::InitializeNativeTargetAsmPrinter();
-
-  // Instantiate an execution engine for JIT compilation.
-  auto machineOrErr = createTargetMachine(options,
-                                          /*isJIT=*/true);
-  if (failed(machineOrErr))
-    return state.reportError(machineOrErr.getError());
-  std::unique_ptr<llvm::TargetMachine> machine = std::move(*machineOrErr);
-
-  // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
-  auto engineOrErr = ExecutionEngine::createWithStandardLayers(
-      {/*registerDebugPlugins=*/false}, *machine);
-  if (failed(engineOrErr))
-    return state.reportError(engineOrErr.getError());
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOrErr);
-
-  // Add the object compiler layer to the execution engine.
-  mlir::PassManager passManager(&context);
-  ErrorOr<ObjectCompiler> objectCompiler =
-      ObjectCompiler::create(runtime, passManager, ".kgen_cache", options);
-  if (failed(objectCompiler))
-    return state.reportError(Twine("could not create object compiler: ") +
-                             objectCompiler.getError());
-  ObjectCompilerLayer &objectCompilerLayer =
-      engine->addLayer<ObjectCompilerLayer>(std::move(*objectCompiler),
-                                            engine->getLinkingLayer());
-
-  // Add the KGEN compiler layer. To do so, first get the backend chains to pass
-  // into the compile layer.
-  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
-      KGEN_VERSION_STRING);
-  if (failed(transformCacheBackend))
-    return state.reportError(transformCacheBackend.getError());
-
-  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
-      KGEN_VERSION_STRING);
-  if (failed(regionCacheBackend))
-    return state.reportError(transformCacheBackend.getError());
-
-  // Next, find a target specification.
-  TargetInfoAttr target = getOrConstructTargetInfo(context, moduleOp, options);
-  if (!target)
-    return EXIT_FAILURE;
-
-  // Finally, instantiate the compiler layer, using the build info from the
-  // current build.
-  BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(&context);
-  KGENCompilerLayer &compilerLayer = engine->addLayer<KGENCompilerLayer>(
-      passManager, runtime, target, build, options, objectCompilerLayer,
-      std::move(*transformCacheBackend), std::move(*regionCacheBackend));
+  mlir::PassManager pm(&context);
+  TargetInfoAttr target;
+  // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed.
+  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
+      initializeExecutionEngine(runtime, pm, options,
+                                {/*registerDebugPlugins=*/false},
+                                /*isJIT=*/true, target);
+  if (failed(execEngineOr))
+    return state.reportError(execEngineOr.getError());
+  std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
+  auto &compilerLayer = engine->getLayer<KGENCompilerLayer>();
 
   // Add the module into the layer. This will actually compile it down to the
   // post-elaboration phase, because before that phase we don't have flat
@@ -367,7 +235,9 @@ static int run(const State &state) {
   // Parse arguments.
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
-  if (std::optional<int> exitCode = parseArgs(state, args, sourceManager))
+  CompilationOptions options;
+  if (std::optional<int> exitCode =
+          parseArgs(state, args, sourceManager, options))
     return *exitCode;
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
@@ -378,15 +248,18 @@ static int run(const State &state) {
   // Lower the input file to an MLIR module.
   MLIRContext context;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
-  CompilationOptions options;
-  OwningOpRef<ModuleOp> moduleOp;
-  if (std::optional<int> exitCode = compileModule(
-          state, args, runtime, context, sourceManager, options, moduleOp))
-    return *exitCode;
+  ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
+      state, args, options, &context, runtime, options::OPT_doc_validate,
+      options::OPT_max_notes, options::OPT_D,
+      [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
+        return importMojoFile(sourceManager, parserConfig, ts);
+      });
+  if (failed(moduleOp))
+    return state.reportError(moduleOp.getError());
 
   // Execute the Mojo program.
   return executeModule(
-      state, runtime, context, options, *moduleOp,
+      state, runtime, context, options, **moduleOp,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()));
 }
 

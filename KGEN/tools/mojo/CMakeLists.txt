@@ -6,6 +6,7 @@
 
 add_modular_tool(mojo
   mojo.cpp
+  Common/Compilation.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
   Package/mojo-package.cpp
