@@ -1339,6 +1339,13 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)
 
+# CHECK: lit.globalvar.decl export C @exported_alias {{.*}} {linkageName = "exported_global"}
+@export("exported_global")
+var exported_alias = 1
+# CHECK: lit.globalvar.decl export C @exported_global_var {{.*}} {linkageName = "exported_global_var"}
+@export
+var exported_global_var = 1
+
 ##===----------------------------------------------------------------------===##
 # Exported Functions
 ##===----------------------------------------------------------------------===##
