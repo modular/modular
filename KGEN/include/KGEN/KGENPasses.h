@@ -70,8 +70,7 @@ struct LowerToLLVMOptions
       llvm::cl::values(
           clEnumValN(DebugInfo::EmissionKind::None, "none",
                      "Disable all debug info."),
-          clEnumValN(DebugInfo::EmissionKind::LineTablesOnly,
-                     "only-line-tables",
+          clEnumValN(DebugInfo::EmissionKind::LineTablesOnly, "line-tables",
                      "Only generate debug info for line number tables."),
           clEnumValN(DebugInfo::EmissionKind::Full, "full",
                      "Generate full debug info.")),

@@ -468,6 +468,9 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
   CompilationOptions &compilationOptions = pkgArgs.compileOptions;
+  if (args.hasArg(options::OPT_no_optimization))
+    compilationOptions.optimizationLevel = 0;
+
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
   if (!triple.empty())
@@ -476,6 +479,19 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
     compilationOptions.targetCpu = cpu.str();
   if (!features.empty())
     compilationOptions.targetFeatures = features.str();
+
+  // Setup the debug level.
+  StringRef level = args.getLastArgValue(options::OPT_debug_level, "none");
+  if (!llvm::is_contained({"none", "line", "full"}, level)) {
+    return Error("invalid debug level '" + level +
+                 "', expected one of: `none` (the default value), "
+                 "`line-tables`, or `full`");
+  }
+  compilationOptions.debugLevel =
+      llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
+          .Case("none", CompilationOptions::kNoDebug)
+          .Case("line-tables", CompilationOptions::kLineTablesOnly)
+          .Case("full", CompilationOptions::kFullDebugInfo);
 
   return success();
 }
