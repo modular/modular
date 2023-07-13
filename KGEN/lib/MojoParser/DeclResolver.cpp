@@ -1907,7 +1907,7 @@ struct FnDecorators : public SharedStateUser {
         baseName(baseName) {}
 
   /// Apply a function signature decorator.
-  LogicalResult apply(ExprNode *decorator);
+  LogicalResult apply(ExprNode *decorator, FnEffects &effects);
 
 private:
   void applyAdaptive(const DeclRefNode &node);
@@ -1918,7 +1918,7 @@ private:
 };
 } // namespace
 
-LogicalResult FnDecorators::apply(ExprNode *decorator) {
+LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export")
@@ -1933,9 +1933,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
     else if (declRef->spelling == "parameter")
       funcOp.setIsParametric(true);
     else if (declRef->spelling == "noncapturing")
-      funcOp.setIsNoncapturing(true);
+      effects = bitEnumClear(effects, FnEffects::Capturing);
     else if (declRef->spelling == "closure")
-      funcOp.setIsClosure(true);
+      effects = effects | FnEffects::Capturing;
     else
       return failure();
     return success();
@@ -1967,45 +1967,25 @@ void FnDecorators::applyAdaptive(const DeclRefNode &node) {
   funcOp.setIsAdaptive(true);
 }
 
-/// Given a function with `isNoncapturing` or `closure` bits, its context, and
-/// its signature, determine whether the function effects needs to have
-/// `capturing` in it.
+/// Given the lexical context of a function, return true if the default bit
+/// for the function is capturing.
 /// FIXME: The language modeling here is a mess. It needs more thought.
-static FnEffects
-determineFunctionCaptureBit(ParserBase &p, LIT::FuncOp funcOp,
-                            FnEffects effects,
-                            ArrayRef<ParamDeclAttr> inputParamDecls,
-                            ArrayRef<ParamDeclAttr> resultParamDecls) {
+static bool isCapturingByDefault(LIT::FuncOp funcOp,
+                                 ArrayRef<ParamDeclAttr> inputParamDecls,
+                                 ArrayRef<ParamDeclAttr> resultParamDecls) {
   // Nested functions are capturing by default.
-  if (funcOp->getParentOfType<LIT::FuncOp>() || funcOp.getIsClosure())
-    effects = effects | FnEffects::Capturing;
+  if (funcOp->getParentOfType<LIT::FuncOp>())
+    return true;
   // Any function that contains a capturing closure as a parameter is itself
   // capturing.
   // TODO: Check struct elements too.
-  bool transitivelyCaptures = llvm::any_of(
+  return llvm::any_of(
       llvm::concat<const ParamDeclAttr>(inputParamDecls, resultParamDecls),
       [](ParamDeclAttr decl) {
         if (auto signature = dyn_cast<SignatureType>(decl.getType()))
           return signature.isCapturing();
         return false;
       });
-  if (transitivelyCaptures) {
-    effects = effects | FnEffects::Capturing;
-    // If the user tried to mark a transitive capturing closure as thin, emit an
-    // error.
-  }
-  if (funcOp.getIsNoncapturing()) {
-    if (transitivelyCaptures) {
-      p.emitError(funcOp.getLoc(), "cannot mark a function with capturing "
-                                   "closure parameters as @noncapturing");
-    } else if (funcOp.getIsClosure()) {
-      p.emitError(funcOp.getLoc(),
-                  "cannot mark function as both @noncapturing and @closure");
-    } else {
-      effects = bitEnumClear(effects, FnEffects::Capturing);
-    }
-  }
-  return effects;
 }
 
 /// Generate a debug subprogram for this function and set it in its location.
@@ -2134,14 +2114,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in function definition"))
     return failure();
 
-  // Now that we have figured out the lexical structure, allow decorators to
-  // take a crack at the signature.
-  FnDecorators fnDecorators(decl, shared, baseName);
-  Decorators(decl, shared)
-      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return fnDecorators.apply(decorator);
-      });
-
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
   SmallVector<TypedAttr> defaults;
@@ -2161,8 +2133,16 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   decl.hasReferenceError |= sigDecl.hasReferenceError;
   decl.declsInScope = std::move(sigDecl.declsInScope);
 
-  effects = determineFunctionCaptureBit(p, funcOp, effects, inputParamDecls,
-                                        resultParamDecls);
+  if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls))
+    effects = effects | FnEffects::Capturing;
+
+  // Now that we have figured out the lexical structure, allow decorators to
+  // take a crack at the signature.
+  FnDecorators fnDecorators(decl, shared, baseName);
+  Decorators(decl, shared)
+      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+        return fnDecorators.apply(decorator, effects);
+      });
 
   // Now that all the structural properties are determined, perform any
   // name-binding specific checks over the declaration.  This happens after
