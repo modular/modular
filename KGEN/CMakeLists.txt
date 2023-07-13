@@ -101,98 +101,6 @@ macro(_setup_debug_flags)
   endif()
 endmacro()
 
-# This target represents the full mojo-sdk, and builds both `mojo` and all of
-# the necessary standard library packages.
-add_custom_target(mojo-sdk DEPENDS mojo)
-
-# This function will generate the CMake targets needed to build a Mojo package
-# for the current source directory, or directory specified by PACKAGE_DIR.
-#   Usage:
-#
-#  add_mojo_package(MojoPackage
-#     PUBLIC
-#     Module
-#     NestedPackage/Module
-#  )
-#
-# This will generate a target, `MojoBuiltin`, and also generate
-# documentation for the provided source files. Source files are added with
-# either PUBLIC or PRIVATE to denote whether the documentation should be
-# public or internal.
-#
-# This function will pull its include flags from the linked libs to avoid
-# having too many search paths.
-function(add_mojo_package target)
-  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS" ${ARGN})
-
-  _setup_libs()
-  _setup_debug_flags()
-
-  if (NOT KGEN_PACKAGE_DIR)
-    set(KGEN_PACKAGE_DIR ${CMAKE_CURRENT_LIST_DIR})
-  endif ()
-  if (NOT KGEN_OUTPUT_NAME)
-    get_filename_component(KGEN_OUTPUT_NAME ${KGEN_PACKAGE_DIR} NAME_WE)
-  endif ()
-
-  # CMake emits build targets as relative paths but Ninja doesn't identify
-  # absolute paths (in *.d) as relative paths (in build.ninja).
-  set(package_file_name "${KGEN_OUTPUT_NAME}.mojopkg")
-  file(RELATIVE_PATH package_file_name_rel ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${package_file_name})
-
-  # Process the sources to generate documentation as necessary.
-  set(KGEN_SOURCE_FILES "")
-  foreach(file ${KGEN_PRIVATE})
-    add_mojo_doc(PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-                ${file} Kernels/docs/${target}/)
-    list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
-  endforeach()
-  foreach(file ${KGEN_PUBLIC})
-    add_mojo_doc(PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-                ${file} Kernels/docs/${target}/)
-    list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
-  endforeach()
-
-  # `mojo` doesn't expose synthetic debug info.
-  if (${KGEN_DEBUG_LEVEL} STREQUAL "synthetic")
-    set(KGEN_DEBUG_LEVEL "none")
-  endif()
-
-  # `mojo` is O3 by default, we only need to specify the flag if we're not
-  # optimizing.
-  set(KGEN_OPTIMIZATION_FLAG, "")
-  if (${KGEN_OPTIMIZATION_LEVEL} EQUAL 0)
-    set(KGEN_OPTIMIZATION_FLAG "-no-optimization")
-  endif()
-
-  # If this is not standard library package, it should depend on the full-sdk.
-  if (NOT KGEN_STDLIB)
-    list(APPEND KGEN_LIB_DEPENDS mojo-sdk)
-  endif()
-
-  # Add the command used to generate the archive for the kernel.
-  add_custom_command(
-    OUTPUT ${package_file_name}
-
-    COMMAND $<TARGET_FILE:mojo> package
-    ${KGEN_PACKAGE_DIR} --name ${KGEN_OUTPUT_NAME}
-    -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
-    ${KGEN_OPTIMIZATION_FLAG}
-    --debug-level ${KGEN_DEBUG_LEVEL}
-
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS}
-  )
-  add_custom_target(${target} DEPENDS ${package_file_name})
-  set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
-
-  # If this is a standard library package, then we need to add it to the
-  # mojo-sdk target.
-  if (KGEN_STDLIB)
-    add_dependencies(mojo-sdk ${target})
-  endif()
-endfunction()
-
 
 # This function takes a target name, a single source file, and a list of
 # targets to link. It generates the pre-elaboration library files to be used
@@ -226,10 +134,9 @@ function(add_kgen_library target)
       -debug-level=${KGEN_DEBUG_LEVEL}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
-            mojo-sdk
   )
 
-  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} kgen mojo-sdk ${KGEN_LIB_DEPENDS})
+  add_custom_target(${target} DEPENDS ${KGEN_OUTPUT} ${KGEN_UNPARSED_ARGUMENTS} kgen ${KGEN_LIB_DEPENDS})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 endfunction()
 
@@ -288,10 +195,10 @@ function(add_kgen_kernel target)
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${header_file_name}.d
-    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} mojo-sdk
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS}
   )
   add_custom_target(${target}-headers DEPENDS ${header_file_name})
-  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen mojo-sdk)
+  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen)
   set_target_properties(${target}-headers PROPERTIES
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
   )
@@ -319,12 +226,12 @@ function(add_kgen_kernel target)
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}.d
     # This depends on the header target because that will run (and therefore cache)
     # elaboration, thus saving much of the work for this target.
-    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} ${target}-headers mojo-sdk
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} ${target}-headers
   )
   add_custom_target(${target}-archive DEPENDS ${archive_file_name})
 
   add_library(${target} IMPORTED STATIC)
-  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen mojo-sdk ${target}-archive)
+  add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen ${target}-archive)
   target_link_libraries(${target} INTERFACE KGENCompilerRT ${KGEN_SANITIZER_LIBS})
   set_target_properties(${target} PROPERTIES
     IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
@@ -349,7 +256,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
     -I ${KERNELS_BINARY_DIR}/mojo/Python
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
+    DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
   )
 
   # Process the JSON file into a markdown that can be rendered.
@@ -404,7 +311,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
     > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
+    DEPENDS mojo ${doc_filename} ${KGEN_LIB_DEPENDS}
   )
 
   # Add a `DocValidate` target that checks the `-doc-validate` output for

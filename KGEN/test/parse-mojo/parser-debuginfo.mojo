@@ -64,7 +64,7 @@ from imported_module import VeryUniqueStruct
 
 # CHECK-DAG: #[[FILE:file[0-9]+]] = #debuginfo.file<"[[FILENAME:.*imported_module.mojo]]" in
 
-# CHECK-DAG: #[[LOCAL_VAR:local_variable[0-9]*]] = #debuginfo.local_variable<scope = #[[SP:subprogram[0-9]+]], name = "very_unique_arg", file = #[[FILE]],
+# CHECK-DAG: #[[LOCAL_VAR:local_variable[0-9]+]] = #debuginfo.local_variable<scope = #[[SP:subprogram[0-9]+]], name = "very_unique_arg", file = #[[FILE]],
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
