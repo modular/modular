@@ -992,7 +992,8 @@ struct MatmulInnerLoopBPacked[
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                let a_val = a_ptr.offset(idx0 * K).simd_load[1]().cast[c_type]()
+                # width K bytes or K/4 ints, a_ptr is pointer to ints
+                let a_val = a_ptr.offset(idx0 * K // 4).load().cast[c_type]()
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 let c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
