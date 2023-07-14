@@ -141,6 +141,11 @@ public:
           "Compilation target CPU features. Defaults to the host features."),
       cl::init(getHostCPUFeatures())};
 
+  cl::opt<std::string> march{
+      "march", cl::desc("Architecture to generate code for (see --version)")};
+
+  cl::opt<std::string> mcpu{"mcpu", cl::desc("CPU to generate code for")};
+
   KGENCommonOptions() : RuntimeWorkQueueCLOptions(WorkQueueType::kThreadPool) {}
 
   /// Get the include directories that exist on the file system.

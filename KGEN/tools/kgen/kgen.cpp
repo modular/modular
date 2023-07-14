@@ -19,6 +19,7 @@
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/MArchTarget/MArchTarget.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -241,9 +242,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // Find a target specification or construct one using the commandline options.
   TargetInfoAttr target = getTargetInfo(*theModule);
   if (target) {
-    if (target.getTripleStr() != clOptions.targetTriple ||
-        target.getCpu() != clOptions.targetCpu ||
-        target.getFeatures() != clOptions.targetFeatures) {
+    if (!clOptions.march.empty()) {
+      mlir::emitWarning(theModule->getLoc(),
+                        "overriding module target specification with -march");
+    } else if (target.getTripleStr() != clOptions.targetTriple ||
+               target.getCpu() != clOptions.targetCpu ||
+               target.getFeatures() != clOptions.targetFeatures) {
       mlir::emitWarning(theModule->getLoc(),
                         "module target does not match command line "
                         "specification and will be overwritten");
@@ -251,11 +255,19 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     target = nullptr;
   }
   if (!target) {
-    ErrorOr<TargetInfoAttr> targetOr =
-        getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
-                         clOptions.targetFeatures);
+    ErrorOr<TargetInfoAttr> targetOr = nullptr;
+    if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
+      // Use `-march` to determine the feature set.
+      targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu);
+    } else {
+      // Use the full triple, specific CPU, and manually specified features to
+      // get the target info.
+      targetOr =
+          getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
+                           clOptions.targetFeatures);
+    }
     if (targetOr.isError())
-      return mlir::emitError(theModule->getLoc(), targetOr.getError());
+      return failure(clOptions.reportError(targetOr.getError()));
     target = targetOr.takeValue();
   }
 

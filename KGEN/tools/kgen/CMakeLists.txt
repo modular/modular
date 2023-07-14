@@ -25,6 +25,7 @@ add_modular_tool(kgen
   KGENExecutionEngine
   LITDialect
   LLCLRuntimeGlobals
+  MArchTarget
   MSupportGlobals
   POPDialect
   MVersion
