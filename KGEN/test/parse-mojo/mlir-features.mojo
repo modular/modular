@@ -111,9 +111,9 @@ fn testAttrConcatWithoutType[
 struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
     alias StorageTy = __mlir_type[`!pop.pointer<`, elType, `>`]
     # CHECK: lit.struct.field value : !pop.pointer<[[ELTYPE]]>
-    var value: StorageTy
+    var value: Self.StorageTy
 
-    fn __init__(value: StorageTy) -> MyPointer[elType]:
+    fn __init__(value: Self.StorageTy) -> MyPointer[elType]:
         return MyPointer[elType] {value: value}
 
 

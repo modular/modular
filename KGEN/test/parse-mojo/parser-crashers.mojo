@@ -48,7 +48,7 @@ struct XDType[_type: __mlir_type.`!kgen.dtype`]:
     alias type = _type
 
     fn getType(self) -> __mlir_type.`!kgen.dtype`:
-      return type
+      return Self.type
 
 // -----
 

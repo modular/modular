@@ -675,12 +675,12 @@ fn referencesDefaultArgumentFunction():
 
 struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
     alias StorageType = __mlir_type[`!kgen.variadic<`, EltType, `>`]
-    var value: StorageType
+    var value: Self.StorageType
 
     fn __copyinit__(inout self, existing: Self):
         self.value = existing.value
 
-    fn __init__(inout self, value: StorageType):
+    fn __init__(inout self, value: Self.StorageType):
         self.value = value
 
     fn size(self) -> __mlir_type.index:
@@ -994,6 +994,13 @@ struct DelegatingInitMem:
 
     fn __init__(inout self, value: Int):
         self.value = value
+
+# External issue #260
+fn nameOutsideStruct(x: Int, y: Int):
+  pass
+struct ShadowsOuterName:
+  fn nameOutsideStruct(self: Self):
+    nameOutsideStruct(1, 2)
 
 
 ##===----------------------------------------------------------------------===##
