@@ -13,5 +13,4 @@ def REPLDescription : MojoCommandDescription<
   "\n"
   "Any number of options and arguments may be specified on the command line. "
   "These are then forwarded to the underlying lldb tool, which runs the REPL.",
-  /*inputMetaVarName=*/"lldb-args", /*requiresInput=*/false,
-  /*variadicInput=*/true>, Index<2>;
+  [UsageInfo<"lldb-options", "", /*variadicInput=*/false>]>, Index<2>;

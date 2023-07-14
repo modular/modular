@@ -60,16 +60,8 @@ public:
     return record->getValueAsString("description");
   }
 
-  StringRef getInputMetaVarName() const {
-    return record->getValueAsString("inputMetaVarName");
-  }
-
-  bool getRequiresInput() const {
-    return record->getValueAsBit("requiresInput");
-  }
-
-  bool getVariadicInput() const {
-    return record->getValueAsBit("variadicInput");
+  std::vector<llvm::Record *> getUsages() const {
+    return record->getValueAsListOfDefs("usages");
   }
 
   /// Returns all of the command description records that are subcommands of

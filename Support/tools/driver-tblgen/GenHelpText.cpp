@@ -109,14 +109,20 @@ static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
 static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
                                ArrayRef<CommandOptionGroup> groups) {
   os << "SYNOPSIS\n";
-  os.indent(8) << cmd.getName(/*join=*/" ");
-  if (!groups.empty())
-    os << " [options]";
-  std::string input = llvm::formatv("{0}{1}", cmd.getInputMetaVarName(),
-                                    cmd.getVariadicInput() ? "..." : "");
-  if (!cmd.getRequiresInput())
-    input = "[" + input + "]";
-  os << ' ' << input << "\n\n";
+  for (const llvm::Record *usage : cmd.getUsages()) {
+    os.indent(8) << cmd.getName(/*join=*/" ");
+    StringRef options = usage->getValueAsString("optionsName");
+    if (!options.empty())
+      os << " [" << options << ']';
+
+    StringRef input = usage->getValueAsString("inputName");
+    if (!input.empty()) {
+      os << " <" << input
+         << (usage->getValueAsBit("variadicInput") ? "..." : "") << '>';
+    }
+    os << '\n';
+  }
+  os << '\n';
 }
 
 static void genDescriptionSection(raw_ostream &os,

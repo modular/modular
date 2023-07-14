@@ -44,5 +44,4 @@ def : CommandDescription<
   "accumsansitametnullafacilisimorbifacilisisleovelfringillaestullamcorperegeturnaduisconvallis"
   " convallis tellus id. Diam maecenas ultricies mi eget mauris pharetra et "
   "ultrices neque. Vitae turpis massa sed elementum tempus egestas sed.",
-  /*inputMetaVarName=*/"input", /*requiresInput=*/false,
-  /*variadicInput=*/false>, Index<0>;
+  [UsageInfo<"", "", /*requiresInput=*/false>]>, Index<0>;
