@@ -1,10 +1,12 @@
 // RUN: kgen-opt -split-input-file -lower-kgen-to-llvm %s | FileCheck %s
 
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", cpu="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128>} {
 // CHECK-LABEL: llvm.mlir.global internal constant @_static_string_{{.*}}("AB\00") {addr_space = 0 : i32}
 
 // CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
+// CHECK-SAME: ["target-cpu", "skylake-avx512"]
+// CHECK-SAME: ["target-features", "+fma"]
 // CHECK-NEXT: llvm.return %[[ARG0]] : i32
 kgen.func @trivial(%arg0: si32) -> si32 {
   kgen.return %arg0 : si32

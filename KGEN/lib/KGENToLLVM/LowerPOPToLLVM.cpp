@@ -1585,8 +1585,10 @@ public:
         *funcType, op.getVariadicType().has_value(),
         getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
 
-    // Get the passthrough attributes.
-    mlir::ArrayAttr passthrough = op.getFuncAttrsAttr();
+    // Get the passthrough attributes. Set the target passthrough attributes
+    // early because all functions will have them.
+    mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
+        rewriter, getTypeConverter()->getTarget(), op.getFuncAttrsAttr());
     mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
     mlir::ArrayAttr resAttrs = op.getResAttrsAttr();
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
@@ -1615,8 +1617,7 @@ public:
       rewriter.clearInsertionPoint();
       func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), op.getCallee(),
                                                signature);
-      if (passthrough)
-        func.setPassthroughAttr(passthrough);
+      func.setPassthroughAttr(passthrough);
       if (argAttrs)
         func.setArgAttrsAttr(argAttrs);
       if (resAttrs)
@@ -1626,9 +1627,9 @@ public:
       symtab.insert(func);
     }
 
-    auto call = rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, func, adaptor.getOperands());
-    call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
+    LLVM::CallOp call =
+        createLLVMCall(rewriter, op.getLoc(), func, adaptor.getOperands());
+    rewriter.replaceOp(op, call);
     return success();
   }
 

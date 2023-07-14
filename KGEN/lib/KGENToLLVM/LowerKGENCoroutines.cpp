@@ -233,7 +233,7 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
   b.setLoc(symtab.getOp()->getLoc());
   b.clearInsertionPoint();
 
-  auto endFn = b.create<LLVMFuncOp>(
+  LLVMFuncOp endFn = b.createFunc(
       "__kgen_coro_end_fn",
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.i8PtrType),
       Linkage::Internal);
@@ -268,10 +268,10 @@ static LLVMFuncOp synthesizeCoroCtxtProjFn(SymbolTable &symtab, LLVMBuilder &b,
   b.setLoc(symtab.getOp()->getLoc());
   b.clearInsertionPoint();
 
-  auto projFn = b.create<LLVMFuncOp>(
-      "__kgen_coro_ctxt_proj_fn",
-      LLVMFunctionType::get(cache.i8PtrType, cache.i8PtrType),
-      Linkage::Internal);
+  LLVMFuncOp projFn =
+      b.createFunc("__kgen_coro_ctxt_proj_fn",
+                   LLVMFunctionType::get(cache.i8PtrType, cache.i8PtrType),
+                   Linkage::Internal);
 
   b.setInsertionPointToStart(projFn.addEntryBlock());
   b.create<ReturnOp>(projFn.getArgument(0));
@@ -333,7 +333,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // function with that signature and make the current function the wrapper
   // function. The wrapper will load the arguments into the context and store
   // the ramp function as the resume function.
-  auto asyncFn = b.create<LLVMFuncOp>(
+  LLVMFuncOp asyncFn = b.createFunc(
       (func.getSymName() + "_af").str(),
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.i8PtrType),
       func.getLinkage());
@@ -526,7 +526,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   }
 
   b.clearInsertionPoint();
-  auto suspendFn = b.create<LLVMFuncOp>(
+  LLVMFuncOp suspendFn = b.createFunc(
       (coro.asyncFn.getSymName() + ".suspend").str(),
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), captureTypes),
       Linkage::Internal);

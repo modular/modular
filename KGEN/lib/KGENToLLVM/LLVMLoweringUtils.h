@@ -16,6 +16,11 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Value.h"
 
+namespace mlir::LLVM {
+class CallOp;
+class LLVMFuncOp;
+} // namespace mlir::LLVM
+
 namespace M::KGEN {
 class KGENDType;
 
@@ -43,6 +48,9 @@ public:
   }
   /// Get the ABI alignment of the LLVM type.
   int64_t getTypeABIAlign(Type type) const;
+
+  /// Get the target info.
+  TargetInfoAttr getTarget() const { return target; }
 
 private:
   /// The target info with the data layout to use.
@@ -73,6 +81,36 @@ struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,
 // LLVMBuilder
 //===----------------------------------------------------------------------===//
 
+/// These are the default LLVM fastmath flags that are always set.
+static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
+    mlir::LLVM::FastmathFlags::contract;
+
+/// Create an `LLVM::CallOp` with the default fastmath flags.
+template <typename... Args>
+auto createLLVMCall(OpBuilder &b, Location loc, Args &&...args) {
+  auto call = b.create<mlir::LLVM::CallOp>(loc, std::forward<Args>(args)...);
+  // Attach the default fastmath flags.
+  call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
+  return call;
+}
+
+/// Attach `target-cpu` and `target-features` to the LLVM function attributes,
+/// even if null. These attributes are attached to `LLVMFuncOp` and passed on
+/// to LLVM IR function attributes.
+ArrayAttr attachTargetPassthroughAttrs(OpBuilder &b, TargetInfoAttr target,
+                                       ArrayAttr passthrough);
+
+/// Create an `LLVMFuncOp` with the target info attributes.
+template <typename... Args>
+auto createLLVMFunc(OpBuilder &b, TargetInfoAttr target, Location loc,
+                    Args &&...args) {
+  auto func =
+      b.create<mlir::LLVM::LLVMFuncOp>(loc, std::forward<Args>(args)...);
+  func.setPassthroughAttr(
+      attachTargetPassthroughAttrs(b, target, func.getPassthroughAttr()));
+  return func;
+}
+
 /// This class is a builder, type converter, and data layout bundled together.
 struct LLVMBuilder : public ImplicitLocOpBuilder,
                      public POPToLLVMTypeConverter {
@@ -81,6 +119,19 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
 
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
+
+  /// Create an `LLVM::CallOp` with the default fastmath flags.
+  template <typename... Args>
+  auto createCall(Args &&...args) {
+    return createLLVMCall(*this, getLoc(), std::forward<Args>(args)...);
+  }
+
+  /// Create an `LLVMFuncOp` with the target info attributes.
+  template <typename... Args>
+  auto createFunc(Args &&...args) {
+    return createLLVMFunc(*this, getTarget(), getLoc(),
+                          std::forward<Args>(args)...);
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -153,10 +204,6 @@ struct POPToLLVMDebugInfoTypeConverter
 //===----------------------------------------------------------------------===//
 // ConvertPOPToLLVMPattern
 //===----------------------------------------------------------------------===//
-
-/// These are the default LLVM fastmath flags that are always set.
-static constexpr mlir::LLVM::FastmathFlags LLVM_FASTMATH_FLAGS =
-    mlir::LLVM::FastmathFlags::contract;
 
 /// This is a templated instance of the wrapper class to rewrite a specific op.
 template <typename OpT>

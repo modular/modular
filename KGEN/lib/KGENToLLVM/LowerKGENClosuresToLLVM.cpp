@@ -122,9 +122,9 @@ private:
     for (Type argTy : wrapperFnArgTypes)
       wrapperFnBody->addArgument(argTy, op.getLoc());
     rewriter.clearInsertionPoint();
-    auto wrapperFn = rewriter.create<LLVM::LLVMFuncOp>(
-        op.getLoc(), "closure_wrapper_fn", wrapperFnType,
-        LLVM::Linkage::Internal);
+    LLVM::LLVMFuncOp wrapperFn = createLLVMFunc(
+        rewriter, getTypeConverter()->getTarget(), op.getLoc(),
+        "closure_wrapper_fn", wrapperFnType, LLVM::Linkage::Internal);
     wrapperFn.getBody().push_back(wrapperFnBody);
     return wrapperFn;
   }
@@ -153,8 +153,8 @@ private:
     if (!flatSymbol)
       return emitError(op.getLoc(),
                        "cannot lower call to nested symbol to LLVM");
-    auto llvmFunction = symbolTable.lookup(flatSymbol.getRootReference());
-    auto func = dyn_cast<LLVM::LLVMFuncOp>(llvmFunction);
+    auto func =
+        symbolTable.lookup<LLVM::LLVMFuncOp>(flatSymbol.getRootReference());
     if (!func)
       return emitError(op.getLoc(), "Callee does not reference llvm function");
 
@@ -177,8 +177,8 @@ private:
           wrapperFnBody.getArgument(i + 1);
 
     ValueRange valueRange(liftedNestedFunctionCallArgs);
-    auto callLiftedFunction =
-        rewriter.create<LLVM::CallOp>(op.getLoc(), func, valueRange);
+    LLVM::CallOp callLiftedFunction =
+        createLLVMCall(rewriter, op.getLoc(), func, valueRange);
     rewriter.create<LLVM::ReturnOp>(op.getLoc(),
                                     callLiftedFunction.getResults());
     return success();
@@ -342,13 +342,13 @@ struct CallSignatureOpConversion
       for (Value inp : adaptor.getArguments())
         llvmCallArgs.push_back(inp);
 
-      llvmCall = rewriter.create<LLVM::CallOp>(
-          op.getLoc(), resultTypes, FlatSymbolRefAttr(), llvmCallArgs);
+      llvmCall = createLLVMCall(rewriter, op.getLoc(), resultTypes,
+                                FlatSymbolRefAttr(), llvmCallArgs);
     } else {
       // Create the LLVM call operation.
       // Note: adaptor.getOperands() is a list of callee followed by inputs.
-      llvmCall = rewriter.create<LLVM::CallOp>(
-          op.getLoc(), resultTypes, FlatSymbolRefAttr(), adaptor.getOperands());
+      llvmCall = createLLVMCall(rewriter, op.getLoc(), resultTypes,
+                                FlatSymbolRefAttr(), adaptor.getOperands());
     }
 
     if (op.getNumResults() <= 1) {

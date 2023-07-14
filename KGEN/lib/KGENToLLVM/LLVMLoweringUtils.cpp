@@ -98,6 +98,24 @@ int64_t LLVMDataLayout::getTypeABIAlign(Type type) const {
 }
 
 //===----------------------------------------------------------------------===//
+// TargetInfoAttr
+//===----------------------------------------------------------------------===//
+
+ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
+                                             TargetInfoAttr target,
+                                             ArrayAttr passthrough) {
+  SmallVector<Attribute> attrs;
+  if (passthrough)
+    llvm::append_range(attrs, passthrough);
+  // Attach the target info attributes.
+  attrs.push_back(b.getArrayAttr(
+      {b.getStringAttr("target-cpu"), b.getStringAttr(target.getCpu())}));
+  attrs.push_back(b.getArrayAttr({b.getStringAttr("target-features"),
+                                  b.getStringAttr(target.getFeatures())}));
+  return b.getArrayAttr(attrs);
+}
+
+//===----------------------------------------------------------------------===//
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
