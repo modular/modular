@@ -22,38 +22,76 @@
 
 using namespace M;
 
+/// Given a string, splits it into two substrings around the first occurrence of
+/// a space or newline character, along with a boolean indicating whether the
+/// character was a newline.
+static std::tuple<StringRef, StringRef, bool> splitString(StringRef str) {
+  size_t idx = str.find_if([](char c) { return c == ' ' || c == '\n'; });
+  if (idx == StringRef::npos)
+    return std::make_tuple(str, StringRef(), false);
+  return std::make_tuple(str.slice(0, idx), str.slice(idx + 1, StringRef::npos),
+                         str[idx] == '\n');
+}
+
 /// Write the given `text` to the output stream `os`, inserting a line break if
 /// a "word" would exceed the column `limit` (this is a simple function that,
-/// for now, treats spaces as word delimiters. It will need to be updated if we
-/// wish to better support splitting `inline code` or hyphenated-text). Each new
-/// line is indented by `indent`.
+/// for now, treats spaces and newlines as word delimiters. It will need to be
+/// updated if we wish to better support splitting `inline code` or
+/// hyphenated-text). Each new line is indented by `indent`.
 static raw_ostream &writeWordWrapped(raw_ostream &os, Twine text,
                                      size_t indent = 0, size_t limit = 80) {
-  unsigned maxLineLength = limit - indent;
+  ssize_t maxLineLength = limit - indent;
+  assert(maxLineLength > 0 && "indent must not exceed line length limit");
 
   SmallVector<char> buffer;
   StringRef str = text.toStringRef(buffer);
 
-  // Write the first word, indented.
-  auto [word, rest] = str.split(' ');
-  os.indent(indent) << word;
-  size_t remainingLength = maxLineLength - word.size();
-  str = rest;
-  // Write all remaining words.
+  // The number of characters that can still fit on this line.
+  ssize_t remainingLength = maxLineLength;
+  // Whether any text we are about to print appears on a new line.
+  bool startsNewline = true;
+
   while (!str.empty()) {
-    auto [word, rest] = str.split(' ');
-    if (remainingLength < word.size() + 1) {
-      // Not enough space to write a word and a space; write a new line,
-      // re-indent, and reset the remaining length.
+    auto [word, rest, isSplitOnNewline] = splitString(str);
+    // If we're on a new line, indent before printing any characters.
+    if (startsNewline)
+      os.indent(indent);
+
+    // If the word can't fit on this line, then start a new line and try again.
+    ssize_t size = word.size();
+    if (size > remainingLength) {
       os << '\n';
-      os.indent(indent) << word;
-      remainingLength = maxLineLength - word.size();
-    } else {
-      // Enough space to write a space and and the next word. Subtract what we
-      // wrote from the remaining length.
-      os << ' ' << word;
-      remainingLength -= word.size() + 1;
+      // If the word can't fit on *any* line, just print it on its own line.
+      if (size > maxLineLength) {
+        os.indent(indent) << word << '\n';
+        str = rest;
+      }
+      remainingLength = maxLineLength;
+      startsNewline = true;
+      continue;
     }
+
+    // The word can fit on this line.
+    if (!startsNewline) {
+      // If the word is following another word, print a space.
+      os << ' ';
+      --remainingLength;
+    }
+
+    os << word;
+
+    // If a newline character separates this word and the next, print it and
+    // reset the line length. Otherwise, subtract the word we printed from the
+    // line length.
+    if (isSplitOnNewline) {
+      os << '\n';
+      remainingLength = maxLineLength;
+      startsNewline = true;
+    } else {
+      remainingLength -= word.size();
+      startsNewline = false;
+    }
+    // Move on to the rest of the string.
     str = rest;
   }
 
