@@ -2320,12 +2320,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
     if (funcOp.getIsAdaptive()) {
       decl.hasReferenceError = true;
-      return emitError(funcOp.getLoc(),
-                       "nonparametric closure cannot be marked @adaptive");
+      return emitError(
+          funcOp.getLoc(),
+          "nonparametric capturing closure cannot be marked @adaptive");
     }
     if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
-      emitError(funcOp.getLoc(),
-                "nonparametric closure cannot have input or result parameters");
+      return emitError(funcOp.getLoc(),
+                       "nonparametric capturing closure cannot have input or "
+                       "result parameters");
     }
 
     OpBuilder b(funcOp.getContext());
