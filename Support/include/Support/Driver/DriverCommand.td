@@ -14,11 +14,24 @@
 
 include "llvm/Option/OptParser.td"
 
+// A collection of information related to a command's input, which is used to
+// generate usage strings for a command.
+class UsageInfo<string optName, string inName, bit varIn> {
+  // The name to display for options, or an empty string if no options should be
+  // displayed.
+  string optionsName = optName;
+  // The name to display as a placeholder for a positional input argument, or an
+  // empty string if no positional input argument should be displayed. If
+  // non-empty, this must be a lowercase string.
+  string inputName = inName;
+  // Whether to append a "..." to the positional input argument name.
+  bit variadicInput = varIn;
+}
+
 // A description of a command line executable, or subcommand of a top-level
-// driver executable. In addition to documentation about the command, this also
-// includes information about its positional input arguments.
+// driver executable.
 class CommandDescription<string exec, string subcmd, string summ, string desc,
-                         string inName, bit reqIn, bit varIn> {
+                         list<UsageInfo> uses> {
   // The name of the executable.
   string executable = exec;
   // The name of a subcommand, or an empty string to indicate that a top-level
@@ -41,25 +54,22 @@ class CommandDescription<string exec, string subcmd, string summ, string desc,
   // A long-form description of the command that can span multiple paragraphs.
   // This should begin with a capital letter, and end with a period.
   string description = desc;
-
-  // The name to display as a placeholder for a positional input argument.
-  // This should be a lowercase string.
-  string inputMetaVarName = inName;
-  // Whether this command requires an input argument. `true` indicates the
-  // argument is required (the command fails if no input is provided), `false`
-  // indicates it is optional (the command can succeed with no input argument,
-  // or it uses a default input argument).
-  bit requiresInput = reqIn;
-  // Whether this command accepts more than one input argument.
-  bit variadicInput = varIn;
+  // Information on how a command should be used. These are displayed in the
+  // `SYNOPSIS` section in the order they are defined, as in:
+  //
+  //   mojo [options] <command>
+  //   mojo [options] <path>
+  //   mojo
+  //
+  // At least one should be present in this list.
+  list<UsageInfo> usages = uses;
 }
 
 // A description of a top-level driver executable.
-class DriverDescription<
-    string executable, string summary, string description,
-    string inputMetaVarName, bit requiresInput, bit variadicInput> :
+class DriverDescription<string executable, string summary, string description,
+                        list<UsageInfo> usages> :
   CommandDescription<executable, /*subcommand=*/"", summary, description,
-                     inputMetaVarName, requiresInput, variadicInput>;
+                     usages>;
 
 // This mix-in record can be used to order option groups, options, and their
 // aliases relative to one another.

@@ -12,7 +12,7 @@ def : CommandDescription<
   "driver-tblgen-test", "option-validation", "Test option validation",
   "Test that warnings are emitted when options do not include help text, or "
   "when they do not match the style we expect.",
-  /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>;
+  [UsageInfo<"options", "path", /*variadicInput=*/false>]>;
 
 def FunOptionGroup : OptionGroup<"Fun Options">;
 

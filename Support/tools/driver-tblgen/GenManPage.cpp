@@ -59,16 +59,20 @@ static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
 
 static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
                                ArrayRef<CommandOptionGroup> groups) {
-  os << ".SH \"SYNOPSIS\"\n"
-     << "\\fB" << escape(cmd.getName(/*join=*/" ")) << "\\fR";
-  if (!groups.empty())
-    os << " [\\fIoptions\\fR]";
-  std::string input =
-      escape(llvm::formatv("\\fI{0}{1}\\fR", cmd.getInputMetaVarName(),
-                           cmd.getVariadicInput() ? "..." : ""));
-  if (!cmd.getRequiresInput())
-    input = "[" + input + "]";
-  os << ' ' << input << '\n';
+  os << ".SH \"SYNOPSIS\"\n";
+  for (const llvm::Record *usage : cmd.getUsages()) {
+    os << "\\fB" << escape(cmd.getName(/*join=*/" ")) << "\\fR";
+    StringRef options = usage->getValueAsString("optionsName");
+    if (!options.empty())
+      os << " [\\fI" << escape(options) << "\\fR]";
+
+    StringRef input = usage->getValueAsString("inputName");
+    if (!input.empty()) {
+      os << " \\fI" << input
+         << (usage->getValueAsBit("variadicInput") ? "..." : "") << "\\fR";
+    }
+    os << "\n.br\n";
+  }
 }
 
 static void genDescriptionSection(raw_ostream &os,
@@ -88,7 +92,7 @@ static void genSubcommandsSection(raw_ostream &os,
   for (const llvm::Record *sub : subcommands)
     os << "\\fB" << escape(sub->getValueAsString("subcommand"))
        << "\\fR \\[em] " << escape(sub->getValueAsString("summary"))
-       << "\n.sp\n";
+       << "\n.br\n";
 }
 
 /// Output the given LLVM `Option` record's prefix and name, followed by its

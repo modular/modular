@@ -12,21 +12,31 @@
 
 include "Support/Driver/DriverCommand.td"
 
+// CHECK: \fBdriver\-tblgen\-test\fR [\fIoptions\fR] \fIinputs...\fR
+// CHECK-NEXT: .br
+// CHECK-NEXT: \fBdriver\-tblgen\-test\fR \fIinput\fR
+// CHECK-NEXT: .br
+// CHECK-NEXT: \fBdriver\-tblgen\-test\fR
+// CHECK-NEXT: .br
 def : CommandDescription<
   "driver-tblgen-test", /*subcommand=*/"",
   "Test that options are output in a man page",
   "This command contains several option groups, each of which has several "
-  "options, along with aliases.", /*inputMetaVarName=*/"input",
-  /*requiresInput=*/false, /*variadicInput=*/false>;
+  "options, along with aliases.",
+  [
+    UsageInfo<"options", "inputs", /*variadicInput=*/true>,
+    UsageInfo<"", "input", /*variadicInput=*/false>,
+    UsageInfo<"", "", /*variadicInput=*/false>
+  ]>;
 
 // CHECK: .SH "COMMANDS"
-// CHECK: \fBsubcommand\fR \[em] Test that subcommands are output in a man page
+// CHECK-NEXT: \fBsubcommand\fR \[em] Test that subcommands are output in a man page
+// CHECK-NEXT: .br
 def : CommandDescription<
   "driver-tblgen-test", "subcommand",
   "Test that subcommands are output in a man page",
   "This is the description of a subcommand.",
-  /*inputMetaVarName=*/"input", /*requiresInput=*/false,
-  /*variadicInput=*/false>, Index<0>;
+  [UsageInfo<"options", "input", /*variadicInput=*/false>]>, Index<0>;
 
 // CHECK: .SH "OPTIONS"
 // CHECK: .SS "First Options"

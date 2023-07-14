@@ -26,4 +26,9 @@ def : MojoDriverDescription<
   "Finally, invoking this program with no arguments launches the Mojo REPL. "
   "This behavior is equivalent to the `mojo repl` command; please run "
   "`mojo repl --help` to learn more.",
-  /*metaVarName=*/"command", /*requiresInput=*/false, /*variadicInput=*/false>;
+  [
+    UsageInfo<"", "command", /*variadicInput=*/false>,
+    UsageInfo<"run-options", "path", /*variadicInput=*/false>,
+    UsageInfo<"options", "", /*variadicInput=*/false>,
+    UsageInfo<"", "", /*variadicInput=*/false>
+  ]>;

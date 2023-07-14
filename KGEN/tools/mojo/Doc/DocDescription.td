@@ -9,5 +9,4 @@ include "DescriptionBase.td"
 def DocDescription : MojoCommandDescription<
   "doc", "Compile doc strings",
   "Translate Mojo source file doc strings to a structured output format.",
-  /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>,
-  Index<4>;
+  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<4>;

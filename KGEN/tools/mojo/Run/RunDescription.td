@@ -14,5 +14,4 @@ def RunDescription : MojoCommandDescription<
   "before the input file `path` argument. Any command line arguments that "
   "appear after the Mojo source file `path` are interpreted as arguments for "
   "that Mojo program.",
-  /*inputMetaVarName=*/"path", /*requiresInput=*/true, /*variadicInput=*/false>,
-  Index<0>;
+  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<0>;

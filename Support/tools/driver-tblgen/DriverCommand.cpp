@@ -117,10 +117,21 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
       llvm::PrintWarning(record->getLoc(),
                          "command description should end with a period");
 
-    StringRef metaVarName = record->getValueAsString("inputMetaVarName");
-    if (metaVarName.lower() != metaVarName)
+    std::vector<llvm::Record *> usages = record->getValueAsListOfDefs("usages");
+    if (usages.empty())
       llvm::PrintWarning(record->getLoc(),
-                         "command input metavar name should be lowercase");
+                         "command should include at least one usage");
+    for (const llvm::Record *usage : usages) {
+      StringRef optionsName = usage->getValueAsString("optionsName");
+      if (optionsName.lower() != optionsName)
+        llvm::PrintWarning(usage->getLoc(),
+                           "usage options name should be lowercase");
+
+      StringRef metaVarName = usage->getValueAsString("inputName");
+      if (metaVarName.lower() != metaVarName)
+        llvm::PrintWarning(usage->getLoc(),
+                           "usage input metavar name should be lowercase");
+    }
   };
 
   // First validate the main description.
