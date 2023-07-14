@@ -56,7 +56,7 @@ private:
 
   /// Transform a simple loop that has no early exits and known iterations into
   /// a for-loop.
-  LogicalResult raiseForLoops(LoopOp loop, InFlightDiagnostic &diag);
+  void raiseForLoops(LoopOp loop);
 };
 
 struct ForLoopBoundsAndSteps {
@@ -261,52 +261,15 @@ reorderValueIntoGroups(ValueRange values,
   return result;
 }
 
-LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
-                                           InFlightDiagnostic &diag) {
+void RaiseForLoops::raiseForLoops(LoopOp loop) {
   auto iter = loopJumpOps.find(loop);
   if (iter == loopJumpOps.end())
-    return failure();
+    return;
 
   // Only raise a loop with no early exits which should have only one BreakOp
   // and one ContinueOp.
-  if (iter->second.size() <= 1) {
-    diag.attachNote(loop->getLoc()) << "loop has no exit";
-    return failure();
-  }
-
-  if (iter->second.size() > 2) {
-
-    SmallVector<Operation *> breakOps;
-    SmallVector<Operation *> continueOps;
-    for (Operation *op : iter->second) {
-      if (isa<BreakOp>(op))
-        breakOps.push_back(op);
-      else if (isa<ContinueOp>(op))
-        continueOps.push_back(op);
-    }
-
-    if (breakOps.size() > 1 && continueOps.size() > 1)
-      diag.attachNote(loop->getLoc()) << "loop has multiple exits and multiple "
-                                         "branches back to the beginning.";
-    else if (breakOps.size() > 1)
-      diag.attachNote(loop->getLoc()) << "loop has multiple exits";
-    else
-      diag.attachNote(loop->getLoc())
-          << "loop has multiple branches back to the beginning.";
-
-    if (breakOps.size() > 1) {
-      // Add diagnostics notes to each BreakOp in the loop.
-      for (Operation *op : breakOps)
-        diag.attachNote(op->getLoc()) << "loop exits";
-    }
-
-    if (continueOps.size() > 1) {
-      // Add diagnostics notes to each ContinueOp in the loop.
-      for (Operation *op : breakOps)
-        diag.attachNote(op->getLoc()) << "loop branches back to the beginning";
-    }
-    return failure();
-  }
+  if (iter->second.size() != 2)
+    return;
 
   // Only raise a loop with no early exits which should have only one BreakOp
   // and one ContinueOp.
@@ -314,37 +277,23 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   ContinueOp continueOp = dyn_cast<ContinueOp>(iter->second[!!breakOp]);
   if (!breakOp)
     breakOp = dyn_cast<BreakOp>(iter->second.back());
-  if (!continueOp) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
-  }
-
-  if (!breakOp) {
-    diag.attachNote(loop->getLoc()) << "loop has no exit";
-    return failure();
-  }
+  if (!continueOp || !breakOp)
+    return;
 
   Block &body = loop.getBody().front();
   Operation *term = body.getTerminator();
 
-  if (!isa<ContinueOp>(term)) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
-  }
+  if (!isa<ContinueOp>(term))
+    return;
 
-  if (!isa<IfOp>(breakOp->getParentOp())) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
-  }
+  if (!isa<IfOp>(breakOp->getParentOp()))
+    return;
 
   std::optional<ForLoopBoundsAndSteps> loopInfo =
       inferLoopCount(loop, continueOp, breakOp);
 
-  if (!loopInfo.has_value()) {
-    diag.attachNote(loop->getLoc())
-        << "cannot infer loop bounds and steps as constants for fully unroll";
-    return failure();
-  }
+  if (!loopInfo.has_value())
+    return;
 
   mlir::IRRewriter rewriter{OpBuilder(loop)};
   IRMapping map;
@@ -357,9 +306,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     } else {
       // Assuming that we only handle break has operands that are all
       // BlockArguments.
-      diag.attachNote(loop->getLoc())
-          << "complex loop structure, cannot infer loop bounds and steps";
-      return failure();
+      return;
     }
   }
 
@@ -369,7 +316,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                     loopInfo->inductionVarArgNumber);
 
   // Create the new ForOp with reordered operands.
-  auto forOp = rewriter.create<HLCF::ForOp>(
+  ForOp forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
       loopInfo->upperBound, loopInfo->step, forOperands,
       loop.getUnrollFactorAttr());
@@ -395,7 +342,6 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
     // Move op to the ForOp body.
     if (prevOp == nullptr) {
-      // Move the first op to the beginning of the block.
       op.moveBefore(block, block->begin());
     } else {
       op.moveAfter(prevOp);
@@ -423,9 +369,6 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   // Erase the original loop.
   rewriter.eraseOp(loop);
-  diag.abandon();
-
-  return success();
 }
 
 void RaiseForLoops::runOnOperation() {
@@ -436,11 +379,6 @@ void RaiseForLoops::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
-    InFlightDiagnostic diag = mlir::emitError(
-        loop->getLoc(),
-        " loop is decorated with @unroll, but compiler can't fully unroll it");
-    if (failed(raiseForLoops(loop, diag))) {
-      signalPassFailure();
-    }
+    raiseForLoops(loop);
   }
 }
