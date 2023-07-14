@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -597,7 +598,11 @@ void GeneratorOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
 }
 
-LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
+LogicalResult GeneratorOp::verify() {
+  if (failed(DebugInfo::verifyFuncLocScope(*this)))
+    return failure();
+  return verifyOneBlockOrCached(*this);
+}
 
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
 
@@ -681,6 +686,9 @@ LogicalResult FuncOp::verify() {
                       return inputConv == ValueInputConvention::OwnedInReg;
                     }))
     return emitOpError("can only have default value input conventions");
+
+  if (failed(DebugInfo::verifyFuncLocScope(*this)))
+    return failure();
   return verifyOneBlockOrCached(*this);
 }
 

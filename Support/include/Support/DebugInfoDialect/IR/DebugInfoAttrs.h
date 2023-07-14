@@ -9,11 +9,14 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/Attributes.h"
 
 //===----------------------------------------------------------------------===//
 // DIAttr
 //===----------------------------------------------------------------------===//
+
+namespace mlir {
+class FunctionOpInterface;
+}
 
 namespace M::DebugInfo {
 /// This class represents the base class of all DebugInfo attributes.
@@ -101,6 +104,10 @@ void renameSubprogramsInScopes(StringAttr name, OpTy op) {
       [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
   replacer.recursivelyReplaceElementsIn(op);
 }
+
+/// Verify that a function-like op has the correct location scope. Succeeds if
+/// the location has no scope attached to it.
+LogicalResult verifyFuncLocScope(mlir::FunctionOpInterface op);
 
 } // namespace M::DebugInfo
 

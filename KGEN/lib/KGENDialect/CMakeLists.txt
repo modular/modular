@@ -28,6 +28,7 @@ add_modular_dialect_library(KGENDialect
 
   LINK_LIBS PUBLIC
   CacheDialect
+  DebugInfoDialect
   HLCFDialect
   MCompilerSupport
   MSupport

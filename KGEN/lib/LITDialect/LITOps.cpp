@@ -546,15 +546,7 @@ LogicalResult LIT::FuncOp::verify() {
                          "`lit.extern_func`");
   }
 
-  // If the scope is available in the location, we verify it's the right type.
-  if (DebugInfo::DIScopeAttr scope = DebugInfo::extractScope(getLoc())) {
-    if (!isa<DebugInfo::DISubprogramAttr>(scope)) {
-      return emitOpError("must have subprogram scope in location, but got ")
-             << scope;
-    }
-  }
-
-  return success();
+  return DebugInfo::verifyFuncLocScope(*this);
 }
 
 void LIT::FuncOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
