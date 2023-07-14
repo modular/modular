@@ -18,8 +18,10 @@
 
 namespace M {
 
-#if defined(__x86_64__)
+#if defined(__AVX512F__)
 static constexpr size_t kPreferredMemoryAlignment = 64;
+#elif defined(__AVX2__) || defined(__AVX__)
+static constexpr size_t kPreferredMemoryAlignment = 32;
 #elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 static constexpr size_t kPreferredMemoryAlignment = 16;
 #else
