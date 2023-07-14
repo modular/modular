@@ -8,6 +8,7 @@
 #define SUPPORT_TELEMETRY_INSTRUMENTS_H
 
 #include "Support/Telemetry/ForwardDecls.h"
+#include <chrono>
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/metrics/sync_instruments.h"
 #endif
@@ -47,7 +48,7 @@ private:
 
 #endif
 
-// -------- Histogram --------
+// -------- Histogram and Timer --------
 
 #ifndef MODULAR_ENABLE_TELEMETRY
 
@@ -60,6 +61,14 @@ private:
   friend class TelemetryContext;
 
   Histogram() {}
+};
+
+template <typename T, typename DurationT = std::chrono::nanoseconds>
+class Timer {
+private:
+  friend class TelemetryContext;
+  /// TODO: Allow passing in attributes to attach to the recorded entry.
+  Timer() {}
 };
 
 #else
@@ -76,6 +85,32 @@ private:
       : histogram(std::move(histogram)) {}
 
   std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
+};
+
+template <typename T, typename DurationT = std::chrono::nanoseconds>
+class Timer {
+  using ClockType = std::chrono::high_resolution_clock;
+  using TimePointType = std::chrono::time_point<ClockType>;
+
+public:
+  ~Timer() {
+    auto end = ClockType::now();
+    auto duration = std::chrono::duration_cast<DurationT>(end - start);
+    histogram->Record(duration.count());
+  }
+
+private:
+  friend class TelemetryContext;
+
+  /// TODO: Allow passing in attributes to attach to the recorded entry.
+  Timer(std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram)
+      : histogram(std::move(histogram)) {
+    start = ClockType::now();
+  }
+
+  std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
+  /// The start time.
+  TimePointType start;
 };
 
 #endif

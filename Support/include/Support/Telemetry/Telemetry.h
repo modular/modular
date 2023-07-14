@@ -91,6 +91,18 @@ public:
 #endif
   }
 
+  template <typename DurationT = std::chrono::nanoseconds>
+  Timer<uint64_t, DurationT> createUInt64Timer(StringRef name,
+                                               StringRef description = "",
+                                               StringRef unit = "") {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    return Timer<uint64_t, DurationT>(
+        meter->CreateUInt64Histogram(name, description, unit));
+#else
+    return Timer<uint64_t, DurationT>();
+#endif
+  }
+
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
