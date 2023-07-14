@@ -28,25 +28,25 @@ from Vector import InlinedFixedVector
 struct ConcatInputs[rank: Int, type: DType]:
     alias stack_capacity = 20
     alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
-    alias StorageType = InlinedFixedVector[stack_capacity, BufferType]
-    var storage: StorageType
+    alias StorageType = InlinedFixedVector[Self.stack_capacity, Self.BufferType]
+    var storage: Self.StorageType
 
     fn __init__(inout self, num_inputs: Int):
-        self.storage = StorageType(num_inputs)
+        self.storage = Self.StorageType(num_inputs)
 
     fn __init__(inout self, *inputs: DynamicRankBuffer):
         self.__init__(VariadicList[DynamicRankBuffer](inputs))
 
     fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
-        self.storage = StorageType(input_list.__len__())
+        self.storage = Self.StorageType(input_list.__len__())
         for i in range(input_list.__len__()):
             self.storage.append(input_list[i].to_ndbuffer[rank, type]())
 
-    fn __init__(inout self, *inputs: BufferType):
-        self.__init__(VariadicList[BufferType](inputs))
+    fn __init__(inout self, *inputs: Self.BufferType):
+        self.__init__(VariadicList[Self.BufferType](inputs))
 
-    fn __init__(inout self, input_list: VariadicList[BufferType]):
-        self.storage = StorageType(input_list.__len__())
+    fn __init__(inout self, input_list: VariadicList[Self.BufferType]):
+        self.storage = Self.StorageType(input_list.__len__())
         for i in range(input_list.__len__()):
             self.storage.append(input_list[i])
 
