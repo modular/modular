@@ -907,6 +907,7 @@ struct MatmulInnerLoopBPacked[
         if prefetch_b_distance > 0:
             alias prefetch_offset = prefetch_b_distance * pack_inner_size
 
+            @unroll
             for idx in range(pack_inner_size // simd_size):
                 b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
