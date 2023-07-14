@@ -1010,7 +1010,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[use_vnni]()
+        assert_param[Self.use_vnni]()
         debug_assert(
             self.tile_n_k[1] % 0 == 0, "K dimension must be a multipel of 4"
         )
@@ -1044,7 +1044,9 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[not use_vnni and (not has_neon() or critical_stride)]()
+        assert_param[
+            not Self.use_vnni and (not has_neon() or critical_stride)
+        ]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
