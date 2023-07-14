@@ -9,6 +9,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/FunctionImplementation.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -97,4 +98,14 @@ void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {
 
 void DIAttrTypeReplacer::recursivelyReplaceElementsIn(Operation *op) {
   op->walk([&](Operation *op) { replaceElementsIn(op); });
+}
+
+LogicalResult DebugInfo::verifyFuncLocScope(mlir::FunctionOpInterface op) {
+  if (DebugInfo::DIScopeAttr scope = DebugInfo::extractScope(op.getLoc())) {
+    if (!isa<DebugInfo::DISubprogramAttr>(scope)) {
+      return op.emitOpError("must have subprogram scope in location, but got ")
+             << scope;
+    }
+  }
+  return success();
 }
