@@ -65,8 +65,9 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
       return emitError(func.getLoc(), "failed to convert func signature");
 
     // Mark all functions as internal for now - we'll clean this up later.
-    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType, LLVM::Linkage::Internal);
+    auto funcOp =
+        createLLVMFunc(rewriter, getTypeConverter()->getTarget(), func.getLoc(),
+                       func.getNameAttr(), funcType, LLVM::Linkage::Internal);
 
     // And move the func's body into the new function.
     rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
@@ -103,8 +104,9 @@ struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
-    auto funcOp = rewriter.create<LLVM::LLVMFuncOp>(
-        func.getLoc(), func.getNameAttr(), funcType, LLVM::Linkage::External);
+    auto funcOp =
+        createLLVMFunc(rewriter, getTypeConverter()->getTarget(), func.getLoc(),
+                       func.getNameAttr(), funcType, LLVM::Linkage::External);
 
     // Remove the function.
     symtab.remove(func);
@@ -141,11 +143,8 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
                        "cannot lower call to nested symbol to LLVM");
 
     // Create the LLVM call operation.
-    auto llvmCall = rewriter.create<LLVM::CallOp>(
-        op.getLoc(), types, flatSymbol, adaptor.getOperands(),
-        LLVM_FASTMATH_FLAGS,
-        /*branch_weights=*/nullptr, /*access_groups=*/nullptr,
-        /*alias_scopes*/ nullptr, /*noalias_scopes*/ nullptr, /*tbaa*/ nullptr);
+    LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,
+                                           flatSymbol, adaptor.getOperands());
 
     // Unpack the struct if necessary.
     SmallVector<Value> results;
@@ -386,8 +385,8 @@ convertResultCallingConvention(Location loc, Block *body, Type resultTy) {
 /// calling convention. The wrapper constructs the necessary structs and
 /// forwards them to the actual function.
 static void emitCWrapper(LLVM::LLVMFuncOp func,
-                         mlir::SymbolUserMap &symbolUsers,
-                         SymbolTable &symtab) {
+                         mlir::SymbolUserMap &symbolUsers, SymbolTable &symtab,
+                         TargetInfoAttr target) {
   // The function has internal users. Update its symbol name so the wrapper can
   // take its name.
   StringAttr origName = func.getSymNameAttr();
@@ -416,8 +415,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
 
   ImplicitLocOpBuilder b(loc, loc.getContext());
   b.setInsertionPointToEnd(body);
-  auto call = b.create<LLVM::CallOp>(func, newArgs);
-  call.setFastmathFlags(LLVM_FASTMATH_FLAGS);
+  LLVM::CallOp call = createLLVMCall(b, b.getLoc(), func, newArgs);
 
   // If the result type is a struct, flatten it into the arguments.
   if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultType)) {
@@ -430,9 +428,10 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
   }
 
   b.setInsertionPointAfter(func);
-  auto wrapper = b.create<LLVM::LLVMFuncOp>(
-      origName, LLVM::LLVMFunctionType::get(
-                    resultType, llvm::to_vector(body->getArgumentTypes())));
+  auto wrapper = createLLVMFunc(
+      b, target, b.getLoc(), origName,
+      LLVM::LLVMFunctionType::get(resultType,
+                                  llvm::to_vector(body->getArgumentTypes())));
   wrapper.getBody().push_back(body);
 }
 
@@ -441,7 +440,8 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
 /// internally invokes the provided function.
 static void processCExportedFunction(LLVM::LLVMFuncOp func,
                                      mlir::SymbolUserMap &symbolUsers,
-                                     SymbolTable &symtab) {
+                                     SymbolTable &symtab,
+                                     TargetInfoAttr target) {
   // Check if we need to update the function arguments or results to be
   // C-compatible.
   ArrayRef<Type> currentFunctionTypes = func.getArgumentTypes();
@@ -456,7 +456,7 @@ static void processCExportedFunction(LLVM::LLVMFuncOp func,
   // change.
   bool hasInternalUsers = !symbolUsers.getUsers(func).empty();
   if ((needUpdatedArgTypes || needUpdatedResultType) && hasInternalUsers)
-    return emitCWrapper(func, symbolUsers, symtab);
+    return emitCWrapper(func, symbolUsers, symtab, target);
 
   // Otherwise, we can update the function in place.
   func.setLinkage(LLVM::Linkage::External);
@@ -580,7 +580,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
     else if (!exportSymbol.isCExport)
       func.setLinkage(LLVM::Linkage::External);
     else
-      processCExportedFunction(func, symbolUsers, symtab);
+      processCExportedFunction(func, symbolUsers, symtab, targetInfo);
   }
 
   // Convert the debug info within the IR.

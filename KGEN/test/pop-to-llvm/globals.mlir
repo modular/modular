@@ -14,7 +14,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>
   // CHECK-SAME: memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read>
-  // CHECK-SAME: passthrough = ["noinline", "noreturn"]
+  // CHECK-SAME: passthrough = ["noinline", "noreturn"
   // CHECK: llvm.func @bar(!llvm.ptr<i32> {llvm.noalias}) -> (i32 {llvm.signext})
 }
 
