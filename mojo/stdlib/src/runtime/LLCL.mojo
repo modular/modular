@@ -133,7 +133,7 @@ fn _async_complete(chain: Pointer[Chain]):
 @register_passable
 struct Runtime:
     alias ptr_type = DTypePointer[DType.invalid.value]
-    var ptr: ptr_type
+    var ptr: Self.ptr_type
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
     @always_inline("nodebug")
@@ -148,23 +148,23 @@ struct Runtime:
 
     fn __init__(numThreads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
-        return external_call["KGEN_CompilerRT_LLCL_CreateRuntime", ptr_type](
-            numThreads
-        )
+        return external_call[
+            "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
+        ](numThreads)
 
     fn __init__(numThreads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
         return external_call[
-            "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", ptr_type
+            "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", Self.ptr_type
         ](
             numThreads,
             profileFilename.data,
             profileFilename.length.value,
         )
 
-    fn __init__(ptr: ptr_type) -> Runtime:
+    fn __init__(ptr: Self.ptr_type) -> Runtime:
         return Runtime {ptr: ptr}
 
     fn __enter__(self) -> Self:
@@ -261,7 +261,7 @@ struct Task[type: AnyType]:
 struct TaskGroupContext:
     alias tg_callback_fn_type = fn (inout TaskGroup) -> None
 
-    var callback: tg_callback_fn_type
+    var callback: Self.tg_callback_fn_type
     var task_group: Pointer[TaskGroup]
 
 
@@ -360,15 +360,15 @@ struct OutputChainPtr:
 
     # Actually LLCL::OutputChain*
     alias ptr_type = DTypePointer[DType.invalid.value]
-    var ptr: ptr_type
+    var ptr: Self.ptr_type
 
     @always_inline
     fn __init__() -> OutputChainPtr:
         """Casts a raw null OutputChainPtr."""
-        return OutputChainPtr {ptr: ptr_type()}
+        return OutputChainPtr {ptr: Self.ptr_type()}
 
     @always_inline
-    fn __init__(ptr: ptr_type) -> OutputChainPtr:
+    fn __init__(ptr: Self.ptr_type) -> OutputChainPtr:
         """Casts a raw pointer to our OutputChainPtr."""
         return OutputChainPtr {ptr: ptr}
 
@@ -378,7 +378,7 @@ struct OutputChainPtr:
 
     @always_inline("nodebug")
     fn __bool__(self) -> Bool:
-        return self.ptr != ptr_type()
+        return self.ptr != Self.ptr_type()
 
     @always_inline
     fn fork(self) -> OwningOutputChainPtr:
@@ -490,15 +490,15 @@ struct OwningOutputChainPtr:
 
     # Actually LLCL::OutputChain*
     alias ptr_type = DTypePointer[DType.invalid.value]
-    var ptr: ptr_type
+    var ptr: Self.ptr_type
 
     @always_inline
     fn __init__() -> OwningOutputChainPtr:
         """Creates a null OwningOutputChainPtr."""
-        return OwningOutputChainPtr {ptr: ptr_type()}
+        return OwningOutputChainPtr {ptr: Self.ptr_type()}
 
     @always_inline
-    fn __init__(ptr: ptr_type) -> OwningOutputChainPtr:
+    fn __init__(ptr: Self.ptr_type) -> OwningOutputChainPtr:
         """Casts a raw pointer to our OwningOutputChainPtr."""
         return OwningOutputChainPtr {ptr: ptr}
 
@@ -509,7 +509,7 @@ struct OwningOutputChainPtr:
         AsyncValueRef<Chain>.
         """
         let ptr = external_call[
-            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty", ptr_type
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_CreateEmpty", Self.ptr_type
         ](rt.ptr)
         return OwningOutputChainPtr {ptr: ptr}
 
@@ -544,12 +544,12 @@ struct OwningOutputChainPtr:
 struct AsyncTaskGroupContext:
     alias tg_callback_fn_type = fn (inout AsyncTaskGroup) -> None
 
-    var callback: tg_callback_fn_type
+    var callback: Self.tg_callback_fn_type
     var async_task_group_ptr: Pointer[AsyncTaskGroup]
 
     fn __init__(
         inout self,
-        callback: tg_callback_fn_type,
+        callback: Self.tg_callback_fn_type,
         async_task_group_ptr: Pointer[AsyncTaskGroup],
     ):
         self.callback = callback

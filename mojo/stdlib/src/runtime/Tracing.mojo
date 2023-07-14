@@ -240,11 +240,11 @@ struct Trace[level: TraceLevel]:
 
         This pushes this trace event onto a per-thread stack of traces.
         """
-        trace_range_push[trace_type, level](self.name, self.detail)
+        trace_range_push[Self.trace_type, level](self.name, self.detail)
 
     fn __exit__(self):
         """Exits the trace context.
 
         This pops this trace event off a per-thread stack of traces.
         """
-        trace_range_pop[trace_type, level]()
+        trace_range_pop[Self.trace_type, level]()
