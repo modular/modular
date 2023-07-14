@@ -7,13 +7,59 @@
 # RUN: kgen %s -emit-header | FileCheck %s
 
 from SIMD import Float32
-from IO import print
+
+
+@export("bar", ABI="C")
+# CHECK: extern float bar();
+fn foo() -> Float32:
+    # OK to alias, not proper main
+    return 0.0
 
 
 @export(ABI="C")
 # CHECK: extern float call_me();
 fn call_me() -> Float32:
     return 1.0
+
+
+@register_passable("trivial")
+struct RegIntPair:
+    var first: Int
+    var second: Int
+
+
+# CHECK: extern ssize_t first_reg(ssize_t, ssize_t);
+@export(ABI="C")
+fn first_reg(pair: RegIntPair) -> Int:
+    return pair.first
+
+
+# CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
+@export(ABI="C")
+fn make_reg_pair(first: Int, second: Int) -> RegIntPair:
+    return RegIntPair {first: first, second: second}
+
+
+# This is a memory primary type.
+struct MemIntPair:
+    var first: Int
+    var second: Int
+
+    fn __init__(inout self, first: Int, second: Int):
+        self.first = first
+        self.second = second
+
+
+# CHECK: extern ssize_t first_mem(void *);
+@export(ABI="C")
+fn first_mem(pair: MemIntPair) -> Int:
+    return pair.first
+
+
+# CHECK: extern void make_mem_pair(void *, ssize_t, ssize_t);
+@export(ABI="C")
+fn make_mem_pair(first: Int, second: Int) -> MemIntPair:
+    return MemIntPair(first, second)
 
 
 # CHECK: extern int32_t main(int32_t, void *);
