@@ -26,7 +26,7 @@ struct Dim:
     """
 
     alias type = __mlir_type[`!pop.variant<i1, `, Int, `>`]
-    var value: type
+    var value: Self.type
     """Either a boolean indicating that the dimension is dynamic, or the static
     value of the dimension."""
 
@@ -40,7 +40,7 @@ struct Dim:
         Returns:
             A dimension with a static value.
         """
-        return __mlir_op.`pop.variant.create`[_type:type](value)
+        return __mlir_op.`pop.variant.create`[_type : Self.type](value)
 
     @always_inline
     fn __init__(value: __mlir_type.index) -> Dim:
@@ -61,7 +61,9 @@ struct Dim:
         Returns:
             A dimension value with no static value.
         """
-        return __mlir_op.`pop.variant.create`[_type:type](__mlir_attr.`0 : i1`)
+        return __mlir_op.`pop.variant.create`[_type : Self.type](
+            __mlir_attr.`0 : i1`
+        )
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -537,7 +539,7 @@ struct VariadicList[type: AnyType]:
     """
 
     alias StorageType = __mlir_type[`!kgen.variadic<`, type, `>`]
-    var value: StorageType
+    var value: Self.StorageType
     """The underlying storage for the variadic list."""
 
     @always_inline
@@ -554,7 +556,7 @@ struct VariadicList[type: AnyType]:
         return Self(value)
 
     @always_inline
-    fn __init__(value: StorageType) -> Self:
+    fn __init__(value: Self.StorageType) -> Self:
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
@@ -600,12 +602,12 @@ struct VariadicListMem[type: AnyType]:
     """
 
     alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
-    var value: StorageType
+    var value: Self.StorageType
     """The underlying storage, a variadic list of pointers to elements of the
     given type."""
 
     @always_inline
-    fn __init__(value: StorageType) -> Self:
+    fn __init__(value: Self.StorageType) -> Self:
         """Constructs a VariadicList from a variadic argument type.
 
         Args:
