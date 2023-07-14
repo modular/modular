@@ -460,8 +460,6 @@ struct PackMatrixCols[
                 skip_col_bound: Boundary check on column dimension will be skipped
                     if true.
         """
-        alias alignment = alignof[SIMD[type, simd_size]]()
-        alias is_row_aligned = original_shape.at[1]().is_multiple[alignment]()
 
         alias unroll_factor = get_packB_unroll_factor()
 
@@ -473,14 +471,7 @@ struct PackMatrixCols[
             if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
-                # Whole SIMD vector within bound.
-                @parameter
-                if is_row_aligned:
-                    data = self.original_matrix.aligned_simd_load[
-                        simd_size, alignment
-                    ](global_idx)
-                else:
-                    data = self.original_matrix.simd_load[simd_size](global_idx)
+                data = self.original_matrix.simd_load[simd_size](global_idx)
             elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
@@ -494,7 +485,7 @@ struct PackMatrixCols[
             # map to packed index
             let col_idx_outer = col_idx // column_inner_size
             let col_idx_inner = col_idx % column_inner_size
-            self.packed_matrix.aligned_simd_store[simd_size, alignment](
+            self.packed_matrix.simd_store[simd_size](
                 Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
