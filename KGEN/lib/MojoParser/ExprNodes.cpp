@@ -474,6 +474,33 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (decls.empty()) {
     if (lookup.isErroneous())
       return {}; // Error already diagnosed.
+    ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
+    if (!failureDecls.empty()) {
+      // Reject unqualified struct field references.
+      if (auto fieldOp = dyn_cast<StructFieldOp>(*failureDecls[0])) {
+        emitter.emitError(getLoc(), "cannot access instance field '")
+            << spelling << "' directly; did you mean 'self.'?" << getRange()
+            << FixIt::insertBeforeToken(getLoc(), "self.");
+        return {};
+        // Rejected unqualified struct method references.
+      } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
+        const char *replacement = "self.";
+        // References to static methods can always use capital Self.
+        if (auto firstCandidate = dyn_cast<FuncOp>(*failureDecls[0]))
+          if (firstCandidate.getIsStatic())
+            replacement = "Self.";
+
+        // References /from/ static methods can only use capital Self.
+        if (auto curFn = dyn_cast<FuncOp>(container))
+          if (curFn.getIsStatic())
+            replacement = "Self.";
+
+        emitter.emitError(getLoc(), "cannot access method '")
+            << spelling << "' directly; did you mean '" << replacement << "'?"
+            << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
+        return {};
+      }
+    }
 
     // By policy in order to produce a more predictable programming model,
     // implicit declarations of variables are only allowed in `def` contexts,
@@ -498,31 +525,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<FuncOp>(*decls[0])) {
-    // Reject unqualified struct method references.
-    if (isa<StructDeclOp>(*decls[0]->getParentDecl())) {
-      const char *replacement = "self.";
-      // References to static methods can always use capital Self.
-      if (firstCandidate.getIsStatic())
-        replacement = "Self.";
-      // References /from/ static methods can only use capital Self.
-      if (auto curFn = dyn_cast<FuncOp>(container))
-        if (curFn.getIsStatic())
-          replacement = "Self.";
-
-      emitter.emitError(getLoc(), "cannot access method '")
-          << spelling << "' directly; did you mean '" << replacement << "'?"
-          << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
-      return {};
-    }
-
-    // When unqualified name lookup finds a method on a struct, we bind in the
-    // parameters from the enclosing struct.
-    ParamBindArrayAttr paramBindings;
-    if (isa_and_nonnull<StructDeclOp>(*decls[0]->getParentDecl())) {
-      auto structDeclType = decls[0]->getParentDecl()->getSelfType();
-      paramBindings = structDeclType.getParamBindings();
-    }
-
+    ParamBindArrayAttr paramBindings = {};
     // Form an overload set value with all the candidates.
     auto result = ORValue::create(spelling, decls, paramBindings, this,
                                   CallSyntax::kDirectCall);
@@ -605,12 +608,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     mlirValue = lvalue;
     value = lvalue;
 
-    // Reject unqualified struct field references.
-  } else if (auto fieldOp = dyn_cast<StructFieldOp>(decl)) {
-    emitter.emitError(getLoc(), "cannot access instance field '")
-        << spelling << "' directly; did you mean 'self.'?" << getRange()
-        << FixIt::insertBeforeToken(getLoc(), "self.");
-    return {};
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     auto ref = emitter.builder->create<GlobalVarRefOp>(
         emitter.translateLocation(getLoc()), globalOp);

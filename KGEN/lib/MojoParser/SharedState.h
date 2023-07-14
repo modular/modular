@@ -351,10 +351,28 @@ public:
   static LookupResult getSuccess(ArrayRef<ASTDecl *> decls) {
     return {kSuccess, decls};
   }
-  static LookupResult getFailure() { return {kFailure, {}}; }
+  /// Failure means that lookup failed, but they can still have decls
+  /// attached for diagnostic purposes.
+  static LookupResult getFailure(ArrayRef<ASTDecl *> decls) {
+    return {kFailure, decls};
+  }
   static LookupResult getErroneous() { return {kErroneous, {}}; }
 
-  ArrayRef<ASTDecl *> getIfSuccess() const { return decls; }
+  /// Return decls only if lookup was a success, because failures can
+  /// also store decls for diagnostic purposes.
+  ArrayRef<ASTDecl *> getIfSuccess() const {
+    if (isSuccess())
+      return decls;
+    else
+      return {};
+  }
+  /// Return decls from a failed lookup, for diagnostic purposes.
+  ArrayRef<ASTDecl *> getIfFailure() const {
+    if (isFailure())
+      return decls;
+    else
+      return {};
+  }
   bool isSuccess() const { return kind == kSuccess; }
   bool isFailure() const { return kind == kFailure; }
   bool isErroneous() const { return kind == kErroneous; }

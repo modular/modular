@@ -443,7 +443,7 @@ struct UnqualAliasLookup[param: Int]:
   alias member = param+1
   fn get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
-    return member
+    return Self.member
 
 ##===----------------------------------------------------------------------===##
 # Variadic parameters

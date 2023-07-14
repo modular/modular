@@ -461,29 +461,45 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
     return {};
   };
 
-  auto getEntry = [&]() -> ArrayRef<ASTDecl *> {
-    if (!searchParentScopes)
-      return lookupInScope(scope);
-
+  auto getEntry = [&]() -> LookupResult {
+    if (!searchParentScopes) {
+      ArrayRef<ASTDecl *> result = lookupInScope(scope);
+      if (result.empty())
+        return LookupResult::getFailure({});
+      else
+        return LookupResult::getSuccess(result);
+    }
+    ArrayRef<ASTDecl *> skipped = {};
     ASTDecl *curSearchScope = &scope;
     do {
       ArrayRef<ASTDecl *> e = lookupInScope(*curSearchScope);
-      if (!e.empty())
-        return e;
+      if (!e.empty()) {
+        if (isa<StructDeclOp>(*curSearchScope) && !(*e.front()).getIfPValue()) {
+          // Skip struct bodies when searching up parent scopes, unless the
+          // value is a parameter.
+          if (skipped.empty())
+            skipped = e;
+
+          continue;
+        }
+        return LookupResult::getSuccess(e);
+      }
     } while ((curSearchScope = curSearchScope->parentDecl));
-    return {};
+    // If we found a name in a context that we skip, return it in the failure
+    // for diagnostic reporting.
+    return LookupResult::getFailure(skipped);
   };
 
-  ArrayRef<ASTDecl *> entry = getEntry();
+  LookupResult entry = getEntry();
 
   // If nothing was found, return a failure.
-  if (entry.empty())
-    return LookupResult::getFailure();
+  if (entry.isFailure())
+    return entry;
 
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood. Make a copy of the entries to avoid dangling references if
   // we end up invalidating the decl map.
-  for (ASTDecl *decl : SmallVector<ASTDecl *>(entry)) {
+  for (ASTDecl *decl : SmallVector<ASTDecl *>(entry.getIfSuccess())) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,
@@ -496,13 +512,14 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   entry = getEntry();
   // If we are resolving an unresolved import, do another lookup now that import
   // has been resolved. The scope map should be updated with the proper decls.
-  if (!entry.empty() && isa<UnresolvedImportOp>(*entry.front()))
+  if (entry.isSuccess() &&
+      isa<UnresolvedImportOp>(*entry.getIfSuccess().front()))
     return lookupAndResolveDecl(name, loc, scope, searchParentScopes);
 
   // We return a pointer into the TinyPtrVector entry in the scope.  This should
   // be stable because you can't perform a lookup into a decl that has unknown
   // entries, and we just resolved all the signatures for all the decls.
-  return LookupResult::getSuccess(entry);
+  return entry;
 }
 
 /// Perform a name lookup for a member in the specified type.
@@ -511,7 +528,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope,
     -> LookupResult {
   if (auto *decl = scope.getDecl(*this))
     return lookupAndResolveDecl(name, loc, *decl, searchParentScopes);
-  return LookupResult::getFailure();
+  return LookupResult::getFailure({});
 }
 
 ASTType SharedState::lookupNonparameterizedNamedType(StringRef name,
