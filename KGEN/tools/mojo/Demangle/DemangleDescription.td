@@ -10,4 +10,4 @@ def DemangleDescription : MojoCommandDescription<
   "demangle", "Demangle the given name",
   "If the given name is a mangled Mojo symbol name, prints the demangled "
   "name. If no name is provided, one is read from standard input.",
-  [UsageInfo<"options", "name", /*variadicInput=*/false>]>, Index<5>;
+  [UsageInfo<"options", "name", /*variadicInput=*/false>]>, Index<6>;

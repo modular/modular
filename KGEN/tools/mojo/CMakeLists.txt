@@ -11,6 +11,7 @@ add_modular_tool(mojo
   Common/Telemetry.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
+  Format/mojo-format.cpp
   Package/mojo-package.cpp
   REPL/mojo-repl.cpp
   Run/mojo-run.cpp
@@ -56,6 +57,7 @@ add_driver_option_tablegen(Mojo DriverOptions.td
 add_subdirectory(Build)
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
+add_subdirectory(Format)
 add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)

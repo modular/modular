@@ -1,0 +1,12 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: mojo format - < %s 2>&1 | FileCheck %s
+
+# CHECK: fn function() -> Int:
+# CHECK: return 10
+fn function()    -> Int:
+    return     10
