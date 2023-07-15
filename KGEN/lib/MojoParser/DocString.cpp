@@ -10,6 +10,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
 

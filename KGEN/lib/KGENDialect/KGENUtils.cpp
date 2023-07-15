@@ -22,6 +22,7 @@
 #include "Support/STLExtras.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
