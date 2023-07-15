@@ -185,6 +185,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return bitEnumContainsAny(getFnEffects(), FnEffects::Capturing);
     }
 
+    bool isEscaping() const {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::Escaping);
+    }
+
     /// Return true if the SSA result of this signature is a non-trivial owned
     /// register result.
     bool hasOwnedRegisterResult() {

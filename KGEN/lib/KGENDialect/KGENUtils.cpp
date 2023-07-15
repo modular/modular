@@ -1039,7 +1039,7 @@ parseOptionalSignatureValues(AsmParser &p,
   StringRef kw;
   while (succeeded(p.parseOptionalKeyword(
       &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
-            "param_vararg", "capturing", "ownedresult"}))) {
+            "param_vararg", "capturing", "ownedresult", "escaping"}))) {
     effect = effect | *symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we

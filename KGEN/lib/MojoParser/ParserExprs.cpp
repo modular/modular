@@ -947,6 +947,10 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       if (bitEnumContainsAny(effects, FnEffects::Capturing))
         emitError(loc, "function effect 'capturing' was already specified");
       effects = effects | FnEffects::Capturing;
+    } else if (getToken().getSpelling() == "escaping") {
+      if (bitEnumContainsAny(effects, FnEffects::Escaping))
+        emitError(loc, "function effect 'escaping' was already specified");
+      effects = effects | FnEffects::Escaping;
     } else {
       emitError(loc, "unknown function effect '")
           << getToken().getSpelling() << "', expected 'raises' or 'capturing'";
