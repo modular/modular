@@ -12,16 +12,17 @@
 #ifndef SUPPORT_ALIGNED_ALLOC_H
 #define SUPPORT_ALIGNED_ALLOC_H
 
+#include "Support/PlatformUtils.h"
+
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
 
 namespace M {
 
-#if defined(__x86_64__) || defined(__x86_64) || defined(_M_AMD64) ||           \
-    defined(_M_X64)
+#if defined(MODULAR_X86_64)
 static constexpr size_t kPreferredMemoryAlignment = 64;
-#elif defined(__ARM_NEON__) || defined(__ARM_NEON)
+#elif defined(MODULAR_ARM_NEON)
 static constexpr size_t kPreferredMemoryAlignment = 16;
 #else
 static constexpr size_t kPreferredMemoryAlignment = 16;
