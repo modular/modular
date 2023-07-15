@@ -163,25 +163,27 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
 
 /// This describes the encoding of the function effects in the metadata of a
 /// SignatureType.
-def KGEN_FnEffects : I8BitEnumAttr<"FnEffects", "Function effects", [
+def KGEN_FnEffects : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This function has no effects.
-  I8BitEnumAttrCaseNone<"None", "none">,
+  I16BitEnumAttrCaseNone<"None", "none">,
   /// This function can throw.
-  I8BitEnumAttrCaseBit<"Throws", 0, "throws">,
+  I16BitEnumAttrCaseBit<"Throws", 0, "throws">,
   /// This is an async function.
-  I8BitEnumAttrCaseBit<"Async", 1, "async">,
+  I16BitEnumAttrCaseBit<"Async", 1, "async">,
   /// This function has vararg arguments.
-  I8BitEnumAttrCaseBit<"Vararg", 2, "vararg">,
+  I16BitEnumAttrCaseBit<"Vararg", 2, "vararg">,
   /// This function has pack arguments.
-  I8BitEnumAttrCaseBit<"PackVararg", 3, "packvararg">,
+  I16BitEnumAttrCaseBit<"PackVararg", 3, "packvararg">,
   /// This function has keyword vararg arguments.
-  I8BitEnumAttrCaseBit<"KWVararg", 4, "kwvararg">,
+  I16BitEnumAttrCaseBit<"KWVararg", 4, "kwvararg">,
   /// This function has vararg input parameters.
-  I8BitEnumAttrCaseBit<"ParamVararg", 5, "param_vararg">,
+  I16BitEnumAttrCaseBit<"ParamVararg", 5, "param_vararg">,
   /// This function captures state.
-  I8BitEnumAttrCaseBit<"Capturing", 6, "capturing">,
+  I16BitEnumAttrCaseBit<"Capturing", 6, "capturing">,
   /// The return value of this function is a non-trivial owned register value.
-  I8BitEnumAttrCaseBit<"OwnedResult", 7, "ownedresult">,
+  I16BitEnumAttrCaseBit<"OwnedResult", 7, "ownedresult">,
+  /// This local function has state that may live beyond its defined scope.
+  I16BitEnumAttrCaseBit<"Escaping", 8, "escaping">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

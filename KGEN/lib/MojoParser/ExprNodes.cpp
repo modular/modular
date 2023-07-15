@@ -2696,6 +2696,14 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
     return {};
   }
+  if (bitEnumContainsAny(effects, FnEffects::Escaping)) {
+    // TODO: remove (https://github.com/modularml/modular/issues/17073).
+    FnEffects newFn =
+        bitEnumSet(bitEnumClear(signature.getFnEffects(), FnEffects::Escaping),
+                   FnEffects::Capturing);
+    return emitter.emitResult(ASTType(signature.getWithFnEffects(newFn)), this,
+                              dest);
+  }
   return emitter.emitResult(ASTType(signature), this, dest);
 }
 
