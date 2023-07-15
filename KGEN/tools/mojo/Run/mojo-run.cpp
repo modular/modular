@@ -22,6 +22,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -166,9 +167,12 @@ static bool moduleExportsMain(ModuleOp theModule, const SymbolTable &symtab) {
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
                                   ExecutionEngine *engine,
+                                  LLCL::Runtime &runtime,
                                   ArrayRef<const char *> arguments) {
   if (!moduleExportsMain(moduleOp, symtab))
     return Error("could not find a 'main' function to execute");
+  [[maybe_unused]] auto timeScope =
+      runtime.getTelemetryContext()->createUInt64Timer("mojo.run.time");
 
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -221,7 +225,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // Finally, execute the 'main' function of the Mojo program.
   TimeTraceScope<> traceScope("execute-main");
   ErrorOrSuccess result =
-      executeMain(moduleOp, symtab, engine.get(), arguments);
+      executeMain(moduleOp, symtab, engine.get(), runtime, arguments);
   if (failed(result))
     return state.reportError(result.getError());
 
