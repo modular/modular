@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
+#include "../Common/Telemetry.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/MojoParser.h"
@@ -73,21 +74,28 @@ static int doc(const State &state) {
         inputs[1]));
   }
 
+  // We don't allow users to configure LLCL runtime options, such as the
+  // allocator or the work queue threading model.
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
+  // Initialize telemetry, making sure to redact any arguments that may contain
+  // user-sensitive data.
+  initializeTelemetry(runtime.getTelemetryContext(), state, args,
+                      /*privateArgs=*/{options::OPT_I, options::OPT_o});
+
   // Open the input file, or exit with an error.
   auto bufferOrErr =
       openMojoInputFile(args.getLastArgValue(options::OPT_INPUT));
   if (bufferOrErr.isError())
     return state.reportError(bufferOrErr.getError());
+
   // Initialize the source manager with the input file buffer and all includes.
   llvm::SourceMgr sourceManager;
   sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
   sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
-  // We don't allow users to configure LLCL runtime options, such as the
-  // allocator or the work queue threading model.
   mlir::MLIRContext context;
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
   CompilationOptions compilationOptions;
   MojoParserConfig parserConfig(&context, runtime, compilationOptions);
   parserConfig.validateDocStrings = args.hasArg(options::OPT_validate);

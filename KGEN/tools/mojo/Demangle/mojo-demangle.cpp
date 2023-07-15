@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-demangle.h"
+#include "../Common/Telemetry.h"
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -63,6 +64,10 @@ static int demangle(const State &state) {
                       "cannot demangle both '{0}' and '{1}'",
                       inputs[0], inputs[1]));
   }
+
+  // Initialize telemetry.
+  auto telemetryCtx = LLCL::RCRef<Telemetry::TelemetryContext>::create();
+  initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;

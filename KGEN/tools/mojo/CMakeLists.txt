@@ -8,6 +8,7 @@ add_modular_tool(mojo
   mojo.cpp
   Build/mojo-build.cpp
   Common/Compilation.cpp
+  Common/Telemetry.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
   Package/mojo-package.cpp

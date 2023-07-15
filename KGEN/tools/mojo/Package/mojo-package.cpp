@@ -6,6 +6,7 @@
 
 #include "mojo-package.h"
 #include "../Common/Compilation.h"
+#include "../Common/Telemetry.h"
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
@@ -523,6 +524,15 @@ static int package(const State &state) {
   if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());
 
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
+  // Initialize telemetry, making sure to redact any arguments that may contain
+  // user-sensitive data.
+  initializeTelemetry(
+      runtime.getTelemetryContext(), state, args, /*privateArgs=*/
+      {options::OPT_D, options::OPT_I, options::OPT_L, options::OPT_o});
+
   //===--------------------------------------------------------------------===//
   // Build the package
   //===--------------------------------------------------------------------===//
@@ -533,9 +543,6 @@ static int package(const State &state) {
       mlir::openOutputFile(packageArgs.outputPath, &outputError);
   if (!out)
     return state.reportError(outputError);
-
-  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue());
 
   // Parse the package.
   mlir::MLIRContext ctx;
