@@ -6,7 +6,7 @@
 
 include "DescriptionBase.td"
 
-def DocDescription : MojoCommandDescription<
-  "doc", "Compile doc strings",
-  "Translate Mojo source file doc strings to a structured output format.",
-  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<5>;
+def FormatDescription : MojoCommandDescription<
+  "format", "Format Mojo source files",
+  "Format the given set of Mojo sources.",
+  [UsageInfo<"options", "sources", /*variadicInput=*/true>]>, Index<4>;

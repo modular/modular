@@ -1,0 +1,124 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "mojo-format.h"
+
+#include "Support/Driver/DriverSupport.h"
+
+#include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptTable.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Program.h"
+
+#include <filesystem>
+
+using namespace M;
+
+#define DRIVER_OPTIONS_PATH "Format/FormatOptions.inc"
+#include "Support/Driver/OptTable.inc"
+
+namespace {
+struct FormatOptTable : public llvm::opt::PrecomputedOptTable {
+  FormatOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+};
+} // namespace
+
+/// Format a set of Mojo source files. Returns an integer representing a
+/// successful exit code if formatting succeeded, otherwise returns a failure
+/// code.
+static int format(const State &state) {
+  // Parse command line arguments.
+  FormatOptTable options;
+  unsigned missingIndex = 0;
+  unsigned missingCount = 0;
+  llvm::opt::InputArgList args =
+      options.ParseArgs(state.arguments, missingIndex, missingCount);
+
+  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
+    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
+#include "Format/FormatOptionsHelpText.inc"
+    );
+  }
+
+  if (args.hasArg(options::OPT_UNKNOWN)) {
+    int result = 1;
+    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
+      result = state.reportError("unrecognized argument '" +
+                                 arg->getSpelling() + "'\n");
+    return result;
+  }
+
+  // Process the input files.
+  std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
+  if (!args.hasArg(options::OPT_INPUT))
+    return state.reportError("no inputs provided");
+
+  // Check that the inputs are all valid Mojo/Python files, or directories.
+  std::error_code ec;
+  bool hasStdin = false;
+  for (const std::string &input : inputs) {
+    // Allow "-" to represent stdin.
+    if (input == "-") {
+      if (inputs.size() > 1)
+        return state.reportError("cannot mix '-' with other inputs");
+      hasStdin = true;
+      break;
+    }
+
+    std::filesystem::path inputPath(input);
+    if (!std::filesystem::exists(inputPath, ec)) {
+      return state.reportError(
+          llvm::formatv("input '{0}' does not exist", input));
+    }
+
+    if (std::filesystem::is_directory(inputPath, ec))
+      continue;
+    if (ec)
+      return state.reportError(ec.message());
+
+    if (!llvm::is_contained(ArrayRef<StringRef>{".mojo", ".🔥", ".py"},
+                            inputPath.extension().string())) {
+      return state.reportError(
+          llvm::formatv("invalid input '{0}', expected a source .mojo/.🔥/.py "
+                        "file, or a directory",
+                        input));
+    }
+  }
+
+  StringRef lineLengthArg = args.getLastArgValue(options::OPT_line_length);
+  if (!lineLengthArg.empty()) {
+    int lineLength = 0;
+    if (lineLengthArg.getAsInteger(10, lineLength)) {
+      return state.reportError(llvm::formatv(
+          "expected integer value for --line-length, but got '{0}'",
+          lineLengthArg));
+    }
+  }
+
+  llvm::ErrorOr<std::string> mblack = llvm::sys::findProgramByName("mblack");
+  if (!mblack) {
+    return state.reportError("unable to resolved Mojo formatter in PATH");
+  }
+
+  // Forward the curated options to mblack.
+  SmallVector<StringRef> mblackArgs = {*mblack, "--fast"};
+  if (!lineLengthArg.empty()) {
+    mblackArgs.push_back("--line-length");
+    mblackArgs.push_back(lineLengthArg);
+  }
+  // If we're formatting stdin, we need to tell mblack to expect a Mojo file.
+  if (hasStdin)
+    llvm::append_range(mblackArgs, ArrayRef<StringRef>{"-t", "mojo"});
+  if (args.hasArg(options::OPT_quiet))
+    mblackArgs.push_back("-q");
+  llvm::append_range(mblackArgs, inputs);
+  return llvm::sys::ExecuteAndWait(mblack.get(), mblackArgs);
+}
+
+void M::registerFormatSubcommand(SubcommandRegistry &registry) {
+  registry.addCallback("format", format);
+}
