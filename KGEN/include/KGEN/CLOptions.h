@@ -114,6 +114,11 @@ public:
       cl::desc("Enable MLIR pass manager crash reproducer generation."),
       cl::init(false)};
 
+  cl::opt<bool> enableLocalMLIRReproducer{
+      "enable-mlir-local-reproducer",
+      cl::desc("If set, MLIR will attempt to generate a local reproducer."),
+      cl::init(false)};
+
   cl::opt<bool> timeTrace{
       "time-trace",
       cl::desc("Turn on time profiler. Generates JSON file "
