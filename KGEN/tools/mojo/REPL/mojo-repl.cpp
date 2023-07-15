@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-repl.h"
+#include "../Common/Telemetry.h"
 
 #include "Support/Driver/DriverSupport.h"
 #include "llvm/Option/ArgList.h"
@@ -39,6 +40,11 @@ static int repl(const State &state) {
     );
   }
 
+  // Initialize telemetry.
+  auto telemetryCtx = LLCL::RCRef<Telemetry::TelemetryContext>::create();
+  initializeTelemetry(telemetryCtx.copy(), state, args);
+
+  // Find the path to lldb.
   llvm::ErrorOr<std::string> lldb = llvm::sys::findProgramByName("lldb");
   if (!lldb)
     return state.reportError("lldb must exist in our PATH to launch the REPL");

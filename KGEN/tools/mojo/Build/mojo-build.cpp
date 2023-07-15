@@ -6,6 +6,7 @@
 
 #include "mojo-build.h"
 #include "../Common/Compilation.h"
+#include "../Common/Telemetry.h"
 
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/CompilationOptions.h"
@@ -283,6 +284,12 @@ static int build(const State &state) {
   // options, such as the allocator or the work queue threading model.
   LLCL::Runtime runtime(LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue());
+
+  // Initialize telemetry, making sure to redact any arguments that may contain
+  // user-sensitive data.
+  initializeTelemetry(
+      runtime.getTelemetryContext(), state, args, /*privateArgs=*/
+      {options::OPT_D, options::OPT_I, options::OPT_L, options::OPT_o});
 
   // Lower the input file to an MLIR module.
   MLIRContext context;
