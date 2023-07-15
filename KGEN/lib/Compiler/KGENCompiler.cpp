@@ -11,6 +11,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -349,12 +350,18 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
 
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.
-  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      theModule, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
-  LLCL::await(ready);
-  if (ready.isError())
-    return ready.takeDiagnostic().getMessage().copy();
+  {
+    [[maybe_unused]] auto timeScope =
+        runtime.getTelemetryContext()->createUInt64Timer(
+            "mojo.kgen.compile.time");
+
+    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+        theModule, regionCache.copy(), transformCache.copy(),
+        runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
+    LLCL::await(ready);
+    if (ready.isError())
+      return ready.takeDiagnostic().getMessage().copy();
+  }
 
   // Add the materialization unit by computing the exports and the symbol
   // table, and passing those off.

@@ -17,6 +17,10 @@ class Module;
 class TargetMachine;
 } // namespace llvm
 
+namespace M::LLCL {
+class Runtime;
+} // namespace M::LLCL
+
 namespace M::KGEN {
 class CompilationOptions;
 
@@ -25,6 +29,7 @@ LogicalResult compileLLVMToObject(llvm::Module &module,
                                   llvm::TargetMachine &targetMachine,
                                   llvm::raw_pwrite_stream &objStream,
                                   CompilationOptions &options,
+                                  LLCL::Runtime &runtime,
                                   bool emitAssembly = false);
 } // namespace M::KGEN
 

@@ -659,7 +659,8 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
       module->setDataLayout((*machineOr)->createDataLayout());
 
       // Lower the LLVM to an object file.
-      if (failed(compileLLVMToObject(*module, **machineOr, *buf, options))) {
+      if (failed(compileLLVMToObject(*module, **machineOr, *buf, options,
+                                     runtime))) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
             "failed to lower LLVM IR to object file", loc));
       }
@@ -741,7 +742,7 @@ ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
   llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
   // Emit the assembly.
-  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os, options,
+  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os, options, runtime,
                                  /*emitAssembly=*/true))) {
     return Error("failed to lower LLVM IR to assembly");
   }

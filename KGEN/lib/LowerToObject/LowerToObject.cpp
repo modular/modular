@@ -12,6 +12,7 @@
 #include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Host.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
@@ -122,8 +123,12 @@ private:
 /// level.
 LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
                                      llvm::TargetMachine &targetMachine,
-                                     const CompilationOptions &options) {
+                                     const CompilationOptions &options,
+                                     LLCL::Runtime &runtime) {
   TimeTraceScope<> traceScope("llvm-optimize", module.getName());
+  [[maybe_unused]] auto timeScope =
+      runtime.getTelemetryContext()->createUInt64Timer(
+          "mojo.llvm.optimize.time");
   using namespace llvm;
 
   LoopAnalysisManager loopAnalysisMgr;
@@ -174,11 +179,14 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
 }
 
 /// Run the default llc passes required to generate object code.
-static LogicalResult runLlcPasses(llvm::Module &module,
-                                  llvm::TargetMachine &targetMachine,
-                                  llvm::raw_pwrite_stream &os,
-                                  llvm::CodeGenFileType fileType) {
+static LogicalResult
+runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
+             llvm::raw_pwrite_stream &os, llvm::CodeGenFileType fileType,
+             LLCL::RCRef<Telemetry::TelemetryContext> telemetryCtx = {}) {
   TimeTraceScope<> traceScope("llvm-codegen", module.getName());
+  std::optional<Telemetry::Timer<uint64_t>> timeScope;
+  if (telemetryCtx)
+    timeScope = telemetryCtx->createUInt64Timer("mojo.llvm.optimize.time");
   using namespace llvm;
 
   // Build up all of the passes that we want to do to the module.
@@ -215,6 +223,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         llvm::raw_pwrite_stream &objStream,
                                         CompilationOptions &options,
+                                        LLCL::Runtime &runtime,
                                         bool emitAssembly) {
   TimeTraceScope<> traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
@@ -228,7 +237,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     outFile->keep();
   }
 
-  if (failed(runLLVMOptPasses(module, targetMachine, options)))
+  if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
@@ -242,7 +251,8 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 
   if (failed(runLlcPasses(module, targetMachine, objStream,
                           emitAssembly ? llvm::CGFT_AssemblyFile
-                                       : llvm::CGFT_ObjectFile)))
+                                       : llvm::CGFT_ObjectFile,
+                          runtime.getTelemetryContext())))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {

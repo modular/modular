@@ -21,7 +21,9 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -147,6 +149,9 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
                SmallVectorImpl<std::string> *includedFiles,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
+  [[maybe_unused]] auto timeScope =
+      sharedState.runtime.getTelemetryContext()->createUInt64Timer(
+          "mojo.parser.compile.time");
 
   // This is the result module we are parsing into.
   auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,

@@ -189,7 +189,8 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
   }
 
   if (failed(KGEN::runLLVMOptPasses(*module, **targetMachineOr,
-                                    compilationOptions))) {
+                                    compilationOptions,
+                                    typeSystem->getRuntime()))) {
     typeSystem->errorLog("[evaluateSpecializations] LLVM optimization failed");
     return M::Error("LLVM optimization failed");
   }
@@ -755,7 +756,8 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   }
 
   if (failed(KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
-                                    impl->compilationOptions))) {
+                                    impl->compilationOptions,
+                                    impl->typeSystem->getRuntime()))) {
     impl->typeSystem->errorLog("LLVM optimization failed");
     return returnErrorCleanup();
   }
