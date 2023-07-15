@@ -40,6 +40,18 @@ add_modular_library(KGENCompilerRTShared SHARED
 
 target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)
 
+# The LLVM libraries generally aren't OBJECT libraries, but we need
+# KGENCompilerRT-static to be fully self contained, so we need to extract the
+# object files from the LLVM libraries and link them into KGENCompilerRT-static.
+get_property(LLVMSupportTargetFile TARGET LLVMSupport PROPERTY LOCATION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${LLVMSupportTargetFile})
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport)
+execute_process(
+    COMMAND ${LLVM_BUILD_DIR}/bin/llvm-ar${CMAKE_EXECUTABLE_SUFFIX} -x ${LLVMSupportTargetFile}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport
+)
+file(GLOB LLVMSupportObjs ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport/*)
+
 # A fully-staticized version of KGENCompilerRT that we can use for standalone
 # mojo executables.
 add_modular_library(KGENCompilerRT-static
@@ -49,6 +61,7 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
+  ${LLVMSupportObjs}
 )
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
 
