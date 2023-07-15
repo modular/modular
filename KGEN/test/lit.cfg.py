@@ -42,6 +42,9 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
+# python tests shouldn't be handled by llvm-lit directly
+config.excludes.add("pytests")
+
 configure_lldb_tests(config)
 
 tool_dirs = [
