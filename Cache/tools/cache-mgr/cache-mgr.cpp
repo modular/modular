@@ -12,6 +12,7 @@
 #include "Support/CommonCLOptions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Support/FileUtilities.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/Regex.h"
