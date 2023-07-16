@@ -4,7 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+include(AddPython)
+modular_find_python3_development()
 
 add_modular_tool(mojo
   mojo.cpp
@@ -45,7 +46,7 @@ add_modular_tool(mojo
   MLIRBuiltinToLLVMIRTranslation
 
   LLVMOption
-)
+  )
 
 # An umbrella target for all driver TableGen targets.
 add_custom_target(MojoDriverOptions)
@@ -73,16 +74,25 @@ add_dependencies(mojo MojoDriverOptions)
 
 # Generate a packaged version of mblack for use in the Mojo driver.
 set(mblackPathSeparator ":")
-if (WIN32)
-  set(mblackPathSeparator ";")
+if(WIN32)
+  set(mblackPathSeparator "\;")
 endif()
+
+if(MODULAR_PYTHON_EXECUTABLE STREQUAL "")
+  set(PYTHON_EXE ${Python3_EXECUTABLE})
+else()
+  set(PYTHON_EXE ${MODULAR_PYTHON_EXECUTABLE})
+endif()
+
+message(STATUS "Using ${PYTHON_EXE} to create mblack binary.")
+
 add_custom_target(mblack
   ${CMAKE_COMMAND} -E env PYI_LOG_LEVEL=ERROR
-    ${Python3_EXECUTABLE} -m PyInstaller -F --name mblack
-      --add-data '${MODULAR_UTILS_DIR}/mblack/src/mblib2to3${mblackPathSeparator}mblib2to3'
-      ${MODULAR_UTILS_DIR}/mblack/src/mblack/__main__.py
+  ${PYTHON_EXE} -m PyInstaller -F --name mblack
+  --add-data "${MODULAR_UTILS_DIR}/mblack/src/mblib2to3${mblackPathSeparator}mblib2to3"
+  "${MODULAR_UTILS_DIR}/mblack/src/mblack/__main__.py"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_BINARY_DIR}/dist/mblack${CMAKE_EXECUTABLE_SUFFIX}
-    ${CMAKE_BINARY_DIR}/bin/
-)
+  ${CMAKE_CURRENT_BINARY_DIR}/dist/mblack${CMAKE_EXECUTABLE_SUFFIX}
+  ${CMAKE_BINARY_DIR}/bin/
+  )
 add_dependencies(mojo mblack)
