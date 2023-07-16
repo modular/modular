@@ -4,11 +4,12 @@
 #
 ##===----------------------------------------------------------------------===##
 
+include(AddPython)
 #
 # TODO(#8161) Copied over from TensorFlow/unittests/API/python/CMakeLists.txt
 # Fixing #8161 would help reduce this duplication.
 
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+modular_find_python3_development()
 
 include(AddPyBind11)
 
