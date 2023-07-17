@@ -76,7 +76,7 @@ private:
 template <typename T>
 class Histogram {
 public:
-  void record(T value) { histogram->Record(value); }
+  void record(T value) { histogram->Record(value, context); }
 
 private:
   friend class TelemetryContext;
@@ -85,6 +85,7 @@ private:
       : histogram(std::move(histogram)) {}
 
   std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
+  opentelemetry::context::Context context{};
 };
 
 template <typename T, typename DurationT = std::chrono::nanoseconds>
@@ -96,7 +97,7 @@ public:
   ~Timer() {
     auto end = ClockType::now();
     auto duration = std::chrono::duration_cast<DurationT>(end - start);
-    histogram->Record(duration.count());
+    histogram->Record(duration.count(), context);
   }
 
 private:
@@ -109,6 +110,7 @@ private:
   }
 
   std::unique_ptr<opentelemetry::metrics::Histogram<T>> histogram;
+  opentelemetry::context::Context context{};
   /// The start time.
   TimePointType start;
 };
