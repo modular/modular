@@ -20,10 +20,10 @@
 namespace M::KGEN {
 class ParamBindArrayAttr;
 class ParamDeclAttr;
-class ParamDeclareOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class AliasDeclOp;
 class AliasForwardDeclOp;
 class ASTDecl;
 class FileModuleOp;
@@ -179,9 +179,8 @@ private:
   LogicalResult resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
                                  ASTDecl &decl);
   ParseResult resolveBody(GlobalVarDeclOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(ParamDeclareOp op, Lexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(ParamDeclareOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
+  ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasForwardDeclOp op, Lexer &lexer, ASTDecl &decl);
 
 private:

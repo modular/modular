@@ -1506,7 +1506,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
             structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
           })
-          .Case([&](ParamDeclareOp op) {
+          .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
                                              demangleParameterName(
                                                  op.getParamDecl().getName())));

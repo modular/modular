@@ -93,8 +93,13 @@ static void lowerLITOps(LIT::FuncOp func,
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
   func.walk([&](Operation *op) {
-    if (isa<AliasForwardDeclOp, OwnershipUseOp, OwnershipMarkDestroyedOp,
-            OwnershipDefLValueOp>(op)) {
+    // Lower any aliases within the function body to param declare.
+    if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
+      b.replaceOpWithNewOp<ParamDeclareOp>(
+          alias, TypeRange(), alias.getParamDecl(), alias.getValue());
+    } else if (isa<AliasForwardDeclOp, OwnershipUseOp, OwnershipMarkDestroyedOp,
+                   OwnershipDefLValueOp>(op)) {
       // lit.alias.fwd.decl and lit.ownership.* are used internally by the
       // frontend and ownership lowering, but is not needed after that.
       op->erase();
@@ -238,6 +243,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
   symbolTable.remove(gen);
   symbolTable.insert(result, genIter);
   gen.erase();
+
   return success();
 }
 
@@ -262,8 +268,8 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
       b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType);
       varDecl->erase();
       continue;
-    } else if (auto paramDeclare = dyn_cast<ParamDeclareOp>(member)) {
-      paramDeclare.erase();
+    } else if (isa<AliasDeclOp>(member)) {
+      member.erase();
       continue;
     }
     auto func = dyn_cast<LIT::FuncOp>(member);
@@ -500,7 +506,7 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
               op->erase();
               return mlir::success();
             })
-            .Case<ParamDeclareOp, LIT::UnresolvedImportOp>([&](auto op) {
+            .Case<AliasDeclOp, LIT::UnresolvedImportOp>([&](auto op) {
               op->erase();
               return mlir::success();
             })

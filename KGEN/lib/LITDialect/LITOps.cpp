@@ -1037,6 +1037,34 @@ void TryRaiseOp::getBranchTargets(
 }
 
 //===----------------------------------------------------------------------===//
+// AliasDeclOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseAliasDeclOpValue(OpAsmParser &p,
+                                         ParamDeclAttr &paramDecl,
+                                         TypedAttr &value) {
+  return parseParamDeclaration(p, paramDecl, value);
+}
+
+static void printAliasDeclOpValue(OpAsmPrinter &p, Operation *,
+                                  ParamDeclAttr paramDecl, TypedAttr value) {
+  return printParamDeclaration(p, paramDecl, value);
+}
+
+void AliasDeclOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), getValue());
+}
+
+LogicalResult AliasDeclOp::verify() {
+  if (getParamDecl().getType() == getValue().getType())
+    return success();
+  return emitOpError("declares a parameter with type ")
+         << getParamDecl().getType() << " but parameter expression has type "
+         << getValue().getType();
+}
+
+//===----------------------------------------------------------------------===//
 // LetRegDeclOp
 //===----------------------------------------------------------------------===//
 

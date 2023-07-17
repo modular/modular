@@ -724,7 +724,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
-              GlobalVarDeclOp, ParamDeclareOp>([&](auto op) {
+              GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
           Lexer lexer(shared, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
@@ -789,7 +789,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,
-              VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, ParamDeclareOp,
+              VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
               AliasForwardDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
           Lexer lexer(shared, decl.getCursor());
@@ -2868,7 +2868,7 @@ ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
 /// alias_decl_stmt ::= "alias" identifier ":" expression ["=" expression]
 ///                   | "alias" identifier "=" expression
 ///
-LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
+LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(lexer);
   auto decoratorExprs = p.parseDecorators(decl);
@@ -2888,30 +2888,30 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   if (!p.consumeIf(Token::equal)) {
     // If there was neither a type or initializer, reject the var.
     if (!type) {
-      p.emitError(paramDeclOp.getLoc(),
+      p.emitError(aliasDeclOp.getLoc(),
                   "declaration must have either a type or an initializer");
       return failure();
     }
 
     // `alias x: Int` is a forward declaration of a return parameter from a
     // function call, so it must occur in a function.
-    if (!paramDeclOp->getParentOfType<LIT::FuncOp>()) {
-      p.emitError(paramDeclOp.getLoc(),
+    if (!aliasDeclOp->getParentOfType<LIT::FuncOp>()) {
+      p.emitError(aliasDeclOp.getLoc(),
                   "parameter results may only be declared in a function");
       return failure();
     }
 
     // Ok, things seem set up right, replace the ParamDeclOp with the right
     // operation that will allow us to track things.
-    OpBuilder builder(paramDeclOp);
+    OpBuilder builder(aliasDeclOp);
     Operation *forwardDecl = builder.create<AliasForwardDeclOp>(
-        paramDeclOp.getLoc(), paramDeclOp.getName(), TypeAttr::get(type),
+        aliasDeclOp.getLoc(), aliasDeclOp.getName(), TypeAttr::get(type),
         mlir::LocationAttr());
     decl.setIRValue(forwardDecl);
 
     // Remove the paramDeclOp from the IR, since we ended up changing our mind
     // about how to represent this.
-    paramDeclOp->erase();
+    aliasDeclOp->erase();
 
     // The check that the alias was specified is handled when the function body
     // has been fully resolved.
@@ -2942,11 +2942,11 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
     type = rhsValue.getType();
 
   // Remember the value, and update the type from UnresolvedType.
-  NamedAttrList attrs = paramDeclOp->getAttrDictionary();
-  attrs.set(paramDeclOp.getValueAttrName(), rhsValue.get());
-  attrs.set(paramDeclOp.getParamDeclAttrName(),
-            ParamDeclAttr::get(paramDeclOp.getName(), type));
-  paramDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));
+  NamedAttrList attrs = aliasDeclOp->getAttrDictionary();
+  attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
+  attrs.set(aliasDeclOp.getParamDeclAttrName(),
+            ParamDeclAttr::get(aliasDeclOp.getName(), type));
+  aliasDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));
   rejectDecorators(decoratorExprs, decl, shared);
 
   // Process the doc string of the alias.
@@ -2954,7 +2954,7 @@ LogicalResult DeclResolver::resolveSignature(ParamDeclareOp paramDeclOp,
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(ParamDeclareOp op, Lexer &lexer,
+ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
   return success();
 }

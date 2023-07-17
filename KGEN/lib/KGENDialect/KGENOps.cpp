@@ -97,19 +97,12 @@ OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
 static ParseResult parseParamDeclareOpValue(OpAsmParser &p,
                                             ParamDeclAttr &paramDecl,
                                             TypedAttr &value) {
-  StringAttr name;
-  Type type;
-  if (parseParamName(p, name) || parseParamConstantOpValue(p, value, type))
-    return failure();
-
-  paramDecl = ParamDeclAttr::get(name, value.getType());
-  return success();
+  return parseParamDeclaration(p, paramDecl, value);
 }
 
 static void printParamDeclareOpValue(OpAsmPrinter &p, Operation *,
                                      ParamDeclAttr paramDecl, TypedAttr value) {
-  printParamName(p, paramDecl.getName());
-  printParamConstantOpValue(p, nullptr, value, nullptr);
+  return printParamDeclaration(p, paramDecl, value);
 }
 
 void ParamDeclareOp::walkDefinitions(

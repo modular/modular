@@ -587,6 +587,40 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
+// AliasDeclOp
+//===----------------------------------------------------------------------===//
+
+def LIT_AliasDeclOp : LITOp<"alias.decl", [
+    DeclareOpInterfaceMethods<ParamOpInterface>
+  ]>, OneParamDecl {
+  let summary = "`alias x: T = value` declaration";
+  let description = [{
+    This op represents an alias decl bound with the given initializer.
+
+    Example:
+
+    ```mlir
+    lit.alias.decl A = <5>
+    lit.alias.decl A_plus_one = <add(A, 1)>
+    ```
+  }];
+
+  let arguments = (ins
+    KGEN_ParamDeclAttr:$paramDecl, TypedAttrInterface:$value
+  );
+  let assemblyFormat = [{
+    custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    StringAttr getName() { return getParamDecl().getName(); }
+    Type getType() { return getParamDecl().getType(); }
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // AliasForwardDeclOp
 //===----------------------------------------------------------------------===//
 

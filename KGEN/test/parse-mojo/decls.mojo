@@ -96,7 +96,7 @@ fn take_closure_with_param_main():
     fn g[N: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: kgen.param.declare [[BOUND:.*]]: <>(index borrow) capturing -> index = <bind_signature(:<index>(index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
+    # CHECK: lit.alias.decl [[BOUND:.*]]: <>(index borrow) capturing -> index = <bind_signature(:<index>(index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
     # CHECK: %0 = kgen.create_closure [<>(index borrow) capturing -> index: [[BOUND]]]()
     alias Bound = g[(3).value]
 
@@ -185,7 +185,7 @@ fn capture_by_copy():
     fn doesnt_capture(x: Int):
         let arg = x
 
-    # CHECK: kgen.param.declare {{.*}}f: {{.*}} = <*"doesnt_capture
+    # CHECK: lit.alias.decl {{.*}}f: {{.*}} = <*"doesnt_capture
     alias f = doesnt_capture
 
 
@@ -1135,7 +1135,7 @@ fn topLevelFunction() -> Int:
         # CHECK-NEXT: pop.load %a
         return a
 
-    # CHECK: declare {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int> = <*"nestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int> = <*"nestedFunction()">
     alias b = nestedFunction
     # CHECK: call_param[<>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int>: *"nestedFunction()"]()
     return nestedFunction()
@@ -1152,7 +1152,7 @@ struct SomeStruct:
             # CHECK-NEXT: pop.load %a
             return a
 
-        # CHECK: declare {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int> = <*"nestedFunction()">
+        # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int> = <*"nestedFunction()">
         alias b = nestedFunction
         # CHECK: call_param[<>() capturing -> !kgen.declref<{{.*}}@"$Int"::@Int>: *"nestedFunction()"]()
         return nestedFunction()
@@ -1173,7 +1173,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: declare {{.*}}ref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl {{.*}}ref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
     alias ref = nestedFunction
     # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[(2).value]()
@@ -1184,7 +1184,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn capturingNestedFunction() -> Int:
         return value
 
-    # CHECK: declare {{.*}}fatRef: <>() capturing -> {{.*}}@Int> = <*"capturingNestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}fatRef: <>() capturing -> {{.*}}@Int> = <*"capturingNestedFunction()">
     alias fatRef = capturingNestedFunction
 
 
@@ -1196,7 +1196,7 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: declare {{.*}}ref: <{{.*}}@"$Int"::@Int>() -> !lit.none = <*"nestedFunction[{{.*}}$Int::Int]()">
+        # CHECK: lit.alias.decl {{.*}}ref: <{{.*}}@"$Int"::@Int>() -> !lit.none = <*"nestedFunction[{{.*}}$Int::Int]()">
         alias ref = nestedFunction
         # CHECK: call_param[{{.*}}: bind_signature(:<{{.*}}@"$Int"::@Int>() -> !lit.none *"nestedFunction[{{.*}}$Int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()

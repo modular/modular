@@ -230,10 +230,10 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
                                        unboundOp.getName(), attrs);
 }
 
-/// Given a ParamDeclareOp, return the value that should be used in a reference
+/// Given a AliasDeclOp, return the value that should be used in a reference
 /// to it.  This currently fully substitutes members unless they are in a
 /// function definition.
-static PValue resolveParamDeclareValue(ParamDeclareOp param,
+static PValue resolveAliasDeclareValue(AliasDeclOp param,
                                        ParamBindArrayAttr bindings,
                                        SharedState &shared, SMLoc errLoc) {
   // If the param is declared in a function, then just directly use it.
@@ -536,8 +536,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &decl = *decls[0];
 
   // Aliases form a PValue.
-  if (auto param = dyn_cast<ParamDeclareOp>(decl)) {
-    PValue result = resolveParamDeclareValue(param, /*bindings=*/{},
+  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
+    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{},
                                              emitter.shared, getLoc());
     return emitter.emitResult(result.get(), this, dest);
   }
@@ -1011,8 +1011,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &memberDecl = *memberDecls[0];
 
   // Parameters form a meta-value.
-  if (auto param = dyn_cast<ParamDeclareOp>(memberDecl)) {
-    PValue result = resolveParamDeclareValue(
+  if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
+    PValue result = resolveAliasDeclareValue(
         param, baseRVType.getParamBindings(), emitter.shared, getLoc());
     return emitter.emitResult(result.get(), this, dest);
   }

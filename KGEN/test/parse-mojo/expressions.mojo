@@ -431,13 +431,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: kgen.param.declare {{.*}}c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[B]], [[A]])>
+  # CHECK: lit.alias.decl {{.*}}c: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[B]], [[A]])>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: kgen.param.declare {{.*}}d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[A]], [[B]])>
+  # CHECK: lit.alias.decl {{.*}}d: @"$expressions"::@Boolish = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", apply(:<>(!kgen.declref<@"$expressions"::@Boolish> borrow) -> !kgen.declref<{{.*}}@"$Bool"::@Bool> @"$expressions"::@Boolish::@"__bool__($expressions::Boolish)", [[A]])), [[A]], [[B]])>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -518,10 +518,10 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: {{.*}}@"$Bool"::@Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: kgen.param.declare [[I_ALIAS:.*]]: {{.*}}@"$Int"::@Int = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
+  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: {{.*}}@"$Int"::@Int = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: kgen.param.declare {{.*}}j: {{.*}}@"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl {{.*}}j: {{.*}}@"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<{{.*}}@"$Bool"::@Bool> borrow) -> i1 {{.*}}@"$Bool"::@Bool::@"__mlir_i1__({{.*}}$Bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <[[I_ALIAS]]>
@@ -563,11 +563,11 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 # CHECK-LABEL: lit.func @"parameterExprs{{.*}}()"
 # CHECK-SAME: <[[A:.*]]: {{.*}}@"$Int"::@Int, [[A2:.*]]: {{.*}}@"$Int"::@Int>
 fn parameterExprs[a: Int, a2: Int]():
-  # CHECK: kgen.param.declare {{.*}}b: {{.*}}@Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
+  # CHECK: lit.alias.decl {{.*}}b: {{.*}}@Int = <apply({{.*}}__sub__{{.*}}, [[A]], [[A]])>
   alias b = a-a
-  # CHECK: kgen.param.declare {{.*}}c: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[A]], {{.*}}42{{.*}})>
+  # CHECK: lit.alias.decl {{.*}}c: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[A]], {{.*}}42{{.*}})>
   alias c = a+42
-  # CHECK: kgen.param.declare {{.*}}d: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A2]])>
+  # CHECK: lit.alias.decl {{.*}}d: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A2]])>
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##
@@ -628,9 +628,9 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"mvalueStructField()"
 fn mvalueStructField():
-  # CHECK: kgen.param.declare [[INT:.*]]: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 4}>>
+  # CHECK: lit.alias.decl [[INT:.*]]: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 4}>>
   alias int = 4
-  # CHECK: kgen.param.declare {{.*}}value = <#lit.struct.extract<:{{.*}}@"$Int"::@Int [[INT]], "value">>
+  # CHECK: lit.alias.decl {{.*}}value = <#lit.struct.extract<:{{.*}}@"$Int"::@Int [[INT]], "value">>
   alias value = int.value
   alias foldToValue = (5).value
 
@@ -1140,10 +1140,10 @@ fn foo_adaptive[x: Int]() -> Int:
 
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
-    # CHECK: kgen.param.declare {{.*}}not_bound: variadic<!kgen.signature<<{{.*}}@"$Int"::@Int>() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
+    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!kgen.signature<<{{.*}}@"$Int"::@Int>() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
-    # CHECK-NEXT: kgen.param.declare {{.*}}bound: variadic<!kgen.signature<() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
+    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<!kgen.signature<() -> !kgen.declref<{{.*}}@"$Int"::@Int>>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()"<:{{.*}}@"$Int"::@Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[{{.*}}$Int::Int]()_0"<:{{.*}}@"$Int"::@Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
@@ -1226,7 +1226,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}})"<
 # CHECK-SAME: {{.*}}idx: {{.*}}@"$Int"::@Int, [[A:.*]]: variadic<{{.*}}@"$Int"::@Int>>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: declare {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<{{.*}}@"$Int"::@Int> [[A]], 2)>
+    # CHECK-NEXT: lit.alias.decl {{.*}}v0: {{.*}}Int = <variadic_get(:variadic<{{.*}}@"$Int"::@Int> [[A]], 2)>
     alias v0 = a[2]
     # CHECK: pop.variadic.get %{{.*}}[%idx3]
     let v1 = a[3]

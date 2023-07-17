@@ -175,7 +175,7 @@ public:
 
   void generate(ASTDecl &decl) {
     TypeSwitch<ASTDecl &>(decl)
-        .Case<FileModuleOp, LIT::FuncOp, ParamDeclareOp, StructDeclOp,
+        .Case<AliasDeclOp, FileModuleOp, LIT::FuncOp, StructDeclOp,
               StructFieldOp>([&](auto op) { generateJSONFor(decl, op); });
   }
 
@@ -223,7 +223,7 @@ private:
       if (shouldHideName(name) || decls.empty())
         continue;
 
-      if (isa<ParamDeclareOp>(**decls.begin()))
+      if (isa<AliasDeclOp>(**decls.begin()))
         aliases.emplace_back(name, decls);
       else if (isa<LIT::FuncOp>(**decls.begin()))
         functions.emplace_back(name, decls);
@@ -416,16 +416,16 @@ private:
   //===--------------------------------------------------------------------===//
   // Alias Generation
 
-  void generateJSONFor(ASTDecl &decl, ParamDeclareOp paramOp) {
+  void generateJSONFor(ASTDecl &decl, AliasDeclOp aliasOp) {
     os.object([&] {
       os.attribute("kind", "alias");
       os.attribute("name",
-                   demangleParameterName(paramOp.getParamDecl().getName()));
+                   demangleParameterName(aliasOp.getParamDecl().getName()));
 
       // Pretty print the value.
       std::string valueStr;
       llvm::raw_string_ostream valueOS(valueStr);
-      PValue(paramOp.getValue()).printForDiag(valueOS);
+      PValue(aliasOp.getValue()).printForDiag(valueOS);
       os.attribute("value", valueOS.str());
 
       // Emit the doc string if present.

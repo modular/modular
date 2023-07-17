@@ -980,6 +980,29 @@ void KGEN::printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
   printParamValue(p, value, type);
 }
 
+ParseResult KGEN::parseParamDeclaration(OpAsmParser &p,
+                                        ParamDeclAttr &paramDecl,
+                                        TypedAttr &value) {
+  StringAttr name;
+  Type resultType;
+  if (parseParamName(p, name) || parseColonTypeOrIndex(p, resultType) ||
+      p.parseEqual() || p.parseLess() ||
+      parseParamValue(p, value, resultType) || p.parseGreater())
+    return failure();
+
+  paramDecl = ParamDeclAttr::get(name, value.getType());
+  return success();
+}
+
+void KGEN::printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
+                                 TypedAttr value) {
+  printParamName(p, paramDecl.getName());
+  printColonTypeOrIndex(p, value.getType());
+  p << " = <";
+  printParamValue(p, value);
+  p << ">";
+}
+
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
