@@ -32,7 +32,7 @@ struct HoistTrivialInvariants
 /// producer of whichever operand is dominated by all other operands.
 static void moveInvariants(FuncOp func, Operation *opWithRegion,
                            iterator_range<Region::OpIterator> range,
-                           unsigned numHoisted) {
+                           unsigned &numHoisted) {
   // Move the invariants.
   for (Operation &op : llvm::make_early_inc_range(range)) {
     // This pass only will hoist
