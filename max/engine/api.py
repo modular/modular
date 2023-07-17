@@ -114,17 +114,17 @@ class DType(Enum):
     """The tensor data type."""
 
     bool = 0
-    si8 = 1
-    si16 = 2
-    si32 = 3
-    si64 = 4
-    ui8 = 5
-    ui16 = 6
-    ui32 = 7
-    ui64 = 8
-    f16 = 9
-    f32 = 10
-    f64 = 11
+    int8 = 1
+    int16 = 2
+    int32 = 3
+    int64 = 4
+    uint8 = 5
+    uint16 = 6
+    uint32 = 7
+    uint64 = 8
+    float16 = 9
+    float32 = 10
+    float64 = 11
 
     @classmethod
     def _from(cls, dtype: _DType):
