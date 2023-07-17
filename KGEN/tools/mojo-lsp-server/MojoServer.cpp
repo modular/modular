@@ -118,7 +118,7 @@ MojoASTTypeRef Symbol::getDisplayType() const {
   return TypeSwitch<Operation &, MojoASTTypeRef>(*declRef.getIfOperation())
       .Case<VarLetDeclOp>(
           [&](auto op) { return declRef.getType().getPointerElementType(); })
-      .Case<LetRegDeclOp>([&](auto op) { return declRef.getType(); });
+      .Case<LetRegDeclOp, FuncOp>([&](auto op) { return declRef.getType(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -138,6 +138,7 @@ public:
   /// Return a nicely formatted markdown text of the declaration of this symbol.
   std::string getMarkdownDeclaration() const;
 
+  /// Return the symbol kind as a display string.
   StringRef getSymbolKindAsString() const;
 
 private:
@@ -147,7 +148,8 @@ private:
 
 StringRef SymbolPrinter::getSymbolKindAsString() const {
   return TypeSwitch<Operation &, StringRef>(*symbol.declRef.getIfOperation())
-      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return "variable"; });
+      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return "variable"; })
+      .Case<FuncOp>([&](auto op) { return "function"; });
 }
 
 std::string SymbolPrinter::getDeclarationCodeSnippet() const {
@@ -167,21 +169,30 @@ std::string SymbolPrinter::getDeclarationCodeSnippet() const {
         os << "let " << symbol.identifier;
         if (auto typeRef = symbol.getDisplayType())
           os << ": " << typeRef.getAsString();
+      })
+      .Case<FuncOp>([&](FuncOp op) {
+        // TODO: reuse the same logic as DocString.cpp
+        os << (op.getIsDef() ? "def" : "fn") << " " << symbol.declRef.getName()
+           << "()";
       });
   return buff;
 }
 
 std::string SymbolPrinter::getMarkdownDeclaration() const {
-  return llvm::formatv(R"(### {0} `{1}`
+  std::string buff;
+  llvm::raw_string_ostream os(buff);
 
+  os << formatv("### {0} `{1}`\n", getSymbolKindAsString(), symbol.identifier);
+
+  os << llvm::formatv(R"(
 ---
 
 ###
 ```mojo
-{2}
+{0}
 ```)",
-                       getSymbolKindAsString(), symbol.identifier,
-                       getDeclarationCodeSnippet());
+                      getDeclarationCodeSnippet());
+  return buff;
 }
 
 //===----------------------------------------------------------------------===//
@@ -261,6 +272,8 @@ class LSPParserListener : public MojoParserListener {
 public:
   LSPParserListener(MojoDocument &mainDoc, llvm::SourceMgr &sourceMgr)
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
+
+  void onFunctionDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
   void onVariableDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
@@ -627,6 +640,19 @@ MojoDocument::onHover(const lsp::Position &pos) const {
 //===----------------------------------------------------------------------===//
 // LSPParserListener
 //===----------------------------------------------------------------------===//
+
+void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
+                                       SMLoc identifierLoc) {
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    return;
+
+  if (std::optional<StringRef> identifier = declRef.getName()) {
+    mainDoc.symbolIndex.registerSymbol(
+        declRef, *identifier,
+        getRangeForText(sourceMgr, identifierLoc, *identifier));
+  }
+}
 
 void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {

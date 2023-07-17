@@ -15,6 +15,7 @@
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
 #include "IRValues.h"
+#include "KGEN/MojoParser.h"
 #include "Lexer.h"
 #include "ParserBase.h"
 #include "ParserParamEvaluator.h"
@@ -2066,7 +2067,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   p.consumeToken();
 
   StringAttr baseName;
-  if (p.parseIdentifier(baseName, "expected function name"))
+  SMLoc identifierLoc;
+  if (p.parseIdentifier(baseName, "expected function name", &identifierLoc))
     return failure();
 
   // The function signature is a self-contained scope where the input and result
@@ -2315,27 +2317,29 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     bool hasCapture = false;
     mlir::visitUsedValuesDefinedAbove(funcOp.getBodyRegion(),
                                       [&](OpOperand *) { hasCapture = true; });
-    if (!hasCapture)
-      return success();
+    if (hasCapture) {
+      if (funcOp.getIsAdaptive()) {
+        decl.hasReferenceError = true;
+        return emitError(
+            funcOp.getLoc(),
+            "nonparametric capturing closure cannot be marked @adaptive");
+      }
+      if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
+        return emitError(funcOp.getLoc(),
+                         "nonparametric capturing closure cannot have input or "
+                         "result parameters");
+      }
 
-    if (funcOp.getIsAdaptive()) {
-      decl.hasReferenceError = true;
-      return emitError(
-          funcOp.getLoc(),
-          "nonparametric capturing closure cannot be marked @adaptive");
+      OpBuilder b(funcOp.getContext());
+      b.setInsertionPointAfter(funcOp);
+      decl.irValue = SBValue(b.create<CreateClosureOp>(
+          funcOp.getLoc(), funcOp.getSignature(),
+          ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
     }
-    if (!inputParamDecls.empty() || !resultParamDecls.empty()) {
-      return emitError(funcOp.getLoc(),
-                       "nonparametric capturing closure cannot have input or "
-                       "result parameters");
-    }
-
-    OpBuilder b(funcOp.getContext());
-    b.setInsertionPointAfter(funcOp);
-    decl.irValue = SBValue(b.create<CreateClosureOp>(
-        funcOp.getLoc(), funcOp.getSignature(),
-        ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
   }
+
+  if (shared.parserListener)
+    shared.parserListener->onFunctionDecl(MojoASTDeclRef(&decl), identifierLoc);
 
   return success();
 }

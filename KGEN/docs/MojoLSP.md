@@ -85,3 +85,8 @@ async def test_lsp_request(client: LanguageClient)
   results = client.text_document_hover_async(HoverParams(...))
   assert results.contents.value == "foo
 ```
+
+#### Utils
+
+The package `lib/utils` contains a set of helpers that make asserting and
+issuing LSP messages less verbose. Please keep improving them.

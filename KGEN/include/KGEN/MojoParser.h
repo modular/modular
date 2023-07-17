@@ -94,7 +94,10 @@ public:
   /// returns an invalid `MojoASTTypeRef`.
   MojoASTTypeRef getType() const;
 
-  /// Get the name of the Mojo entity backed by this decl if available.
+  /// Get the mangled name of this declaration if available.
+  std::optional<StringAttr> getMangledName() const;
+
+  /// Get the name of this declaration if available.
   std::optional<StringRef> getName() const;
 
   /// Get the location of the start token of this decl. It might not be the
@@ -150,6 +153,11 @@ private:
 class MojoParserListener {
 public:
   virtual ~MojoParserListener() = default;
+
+  /// Notify the listener that a new `def` or `fn` function declaration has been
+  /// resolved by the parser. This includes struct methods and closures.
+  virtual void onFunctionDecl(MojoASTDeclRef declRef,
+                              llvm::SMLoc identifierLoc) = 0;
 
   /// Notify the listener that a new `let` or `var` declaration has been
   /// resolved by the parser.
