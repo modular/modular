@@ -85,22 +85,22 @@ struct TestParamStruct[A: Int]:
 
   # CHECK-LABEL: lit.func @"aliases{{.*}}%x: !kgen.declref<@"$parameters"::@TestParamStruct<
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
-    # CHECK: kgen.param.declare [[B:.*]]: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
+    # CHECK: lit.alias.decl [[B:.*]]: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__mul__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A*A+1
-    # CHECK: kgen.param.declare [[C:.*]]: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
+    # CHECK: lit.alias.decl [[C:.*]]: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
     alias C = B*A
-    # CHECK: kgen.param.declare [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = {{.*}}1{{.*}}> = <apply(:<>() ownedresult -> {{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = {{.*}}1{{.*}}>> {{.*}}__init__()"<:{{.*}}@Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = {{.*}}1{{.*}}> = <apply(:<>() ownedresult -> {{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = {{.*}}1{{.*}}>> {{.*}}__init__()"<:{{.*}}@Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = [[C]]>>
     var temp: TestParamStruct[C]
 
-    # CHECK: kgen.param.declare {{.*}}intVal: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 42}>>
+    # CHECK: lit.alias.decl {{.*}}intVal: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 42}>>
     alias intVal : Int = 42
 
     # CHECK: %temp2 = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: {{.*}}@Int = apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
-  # CHECK: kgen.param.declare {{.*}}TypeLevelAlias: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
+  # CHECK: lit.alias.decl {{.*}}TypeLevelAlias: {{.*}}@Int = <apply({{.*}}__mul__{{.*}}, [[A]], [[A]])
   alias TypeLevelAlias = A*A
 
 # Test that we support partially bound parameters.
@@ -174,7 +174,7 @@ struct Pair[dt: DType]:
 
 # CHECK: useParameterizedField
 fn useParameterizedField[x: Pair[DType.float32]]():
-  # CHECK: kgen.param.declare {{.*}}y:
+  # CHECK: lit.alias.decl {{.*}}y:
   alias y : OurSIMD[42, DType.float32] = x.a
 
 
@@ -389,22 +389,22 @@ fn pass_str_param():
 # Alias resolution
 ##===----------------------------------------------------------------------===##
 
-# CHECK: kgen.param.declare {{.*}}boolDtype: dtype = <bool>
+# CHECK: lit.alias.decl {{.*}}boolDtype: dtype = <bool>
 alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
-# CHECK: kgen.param.declare {{.*}}FOURTY_TWO: {{.*}}@Int = <{{.*}}42
+# CHECK: lit.alias.decl {{.*}}FOURTY_TWO: {{.*}}@Int = <{{.*}}42
 alias FOURTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <[[V:.*]]: {{.*}}@Int>
 struct A[v: Int]:
-  # CHECK: kgen.param.declare {{.*}}member: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[V]], {{.*}}42
+  # CHECK: lit.alias.decl {{.*}}member: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[V]], {{.*}}42
   alias member = v + FOURTY_TWO
 
 # CHECK-LABEL: lit.func @"testUseOfAliases
 fn testUseOfAliases(a: Bool):
   # This type checks.
   _ = SIMD[DType(boolDtype), 4].splat(a)
-  # CHECK: kgen.param.declare {{.*}}y: {{.*}}@Int = <{{.*}}44
+  # CHECK: lit.alias.decl {{.*}}y: {{.*}}@Int = <{{.*}}44
   alias y = A[2].member
 
 @register_passable
@@ -424,7 +424,7 @@ struct MyDType:
   alias float32 = MyDType((2).value)
   alias float64 = MyDType((3).value)
 
-  # CHECK: kgen.param.declare {{.*}}ui16: @"$parameters"::@MyDType = <#lit.struct<{state = 7}>>
+  # CHECK: lit.alias.decl {{.*}}ui16: @"$parameters"::@MyDType = <#lit.struct<{state = 7}>>
   alias ui16 = MyDType{state: (7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
@@ -439,7 +439,7 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup
 # CHECK-SAME: <[[PARAM:.*]]: {{.*}}@Int>
 struct UnqualAliasLookup[param: Int]:
-  # CHECK: kgen.param.declare {{.*}}member: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
+  # CHECK: lit.alias.decl {{.*}}member: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
   alias member = param+1
   fn get(self) -> Int:
     # CHECK: %0 = kgen.param.constant: {{.*}}@Int = <apply({{.*}}__add__{{.*}}, [[PARAM]], {{.*}}1{{.*}})>
@@ -470,7 +470,7 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: kgen.param.declare {{.*}}fnAlias: <variadic<{{.*}}@"$Int"::@Int>>() param_vararg -> !lit.none = <@"$parameters"::@"fnWithVariadics{{.*}}">
+  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: <variadic<{{.*}}@"$Int"::@Int>>() param_vararg -> !lit.none = <@"$parameters"::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
@@ -578,7 +578,7 @@ fn testDependentType[
 
 # CHECK-LABEL: lit.func @"testParameterEvaluator()"
 fn testParameterEvaluator():
-  # CHECK-NEXT: declare {{.*}}x = <1>
+  # CHECK-NEXT: lit.alias.decl {{.*}}x = <1>
   alias x = Abstraction[1].val
   # CHECK-NEXT: %0 = kgen.call @"$parameters"::@Abstraction::@"push{{.*}}"<:{{.*}} = 1{{.*}}, :{{.*}} = 2{{.*}}>()
   # CHECK-NEXT: %1 = kgen.rebind %0 : {{.*}} to {{.*}}@Abstraction<[[A:.*]]: {{.*}} = 3}

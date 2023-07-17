@@ -318,3 +318,11 @@ lit.package @MyPackage {
   // expected-note @below {{see operation defined here}}
   kgen.unreachable
 }
+
+// -----
+
+lit.func @declareWrongType() {
+  // expected-error @below {{op declares a parameter with type 'index' but parameter expression has type 'i32'}}
+  "lit.alias.decl"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
+  kgen.return
+}

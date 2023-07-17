@@ -1740,7 +1740,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
   auto type = UnresolvedType::get(getContext());
   auto value = UnresolvedAliasValueAttr::get(type);
   auto [line, col] = getSourceMgr().getLineAndColumn(smLoc);
-  auto declOp = builder.create<ParamDeclareOp>(
+  auto declOp = builder.create<AliasDeclOp>(
       loc, ParamDeclAttr::get(mangleParameter(name, line, col), type), value);
 
   // Skip the body of this definition: go to a token the starts a line at the

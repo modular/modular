@@ -31,10 +31,12 @@ lit.func @letDecl(%arg0: index) -> index {
 // Aliases
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: kgen.generator @aliasFwdDecl()
+// CHECK-LABEL: kgen.generator @aliasDecls()
+// CHECK-NEXT: kgen.param.declare aliasDecl = <5>
 // CHECK-NEXT: kgen.return
-lit.func @aliasFwdDecl() {
-  lit.alias.fwd.decl "xyz" : index
+lit.func @aliasDecls() {
+  lit.alias.decl aliasDecl = <5>
+  lit.alias.fwd.decl "aliasFwdDecl" : index
   kgen.return
 }
 

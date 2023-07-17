@@ -47,6 +47,6 @@ lit.package @package {
 // -----
 
 lit.file_module @module {
-   // CHECK-NOT: kgen.param.declare
-   kgen.param.declare A = <42>
+   // CHECK-NOT: lit.alias.decl
+   lit.alias.decl A = <42>
 }

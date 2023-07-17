@@ -10,7 +10,7 @@
 fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
-    # CHECK: kgen.param.declare [[A:.*]] = <1>
+    # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = (1).value
     # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
     var b: __mlir_type.f64
@@ -37,7 +37,7 @@ fn mlirMagicTest(
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
     var i1Cast = __mlir_op.`index.castu`[_type : __mlir_type.i1](idxConstant)
 
-    # CHECK: kgen.param.declare [[NEW_LOWER:.*]] = <max([[A]], 42)>
+    # CHECK: lit.alias.decl [[NEW_LOWER:.*]] = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max, `, a, `, `, (42).value, `> : index`
     ]
@@ -77,9 +77,9 @@ fn fancierSubstitutions():
     # CHECK: = lit.varlet.decl {{.*}} : <complex<i32>>
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
-    # CHECK: kgen.param.declare [[A:.*]] = <1>
+    # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = (1).value
-    # CHECK: kgen.param.declare {{.*}}new_lower = <max([[A]], 42)>
+    # CHECK: lit.alias.decl {{.*}}new_lower = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max,`, a, `, `, (42).value, `> : index`
     ]
@@ -92,7 +92,7 @@ fn fancierSubstitutions():
 fn testAttrConcatWithoutType[
     length: __mlir_type.index,
 ]():
-    # CHECK: kgen.param.declare {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
+    # CHECK: lit.alias.decl {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
     alias x = __mlir_attr[
         `#kgen.variadic<`,
         +(1).value,

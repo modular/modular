@@ -117,15 +117,15 @@ lit.func @callIt() {
 
 // -----
 
-// CHECK-NOT: kgen.param.declare
-kgen.param.declare A = <1>
+// CHECK-NOT: lit.alias.decl
+lit.alias.decl A = <1>
 lit.struct.decl @foo {
-  // CHECK-NOT: kgen.param.declare
-  kgen.param.declare B = <2>
+  // CHECK-NOT: lit.alias.decl
+  lit.alias.decl B = <2>
  // CHECK-LABEL:  @"foo::f"() -> index {
   lit.func @f() -> index {
     // CHECK: kgen.param.declare
-    kgen.param.declare C = <3>
+    lit.alias.decl C = <3>
     %0 = kgen.param.constant: index = <1>
     kgen.return %0 : index
   }

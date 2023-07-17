@@ -14,10 +14,10 @@
 
 # COM: This file
 
-# CHECK: kgen.param.declare _18x1_MY_NUMBER: {{.*}}@Int =
+# CHECK: lit.alias.decl _18x1_MY_NUMBER: {{.*}}@Int =
 alias MY_NUMBER = 42
 
 
 fn foo():
-    # CHECK: kgen.param.declare _23x5_value: {{.*}}@Int =
+    # CHECK: lit.alias.decl _23x5_value: {{.*}}@Int =
     alias value = MY_NUMBER

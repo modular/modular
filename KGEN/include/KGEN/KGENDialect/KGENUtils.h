@@ -94,6 +94,14 @@ void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
 ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type);
 
+/// Parse a parameter declaration of the form `name = value`.
+ParseResult parseParamDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
+                                  TypedAttr &value);
+
+/// Print a parameter declaration of the form `name = value`.
+void printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
+                           TypedAttr value);
+
 /// Parse ":type 42" or "42" and default to index type.
 ParseResult parseParamValueDefaultingToIndex(AsmParser &p, TypedAttr &value);
 
