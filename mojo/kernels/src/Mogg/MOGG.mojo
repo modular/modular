@@ -69,6 +69,7 @@ from SIMD import SIMD
 from TargetInfo import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
+from Softmax import softmax as _softmax
 from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
@@ -143,6 +144,7 @@ fn MOGGExport():
     alias _simd_load_strided = simd_load_strided
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
+    alias _softmax = softmax
     alias _sum = sum
     alias _splat = splat
     alias _transpose = transpose
@@ -1485,6 +1487,23 @@ fn scatter_nd[
         )
 
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+
+
+# Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
+fn softmax[
+    rank: Int,
+    type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    _softmax[
+        type,
+        simdwidthof[type](),
+        rank,
+        DimList.create_unknown[rank](),
+    ](input, output, rank - 1, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
