@@ -37,6 +37,9 @@ class Counter {
 public:
   void add(T value) { counter->Add(value); }
 
+  Counter(Counter &&) = default;
+  Counter &operator=(Counter &&) = default;
+
 private:
   friend class TelemetryContext;
 
@@ -78,6 +81,9 @@ class Histogram {
 public:
   void record(T value) { histogram->Record(value, context); }
 
+  Histogram(Histogram &&) = default;
+  Histogram &operator=(Histogram &&) = default;
+
 private:
   friend class TelemetryContext;
 
@@ -95,10 +101,17 @@ class Timer {
 
 public:
   ~Timer() {
-    auto end = ClockType::now();
-    auto duration = std::chrono::duration_cast<DurationT>(end - start);
-    histogram->Record(duration.count(), context);
+    // The histogram pointer in the destructor may be null if the Timer was
+    // moved.
+    if (histogram) {
+      auto end = ClockType::now();
+      auto duration = std::chrono::duration_cast<DurationT>(end - start);
+      histogram->Record(duration.count(), context);
+    }
   }
+
+  Timer(Timer &&) = default;
+  Timer &operator=(Timer &&) = default;
 
 private:
   friend class TelemetryContext;
