@@ -7,15 +7,9 @@
 import os
 
 import pytest_lsp
-from lsprotocol.types import (
-    HoverParams,
-    Position,
-    Range,
-    TextDocumentIdentifier,
-)
+from lib.utils import Document, Requests, fail_if_none
+from lsprotocol.types import HoverParams, MarkupContent, Position, Range
 from pytest_lsp import ClientServerConfig, LanguageClient
-
-from utils import initialize, open_document
 
 
 @pytest_lsp.fixture(
@@ -25,17 +19,15 @@ from utils import initialize, open_document
 )
 async def client(lsp_client: LanguageClient):
     # Setup
-    await initialize(lsp_client)
+    await Requests(lsp_client).initialize()
     yield
     # Teardown
     await lsp_client.shutdown_session()
 
 
 async def test_hover_letvar(client: LanguageClient):
-    uri = "test:///foo.mojo"
-    open_document(
-        client,
-        uri,
+    doc = Document(
+        "foo.mojo",
         """
 from IO import print
 
@@ -45,13 +37,13 @@ fn function():
   print(bar)
 """,
     )
+    requests = Requests(client)
+    requests.open_document(doc)
 
-    result = await client.text_document_hover_async(
-        params=HoverParams(
-            position=Position(line=5, character=17),
-            text_document=TextDocumentIdentifier(uri),
-        )
+    result = fail_if_none(
+        await requests.hover(doc, Position(line=5, character=17))
     )
+    assert isinstance(result.contents, MarkupContent)
     assert (
         result.contents.value
         == """### variable `foo`
@@ -70,9 +62,11 @@ let foo: Int
     result = await client.text_document_hover_async(
         params=HoverParams(
             position=Position(line=6, character=8),
-            text_document=TextDocumentIdentifier(uri),
+            text_document=doc.identifier,
         )
     )
+    assert result
+    assert isinstance(result.contents, MarkupContent)
     assert (
         result.contents.value
         == """### variable `bar`
@@ -86,4 +80,126 @@ var bar: Int
     )
     assert result.range == Range(
         start=Position(line=5, character=6), end=Position(line=5, character=9)
+    )
+
+
+async def test_hover_function_decls(client: LanguageClient):
+    doc = Document.from_file("functions.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert result.range == range
+        assert isinstance(result.contents, MarkupContent)
+        assert result.contents.value == contents
+
+    await assert_decl(
+        "__init__",
+        """### function `__init__`
+
+---
+
+###
+```mojo
+fn __init__()
+```""",
+    )
+
+    await assert_decl(
+        "static_method",
+        """### function `static_method`
+
+---
+
+###
+```mojo
+fn static_method()
+```""",
+    )
+
+    await assert_decl(
+        "non_capturing_nested_function",
+        """### function `non_capturing_nested_function`
+
+---
+
+###
+```mojo
+fn non_capturing_nested_function()
+```""",
+    )
+
+    await assert_decl(
+        "async_function",
+        """### function `async_function`
+
+---
+
+###
+```mojo
+fn async_function()
+```""",
+    )
+
+    await assert_decl(
+        "parameter_nested_function",
+        """### function `parameter_nested_function`
+
+---
+
+###
+```mojo
+fn parameter_nested_function()
+```""",
+    )
+
+    await assert_decl(
+        "another_nested_function",
+        """### function `another_nested_function`
+
+---
+
+###
+```mojo
+fn another_nested_function()
+```""",
+    )
+
+    await assert_decl(
+        "function_that_raises",
+        """### function `function_that_raises`
+
+---
+
+###
+```mojo
+fn function_that_raises()
+```""",
+    )
+
+    await assert_decl(
+        "exported_function",
+        """### function `exported_function`
+
+---
+
+###
+```mojo
+fn exported_function()
+```""",
+    )
+
+    await assert_decl(
+        "def_function",
+        """### function `def_function`
+
+---
+
+###
+```mojo
+def def_function()
+```""",
     )

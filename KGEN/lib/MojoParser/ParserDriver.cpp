@@ -60,11 +60,22 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
       .Default({});
 }
 
-std::optional<StringRef> MojoASTDeclRef::getName() const {
-  return TypeSwitch<ASTDecl &, std::optional<StringRef>>(
+std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
+  return TypeSwitch<ASTDecl &, std::optional<StringAttr>>(
              *unwrapMojoASTDecl(impl))
-      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return op.getName(); })
+      .Case<VarLetDeclOp, LetRegDeclOp, FuncOp>(
+          [&](auto op) { return op.getNameAttr(); })
       .Default({});
+}
+
+std::optional<StringRef> MojoASTDeclRef::getName() const {
+  if (auto mangledName = getMangledName()) {
+    // We remove the parameter section and argument section from the symbol name
+    // to keep only the identifier.
+    StringRef mangled = mangledName->getValue();
+    return mangled.substr(0, mangled.find_first_of("(["));
+  }
+  return {};
 }
 
 llvm::SMLoc MojoASTDeclRef::getLoc() const {
