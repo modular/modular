@@ -20,6 +20,15 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+namespace {
+/// Statistics collected for this pass.
+struct PassStats {
+  unsigned numAllocsElided = 0;
+  unsigned numLoadsElided = 0;
+  unsigned numStoresElided = 0;
+};
+} // namespace
+
 /// Return the pointer element type of an allocation.
 static Type getAllocType(StackAllocationOp alloc) {
   return ParamRefType::get(cast<PointerType>(alloc.getType()).getElementType());
@@ -59,7 +68,8 @@ static LogicalResult
 processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               llvm::MapVector<StackAllocationOp, Value> &state,
               DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
-                  &termVariants) {
+                  &termVariants,
+              PassStats &stats) {
   // This analysis only works on single-block regions.
   if (!llvm::hasSingleElement(region)) {
     return region.getParentOp()->emitError(
@@ -90,6 +100,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         if (auto it = state.find(alloc); it != state.end()) {
           load.replaceAllUsesWith(valueOrUndef(alloc, load, it->second));
           load.erase();
+          ++stats.numLoadsElided;
         }
       }
       continue;
@@ -101,6 +112,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         if (auto it = state.find(alloc); it != state.end()) {
           it->second = store.getArg();
           store.erase();
+          ++stats.numStoresElided;
         }
       }
       continue;
@@ -133,7 +145,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     if (!node) {
       // This is an unknown operation. Process it as if it were isolated.
       for (Region &region : op.getRegions())
-        if (failed(processRegion(region, cfg, state, termVariants)))
+        if (failed(processRegion(region, cfg, state, termVariants, stats)))
           return failure();
       continue;
     }
@@ -215,13 +227,16 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         }
       }
       // Okay, now recurse into the region.
-      if (failed(processRegion(region, cfg, nestedState, termVariants)))
+      if (failed(processRegion(region, cfg, nestedState, termVariants, stats)))
         return failure();
 
       // Erase elided allocations in the nested region.
-      for (StackAllocationOp alloc : llvm::make_first_range(nestedState))
-        if (!state.contains(alloc))
+      for (StackAllocationOp alloc : llvm::make_first_range(nestedState)) {
+        if (!state.contains(alloc)) {
           alloc.erase();
+          ++stats.numAllocsElided;
+        }
+      }
     }
 
     // After processing the regions, we need to add results to the operation
@@ -260,16 +275,23 @@ struct Mem2RegPass : public M::KGEN::impl::Mem2RegBase<Mem2RegPass> {
 
 void Mem2RegPass::runOnOperation() {
   auto &cfg = getAnalysis<HLCF::CFGAnalysis>();
+  PassStats stats;
   for (Region &region : getOperation()->getRegions()) {
     llvm::MapVector<StackAllocationOp, Value> entryState;
     DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
         termVariants;
-    if (failed(processRegion(region, cfg, entryState, termVariants)))
+    if (failed(processRegion(region, cfg, entryState, termVariants, stats)))
       return signalPassFailure();
     // Erase elided allocations.
-    for (StackAllocationOp alloc : llvm::make_first_range(entryState))
+    for (StackAllocationOp alloc : llvm::make_first_range(entryState)) {
       alloc.erase();
+      ++stats.numAllocsElided;
+    }
   }
+
+  numAllocsElided = stats.numAllocsElided;
+  numLoadsElided = stats.numLoadsElided;
+  numStoresElided = stats.numStoresElided;
 
   // Control-flow is not modified.
   markAnalysesPreserved<HLCF::CFGAnalysis>();

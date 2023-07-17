@@ -29,7 +29,8 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
                              ParameterCollector &collector,
                              LiftedMapStack &lifted, unsigned &counter,
                              const ParameterUseDefGraph &graph,
-                             const ParameterUseDefGraph &topLevel) {
+                             const ParameterUseDefGraph &topLevel,
+                             unsigned &numDedupedApplies) {
   mlir::AttrTypeReplacer replacer;
   lifted.emplace_back().first = body;
 
@@ -53,8 +54,11 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     // scope for an operator of the same value in the current scope that has
     // already been lifted.
     DenseMap<ParamOperatorAttr, Attribute> &curMap = lifted.back().second;
-    if (auto it = curMap.find(op); it != curMap.end())
+    if (auto it = curMap.find(op); it != curMap.end()) {
+      // Deduplicated an 'apply'.
+      ++numDedupedApplies;
       return it->second;
+    }
 
     // Collect all parameter uses within the operator so we can check the
     // declaring operations to determine the highest scope into which we could
@@ -108,6 +112,9 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
       // Create the operation and set the value of the lifted operator.
       b.create<ParamApplyOp>(decl, callee, operands);
       existing = ParamDeclRefAttr::get(decl);
+    } else {
+      // Deduplicated an 'apply' with the existing parameter.
+      ++numDedupedApplies;
     }
 
     // Map the created or existing parameter into the current scope. This also
@@ -144,7 +151,8 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     if (isa<DeclInterface>(op)) {
       for (Region &region : op->getRegions()) {
         liftAndFoldApply(&region, b, collector, lifted, counter,
-                         topLevel.nestedScopes.at(&region), topLevel);
+                         topLevel.nestedScopes.at(&region), topLevel,
+                         numDedupedApplies);
       }
       return WalkResult::skip();
     }
@@ -158,13 +166,15 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
 /// operators for each scope.
 static void liftAndFoldApply(Region *body,
                              ParameterCollector::Analysis &paramCache,
-                             const ParameterUseDefGraph &topLevel) {
+                             const ParameterUseDefGraph &topLevel,
+                             unsigned &numDedupedApplies) {
   ImplicitLocOpBuilder b(body->getParentOp()->getLoc(),
                          OpBuilder(body->getContext()));
   LiftedMapStack lifted;
   unsigned counter = 0;
   ParameterCollector collector(paramCache);
-  liftAndFoldApply(body, b, collector, lifted, counter, topLevel, topLevel);
+  liftAndFoldApply(body, b, collector, lifted, counter, topLevel, topLevel,
+                   numDedupedApplies);
 }
 
 namespace {
@@ -173,6 +183,8 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
 
   void runOnOperation() override {
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
+    // Sum the number of deduplicated operators over all work items.
+    std::atomic<unsigned> totNumDedupedApplies = 0;
 
     // Give each thread a copy of the parameter cache, rather than each work
     // item.
@@ -181,15 +193,19 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
                         ? getContext().getThreadPool().getThreadCount()
                         : 1);
 
-    auto workFunc = [&threadCaches](GeneratorOp func) {
+    auto workFunc = [&threadCaches, &totNumDedupedApplies](GeneratorOp func) {
       ParameterUseDefGraph graph(func.getBodyRegion());
       ParameterCollector::Analysis &cache = threadCaches.getThreadLocalCache();
       graph.calculate(cache);
-      liftAndFoldApply(&func.getBodyRegion(), cache, graph);
+      unsigned numDedupedApplies = 0;
+      liftAndFoldApply(&func.getBodyRegion(), cache, graph, numDedupedApplies);
+      totNumDedupedApplies += numDedupedApplies;
     };
     mlir::parallelForEach(&getContext(), getOperation().getOps<GeneratorOp>(),
                           workFunc);
+
     markAllAnalysesPreserved();
+    numDedupedApplies = totNumDedupedApplies;
   }
 };
 } // namespace

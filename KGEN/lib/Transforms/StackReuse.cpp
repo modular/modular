@@ -519,6 +519,8 @@ void StackReuse::runOnOperation() {
   TimeTraceScope<> deleteScope("deleteOps");
   std::vector<Operation *> worklist;
   llvm::append_range(worklist, llvm::make_first_range(canElide));
+  numElidedVars = canElide.size();
+  unsigned numErasedOps = 0;
   while (!worklist.empty()) {
     Operation *op = worklist.back();
     worklist.pop_back();
@@ -527,5 +529,7 @@ void StackReuse::runOnOperation() {
     llvm::append_range(worklist, op->getUsers());
     op->dropAllUses();
     op->erase();
+    ++numErasedOps;
   }
+  this->numErasedOps = numErasedOps;
 }

@@ -62,6 +62,11 @@ def LiftAndFoldApply : Pass<"lift-and-fold-apply", "mlir::ModuleOp"> {
     can create concrete signatures that disagree with what the standard
     `ParameterEvaluator` determines as the concrete signature for a callee.
   }];
+
+  let statistics = [
+    Statistic<"numDedupedApplies", "num-deduped-applies",
+              "the number of 'apply' operators deduplicated">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -249,7 +254,19 @@ def TweakSpilledAllocas : Pass<"tweak-spilled-allocas",
     when this happens, so prevent it by stripping lifetimes of spilled allocas.
     This pass must run prior to `lower-control-flow`, since the algorithm is
     trivial on region control-flow form.
+
+    This pass also makes a small optimization to reduce the number of variables
+    places on coroutine frames. Since `pop.stack_allocation` operations are
+    lowered to an `alloca` at the top of the function, it is quite common to see
+    `alloca > await > lifetime.start > lifetime.end`. Only the switched-resume
+    lowering is intelligent enough to do this automatically, but since KGEN
+    coroutines use the async lowering, it has to be done here.
   }];
+
+  let statistics = [
+    Statistic<"numLocalVars", "num-local-vars",
+              "the number of variables moved off the coroutine frame">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -461,6 +478,10 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
   }];
 
   let dependentDialects = ["KGENDialect"];
+
+  let statistics = [
+    Statistic<"numErased", "num-erased", "the number of dead symbols removed">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -476,6 +497,11 @@ def FoldGlobalConstLoads : Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+
+  let statistics = [
+    Statistic<"numLoadsFolded", "num-loads-folded",
+              "the number of loads folded away">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -521,6 +547,13 @@ def StackReuse : Pass<"stack-reuse", "KGEN::FuncOp"> {
     %v1 = pop.load %s1
     ```
   }];
+
+  let statistics = [
+    Statistic<"numElidedVars", "num-elided-vars",
+              "the number of stack allocations elided">,
+    Statistic<"numErasedOps", "num-erased-ops",
+              "the number of operations erased, including stack allocations">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -633,6 +666,10 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
     more performant, however if we do not move it LLVM is limited in many
     situations from being able to move it back.
   }];
+
+  let statistics = [
+    Statistic<"numHoisted", "num-hoisted", "the number of operations hoisted">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -660,6 +697,13 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
       some_ops
     ```
   }];
+
+  let statistics = [
+    Statistic<"numErasedLoops", "num-erased-loops",
+              "the number of trivial loops erased">,
+    Statistic<"numErasedTry", "num-erased-try",
+              "the number of trivial try erased">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -673,19 +717,26 @@ def SROA : Pass<"sroa"> {
     down into scalar alternatives where possible.
 
     ```mlir
-      %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index>
+    %struct = pop.stack_allocation 1 x !pop.struct<index, index, index, index>
     ```
+
     Becomes
+
     ```mlir
-      %sclar1 = pop.stack_allocation 1 x index
-      %sclar2 = pop.stack_allocation 1 x index
-      %sclar3 = pop.stack_allocation 1 x index
-      %sclar4 = pop.stack_allocation 1 x index
+    %sclar1 = pop.stack_allocation 1 x index
+    %sclar2 = pop.stack_allocation 1 x index
+    %sclar3 = pop.stack_allocation 1 x index
+    %sclar4 = pop.stack_allocation 1 x index
     ```
 
     Doing this gives mem-2-reg an easier time identifying optimization
     opportunities as it eliminates problematic aliasing.
   }];
+
+  let statistics = [
+    Statistic<"numReplacedAllocs", "num-replaced-allocas",
+              "the number of aggregate allocations replaced with scalars">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

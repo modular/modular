@@ -60,8 +60,13 @@ void EliminateDeadSymbolsPass::runOnOperation() {
 
   // OK, we have all the used symbols. Now, just erase ones that aren't in
   // there.
-  for (auto sym :
-       llvm::make_early_inc_range(theModule.getOps<mlir::SymbolOpInterface>()))
-    if (!usedSymbols.contains(sym.getNameAttr()))
+  unsigned numErased = 0;
+  for (auto sym : llvm::make_early_inc_range(
+           theModule.getOps<mlir::SymbolOpInterface>())) {
+    if (!usedSymbols.contains(sym.getNameAttr())) {
       analysis.getTopLevelSymbolTable().erase(sym);
+      ++numErased;
+    }
+  }
+  this->numErased = numErased;
 }

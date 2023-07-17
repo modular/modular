@@ -392,6 +392,7 @@ void SROAPass::runOnOperation() {
   size_t iters = 0;
 
   bool changed = true;
+  numReplacedAllocs = 0;
   while (changed && iters < loopLimit) {
     changed = false;
     iters++;
@@ -431,6 +432,7 @@ void SROAPass::runOnOperation() {
     });
 
     // Delete the ops which are no longer used.
+    numReplacedAllocs += toDelete.size();
     for (Operation *op : toDelete)
       op->erase();
   }

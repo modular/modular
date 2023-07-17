@@ -98,6 +98,7 @@ void FoldGlobalConstLoads::runOnOperation() {
     }
   });
 
+  numLoadsFolded = toDelete.size();
   for (Operation *op : toDelete)
     op->erase();
 }

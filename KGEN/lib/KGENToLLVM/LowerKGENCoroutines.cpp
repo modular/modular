@@ -41,7 +41,8 @@ struct TweakSpilledAllocasPass
 /// dominate like `alloca > await > lifetime.end`. In a region representation,
 /// we can get the right order with a forward traversal, since control-flow can
 /// cross between parent and child regions but not jump across operations.
-static LogicalResult tweakSpilledAllocas(Operation *func) {
+static LogicalResult tweakSpilledAllocas(Operation *func,
+                                         unsigned &numLocalVars) {
   enum SpillKind {
     /// Alloca is not spilled.
     NOT_SPILLED,
@@ -118,8 +119,10 @@ static LogicalResult tweakSpilledAllocas(Operation *func) {
 }
 
 void TweakSpilledAllocasPass::runOnOperation() {
-  if (failed(tweakSpilledAllocas(getOperation())))
+  unsigned numLocalVars = 0;
+  if (failed(tweakSpilledAllocas(getOperation(), numLocalVars)))
     return signalPassFailure();
+  this->numLocalVars = numLocalVars;
 }
 
 //===----------------------------------------------------------------------===//
