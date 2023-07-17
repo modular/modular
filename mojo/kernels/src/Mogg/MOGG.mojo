@@ -69,7 +69,7 @@ from SIMD import SIMD
 from TargetInfo import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
-from Softmax import softmax as _softmax
+from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
@@ -114,6 +114,7 @@ fn MOGGExport():
     alias _isinf = isinf
     alias _isnan = isnan
     alias _log1p = log1p
+    alias _logsoftmax = logsoftmax
     alias _pack_b = pack_b_ndbuffer
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
@@ -1499,6 +1500,23 @@ fn softmax[
     out_chain: OutputChainPtr,
 ):
     _softmax[
+        type,
+        simdwidthof[type](),
+        rank,
+        DimList.create_unknown[rank](),
+    ](input, output, rank - 1, out_chain)
+
+
+# Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
+fn logsoftmax[
+    rank: Int,
+    type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    _logsoftmax[
         type,
         simdwidthof[type](),
         rank,
