@@ -86,6 +86,11 @@ endif()
 
 message(STATUS "Using ${PYTHON_EXE} to create mblack binary.")
 
+if (MODULAR_RELEASE_PACKAGE_BUILD)
+  message(STATUS "Skipping binary mblack build for release package build.")
+  return()
+endif()
+
 add_custom_target(mblack
   ${CMAKE_COMMAND} -E env PYI_LOG_LEVEL=ERROR
   ${PYTHON_EXE} -m PyInstaller -F --name mblack
