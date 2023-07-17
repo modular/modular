@@ -31,7 +31,9 @@ struct SimplifyCF : impl::SimplifyCFBase<SimplifyCF> {
   void runOnOperation() override;
 
 private:
-  void tryRemovingLoop(LoopOp loop);
+  /// Remove the loop if it is trivial. Return true if it was removed.
+  bool tryRemovingLoop(LoopOp loop);
+
   void findTargetLoop(Operation *op, StringAttr label);
   void walkPreorder(Region &region);
 
@@ -131,7 +133,7 @@ void SimplifyCF::walkPreorder(Region &region) {
 ///   }
 ///   C                          C
 /// }                          }
-void SimplifyCF::tryRemovingLoop(LoopOp loop) {
+bool SimplifyCF::tryRemovingLoop(LoopOp loop) {
   Block &body = loop.getBody().front();
   int count = jumpsCount[loop];
   mlir::IRRewriter b{OpBuilder(loop)};
@@ -147,7 +149,7 @@ void SimplifyCF::tryRemovingLoop(LoopOp loop) {
 
     b.eraseOp(breakOp);
     b.eraseOp(loop);
-    return;
+    return true;
   }
 
   // The loop is never branched to, meaning the terminator branches to some
@@ -158,8 +160,10 @@ void SimplifyCF::tryRemovingLoop(LoopOp loop) {
     b.inlineBlockBefore(&body, loop);
     Block *toErase = b.splitBlock(loop->getBlock(), loop->getIterator());
     b.eraseBlock(toErase);
-    return;
+    return true;
   }
+
+  return false;
 }
 
 /// Given a try in the following form:
@@ -242,10 +246,15 @@ void SimplifyCF::runOnOperation() {
   // Try to remove trivial loops. Process in reverse to make sure later ops are
   // visited first.
   TimeTraceScope traceScope("eraseOps");
+  numErasedLoops = 0;
+  numErasedTry = 0;
   for (LoopOp loop : llvm::reverse(loopsInOrder))
-    tryRemovingLoop(loop);
+    numErasedLoops += tryRemovingLoop(loop);
   // Remove elidable tries.
-  for (LIT::TryOp tryOp : llvm::reverse(triesInOrder))
-    if (elidableTries.contains(tryOp))
+  for (LIT::TryOp tryOp : llvm::reverse(triesInOrder)) {
+    if (elidableTries.contains(tryOp)) {
       removeTrivialTry(tryOp);
+      ++numErasedTry;
+    }
+  }
 }

@@ -31,7 +31,8 @@ struct HoistTrivialInvariants
 /// function. Either to the start if they use only input arguments or to the
 /// producer of whichever operand is dominated by all other operands.
 static void moveInvariants(FuncOp func, Operation *opWithRegion,
-                           iterator_range<Region::OpIterator> range) {
+                           iterator_range<Region::OpIterator> range,
+                           unsigned numHoisted) {
   // Move the invariants.
   for (Operation &op : llvm::make_early_inc_range(range)) {
     // This pass only will hoist
@@ -96,6 +97,7 @@ static void moveInvariants(FuncOp func, Operation *opWithRegion,
       op.moveBefore(&region->front(), region->front().begin());
     else
       op.moveAfter(leastDominatingOperand.get<Operation *>());
+    ++numHoisted;
   }
 }
 
@@ -104,24 +106,26 @@ static void moveInvariants(FuncOp func, Operation *opWithRegion,
 void HoistTrivialInvariants::runOnOperation() {
   FuncOp func = getOperation();
 
+  unsigned numHoisted = 0;
   func.walk([&](Operation *opWithRegion) {
     // We maintain a small list of operations which we are allowed to hoist
     // invariants from.
     if (auto loop = dyn_cast<HLCF::LoopOp>(opWithRegion))
-      moveInvariants(func, loop, loop.getOps());
+      moveInvariants(func, loop, loop.getOps(), numHoisted);
 
     // We hoist from both branches of the if regardless of the condition with
     // the guarantee that these ops have no side effects and LLVM is free to
     // move them back if that is more optimal.
     if (auto ifOp = dyn_cast<HLCF::IfOp>(opWithRegion)) {
-      moveInvariants(func, ifOp, ifOp.getThenRegion().getOps());
-      moveInvariants(func, ifOp, ifOp.getElseRegion().getOps());
+      moveInvariants(func, ifOp, ifOp.getThenRegion().getOps(), numHoisted);
+      moveInvariants(func, ifOp, ifOp.getElseRegion().getOps(), numHoisted);
     }
 
     if (auto tryOp = dyn_cast<LIT::TryOp>(opWithRegion)) {
-      moveInvariants(func, tryOp, tryOp.getTryRegion().getOps());
-      moveInvariants(func, tryOp, tryOp.getExceptRegion().getOps());
-      moveInvariants(func, tryOp, tryOp.getElseRegion().getOps());
+      moveInvariants(func, tryOp, tryOp.getTryRegion().getOps(), numHoisted);
+      moveInvariants(func, tryOp, tryOp.getExceptRegion().getOps(), numHoisted);
+      moveInvariants(func, tryOp, tryOp.getElseRegion().getOps(), numHoisted);
     }
   });
+  this->numHoisted = numHoisted;
 }
