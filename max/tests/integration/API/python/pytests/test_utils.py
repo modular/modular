@@ -28,28 +28,28 @@ _batch_size = 1
 def _get_np_dtype(dtype: me.DType):
     if dtype == me.DType.bool:
         return np.bool_
-    elif dtype == me.DType.si8:
+    elif dtype == me.DType.int8:
         return np.int8
-    elif dtype == me.DType.si16:
+    elif dtype == me.DType.int16:
         return np.int16
-    elif dtype == me.DType.si32:
+    elif dtype == me.DType.int32:
         return np.int32
-    elif dtype == me.DType.si64:
+    elif dtype == me.DType.int64:
         return np.int64
-    elif dtype == me.DType.ui8:
+    elif dtype == me.DType.uint8:
         return np.uint8
-    elif dtype == me.DType.ui16:
+    elif dtype == me.DType.uint16:
         return np.uint16
-    elif dtype == me.DType.ui32:
+    elif dtype == me.DType.uint32:
         return np.uint32
-    elif dtype == me.DType.ui64:
+    elif dtype == me.DType.uint64:
         return np.uint64
-    elif dtype == me.DType.f16:
+    elif dtype == me.DType.float16:
         return np.float16
-    elif dtype == me.DType.f32:
+    elif dtype == me.DType.float32:
         return np.float32
-    elif dtype == me.DType.f64:
-        return np.double
+    elif dtype == me.DType.float64:
+        return np.float64
 
 
 def generate_test_inputs(model: me.Model) -> List[np.ndarray]:
