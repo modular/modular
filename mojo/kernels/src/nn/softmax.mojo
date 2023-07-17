@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import Buffer
+from Buffer import Buffer, NDBuffer
 from DType import DType
-from Functional import vectorize_unroll
-from List import Dim
-from Math import exp, identity, log, mul, reciprocal, sub, neginf
+from Functional import vectorize_unroll, async_parallelize
+from Index import product
+from List import Dim, DimList
+from LLCL import OutputChainPtr
+from Math import exp, identity, log, mul, reciprocal, sub, neginf, min, div_ceil
 from Range import range
 from Reductions import max
 from SIMD import SIMD
@@ -400,3 +402,45 @@ fn logsoftmax[
     _softmax_3_pass_base[
         simd_width, buffer_size, type, identity, exp, log, sub
     ](output, input)
+
+
+fn softmax[
+    type: DType,
+    simd_width: Int,
+    rank: Int,
+    static_shape: DimList,
+](
+    input: NDBuffer[rank, static_shape, type],
+    output: NDBuffer[rank, static_shape, type],
+    axis: Int,
+    out_chain: OutputChainPtr,
+):
+    if axis != rank - 1:
+        out_chain.mark_error("softmax not supported on non-inner axis yet")
+    let shape = input.get_shape()
+    let inner_dim = output.dim[rank - 1]()
+    let outer_dim = product[rank](shape, rank - 1)
+    let num_workers = min(
+        out_chain.get_runtime().parallelism_level(), outer_dim
+    )
+    let chunk_size = div_ceil(outer_dim, num_workers)
+
+    @parameter
+    @always_inline
+    fn task_func(task_id: Int):
+        let start_offset = task_id * chunk_size
+        let end_offset = min((task_id + 1) * chunk_size, outer_dim)
+        for i in range(start_offset, end_offset):
+            let buffer_offset = i * inner_dim
+            let output_buffer_view = Buffer[Dim(), type](
+                output.data.offset(buffer_offset), inner_dim
+            )
+            let input_buffer_view = Buffer[Dim(), type](
+                input.data.offset(buffer_offset), inner_dim
+            )
+
+            softmax_3_pass[simd_width, Dim(), type](
+                output_buffer_view, input_buffer_view
+            )
+
+    async_parallelize[task_func](out_chain, num_workers)
