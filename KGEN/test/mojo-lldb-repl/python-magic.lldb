@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: python-lldb-integration
-# REQUIRES: darwin
 # RUN: %repl <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
@@ -19,7 +18,7 @@ print(1 + 2)
 print(1 + 2)
 
 # We support trailing spaces in the python magic line
-# CHECK: 3
+# CHECK: 3   
 
 x = 1
 %%python
