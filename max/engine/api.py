@@ -61,20 +61,31 @@ class Model:
     def execute(self, **kwargs) -> Dict[str, np.ndarray]:
         """Executes the model with the provided input and returns outputs.
 
+        For example, if the model has one input tensor named "input":
+
+        .. code-block:: python
+
+            input_tensor = np.random.rand(1, 224, 224, 3).astype(np.float32)
+            model.execute(input=input_tensor)
+
         Parameters
         ----------
-        ``*args``
-            Input tensors as :obj:`np.ndarray` data.
+        ``kwargs``
+            The input tensors, each specified with the approprite tensor name
+            as a keyword and passed as an :obj:`np.ndarray`.
 
         Returns
         -------
-        np.ndarray
-            Output tensors.
+        Dict
+            A dictionary of output tensors, each as an :obj:`np.ndarray`
+            identified by its tensor name.
 
         Raises
         ------
         RuntimeError
-            If the input tensors don't match what the model expects.
+            If the given input tensors' name, shape, and dtype don't match what
+            the model expects (you can check what the model expects with
+            :obj:`~Model.input_metadata`).
         """
         return self._impl.execute(**kwargs)
 
@@ -91,7 +102,7 @@ class Model:
         .. code-block:: python
 
             for tensor in model.input_metadata:
-                print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
+                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
@@ -105,7 +116,7 @@ class Model:
         .. code-block:: python
 
             for tensor in model.ouput_metadata:
-                print(f'shape: {tensor.shape}, dtype: {tensor.dtype}')
+                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
         return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
 
@@ -143,7 +154,7 @@ class TensorSpec:
     Defines the properties of a tensor, namely its shape and data type.
 
     You can get a list of ``TensorSpec`` objects that specify the input tensors
-    of a :obj:`Model` from :func:`Model.input_metadata`.
+    of a :obj:`Model` from :obj:`Model.input_metadata`.
     """
 
     _impl: _TensorSpec
@@ -257,7 +268,7 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format or a traceable PyTorch model.
 
-        options: Optional[TorchLoadOptions]
+        options: Union[TensorFlowLoadOptions, TorchLoadOptions]
             Load options for configuring how the model should be compiled.
 
         Returns
