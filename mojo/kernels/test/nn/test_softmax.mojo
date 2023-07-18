@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from Softmax import softmax_2_pass
 from Buffer import Buffer
