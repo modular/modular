@@ -218,6 +218,27 @@ def UI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
 }
 
 //===----------------------------------------------------------------------===//
+// MultiLineString
+//===----------------------------------------------------------------------===//
+
+def M_MultiLineStringAttr
+    : ArrayOfAttr<MDialect, "MultiLineString", "multiline", "StringAttr"> {
+  let summary = "An array of strings which is encoded as a multi-line "
+                "null-terminated string in MEF.";
+  let description = [{
+    An array of strings which is encoded as a multi-line null-terminated string
+    in MEF.
+
+    Example: The attribute
+    ```mlir
+      #m<multiline["line1",
+                   "line2"]>
+    ```
+    will appear in MEF as the the string "line1\nline2\n\0".
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // PointerAttr
 //===----------------------------------------------------------------------===//
 
