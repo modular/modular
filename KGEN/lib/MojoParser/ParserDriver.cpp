@@ -312,10 +312,7 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
 LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
                                  MojoParserConfig &config,
                                  raw_ostream &outputOS, mlir::TimingScope &ts) {
-  // TODO: We should be able to cache when processing doc strings, but we need
-  // to define when/how they get cached to not negatively affect the non-doc
-  // string caring path.
-  SharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
+  SharedState sharedState(sourceMgr, config);
   auto [module, moduleDecl] = importMojoFileImpl(sourceMgr, sharedState, ts);
   if (!module)
     return failure();

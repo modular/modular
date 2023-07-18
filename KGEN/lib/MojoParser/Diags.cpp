@@ -150,7 +150,6 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic)
     : sourceMgr(sourceMgr), context(context),
-      bufferNameIdentifier(makeMainBufferNameIdentifier(sourceMgr, context)),
       useMLIRDiagnostics(useMLIRDiagnostics),
       maxNotesPerDiagnostic(maxNotesPerDiagnostic) {
 
@@ -162,7 +161,15 @@ Diags::~Diags() {}
 
 /// Return the identifier for the main buffer in the SourceMgr.
 StringAttr Diags::getBufferNameIdentifier() const {
-  return StringAttr::getFromOpaquePointer(bufferNameIdentifier);
+  if (!bufferNameIdentifier) {
+    if (sourceMgr.getNumBuffers() == 0) {
+      return StringAttr::get(context,
+                             SourceMgrLocationMapper::kUnnamedFileSigil);
+    }
+    bufferNameIdentifier = makeMainBufferNameIdentifier(sourceMgr, context);
+  }
+
+  return StringAttr::getFromOpaquePointer(*bufferNameIdentifier);
 }
 
 /// Emit an error through the parser's logic.

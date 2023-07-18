@@ -773,6 +773,17 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
   return result;
 }
 
+SMLoc Lexer::getStringLiteralStartLoc(StringRef spelling) {
+  size_t stringStartOffset = 1;
+  if (spelling[0] == 'r' || spelling[0] == 'R')
+    ++stringStartOffset;
+  // Handle triple quoted strings.
+  if (spelling.size() >= 6 &&
+      (spelling.starts_with("\"\"\"") || spelling.starts_with("'''")))
+    stringStartOffset += 2;
+  return SMLoc::getFromPointer(spelling.data() + stringStartOffset);
+}
+
 /// Return the a value for the specified string, which is known to have been
 /// lexed as an integer literal token.
 APInt Lexer::getIntegerLiteralValue(StringRef spelling) {

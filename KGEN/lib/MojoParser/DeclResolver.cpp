@@ -67,6 +67,18 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
+DocStringAttr ASTDecl::getDocString() {
+  Operation *declOp = getIfOperation();
+  if (!declOp)
+    return DocStringAttr();
+
+  return TypeSwitch<Operation *, DocStringAttr>(declOp)
+      .Case<AliasDeclOp, AliasForwardDeclOp, GlobalVarDeclOp, FileModuleOp,
+            FuncOp, StructFieldOp, StructDeclOp, VarLetDeclOp>(
+          [&](auto op) { return op.getDocStringAttr(); })
+      .Default({});
+}
+
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
   return lookupInCurrentScope(StringAttr::get(getContext(), name));
 }
@@ -1373,9 +1385,24 @@ void ParsedArgument::computeArgumentConventions(
 
 void ParserBase::parseDocString(ASTDecl &decl) {
   // The doc string is simply a follow-on string literal.
-  if (getToken().isNot(Token::string))
+  Token docToken = getToken();
+  if (!consumeIf(Token::string))
     return;
-  decl.setDocString(consumeToken());
+  Operation *declOp = decl.getIfOperation();
+  if (!declOp)
+    return;
+  StringRef docSpelling = docToken.getSpelling();
+  Location loc = shared.diags.translateLocation(
+      lexer.getStringLiteralStartLoc(docSpelling));
+
+  TypeSwitch<Operation *>(declOp)
+      .Case<AliasDeclOp, AliasForwardDeclOp, GlobalVarDeclOp, FileModuleOp,
+            FuncOp, StructFieldOp, StructDeclOp>([&](auto op) {
+        op.setDocStringAttr(DocStringAttr::get(
+            StringAttr::get(getContext(),
+                            lexer.getStringLiteralValue(docSpelling)),
+            dyn_cast<FileLineColLoc>(loc)));
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -2906,7 +2933,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     OpBuilder builder(aliasDeclOp);
     Operation *forwardDecl = builder.create<AliasForwardDeclOp>(
         aliasDeclOp.getLoc(), aliasDeclOp.getName(), TypeAttr::get(type),
-        mlir::LocationAttr());
+        mlir::LocationAttr(), DocStringAttr());
     decl.setIRValue(forwardDecl);
 
     // Remove the paramDeclOp from the IR, since we ended up changing our mind

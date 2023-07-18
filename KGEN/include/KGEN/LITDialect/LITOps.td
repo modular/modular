@@ -74,7 +74,8 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<FlatSymbolRefAttr>:$postElaborationModuleRef,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
-    OptionalAttr<StrAttr>:$linkageName
+    OptionalAttr<StrAttr>:$linkageName,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -139,7 +140,10 @@ def FileModuleOp : LITOp<"file_module", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let builders = [
@@ -283,7 +287,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     UnitAttr:$paramVarargs,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit
+    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -340,7 +345,9 @@ def LIT_StructFieldOp : LITOp<"struct.field", [HasParent<"StructDeclOp">]> {
     ```
   }];
 
-  let arguments = (ins StrAttr:$name, TypeAttr:$type);
+  let arguments = (ins
+    StrAttr:$name, TypeAttr:$type, OptionalAttr<LIT_DocStringAttr>:$docString
+  );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
   let extraClassDeclaration = [{
@@ -606,7 +613,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
   }];
 
   let arguments = (ins
-    KGEN_ParamDeclAttr:$paramDecl, TypedAttrInterface:$value
+    KGEN_ParamDeclAttr:$paramDecl, TypedAttrInterface:$value,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -640,9 +648,11 @@ def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
     ultimately actually defines this.
   }];
 
-  let arguments = (ins StrAttr:$name, TypeAttr:$type,
-                   OptionalAttr<Builtin_LocationAttr>:$resultParamLoc);
-  let results = (outs);
+  let arguments = (ins
+    StrAttr:$name, TypeAttr:$type,
+    OptionalAttr<Builtin_LocationAttr>:$resultParamLoc,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
   let assemblyFormat = "$name `:` $type attr-dict";
 }
 
@@ -687,13 +697,25 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
     `isSynthesized` bit indicates whether this was created internally, which
     supresses some warnings.
   }];
-  let arguments = (ins StrAttr:$name, BoolAttr:$isVar, BoolAttr:$isSynthesized);
+  let arguments = (ins
+    StrAttr:$name, BoolAttr:$isVar, BoolAttr:$isSynthesized,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
 
   let results = (outs POP_PointerType:$result);
   let assemblyFormat = [{
     $name `,` `var``=`$isVar`,` `synth``=`$isSynthesized
           `:` type($result) attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$type, "StringRef":$name, "bool":$isVar,
+                   "bool":$isSynthesized), [{
+      build($_builder, $_state, type, $_builder.getStringAttr(name),
+            $_builder.getBoolAttr(isVar), $_builder.getBoolAttr(isSynthesized),
+            /*docString=*/{});
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -731,7 +753,8 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
     UnitAttr:$isLet,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_DecoratorsAttr:$decorators,
-    OptionalAttr<StrAttr>:$linkageName
+    OptionalAttr<StrAttr>:$linkageName,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
 
@@ -745,7 +768,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
   let builders = [
     OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isLet), [{
       build($_builder, $_state, sym_name, type, isLet, ExportKind::NotExported,
-            DecoratorsAttr::get(type.getContext(), {}), {});
+            DecoratorsAttr::get(type.getContext(), {}), {}, {});
     }]>
   ];
 

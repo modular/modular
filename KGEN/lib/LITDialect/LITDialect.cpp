@@ -42,6 +42,30 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// LITOpAsmDialectInterface
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
+  using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
+
+  AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    if (!attr)
+      return AliasResult::NoAlias;
+
+    return TypeSwitch<Attribute, AliasResult>(attr)
+        .Case([&](DocStringAttr attr) {
+          // Doc strings are nearly always long, so make sure to print them as
+          // aliases.
+          os << "doc_string";
+          return AliasResult::OverridableAlias;
+        })
+        .Default([](Attribute) { return AliasResult::NoAlias; });
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // Dialect specification.
 //===----------------------------------------------------------------------===//
 
@@ -51,7 +75,7 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
 void LITDialect::initialize() {
   // Register attributes.
   registerAttributes();
-  addInterfaces<LITDialectFoldInterface>();
+  addInterfaces<LITDialectFoldInterface, LITOpAsmDialectInterface>();
 
   // Register types.
   addTypes<
