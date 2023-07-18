@@ -8,10 +8,9 @@ kgen.func @zero_starting_range() {
   // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
 
-  %index2 = kgen.param.constant = <2>
+  %index2 = index.constant 2
   %idx0 = index.constant 0
-  %index1 = kgen.param.constant = <1>
-  %array = kgen.param.constant: array<0, i1> = <[]>
+  %index1 = index.constant 1
   hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     %1 = index.sub %index2, %arg0
@@ -25,15 +24,14 @@ kgen.func @zero_starting_range() {
 kgen.func @sequential_range() {
   // CHECK: [[V2:%.*]] = index.constant 3
   // CHECK-NEXT: [[V1:%.*]] = index.constant 2
-  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: [[V0:%.*]] = index.constant 1
   // CHECK-NOT: hlcf.for
   // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
 
-  %index1 = kgen.param.constant = <1>
-  %index4 = kgen.param.constant = <4>
-  %array = kgen.param.constant: array<0, i1> = <[]>
+  %index1 = index.constant 1
+  %index4 = index.constant 4
   hlcf.for [%index1 to %index4 step %index1] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index1
     kgen.call @foo(%arg0) : (index) -> ()
@@ -46,16 +44,15 @@ kgen.func @sequential_range() {
 kgen.func @strided_range() {
   // CHECK: [[V0:%.*]] = index.constant 5
   // CHECK-NEXT: [[V1:%.*]] = index.constant 3
-  // CHECK-NEXT: [[V2:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: [[V2:%.*]] = index.constant 1
   // CHECK-NOT: hlcf.for
   // CHECK-NEXT: kgen.call @foo([[V2]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
 
-  %index1 = kgen.param.constant = <1>
-  %index6 = kgen.param.constant = <6>
-  %index2 = kgen.param.constant = <2>
-  %array = kgen.param.constant: array<0, i1> = <[]>
+  %index1 = index.constant 1
+  %index6 = index.constant 6
+  %index2 = index.constant 2
   hlcf.for [%index1 to %index6 step %index2] (%arg0 = %index1 : index) {
     %0 = index.add %arg0, %index2
     kgen.call @foo(%arg0) : (index) -> ()
@@ -80,12 +77,11 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:  kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT:  kgen.call @foo([[V0]]) : (index) -> ()
 
-  %index2 = kgen.param.constant = <2>
-  %index4 = kgen.param.constant = <4>
-  %index8 = kgen.param.constant = <8>
+  %index2 = index.constant 2
+  %index4 = index.constant 4
+  %index8 = index.constant 8
   %idx0 = index.constant 0
-  %index1 = kgen.param.constant = <1>
-  %array = kgen.param.constant: array<0, i1> = <[]>
+  %index1 = index.constant 1
   hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     %1 = index.sub %index2, %arg0
@@ -110,8 +106,8 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT: [[V4:%.*]] = index.constant 9
   // CHECK-NEXT: [[V5:%.*]] = index.constant 7
   // CHECK-NEXT: [[V6:%.*]] = index.constant 5
+  // CHECK-NEXT: [[V8:%.*]] = index.constant 1
   // CHECK-NEXT: [[V7:%.*]] = index.constant 3
-  // CHECK-NEXT: [[V8:%.*]] = kgen.param.constant = <1>
   // CHECK-NOT: hlcf.for
   // CHECK-NEXT: kgen.call @foo([[V8]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V6]]) : (index) -> ()
@@ -128,13 +124,12 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT: kgen.call @foo([[V3]]) : (index) -> ()
   // CHECK-NEXT: kgen.call @foo([[V0]]) : (index) -> ()
 
-  %index1 = kgen.param.constant = <1>
-  %index9 = kgen.param.constant = <9>
-  %index2 = kgen.param.constant = <2>
-  %index4 = kgen.param.constant = <4>
-  %index8 = kgen.param.constant = <8>
-  %array = kgen.param.constant: array<0, i1> = <[]>
-  %index0 = kgen.param.constant = <0>
+  %index1 = index.constant 1
+  %index9 = index.constant 9
+  %index2 = index.constant 2
+  %index4 = index.constant 4
+  %index8 = index.constant 8
+  %index0 = index.constant 0
   %0:2 = hlcf.for [%index1 to %index9 step %index2] (%arg2 = %index1 : index, %arg0 = %index0 : index, %arg1 = %index0 : index) -> (index, index) {
     %3 = index.add %arg2, %index2
     kgen.call @foo(%arg2) : (index) -> ()
@@ -155,7 +150,7 @@ kgen.func @loop_carried_dependency() {
 
 // CHECK-LABEL: @loop_has_side_effect
 kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) -> index {
-  // CHECK: [[IDX:%.*]] = kgen.param.constant = <1>
+  // CHECK: [[IDX:%.*]] = index.constant 1
   // CHECK-NEXT: [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !pop.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
@@ -167,10 +162,10 @@ kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, 
   // CHECK-NEXT: [[V8:%.*]] = index.add [[V3]], [[V7]]
   // CHECK-NEXT: kgen.return [[V8]] : index
 
-  %index10 = kgen.param.constant = <2>
+  %index10 = index.constant 2
   %idx0 = index.constant 0
-  %index1 = kgen.param.constant = <1>
-  %index0 = kgen.param.constant = <0>
+  %index1 = index.constant 1
+  %index0 = index.constant 0
   %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
   %1 = hlcf.for [%idx0 to %index10 step %index1] (%arg3 = %index10 : index, %arg1 = %index0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)
@@ -195,8 +190,8 @@ kgen.func @single_iteration_no_decorator(%arg0: !pop.struct<pointer<scalar<f32>>
   // CHECK-NEXT: kgen.return [[V3]] : index
 
   %idx0 = index.constant 0
-  %index1 = kgen.param.constant = <1>
-  %index0 = kgen.param.constant = <0>
+  %index1 = index.constant 1
+  %index0 = index.constant 0
   %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
   %1 = hlcf.for [%idx0 to %index1 step %index1] (%arg3 = %index1 : index, %arg1 = %index0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)

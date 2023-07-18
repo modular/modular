@@ -117,14 +117,12 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                        "Value":$step,
                        "ValueRange":$iterArgs,
                        "std::optional<Attribute>":$unrollFactor), [{
-          if(!unrollFactor.has_value()) {
-            build($_builder, $_state, results, lowerBound, upperBound,
-                 step, iterArgs, HLCF::LoopUnrollFullAttr::get(
-                   $_state.getContext(), HLCF::LoopUnrollFull::None));
-          } else  {
-            build($_builder, $_state, results, lowerBound, upperBound,
+          if(!unrollFactor)
+            unrollFactor =
+              HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None);
+
+          build($_builder, $_state, results, lowerBound, upperBound,
             step, iterArgs, unrollFactor.value());
-          }
     }]>
   ];
 
@@ -138,7 +136,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     // Get args that will be return values.
     ValueRange getReturnValueArgs();
     // Get loop trip count.
-    std::optional<int64_t> tripCount();
+    std::optional<int64_t> getTripCount();
     // Check if the loop is decorated to be fully unrolled.
     bool isFullUnroll();
   }];
