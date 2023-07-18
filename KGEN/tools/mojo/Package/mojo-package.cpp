@@ -367,6 +367,8 @@ struct PackageArgs {
   std::string inputPath;
   std::string outputPath;
   CompilationOptions compileOptions;
+  mlir::MLIRContext ctx;
+  TargetInfoAttr target;
 };
 } // namespace
 
@@ -400,10 +402,11 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
   return parseCompilationOptions(
-      state, args, pkgArgs.compileOptions, sourceMgr, options::OPT_I,
-      options::OPT_L, options::OPT_target_triple, options::OPT_target_cpu,
-      options::OPT_target_features, options::OPT_no_optimization,
-      options::OPT_debug_level);
+      state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
+      pkgArgs.target, options::OPT_I, options::OPT_L,
+      options::OPT_target_triple, options::OPT_target_cpu,
+      options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
+      options::OPT_no_optimization, options::OPT_debug_level);
 }
 
 //===----------------------------------------------------------------------===//
@@ -432,16 +435,15 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
 
   // Set up the ExecutionEngine with all the requisite layers.
   mlir::PassManager pm(ctx);
-  TargetInfoAttr target;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(runtime, pm, compilationOptions,
                                 ExecutionEngineOptions(), /*isJIT=*/false,
-                                target);
+                                packageArgs.target);
   if (failed(execEngineOr))
     return execEngineOr.takeError();
   std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
   auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
-  packageBuilder.setTarget(target);
+  packageBuilder.setTarget(packageArgs.target);
 
   // This currently compiles the module, so we don't need to try to look
   // anything up just yet.
@@ -545,11 +547,11 @@ static int package(const State &state) {
     return state.reportError(outputError);
 
   // Parse the package.
-  mlir::MLIRContext ctx;
   LIT::PackageOp packageOp;
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &ctx);
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
+                                                    &packageArgs.ctx);
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, packageArgs.compileOptions, &ctx, runtime,
+      state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_doc_validate, options::OPT_max_notes, options::OPT_D,
       [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;

@@ -35,14 +35,16 @@ struct MojoParserConfig;
 class TargetInfoAttr;
 
 /// Parse the common compilation options for Mojo related to configuration,
-/// populating the provided `compilationOptions` argument.
+/// populating the provided `compilationOptions` argument. On success, `target`
+/// is populated with the selected compilation target.
 ErrorOrSuccess parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, TargetInfoAttr &target,
     llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier linkDirsId,
     llvm::opt::OptSpecifier tripleId, llvm::opt::OptSpecifier cpuId,
-    llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
+    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
@@ -59,12 +61,12 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the LLVM MC targets, the target machine, the cache backends,
 /// and the execution engine itself. On success, the execution engine is
-/// returned, and the used target is returned in `target`.
+/// returned.
 ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
 initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
                           const KGEN::CompilationOptions &compilationOptions,
                           KGEN::ExecutionEngineOptions executionEngineOptions,
-                          bool isJIT, TargetInfoAttr &target);
+                          bool isJIT, TargetInfoAttr target);
 } // namespace M
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATION_H

@@ -64,7 +64,8 @@ struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
 static std::optional<int> parseArgs(const State &state,
                                     llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
-                                    CompilationOptions &compilationOptions) {
+                                    CompilationOptions &compilationOptions,
+                                    MLIRContext &ctx, TargetInfoAttr &target) {
   // First, parse all arguments, in order to find the index of the input
   // argument.
   BuildOptTable options;
@@ -109,9 +110,10 @@ static std::optional<int> parseArgs(const State &state,
 
   // Build the compilation options based on the provided arguments.
   if (ErrorOrSuccess err = parseCompilationOptions(
-          state, args, compilationOptions, sourceManager, options::OPT_I,
-          options::OPT_L, options::OPT_target_triple, options::OPT_target_cpu,
-          options::OPT_target_features, options::OPT_no_optimization,
+          state, args, compilationOptions, sourceManager, ctx, target,
+          options::OPT_I, options::OPT_L, options::OPT_target_triple,
+          options::OPT_target_cpu, options::OPT_target_features,
+          options::OPT_march, options::OPT_mcpu, options::OPT_no_optimization,
           options::OPT_debug_level)) {
     return state.reportError(err.getError());
   }
@@ -128,9 +130,9 @@ static std::optional<int> parseArgs(const State &state,
 static std::optional<int>
 compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
-                       ModuleOp moduleOp, Cache::BufferRef &archive) {
+                       ModuleOp moduleOp, TargetInfoAttr target,
+                       Cache::BufferRef &archive) {
   mlir::PassManager pm(&context);
-  TargetInfoAttr target;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(runtime, pm, options, ExecutionEngineOptions(),
                                 /*isJIT=*/false, target);
@@ -275,9 +277,12 @@ static int build(const State &state) {
   CompilationOptions options;
 
   // Parse arguments.
+  MLIRContext context;
+  TargetInfoAttr target;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;
-  if (std::optional<int> exitCode = parseArgs(state, args, sourceMgr, options))
+  if (std::optional<int> exitCode =
+          parseArgs(state, args, sourceMgr, options, context, target))
     return *exitCode;
 
   // Initialize the LLCL runtime. We don't allow users to configure runtime
@@ -292,7 +297,6 @@ static int build(const State &state) {
       {options::OPT_D, options::OPT_I, options::OPT_L, options::OPT_o});
 
   // Lower the input file to an MLIR module.
-  MLIRContext context;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &context, runtime, options::OPT_doc_validate,
@@ -306,7 +310,7 @@ static int build(const State &state) {
   // Compile the module to a static archive.
   Cache::BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
-          state, runtime, context, options, **moduleOp, archive))
+          state, runtime, context, options, **moduleOp, target, archive))
     return *exitCode;
 
   // Link an executable from the archive.
