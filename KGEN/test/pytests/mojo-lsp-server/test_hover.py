@@ -104,7 +104,7 @@ async def test_hover_function_decls(client: LanguageClient):
 
 ###
 ```mojo
-fn __init__()
+fn __init__(inout self: Self)
 ```""",
     )
 
@@ -116,7 +116,7 @@ fn __init__()
 
 ###
 ```mojo
-fn static_method()
+fn static_method() -> Int
 ```""",
     )
 
@@ -140,7 +140,7 @@ fn non_capturing_nested_function()
 
 ###
 ```mojo
-fn async_function()
+async fn async_function(inout self: Self)
 ```""",
     )
 
@@ -176,13 +176,19 @@ fn another_nested_function()
 
 ###
 ```mojo
-fn function_that_raises()
+fn function_that_raises(inout self: Self) raises -> String
 ```""",
     )
 
     await assert_decl(
         "exported_function",
         """### function `exported_function`
+
+---
+
+###
+This is an exported function.
+
 
 ---
 
@@ -200,6 +206,6 @@ fn exported_function()
 
 ###
 ```mojo
-def def_function()
+def def_function() raises -> Int
 ```""",
     )

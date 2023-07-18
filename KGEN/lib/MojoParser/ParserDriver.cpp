@@ -20,6 +20,7 @@
 #include "SharedState.h"
 
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser/ASTDeclView.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -80,6 +81,15 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 
 llvm::SMLoc MojoASTDeclRef::getLoc() const {
   return unwrapMojoASTDecl(impl)->getLoc();
+}
+
+std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
+  return TypeSwitch<ASTDecl &, std::unique_ptr<DeclView>>(
+             *unwrapMojoASTDecl(impl))
+      .Case<FuncOp>([&](auto op) {
+        return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
+      })
+      .Default({});
 }
 
 //===----------------------------------------------------------------------===//

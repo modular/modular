@@ -32,6 +32,7 @@ namespace LLCL {
 class Runtime;
 } // namespace LLCL
 
+class DeclView;
 class MojoParserListener;
 class MojoASTTypeRef;
 
@@ -103,6 +104,10 @@ public:
   /// Get the location of the start token of this decl. It might not be the
   /// identifier.
   llvm::SMLoc getLoc() const;
+
+  /// Get a DeclView that can be used for more easily inspecting the metadata of
+  /// this decl.
+  std::unique_ptr<DeclView> getView() const;
 
 private:
   /// Allow MojoParserContext to access the internal implementation.

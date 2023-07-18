@@ -8,6 +8,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclView.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -132,9 +133,6 @@ class SymbolPrinter {
 public:
   SymbolPrinter(const Symbol &symbol) : symbol(symbol) {}
 
-  /// Return a code snippet that summarized the declaration of the symbol.
-  std::string getDeclarationCodeSnippet() const;
-
   /// Return a nicely formatted markdown text of the declaration of this symbol.
   std::string getMarkdownDeclaration() const;
 
@@ -142,6 +140,11 @@ public:
   StringRef getSymbolKindAsString() const;
 
 private:
+  /// Return a nicely formatted markdown docstring of the symbol along with a
+  /// code snippet that summarizes the declaration of the symbol. The docstring
+  /// might be empty.
+  std::pair<std::string, std::string> getDocStringAndCodeSnippet() const;
+
   const Symbol &symbol;
 };
 } // namespace
@@ -152,13 +155,16 @@ StringRef SymbolPrinter::getSymbolKindAsString() const {
       .Case<FuncOp>([&](auto op) { return "function"; });
 }
 
-std::string SymbolPrinter::getDeclarationCodeSnippet() const {
-  std::string buff;
-  llvm::raw_string_ostream os(buff);
+std::pair<std::string, std::string>
+SymbolPrinter::getDocStringAndCodeSnippet() const {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  std::string docString;
 
   auto &rawOp = *symbol.declRef.getIfOperation();
   TypeSwitch<Operation &>(rawOp)
       .Case<VarLetDeclOp>([&](auto op) {
+        // TODO:: switch this to use DeclView
         os << (op.getIsVar() ? "var" : "let");
 
         os << " " << symbol.identifier;
@@ -166,16 +172,20 @@ std::string SymbolPrinter::getDeclarationCodeSnippet() const {
           os << ": " << typeRef.getAsString();
       })
       .Case<LetRegDeclOp>([&](auto op) {
+        // TODO:: switch this to use DeclView
         os << "let " << symbol.identifier;
         if (auto typeRef = symbol.getDisplayType())
           os << ": " << typeRef.getAsString();
       })
       .Case<FuncOp>([&](FuncOp op) {
-        // TODO: reuse the same logic as DocString.cpp
-        os << (op.getIsDef() ? "def" : "fn") << " " << symbol.declRef.getName()
-           << "()";
+        if (auto view = symbol.declRef.getView()) {
+          auto function = cast<FunctionDeclView>(view.get());
+          os << function->getDeclarationSnippet();
+          docString = function->getMarkdownDocString();
+        }
       });
-  return buff;
+
+  return {docString, snippet};
 }
 
 std::string SymbolPrinter::getMarkdownDeclaration() const {
@@ -184,6 +194,17 @@ std::string SymbolPrinter::getMarkdownDeclaration() const {
 
   os << formatv("### {0} `{1}`\n", getSymbolKindAsString(), symbol.identifier);
 
+  auto [docString, snippet] = getDocStringAndCodeSnippet();
+  if (!docString.empty()) {
+    os << llvm::formatv(R"(
+---
+
+###
+{0}
+)",
+                        docString);
+  }
+
   os << llvm::formatv(R"(
 ---
 
@@ -191,7 +212,8 @@ std::string SymbolPrinter::getMarkdownDeclaration() const {
 ```mojo
 {0}
 ```)",
-                      getDeclarationCodeSnippet());
+                      snippet);
+  llvm::errs() << buff << "\n";
   return buff;
 }
 
