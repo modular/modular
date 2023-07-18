@@ -753,6 +753,11 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // conversions.
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
+    // If converting to a TypeCheckError type, then there is an
+    // already-diagnosed error about this expression.
+    if (requiredType.isTypeCheckErrorType())
+      return {};
+
     if (!requiredType.isEqualCanon(rvalueType)) {
       // We disable implicit conversions  prevent converting T -> S -> U in one
       // step, and to avoid infinite conversion cycles.
@@ -1272,6 +1277,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
                                         const ExprNode *expr, CallSyntax syntax,
                                         ValueDest &dest,
                                         bool allowImplicitConversion) {
+  // If the dest type is invalid, then an error has already been reported.
+  if (type.isTypeCheckErrorType())
+    return {};
 
   // Check to see if we can invoke an __init__ method to convert it.
   OverloadSet callee(type, "__init__", expr, syntax, shared,
@@ -1302,10 +1310,6 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       callee.filterOverloadSet(args, allowImplicitConversion,
                                /*emitDiagnosticOnFailure=*/false, *this);
   if (!calleeFn) {
-    // If the dest type is invalid, then an error has already been reported.
-    if (isa<TypeCheckErrorType>(type.mlirType))
-      return {};
-
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).

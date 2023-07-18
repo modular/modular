@@ -213,7 +213,8 @@ public:
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
-  /// Get a builtin type, or emit an error and return null if invalid.
+  /// Get a builtin type, or emit an error and return TypeCheckErrorType if
+  /// invalid. These never return null.
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc);

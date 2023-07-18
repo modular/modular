@@ -227,13 +227,13 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   // If this is a declaration which has a TypeCheckErrorType, then all
   // references to it are invalid.
   if (auto rv = decl->getIfRValue()) {
-    if (isa<TypeCheckErrorType>(rv.getType().mlirType))
+    if (rv.getType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   } else if (auto lv = decl->getIfLValue()) {
-    if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
+    if (lv.getRValueType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   } else if (auto bv = decl->getIfBValue()) {
-    if (isa<TypeCheckErrorType>(bv.getRValueType().mlirType))
+    if (bv.getRValueType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   }
 
@@ -1133,7 +1133,7 @@ void ParsedArgument::processParameterArgs(
     else
       emitter.emitError(arg.loc, "parameters must always have a type");
     if (!type)
-      type = TypeCheckErrorType::get(emitter.getContext());
+      type = emitter.shared.getTypeCheckErrorType();
 
     // Parameters must be register passable for now.
     if (!type.isRegisterPassable(arg.loc, emitter.shared)) {
@@ -1141,7 +1141,7 @@ void ParsedArgument::processParameterArgs(
           << type
           << " in a parameter: only @register_passable types are supported "
              "right now";
-      type = TypeCheckErrorType::get(emitter.getContext());
+      type = emitter.shared.getTypeCheckErrorType();
     }
 
     VarArgKind vararg = arg.vararg;
@@ -1150,8 +1150,7 @@ void ParsedArgument::processParameterArgs(
     if (vararg == VarArgKind::PackVarArg)
       emitter.emitError(arg.loc, "parameters may not be variadic packs");
 
-    if (vararg == VarArgKind::VarArg &&
-        !isa<TypeCheckErrorType>(type.mlirType)) {
+    if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       type = VariadicType::get(type);
       paramVararg = true;
     }
@@ -2213,23 +2212,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // If the function raises, it implicitly gets a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
-    if (ASTType errorType =
-            shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc())) {
-      resultType = POP::VariantType::get({errorType, resultType});
+    ASTType errorType =
+        shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc());
+    if (errorType.isTypeCheckErrorType())
+      decl.hasReferenceError = true;
 
-      // FIXME(#12604): We cannot return an Error type from a function that also
-      // throws. This is because Variant collapses the variant to one case and
-      // we can't tell which is which.  We could fix this in a number of ways in
-      // the future if/when it matters.
-      if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
-        p.emitError(funcOp.getLoc(),
-                    "cannot return and raise the same type from a function");
-        resultType =
-            POP::VariantType::get({errorType, shared.getTypeCheckErrorType()});
-        decl.hasReferenceError = true;
-      }
-    } else {
-      resultType = shared.getTypeCheckErrorType();
+    resultType = POP::VariantType::get({errorType, resultType});
+
+    // FIXME(#12604): We cannot return an Error type from a function that also
+    // throws. This is because Variant collapses the variant to one case and
+    // we can't tell which is which.  We could fix this in a number of ways in
+    // the future if/when it matters.
+    if (cast<POP::VariantType>(resultType.mlirType).getNumTypes() == 1) {
+      p.emitError(funcOp.getLoc(),
+                  "cannot return and raise the same type from a function");
+      resultType =
+          POP::VariantType::get({errorType, shared.getTypeCheckErrorType()});
       decl.hasReferenceError = true;
     }
   }
@@ -2538,13 +2536,13 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       argDecl.setIRValue(value);
       argDecl.resolvedness = DeclResolvedness::fully;
       if (auto rv = argDecl.getIfRValue()) {
-        if (isa<TypeCheckErrorType>(rv.getType().mlirType))
+        if (rv.getType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       } else if (auto lv = argDecl.getIfLValue()) {
-        if (isa<TypeCheckErrorType>(lv.getRValueType().mlirType))
+        if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       } else if (auto bv = argDecl.getIfBValue()) {
-        if (isa<TypeCheckErrorType>(bv.getRValueType().mlirType))
+        if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       }
     };

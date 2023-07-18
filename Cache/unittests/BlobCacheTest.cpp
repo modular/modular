@@ -161,7 +161,7 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
     EXPECT_FALSE(insertOr.isError())
         << insertOr.getDiagnostic().getMessage() << '\n';
-    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
+    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\n";
 
     auto contains = cache->contains("zeros");
     contains.andThenSync([contains = contains.copy()] {

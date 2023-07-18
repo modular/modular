@@ -66,6 +66,8 @@ public:
 
   /// Return true if this is a None type.
   bool isNoneType() const;
+  /// Return true if this is a TypeCheckError type.
+  bool isTypeCheckErrorType() const;
 
   /// Return true if this type is a register-passable type that can be passed
   /// around and copied in SSA values instead of having to live in memory.
