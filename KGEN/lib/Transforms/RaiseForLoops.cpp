@@ -91,8 +91,10 @@ void RaiseForLoops::walkLoopsPreorder(Operation *cur) {
       collectJumpOps(ct, ct.getLabelAttr());
 
     if (auto loop = dyn_cast<LoopOp>(op); loop && loop != cur) {
-      // Recurse in nested loops.
-      loopsToRaiseInOrder.push_back(loop);
+      if (loop.isFullUnroll()) {
+        // Recurse in nested loops.
+        loopsToRaiseInOrder.push_back(loop);
+      }
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
       parentLoops.pop_back();
