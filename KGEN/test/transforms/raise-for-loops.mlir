@@ -5,7 +5,6 @@ kgen.func @zero_starting_range() {
   %index2 = kgen.param.constant = <2>
   %idx0 = index.constant 0
   %index1 = kgen.param.constant = <1>
-  %array = kgen.param.constant: array<0, i1> = <[]>
 
   // CHECK:      [[INDEX2:%.*]] = kgen.param.constant = <2>
   // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
@@ -36,7 +35,6 @@ kgen.func @zero_starting_range() {
 kgen.func @sequential_range() {
   %index1 = kgen.param.constant = <1>
   %index4 = kgen.param.constant = <4>
-  %array = kgen.param.constant: array<0, i1> = <[]>
 
   // CHECK:      [[INDEX1:%.*]] = kgen.param.constant = <1>
   // CHECK-NEXT: [[INDEX4:%.*]] = kgen.param.constant = <4>
@@ -75,7 +73,6 @@ kgen.func @strided_range() {
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
   // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full full>}
 
-  %array = kgen.param.constant: array<0, i1> = <[]>
   hlcf.loop (%arg0 = %index1 : index) {
     %0 = index.cmp slt(%arg0, %index6)
     hlcf.if %0 {
@@ -97,7 +94,6 @@ kgen.func @nested_unroll_loops() {
   %index8 = kgen.param.constant = <8>
   %idx0 = index.constant 0
   %index1 = kgen.param.constant = <1>
-  %array = kgen.param.constant: array<0, i1> = <[]>
 
   // CHECK:      [[INDEX2:%.*]] = kgen.param.constant = <2>
   // CHECK-NEXT: [[INDEX4:%.*]] = kgen.param.constant = <4>
@@ -144,6 +140,35 @@ kgen.func @nested_unroll_loops() {
   kgen.return
 }
 
+// CHECK-LABEL: @zero_starting_range_not_decorated
+kgen.func @zero_starting_range_not_decorated() {
+  %index2 = kgen.param.constant = <2>
+  %idx0 = index.constant 0
+  %index1 = kgen.param.constant = <1>
+  // CHECK:      [[INDEX2:%.*]] = kgen.param.constant = <2>
+  // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: hlcf.for [[[IDX0]] to [[INDEX2]] step [[INDEX1]]] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT:   [[IDX:%.*]] = index.sub %arg0, [[INDEX1]]
+  // CHECK-NEXT:   [[V:%.*]] = index.sub [[INDEX2]], %arg0
+  // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
+  hlcf.loop (%arg0 = %index2 : index) {
+    %0 = index.cmp sgt(%arg0, %idx0)
+    hlcf.if %0 {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %1 = index.sub %arg0, %index1
+    %2 = index.sub %index2, %arg0
+    kgen.call @foo(%2) : (index) -> ()
+    hlcf.continue %1 : index
+  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  kgen.return
+}
+
 // CHECK-LABEL: @loop_carried_dependency
 kgen.func @loop_carried_dependency() {
   %index1 = kgen.param.constant = <1>
@@ -151,7 +176,6 @@ kgen.func @loop_carried_dependency() {
   %index2 = kgen.param.constant = <2>
   %index4 = kgen.param.constant = <4>
   %index8 = kgen.param.constant = <8>
-  %array = kgen.param.constant: array<0, i1> = <[]>
   %index0 = kgen.param.constant = <0>
 
   // CHECK:      [[INDEX1:%.*]] = kgen.param.constant = <1>
@@ -243,4 +267,26 @@ kgen.func @reorder_args(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) 
     hlcf.continue %3, %8, %7 : index, !pop.pointer<scalar<f32>>, index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return %1 : index
+}
+
+// CHECK-LABEL: @complex_exit_logic_no_raise
+kgen.func @complex_exit_logic_no_raise() {
+  %idx2 = index.constant 2
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  // CHECK-NOT: hlcf.for
+  hlcf.loop (%arg0 = %idx2 : index) {
+    %0 = index.cmp sgt(%arg0, %idx0)
+    hlcf.if %0 {
+      hlcf.yield
+    } else {
+      kgen.call @bar(%arg0) : (index) -> ()
+      hlcf.break
+    }
+    %1 = index.sub %arg0, %idx1
+    kgen.call @foo(%1) : (index) -> ()
+    hlcf.continue %1 : index
+  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  kgen.return
 }

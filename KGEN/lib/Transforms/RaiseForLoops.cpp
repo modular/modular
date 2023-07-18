@@ -91,10 +91,8 @@ void RaiseForLoops::walkLoopsPreorder(Operation *cur) {
       collectJumpOps(ct, ct.getLabelAttr());
 
     if (auto loop = dyn_cast<LoopOp>(op); loop && loop != cur) {
-      if (loop.isFullUnroll()) {
-        // Recurse in nested loops.
-        loopsToRaiseInOrder.push_back(loop);
-      }
+      // Recurse in nested loops.
+      loopsToRaiseInOrder.push_back(loop);
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
       parentLoops.pop_back();
@@ -325,8 +323,18 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     return failure();
   }
 
-  if (!isa<IfOp>(breakOp->getParentOp())) {
+  IfOp ifOp = dyn_cast<IfOp>(breakOp->getParentOp());
+
+  if (!ifOp) {
     diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
+    return failure();
+  }
+
+  if (ifOp.getThenRegion().getBlocks().front().getOperations().size() != 1 ||
+      ifOp.getElseRegion().getBlocks().front().getOperations().size() != 1) {
+    // TODO: handle exit logic in loop unrolling and lower loops, which requires
+    // raise ForOp to keep track of the exit block.
+    diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
     return failure();
   }
 
