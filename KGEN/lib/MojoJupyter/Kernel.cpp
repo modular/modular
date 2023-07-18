@@ -13,6 +13,8 @@
 #include "../MojoLLDB/REPL/MojoREPL.h"
 #include "../MojoLLDB/ScriptingBridge/SBClassUtils.h"
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
+#include "KGEN/MojoJupyter/MatplotlibInitialization.h"
+
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/STLExtras.h"
@@ -173,7 +175,8 @@ public:
   /// Start execution of the given cell identifier and expression string.
   /// `storeHistory` indicates if variables and state from this expression
   /// should be persisted. Returns the state of the expression execution.
-  void startExecution(StringRef cellId, const char *expr, int storeHistory);
+  LogicalResult startExecution(StringRef cellId, const char *expr,
+                               int storeHistory = 0);
 
   /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
@@ -188,6 +191,9 @@ private:
 
   /// Launch the mojo-repl-entry-point process.
   LogicalResult launchReplProcess();
+
+  /// Initialize the inline matplotlib backend within the python interop.
+  LogicalResult initializeMatplotlib();
 
   /// Report an error to the Jupyter kernel.
   LogicalResult reportKernelError(const Twine &message) {
@@ -241,6 +247,9 @@ private:
 
   /// Information about each of the cells that have been executed.
   llvm::StringMap<std::unique_ptr<KernelCellState>> cells;
+
+  /// A bool indicating if matplotlib has been initialized.
+  bool matplotlibInitialized = false;
 };
 } // namespace
 
@@ -257,9 +266,11 @@ MODULAR_EXPORT MojoKernel *initMojoKernel(OutputFn outputFn,
   return kernel.release();
 }
 
-MODULAR_EXPORT void startMojoExecution(MojoKernel *kernel, const char *cellId,
-                                       const char *code, int storeHistory) {
-  kernel->startExecution(cellId, code, storeHistory);
+MODULAR_EXPORT int startMojoExecution(MojoKernel *kernel, const char *cellId,
+                                      const char *code, int storeHistory) {
+  if (failed(kernel->startExecution(cellId, code, storeHistory)))
+    return ExecutionFinishedState::kFinishedError;
+  return ExecutionFinishedState::kNotFinished;
 }
 
 MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
@@ -436,11 +447,34 @@ LogicalResult MojoKernel::launchReplProcess() {
 }
 
 //===----------------------------------------------------------------------===//
+// Matplotlib
+//===----------------------------------------------------------------------===//
+
+LogicalResult MojoKernel::initializeMatplotlib() {
+  // Initialize the matplotlib backend by running the initialization code with
+  // the REPL.
+  if (failed(startExecution("matplotlib", kInitMatplotlibStr)))
+    return failure();
+
+  // Wait for the execution to finish.
+  do {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (int result = checkExecutionFinished())
+      return success(result == kFinishedSuccessfully);
+  } while (true);
+}
+
+//===----------------------------------------------------------------------===//
 // Execution
 //===----------------------------------------------------------------------===//
 
-void MojoKernel::startExecution(StringRef cellId, const char *expr,
-                                int storeHistory) {
+LogicalResult MojoKernel::startExecution(StringRef cellId, const char *expr,
+                                         int storeHistory) {
+  // Before we start executing, check to see if we need to initialize anything.
+  if (!std::exchange(matplotlibInitialized, true)) {
+    if (failed(initializeMatplotlib()))
+      return failure();
+  }
   executionState.emplace(initializeCellForExecution(cellId));
 
   // Start execution of the expression in a separate thread, so that way the
@@ -475,6 +509,7 @@ void MojoKernel::startExecution(StringRef cellId, const char *expr,
         // Mark the execution as finished.
         executionState->finished = true;
       });
+  return success();
 }
 
 void MojoKernel::flushLLDBStreams() {

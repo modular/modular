@@ -1,0 +1,18 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file contains data used when initializing matplotlib for use by the Mojo
+// Jupyter kernel.
+//
+//===----------------------------------------------------------------------===//
+
+static const char *kInitMatplotlibStr = R"python(%%python
+display_start = "{display_start}"
+display_end = "{display_end}"
+backend_str = """{@ENABLE_MATPLOTLIB_STR@}"""
+
+@MATPLOTLIB_BACKEND_STR@
+)python";
