@@ -93,6 +93,17 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
     opts->CPU = "generic";
   }
 
+  // Set the OS name (see #17241).
+#ifdef __linux__
+  triple.setOS(llvm::Triple::OSType::Linux);
+#elif __APPLE__
+  triple.setOS(llvm::Triple::OSType::MacOSX);
+#elif _WIN32
+  triple.setOS(Triple::OSType::OSType::Win32);
+#else
+#error "unsupported operating system."
+#endif
+
   opts->Triple = triple.str();
 
   // Intercept diagnostics from Clang and then bundle them up in an `Error` if
