@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
 from IO import print
