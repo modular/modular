@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not mojo %s 2>&1 | FileCheck %s
+# RUN: not %mojo %s 2>&1 | FileCheck %s
 
 from SIMD import Float32
 

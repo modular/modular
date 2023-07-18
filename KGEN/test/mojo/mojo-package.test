@@ -1,4 +1,4 @@
-// RUN: mojo package %S/test_package --name mojo-test-pkg | FileCheck %s
+// RUN: mojo package %mojo_cpu_build_arch %S/test_package --name mojo-test-pkg | FileCheck %s
 
 // CHECK: lit.package @"$mojo-test-pkg" attributes {archiveBytes = {{.*}}, compiledFor = {{.*}}, postElaborationModule = {{.*}}
 

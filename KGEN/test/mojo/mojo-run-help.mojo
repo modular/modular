@@ -10,14 +10,14 @@
 # Check that passing the `--help-text` option without an input argument, or
 # before the input argument, prints the `run` command's help text.
 # RUN: mojo run --help-text | FileCheck %s
-# RUN: mojo run --help-text %s | FileCheck %s
+# RUN: mojo run %mojo_cpu_build_arch --help-text %s | FileCheck %s
 
 # CHECK: Build and execute a Mojo file
 
 # Check that passing the `--help-text` option after the input argument passes it
 # along to the underlying Mojo program.
-# RUN: mojo run %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
-# RUN: mojo %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
+# RUN: mojo run %mojo_cpu_build_arch %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
+# RUN: %mojo %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
 
 from IO import print
 from Sys import argv
