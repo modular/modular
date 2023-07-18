@@ -21,6 +21,7 @@ add_modular_conversion_library(MojoParser
   ParserExprs.cpp
   ParserStmts.cpp
   SharedState.cpp
+  ClosureEmitter.cpp
 
   DEPENDS
   KGENVersion

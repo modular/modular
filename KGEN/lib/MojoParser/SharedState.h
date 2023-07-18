@@ -41,6 +41,9 @@ class ASTDecl;
 class ASTType;
 class LookupResult;
 class NoneAttr;
+class StructDeclOp;
+class FuncOp;
+class FileModuleOp;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -231,6 +234,11 @@ public:
 
   struct Impl;
   Impl &getImpl() const { return *impl; }
+
+  /// Emitters invoke this method to get a closure declaration.
+  StructDeclOp getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
+                                                 Type signatureType,
+                                                 FileModuleOp fileModuleOp);
 
 private:
   /// The internal state of an imported module or package.

@@ -11,7 +11,9 @@
 #include "SharedState.h"
 #include "ASTDecl.h"
 #include "ASTType.h"
+#include "ClosureEmitter.h"
 #include "DeclResolver.h"
+#include "ExprEmitter.h"
 #include "IRValues.h"
 
 #include "Cache/Buffer.h"
@@ -25,6 +27,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -153,6 +156,11 @@ struct SharedState::Impl {
 
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
+
+  /// The closure wrapper types that have already been generated, keyed off
+  /// name.
+  llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
+      closureWrappers;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
@@ -1599,4 +1607,43 @@ void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   size_t tokenSize = Lexer::getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
+}
+
+static StringAttr getClosureStructNameFromType(FileModuleOp fileModuleOp,
+                                               SignatureType signatureType) {
+  std::string closure_wrapper_name = "_CW_";
+  llvm::raw_string_ostream stream(closure_wrapper_name);
+  stream << fileModuleOp.getSymName() << "_";
+  stream << DeclResolver::getMangledName(
+      StringAttr::get(fileModuleOp.getContext(), stream.str()), signatureType);
+  return StringAttr::get(signatureType.getContext(), stream.str());
+}
+
+LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
+    llvm::SMLoc location, Type signatureTypeMaybe, FileModuleOp fileModuleOp) {
+  SignatureType signatureType = dyn_cast<SignatureType>(signatureTypeMaybe);
+  assert(signatureType && "must be SignatureType");
+  std::pair<SignatureType, StringAttr> key(signatureType,
+                                           fileModuleOp.getSymNameAttrName());
+  StructDeclOp existing = impl->closureWrappers[key];
+  if (!existing) {
+    StringAttr name = getClosureStructNameFromType(fileModuleOp, signatureType);
+    ClosureEmitter emitter(fileModuleOp);
+    existing = emitter.createClosureWrapperStructDecl(
+        name, translateLocation(location), signatureType);
+    ASTDecl &decl = declResolver->addFullyResolvedDecl(
+        existing.getOperation(), existing.getSymNameAttr(), location,
+        impl->topLevelDecl);
+    for (StructFieldOp field : existing.getFieldDecls()) {
+      declResolver->addFullyResolvedDecl(field.getOperation(),
+                                         field.getNameAttr(), location, &decl);
+    }
+    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>()) {
+      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
+                                         funcOp.getSymNameAttr(), location,
+                                         impl->topLevelDecl);
+    }
+    impl->closureWrappers[key] = existing;
+  }
+  return existing;
 }

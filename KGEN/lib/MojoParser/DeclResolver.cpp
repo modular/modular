@@ -1890,7 +1890,8 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 /// Mangle 'name', ensuring that overloaded methods get unique symbol names.
 /// TODO(#16040): Struct names mangled into the signature should be parameter
 /// name-erased.
-static StringAttr getMangledName(StringAttr baseName, SignatureType signature) {
+StringAttr DeclResolver::getMangledName(StringAttr baseName,
+                                        SignatureType signature) {
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
   llvm::raw_svector_ostream os(mangledName);
@@ -2394,11 +2395,16 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   return SLValue(varDecl);
 };
 
-/// Emit a normal return (not a 'raise' return) out of the function, along with
-/// any special logic that goes with it.
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                    const ASTDecl &funcDecl) {
   auto func = cast<LIT::FuncOp>(funcDecl);
+  emitNormalReturn(builder, value, func);
+}
+
+/// Emit a normal return (not a 'raise' return) out of the function, along with
+/// any special logic that goes with it.
+void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                                   LIT::FuncOp func) {
   switch (func.getSpecialFunctionKind()) {
   default:
     break;
@@ -3097,7 +3103,8 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
   auto signature = SignatureType::get({}, {}, fnType, metadata);
 
   // Create the empty function.
-  StringAttr nameAttr = getMangledName(builder.getStringAttr(name), signature);
+  StringAttr nameAttr =
+      DeclResolver::getMangledName(builder.getStringAttr(name), signature);
   auto funcOp =
       builder.create<LIT::FuncOp>(nameAttr, signature, argNames, specialFnID);
 

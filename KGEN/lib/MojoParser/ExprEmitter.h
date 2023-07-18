@@ -435,6 +435,8 @@ public:
   /// function we are returning out of.
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                const ASTDecl &funcDecl);
+  static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                               const FuncOp funcDecl);
 };
 
 } // namespace M::KGEN::LIT
