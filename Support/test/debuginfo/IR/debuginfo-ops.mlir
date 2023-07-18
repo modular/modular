@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s | support-dialect-opt | FileCheck %s
+// RUN: support-dialect-opt -mlir-print-debuginfo %s | support-dialect-opt -mlir-print-debuginfo | FileCheck %s
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
@@ -27,10 +27,15 @@
   alignInBits = 32
 > : !debuginfo.unresolved<i32>
 
+#loc1 = loc("foo.mlir":7:8)
+#loc2 = loc("bar.mlir":5:6)
+#fusedLoc = loc(fused<#subprogram>[#loc2])
+#loc3 = loc(callsite(#fusedLoc at #loc1))
+
 // CHECK-LABEL: func @foo
-// CHECK-SAME: (%[[ARG:.*]]: i32)
+// CHECK-SAME: (%[[ARG:.*]]: i32
 func.func @foo(%arg: i32) {
   // CHECK: debuginfo.value #[[VAR:.*]] = %[[ARG]] : i32
-  debuginfo.value #local_variable = %arg : i32
+  debuginfo.value #local_variable = %arg : i32 loc(callsite(#loc3 at #loc1))
   return
 }

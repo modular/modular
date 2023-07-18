@@ -35,14 +35,47 @@ ErrorTreeOrSuccess ValueOp::interpret(ArrayRef<Attribute> operands,
   return success();
 }
 
+/// Return the scope from a ValueOp's location, recursively walking up through a
+/// chain of inlined locations if needed.
+static ErrorOr<DIScopeAttr> getValueOpLocationScope(Location loc) {
+  DIScopeAttr scope;
+  if (auto fusedLoc = dyn_cast<FusedLoc>(loc)) {
+    // Since ValueOp belongs to a single variable declaration, nothing should
+    // ever give it a fused location.
+    ArrayRef<Location> locations = fusedLoc.getLocations();
+    if (size_t numLocs = locations.size(); numLocs != 1) {
+      return Error(
+          "with fused location must reference a single location, got " +
+          Twine(numLocs));
+    }
+
+    // FusedLoc _may_ contain the scope.
+    scope = dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata());
+    loc = locations[0];
+  }
+
+  // If not dealing with an inlined location, we return a scope (if found).
+  auto callSiteLoc = dyn_cast<mlir::CallSiteLoc>(loc);
+  if (!callSiteLoc)
+    return scope;
+
+  // Otherwise, we walk up the inlining chain.
+  return getValueOpLocationScope(callSiteLoc.getCallee());
+}
+
 LogicalResult ValueOp::verify() {
+  ErrorOr<DIScopeAttr> scopeOr = getValueOpLocationScope(getLoc());
+  if (scopeOr.isError())
+    return emitOpError(scopeOr.getError());
+
   DILocalVariableAttr varAttr = getValueInfo();
-  if (DIScopeAttr scope = extractScope(getLoc())) {
+  if (DIScopeAttr scope = *scopeOr) {
     if (varAttr.getScope() != scope) {
       return emitOpError("location scope must match variable scope: ")
              << scope << " vs. " << varAttr.getScope();
     }
   }
+
   return success();
 }
 
