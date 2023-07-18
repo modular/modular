@@ -180,6 +180,7 @@ int main(int argc, char **argv) {
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();
+  KGEN::registerLowerLoops();
   KGEN::registerLowerKGENCoroutinesAsync();
   KGEN::registerLowerKGENToLLVM();
   KGEN::registerLowerLIT();

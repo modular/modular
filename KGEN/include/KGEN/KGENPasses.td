@@ -812,6 +812,20 @@ def LoopUnrolling : Pass<"loop-unrolling", "KGEN::FuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerLoops
+//===----------------------------------------------------------------------===//
+
+def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
+  let summary = "lower high-level loop abstractions to `hlcf.loop`";
+  let description = [{
+    The `lower-loops` pass will lower high-level loop abstractions, such as
+    `hlcf.for` operations, to `hlcf.loop`.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalizePrecompiledFunctions
 //===----------------------------------------------------------------------===//
 

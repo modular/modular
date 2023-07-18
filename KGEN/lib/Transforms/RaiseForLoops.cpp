@@ -92,18 +92,7 @@ void RaiseForLoops::walkLoopsPreorder(Operation *cur) {
 
     if (auto loop = dyn_cast<LoopOp>(op); loop && loop != cur) {
       // Recurse in nested loops.
-
-      if (loop.getUnrollFactor().has_value()) {
-        if (auto unroll =
-                dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-            unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
-          // TODO: add general support to lower ForOp back to LoopOp if
-          // LoopUnrolling pass can't unroll the for-loop, so we don't only
-          // raise LoopOp that is annotated to fully unroll here.
-          loopsToRaiseInOrder.push_back(loop);
-        }
-      }
-
+      loopsToRaiseInOrder.push_back(loop);
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
       parentLoops.pop_back();
@@ -124,14 +113,15 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
 }
 
 static Value
-getValueIfConstInteger(Value v, LoopOp loop,
-                       std::optional<int64_t> &inductionVarArgNumber) {
+getValueIfConstInteger(Value v, std::optional<int64_t> &inductionVarArgNumber) {
   Value result;
   if (auto arg = dyn_cast<BlockArgument>(v)) {
     // Return the initial value of a block argument if it is constant.
     inductionVarArgNumber = arg.getArgNumber();
-    Value input = loop->getOperand(arg.getArgNumber());
-    result = getValueIfConstInteger(input, loop, inductionVarArgNumber);
+    if (auto p = dyn_cast<LoopOp>(arg.getParentBlock()->getParentOp())) {
+      Value input = p->getOperand(arg.getArgNumber());
+      result = getValueIfConstInteger(input, inductionVarArgNumber);
+    }
   } else if (mlir::matchPattern(v, mlir::m_Constant())) {
     // If the value v is a constant get the value.
     result = v;
@@ -182,12 +172,12 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   if (auto cmp = dyn_cast<mlir::index::CmpOp>(ifCond.getDefiningOp())) {
     switch (cmp.getPred()) {
     case mlir::index::IndexCmpPredicate::SLT:
-      start = getValueIfConstInteger(cmp.getLhs(), loop, inductionVarArgNumber);
-      end = getValueIfConstInteger(cmp.getRhs(), loop, inductionVarArgNumber);
+      start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
+      end = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
       break;
     case mlir::index::IndexCmpPredicate::SGT:
-      start = getValueIfConstInteger(cmp.getRhs(), loop, inductionVarArgNumber);
-      end = getValueIfConstInteger(cmp.getLhs(), loop, inductionVarArgNumber);
+      start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
+      end = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
       break;
     default:
       return {};
@@ -206,7 +196,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
     if (auto blockArg = dyn_cast<BlockArgument>(input0))
-      stride = getValueIfConstInteger(input1, loop, argNum);
+      stride = getValueIfConstInteger(input1, argNum);
   }
 
   // Bail if we can't match pattern to find the stride value.
@@ -285,14 +275,15 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
         continueOps.push_back(op);
     }
 
-    if (breakOps.size() > 1 && continueOps.size() > 1)
+    if (breakOps.size() > 1 && continueOps.size() > 1) {
       diag.attachNote(loop->getLoc()) << "loop has multiple exits and multiple "
                                          "branches back to the beginning.";
-    else if (breakOps.size() > 1)
+    } else if (breakOps.size() > 1) {
       diag.attachNote(loop->getLoc()) << "loop has multiple exits";
-    else
+    } else {
       diag.attachNote(loop->getLoc())
           << "loop has multiple branches back to the beginning.";
+    }
 
     if (breakOps.size() > 1) {
       // Add diagnostics notes to each BreakOp in the loop.
@@ -347,7 +338,6 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   }
 
   mlir::IRRewriter rewriter{OpBuilder(loop)};
-  IRMapping map;
 
   // Collect return value arg numbers (indices).
   llvm::SetVector<int64_t> returnValueArgNumbers;
@@ -369,10 +359,10 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                     loopInfo->inductionVarArgNumber);
 
   // Create the new ForOp with reordered operands.
-  auto forOp = rewriter.create<HLCF::ForOp>(
+  ForOp forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
       loopInfo->upperBound, loopInfo->step, forOperands,
-      loop.getUnrollFactorAttr());
+      loop.getUnrollFactor());
 
   // Create the block for the new ForOp.
   Block *block = rewriter.createBlock(&forOp.getBody());
@@ -428,6 +418,17 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   return success();
 }
 
+static bool isLoopDecoratedWithFullUnroll(LoopOp loop) {
+  if (loop.getUnrollFactor().has_value()) {
+    if (auto unroll =
+            dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
+        unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void RaiseForLoops::runOnOperation() {
   loopJumpOps.clear();
   loopsToRaiseInOrder.clear();
@@ -436,11 +437,17 @@ void RaiseForLoops::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
+
     InFlightDiagnostic diag = mlir::emitError(
         loop->getLoc(),
         " loop is decorated with @unroll, but compiler can't fully unroll it");
+
     if (failed(raiseForLoops(loop, diag))) {
-      signalPassFailure();
+      if (isLoopDecoratedWithFullUnroll(loop)) {
+        signalPassFailure();
+        continue;
+      }
     }
+    diag.abandon();
   }
 }

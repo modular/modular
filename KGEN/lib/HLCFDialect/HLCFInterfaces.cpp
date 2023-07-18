@@ -134,7 +134,7 @@ LogicalResult ControlFlowVerifier::verifyNode(ControlFlowNode op) {
 
   for (Region &region : op->getRegions()) {
     for (Block &block : region) {
-      if (!block.back().hasTrait<OpTrait::IsTerminator>())
+      if (block.empty() || !block.back().hasTrait<OpTrait::IsTerminator>())
         return success(); // another trait will emit an error
       if (auto terminator =
               dyn_cast<ControlFlowTerminator>(block.getTerminator()))
