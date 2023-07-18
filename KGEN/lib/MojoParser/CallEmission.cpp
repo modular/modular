@@ -1748,7 +1748,12 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
                                CallSyntax::kDirectCall, callExpr);
   }
 
-  assert(calleeSig.getResultParamTypes().empty());
+  if (calleeSig.getNumResultParams()) {
+    emitError(callExpr->getLoc(), "invalid indirect call: callee has ")
+        << calleeSig.getNumResultParams() << " unbound result parameter"
+        << plural(calleeSig.getNumResultParams()) << callExpr->getRange();
+    return {};
+  }
 
   // If we have a function pointer, resolve it to an RValue.
   CRValue calleeRV = emitCRValue({callee, callExpr}, EC_CallCalleeValue);
