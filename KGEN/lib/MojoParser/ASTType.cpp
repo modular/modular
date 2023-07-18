@@ -67,6 +67,11 @@ bool ASTType::isEqualCanon(ASTType other) const {
 /// Return true if this is a None type.
 bool ASTType::isNoneType() const { return mlirType.isa<LIT::NoneType>(); }
 
+/// Return true if this is a TypeCheckError type.
+bool ASTType::isTypeCheckErrorType() const {
+  return mlirType.isa<TypeCheckErrorType>();
+}
+
 /// Return the StructDeclOp::RegisterPassable enum for this type.
 uint8_t ASTType::getRegisterPassability(llvm::SMLoc loc,
                                         SharedState &shared) const {

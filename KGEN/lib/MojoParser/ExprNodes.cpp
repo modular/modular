@@ -322,9 +322,6 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Int. Int must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinIntType(emitter.declScope, getLoc());
-  if (!type)
-    return {};
-
   return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -338,9 +335,6 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Double.
   ASTType type =
       emitter.shared.getBuiltinDoubleType(emitter.declScope, getLoc());
-  if (!type)
-    return {};
-
   return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -354,9 +348,6 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-  if (!type)
-    return {};
-
   return emitter.emitConstructorCall(type, {{AnyValue(boolAttr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -414,9 +405,6 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   // Convert this to an instance of StringLiteral.
   ASTType type =
       emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
-  if (!type)
-    return {};
-
   return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -968,8 +956,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Emit the value as a StringLiteral.
     ASTType type =
         emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
-    if (!type)
-      return {};
 
     auto attr =
         StringAttr::get(attrSpelling, StringType::get(emitter.getContext()));
@@ -1333,9 +1319,6 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin slice type and emit a constructor call.
   ASTType type =
       emitter.shared.getBuiltinSliceType(emitter.declScope, getLoc());
-  if (!type)
-    return {};
-
   return emitter.emitConstructorCall(type, ctorArgs, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
@@ -1696,7 +1679,8 @@ AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
                                          ASTType type, const ExprNode *node,
                                          ArrayRef<ExprNode *> exprs) {
-  if (!type) // If we failed to look up the tuple/list type, fail.
+  // If we failed to look up the tuple/list type, fail.
+  if (!type || type.isTypeCheckErrorType())
     return {};
 
   // Emit each of the tuple elements.
@@ -1722,7 +1706,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
     type = emitter.shared.getBuiltinTupleInstantion(emitter.declScope,
                                                     node->getLoc(), typeElts);
-
+    if (type.isTypeCheckErrorType())
+      return {};
     DLValue result(LLCL::RCRef<TupleDLValue>::create(elements, type, node));
     return emitter.emitResult(std::move(result), node, dest);
   }
@@ -1737,6 +1722,8 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
     auto result = emitter.shared.getBuiltinTupleInstantion(
         emitter.declScope, node->getLoc(), typeElts);
+    if (type.isTypeCheckErrorType())
+      return {};
     return emitter.emitResult(PValue(result), node, dest);
   }
 
@@ -2222,8 +2209,6 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     // second argument and converting that to a proper Bool result.
     ASTType boolType =
         emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-    if (!boolType)
-      return {};
 
     // If the RHS is already a Bool, we're good, otherwise convert to i1 then
     // back to Bool with a ctor.

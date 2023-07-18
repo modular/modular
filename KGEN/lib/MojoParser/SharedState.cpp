@@ -800,7 +800,7 @@ static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
     return lookup.getIfSuccess()[0]->getSelfType();
 
   shared.emitError(loc, "could not find builtin '") << typeName << "' type";
-  return {};
+  return shared.getTypeCheckErrorType();
 }
 
 ASTType SharedState::getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
@@ -843,8 +843,8 @@ ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,
                                                llvm::SMLoc loc,
                                                ArrayRef<Type> elements) {
   auto tupleType = getBuiltinTupleType(context, loc);
-  if (!tupleType)
-    return {};
+  if (tupleType.isTypeCheckErrorType())
+    return tupleType;
 
   // Bind the correct element types for the tuple to the tuple type.
   SmallVector<TypedAttr> eltTypes;

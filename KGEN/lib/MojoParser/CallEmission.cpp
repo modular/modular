@@ -1466,7 +1466,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
-  if (isa<TypeCheckErrorType>(type.mlirType))
+  if (type.isTypeCheckErrorType())
     return;
 
   SMLoc callLoc = expr->getLoc();

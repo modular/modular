@@ -666,8 +666,6 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   Value errorVal;
   if (errorExpr) {
     ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), loc.Start);
-    if (!errorType)
-      return success();
 
     // TODO: Support memory-only error values.
     errorVal =
@@ -1194,8 +1192,6 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Lookup the error type.
   ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-  if (!errorType)
-    return failure();
   if (!errorType.isRegisterPassable(smLoc, shared)) {
     emitError(loc) << errorType << " is not a @register_passable type";
     return failure();
