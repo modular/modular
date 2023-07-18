@@ -34,6 +34,7 @@ add_modular_tool(mojo
   LINK_LIBS PRIVATE
   LITDialect
   LLCLRuntimeGlobals
+  MArchTarget
   MojoParser
   MSupportDriver
   MSupportGlobals

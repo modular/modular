@@ -46,17 +46,25 @@ def target_features : Separate<["--", "-"], "target-features">,
   Group<CompilationOptionGroup>, Index<4>, MetaVarName<"FEATURES">,
   HelpText<"Compilation target CPU features. Defaults to the host features.">;
 
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<5>,
+def march : Separate<["-", "--"], "march">, Group<CompilationOptionGroup>,
+  Index<5>, MetaVarName<"ARCHITECTURE">,
+  HelpText<"Architecture to generate code for.">;
+
+def mcpu : Separate<["-", "--"], "mcpu">, Group<CompilationOptionGroup>,
+  Index<6>, MetaVarName<"CPU">,
+  HelpText<"CPU to generate code for.">;
+
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "
            "included Mojo files.">;
 
-def L : JoinedOrSeparate<["-"], "L">, Group<CompilationOptionGroup>, Index<6>,
+def L : JoinedOrSeparate<["-"], "L">, Group<CompilationOptionGroup>, Index<8>,
   MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "
            "linked libraries.">;
 
-def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<7>,
+def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Define a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "

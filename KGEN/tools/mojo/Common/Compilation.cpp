@@ -11,6 +11,7 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
@@ -27,31 +28,41 @@ using namespace M::KGEN;
 ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, TargetInfoAttr &target,
     llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier linkDirsId,
     llvm::opt::OptSpecifier tripleId, llvm::opt::OptSpecifier cpuId,
-    llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
+    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId) {
-  StringRef triple = args.getLastArgValue(tripleId);
+  StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
 
-  StringRef cpu = args.getLastArgValue(cpuId);
+  StringRef targetCpu = args.getLastArgValue(cpuId);
   if (args.hasMultipleArgs(cpuId))
     return Error("too many specified target CPUs, expected exactly one");
 
-  StringRef features = args.getLastArgValue(featuresId);
+  StringRef targetFeatures = args.getLastArgValue(featuresId);
   if (args.hasMultipleArgs(featuresId))
     return Error("too many specified target features, expected exactly one");
 
+  StringRef mArch = args.getLastArgValue(marchId);
+  if (args.hasMultipleArgs(marchId))
+    return Error(
+        "too many specified target architectures, expected exactly one");
+
+  StringRef mCpu = args.getLastArgValue(mcpuId);
+  if (args.hasMultipleArgs(mcpuId))
+    return Error("too many specified target cpus, expected exactly one");
+
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
-  if (!triple.empty())
-    compilationOptions.targetTriple = triple.str();
-  if (!cpu.empty())
-    compilationOptions.targetCpu = cpu.str();
-  if (!features.empty())
-    compilationOptions.targetFeatures = features.str();
+  if (!targetTriple.empty())
+    compilationOptions.targetTriple = targetTriple.str();
+  if (!targetCpu.empty())
+    compilationOptions.targetCpu = targetCpu.str();
+  if (!targetFeatures.empty())
+    compilationOptions.targetFeatures = targetFeatures.str();
 
   // Disabled optimizations.
   if (args.hasArg(noOptimizationId))
@@ -72,6 +83,42 @@ ErrorOrSuccess M::parseCompilationOptions(
 
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
   compilationOptions.linkDirs = args.getAllArgValues(linkDirsId);
+
+  // Initialize the MLIR context.
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  registerBuiltinDialectTranslation(registry);
+  registerLLVMDialectTranslation(registry);
+  ctx.appendDialectRegistry(registry);
+  ctx.loadDialect<MDialect>();
+
+  // Allow unregistered dialects, we will verify we know what to do with it
+  // later.
+  ctx.allowUnregisteredDialects();
+
+  // Initialize targets first - we rely on this for getTargetInfo as well as for
+  // the ExecutionEngine.
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  // Construct a target specification using the command line options.
+  ErrorOr<TargetInfoAttr> targetOr = nullptr;
+  if (!mArch.empty() || !mCpu.empty()) {
+    // Use `-march` to determine the feature set.
+    targetOr = getMArchFeatures(&ctx, mArch, mCpu);
+  } else {
+    // Use the full triple, specific CPU, and manually specified features to
+    // get the target info.
+    targetOr = getTargetInfoFor(&ctx, compilationOptions.targetTriple,
+                                compilationOptions.targetCpu,
+                                compilationOptions.targetFeatures);
+  }
+  if (targetOr.isError())
+    return targetOr.takeError();
+  target = targetOr.takeValue();
+
   return success();
 }
 
@@ -82,17 +129,6 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     function_ref<OwningOpRef<ModuleOp>(MojoParserConfig &, mlir::TimingScope &)>
         parseFn) {
-  // Initialize the MLIR context.
-  DialectRegistry registry;
-  registerAllKGENDialects(registry);
-  registerBuiltinDialectTranslation(registry);
-  registerLLVMDialectTranslation(registry);
-  ctx->appendDialectRegistry(registry);
-
-  // Allow unregistered dialects, we will verify we know what to do with it
-  // later.
-  ctx->allowUnregisteredDialects();
-
   // We don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
   mlir::TimingScope timing = timingManager.getRootScope();
@@ -128,23 +164,8 @@ ErrorOr<std::unique_ptr<ExecutionEngine>>
 M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
                              const CompilationOptions &compilationOptions,
                              ExecutionEngineOptions executionEngineOptions,
-                             bool isJIT, TargetInfoAttr &target) {
+                             bool isJIT, TargetInfoAttr target) {
   MLIRContext *ctx = pm.getContext();
-
-  // Initialize targets first - we rely on this for getTargetInfo as well as for
-  // the ExecutionEngine.
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmParsers();
-  llvm::InitializeAllAsmPrinters();
-
-  // Construct a target specification using the command line options.
-  ErrorOr<TargetInfoAttr> targetOr = getTargetInfoFor(
-      ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
-      compilationOptions.targetFeatures);
-  if (targetOr.isError())
-    return targetOr.takeError();
-  target = targetOr.takeValue();
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
