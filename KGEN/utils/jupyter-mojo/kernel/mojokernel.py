@@ -213,8 +213,6 @@ class MojoKernel(Kernel):
         if not self.mojo_kernel:
             raise RuntimeError("Unable to initialize Mojo kernel.")
 
-        self.initialized_python = False
-
     def _send_internal_error_message(self):
         self.output_processor.send_message(
             "stderr",
@@ -225,40 +223,6 @@ class MojoKernel(Kernel):
                 " about this error can be found in the server error log."
             ),
         )
-
-    def _initialize_repl_matplotlib(self):
-        """Initialize the matplotlib backend within the REPL."""
-
-        # Read the matplotlib backend module into a string. This will be splat
-        # into an expression sent to the REPL.
-        with open(
-            Path(__file__).parent / "matplotlib_backend.py",
-            "r",
-        ) as f:
-            backend_string = f.read()
-
-        # The `enable_matplotlib` modules expects a `backend_str` variable
-        # containing the source for the backend module. It also expects a
-        # `display_start` and `display_end` that provide the begin/end markers
-        # it should use.
-        exec_string = (
-            "%%python\n\n"
-            f'display_start = "{display_start}"\n'
-            f'display_end = "{display_end}"\n'
-            f'backend_str = """{backend_string}"""\n\n'
-        )
-
-        # Read `enable_matplotlib.py` into a string so we can send it to the
-        # repl.
-        with open(
-            Path(__file__).parent / "enable_matplotlib.py",
-            "r",
-        ) as f:
-            exec_string += f.read()
-
-        # Directly execute the python expression within the REPL. This will
-        # ensure it gets initialized before any user expressions are sent.
-        self.do_execute(exec_string, silent=True, store_history=False)
 
     def __del__(self):
         """Destroy the Mojo kernel."""
@@ -315,11 +279,6 @@ class MojoKernel(Kernel):
         # TODO: Better propagate errors from the kernel execution, process
         # provided arguments, etc.
 
-        # If we haven't initialized the python environment, do so now.
-        if not self.initialized_python:
-            self.initialized_python = True
-            self._initialize_repl_matplotlib()
-
         # Wait for the currently running execution to finish.
         def wait_for_execution() -> ExecutionFinishedState:
             # Wait for the execution to finish.
@@ -343,14 +302,14 @@ class MojoKernel(Kernel):
                 self.auto_gen_cell_id_count += 1
 
             # Start execution of the expression.
-            self.lib_mojo_jupyter.startMojoExecution(
+            finish_state = self.lib_mojo_jupyter.startMojoExecution(
                 ctypes.c_void_p(self.mojo_kernel),
                 ctypes.c_char_p(cell_id.encode("utf-8")),
                 ctypes.c_char_p(code.encode("utf-8")),
                 ctypes.c_int(store_history),
             )
-
-            finish_state = wait_for_execution()
+            if finish_state == ExecutionFinishedState.NotFinished:
+                finish_state = wait_for_execution()
             if finish_state == ExecutionFinishedState.FinishedError:
                 return {"status": "error"}
 
