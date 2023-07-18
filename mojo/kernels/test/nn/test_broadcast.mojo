@@ -13,6 +13,35 @@ from IO import print
 from List import DimList
 
 
+# CHECK-LABEL: test_broadcast_empty_shape
+fn test_broadcast_empty_shape():
+    print("== test_broadcast_empty_shape")
+
+    # parameters
+    alias input_shape = DimList(1)
+    alias output_shape = DimList(0)
+
+    # Create a 1D tensor of shape (1), of the form [1]
+    var input = NDBuffer[
+        1,
+        input_shape,
+        DType.index,
+    ].stack_allocation()
+    input[0] = 1
+
+    # Create a 1D tensor of shape (0)
+    var output = NDBuffer[1, output_shape, DType.index].stack_allocation()
+
+    broadcast(output, input)
+    # output tensor will have the form:
+    # []
+
+    # CHECK: 1
+    print(input[0])
+
+    # test shouldn't crash
+
+
 # CHECK-LABEL: test_broadcast_same_shape
 fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape")
@@ -254,6 +283,7 @@ fn test_broadcast_multi_axes_nested():
 
 
 fn main():
+    test_broadcast_empty_shape()
     test_broadcast_same_shape()
     test_broadcast_single_axis()
     test_broadcast_multi_axes()

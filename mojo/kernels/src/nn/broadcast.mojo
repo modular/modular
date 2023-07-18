@@ -68,6 +68,11 @@ fn broadcast[
         output (NDBuffer): the output buffer
         input (NDBuffer): the input buffer
     """
+    # short-circuit if any dimension of the output is 0, this way we don't need
+    # to worry about such cases in the kernel implementation.
+    if output.num_elements() == 0:
+        return
+
     let rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[
         rank, output_shape, input_shape, type
     ](output, input)
