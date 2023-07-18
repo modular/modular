@@ -758,8 +758,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           if (failed(resolveSignature(op, decl)))
             decl.hasReferenceError = true;
         })
-        .Case<LIT::FileModuleOp, ModuleOp, PackageOp>(
-            [&](auto op) { /*Nothing*/ })
+        .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
+              UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           // Invalid function arguments will not be resolved to a value and will
           // have a null IR representation.
@@ -817,7 +817,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           checkEndOfBodyCursor(lexer);
         })
         .Case([&](PackageOp op) { (void)resolveBody(op, decl); })
-        .Case<ModuleOp, UnresolvedImportOp>([&](auto op) { /*Nothing*/ })
+        .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
+            [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
           if (!decl.hasReferenceError)
             emitError(decl.getLoc(),

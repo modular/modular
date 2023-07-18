@@ -507,10 +507,11 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
               op->erase();
               return mlir::success();
             })
-            .Case<AliasDeclOp, LIT::UnresolvedImportOp>([&](auto op) {
-              op->erase();
-              return mlir::success();
-            })
+            .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
+                [&](auto op) {
+                  op->erase();
+                  return mlir::success();
+                })
             .Case([&](GlobalOp op) {
               flattenAndRenameSymbol(op, symbolTable, opSymTableIt);
               if (StringAttr linkageName =
