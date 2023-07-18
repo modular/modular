@@ -144,14 +144,21 @@ kgen.func @nested_unroll_loops() {
   kgen.return
 }
 
-// For-loop not raised because loop has no unrollFactor
-// CHECK-LABEL: @zero_starting_range_no_raise
-kgen.func @zero_starting_range_no_raise() {
+// CHECK-LABEL: @zero_starting_range_not_decorated
+kgen.func @zero_starting_range_not_decorated() {
   %index2 = kgen.param.constant = <2>
   %idx0 = index.constant 0
   %index1 = kgen.param.constant = <1>
   %array = kgen.param.constant: array<0, i1> = <[]>
-  // CHECK-NOT: hlcf.for
+  // CHECK:      [[INDEX2:%.*]] = kgen.param.constant = <2>
+  // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = kgen.param.constant = <1>
+  // CHECK-NEXT: hlcf.for [[[IDX0]] to [[INDEX2]] step [[INDEX1]]] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT:   [[IDX:%.*]] = index.sub %arg0, [[INDEX1]]
+  // CHECK-NEXT:   [[V:%.*]] = index.sub [[INDEX2]], %arg0
+  // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
   hlcf.loop (%arg0 = %index2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
     hlcf.if %0 {

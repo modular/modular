@@ -110,6 +110,21 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                    "ValueRange":$iterArgs), [{
       build($_builder, $_state, results, lowerBound, upperBound, step, iterArgs,
         HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
+    }]>,
+    OpBuilder<(ins "TypeRange":$results,
+                       "Value":$lowerBound,
+                       "Value":$upperBound,
+                       "Value":$step,
+                       "ValueRange":$iterArgs,
+                       "std::optional<Attribute>":$unrollFactor), [{
+          if(!unrollFactor.has_value()) {
+            build($_builder, $_state, results, lowerBound, upperBound,
+                 step, iterArgs, HLCF::LoopUnrollFullAttr::get(
+                   $_state.getContext(), HLCF::LoopUnrollFull::None));
+          } else  {
+            build($_builder, $_state, results, lowerBound, upperBound,
+            step, iterArgs, unrollFactor.value());
+          }
     }]>
   ];
 

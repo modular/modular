@@ -1,0 +1,139 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENPasses.h"
+
+#include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/PatternMatch.h"
+
+using namespace M;
+using namespace HLCF;
+using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_LOWERLOOPS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+/// Unroll For-Loops with unrollFactor attributes:
+/// - fully unroll a for-loop.
+/// - unroll a for-loop with an unroll factor of a constant value .
+/// This pass has to run after elaboration so that all parameter
+/// expressions have elaborated with known values.
+struct LowerLoops : impl::LowerLoopsBase<LowerLoops> {
+  using LowerLoopsBase::LowerLoopsBase;
+
+  void runOnOperation() override;
+
+private:
+  /// For-loops in program order.
+  SmallVector<ForOp> forLoopsInOrder;
+
+  /// Lower hlcf.for operation to hlcf.loop
+  static LogicalResult lowerForLoop(ForOp forLoop);
+};
+} // namespace
+
+LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
+  Block &body = forLoop.getBody().front();
+
+  mlir::IRRewriter rewriter{OpBuilder(forLoop)};
+
+  // Create HLCF::LoopOp.
+  LoopOp loop = rewriter.create<LoopOp>(
+      forLoop->getLoc(), forLoop->getResultTypes(), forLoop.getIterArgs());
+
+  // Create the block for the new LoopOp.
+  Block *loopBlock = rewriter.createBlock(&loop.getBody());
+
+  // Create and rewire BlockArguments from ForOp to LoopOp.
+  for (BlockArgument arg : body.getArguments()) {
+    rewriter.replaceAllUsesWith(
+        arg, loopBlock->addArgument(arg.getType(), arg.getLoc()));
+  }
+
+  // Insert induction variable and bound check and break;
+  rewriter.setInsertionPointToStart(&body);
+
+  // Create check condition.
+  mlir::index::CmpOp cmpOp;
+  Value inductionVar = body.getArgument(0);
+  Value initValue = forLoop.getIterArgs().front();
+
+  if (initValue == forLoop.getUpperBound()) {
+    // Subtracting step(positive value) or adding step (negative value) from
+    // upperBound to lowerBound
+    cmpOp = rewriter.create<mlir::index::CmpOp>(
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT,
+        forLoop.getLowerBound(), inductionVar);
+  } else {
+    // Adding step (positive value) or subtracting step (negative value) from
+    // lowerBound to upperBound
+    cmpOp = rewriter.create<mlir::index::CmpOp>(
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT,
+        forLoop.getUpperBound(), body.getArgument(0));
+  }
+
+  // Create IfOp with ThenBlock yields and ElseBlock breaks.
+  auto ifOp = rewriter.create<IfOp>(forLoop->getLoc(), ValueRange{}, cmpOp);
+  rewriter.createBlock(&ifOp.getThenRegion());
+  rewriter.create<YieldOp>(forLoop->getLoc());
+
+  rewriter.createBlock(&ifOp.getElseRegion());
+  rewriter.create<BreakOp>(
+      forLoop->getLoc(),
+      body.getArguments().drop_front().take_front(forLoop.getNumResults()),
+      loop.getLabelAttr());
+
+  for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
+    if (auto y = dyn_cast<ForYieldOp>(op)) {
+      // Turn ForYieldOp to ContinueOp.
+      rewriter.setInsertionPointAfter(&op);
+
+      // Create `hlcf.continue` with the reordered operands.
+      auto cont = rewriter.create<HLCF::ContinueOp>(
+          op.getLoc(), y->getResultTypes(), y.getOperands());
+
+      // Replace `hlcf.for.yield with `hlcf.continue`.
+      rewriter.replaceOp(y, cont);
+    }
+  }
+
+  // Replace ForOp's results with LoopOp's
+  forLoop->replaceAllUsesWith(loop.getResults());
+
+  // Move ForOp's body to LoopOp
+  rewriter.inlineBlockBefore(&body, loopBlock, loopBlock->begin(),
+                             loopBlock->getArguments());
+
+  // Erase the original forLoop.
+  rewriter.eraseOp(forLoop);
+
+  return success();
+}
+
+void LowerLoops::runOnOperation() {
+  getOperation()->walk<mlir::WalkOrder::PostOrder>([&](Operation *op) {
+    if (auto forLoop = dyn_cast<ForOp>(op)) {
+      if (failed(lowerForLoop(forLoop))) {
+        mlir::emitError(forLoop->getLoc(),
+                        "Failed to lower HLCF::ForOp to HLCF::LoopOp.");
+        signalPassFailure();
+      }
+      return WalkResult::skip();
+    }
+    return WalkResult::advance();
+  });
+}
