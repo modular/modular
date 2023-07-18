@@ -13,7 +13,7 @@ struct Crash1[XXX: __mlir_type.index]:
 
   fn f(self): pass
 
-// -----
+# // -----
 
 # Forward reference needs to get resolved.
 fn printFloat32(x: Float32):
@@ -22,13 +22,13 @@ fn printFloat32(x: Float32):
 struct Float32:
   var value : __mlir_type.`!pop.scalar<f32>`
 
-// -----
+# // -----
 # Crashed at top level.
 
 # expected-error @below {{MLIR attribute is not a TypedAttr}}
 __mlir_attr.`#index<cmp_predicate eq>`
 
-// -----
+# // -----
 # MLIR Symbol Redefinition crash
 
 struct Foo: pass # expected-note {{previous definition here}}
@@ -36,12 +36,12 @@ struct Foo: pass # expected-error {{invalid redefinition of 'Foo'}}
 
 fn x(a: Foo): pass
 
-// -----
+# // -----
 
 fn test():
   alias x: __mlir_type.index
 
-// -----
+# // -----
 
 # Issue #6874: Cannot use aliased variables as return value
 struct XDType[_type: __mlir_type.`!kgen.dtype`]:
@@ -50,7 +50,7 @@ struct XDType[_type: __mlir_type.`!kgen.dtype`]:
     fn getType(self) -> __mlir_type.`!kgen.dtype`:
       return Self.type
 
-// -----
+# // -----
 
 # The octal escape sequence in string literals \ooo can have variable length.
 fn testOctal():
@@ -58,7 +58,7 @@ fn testOctal():
   x = "A\01"
   x = "A\012"
 
-// -----
+# // -----
 
 fn testTripleQuote():
   # expected-error @below {{invalid escape sequence}}
