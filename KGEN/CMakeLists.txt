@@ -101,6 +101,19 @@ macro(_setup_debug_flags)
   endif()
 endmacro()
 
+
+# This function reads MODULAR_USE_NATIVE_ARCH / BUILD_ARCH and respects it to
+# pass in the appropriate flags to the kgen compiler.
+macro(_setup_arch)
+  if (NOT CMAKE_APPLE_SILICON_PROCESSOR AND NOT "${CPU_BUILD_ARCH}" STREQUAL "")
+    set(KGEN_ARCH_FLAGS "-march=${CPU_BUILD_ARCH}")
+    # TODO(17221): Merge MOJO_PACKAGE_ARCH_FLAGS with KGEN_ARCH_FLAGS once
+    # the mojo driver accepts flags with equals or we shift to compiling
+    # everything with the driver.
+    set(MOJO_PACKAGE_ARCH_FLAGS "-march" "${CPU_BUILD_ARCH}")
+  endif()
+endmacro()
+
 # This target represents the full mojo-sdk, and builds both `mojo` and all of
 # the necessary standard library packages.
 add_custom_target(mojo-sdk DEPENDS mojo)
@@ -126,6 +139,7 @@ function(add_mojo_package target)
   cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS" ${ARGN})
 
   _setup_libs()
+  _setup_arch()
   _setup_debug_flags()
 
   if (NOT KGEN_PACKAGE_DIR)
@@ -175,6 +189,7 @@ function(add_mojo_package target)
     OUTPUT ${package_file_name}
 
     COMMAND $<TARGET_FILE:mojo> package
+    ${MOJO_PACKAGE_ARCH_FLAGS}
     ${KGEN_PACKAGE_DIR} --name ${KGEN_OUTPUT_NAME}
     -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
@@ -211,6 +226,7 @@ function(add_kgen_library target)
   cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
+  _setup_arch()
   _setup_debug_flags()
 
   if (NOT KGEN_OUTPUT)
@@ -220,6 +236,7 @@ function(add_kgen_library target)
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
+      ${KGEN_ARCH_FLAGS}
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
       -O${KGEN_OPTIMIZATION_LEVEL}
@@ -256,6 +273,7 @@ function(add_kgen_kernel target)
   cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
+  _setup_arch()
   _setup_debug_flags()
 
   if (MODULAR_KERNELS_USE_SANITIZER)
@@ -279,6 +297,7 @@ function(add_kgen_kernel target)
     OUTPUT ${header_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
+    ${KGEN_ARCH_FLAGS}
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
@@ -306,6 +325,7 @@ function(add_kgen_kernel target)
     OUTPUT ${archive_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit
+    ${KGEN_ARCH_FLAGS}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
