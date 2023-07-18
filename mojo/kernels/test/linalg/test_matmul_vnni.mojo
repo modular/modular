@@ -8,7 +8,7 @@
 # and outputs a 16x16 int32 matrix
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from Range import range
 from DType import DType

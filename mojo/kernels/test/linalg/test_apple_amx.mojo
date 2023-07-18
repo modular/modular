@@ -9,7 +9,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: apple-m1
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from AppleAMX import amx_detail
 from Buffer import NDBuffer
