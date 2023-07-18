@@ -8,6 +8,8 @@
 #include "ASTDecl.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclView.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -473,144 +475,7 @@ private:
   /// Generate a sub-section for the overload described by the given function.
   void generateJSONForOverload(ASTDecl &decl, LIT::FuncOp funcOp,
                                StringRef name) {
-    auto argTypes = funcOp.getArgumentTypes();
-    auto argNames = funcOp.getValueParamNames();
-    auto argConventions = funcOp.getSignature().getValueInputConventions();
-    ASTType resultType = funcOp.getUserResultType();
-
-    // Check for a by-ref result type, which gets modeled as the first argument
-    // (as it needs to be passed through memory), and we don't want to include
-    // it in the normal argument list.
-    if (!argConventions.empty() &&
-        argConventions.front() == ValueInputConvention::ByRefResult) {
-      argTypes = argTypes.drop_front();
-      argNames = argNames.drop_front();
-      argConventions = argConventions.drop_front();
-    }
-
-    // If this is a method, grab the expected "Self" type.
-    std::optional<ASTType> selfType;
-    if (isa<StructDeclOp>(funcOp->getParentOp()))
-      selfType = decl.getParentDecl()->getSelfType();
-
-    // Grab the types of the arguments to the function.
-    SmallVector<std::string> argTypeDetails;
-    for (auto [index, argType] : llvm::enumerate(argTypes)) {
-      argTypeDetails.push_back(
-          generateTypeString(argType, selfType, argConventions[index]));
-    }
-    llvm::StringMap<StringRef> argNameToDetail;
-    for (auto [index, value] : llvm::enumerate(argNames)) {
-      if (index < argTypeDetails.size())
-        argNameToDetail[value] = argTypeDetails[index];
-    }
-
-    // Grab the types of the parameters to the function.
-    SmallVector<ParamDeclAttr> demangledParams;
-    SmallVector<std::string> paramTypeDetails;
-    for (ParamDeclAttr param : funcOp.getInputParams()) {
-      ParamDeclAttr demangled = demangleIfNeeded(param);
-      demangledParams.emplace_back(demangled);
-      paramTypeDetails.emplace_back(
-          generateTypeString(param.getType(), selfType));
-    }
-
-    // Grab the result type, if it's non-none.
-    std::optional<std::string> resultTypeName;
-    if (!resultType.isNoneType())
-      resultTypeName = generateTypeString(resultType, selfType);
-
-    os.object([&] {
-      os.attribute("signature",
-                   generateFunctionSignature(name, argNames, argTypeDetails,
-                                             demangledParams, paramTypeDetails,
-                                             resultTypeName));
-
-      // Emit the doc string if present.
-      if (std::optional<DocString> docStr = getDocString(decl)) {
-        llvm::StringMap<StringRef> paramToDetail;
-        for (auto [demangled, typeString] :
-             llvm::zip(demangledParams, paramTypeDetails))
-          paramToDetail[demangled.getName()] = typeString;
-        os.attribute("summary", docStr->getSummary());
-        processFunctionDocDescription(docStr->getDescription(), paramToDetail,
-                                      argNameToDetail, resultTypeName);
-      }
-      if (funcOp.isThrows())
-        os.attribute("raises", true);
-      if (funcOp.isAsync())
-        os.attribute("async", true);
-    });
-  }
-
-  /// Generate a string for the signature of a function, given its components.
-  std::string
-  generateFunctionSignature(StringRef name, ArrayRef<StringAttr> argNames,
-                            ArrayRef<std::string> argTypes,
-                            ArrayRef<ParamDeclAttr> params,
-                            ArrayRef<std::string> paramTypes,
-                            const std::optional<std::string> &resultTypeName) {
-    std::string signature;
-    llvm::raw_string_ostream signatureOS(signature);
-
-    // Functor used to emit a parameter or type to the signature.
-    auto emitParamOrArg = [&](StringRef name, StringRef type) {
-      // If the argument is variadic, we put the star before the name when
-      // printing a signature.
-      if (type.consume_front("*"))
-        signatureOS << "*";
-      signatureOS << name << ": " << type;
-    };
-
-    // Strip off the mangled suffix from the base function name.
-    signatureOS << name.split('(').first;
-
-    // Emit the parameters of the function.
-    if (!params.empty()) {
-      signatureOS << "[";
-      interleaveComma(
-          llvm::seq<int>(0, paramTypes.size()), signatureOS, [&](int index) {
-            emitParamOrArg(params[index].getName(), paramTypes[index]);
-          });
-      signatureOS << "]";
-    }
-
-    // Emit the arguments of the function.
-    signatureOS << "(";
-    interleaveComma(
-        llvm::seq<int>(0, argTypes.size()), signatureOS,
-        [&](int index) { emitParamOrArg(argNames[index], argTypes[index]); });
-    signatureOS << ")";
-
-    // Emit the result type.
-    if (resultTypeName)
-      signatureOS << " -> " << *resultTypeName;
-    return signatureOS.str();
-  }
-
-  void processFunctionDocDescription(
-      ArrayRef<StringRef> description,
-      const llvm::StringMap<StringRef> &paramToDetail,
-      const llvm::StringMap<StringRef> &argNameToDetail,
-      const std::optional<std::string> &returnType) {
-    // Process the lines of the description, looking for markers.
-    SmallVector<StringRef> pureDescriptionLines;
-    for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
-      if (description[line] == (Twine(kArgs) + ":").str()) {
-        generateArraySection("args", description, line, lineE, argNameToDetail);
-      } else if (description[line] == (Twine(kParameters) + ":").str()) {
-        generateArraySection("parameters", description, line, lineE,
-                             paramToDetail);
-      } else if (description[line] == (Twine(kReturns) + ":").str()) {
-        if (returnType)
-          generateParagraphSection("returns", description, line, lineE);
-      } else if (description[line] == (Twine(kConstraints) + ":").str()) {
-        generateParagraphSection("constraints", description, line, lineE);
-      } else {
-        pureDescriptionLines.push_back(description[line]);
-      }
-    }
-    os.attribute("description", llvm::join(pureDescriptionLines, "\n"));
+    os.value(MojoASTDeclRef(&decl).getView()->toJSON());
   }
 
   //===--------------------------------------------------------------------===//

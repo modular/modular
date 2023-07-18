@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(MojoParser
+  ASTDeclView.cpp
   ASTType.cpp
   CallEmission.cpp
   DeclResolver.cpp

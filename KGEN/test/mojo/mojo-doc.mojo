@@ -35,9 +35,9 @@ alias alias_Value = 10
 # CHECK:  "functions": [
 # CHECK:  "name": "empty_fn",
 # CHECK:  "overloads": [
-# CHECK:      "signature": "empty_fn()",
-# CHECK:      "summary": "This is a function summary.",
 # CHECK:      "description": "The is some kind of description."
+# CHECK:      "signature": "empty_fn()"
+# CHECK:      "summary": "This is a function summary."
 # CHECK:  ]
 
 
@@ -52,10 +52,10 @@ fn empty_fn():
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_that_async",
 # CHECK:  "overloads":
+# CHECL:      "async": true
+# CHECK:      "returns": "an Int."
 # CHECK:      "signature": "fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
-# CHECK:      "returns": "an Int."
-# CHECL:      "async": true
 
 
 async fn fn_that_async() -> Int:
@@ -72,10 +72,10 @@ async fn fn_that_async() -> Int:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
+# CHECL:      "raises": true
+# CHECK:      "returns": "an Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
-# CHECK:      "returns": "an Int."
-# CHECL:      "raises": true
 
 
 def fn_that_raises() -> Int:
@@ -92,12 +92,12 @@ def fn_that_raises() -> Int:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_args",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_args(arg: Int)",
-# CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args":
-# CHECK:          "name": "arg",
-# CHECK:          "type": "Int",
 # CHECK:          "description": "This is an argument."
+# CHECK:          "name": "arg"
+# CHECK:          "type": "Int"
+# CHECK:      "signature": "fn_with_args(arg: Int)",
+# CHECK:      "summary": "This is a function summary."
 
 
 fn fn_with_args(arg: Int):
@@ -157,11 +157,11 @@ fn fn_with_parameter_references[
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_params",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_params[param: dtype]()",
 # CHECK:      "parameters": [
-# CHECK:          "name": "param",
-# CHECK:          "type": "dtype",
 # CHECK:          "description": "This is a parameter."
+# CHECK:          "name": "param"
+# CHECK:          "type": "dtype"
+# CHECK:      "signature": "fn_with_params[param: dtype]()"
 
 
 fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
@@ -178,12 +178,12 @@ fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_params_and_return",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int",
 # CHECK:     "args":
-# CHECK:         "name": "arg",
-# CHECK:         "type": "Int",
 # CHECK:         "description": "This is an argument."
+# CHECK:         "name": "arg"
+# CHECK:         "type": "Int"
 # CHECK:     "returns": "This is a return value."
+# CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int"
 
 
 fn fn_with_params_and_return(arg: Int) -> Int:
@@ -203,12 +203,12 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_variant",
 # CHECK:  "overloads":
-# CHECK:      "signature": "fn_with_variant(arg: Variant[Error, None])",
-# CHECK:      "summary": "This is a function summary.",
 # CHECK:      "args":
-# CHECK:          "name": "arg",
-# CHECK:          "type": "Variant[Error, None]",
 # CHECK:          "description": "This is an argument."
+# CHECK:          "name": "arg"
+# CHECK:          "type": "Variant[Error, None]"
+# CHECK:      "signature": "fn_with_variant(arg: Variant[Error, None])"
+# CHECK:      "summary": "This is a function summary."
 
 
 fn fn_with_variant(
@@ -243,22 +243,22 @@ fn fn_with_variant(
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_by_conventions",
 # CHECK:  "overloads"
-# CHECK:      "signature": "fn_with_by_conventions(self: Self&, arg: Self&, *args: Self&) -> Self",
-# CHECK:      "summary": "This is a function summary.",
-# CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "args"
 # CHECK:        {
-# CHECK:          "name": "arg",
-# CHECK:          "type": "Self&",
 # CHECK:          "description": "This is a by-ref argument."
+# CHECK:          "name": "arg"
+# CHECK:          "type": "Self"
 # CHECK:        },
 # CHECK:        {
-# CHECK:          "name": "args",
-# CHECK:          "type": "*Self&",
 # CHECK:          "description": "This is a variadic argument."
+# CHECK:          "name": "args",
+# CHECK:          "type": "*Self"
 # CHECK:        }
-# CHECK:      "returns": "This is a by-ref return value.",
+# CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
+# CHECK:      "returns": "This is a by-ref return value.",
+# CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, inout *args: Self) -> Self",
+# CHECK:      "summary": "This is a function summary."
 
 
 struct InMemoryStruct:
@@ -297,19 +297,19 @@ struct InMemoryStruct:
 # CHECK:  "summary": "This is a class summary.",
 # CHECK:  "constraints": "This describes the struct's constraints.",
 # CHECK:  "parameters": [
-# CHECK:      "name": "_type",
-# CHECK:      "type": "dtype",
+# CHECK:      "name": "_type"
+# CHECK:      "type": "dtype"
 # CHECK:      "description": "This is a parameter."
 # CHECK:  ],
 # CHECK:  "description": "The is some kind of description.\n",
 
 # CHECK:      "kind": "function",
 # CHECK:      "name": "fn_with_self_param",
-# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)",
 # CHECK:          "parameters": [
-# CHECK:              "name": "param",
-# CHECK:              "type": "Self",
 # CHECK:              "description": "This is a Self parameter."
+# CHECK:              "name": "param"
+# CHECK:              "type": "Self"
+# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)"
 
 
 @register_passable
