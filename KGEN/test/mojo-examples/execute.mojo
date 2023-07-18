@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo %s | FileCheck %s
-# RUN: kgen %s -emit-llvm -debug-level=full -mlir-print-debuginfo -o /dev/null
+# RUN: %mojo %s | FileCheck %s
+# RUN: kgen %s %mojo_cpu_build_arch -emit-llvm -debug-level=full -mlir-print-debuginfo -o /dev/null
 # COM: TODO(#13267): compile all the way to object file.
 
 from SIMD import Float32

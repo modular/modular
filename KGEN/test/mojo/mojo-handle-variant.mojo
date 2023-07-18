@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 from IO import print
 from Range import range
 from Len import len
