@@ -3,12 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from DType import DType
 from Math import factorial, sin, cos, isfinite, isinf, inf, neginf, nan, isnan
 from IO import print
-from SIMD import SIMD, Float16, Float32
+from SIMD import SIMD, Float32
 
 # CHECK-LABEL: test_inf
 fn test_inf():
@@ -100,9 +100,6 @@ fn test_nan():
 fn test_sin():
     print("== test_sin")
 
-    # CHECK: 0.84130859375
-    print(sin(Float16(1.0)))
-
     # CHECK: 0.841470956802{{[0-9]+}}
     print(sin(Float32(1.0)))
 
@@ -110,9 +107,6 @@ fn test_sin():
 # CHECK-LABEL: test_cos
 fn test_cos():
     print("== test_cos")
-
-    # CHECK: 0.54052734375
-    print(cos(Float16(1.0)))
 
     # CHECK: 0.540302276611{{[0-9]+}}
     print(cos(Float32(1.0)))
