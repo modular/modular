@@ -175,7 +175,9 @@ class TensorSpec:
         )
 
     def __str__(self) -> str:
-        mlir_shape = [str(dim) if dim else "-1" for dim in self.shape]
+        mlir_shape = [
+            str(dim) if dim is not None else "-1" for dim in self.shape
+        ]
         shape_str = "x".join(mlir_shape)
         return f"{shape_str}x{self.dtype.name}"
 
