@@ -102,7 +102,7 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
 #elif __APPLE__
   triple.setOS(llvm::Triple::OSType::MacOSX);
 #elif _WIN32
-  triple.setOS(Triple::OSType::OSType::Win32);
+  triple.setOS(Triple::Triple::OSType::Win32);
 #else
 #error "unsupported operating system."
 #endif
