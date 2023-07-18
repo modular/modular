@@ -639,7 +639,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         AlwaysInlineLevelAttr::get(ctx, AlwaysInlineLevel::Disabled),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr());
+        StringAttr(), DocStringAttr());
 
   result.regions[0]->push_back(new Block());
 }
@@ -677,7 +677,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*paramVarargs=*/false,
-        /*registerPassable=*/0, /*destructor=*/nullptr, /*moveInit=*/nullptr);
+        /*registerPassable=*/0, /*destructor=*/nullptr, /*moveInit=*/nullptr,
+        /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }
 

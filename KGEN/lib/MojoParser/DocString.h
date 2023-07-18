@@ -17,6 +17,8 @@
 #include "Support/ADT/SmartVariant.h"
 
 namespace M::KGEN::LIT {
+class DocStringAttr;
+
 //===----------------------------------------------------------------------===//
 // DocString
 //===----------------------------------------------------------------------===//
@@ -25,7 +27,7 @@ namespace M::KGEN::LIT {
 class DocString {
 public:
   /// Construct a new DocString from a given raw doc-string.
-  DocString(StringRef rawDocString);
+  DocString(DocStringAttr rawDocStringAttr);
 
   /// Return the summary of the doc string.
   StringRef getSummary() const { return summary; }
@@ -33,8 +35,9 @@ public:
   /// Return the fully body description of the doc string.
   ArrayRef<StringRef> getDescription() const { return descriptionLines; }
 
-  /// Return the beginning location of the doc string.
-  SMLoc getLoc() const { return loc; }
+  /// Return the beginning location of the doc string, or nullptr if the doc
+  /// string is not attached to a location.
+  FileLineColLoc getLoc() const { return loc; }
 
 private:
   /// The short summary of the doc string.
@@ -44,7 +47,7 @@ private:
   SmallVector<StringRef> descriptionLines;
 
   /// The beginning location of the doc string.
-  SMLoc loc;
+  FileLineColLoc loc;
 };
 
 //===----------------------------------------------------------------------===//

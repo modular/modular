@@ -26,6 +26,38 @@ class LITTypedAttr<string attrName, string attrMnemonic, list<Trait> traits = []
     : LITAttr<attrName, attrMnemonic, [TypedAttrInterface] # traits>;
 
 //===----------------------------------------------------------------------===//
+// DocStringAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_DocStringAttr : LITAttr<"DocString", "doc.string"> {
+  let summary = "A source documentation string";
+  let description = [{
+    The `#lit.doc.string` attribute represents a documentation string within
+    Mojo source. It contains the raw string, and optionally the source location
+    of the start of the string.
+
+    Example:
+
+    ```mlir
+    #lit.doc.string<"This is a doc string">
+    #lit.doc.string<"This is a doc string", loc("file.mojo":10:8)>
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$string,
+    OptionalParameter<"FileLineColLoc">:$location
+  );
+  let assemblyFormat = "`<` $string (`,` $location^)? `>`";
+
+  let builders = [AttrBuilderWithInferredContext<(ins
+    "StringAttr":$string, "FileLineColLoc":$location),
+  [{
+    return get(string.getContext(), string, location);
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 

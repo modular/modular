@@ -76,10 +76,6 @@ public:
 
   std::function<void(SMLoc &)> tokenEndPointAdjustmentFn;
 
-  /// This is the StringAttr for the main buffer identifier.  It is type erased
-  /// to void* to reduce header polution.
-  const void *const bufferNameIdentifier;
-
   /// This is true if we should use MLIR for diagnostics (e.g. to enable
   /// -verify-diagnostics and other MLIR testing features), but we prefer
   /// llvm::SourceMgr for better QoI: it supports source ranges and FixIt hints.
@@ -88,6 +84,12 @@ public:
 private:
   friend class InflightDiag;
   Diags(const Diags &) = delete;
+
+  /// This is the StringAttr for the main buffer identifier. It is type erased
+  /// to void* to reduce header polution. This field is lazy initialized to
+  /// handle the case where the main buffer is added after the Diags object is
+  /// constructed.
+  mutable std::optional<const void *> bufferNameIdentifier;
 
   /// This is set to true if an error occurred at any point processing the
   /// file.

@@ -41,19 +41,9 @@ static size_t getIndentationLevel(StringRef str) {
 
 /// Extract a DocString from a given decl, or None if there is no doc string.
 static std::optional<DocString> getDocString(ASTDecl &decl) {
-  // FIXME: This isn't right, this should be using Lexer::getStringLiteralValue.
-  StringRef docStr = decl.getDocString();
-  if (!docStr.empty()) {
-    if (docStr.size() >= 6 &&
-        (docStr.starts_with("\"\"\"") || docStr.starts_with("'''")))
-      docStr = docStr.drop_front(3).drop_back(3);
-    else
-      docStr = docStr.drop_front(1).drop_back(1);
-  }
-
-  if (docStr.empty())
-    return std::nullopt;
-  return DocString(docStr);
+  if (DocStringAttr rawDocString = decl.getDocString())
+    return DocString(rawDocString);
+  return std::nullopt;
 }
 
 /// A struct requires a doc string if it's defined at the top level of a module,
@@ -100,10 +90,12 @@ static bool requiresDocString(StructFieldOp op) {
 // DocString
 //===----------------------------------------------------------------------===//
 
-DocString::DocString(StringRef rawDocString) {
+DocString::DocString(DocStringAttr rawDocStringAttr)
+    : loc(rawDocStringAttr.getLocation()) {
   // This function processes a doc-string, following a similar structure as
   // defined by PEP 257 for how multi-line doc strings should be formatted.
   // https://peps.python.org/pep-0257/#multi-line-docstrings
+  StringRef rawDocString = rawDocStringAttr.getString();
 
   // Split the doc string into lines.
   SmallVector<StringRef> lineStorage;
@@ -111,8 +103,6 @@ DocString::DocString(StringRef rawDocString) {
   MutableArrayRef<StringRef> lines(lineStorage);
   if (lines.empty())
     return;
-
-  loc = SMLoc::getFromPointer(lines.front().begin());
 
   // Determine the minimum indentation (first line doesn't count).
   size_t indent = std::numeric_limits<size_t>::max();
@@ -733,46 +723,77 @@ static bool isValidFirstCharacter(char c) { return c == '`' || isupper(c); }
 
 class DocStringValidator {
 public:
-  DocStringValidator(SharedState &sharedState) : sharedState(sharedState) {}
+  DocStringValidator(SharedState &sharedState, ASTDecl &decl)
+      : sharedState(sharedState), docStr(getDocString(decl)) {
+    // If the doc string isn't valid, there's nothing to do.
+    if (!docStr || !docStr->getLoc())
+      return;
+    rawDocStr = decl.getDocString().getString();
+
+    // Otherwise, try to resolve a file location for the doc string.
+    FileLineColLoc docLocAttr = docStr->getLoc();
+    llvm::SourceMgr &sourceMgr = sharedState.getSourceMgr();
+
+    // Check for an already opened file.
+    int docBufferId = 0;
+    for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
+      int bufferId = sourceMgr.getMainFileID() + i;
+      auto *buffer = sourceMgr.getMemoryBuffer(bufferId);
+      if (buffer->getBufferIdentifier() == docLocAttr.getFilename()) {
+        docBufferId = bufferId;
+        break;
+      }
+    }
+
+    // Otherwise, try to pull in the file.
+    if (!docBufferId) {
+      std::string unused;
+      docBufferId = sourceMgr.AddIncludeFile(docLocAttr.getFilename().str(),
+                                             SMLoc(), unused);
+      if (!docBufferId)
+        return;
+    }
+    docStartLoc = sourceMgr.FindLocForLineAndColumn(
+        docBufferId, docLocAttr.getLine(), docLocAttr.getColumn());
+  }
 
   void validate(ASTDecl &decl) {
-    std::optional<DocString> docStr = getDocString(decl);
-    if (!decl.hasReferenceError) {
-      TypeSwitch<ASTDecl &>(decl)
-          .Case<LIT::FuncOp, StructDeclOp, StructFieldOp>([&](auto op) {
-            ValidationKind validation = requiresDocString(op)
-                                            ? ValidationKind::Strict
-                                            : ValidationKind::Normal;
-            if (!docStr) {
-              if (validation == ValidationKind::Strict)
-                sharedState.emitWarning(op.getLoc(), "public symbol '")
-                    << op.getName() << "' is missing a doc string";
-              return;
-            }
+    if (decl.hasReferenceError)
+      return;
+    TypeSwitch<ASTDecl &>(decl).Case<LIT::FuncOp, StructDeclOp, StructFieldOp>(
+        [&](auto op) {
+          ValidationKind validation = requiresDocString(op)
+                                          ? ValidationKind::Strict
+                                          : ValidationKind::Normal;
+          if (!docStr) {
+            if (validation == ValidationKind::Strict)
+              sharedState.emitWarning(op.getLoc(), "public symbol '")
+                  << op.getName() << "' is missing a doc string";
+            return;
+          }
 
-            if (validation == ValidationKind::Strict) {
-              // Check that the summary line is a complete sentence: it begins
-              // with a capital letter (or a punctuator such as '`'), and ends
-              // with a period.
-              StringRef summary = docStr->getSummary();
-              if (!isValidFirstCharacter(summary.front()))
-                sharedState.emitWarning(docStr->getLoc(),
-                                        "doc string summary should begin with "
-                                        "a capital letter or '`', but this "
-                                        "begins with '")
-                    << summary.front() << "'";
+          if (validation == ValidationKind::Strict) {
+            // Check that the summary line is a complete sentence: it begins
+            // with a capital letter (or a punctuator such as '`'), and ends
+            // with a period.
+            StringRef summary = docStr->getSummary();
+            if (!isValidFirstCharacter(summary.front()))
+              sharedState.emitWarning(docStr->getLoc(),
+                                      "doc string summary should begin with "
+                                      "a capital letter or '`', but this "
+                                      "begins with '")
+                  << summary.front() << "'";
 
-              if (!summary.ends_with("."))
-                sharedState.emitWarning(
-                    docStr->getLoc(),
-                    "doc string summary should end with a period '.', but this "
-                    "ends with '")
-                    << summary.back() << "'";
-            }
+            if (!summary.ends_with("."))
+              sharedState.emitWarning(
+                  docStr->getLoc(),
+                  "doc string summary should end with a period '.', but this "
+                  "ends with '")
+                  << summary.back() << "'";
+          }
 
-            validateDecl(decl, op, *docStr, validation);
-          });
-    }
+          validateDecl(decl, op, validation);
+        });
   }
 
 private:
@@ -819,13 +840,13 @@ private:
   /// 2. The last character is not a period.
   void validateStyle(StringRef name, const char *first, const char *last) {
     if (!isValidFirstCharacter(*first))
-      sharedState.emitWarning(SMLoc::getFromPointer(first), name)
+      emitWarning(first, name)
           << " should begin with a capital letter or '`', but this begins"
              " with '"
           << *first << "'";
 
     if (*last != '.')
-      sharedState.emitWarning(SMLoc::getFromPointer(last), name)
+      emitWarning(last, name)
           << " should end with a period '.', but this ends with '" << *last
           << "'";
   }
@@ -834,29 +855,29 @@ private:
   // Arguments and Parameters
 
   /// Process a parameter or argument section.
-  void processParamOrArgs(SMLoc loc, StringRef tag,
-                          llvm::MapVector<StringRef, SMLoc> &elements,
+  void processParamOrArgs(const char *loc, StringRef tag,
+                          llvm::MapVector<StringRef, const char *> &elements,
                           ArrayRef<StringRef> &lines,
                           ValidationKind validation) {
     StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
-    SmallVector<SMLoc> elementDocEndLocs(elements.size());
+    SmallVector<const char *> elementDocEndLocs(elements.size());
     process2ColumnDocSection(lines, [&](StringRef paramName,
                                         StringRef paramBody) {
-      SMLoc paramLoc = SMLoc::getFromPointer(paramName.data());
+      const char *paramLoc = paramName.data();
       size_t currentEltIndex = nextEltIndex++;
 
       auto it = elements.find(paramName);
       if (it == elements.end()) {
-        sharedState.emitWarning(paramLoc)
+        emitWarning(paramLoc)
             << "unknown " << tag << " '" << paramName << "' in doc string";
         return;
       }
 
       // If we have already seen this element, emit a warning.
-      if (std::exchange(it->second, paramLoc).isValid()) {
-        sharedState.emitWarning(paramLoc)
+      if (std::exchange(it->second, paramLoc)) {
+        emitWarning(paramLoc)
             << "duplicate " << tag << " '" << paramName << "' in doc string";
         return;
       }
@@ -865,7 +886,7 @@ private:
       if (!emittedUnexpectedOrderWarning) {
         size_t expectedEltIndex = it - elements.begin();
         if (currentEltIndex != expectedEltIndex) {
-          sharedState.emitWarning(paramLoc)
+          emitWarning(paramLoc)
               << "'" << paramName << "' is defined at index "
               << expectedEltIndex << ", but specified in doc string at index "
               << currentEltIndex;
@@ -874,13 +895,11 @@ private:
       }
 
       // Diagnose empty element descriptions.
-      SMLoc docEndLoc;
+      const char *docEndLoc = paramBody.end();
       if (paramBody.empty()) {
-        sharedState.emitWarning(paramLoc)
+        emitWarning(paramLoc)
             << "'" << paramName << "' does not have a description";
-        docEndLoc = SMLoc::getFromPointer(paramName.end());
-      } else {
-        docEndLoc = SMLoc::getFromPointer(paramBody.end());
+        docEndLoc = paramName.end();
       }
 
       // Diagnose descriptions with poor style.
@@ -893,38 +912,43 @@ private:
     });
 
     // Emit warnings for any elements that were not documented.
-    StringRef indentStr =
-        sectionLine.take_front(loc.getPointer() - sectionLine.data());
-    SMLoc sectionEndLoc = SMLoc::getFromPointer(sectionLine.end());
+    StringRef indentStr = sectionLine.take_front(loc - sectionLine.data());
+    const char *sectionEndLoc = sectionLine.end();
     for (auto [i, it] : llvm::enumerate(elements)) {
       auto &[element, seenLoc] = it;
-      if (seenLoc.isValid())
+      if (seenLoc)
         continue;
-      InflightDiag diag = sharedState.emitWarning(loc)
+      InflightDiag diag = emitWarning(loc)
                           << tag << " '" << element << "' is not documented";
 
       // Attach a fixit to add the element to the doc string.
-      SMLoc prevEndLoc = (i == 0) ? sectionEndLoc : elementDocEndLocs[i - 1];
-      diag.addFixIt(
-          FixIt(SourceRange::getByteLevel(prevEndLoc, prevEndLoc),
-                "\n" + indentStr + std::string(4, ' ') + element + ":"));
+      const char *prevEndLoc =
+          (i == 0) ? sectionEndLoc : elementDocEndLocs[i - 1];
+      SMLoc prevEndSMLoc = translateLoc(prevEndLoc);
+      if (prevEndSMLoc.isValid()) {
+        diag.addFixIt(
+            FixIt(SourceRange::getByteLevel(prevEndSMLoc, prevEndSMLoc),
+                  "\n" + indentStr + std::string(4, ' ') + element + ":"));
+      }
       elementDocEndLocs[i] = prevEndLoc;
     }
   }
-  void processArguments(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
+  void processArguments(const char *loc,
+                        llvm::MapVector<StringRef, const char *> &elements,
                         ArrayRef<StringRef> &lines, ValidationKind validation) {
     processParamOrArgs(loc, "argument", elements, lines, validation);
   }
-  void processParameters(SMLoc loc, llvm::MapVector<StringRef, SMLoc> &elements,
+  void processParameters(const char *loc,
+                         llvm::MapVector<StringRef, const char *> &elements,
                          ArrayRef<StringRef> &lines,
                          ValidationKind validation) {
     processParamOrArgs(loc, "parameter", elements, lines, validation);
   }
 
   /// Process the sections within the given doc string description.
-  void processDocSections(ArrayRef<StringRef> &lines,
-                          DenseMap<StringRef, SMLoc> &sections,
-                          function_ref<void(StringRef, SMLoc)> processSection) {
+  void processDocSections(
+      ArrayRef<StringRef> &lines, DenseMap<StringRef, const char *> &sections,
+      function_ref<void(StringRef, const char *)> processSection) {
     for (; !lines.empty(); lines = lines.drop_front()) {
       // Sections end with `:`.
       StringRef section = lines[0];
@@ -939,17 +963,18 @@ private:
         sectionIt = sections.find(section);
         if (sectionIt == sections.end())
           continue;
-        sharedState.emitWarning(SMLoc::getFromPointer(section.data()))
+        emitWarning(section.data())
             << "section tag '" << section << "' is overindented";
       }
-      SMLoc lineLoc = SMLoc::getFromPointer(section.data());
-      SMLoc &sectionLoc = sectionIt->second;
+      const char *lineLoc = section.data();
+      const char *&sectionLoc = sectionIt->second;
 
       // If we have already seen this section, emit a warning.
-      if (sectionLoc.isValid()) {
-        auto diag = sharedState.emitWarning(
-            lineLoc, "duplicate '" + section + "' section found in doc string");
-        diag.attachNote(sectionLoc) << "see previous definition here";
+      if (sectionLoc) {
+        auto diag = emitWarning(lineLoc, "duplicate '" + section +
+                                             "' section found in doc string");
+        diag.attachNote(translateLoc(sectionLoc))
+            << "see previous definition here";
         continue;
       }
       sectionLoc = lineLoc;
@@ -957,8 +982,7 @@ private:
       // Check that text follows the section header. For example, this should
       // diagnose a doc string that ends with `Returns:"""`.
       if (lines.size() == 1) {
-        sharedState.emitWarning(sectionLoc,
-                                "'" + section + "' section is empty");
+        emitWarning(sectionLoc, "'" + section + "' section is empty");
         break;
       }
 
@@ -973,7 +997,7 @@ private:
   // Functions
 
   /// Validate documentation for the given function.
-  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp, DocString &docStr,
+  void validateDecl(ASTDecl &decl, LIT::FuncOp funcOp,
                     ValidationKind validation) {
     // In general, each function argument must be documented, but exceptions are
     // pruned from the list below.
@@ -990,26 +1014,26 @@ private:
       argNames = argNames.drop_front();
 
     // Grab the types of the arguments to the function.
-    llvm::MapVector<StringRef, SMLoc> seenArguments;
+    llvm::MapVector<StringRef, const char *> seenArguments;
     for (StringAttr argName : argNames)
-      seenArguments.insert({argName, SMLoc()});
+      seenArguments.insert({argName, nullptr});
 
     // Grab the parameters to the function.
-    llvm::MapVector<StringRef, SMLoc> seenParameters;
+    llvm::MapVector<StringRef, const char *> seenParameters;
     for (ParamDeclAttr decl : funcOp.getInputParams())
-      seenParameters.insert({demangleParameterName(decl.getName()), SMLoc()});
+      seenParameters.insert({demangleParameterName(decl.getName()), nullptr});
 
     // Process the sections of the doc string.
-    DenseMap<StringRef, SMLoc> sections = {
-        {kConstraints, SMLoc()},
-        {kArgs, SMLoc()},
-        {kParameters, SMLoc()},
-        {kReturns, SMLoc()},
+    DenseMap<StringRef, const char *> sections = {
+        {kConstraints, nullptr},
+        {kArgs, nullptr},
+        {kParameters, nullptr},
+        {kReturns, nullptr},
     };
-    ArrayRef<StringRef> description = docStr.getDescription();
+    ArrayRef<StringRef> description = docStr->getDescription();
     bool hasResults = !ASTType(funcOp.getUserResultType()).isNoneType();
 
-    auto processFn = [&](StringRef section, SMLoc loc) mutable {
+    auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == kArgs)
         return processArguments(loc, seenArguments, description, validation);
 
@@ -1017,8 +1041,8 @@ private:
         return processParameters(loc, seenParameters, description, validation);
 
       if (section == kReturns && !hasResults)
-        sharedState.emitWarning(loc, "unexpected 'Returns' in doc string for "
-                                     "function with no results");
+        emitWarning(loc, "unexpected 'Returns' in doc string for "
+                         "function with no results");
 
       // Validate paragraph sections such as "Constraints:" and "Returns:".
       if (validation == ValidationKind::Strict) {
@@ -1030,15 +1054,15 @@ private:
     processDocSections(description, sections, processFn);
 
     if (validation == ValidationKind::Strict) {
-      if (!sections[kParameters].isValid() && !seenParameters.empty())
+      if (!sections[kParameters] && !seenParameters.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function takes parameters, but no 'Parameters' in doc string");
-      if (!sections[kArgs].isValid() && !seenArguments.empty())
+      if (!sections[kArgs] && !seenArguments.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function takes arguments, but no 'Args' in doc string");
-      if (!sections[kReturns].isValid() && hasResults)
+      if (!sections[kReturns] && hasResults)
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function has results, but no 'Returns' in doc string");
@@ -1048,26 +1072,26 @@ private:
   //===--------------------------------------------------------------------===//
   // Structs
 
-  void validateDecl(ASTDecl &decl, StructDeclOp structOp, DocString &docStr,
+  void validateDecl(ASTDecl &decl, StructDeclOp structOp,
                     ValidationKind validation) {
     // Grab the parameters to the struct.
-    llvm::MapVector<StringRef, SMLoc> seenParameters;
+    llvm::MapVector<StringRef, const char *> seenParameters;
     for (ParamDeclAttr decl : structOp.getInputParams())
-      seenParameters.insert({demangleIfNeeded(decl).getName(), SMLoc()});
+      seenParameters.insert({demangleIfNeeded(decl).getName(), nullptr});
 
     // Process the sections of the doc string.
-    DenseMap<StringRef, SMLoc> sections = {
-        {kParameters, SMLoc()},
+    DenseMap<StringRef, const char *> sections = {
+        {kParameters, nullptr},
     };
-    ArrayRef<StringRef> description = docStr.getDescription();
-    auto processFn = [&](StringRef section, SMLoc loc) mutable {
+    ArrayRef<StringRef> description = docStr->getDescription();
+    auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == kParameters)
         processParameters(loc, seenParameters, description, validation);
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict &&
-        !sections[kParameters].isValid() && !seenParameters.empty())
+    if (validation == ValidationKind::Strict && !sections[kParameters] &&
+        !seenParameters.empty())
       sharedState.emitWarning(
           structOp.getLoc(),
           "struct takes parameters, but no 'Parameters' in doc string");
@@ -1076,17 +1100,45 @@ private:
   //===--------------------------------------------------------------------===//
   // Fields
 
-  void validateDecl(ASTDecl &decl, StructFieldOp fieldOp, DocString &docStr,
+  void validateDecl(ASTDecl &decl, StructFieldOp fieldOp,
                     ValidationKind validation) {
     // Nothing to do.
   }
 
+  //===--------------------------------------------------------------------===//
+  // Diagnostics
+
+  /// Emit a warning at the given doc string location.
+  InflightDiag emitWarning(const char *loc, const Twine &msg = {}) {
+    SMLoc smLoc = translateLoc(loc);
+    if (!smLoc.isValid())
+      return sharedState.emitWarning(docStr->getLoc(), msg);
+    return sharedState.emitWarning(smLoc, msg);
+  }
+
+  /// Translate a doc string location to a source location.
+  SMLoc translateLoc(const char *loc) {
+    if (!docStartLoc.isValid())
+      return SMLoc();
+
+    // Compute the location
+    return SMLoc::getFromPointer(docStartLoc.getPointer() +
+                                 (loc - rawDocStr.data()));
+  }
+
   /// Reference to the main shared state.
   SharedState &sharedState;
+
+  /// The doc string currently being processed.
+  std::optional<DocString> docStr;
+  StringRef rawDocStr;
+
+  /// The starting source location of the doc string.
+  SMLoc docStartLoc;
 };
 } // namespace
 
 void M::KGEN::LIT::validateDocString(SharedState &sharedState, ASTDecl &decl) {
-  DocStringValidator validator(sharedState);
+  DocStringValidator validator(sharedState, decl);
   validator.validate(decl);
 }

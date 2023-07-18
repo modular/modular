@@ -26,6 +26,7 @@ class DeclRefType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class DocStringAttr;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -120,16 +121,8 @@ public:
     unresolvedWildcardImports.insert({importedModule, loc});
   }
 
-  /// Return the doc string for this decl, or an emtpy string if there isn't
-  /// one.
-  StringRef getDocString() const { return docString; }
-
-  /// Set the doc string for this decl.
-  void setDocString(Token docStringTok) {
-    assert(docStringTok.is(Token::string) &&
-           "doc-string must be a string literal");
-    this->docString = docStringTok.getSpelling();
-  }
+  /// Return the doc string for this decl, or nullptr if there isn't one.
+  DocStringAttr getDocString();
 
   //===--------------------------------------------------------------------===//
   // Name lookup
@@ -230,9 +223,6 @@ private:
   /// parsing the body of the declaration.  If the declaration was not at the
   /// start of a line or this is the top level module, then this is set to -1.
   ssize_t indentation;
-
-  /// The optional documentation for this decl. Empty if there is no doc.
-  StringRef docString;
 
   /// These are the declarations defined within this scope.
   llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;

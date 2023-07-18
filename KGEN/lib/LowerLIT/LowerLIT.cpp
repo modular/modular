@@ -265,7 +265,8 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
     if (auto varDecl = dyn_cast<VarLetDeclOp>(member)) {
       Type elemType = ParamRefType::get(varDecl.getType().getElementType());
       OpBuilder b(&member);
-      b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType);
+      b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType,
+                              varDecl.getDocStringAttr());
       varDecl->erase();
       continue;
     } else if (isa<AliasDeclOp>(member)) {
