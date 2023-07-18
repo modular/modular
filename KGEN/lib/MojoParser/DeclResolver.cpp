@@ -669,7 +669,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // implementation to either `__wrap_and_execute_main` or
   // `__wrap_and_execute_raising_main` in the Startup module, depending on
   // how the user specified their main function.
-  OpBuilder shimBodyBuilder = OpBuilder::atBlockBegin(shimMainFn.getBody());
+  auto shimBodyBuilder =
+      ImplicitLocOpBuilder::atBlockBegin(loc, shimMainFn.getBody());
   bool isRaisingMain = userMainSignature.isThrows();
   ASTDecl *mainWrapperDecl =
       resolveStartDecl(isRaisingMain ? "__wrap_and_execute_raising_main"
@@ -686,10 +687,10 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
                                userMainSignature)},
       mainWrapperFn.getSignature().dropParamValues());
   auto wrappedCall = shimBodyBuilder.create<CallOp>(
-      loc, shimMainFn.getArgumentTypes()[0], wrapperFnRef,
-      ArrayRef<ParamDeclAttr>(), shimMainFn.getArguments());
-  shimBodyBuilder.create<ReturnOp>(loc, wrappedCall.getResults());
-  shimBodyBuilder.create<EndFuncOp>(loc);
+      shimMainFn.getArgumentTypes()[0], wrapperFnRef, ArrayRef<ParamDeclAttr>(),
+      shimMainFn.getArguments());
+  shimBodyBuilder.create<LIT::ReturnOp>(wrappedCall.getResults());
+  shimBodyBuilder.create<EndFuncOp>();
 
   exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }
@@ -2395,8 +2396,8 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
 
 /// Emit a normal return (not a 'raise' return) out of the function, along with
 /// any special logic that goes with it.
-void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
-                                   Value value, const ASTDecl &funcDecl) {
+void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                                   const ASTDecl &funcDecl) {
   auto func = cast<LIT::FuncOp>(funcDecl);
   switch (func.getSpecialFunctionKind()) {
   default:
@@ -2423,7 +2424,7 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
       }
       selfArg = store.getPtr();
     }
-    builder.create<LIT::OwnershipMarkDestroyedOp>(loc, selfArg);
+    builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
     break;
   }
 
@@ -2438,13 +2439,13 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
       break;
 
     Value existingArg = func.getBody()->getArgument(1);
-    builder.create<LIT::OwnershipMarkDestroyedOp>(loc, existingArg);
+    builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
     break;
   }
   }
 
   // Finally we emit a normal return with lit.return.
-  builder.create<LIT::ReturnOp>(loc, value);
+  builder.create<LIT::ReturnOp>(value);
 }
 
 /// This adds a default return (lit.return of None, potentially converted
@@ -2452,18 +2453,16 @@ void ExprEmitter::emitNormalReturn(OpBuilder &builder, Location loc,
 static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
                                         SharedState &shared) {
   Block &body = *func.getBody();
-  auto b = OpBuilder::atBlockEnd(&body);
-  Location loc = func.getLoc();
+  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), &body);
 
   auto makeNoneReturn = [&] {
     // The function returns none.
-    Value retVal = b.create<ParamConstantOp>(loc, b.getAttr<LIT::NoneAttr>());
+    Value retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
 
     // Wrap the result value if necessary.
     if (func.isThrows())
-      retVal =
-          b.create<POP::VariantCreateOp>(loc, func.getMLIRResultType(), retVal);
-    ExprEmitter::emitNormalReturn(b, loc, retVal, funcDecl);
+      retVal = b.create<POP::VariantCreateOp>(func.getMLIRResultType(), retVal);
+    ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
   };
 
   // If the function returns None, insert a "return None".
@@ -2497,7 +2496,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
   }
 
   // Insert the default end terminator.
-  b.create<LIT::EndFuncOp>(loc);
+  b.create<LIT::EndFuncOp>();
 }
 
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
@@ -3366,6 +3365,7 @@ static void synthesizeMemberwiseInit(
   // Set up the body.
   Block *body = funcOp.getBody();
   builder.setInsertionPointToStart(body);
+  builder.setLoc(funcOp->getLoc());
   ExprEmitter emitter(resolver.shared, funcDecl, builder,
                       /*varDeclCursor*/ nullptr);
 
@@ -3412,7 +3412,7 @@ static void synthesizeMemberwiseInit(
       selfType.mlirType, fieldVals,
       StringArrayAttr::get(emitter.getContext(), argNames)));
 
-  ExprEmitter::emitNormalReturn(builder, structOp.getLoc(), result, funcDecl);
+  ExprEmitter::emitNormalReturn(builder, result, funcDecl);
   builder.create<LIT::EndFuncOp>();
 }
 
@@ -3473,6 +3473,7 @@ static void synthesizeCopyMoveInit(
   // Set up the body.
   Block *body = funcOp.getBody();
   builder.setInsertionPointToStart(body);
+  builder.setLoc(funcOp->getLoc());
   ExprEmitter emitter(resolver.shared, funcDecl, builder,
                       /*varDeclCursor*/ nullptr);
   DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
@@ -3520,7 +3521,7 @@ static void synthesizeCopyMoveInit(
       selfType.mlirType, fieldVals,
       StringArrayAttr::get(emitter.getContext(), fieldNames)));
 
-  ExprEmitter::emitNormalReturn(builder, structOp.getLoc(), result, funcDecl);
+  ExprEmitter::emitNormalReturn(builder, result, funcDecl);
   builder.create<LIT::EndFuncOp>();
 }
 
