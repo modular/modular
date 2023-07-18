@@ -28,6 +28,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/StringExtras.h"
@@ -529,11 +530,12 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // If this function throws, we silently wrap the result value in the returned
   // variant type.
+  ImplicitLocOpBuilder b(mlirLoc, builder);
   if (decl.isThrows())
-    resultValue = builder.create<POP::VariantCreateOp>(
-        mlirLoc, decl.getMLIRResultType(), resultValue);
+    resultValue =
+        b.create<POP::VariantCreateOp>(decl.getMLIRResultType(), resultValue);
 
-  ExprEmitter::emitNormalReturn(builder, mlirLoc, resultValue, getParentDecl());
+  ExprEmitter::emitNormalReturn(b, resultValue, getParentDecl());
   return success();
 }
 
