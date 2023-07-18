@@ -147,6 +147,24 @@ ValueRange ForOp::getReturnValueArgs() {
   return getIterArgs().drop_front().take_front(getNumResults());
 }
 
+// Get loop trip count.
+std::optional<int64_t> ForOp::tripCount() {
+  std::optional<int64_t> lowerBound = getLowerBoundAsInt();
+  std::optional<int64_t> upperBound = getUpperBoundAsInt();
+  std::optional<int64_t> step = getStepAsInt();
+  if (!lowerBound || !upperBound || !step)
+    return {};
+
+  return llvm::divideCeil(std::abs(upperBound.value() - lowerBound.value()),
+                          std::abs(step.value()));
+}
+
+bool ForOp::isFullUnroll() {
+  if (auto unroll = dyn_cast<HLCF::LoopUnrollFullAttr>(getUnrollFactorAttr()))
+    return unroll.getValue() == HLCF::LoopUnrollFull::Full;
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
@@ -223,6 +241,14 @@ ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
   state.transferControlFlowTo(&getBody().front(), operands);
   return success();
+}
+
+bool LoopOp::isFullUnroll() {
+  if (!getUnrollFactor())
+    return false;
+  if (auto unroll = dyn_cast<HLCF::LoopUnrollFullAttr>(getUnrollFactorAttr()))
+    return unroll.getValue() == HLCF::LoopUnrollFull::Full;
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
