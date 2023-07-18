@@ -38,9 +38,6 @@ struct LowerLoops : impl::LowerLoopsBase<LowerLoops> {
   void runOnOperation() override;
 
 private:
-  /// For-loops in program order.
-  SmallVector<ForOp> forLoopsInOrder;
-
   /// Lower hlcf.for operation to hlcf.loop
   static LogicalResult lowerForLoop(ForOp forLoop);
 };
@@ -97,19 +94,17 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
       body.getArguments().drop_front().take_front(forLoop.getNumResults()),
       loop.getLabelAttr());
 
-  for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-    if (auto y = dyn_cast<ForYieldOp>(op)) {
-      // Turn ForYieldOp to ContinueOp.
-      rewriter.setInsertionPointAfter(&op);
+  // ForOp's terminator has to be a ForYieldOp.
+  auto y = cast<ForYieldOp>(body.getTerminator());
+  // Turn ForYieldOp to ContinueOp.
+  rewriter.setInsertionPointAfter(y.getOperation());
 
-      // Create `hlcf.continue` with the reordered operands.
-      auto cont = rewriter.create<HLCF::ContinueOp>(
-          op.getLoc(), y->getResultTypes(), y.getOperands());
+  // Create `hlcf.continue` with the reordered operands.
+  auto cont = rewriter.create<HLCF::ContinueOp>(y.getLoc(), y->getResultTypes(),
+                                                y.getOperands());
 
-      // Replace `hlcf.for.yield with `hlcf.continue`.
-      rewriter.replaceOp(y, cont);
-    }
-  }
+  // Replace `hlcf.for.yield with `hlcf.continue`.
+  rewriter.replaceOp(y, cont);
 
   // Replace ForOp's results with LoopOp's
   forLoop->replaceAllUsesWith(loop.getResults());

@@ -148,7 +148,7 @@ ValueRange ForOp::getReturnValueArgs() {
 }
 
 // Get loop trip count.
-std::optional<int64_t> ForOp::tripCount() {
+std::optional<int64_t> ForOp::getTripCount() {
   std::optional<int64_t> lowerBound = getLowerBoundAsInt();
   std::optional<int64_t> upperBound = getUpperBoundAsInt();
   std::optional<int64_t> step = getStepAsInt();
