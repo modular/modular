@@ -99,3 +99,17 @@ TEST(JSONTest, TestNested) {
   serializeCanonicalJSON(&*testJSON, stream);
   ASSERT_EQ(canonical, correct);
 }
+
+TEST(JSONTest, TestJSONControlChars) {
+  llvm::StringRef testVector =
+      "{\"hello\":\"newline\\n\", \"before\":\"hasbackspace\\b\"}";
+  llvm::StringRef correct =
+      "{\"before\":\"hasbackspace\b\",\"hello\":\"newline\n\"}";
+  llvm::Expected<llvm::json::Value> testJSON = llvm::json::parse(testVector);
+  ASSERT_TRUE(bool(testJSON)) << testJSON.takeError();
+
+  std::string canonical;
+  llvm::raw_string_ostream stream(canonical);
+  serializeCanonicalJSON(&*testJSON, stream);
+  ASSERT_EQ(canonical, correct);
+}

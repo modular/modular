@@ -22,6 +22,17 @@ void M::serializeCanonicalJSON(const json::Value *v, raw_ostream &os) {
     return;
   }
 
+  // If it's a string, we have to manually handle control characters.
+  if (auto jsonString = v->getAsString()) {
+    os << "\"";
+    for (char c : *jsonString) {
+      os << c;
+    }
+    os << "\"";
+
+    return;
+  }
+
   // Not an array or object, simply write it to the stream.
   if (v->kind() != json::Value::Array && v->kind() != json::Value::Object) {
     os << *v;
@@ -36,6 +47,7 @@ void M::serializeCanonicalJSON(const json::Value *v, raw_ostream &os) {
         *arr, [&](const json::Value &val) { serializeCanonicalJSON(&val, os); },
         [&]() { os << ","; });
     os << "]";
+    return;
   }
 
   // It's an object, so we have to sort it.
