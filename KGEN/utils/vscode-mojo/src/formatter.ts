@@ -7,6 +7,8 @@
 import {exec} from 'child_process';
 import * as vscode from 'vscode';
 
+import {get} from './config';
+
 export function registerFormatter(outputChannel: vscode.OutputChannel,
                                   extension: string) {
   return vscode.languages.registerDocumentFormattingEditProvider(extension, {
@@ -15,17 +17,11 @@ export function registerFormatter(outputChannel: vscode.OutputChannel,
       const backupFolder = vscode.workspace.workspaceFolders?.[0];
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
 
-      // Get the arguments passed to black when formatting python code. We'll
-      // try to use the same settings.
-      const blackArgs =
-          vscode.workspace
-              .getConfiguration('python.formatting', workspaceFolder)
-              .get<string[]>('blackArgs', []);
-
+      // Get the arguments to pass to the formatter.
+      const args = get<string[]>('formatting.args', workspaceFolder, []);
       return new Promise<vscode.TextEdit[]>((resolve, reject) => {
         const originalDocumentText = document.getText();
-        const command =
-            "mblack --fast --quiet " + blackArgs.join(' ') + ' -t mojo -';
+        const command = "mojo format --quiet " + args.join(' ') + ' -';
         const process = exec(command, {cwd}, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being

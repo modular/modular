@@ -101,6 +101,11 @@
             "Automatically restart the server",
             "Do nothing"
           ]
+        },
+        "mojo.formatting.args": {
+          "scope": "resource",
+          "type": "list",
+          "description": "Arguments passed in. Each argument is a separate item in the array."
         }
       }
     },
