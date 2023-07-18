@@ -151,8 +151,11 @@ Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic)
     : sourceMgr(sourceMgr), context(context),
       useMLIRDiagnostics(useMLIRDiagnostics),
-      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {
-
+      maxNotesPerDiagnostic(maxNotesPerDiagnostic),
+      unknownBufferNameIdentifier(
+          StringAttr::get(context,
+                          Diags::SourceMgrLocationMapper::kUnnamedFileSigil)
+              .getAsOpaquePointer()) {
   if (!useMLIRDiagnostics)
     sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
 }
@@ -162,10 +165,8 @@ Diags::~Diags() {}
 /// Return the identifier for the main buffer in the SourceMgr.
 StringAttr Diags::getBufferNameIdentifier() const {
   if (!bufferNameIdentifier) {
-    if (sourceMgr.getNumBuffers() == 0) {
-      return StringAttr::get(context,
-                             SourceMgrLocationMapper::kUnnamedFileSigil);
-    }
+    if (sourceMgr.getNumBuffers() == 0)
+      return StringAttr::getFromOpaquePointer(unknownBufferNameIdentifier);
     bufferNameIdentifier = makeMainBufferNameIdentifier(sourceMgr, context);
   }
 
@@ -198,6 +199,10 @@ InflightDiag Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
 Location Diags::translateLocation(SMLoc loc) const {
   // TODO: Implement a cache here to speed up location translation.
   unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
+  if (!bufferID) {
+    return FileLineColLoc::get(
+        StringAttr::getFromOpaquePointer(unknownBufferNameIdentifier), 0, 0);
+  }
   auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
 
   StringAttr bufferName;

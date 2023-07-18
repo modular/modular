@@ -101,6 +101,10 @@ private:
 
   /// Configuration for how many notes to print for a diagnostic.
   int maxNotesPerDiagnostic;
+
+  /// This is a StringAttr for an unknown buffer name. It is type erased to
+  /// void* to reduce header polution.
+  const void *unknownBufferNameIdentifier;
 };
 
 /// This class represents a diagnostic that is built up by the parser and
