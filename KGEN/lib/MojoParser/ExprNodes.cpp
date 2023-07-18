@@ -2682,6 +2682,25 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
   if (bitEnumContainsAny(effects, FnEffects::Escaping)) {
+    LIT::FileModuleOp fileModuleOp;
+    ASTDecl *astDecl = &emitter.declScope;
+    for (; !fileModuleOp && astDecl; astDecl = astDecl->getParentDecl()) {
+      fileModuleOp = dyn_cast<LIT::FileModuleOp>(*astDecl);
+      if (fileModuleOp)
+        break;
+    }
+    assert(fileModuleOp &&
+           "It should not be possible for the parser to parse a "
+           "type outside a file module op.");
+    if (fileModuleOp) {
+      StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
+          this->getLoc(), signature, fileModuleOp);
+      ASTType result(DeclRefType::get(
+          SymbolRefAttr::get(SymbolTable::getSymbolName(declOp))));
+      // TODO: uncomment (https://github.com/modularml/modular/issues/17073).
+      // emitter.emitResult(result, this, dest);
+    }
+
     // TODO: remove (https://github.com/modularml/modular/issues/17073).
     FnEffects newFn =
         bitEnumSet(bitEnumClear(signature.getFnEffects(), FnEffects::Escaping),

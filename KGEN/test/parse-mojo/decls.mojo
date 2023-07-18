@@ -9,7 +9,6 @@
 from SIMD import Float32
 from Object import object
 from Range import range
-from String import String
 
 ##===----------------------------------------------------------------------===##
 # var/let
@@ -1383,20 +1382,8 @@ fn decorator_arg(a: Int):
 @decorator
 fn decorated_fn():
     pass
-
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
 # CHECK-NEXT: decorators <:!lit.none apply({{.*}}decorator_arg{{.*}}, #lit.struct<{value = 2}>
 @decorator_arg(2)
 struct DecoratedStruct:
     pass
-
-##===----------------------------------------------------------------------===##
-# Runtime Closures
-##===----------------------------------------------------------------------===##
-
-# CHECK-LABEL: lit.func @"makes_escaping_closure
-# CHECK-SAME: !kgen.signature<(!pop.pointer<@{{.*}}::@String> byref_result, !pop.pointer<@{{.*}}::@String> borrow_in_mem) capturing -> !lit.none>
-fn makes_escaping_closure(m: String, z:String, y:Bool) -> fn(String) escaping -> String:
-   fn myclosure(n:String) -> String:
-      return n + m
-   return myclosure

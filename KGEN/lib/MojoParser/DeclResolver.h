@@ -156,6 +156,10 @@ public:
     return it != declForFuncSymbol.end() ? it->second : nullptr;
   }
 
+  /// Create a name from a signature by appending argument types into the name.
+  static StringAttr getMangledName(StringAttr baseName,
+                                   SignatureType signature);
+
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
