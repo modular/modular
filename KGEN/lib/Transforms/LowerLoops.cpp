@@ -65,22 +65,22 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   rewriter.setInsertionPointToStart(&body);
 
   // Create check condition.
-  mlir::index::CmpOp cmpOp;
   Value inductionVar = body.getArgument(0);
-  Value initValue = forLoop.getIterArgs().front();
+  std::optional<int64_t> upperBound = forLoop.getUpperBoundAsInt();
+  std::optional<int64_t> lowerBound = forLoop.getLowerBoundAsInt();
+  std::optional<int64_t> step = forLoop.getStepAsInt();
+  if (!upperBound || !lowerBound || !step)
+    return failure();
 
-  if (initValue == forLoop.getUpperBound()) {
-    // Subtracting step(positive value) or adding step (negative value) from
-    // upperBound to lowerBound
+  mlir::index::CmpOp cmpOp;
+  if (upperBound.value() > lowerBound.value()) {
     cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT,
-        forLoop.getLowerBound(), inductionVar);
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT, inductionVar,
+        forLoop.getUpperBound());
   } else {
-    // Adding step (positive value) or subtracting step (negative value) from
-    // lowerBound to upperBound
     cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT,
-        forLoop.getUpperBound(), body.getArgument(0));
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT, inductionVar,
+        forLoop.getUpperBound());
   }
 
   // Create IfOp with ThenBlock yields and ElseBlock breaks.

@@ -49,6 +49,11 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     It has one region capturing the loop body.
     The lower and upper bounds specify a half-open range:
     the range includes the lower bound but does not include the upper bound.
+    Note that: lower bound is the initial value of the induction variable;
+    Upper bound is the iteration end of the induction variable. Lower bound's
+    absolute value can be larger than upper bound if step value is negative
+    (positive) and the iteration update the induction variable by
+    adding(subtracting) the step value.
 
     The body region must contain exactly one block that terminates with
     `scf.for.continue`.

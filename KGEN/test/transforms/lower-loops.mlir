@@ -6,7 +6,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
   // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
   // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX2]] : index) {
-  // CHECK-NEXT:   [[V0:%.*]] = index.cmp slt([[IDX0]], %arg0)
+  // CHECK-NEXT:   [[V0:%.*]] = index.cmp sgt(%arg0, [[IDX0]])
   // CHECK-NEXT:   hlcf.if [[V0]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
@@ -20,7 +20,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
   %index2 = index.constant 2
   %idx0 = index.constant 0
   %index1 = index.constant 1
-  hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
+  hlcf.for [%index2 to %idx0 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
@@ -36,7 +36,7 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
   // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX2]] : index) {
-  // CHECK-NEXT:   [[V0:%.*]] = index.cmp slt([[IDX0]], %arg0)
+  // CHECK-NEXT:   [[V0:%.*]] = index.cmp sgt(%arg0, [[IDX0]])
   // CHECK-NEXT:   hlcf.if [[V0]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
@@ -45,7 +45,7 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:   [[V1:%.*]] = index.sub %arg0, [[IDX1]]
   // CHECK-NEXT:   kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT:   hlcf.loop (%arg1 = [[IDX4]] : index) {
-  // CHECK-NEXT:     [[V3:%.*]] = index.cmp sgt([[IDX8]], %arg1)
+  // CHECK-NEXT:     [[V3:%.*]] = index.cmp slt(%arg1, [[IDX8]])
   // CHECK-NEXT:     hlcf.if [[V3]] {
   // CHECK-NEXT:       hlcf.yield
   // CHECK-NEXT:     } else {
@@ -63,7 +63,7 @@ kgen.func @nested_unroll_loops() {
   %index8 = index.constant 8
   %idx0 = index.constant 0
   %index1 = index.constant 1
-  hlcf.for [%idx0 to %index2 step %index1] (%arg0 = %index2 : index) {
+  hlcf.for [%index2 to %idx0 step %index1] (%arg0 = %index2 : index) {
     %0 = index.sub %arg0, %index1
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for [%index4 to %index8 step %index2] (%arg1 = %index4 : index) {
@@ -85,7 +85,7 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT: [[IDX8:%.*]] = index.constant 8
   // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
   // CHECK-NEXT: %0:2 = hlcf.loop (%arg0 = [[IDX1]] : index, %arg1 = [[IDX0]] : index, %arg2 = [[IDX0]] : index) -> (index, index) {
-  // CHECK-NEXT:   [[V1:%.*]] = index.cmp sgt([[IDX9]], %arg0)
+  // CHECK-NEXT:   [[V1:%.*]] = index.cmp slt(%arg0, [[IDX9]])
   // CHECK-NEXT:   hlcf.if [[V1]] {
   // CHECK-NEXT:     hlcf.yield
   // CHECK-NEXT:   } else {
@@ -94,7 +94,7 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT:   [[V2:%.*]] = index.add %arg0, [[IDX2]]
   // CHECK-NEXT:   kgen.call @foo([[V2]], %arg1) : (index, index) -> ()
   // CHECK-NEXT:   [[V3:%.*]] = hlcf.loop (%arg3 = [[IDX4]] : index, %arg4 = %arg2 : index) -> index {
-  // CHECK-NEXT:     [[V4:%.*]] = index.cmp sgt([[IDX8]], %arg3)
+  // CHECK-NEXT:     [[V4:%.*]] = index.cmp slt(%arg3, [[IDX8]])
   // CHECK-NEXT:     hlcf.if [[V4]] {
   // CHECK-NEXT:       hlcf.yield
   // CHECK-NEXT:     } else {

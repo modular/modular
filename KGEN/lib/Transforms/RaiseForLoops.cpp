@@ -130,6 +130,24 @@ getValueIfConstInteger(Value v, std::optional<int64_t> &inductionVarArgNumber) {
   return result;
 }
 
+// Match CmpOp with specific predicateTypes
+class CmpOpMatcher {
+public:
+  CmpOpMatcher(const SmallVector<mlir::index::IndexCmpPredicate> &predTypes)
+      : predicateTypes(predTypes) {}
+
+  bool match(Operation *op) {
+    if (auto c = dyn_cast<mlir::index::CmpOp>(op))
+      if (llvm::is_contained(predicateTypes, c.getPred()))
+        cmpOp = c;
+    return cmpOp;
+  }
+  mlir::index::CmpOp cmpOp;
+
+private:
+  SmallVector<mlir::index::IndexCmpPredicate> predicateTypes;
+};
+
 static std::optional<ForLoopBoundsAndSteps>
 inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // The infer logic here is assuming that for-loop's ranges are:
@@ -169,18 +187,21 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // Position number in the BlockArgument list where the induction variable is.
   // Return empty value if we can't infer this number.
   std::optional<int64_t> inductionVarArgNumber;
-  if (auto cmp = dyn_cast<mlir::index::CmpOp>(ifCond.getDefiningOp())) {
-    switch (cmp.getPred()) {
-    case mlir::index::IndexCmpPredicate::SLT:
-      start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
+
+  CmpOpMatcher matcher({mlir::index::IndexCmpPredicate::SLT,
+                        mlir::index::IndexCmpPredicate::SGT});
+
+  if (matcher.match(ifCond.getDefiningOp())) {
+    mlir::index::CmpOp cmp = matcher.cmpOp;
+    // The operand who is a block argument is the induction variable, and its
+    // initial value is the start value of the loop; the other operand (if a
+    // constant) is the end of the loop.
+    start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
+    if (inductionVarArgNumber.has_value()) {
       end = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
-      break;
-    case mlir::index::IndexCmpPredicate::SGT:
+    } else {
+      end = start;
       start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
-      end = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
-      break;
-    default:
-      return {};
     }
   }
 
@@ -265,7 +286,6 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   }
 
   if (iter->second.size() > 2) {
-
     SmallVector<Operation *> breakOps;
     SmallVector<Operation *> continueOps;
     for (Operation *op : iter->second) {

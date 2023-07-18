@@ -118,7 +118,10 @@ private:
   }
 };
 
-/// Canonicalize `(i < x ? x - i : 0) > 0` to `i < x`. This is a common pattern
+/// Canonicalize
+/// `(i < x ? x - i : 0) > 0` to `i < x`. or
+/// `(x > i ? x - i : 0) > 0` to `x > i`.
+/// This is a common pattern
 /// in for loop constructs.
 /// TODO: Generalize this pattern?
 struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
@@ -139,15 +142,26 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
       return b.notifyMatchFailure(op.getLoc(), "LHS is not a select");
 
     auto indexCmp = select.getCondition().getDefiningOp<mlir::index::CmpOp>();
-    if (!indexCmp || indexCmp.getPred() != mlir::index::IndexCmpPredicate::SLT)
+    if (!indexCmp)
       return b.notifyMatchFailure(op.getLoc(),
-                                  "select condition is not `slt` comparison");
+                                  "select condition is not a comparison.");
 
     auto trueVal = select.getTrueValue().getDefiningOp<mlir::index::SubOp>();
-    if (!trueVal || trueVal.getLhs() != indexCmp.getRhs() ||
-        trueVal.getRhs() != indexCmp.getLhs())
-      return b.notifyMatchFailure(op.getLoc(),
-                                  "select true value is not `x - i`");
+
+    if (indexCmp.getPred() == mlir::index::IndexCmpPredicate::SLT) {
+      if (!trueVal || trueVal.getLhs() != indexCmp.getRhs() ||
+          trueVal.getRhs() != indexCmp.getLhs())
+        return b.notifyMatchFailure(op.getLoc(),
+                                    "select true value is not `x - i`");
+    } else if (indexCmp.getPred() == mlir::index::IndexCmpPredicate::SGT) {
+      if (!trueVal || trueVal.getLhs() != indexCmp.getLhs() ||
+          trueVal.getRhs() != indexCmp.getRhs())
+        return b.notifyMatchFailure(op.getLoc(),
+                                    "select true value is not `x - i`");
+    } else {
+      return b.notifyMatchFailure(
+          op.getLoc(), "select condition is not `slt` or `sgt` comparison");
+    }
 
     IntegerAttr falseVal;
     if (!mlir::matchPattern(select.getFalseValue(),
@@ -156,7 +170,7 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
       return b.notifyMatchFailure(op.getLoc(),
                                   "select false value is not zero");
 
-    // Just replace the whole thing with `i < x`.
+    // Just replace the whole thing with `i < x` or `x > i`.
     b.replaceOp(op, indexCmp);
     return success();
   }
