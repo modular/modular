@@ -105,7 +105,7 @@ static int format(const State &state) {
   }
 
   // Forward the curated options to mblack.
-  SmallVector<StringRef> mblackArgs = {*mblack, "--fast"};
+  SmallVector<StringRef> mblackArgs = {*mblack, "--fast", "--preview"};
   if (!lineLengthArg.empty()) {
     mblackArgs.push_back("--line-length");
     mblackArgs.push_back(lineLengthArg);
