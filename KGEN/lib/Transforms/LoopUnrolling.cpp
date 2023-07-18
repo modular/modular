@@ -57,11 +57,7 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
   cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (auto loop = dyn_cast<ForOp>(op); loop && loop != cur) {
       // Recurse in nested loops.
-      if (auto unroll =
-              dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-          unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
-        loopsToUnrollInOrder.push_back(loop);
-      }
+      loopsToUnrollInOrder.push_back(loop);
 
       parentLoops.push_back(loop);
       walkLoopsPreorder(loop);
@@ -73,14 +69,9 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
 }
 
 LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
-  std::optional<int64_t> lowerBound = loop.getLowerBoundAsInt();
-  std::optional<int64_t> upperBound = loop.getUpperBoundAsInt();
-  std::optional<int64_t> step = loop.getStepAsInt();
-  if (!lowerBound || !upperBound || !step)
+  std::optional<int64_t> count = loop.tripCount();
+  if (!count)
     return failure();
-
-  int64_t count = std::abs<int64_t>(
-      llvm::divideCeil(upperBound.value() - lowerBound.value(), step.value()));
 
   mlir::IRRewriter rewriter{OpBuilder(loop)};
 
@@ -163,9 +154,8 @@ void LoopUnrolling::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // unroll loops from inner to outer
   for (auto loop : llvm::reverse(loopsToUnrollInOrder)) {
-    if (auto unroll =
-            dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-        unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
+    if (loop.isFullUnroll() || (loop.tripCount() == 1)) {
+      // Fully unroll if loop is decorated or has single iteration.
       if (succeeded(fullUnrollForLoop(loop)))
         continue;
       // TODO: unroll with a factor based on cost model if a for loop decorated

@@ -418,17 +418,6 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   return success();
 }
 
-static bool isLoopDecoratedWithFullUnroll(LoopOp loop) {
-  if (loop.getUnrollFactor().has_value()) {
-    if (auto unroll =
-            dyn_cast<HLCF::LoopUnrollFullAttr>(loop.getUnrollFactorAttr());
-        unroll && unroll.getValue() == HLCF::LoopUnrollFull::Full) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void RaiseForLoops::runOnOperation() {
   loopJumpOps.clear();
   loopsToRaiseInOrder.clear();
@@ -442,11 +431,9 @@ void RaiseForLoops::runOnOperation() {
         loop->getLoc(),
         " loop is decorated with @unroll, but compiler can't fully unroll it");
 
-    if (failed(raiseForLoops(loop, diag))) {
-      if (isLoopDecoratedWithFullUnroll(loop)) {
-        signalPassFailure();
-        continue;
-      }
+    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll()) {
+      signalPassFailure();
+      continue;
     }
     diag.abandon();
   }

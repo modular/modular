@@ -137,6 +137,10 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     std::optional<int64_t> getStepAsInt();
     // Get args that will be return values.
     ValueRange getReturnValueArgs();
+    // Get loop trip count.
+    std::optional<int64_t> tripCount();
+    // Check if the loop is decorated to be fully unrolled.
+    bool isFullUnroll();
   }];
 
   let hasVerifier = 1;
@@ -232,6 +236,10 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
           $_state.getContext(), HLCF::LoopUnrollFull::None));
     }]>
   ];
+
+  let extraClassDeclaration = [{
+    bool isFullUnroll();
+  }];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
