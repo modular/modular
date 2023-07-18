@@ -8,7 +8,7 @@
 # https://benchmarksgame-team.pages.debian.net/benchmarksgame/performance/nbody.html
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s -execute | FileCheck %s
+# RUN: %mojo %s -execute | FileCheck %s
 
 from SIMD import SIMD, Float64
 from DType import DType

@@ -8,7 +8,7 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s -execute | FileCheck %s
+# RUN: %mojo %s -execute | FileCheck %s
 
 
 from DType import DType
