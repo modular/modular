@@ -14,6 +14,7 @@ if(MODULAR_ENABLE_TELEMETRY)
 
   add_modular_library(MTelemetry
     TelemetryContext.cpp
+    MetricReader.cpp
 
     LINK_LIBS PUBLIC
     opentelemetry_metrics
@@ -32,5 +33,6 @@ if(MODULAR_ENABLE_TELEMETRY)
 else()
   add_modular_library(MTelemetry
     TelemetryContext.cpp
+    MetricReader.cpp
     )
 endif()

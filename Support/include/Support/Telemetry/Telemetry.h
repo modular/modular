@@ -18,6 +18,8 @@
 
 namespace M::Telemetry {
 
+class ManualExportingMetricReader;
+
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
 
@@ -34,7 +36,7 @@ public:
   // TODO: add options, like exporter options (HTTP URL, file name).
   TelemetryContext();
 
-  ~TelemetryContext() = default;
+  ~TelemetryContext();
 
   // XXX: not sure if it's better to allocate Counter and Histogram on the heap
   // or not. For Otel, the Counter struct will basically just contain a pointer
@@ -107,6 +109,7 @@ private:
 #ifdef MODULAR_ENABLE_TELEMETRY
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
+  std::shared_ptr<ManualExportingMetricReader> metricReader;
 #endif
 };
 
