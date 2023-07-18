@@ -1510,6 +1510,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           .Case([&](UnresolvedImportOp op) {
             addDeclForOp(op, op.getImportNameAttr());
           })
+          .Case([&](UnresolvedWildcardImportOp op) {
+            decl.addUnresolvedWildCardImport(op.getModuleNameAttr(),
+                                             decl.getLoc());
+          })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
             structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));

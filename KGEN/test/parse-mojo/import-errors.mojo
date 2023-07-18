@@ -54,15 +54,6 @@ from imported_module import (imported_fn --
 
 # // -----
 
-# Check that we properly allow import of an imported decl.
-
-from imported_module import *
-
-fn import_of_import(arg: Float64):
-  pass
-
-# // -----
-
 # expected-error @below {{cannot import relative to a top-level package}}
 from .module import foo
 

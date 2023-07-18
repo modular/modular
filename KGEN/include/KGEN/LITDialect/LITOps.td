@@ -1145,6 +1145,28 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UnresolvedWildcardImportOp
+//===----------------------------------------------------------------------===//
+
+def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
+  let summary = "Lexical unresolved wildcard import.";
+  let description = [{
+    The `lit.unresolved_wildcard_import` operation represents a wildcard module
+    import that is yet to be resolved.
+
+    Example:
+
+    ```mlir
+    // Import from the given module.
+    lit.unresolved_wildcard_import from @module
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$moduleName);
+  let assemblyFormat = "`from` $moduleName attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundRegionOp
 //===----------------------------------------------------------------------===//
 

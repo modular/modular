@@ -1443,8 +1443,10 @@ ParseResult StmtParser::parseFromImportStmt() {
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
-    getParentDecl().addUnresolvedWildCardImport(
-        builder.getStringAttr(fullModuleName), importLoc);
+    StringAttr moduleAttr = builder.getStringAttr(fullModuleName);
+    builder.create<LIT::UnresolvedWildcardImportOp>(
+        translateLocation(importLoc), moduleAttr);
+    getParentDecl().addUnresolvedWildCardImport(moduleAttr, importLoc);
     return success();
   }
 
