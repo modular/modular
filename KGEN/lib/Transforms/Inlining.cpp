@@ -1318,15 +1318,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
     });
   } else {
     body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      /// DebugInfo::ValueOp instances in the inlined body will retain their
-      /// DILocalVariableAttr during inlining. The scope in this needs to match
-      /// the scope in the location.
-      mlir::LocationAttr newLoc = mlir::CallSiteLoc::get(op->getLoc(), callLoc);
-      if (auto valueOp = dyn_cast<DebugInfo::ValueOp>(op)) {
-        newLoc = FusedLoc::get(op->getContext(), {newLoc},
-                               valueOp.getValueInfo().getScope());
-      }
-      op->setLoc(newLoc);
+      op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));
 
       if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
         auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
