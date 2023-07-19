@@ -96,11 +96,24 @@ public:
 #endif
   }
 
+  /// Create a Timer. If unit is omitted, the method will implicitly set
+  /// it to one of {"ns", "us", "ms", "s"} based on the DurationT template
+  /// parameter.
   template <typename DurationT = std::chrono::nanoseconds>
   Timer<uint64_t, DurationT> createUInt64Timer(StringRef name,
                                                StringRef description = "",
                                                StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
+    if (unit.empty()) {
+      if constexpr (std::is_same_v<DurationT, std::chrono::nanoseconds>)
+        unit = "ns";
+      else if constexpr (std::is_same_v<DurationT, std::chrono::microseconds>)
+        unit = "us";
+      else if constexpr (std::is_same_v<DurationT, std::chrono::milliseconds>)
+        unit = "ms";
+      else if constexpr (std::is_same_v<DurationT, std::chrono::seconds>)
+        unit = "s";
+    }
     return Timer<uint64_t, DurationT>(
         meter->CreateUInt64Histogram(name, description, unit));
 #else
