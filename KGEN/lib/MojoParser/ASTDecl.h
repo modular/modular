@@ -114,7 +114,7 @@ public:
   }
 
   /// Given an MLIR op for a struct declaration, return the self type.
-  ASTType computeSelfTypeForStruct(SharedState &state);
+  static Type computeSelfTypeForStruct(StructDeclOp structDeclOp);
 
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildCardImport(StringAttr importedModule, SMLoc loc) {
