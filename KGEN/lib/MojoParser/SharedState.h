@@ -226,7 +226,6 @@ public:
   ASTType getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc);
 
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.

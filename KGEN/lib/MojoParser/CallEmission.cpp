@@ -2297,49 +2297,26 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   }
 
   ArrayRef<Type> resultTypes = calleeSig.getValueResults();
-  Value callResult;
+  Operation *callOp;
   if (auto target = callee.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType().mlirType);
         sig && sig.isAsync()) {
-      // If the callee is an async function, emit an async call. Then wrap the
-      // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
-      auto call = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
-                                               callArgs);
-      ASTType coroType =
-          shared.getBuiltinCoroutineType(declScope, callExpr->getLoc());
-      if (!coroType) {
-        emitError(callExpr->getLoc(),
-                  "internal error: could not find builtin 'Coroutine' type");
-        return {};
-      }
-      // Bind the result type to the base coroutine type.
-      coroType = DeclRefType::get(
-          cast<DeclRefType>(coroType.mlirType).getSymbol(),
-          ParamBindArrayAttr::get(
-              getContext(),
-              {ParamBindAttr::get(
-                  "type", TypeConstantAttr::get(resultTypes.front()))}));
-      ValueDest dest;
-      // Emit the implicit conversion.
-      callResult =
-          emitConstructorCall(coroType, {{SBValue(call), callExpr}}, callExpr,
-                              CallSyntax::kImplicitConvert, dest)
-              .getIfSRValue();
+      // If the callee is an async function, emit an async call.
+      callOp = builder->create<AsyncCallOp>(loc, target.get(), resultParams,
+                                            callArgs);
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
-      auto call = builder->create<CallOp>(loc, resultTypes, symbol,
-                                          resultParams, callArgs);
-      callResult = call.getResult(0);
+      callOp = builder->create<CallOp>(loc, resultTypes, symbol, resultParams,
+                                       callArgs);
     } else {
-      auto call = builder->create<CallParamOp>(loc, resultTypes, target.get(),
-                                               resultParams, callArgs);
-      callResult = call.getResult(0);
+      callOp = builder->create<CallParamOp>(loc, resultTypes, target.get(),
+                                            resultParams, callArgs);
     }
   } else {
-    auto call = builder->create<CallSignatureOp>(
-        loc, resultTypes, callee.getIfSRValue(), callArgs);
-    callResult = call.getResult(0);
+    callOp = builder->create<CallSignatureOp>(loc, resultTypes,
+                                              callee.getIfSRValue(), callArgs);
   }
+  Value callResult = callOp->getResult(0);
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
@@ -2353,7 +2330,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     auto callResultTy = cast<POP::VariantType>(callResult.getType());
     Type successType = callResultTy.getType(1);
     auto handleVariant = builder->create<LIT::HandleVariantOp>(
-        loc, successType, callResult, ValueRange(byRefResults));
+        callOp->getLoc(), successType, callResult, ValueRange(byRefResults));
     Block *successBlock =
         builder->createBlock(&handleVariant.getSuccessRegion());
     builder->setInsertionPointToStart(successBlock);
