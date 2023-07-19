@@ -75,6 +75,7 @@ from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
 from GatherScatter import scatter_nd as _scatter_nd
+from Where import where, where_shape
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
@@ -154,6 +155,8 @@ fn MOGGExport():
     alias _tensor_to_shape = tensor_to_shape
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
+    alias _where = where
+    alias _where_shape = where_shape
 
     alias _test_many_ranks_and_types = test_many_ranks_and_types
     alias _test_one_rank_many_tensor = test_one_rank_many_tensor
