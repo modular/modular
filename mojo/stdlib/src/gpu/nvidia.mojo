@@ -1,0 +1,137 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""This module includes intrinsics for NVIDIA GPUs."""
+
+from SIMD import Int32
+from Intrinsics import llvm_intrinsic
+
+
+struct ThreadIdx:
+    """ThreadIdx provides static methods for getting the x/y/z coordinates of
+    a thread within a block."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn x() -> Int:
+        """Gets the `x` coordinate of the thread within the block.
+
+        Returns: The `x` coordinate within the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.tid.x", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn y() -> Int:
+        """Gets the `y` coordinate of the thread within the block.
+
+        Returns: The `y` coordinate within the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.tid.y", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn z() -> Int:
+        """Gets the `z` coordinate of the thread within the block.
+
+        Returns: The `z` coordinate within the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.tid.z", Int32]().value
+
+
+struct BlockIdx:
+    """BlockIdx provides static methods for getting the x/y/z coordinates of
+    a block within a grid."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn x() -> Int:
+        """Gets the `x` coordinate of the block within a grid.
+
+        Returns: The `x` coordinate within the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ctaid.x", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn y() -> Int:
+        """Gets the `y` coordinate of the block within a grid.
+
+        Returns: The `y` coordinate within the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ctaid.y", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn z() -> Int:
+        """Gets the `z` coordinate of the block within a grid.
+
+        Returns: The `z` coordinate within the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ctaid.z", Int32]().value
+
+
+struct BlockDim:
+    """BlockDim provides static methods for getting the x/y/z dimension of a
+    block."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn x() -> Int:
+        """Gets the `x` dimension of the block.
+
+        Returns: The `x` dimension of the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ntid.x", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn y() -> Int:
+        """Gets the `y` dimension of the block.
+
+        Returns: The `y` dimension of the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ntid.y", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn z() -> Int:
+        """Gets the `z` dimension of the block.
+
+        Returns: The `z` dimension of the block.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ntid.z", Int32]().value
+
+
+struct GridDim:
+    """GridDim provides static methods for getting the x/y/z dimension of a
+    grid."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn x() -> Int:
+        """Gets the `x` dimension of the grid.
+
+        Returns: The `x` dimension of the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.nctaid.x", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn y() -> Int:
+        """Gets the `y` dimension of the grid.
+
+        Returns: The `y` dimension of the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.nctaid.y", Int32]().value
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn z() -> Int:
+        """Gets the `z` dimension of the grid.
+
+        Returns: The `z` dimension of the grid.
+        """
+        return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.nctaid.z", Int32]().value
