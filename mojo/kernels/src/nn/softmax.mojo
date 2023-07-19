@@ -419,9 +419,7 @@ fn logsoftmax[
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
-        return out_chain.mark_error(
-            "logsoftmax not supported on non-inner axis yet"
-        )
+        out_chain.mark_error("logsoftmax not supported on non-inner axis yet")
 
     if input.num_elements() == 0:
         return out_chain.mark_ready()
@@ -469,9 +467,7 @@ fn softmax[
     # TODO: Add rowwise generator to de-duplicate partioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
-        return out_chain.mark_error(
-            "softmax not supported on non-inner axis yet"
-        )
+        out_chain.mark_error("softmax not supported on non-inner axis yet")
 
     if input.num_elements() == 0:
         return out_chain.mark_ready()
