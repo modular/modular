@@ -23,9 +23,8 @@ from Math import (
     none_true as _none_true,
     div_ceil,
     min as _min,
-    inf,
-    neginf,
 )
+from Limits import max_or_inf, min_or_neginf
 from Range import range
 from SIMD import SIMD
 from TargetInfo import sizeof, simdwidthof
@@ -797,7 +796,7 @@ fn max[
         _simd_max_elementwise,
         _simd_max,
         reduce_axis,
-    ](src, dst, neginf[type]())
+    ](src, dst, min_or_neginf[type]())
 
 
 # ===----------------------------------------------------------------------===#
@@ -879,7 +878,7 @@ fn min[
         _simd_min_elementwise,
         _simd_min,
         reduce_axis,
-    ](src, dst, inf[type]())
+    ](src, dst, max_or_inf[type]())
 
 
 # ===----------------------------------------------------------------------===#
