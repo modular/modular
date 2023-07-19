@@ -93,10 +93,7 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
     opts->CPU = "generic";
   }
 
-  if (triple.getVendorName() == "")
-    triple.setVendor(Triple::VendorType::UnknownVendor);
-
-    // Set the OS name (see #17241).
+  // Set the OS name (see #17241).
 #ifdef __linux__
   triple.setOS(llvm::Triple::OSType::Linux);
 #elif __APPLE__
