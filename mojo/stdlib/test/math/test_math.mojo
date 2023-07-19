@@ -6,7 +6,8 @@
 # RUN: %mojo %s | FileCheck %s
 
 from DType import DType
-from Math import factorial, sin, cos, isfinite, isinf, inf, neginf, nan, isnan
+from Math import factorial, sin, cos, nan, isnan
+from Limits import isfinite, isinf, inf, neginf
 from IO import print
 from SIMD import SIMD, Float32
 
