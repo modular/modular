@@ -16,3 +16,7 @@ fn function():
 fn call_nested_function():
     nested_function()
     return
+
+@value
+struct SomeType:
+    var value: Int
