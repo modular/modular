@@ -92,30 +92,46 @@ struct LowerPreElaboratedLITPass
     // Collect the functions that need inflation, and the source containing
     // their bodies.
     llvm::MapVector<StringAttr, SmallVector<LIT::FuncOp>> toInflate;
-    for (auto func : theModule.getOps<LIT::FuncOp>()) {
-      if (func.isExternal()) {
-        toInflate[func.getPostElaborationModuleRefAttr().getAttr()]
-            .emplace_back(func);
-      }
-    }
+    for (LIT::FuncOp it : theModule.getOps<LIT::FuncOp>())
+      if (it.isExternal())
+        toInflate[it.getPreCompiledModuleRefAttr().getAttr()].emplace_back(it);
 
     mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
-    for (auto &[elaboratedModuleRef, funcs] : toInflate) {
-      LIT::PackageLinkOp elaboratedModuleLink =
-          symtab.lookup<LIT::PackageLinkOp>(elaboratedModuleRef);
-      if (!elaboratedModuleLink) {
+    for (auto &[moduleRef, funcs] : toInflate) {
+      LIT::PackageLinkOp packageLink =
+          symtab.lookup<LIT::PackageLinkOp>(moduleRef);
+      if (!packageLink) {
         funcs[0].emitOpError(
-            "unable to find the link for postElaborationModuleRef");
+            "unable to find the link for preCompiledModuleRef");
         return signalPassFailure();
       }
-      DenseResourceElementsAttr elaboratedBody =
-          elaboratedModuleLink.getPostElaborationModule();
+      TargetInfoAttr compiledFor = packageLink.getCompiledFor();
+      DenseResourceElementsAttr precompiledBody =
+          packageLink.getPostElaborationModule();
+      bool isPreElaborated = true;
 
-      // Get the data for the elaborated body.
-      mlir::AsmResourceBlob *blob = elaboratedBody.getRawHandle().getBlob();
+      // Get the target on the module. If we don't have a target or if the
+      // target doesn't match, check for a fallback where we can compile the
+      // package right now on-demand.
+      TargetInfoAttr target = M::lookupTargetInfo(theModule);
+      if (!target || target != compiledFor) {
+        // If we have the pre-elaboration module, just recompile the package.
+        // Otherwise, emit an error that we can't use this package.
+        precompiledBody = packageLink.getPreElaborationModuleAttr();
+        if (!precompiledBody) {
+          auto diag = packageLink.emitError("package was compiled for ")
+                      << compiledFor << " but current target is " << target;
+          diag.attachNote() << "no generic fallback was found to recompile "
+                               "package for current target";
+          return signalPassFailure();
+        }
+        isPreElaborated = false;
+      }
+
+      // Get the data for the precompiled body.
+      mlir::AsmResourceBlob *blob = precompiledBody.getRawHandle().getBlob();
       if (!blob) {
-        funcs[0].emitError(
-            "unable to find the blob for postElaborationModuleRef");
+        funcs[0].emitError("unable to find the precompiled body blob");
         return signalPassFailure();
       }
       ArrayRef<char> bytecode = blob->getData();
@@ -134,14 +150,14 @@ struct LowerPreElaboratedLITPass
       // Collect the symbols within the bytecode.
       SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
 
-      // Replace the high level functions with the elaborated counter parts in
+      // Replace the high level functions with the precompiled counter parts in
       // the bytecode module.
       SmallVector<Operation *> operationsToInflate;
       for (LIT::FuncOp func : funcs) {
-        auto result = bytecodeSymtab.lookup<KGEN::FuncOp>(func.getName());
+        auto result = bytecodeSymtab.lookup<ExportInterface>(func.getName());
         if (!result) {
           func.emitError() << "unable to find " << func.getName()
-                           << " in post-elaboration bytecode";
+                           << " in precompiled bytecode";
           return signalPassFailure();
         }
         operationsToInflate.push_back(result);
@@ -163,13 +179,19 @@ struct LowerPreElaboratedLITPass
       if (failed(reader.finalize()))
         return signalPassFailure();
 
-      // Convert the package link to a kgen link directive.
-      OpBuilder b(elaboratedModuleLink);
-      auto linkOp = b.create<KGEN::LinkOp>(
-          elaboratedModuleLink.getLoc(), elaboratedModuleLink.getSymNameAttr(),
-          StringAttr(), elaboratedModuleLink.getArchiveBytesAttr());
-      symtab.erase(elaboratedModuleLink);
-      symtab.insert(linkOp);
+      // Convert the package link to a kgen link directive if we're using the
+      // fully compiled package. If we're recompiling the package, just drop the
+      // package link altogether.
+      if (isPreElaborated) {
+        OpBuilder b(packageLink);
+        auto linkOp = b.create<KGEN::LinkOp>(
+            packageLink.getLoc(), packageLink.getSymNameAttr(), StringAttr(),
+            packageLink.getArchiveBytesAttr());
+        symtab.erase(packageLink);
+        symtab.insert(linkOp);
+      } else {
+        symtab.erase(packageLink);
+      }
     }
   }
 };

@@ -70,8 +70,8 @@ def LIT_FuncOp : LITOp<"func", [
     KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // Used for binary packages, a reference to the symbol containing the
-    // post-elaboration module that contains this function.
-    OptionalAttr<FlatSymbolRefAttr>:$postElaborationModuleRef,
+    // precompiled module that contains this function.
+    OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
     OptionalAttr<StrAttr>:$linkageName,
@@ -101,10 +101,8 @@ def LIT_FuncOp : LITOp<"func", [
     const SpecialFunctionInfo &getSpecialFunctionInfo();
 
     /// Check if a function is coming from an external package. This is
-    /// signified by having the post elaboration metadata on the func itself.
-    bool isExternal() {
-      return getPostElaborationModuleRef().has_value();
-    }
+    /// signified by having the pre-compiled metadata on the func itself.
+    bool isExternal() { return getPreCompiledModuleRef().has_value(); }
   }];
 
   let builders = [
@@ -165,9 +163,10 @@ def PackageOp : LITOp<"package", [
   let description = [{
     A `lit.package` models a mojo package. It contains a set of additional
     `lit.file_module` and `lit.package` operations. If the package was
-    precompiled it may also contain the target it was compiled for,
-    `compiledFor`, the full post-elaboration IR module, `postElaborationModule`,
-    and the compiled static archive, `archiveBytes`.
+    precompiled it may also contain the the full pre-elaboration IR module,
+    `preElaborationModule`, target it was compiled for, `compiledFor`, the full
+    post-elaboration IR module, `postElaborationModule`, and the compiled static
+    archive, `archiveBytes`.
 
     Example:
 
@@ -179,7 +178,13 @@ def PackageOp : LITOp<"package", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    // The module containing the pre-elaboration IR of this package when it was
+    // compiled.
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
+
+    // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<M_TargetInfoAttr>:$compiledFor,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes,
     // The module containing the post-elaboration of this package when it was
@@ -206,19 +211,25 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
     A `lit.package_link` defines a link to the compiled artifacts of a package.
     It contains a reference to the generated archive and the post elaboration
     body, providing an anchor for functions and other operations defined within
-    the package during the lowering pipeline.
+    the package during the lowering pipeline. It may also contain the pre
+    elaboration body which can be used to compile the package if the compiled
+    target is not compatible with the current target of compilation.
 
     Example:
 
     ```mlir
     lit.package_link @foo compiledFor(#M.target<...>)
       archive(dense_resource<...> : tensor<...xi8>)
+      pre_elaboration(dense_resource<...> : tensor<...xi8>)
       post_elaboration(dense_resource<...> : tensor<...xi8>)
     ```
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
+
+    // FIXME(#17326): This should be a map of precompiled targets, not one.
     M_TargetInfoAttr:$compiledFor,
     Builtin_DenseResourceElementsAttr:$archiveBytes,
     Builtin_DenseResourceElementsAttr:$postElaborationModule
@@ -226,6 +237,7 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
 
   let assemblyFormat = [{
     $sym_name `archive` `(` $archiveBytes `)`
+    (`pre_elaboration` `(` $preElaborationModule^ `)`)?
     `post_elaboration` `(` $postElaborationModule `)`
     attr-dict-with-keyword
   }];

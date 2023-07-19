@@ -676,7 +676,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // The shim may be parsed from the precompiled standard library package, make
   // sure to drop any of the package metadata.
-  shimMainFn.setPostElaborationModuleRef(std::nullopt);
+  shimMainFn.setPreCompiledModuleRef(std::nullopt);
 
   // Populate the body of the shim. For this we designate the internal
   // implementation to either `__wrap_and_execute_main` or

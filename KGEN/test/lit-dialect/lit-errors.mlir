@@ -300,7 +300,7 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes
 // -----
 
 // expected-error@below {{expected external function body to contain a single `lit.extern_func`}}
-lit.func @post_elaboration() attributes {postElaborationModuleRef = @package, postElaborationName = "name"} {
+lit.func @post_elaboration() attributes {preCompiledModuleRef = @package} {
   lit.end_func
 }
 

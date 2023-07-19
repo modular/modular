@@ -109,16 +109,21 @@ struct TestGeneratePreElaboratedBody
       if (func->hasAttr("doNotExtern"))
         continue;
 
+      // Allow some functions to specify that they use an incompatible target.
+      TargetInfoAttr funcTarget = target;
+      if (auto newTarget = func->getAttrOfType<TargetInfoAttr>("test.target"))
+        funcTarget = newTarget;
+
       OpBuilder b(func.getContext());
       OwningOpRef<ModuleOp> fakeModule = b.create<ModuleOp>(func.getLoc());
       OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
-      KGEN::FuncOp fakeElaboratedBody = fakeBuilder.create<KGEN::FuncOp>(
-          func.getLoc(), b.getStringAttr(func.getSymName() + "_elaborated"),
+      KGEN::FuncOp fakeCompiledBody = fakeBuilder.create<KGEN::FuncOp>(
+          func.getLoc(), b.getStringAttr(func.getSymName() + "_precompiled"),
           func.getSignature(), KGEN::AlwaysInlineLevel::Disabled);
 
       // Just clone the body in.
       mlir::IRMapping map;
-      func.getBodyRegion().cloneInto(&fakeElaboratedBody.getBodyRegion(), map);
+      func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
 
       // Generate the bytecode for the module bytecode.
       std::string str;
@@ -131,20 +136,18 @@ struct TestGeneratePreElaboratedBody
       OpBuilder::atBlockBegin(func.getBody())
           .create<KGEN::LIT::ExternFuncOp>(func.getLoc());
       StringAttr linkName = b.getStringAttr("link_" + func.getSymName());
-      func.setPostElaborationModuleRefAttr(FlatSymbolRefAttr::get(linkName));
-      func.setLinkageName(fakeElaboratedBody.getSymNameAttr());
+      func.setPreCompiledModuleRefAttr(FlatSymbolRefAttr::get(linkName));
+      func.setLinkageName(fakeCompiledBody.getSymNameAttr());
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
-      auto elaborationAttr = createResourceAttr(
-          stream.str(),
-          "test_generated_post_elaboration_body_attr_" + Twine(counter++));
+      auto bytecodeBufferAttr = createResourceAttr(
+          stream.str(), func.getSymName() + "_generated_body_attr");
       linkBuilder.create<KGEN::LIT::PackageLinkOp>(
-          func.getLoc(), linkName, target, elaborationAttr, elaborationAttr);
+          func.getLoc(), linkName, bytecodeBufferAttr, funcTarget,
+          bytecodeBufferAttr, bytecodeBufferAttr);
     }
   }
-
-  size_t counter = 0;
 };
 } // namespace
 

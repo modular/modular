@@ -429,19 +429,11 @@ orderAndLowerGlobalVariables(ModuleOp module,
 /// precompiled. If this package is a source package, do nothing.
 static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
                                              SymbolTable &symtab) {
-  std::optional<TargetInfoAttr> compiledFor = package.getCompiledFor();
   // If the package wasn't compiled for anything, it's a source package, so
   // there are no link directives to insert.
+  TargetInfoAttr compiledFor = package.getCompiledForAttr();
   if (!compiledFor)
     return success();
-
-  // Get the target on the module. If we don't have a target, we punt and hope
-  // that the target is going to end up being the same.
-  TargetInfoAttr target = M::lookupTargetInfo(package);
-  if (target && target != *compiledFor) {
-    return package.emitError("package was compiled for ")
-           << *compiledFor << " but current target is " << target;
-  }
 
   // We have an archive, insert the link directive.
   DenseResourceElementsAttr bytes = package.getArchiveBytesAttr();
@@ -452,7 +444,8 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
 
   OpBuilder b(package.getContext());
   auto linkOp = b.create<PackageLinkOp>(
-      package.getLoc(), package.getSymNameAttr(), *compiledFor, bytes,
+      package.getLoc(), package.getSymNameAttr(),
+      package.getPreElaborationModuleAttr(), compiledFor, bytes,
       package.getPostElaborationModuleAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't

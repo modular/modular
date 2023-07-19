@@ -8,6 +8,7 @@
 #include "../Common/Compilation.h"
 #include "../Common/Telemetry.h"
 
+#include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
@@ -17,6 +18,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
@@ -72,12 +74,12 @@ namespace {
 class PackageBuilder {
 public:
   /// Construct the PackageBuilder from the parsed package op.
-  PackageBuilder(LIT::PackageOp parsedPackageOp);
+  PackageBuilder(LIT::PackageOp parsedPackageOp, TargetInfoAttr target);
 
-  /// Set the target on the new package.
-  void setTarget(TargetInfoAttr target) {
-    thePackage.setCompiledForAttr(target);
-  }
+  /// Given a pre-elaboration module, attach the bytecode for the pre-elaborated
+  /// versions of each non-parametric function to the high level lit.func in
+  /// the new package.
+  ErrorOrSuccess attachPreElaboratorBytecode(ModuleOp moduleOp);
 
   /// Given an elaborated module, attach the bytecode for the elaborated
   /// versions of each non-parametric function to the high level lit.func in
@@ -154,7 +156,8 @@ static bool canExternalize(LIT::FuncOp func) {
   return true;
 }
 
-PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
+PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
+                               TargetInfoAttr target) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
 
@@ -191,6 +194,7 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
 
   // Clone the parsed package operation and push its ops onto the worklist.
   thePackage = cloneWithoutRegions(parsedPackageOp);
+  thePackage.setCompiledForAttr(target);
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
   while (!worklist.empty()) {
@@ -252,6 +256,39 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp) {
   }
 }
 
+ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
+  // Prepare the operations within the module for use when importing the
+  // package.
+  SmallVector<std::pair<ExportInterface, ExportKind>> exportKinds;
+  for (ExportInterface op : moduleOp.getOps<ExportInterface>()) {
+    auto exportKind = op.getExportKind();
+    if (exportKind != ExportKind::NotExported) {
+      exportKinds.push_back({op, exportKind});
+      op.setNotExported();
+    }
+  }
+
+  // Write the package bytecode to the given buffer. This will be attached to
+  // the exported high level functions.
+  Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
+  if (failed(mlir::writeBytecodeToFile(moduleOp, *str)))
+    return Error("could not write bytecode for package module");
+
+  // Reset the ops now that we've written to bytecode.
+  for (auto [op, exportKind] : exportKinds)
+    op.setExportKind(exportKind);
+
+  // Hash the bytecode itself - this will give us a unique'd attr name that
+  // shouldn't clash even when a large number of packages get imported - and
+  // if they do clash, they're guaranteed to be exactly the same.
+  auto hash = llvm::BLAKE3::hash(
+      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                        (const uint8_t *)str->getBufferEnd()));
+  thePackage.setPreElaborationModuleAttr(createResourceAttr(
+      std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
+  return success();
+}
+
 /// Attach the elaborated bytecode to the high-level lit.func ops.
 ErrorOrSuccess
 PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
@@ -296,7 +333,7 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
     if (!symtab.lookup<KGEN::FuncOp>(symName))
       return Error("could not find kgen.func with name " + symName.getValue());
 
-    hlFunc.setPostElaborationModuleRefAttr(packageName);
+    hlFunc.setPreCompiledModuleRefAttr(packageName);
     hlFunc.setLinkageName(symName);
   }
 
@@ -413,6 +450,72 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 // buildPackage
 //===----------------------------------------------------------------------===//
 
+/// Elaborate the given module, attaching the generated IR along the way. On
+/// success, returns the symbol table and export map after elaboration has run.
+static ErrorOr<std::pair<SymbolTable, ExportMap>>
+elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
+                 const CompilationOptions &options, LLCL::Runtime &runtime,
+                 BuildInfoAttr build, TargetInfoAttr target) {
+  // Set the target and build info now, so it's included in the cache key.
+  setTargetInfo(theModule, target);
+  setBuildInfo(theModule, build);
+
+  // Build the backends used for caching compilation.
+  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
+      runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
+      KGEN_VERSION_STRING);
+  if (transformCacheBackend.isError())
+    return transformCacheBackend.takeError();
+  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
+      runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
+      KGEN_VERSION_STRING);
+  if (regionCacheBackend.isError())
+    return regionCacheBackend.takeError();
+  auto transformCache = LLCL::RCRef<Cache::TransformCache>::create(
+      std::move(*transformCacheBackend));
+  auto regionCache =
+      LLCL::RCRef<Cache::RegionCache>::create(std::move(*regionCacheBackend));
+
+  // Time the compilation.
+  [[maybe_unused]] auto timeScope =
+      runtime.getTelemetryContext()->createUInt64Timer(
+          "mojo.kgen.compile.time");
+
+  auto runPipeline = [&](mlir::PassManager &pm) -> ErrorOrSuccess {
+    LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+        theModule, regionCache.copy(), transformCache.copy(),
+        runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
+    LLCL::await(ready);
+    if (ready.isError())
+      return ready.takeDiagnostic().getMessage().copy();
+    return success();
+  };
+
+  // Lower the module up to the elaborator.
+  mlir::PassManager preElaboratePM(theModule.getContext());
+  populateGenerateLibraryFilePasses(preElaboratePM, runtime);
+  if (auto err = runPipeline(preElaboratePM))
+    return err.takeError();
+  if (auto err = packageBuilder.attachPreElaboratorBytecode(theModule))
+    return err.takeError();
+
+  // Elaborate the module.
+  mlir::PassManager elaboratePM(theModule.getContext());
+  populateElaborateModulePasses(elaboratePM, runtime, target, build, options);
+  if (auto err = runPipeline(elaboratePM))
+    return err.takeError();
+
+  // Construct the symbol table and the export map.
+  SymbolTable symtab(theModule);
+  ExportMap exportedSymbols = getExportedSymbols(theModule);
+
+  // Attach the elaborated bytecode to the individual functions.
+  if (auto err =
+          packageBuilder.attachElaboratedBytecode(symtab, exportedSymbols))
+    return err.takeError();
+  return std::make_pair(std::move(symtab), std::move(exportedSymbols));
+}
+
 /// We have all the arguments and all the state we need, we can now start
 /// building the package itself.
 static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
@@ -421,7 +524,7 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
                                    llvm::ToolOutputFile &out,
                                    LLCL::Runtime &runtime) {
   // Set up the package builder.
-  PackageBuilder packageBuilder(parsedPackageOp);
+  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target);
   mlir::MLIRContext *ctx = packageBuilder.getContext();
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 
@@ -433,41 +536,27 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
     return WalkResult::skip();
   });
 
-  // Set up the ExecutionEngine with all the requisite layers.
-  mlir::PassManager pm(ctx);
-  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(runtime, pm, compilationOptions,
-                                ExecutionEngineOptions(), /*isJIT=*/false,
-                                packageArgs.target);
-  if (failed(execEngineOr))
-    return execEngineOr.takeError();
-  std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
-  auto &compileLayer = engine->getLayer<KGENCompilerLayer>();
-  packageBuilder.setTarget(packageArgs.target);
+  // Elaborate the package, attaching the generated IR along the way.
+  auto symTabAndExportedSymbolsOr = elaboratePackage(
+      theModule, packageBuilder, compilationOptions, runtime,
+      BuildInfoAttr::getForCurrentBuild(ctx), packageArgs.target);
+  if (failed(symTabAndExportedSymbolsOr)) {
+    return Error(llvm::formatv("compilation failed: {0}",
+                               symTabAndExportedSymbolsOr.getError()));
+  }
+  auto [symtab, exportMap] = std::move(*symTabAndExportedSymbolsOr);
 
-  // This currently compiles the module, so we don't need to try to look
-  // anything up just yet.
-  if (auto err = compileLayer.add("package", theModule))
-    return Error("compilation failed");
-
-  // Construct the symbol table and the export map.
-  SymbolTable symtab(theModule);
-  ExportMap exportedSymbols = getExportedSymbols(theModule);
-
-  // Attach the elaborated bytecode to the individual functions.
-  if (auto err =
-          packageBuilder.attachElaboratedBytecode(symtab, exportedSymbols))
-    return err.takeError();
-
-  // Look up the first item in the exported symbols to trigger archive
-  // generation.
-  ErrorOr<CompiledFunc> funcOr = engine->lookup(exportedSymbols.front().first);
-  if (funcOr.isError())
-    return funcOr.takeError();
-  // And lookup the archive.
-  std::optional<Cache::BufferRef> archiveOr =
-      engine->getLayer<ObjectCompilerLayer>().lookupArchive(theModule);
-  assert(archiveOr.has_value());
+  // Now we can start to generate the archive.
+  mlir::PassManager archivePM(ctx);
+  auto objectCompiler = ObjectCompiler::create(
+      runtime, archivePM, ".kgen_cache", compilationOptions);
+  if (failed(objectCompiler))
+    return objectCompiler.takeError();
+  ErrorOr<Cache::BufferRef> archiveOr =
+      objectCompiler->produceStandaloneArchive(symtab, exportMap,
+                                               /*isJIT=*/false);
+  if (failed(archiveOr))
+    return Error(archiveOr.getError());
   Cache::BufferRef archive = std::move(*archiveOr);
 
   // Compile the module, and attach the archive to the package op.
