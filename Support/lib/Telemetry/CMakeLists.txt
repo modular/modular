@@ -18,6 +18,7 @@ if(MODULAR_ENABLE_TELEMETRY)
 
     LINK_LIBS PUBLIC
     opentelemetry_metrics
+    opentelemetry_logs
 
     # It's important to keep OTLP PRIVATE. If not, it will leak our protobuf headers
     # across the codebase given that LLCL links with MTelemetry, and stock TF headers
@@ -25,6 +26,7 @@ if(MODULAR_ENABLE_TELEMETRY)
     LINK_LIBS PRIVATE
     opentelemetry_exporter_otlp_http
     opentelemetry_exporter_otlp_http_metric
+    opentelemetry_exporter_otlp_http_log
     opentelemetry_resources
     )
 

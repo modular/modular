@@ -10,8 +10,11 @@
 #include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Instruments.h"
+#include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringRef.h"
 #ifdef MODULAR_ENABLE_TELEMETRY
+#include "opentelemetry/logs/event_logger_provider.h"
+#include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
@@ -105,11 +108,28 @@ public:
 #endif
   }
 
+  /// Create a Logger with given domain (see
+  /// https://opentelemetry.io/docs/specs/otel/logs/semantic_conventions/events/).
+  std::shared_ptr<Logs::Logger> getLogger(StringRef eventDomain) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    auto otelLogger = loggerProvider->GetLogger("modular_logger");
+    auto otelEventLogger =
+        eventLoggerProvider->CreateEventLogger(otelLogger, eventDomain);
+    return std::shared_ptr<Logs::Logger>(new Logs::Logger(otelEventLogger));
+#else
+    return std::shared_ptr<Logs::Logger>(new Logs::Logger());
+#endif
+  }
+
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
+  // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
   std::shared_ptr<ManualExportingMetricReader> metricReader;
+  // Logs.
+  std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
+  std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
 #endif
 };
 
