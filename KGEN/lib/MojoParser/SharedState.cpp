@@ -1521,7 +1521,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
-            structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(op));
+            structDecl.setSelfType(structDecl.computeSelfTypeForStruct(*this));
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
@@ -1637,7 +1637,7 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
     StringAttr name = getClosureStructNameFromType(fileModuleOp, signatureType);
-    ClosureEmitter emitter(fileModuleOp, getNoneType(), this);
+    ClosureEmitter emitter(fileModuleOp);
     existing = emitter.createClosureWrapperStructDecl(
         name, translateLocation(location), signatureType);
     ASTDecl &decl = declResolver->addFullyResolvedDecl(

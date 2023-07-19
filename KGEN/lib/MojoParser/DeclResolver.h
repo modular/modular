@@ -16,7 +16,6 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN {
 class ParamBindArrayAttr;
@@ -165,10 +164,6 @@ public:
   /// Create a name from a signature by appending argument types into the name.
   static StringAttr getMangledName(StringAttr baseName,
                                    SignatureType signature);
-  static void
-  setLocationDebugScope(SharedState &shared,
-                        DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
-                        LIT::FuncOp &funcOp, StringRef baseName);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
