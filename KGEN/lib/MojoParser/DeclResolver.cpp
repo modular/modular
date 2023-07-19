@@ -29,6 +29,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "SharedState.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -158,7 +159,9 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
 }
 
 /// Given an MLIR op for a struct declaration, return the self type.
-Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
+ASTType ASTDecl::computeSelfTypeForStruct(SharedState &state) {
+  auto structOp = cast<StructDeclOp>(*this);
+
   SmallVector<ParamBindAttr> parameters;
   for (auto decl : structOp.getInputParams()) {
     // We're using the parameter from the type declaration scope in the
@@ -169,7 +172,7 @@ Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return DeclRefType::get(LIT::getFullyResolvedSymbolRef(structOp), parameters);
+  return DeclRefType::get(getSymbolRef(), parameters);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2054,9 +2057,10 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp,
 }
 
 /// Generate a debug subprogram for this function and set it in its location.
-void DeclResolver::setLocationDebugScope(
-    SharedState &shared, DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
-    LIT::FuncOp &funcOp, StringRef baseName) {
+static void
+setLocationDebugScope(SharedState &shared,
+                      DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
+                      LIT::FuncOp &funcOp, StringRef baseName) {
   std::unique_ptr<DebugInfo::DIBuilder> &diBuilder = shared.diBuilder;
   if (!diBuilder)
     return;
@@ -3074,7 +3078,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
-  decl.setSelfType(ASTDecl::computeSelfTypeForStruct(structOp));
+  decl.setSelfType(decl.computeSelfTypeForStruct(shared));
 
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setRegisterPassable(StructDeclOp::RP_MemoryOnly);
@@ -3120,7 +3124,7 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
+  setLocationDebugScope(shared, diScopeGuard, funcOp, name);
 
   // Register the method in the struct.
   ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
