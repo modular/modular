@@ -14,13 +14,19 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
-#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <string>
 
+namespace llvm {
+// Forward declare.
+class MemoryBuffer;
+} // namespace llvm
+
 namespace llvm::json {
+// Forward declare.
 class OStream;
-}
+} // namespace llvm::json
 
 #if defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
 #define HOST_IS_APPLE_SILICON_PROCESSOR
@@ -160,19 +166,30 @@ struct HostMachineInfo {
   std::string cpuArch;
   std::string cpuModelName;
   // This is the SIMD bit-width of the host system.
-  size_t simdBitWidth;
+  size_t simdBitWidth = 0;
   std::vector<std::string> cpuFeatures;
-  size_t numPhysicalCores;
+  size_t numPhysicalCores = 0;
   // These represent either data or unified cache size -- they do not include
   // instruction-only caches, but may include cache size that are shared
   // between instruction and data.
-  size_t l1CacheSize;
-  size_t l2CacheSize;
-  size_t l3CacheSize;
-  size_t l4CacheSize;
+  size_t l1CacheSize = 0;
+  size_t l2CacheSize = 0;
+  size_t l3CacheSize = 0;
+  size_t l4CacheSize = 0;
   // Preferred CPU ids for numPhysicalCores threads if both CPUSystemInfo
   // and thread affinities are supported. Otherwise empty.
   std::optional<std::vector<size_t>> affinities;
+
+  /// Returns a HostMachineInfo representing assumptions about the host machine
+  /// encoded by serializedTargetInfo, which should be the result of
+  /// M::serializeTargetInfoAttr in MAttrs.h. Only some fields of the result are
+  /// filled in:
+  ///  - triple
+  ///  - cpuArch
+  ///  - cpuFeatures
+  /// The remainder are empty/zero.
+  static ErrorOr<HostMachineInfo>
+  deserializeTargetInfoFromJSON(StringRef serializedTargetInfo);
 
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
@@ -181,6 +198,14 @@ struct HostMachineInfo {
   /// Print information excluding the ones that are likely to change with
   /// threading configuration, such as number of cores and affinities.
   void printStaticInfo(llvm::raw_ostream &os) const;
+
+  /// Returns error if this host machine does not satisfy the assumptions
+  /// in required. Only the following fields are checked:
+  ///  - triple (must be exactly string equal to required)
+  ///  - cpuArch (must be exactly string equal to required)
+  ///  - cpuFeatures (must be superset of required features)
+  ErrorOrSuccess
+  checkSatisfiesRequirements(const HostMachineInfo &required) const;
 };
 
 /// Get information about the host machine.

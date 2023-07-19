@@ -1000,7 +1000,7 @@ M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
     return Error("unable to represent simd_bit_width");
 
   // CAUTION:
-  // Keep in sync with HostMachineInfo::deserializeFromTargetInfo in
+  // Keep in sync with HostMachineInfo::deserializeTargetInfoFromJSON in
   // Support/lib/Host.cpp.
 
   // Somewhat frustratingly we need to recover the original HostMachineInfo

@@ -6,7 +6,9 @@
 
 #include "Support/Host.h"
 #include "Support/ErrorOr.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
@@ -727,6 +729,62 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   }
 
   return std::move(machineInfo);
+}
+
+ErrorOr<HostMachineInfo>
+HostMachineInfo::deserializeTargetInfoFromJSON(StringRef serializedTargetInfo) {
+  // CAUTION:
+  // Keep in sync with serializeTargetInfoAttrToJSON in
+  // Support/lib/MDialect/MAttrs.cpp.
+
+  llvm::Expected<llvm::json::Value> errOrValue =
+      llvm::json::parse(serializedTargetInfo);
+  if (llvm::Error err = errOrValue.takeError())
+    return Error(Twine("ill-formed serialized target info: ") +
+                 toString(std::move(err)));
+  llvm::json::Object *object = errOrValue->getAsObject();
+  if (!object)
+    return Error("ill-formed serialized target info: expecting json object");
+
+  std::optional<StringRef> optTriple = object->getString("triple");
+  std::optional<StringRef> optCpu = object->getString("cpu");
+  llvm::json::Array *array = object->getArray("features");
+  if (!optTriple || !optCpu || !array)
+    return Error("ill-formed serialized target info: missing attributes");
+
+  HostMachineInfo info;
+  info.triple = *optTriple;
+  info.cpuArch = *optCpu;
+  for (const llvm::json::Value &v : *array) {
+    std::optional<StringRef> optFeature = v.getAsString();
+    if (!optFeature)
+      return Error("ill-formed serialized target info feature");
+    info.cpuFeatures.emplace_back(*optFeature);
+  }
+  return info;
+}
+
+ErrorOrSuccess HostMachineInfo::checkSatisfiesRequirements(
+    const HostMachineInfo &required) const {
+  if (triple != required.triple)
+    return Error(Twine("host has arch-vendor-os of '") + triple +
+                 "' but model requires '" + required.triple + "'");
+  if (cpuArch != required.cpuArch)
+    return Error(Twine("host has CPU architecture of '") + cpuArch +
+                 "' but model requires '" + required.cpuArch + "'");
+  DenseSet<StringRef> actualFeatures(cpuFeatures.begin(), cpuFeatures.end());
+  DenseSet<StringRef> requiredFeatures(required.cpuFeatures.begin(),
+                                       required.cpuFeatures.end());
+  if (!llvm::set_is_subset(requiredFeatures, actualFeatures)) {
+    std::string str;
+    llvm::raw_string_ostream os(str);
+    os << "host is missing CPU feature(s) required by model: ";
+    llvm::interleaveComma(
+        llvm::set_difference(requiredFeatures, actualFeatures), os);
+    return Error(str);
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
