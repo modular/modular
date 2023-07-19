@@ -1,0 +1,11 @@
+// REQUIRES: GENERATED_TESTS
+// RUN: modular-api-executor --print-metadata %test_models_dir/BasicMLP_float32_25x5/0/model.savedmodel | FileCheck %s
+
+
+// CHECK: Model Metadata:
+// CHECK: Inputs:
+// CHECK: - name: input_116
+// CHECK:   spec: -1x25x5xf32
+// CHECK: Outputs:
+// CHECK: - name: output_1
+// CHECK:   spec: -1x10xf32
