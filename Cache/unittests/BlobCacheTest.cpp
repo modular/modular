@@ -151,50 +151,98 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
 }
 
 TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
-  // Get an uninitialized buffer. We don't care what's in this, as long as it
-  // goes in and comes out the same.
-  auto zerosDataBuf = WriteableBuffer::get();
-  zerosDataBuf->write(0);
-  BufferRef zerosBuf = std::move(zerosDataBuf);
+  // Number of sequential runs.
+  const int numRuns = 10;
+  // Number of concurrent keys to insert then check.
+  const int numThreads = 10;
 
-  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
-  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr.isError())
-        << insertOr.getDiagnostic().getMessage() << '\n';
-    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\n";
+  for (int i = 0; i < numRuns; ++i) {
+    std::vector<std::thread> threads;
+    for (int j = 0; j < numThreads; ++j) {
+      threads.emplace_back([this, j]() {
+        std::string key = "zeros" + std::to_string(j);
 
-    auto contains = cache->contains("zeros");
-    contains.andThenSync([contains = contains.copy()] {
-      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+        // Get an uninitialized buffer. We don't care what's in this, as long as
+        // it goes in and comes out the same.
+        auto zerosDataBuf = WriteableBuffer::get();
+        zerosDataBuf->write(0);
+        BufferRef zerosBuf = std::move(zerosDataBuf);
+
+        auto insertCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+        AsyncValueRef<std::string> insertOr =
+            cache->insert(key, zerosBuf.copy());
+        insertOr.andThenSync(
+            [key, cache = cache.copy(), insertOr = insertOr.copy(),
+             insertCheckDone = insertCheckDone.copy()]() mutable {
+              EXPECT_FALSE(insertOr.isError())
+                  << insertOr.getDiagnostic().getMessage() << '\n';
+              EXPECT_FALSE(insertOr->empty())
+                  << "expected to receive the hash key\n";
+
+              auto contains = cache->contains(key);
+              contains.andThenSync(
+                  [key, contains = contains.copy(),
+                   insertCheckDone = std::move(insertCheckDone)]() mutable {
+                    EXPECT_TRUE(*contains)
+                        << "expected to have item named '" << key << "'\n";
+                    std::move(insertCheckDone).emplace();
+                  });
+            });
+        // Use await to make the sequencing easier to follow.
+        await(insertCheckDone);
+
+        auto zerosCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+        auto zerosOr = cache->find(key);
+        zerosOr.andThenSync([zerosOr = zerosOr.copy(),
+                             zerosBuf = zerosBuf.copy(),
+                             zerosCheckDone = zerosCheckDone.copy()]() mutable {
+          EXPECT_TRUE(zerosOr->has_value())
+              << zerosOr.getDiagnostic().getMessage();
+          BufferRef outZeros = std::move(**zerosOr);
+          ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
+              << "output buffer size did not match input buffer size\n";
+          EXPECT_TRUE(
+              outZeros->getBuffer() ==
+              StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
+              << "buffer returned did not match the buffer inputted\n";
+          std::move(zerosCheckDone).emplace();
+        });
+        await(zerosCheckDone);
+      });
+    }
+
+    for (auto &thread : threads)
+      thread.join();
+
+    auto clearCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+    auto clearOr = cache->clear();
+    clearOr.andThenSync([this, clearOr = clearOr.copy(), cache = cache.copy(),
+                         clearCheckDone = clearCheckDone.copy()]() mutable {
+      EXPECT_FALSE(clearOr.isError())
+          << clearOr.getDiagnostic().getMessage() << "\n";
+
+      std::vector<AnyAsyncValueRef> chains;
+      for (int j = 0; j < numThreads; ++j) {
+        auto containsCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+        chains.emplace_back(containsCheckDone.copy());
+        std::string key = "zeros" + std::to_string(j);
+        auto contains = cache->contains(key);
+        contains.andThenSync([contains = contains.copy(),
+                              containsCheckDone =
+                                  std::move(containsCheckDone)]() mutable {
+          EXPECT_FALSE(*contains)
+              << "expected not to have item named 'zeros' after the clear\n";
+          std::move(containsCheckDone).emplace();
+        });
+      }
+      andThenSyncMoving(chains,
+                        [clearCheckDone = std::move(clearCheckDone)](
+                            MutableArrayRef<AnyAsyncValueRef> chains) mutable {
+                          std::move(clearCheckDone).emplace();
+                        });
     });
-  });
-  await(insertOr);
-
-  auto zerosOr = cache->find("zeros");
-  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
-    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
-    BufferRef outZeros = std::move(**zerosOr);
-    ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
-        << "output buffer size did not match input buffer size\n";
-    EXPECT_TRUE(outZeros->getBuffer() == StringRef(zerosBuf->getBufferStart(),
-                                                   zerosBuf->getBufferSize()))
-        << "buffer returned did not match the buffer inputted\n";
-  });
-  // We have to sequence the clear *after* all the other work has been done. Use
-  // await to make this more readable.
-  await(zerosOr);
-
-  auto clearOr = cache->clear();
-  clearOr.andThenSync([clearOr = clearOr.copy(), cache = cache.copy()] {
-    EXPECT_FALSE(clearOr.isError())
-        << clearOr.getDiagnostic().getMessage() << "\n";
-
-    auto contains = cache->contains("zeros");
-    contains.andThenSync([contains = contains.copy()] {
-      EXPECT_FALSE(*contains)
-          << "expected not to have item named 'zeros' after the clear\n";
-    });
-  });
+    await(clearCheckDone);
+  }
 }
 
 TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
