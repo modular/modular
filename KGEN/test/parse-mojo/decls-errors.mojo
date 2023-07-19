@@ -139,8 +139,8 @@ async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
 
 fn callsWith():
-  testAsyncVoid() # expected-warning {{awaitable 'Coroutine[None]' value was never awaited}}
-  testAsyncInt() # expected-warning {{awaitable 'Coroutine[Int]' value was never awaited}}
+  testAsyncVoid() # expected-warning {{coroutine was never awaited}}
+  testAsyncInt() # expected-warning {{coroutine was never awaited}}
 
 
 struct ThingWithStaticMethod:

@@ -1096,8 +1096,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[<>() async -> !kgen.declref<{{.*}}@"$Int"::@Int>: @"$decls"::@"coroutine()"]()
-        # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type {{.*}}@Int>>(%[[CORO]])
-        # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
+        # CHECK-NEXT: lit.letreg.decl "a" = %[[CORO]] : !pop.coroutine<() -> !kgen.declref<{{.*}}@"$Int"::@Int>
         let a = coroutine()
 
 
