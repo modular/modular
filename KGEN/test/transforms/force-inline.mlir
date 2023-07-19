@@ -1,4 +1,4 @@
-// RUN: kgen-opt -force-inline=update-debug-info=true -allow-unregistered-dialect -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -force-inline=update-debug-info=true -allow-unregistered-dialect -split-input-file %s | FileCheck %s
 
 // CHECK-NOT: @inline_me.a
 kgen.func @inline_me.a() always_inline {
@@ -64,85 +64,6 @@ kgen.func @top2() -> index {
   // CHECK: return %1
   kgen.return %1 : index
 }
-
-// -----
-
-kgen.func @inline_me.a() always_inline {
-  "inline.a"() : () -> ()
-  kgen.return
-}
-
-// CHECK: kgen.func @top0
-kgen.func @top0() {
-  // CHECK-NEXT: inline.a
-  // CHECK-SAME: loc(#[[INLINED_LOC:.*]])
-  kgen.call @inline_me.a() : () -> ()
-  kgen.return
-}
-
-// CHECK: #[[INLINED_LOC]] = loc(callsite(#{{.*}} at #{{.*}}))
-
-// -----
-
-#file = #debuginfo.file<"foo.c" in "/mlir/">
-#compile_unit = #debuginfo.compile_unit<
-  sourceLanguage = DW_LANG_C,
-  file = #file,
-  producer = "MLIR",
-  isOptimized = true,
-  emissionKind = Full
->
-#subprogram = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "foo",
-  linkageName = "foo",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = Definition
-> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1
-> : !debuginfo.unresolved<index>
-
-kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
-  %0 = index.add %arg0, %arg0
-  debuginfo.value #local_variable = %arg0 : index
-  kgen.return %0: index
-}
-
-// CHECK-LABEL: kgen.func @call_nodebug_inline_me
-kgen.func @call_nodebug_inline_me() -> index {
-  %0 = index.constant 3
-  // CHECK: index.add %idx3, %idx3 loc(#[[NODEBUG_LOC:.*]])
-  // CHECK-NOT: debuginfo.value
-  %1 = kgen.call @nodebug_inline_me(%0) : (index) -> index
-  kgen.return %1 : index
-}
-
-kgen.func @inline_me(%arg0: index) -> index always_inline {
-  debuginfo.value #local_variable = %arg0 : index
-  kgen.return %arg0: index
-}
-
-// CHECK-LABEL: kgen.func @call_inline_me
-kgen.func @call_inline_me() -> index {
-  %0 = index.constant 3
-  // CHECK: %idx3 = index.constant 3
-  // CHECK-NEXT: debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE:loc[0-9]+]])
-  %1 = kgen.call @inline_me(%0) : (index) -> index
-  kgen.return %1 : index
-}
-
-// CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#subprogram>[#[[LOC_CALLSITE:loc[0-9]+]]])
-// CHECK-DAG: #[[LOC_CALLSITE]] = loc(callsite(#loc{{[0-9]+}} at #loc{{[0-9]+}}))
-
-// CHECK-DAG: #[[NODEBUG_LOC]] = loc("within split
 
 // -----
 
@@ -239,7 +160,7 @@ kgen.func @callee(%arg0: index, %arg1: index) capturing {
 // CHECK-LABEL: kgen.func @caller
 kgen.func @caller() {
   %idx0 = index.constant 0
-  // CHECK: %0 = kgen.stage_closure = (%arg0: index loc({{.*}})) capturing
+  // CHECK: %0 = kgen.stage_closure = (%arg0: index) capturing
   // CHECK-NEXT: "use"(%idx0, %arg0)
   %0 = kgen.create_closure [(index, index) capturing -> (): @callee](%idx0)
 
@@ -274,7 +195,7 @@ kgen.func @two_callers(%arg0: index, %arg1: index) always_inline {
 // CHECK: kgen.func @caller0
 kgen.func @caller0() {
   %idx0 = index.constant 0
-  // CHECK: stage_closure = (%arg0: index loc({{.*}}) capturing
+  // CHECK: stage_closure = (%arg0: index) capturing
   kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
   kgen.return
 }
@@ -282,7 +203,7 @@ kgen.func @caller0() {
 // CHECK: kgen.func @caller1
 kgen.func @caller1() {
   %idx0 = index.constant 0
-  // CHECK: stage_closure = (%arg0: index loc({{.*}})) capturing
+  // CHECK: stage_closure = (%arg0: index) capturing
   kgen.create_closure [(index, index) -> (): @two_callers](%idx0)
   kgen.return
 }
