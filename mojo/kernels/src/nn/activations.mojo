@@ -23,7 +23,6 @@ from Math import (
     identity,
     tanh,
     fma,
-    isfinite,
 )
 from Polynomial import polynomial_evaluate
 from SIMD import SIMD
