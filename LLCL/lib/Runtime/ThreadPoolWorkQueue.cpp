@@ -62,11 +62,21 @@ constexpr size_t kTaskListSlotsPerThread = 16;
 /// sleep on a semaphore.
 constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
 
+/// If true, insert randomized sleeps to tickle concurrency bugs.
+constexpr bool kDemonicNondet = false;
+
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
 namespace {
+
+/// If in 'demonic non-determinism' mode, sleep for up to a few milliseconds.
+void demonicSleep() {
+  if constexpr (kDemonicNondet) {
+    std::this_thread::sleep_for(std::chrono::microseconds(10 + rand() % 2000));
+  }
+}
 
 /// Bit index i is true if the thread with workedID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
@@ -240,13 +250,18 @@ struct WorkQueueThread {
       thread->join();
   }
 
-  // Execute a single profiled work item.
+  // Execute a single work item, which may have come from either addTask
+  // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(TaskFunction &&taskFunction) {
-    TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
-        IsWaiter ? "llcl.waiter" : "llcl.doWork"));
-    // Do the work.
-    taskFunction();
+    demonicSleep();
+    {
+      TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
+          IsWaiter ? "llcl.waiter" : "llcl.doWork"));
+      // Do the work.
+      taskFunction();
+    }
+    demonicSleep();
   }
 
   /// Returns true if the calling thread can be considered to own this
