@@ -136,13 +136,10 @@ add_custom_target(mojo-sdk DEPENDS mojo)
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_mojo_package target)
-  cmake_parse_arguments(KGEN "STDLIB;MARCH_PORTABLE" "PACKAGE_DIR;OUTPUT_NAME"
-                             "PRIVATE;PUBLIC;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS" ${ARGN})
 
   _setup_libs()
-  if (NOT MARCH_PORTABLE)
-    _setup_arch()
-  endif()
+  _setup_arch()
   _setup_debug_flags()
 
   if (NOT KGEN_PACKAGE_DIR)
@@ -226,13 +223,10 @@ endfunction()
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG;MARCH_PORTABLE"
-                             "OUTPUT" "LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS" ${ARGN})
 
   _setup_libs()
-  if (NOT MARCH_PORTABLE)
-    _setup_arch()
-  endif()
+  _setup_arch()
   _setup_debug_flags()
 
   if (NOT KGEN_OUTPUT)
@@ -276,13 +270,10 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG;MARCH_PORTABLE"
-                             "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
 
   _setup_libs()
-  if (NOT MARCH_PORTABLE)
-    _setup_arch()
-  endif()
+  _setup_arch()
   _setup_debug_flags()
 
   if (MODULAR_KERNELS_USE_SANITIZER)
