@@ -107,7 +107,7 @@ void renameSubprogramsInScopes(StringAttr name, OpTy op) {
 
 /// Verify that a function-like op has the correct location scope. Succeeds if
 /// the location has no scope attached to it.
-LogicalResult verifyFuncLocScope(mlir::FunctionOpInterface op);
+LogicalResult verifyFuncLocScope(mlir::FunctionOpInterface funcOp);
 
 } // namespace M::DebugInfo
 

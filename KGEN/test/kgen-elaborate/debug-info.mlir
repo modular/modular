@@ -34,14 +34,14 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -
   %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
   debuginfo.value #local_variable = %0 : !kgen.paramref<ty> loc(#loc11)
   %1 = kgen.param.constant = <17> loc(#locFwParam)
-  kgen.param.declare a = <1>
+  kgen.param.declare a = <1> loc(#loc11)
   lit.try {
-    lit.try.yield
+    lit.try.yield loc(#loc11)
   } except (%arg0: index loc(fused<#subprogram>[#locTry])) {
     lit.try.yield loc(fused<#subprogram>[#locTry])
   } else {
-    lit.try.yield
-  }
+    lit.try.yield loc(#loc11)
+  } loc(#loc11)
   kgen.return %0 : !kgen.paramref<ty> loc(#locRet)
 } loc(#loc10)
 
@@ -62,12 +62,14 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 // CHECK-DAG: #[[CALL_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC2]]])
 
 // CHECK-DAG: #[[FILE_LOC3:.*]] = loc("test.mlir":4:3)
-// CHECK-DAG: #[[FW_LOC]] = loc(fused<1 : index>[#[[FILE_LOC3]]])
+// CHECK-DAG: #[[PARAM_REF_LOC:.*]] = loc(fused<1 : index>[#[[FILE_LOC3]]])
+// CHECK-DAG: #[[FW_LOC]] = loc(fused<#[[SP]]>[#[[PARAM_REF_LOC]]])
 
 // CHECK-DAG: #[[FILE_LOC4:.*]] = loc("test.mlir":5:5)
 // CHECK-DAG: #[[RET_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC4]]])
 
 #loc10 = loc(fused<#subprogram>["test.mlir":2:3])
 #loc11 = loc(fused<#subprogram>["test.mlir":3:10])
-#locFwParam = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
+#paramRefLoc = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
+#locFwParam = loc(fused<#subprogram>[#paramRefLoc])
 #locRet = loc(fused<#subprogram>["test.mlir":5:5])

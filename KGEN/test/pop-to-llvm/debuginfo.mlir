@@ -121,6 +121,6 @@
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="i64:64:64", simd_bit_width=128>} {
   kgen.func @foo() {
-    kgen.return
+    kgen.return loc(fused<#subprogram>["foo.mlir":10:10])
   } loc(fused<#subprogram>["foo.mlir":10:10])
 }
