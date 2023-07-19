@@ -12,7 +12,7 @@
 static const char *kInitMatplotlibStr = R"python(%%python
 display_start = "%%%%%%%DISPLAY_START"
 display_end = "%%%%%%%DISPLAY_END"
-backend_str = """{@ENABLE_MATPLOTLIB_STR@}"""
+backend_str = """@MATPLOTLIB_BACKEND_STR@"""
 
-@MATPLOTLIB_BACKEND_STR@
+@ENABLE_MATPLOTLIB_STR@
 )python";
