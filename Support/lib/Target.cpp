@@ -12,22 +12,19 @@
 
 using namespace M;
 
-//===--------------------------------------------------------------------===//
-// getHostCPUFeatures
-//===--------------------------------------------------------------------===//
+std::string M::getCPUFeatures(HostMachineInfo &hostMachineInfo) {
+  std::string featureStr;
+  llvm::raw_string_ostream os(featureStr);
+  llvm::interleave(
+      hostMachineInfo.cpuFeatures, os, [&](auto &f) { os << '+' << f; }, ",");
+  return featureStr;
+}
 
 std::string M::getHostCPUFeatures() {
   ErrorOr<HostMachineInfo> hostOr = getHostMachineInfo();
   if (hostOr.isError())
     return "";
-
-  // Get the host features.
-  std::string featureStr;
-  llvm::raw_string_ostream os(featureStr);
-  llvm::interleave(
-      hostOr->cpuFeatures, os, [&](auto &f) { os << '+' << f; }, ",");
-
-  return featureStr;
+  return M::getCPUFeatures(*hostOr);
 }
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
@@ -36,7 +33,7 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOpt::Level optLevel) {
   if (hostOr.isError())
     return hostOr.takeError();
   HostMachineInfo host = std::move(*hostOr);
-  std::string targetFeatures = getHostCPUFeatures();
+  std::string targetFeatures = getCPUFeatures(host);
 
   std::string errorMessage;
   const llvm::Target *target =
