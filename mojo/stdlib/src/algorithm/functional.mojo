@@ -6,6 +6,7 @@
 """Implements higher-order functions."""
 
 from Assert import assert_param
+from Coroutine import Coroutine
 from Index import StaticIntTuple
 from List import VariadicList
 from LLCL import (
