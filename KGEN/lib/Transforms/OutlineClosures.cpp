@@ -15,6 +15,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SmallVectorExtras.h"
@@ -46,25 +47,11 @@ void OutlineClosuresPass::runOnOperation() {
 
   // Walk over all the param.declare.region ops and create structs with the SSA
   // captures, use bind_signature to deal with parameter captures.
-  OpBuilder b(theModule);
-  b.setInsertionPointToStart(theModule.getBody());
-
   unsigned counter = 0, varCounter = 0;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     // Calculate the parameter decls and uses for the region decl's parent.
     ParameterUseDefGraph uses(generator.getBodyRegion());
     uses.calculate(paramCache);
-
-    // We'll use this a lot here - pull it out into a little lambda.
-    auto getUniqueName = [&](const Twine &suffix) {
-      return b.getStringAttr(getUniqueSymbolName(
-          (generator.getName() + suffix).str(), symtab, counter));
-    };
-
-    auto getUniqueVarName = [&](StringRef suffix) {
-      return b.getStringAttr(generator.getName() + suffix + "_" +
-                             Twine(varCounter++));
-    };
 
     bool hadError = false;
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
@@ -95,6 +82,9 @@ void OutlineClosuresPass::runOnOperation() {
                  llvm::interleaveComma(captures, llvm::dbgs());
                  llvm::dbgs() << "]\n");
 
+      // We will use this builder to build the lifted generator.
+      ImplicitLocOpBuilder b(regionDecl->getLoc(), regionDecl.getContext());
+
       // Create a struct with the correct parameter decls if needed (i.e. if
       // there are any captures).
       StringAttr globalVar = nullptr;
@@ -107,7 +97,8 @@ void OutlineClosuresPass::runOnOperation() {
                    << "Created capture struct: " << structType << "\n");
 
         // 'Create' a global variable (really just a StringAttr).
-        globalVar = getUniqueVarName("_context_var");
+        globalVar = b.getStringAttr(generator.getName() + "_context_var_" +
+                                    Twine(varCounter++));
       }
 
       // Collect any parameters used from above that we need to capture for the
@@ -158,9 +149,12 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getSignature(), capturedParamDecls.getArrayRef());
 
       b.setInsertionPoint(generator);
+      auto uniqueName = b.getStringAttr(getUniqueSymbolName(
+          (generator.getName() + Twine("_") + regionName).str(), symtab,
+          counter));
       auto liftedWrapper = b.create<GeneratorOp>(
-          regionDecl.getLoc(), getUniqueName("_" + regionName),
-          TypeAttr::get(wrapperSignature), regionDecl.getFunctionTypeAttr(),
+          uniqueName, TypeAttr::get(wrapperSignature),
+          regionDecl.getFunctionTypeAttr(),
           ParamDeclArrayAttr::get(&getContext(), inputParamDecls),
           regionDecl.getResultParamsAttr(),
           ConstraintArrayAttr::get(&getContext(), {}),
@@ -181,14 +175,26 @@ void OutlineClosuresPass::runOnOperation() {
       if (!isolated) {
         assert(globalVar && structType &&
                "global variable name/type was undefined?");
-        auto load = b.create<POP::CompilerGlobalLoadOp>(regionDecl.getLoc(),
-                                                        structType, globalVar);
+        auto load = b.create<POP::CompilerGlobalLoadOp>(structType, globalVar);
         // Create accesses for each capture.
         for (auto [idx, capture] : llvm::enumerate(captures)) {
           mlir::replaceAllUsesInRegionWith(
-              capture, b.create<POP::StructExtractOp>(load.getLoc(), load, idx),
+              capture, b.create<POP::StructExtractOp>(load, idx),
               liftedWrapper.getBodyRegion());
         }
+      }
+
+      // Since the lifted generator will have a new name, we need to update the
+      // linkage name in the subprogram information.
+      if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(
+              liftedWrapper.getLoc())) {
+        DebugInfo::DIAttrTypeReplacer replacer;
+        replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+          if (sp != funcSp)
+            return sp;
+          return sp.cloneWith(sp.getName(), liftedWrapper.getSymName());
+        });
+        replacer.recursivelyReplaceElementsIn(liftedWrapper);
       }
 
       // We need to set the parameter bindings for the call to the lifted
@@ -228,7 +234,17 @@ void OutlineClosuresPass::runOnOperation() {
       }
 
       // Now replace the region decl with a partial binding to the lifted
-      // wrapper.
+      // wrapper. The location of the region decl op contains the subprogram
+      // scope that itself creates, which we need to override with the
+      // parent's scope.
+      if (DebugInfo::DIScopeAttr scope =
+              DebugInfo::extractScope(regionDecl->getParentOp())) {
+        auto declLoc = cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
+            regionDecl->getLoc());
+        b.setLoc(
+            FusedLoc::get(declLoc.getContext(), declLoc.getLocations(), scope));
+      }
+
       // Create a container for the struct with all the various captures.
       if (!isolated) {
         // We have to find the earliest possible insertion point, so we start
@@ -260,11 +276,10 @@ void OutlineClosuresPass::runOnOperation() {
                "global variable name/type/struct was undefined?");
 
         auto container = b.create<POP::StructCreateOp>(
-            regionDecl.getLoc(), structType, llvm::to_vector(captures));
+            structType, llvm::to_vector(captures));
 
         // Get a pointer to the global and store the container in it.
-        b.create<POP::CompilerGlobalStoreOp>(regionDecl.getLoc(), globalVar,
-                                             container);
+        b.create<POP::CompilerGlobalStoreOp>(globalVar, container);
       }
 
       // Set the insertion point to the regionDecl for the parameter
@@ -273,7 +288,7 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Create the decl that replaces the regionDecl with its parameter being
       // this new partial binding.
-      b.create<ParamDeclareOp>(regionDecl.getLoc(), regionDecl.getParamDecl(),
+      b.create<ParamDeclareOp>(regionDecl.getParamDecl(),
                                cast<TypedAttr>(bindSignature));
 
       // And we can drop the regionDecl now, we're done with it.
