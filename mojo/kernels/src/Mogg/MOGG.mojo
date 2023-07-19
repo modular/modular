@@ -34,7 +34,6 @@ from Math import (
     floor,
     greater,
     greater_equal,
-    isinf,
     isnan,
     pow,
     max,
@@ -50,6 +49,7 @@ from Math import (
     abs,
     log1p,
 )
+from Limits import isinf
 from Matmul import matmul_parallel_async, pack_b_ndbuffer
 from BatchedMatmul import (
     batched_matmul_parallel_async,
