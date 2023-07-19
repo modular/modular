@@ -3390,6 +3390,10 @@ static void synthesizeMemberwiseInit(
   ExprEmitter emitter(resolver.shared, funcDecl, builder,
                       /*varDeclCursor*/ nullptr);
 
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto spAttr = DebugInfo::extractScope(funcOp))
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
   // For a memory-only initializer, we emit a bunch of stores to fields indexing
   // self.
   if (isMemoryOnly) {
@@ -3498,6 +3502,10 @@ static void synthesizeCopyMoveInit(
   ExprEmitter emitter(resolver.shared, funcDecl, builder,
                       /*varDeclCursor*/ nullptr);
   DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
+
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (auto spAttr = DebugInfo::extractScope(funcOp))
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // For a memory-only initializer, we emit a bunch of copies/moves to fields
   // indexing self.
