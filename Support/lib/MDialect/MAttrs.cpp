@@ -11,6 +11,7 @@
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
+#include "Support/Target.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -20,6 +21,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
@@ -977,6 +979,53 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
                              std::move(*dl), simdWidthFromFeatures(features));
+}
+
+ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
+                                            HostMachineInfo &hostMachineInfo) {
+  // Leave the data layout empty.
+  UNWRAP_ERROR(empty, DataLayout::parse(""));
+
+  return TargetInfoAttr::get(ctx, llvm::Triple(hostMachineInfo.triple),
+                             hostMachineInfo.cpuArch,
+                             getCPUFeatures(hostMachineInfo),
+                             /*data_layout=*/empty, /*simd_bit_width=*/0);
+}
+
+ErrorOr<std::string>
+M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
+  if (!targetInfoAttr.getDataLayout().toString().empty())
+    return Error("unable to represent data_layout");
+  if (targetInfoAttr.getSimdBitWidth() != 0)
+    return Error("unable to represent simd_bit_width");
+
+  // CAUTION:
+  // Keep in sync with HostMachineInfo::deserializeFromTargetInfo in
+  // Support/lib/Host.cpp.
+
+  // Somewhat frustratingly we need to recover the original HostMachineInfo
+  // features from their encoded form, eg "+foo,+bar".
+  SmallVector<StringRef> plusFeatureCommas;
+  targetInfoAttr.getFeatures().split(plusFeatureCommas, ',');
+  std::vector<std::string> features;
+  for (StringRef plusFeatureComma : plusFeatureCommas) {
+    if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
+      return Error("ill-formed serialized target info feature");
+    StringRef feature = plusFeatureComma.trim("+,");
+    if (feature.empty())
+      return Error("ill-formed serialized target info feature");
+    features.emplace_back(feature);
+  }
+
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvm::json::OStream json(os);
+  json.objectBegin();
+  json.attribute("triple", targetInfoAttr.getTriple().str());
+  json.attribute("cpu", targetInfoAttr.getCpu());
+  json.attribute("features", features);
+  json.objectEnd();
+  return str;
 }
 
 namespace mlir {

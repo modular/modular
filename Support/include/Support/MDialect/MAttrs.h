@@ -19,6 +19,9 @@
 
 namespace M {
 
+// Forward declarations.
+struct HostMachineInfo;
+
 //===----------------------------------------------------------------------===//
 // DataLayout
 //===----------------------------------------------------------------------===//
@@ -323,6 +326,26 @@ TargetInfoAttr lookupTargetInfo(Operation *from);
 ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
                                          StringRef targetTriple, StringRef cpu,
                                          StringRef features);
+/// Returns the target info partially describing the given HostMachineInfo.
+/// Only some fields are captured:
+///  - triple (captured as triple)
+///  - cpuArch (captured as cpu)
+///  - cpuFeatures (captured as features, with each feature prefixed by '+'
+///    and features separated by ',')
+/// Note that the data_layout and simd_bit_width fields of the result are
+/// left empty/zero.
+///
+/// Unlike the above getTargetInfoFor/4, this method does not depend on any
+/// LLVM target management infrastructure and can be used outside of a
+/// jit context.
+ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
+                                         HostMachineInfo &hostMachineInfo);
+/// Return a serialized representation of targetInfoAttr which can be
+/// deserialized by M::recoverHostMachineInfo in Support/Host.h. This can
+/// be used to capture assumptions about the runtime host machine architecture
+/// with generated artifacts such as MEF files.
+ErrorOr<std::string>
+serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr);
 
 //===----------------------------------------------------------------------===//
 // BuildInfoAttr
