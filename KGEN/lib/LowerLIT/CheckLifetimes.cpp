@@ -1285,8 +1285,11 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
     if (valueInfo.startsUninit || valueID == 0)
       continue;
 
-    mlir::ImplicitLocOpBuilder builder(valueInfo.value.getLoc(), &funcBody,
-                                       funcBody.begin());
+    Location loc = valueInfo.value.getLoc();
+    if (DebugInfo::DIScopeAttr scope = DebugInfo::extractScope(func))
+      loc = FusedLoc::get(loc.getContext(), {loc}, scope);
+
+    mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
     checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr);
   }
 }
