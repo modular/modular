@@ -94,6 +94,32 @@ def NoneAttr : LITTypedAttr<"None", "none"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ModuleAttr
+//===----------------------------------------------------------------------===//
+
+def ModuleAttr : LITTypedAttr<"Module", "module"> {
+  let summary = "A module attribute.";
+  let description = [{
+    The `#lit.module` attribute represents an unresolved module value. It always
+    has a meta-type type.
+
+    Example:
+
+    ```mlir
+    #lit.module : !lit.metatype<@some_module>
+    ```
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"", "MetaTypeType">:$type);
+  let assemblyFormat = "";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "MetaTypeType":$type),
+                                   [{ return get(type.getContext(), type); }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LifetimeAttr
 //===----------------------------------------------------------------------===//
 

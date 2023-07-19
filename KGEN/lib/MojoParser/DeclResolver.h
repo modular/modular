@@ -105,6 +105,11 @@ public:
                                               StringAttr moduleName,
                                               llvm::SMLoc loc);
 
+  /// Lookup a declaration from within a given module or package, emitting an
+  /// error if it was not found.
+  FailureOr<ArrayRef<ASTDecl *>>
+  lookupDeclInModule(ASTDecl &module, StringAttr sourceName, SMLoc loc);
+
   /// Add a declaration that is already fully resolved.
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringAttr baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);

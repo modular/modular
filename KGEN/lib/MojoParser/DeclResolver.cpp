@@ -248,11 +248,14 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
     entries.push_back(decl);
 
     // If the decl is a type or alias that has a symbol, remember it.  This
-    // allows us to look up decls by symbol when referenced as types.
-    if (auto structDecl = dyn_cast<StructDeclOp>(*decl)) {
+    // allows us to look up decls by symbol when referenced as types. Functions
+    // don't have symbols until they are fully resolved, but decls inside
+    // functions cannot be accessed anyways.
+    if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(*decl);
+        symbolDecl && !isa<LIT::FuncOp>(*decl)) {
       // Make sure there are no name conflicts with the MLIR symbol.  If there
       // are, then addDecl will have rejected it with an error.
-      shared.setResolvedDeclSymbol(structDecl);
+      shared.setResolvedDeclSymbol(symbolDecl);
 
       SymbolRefAttr symbol = decl->getSymbolRef();
       assert(!declForTypeSymbol.count(symbol) &&
@@ -448,25 +451,12 @@ LogicalResult DeclResolver::importDeclFromModule(ASTDecl &context,
                                                  SMLoc loc) {
   // Make sure the module has been resolved.
   ASTDecl &module = shared.importModule(moduleName, &context, loc);
-  if (failed(resolveFully(module, loc)))
+  FailureOr<ArrayRef<ASTDecl *>> results =
+      lookupDeclInModule(module, sourceName, loc);
+  if (failed(results))
     return failure();
-
-  // Check to see if the module has the construct we are importing.
-  auto result = shared.lookupAndResolveDecl(sourceName, loc, module,
-                                            /*searchParentScopes=*/false);
-  if (result.isErroneous())
-    return failure();
-  if (result.isFailure()) {
-    // Emit an error with the module name without the leading `$` mangle.
-    StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
-    StringRef declType = isa<PackageOp>(module) ? "package" : "module";
-    assert(name.startswith("$") && "unexpected module/package name mangling");
-    return emitError(loc, declType + " '" + name.drop_front() +
-                              "' does not contain '" + sourceName.getValue() +
-                              "'");
-  }
-  return aliasImportDecls(TinyPtrVector<ASTDecl *>(result.getIfSuccess()),
-                          destName, sourceName, moduleName, loc, context);
+  return aliasImportDecls(TinyPtrVector<ASTDecl *>(*results), destName,
+                          sourceName, moduleName, loc, context);
 }
 
 LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
@@ -486,6 +476,29 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
       result = failure();
   }
   return result;
+}
+
+FailureOr<ArrayRef<ASTDecl *>>
+DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
+                                 SMLoc loc) {
+  if (failed(resolveFully(module, loc)))
+    return failure();
+
+  // Check to see if the module has the construct we are importing.
+  auto result = shared.lookupAndResolveDecl(sourceName, loc, module,
+                                            /*searchParentScopes=*/false);
+  if (result.isErroneous())
+    return failure();
+  if (result.isFailure()) {
+    // Emit an error with the module name without the leading `$` mangle.
+    StringRef name = cast<mlir::SymbolOpInterface>(module).getName();
+    StringRef declType = isa<PackageOp>(module) ? "package" : "module";
+    assert(name.startswith("$") && "unexpected module/package name mangling");
+    emitError(loc, declType + " '" + name.drop_front() +
+                       "' does not contain '" + sourceName.getValue() + "'");
+    return failure();
+  }
+  return result.getIfSuccess();
 }
 
 /// Add a new declaration that needs to be resolved.

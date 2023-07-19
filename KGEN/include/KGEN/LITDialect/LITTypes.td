@@ -65,6 +65,53 @@ def LIT_NoneType : LITType<"None", "none"> {
 }
 
 //===----------------------------------------------------------------------===//
+// MetaTypeType
+//===----------------------------------------------------------------------===//
+
+def LIT_MetaTypeType : LITType<"MetaType", "metatype"> {
+  let summary = "Type of a type value.";
+  let description = [{
+    The `!lit.metatype` type represents the type of a type value (tongue
+    twister). The meta-type stores the prototype of a type value in its type so
+    that member inspection can be performed through the type system during
+    member lookup or implicit conversions to other meta-types.
+
+    Example:
+
+    ```mlir
+    !lit.metatype<@SomeStruct>
+    ```
+
+    The meta-type is propagated through values by attaching itself to type
+    values.
+
+    Example:
+
+    ```mlir
+    // Concrete type value.
+    #kgen.concretetype.constant<!kgen.declref<@SomeStruct>>
+      : !lit.metatype<@SomeStruct>
+
+    // Parametric type value.
+    #kgen.param.decl.ref<"some_type"> : !lit.metatype<@SomeStruct>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol,
+                        "ParamBindArrayAttr":$paramValues);
+  let assemblyFormat = [{
+    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), symbol,
+                 ParamBindArrayAttr::get(symbol.getContext(), {}));
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LifetimeType
 //===----------------------------------------------------------------------===//
 
@@ -75,7 +122,6 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime"> {
     provenance in a signature.
   }];
 }
-
 
 //===----------------------------------------------------------------------===//
 // RefType

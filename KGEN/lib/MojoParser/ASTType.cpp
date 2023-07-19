@@ -47,6 +47,8 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (auto declRef = dyn_cast<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
+  if (auto metaType = dyn_cast<MetaTypeType>(mlirType))
+    return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
   return nullptr;
 }
 

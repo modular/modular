@@ -416,6 +416,121 @@ bool CallArgument::isPositionalStringLiteral(StringRef str) const {
   return kind == kPositional && strExpr && strExpr->getValue() == str;
 }
 
+/// Emit a reference to a declaration to an AnyValue. If the value is concrete
+/// and has a runtime value, `mlirValue` is populated with the correspondong SSA
+/// value.
+/// FIXME: The `mlirValue` is a hack for closures and should be removed.
+static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
+                                  ArrayRef<ASTDecl *> decls,
+                                  const ExprNode *expr, ValueDest &dest,
+                                  Value &mlirValue) {
+  // Functions form an address, and may be overloaded.
+  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
+    ParamBindArrayAttr paramBindings = {};
+    // Form an overload set value with all the candidates.
+    auto result = ORValue::create(spelling, decls, paramBindings, expr,
+                                  CallSyntax::kDirectCall);
+    return emitter.emitResult(std::move(result), expr, dest);
+  }
+
+  assert(decls.size() == 1 && "Only functions may be overloaded");
+  ASTDecl &decl = *decls[0];
+
+  // Aliases form a PValue.
+  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
+    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{},
+                                             emitter.shared, expr->getLoc());
+    return emitter.emitResult(result.get(), expr, dest);
+  }
+
+  // Use of forward alias references.
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
+    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    return emitter.emitResult(result, expr, dest);
+  }
+
+  // If this is a type declaration, return it as a type.
+  if (isa<StructDeclOp>(decl)) {
+    PValue result(DeclRefType::get(decl.getSymbolRef()));
+    return emitter.emitResult(result, expr, dest);
+  }
+
+  // If this is a module or package declaration, form a module reference.
+  if (isa<FileModuleOp, PackageOp>(decl)) {
+    PValue result(ModuleAttr::get(MetaTypeType::get(decl.getSymbolRef())));
+    return emitter.emitResult(result, expr, dest);
+  }
+
+  if (auto pvalue = decl.getIfPValue())
+    return emitter.emitResult(pvalue, expr, dest);
+
+  // All the declarations below require resolving a dynamic value.
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(expr);
+
+  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
+  // can check if it is captured in a function.
+  CValue value;
+
+  // 'let' declarations resolve to an SBvalue when they are register_passable.
+  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
+    mlirValue = letDecl.getResult();
+    value = SBValue(mlirValue);
+
+    if (emitter.shared.parserListener) {
+      // We notify the listener that a new reference has been resolved.
+      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
+                                           expr->getLoc());
+    }
+
+    // Variable references resolve to an MBValue or LValue addressing the
+    // memory.
+  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+    // We handle both var and let's as mutable lvalues and let check lifetimes
+    // diagnose any problems.  This allows us to handle late-initialized lets.
+    mlirValue = var.getResult();
+    value = LValue(mlirValue);
+
+    if (emitter.shared.parserListener) {
+      // We notify the listener that a new reference has been resolved.
+      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
+                                           expr->getLoc());
+    }
+
+    // RValue's and LValues always resolve to their known value.
+  } else if (auto rvalue = decl.getIfRValue()) {
+    if (auto mrValue = rvalue.getIfMRValue())
+      mlirValue = mrValue;
+    else
+      mlirValue = rvalue.getIfSRValue();
+    value = rvalue;
+  } else if (auto bvalue = decl.getIfBValue()) {
+    if (auto mbValue = bvalue.getIfMBValue())
+      mlirValue = mbValue;
+    else
+      mlirValue = bvalue.getIfSBValue();
+    value = bvalue;
+  } else if (auto lvalue = decl.getIfLValue()) {
+    mlirValue = lvalue;
+    value = lvalue;
+
+  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+    auto ref = emitter.builder->create<GlobalVarRefOp>(
+        emitter.translateLocation(expr->getLoc()), globalOp);
+    mlirValue = ref;
+    if (globalOp.getIsLet())
+      value = MBValue(mlirValue);
+    else
+      value = SLValue(mlirValue);
+  } else {
+    emitter.emitError(expr->getLoc(), "use of declaration \"")
+        << spelling << "\" as a value isn't supported yet" << expr->getRange();
+    return {};
+  }
+
+  return value;
+}
+
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -511,104 +626,12 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<FuncOp>(*decls[0])) {
-    ParamBindArrayAttr paramBindings = {};
-    // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, paramBindings, this,
-                                  CallSyntax::kDirectCall);
-    return emitter.emitResult(std::move(result), this, dest);
-  }
-
-  assert(decls.size() == 1 && "Only functions may be overloaded");
-  ASTDecl &decl = *decls[0];
-
-  // Aliases form a PValue.
-  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
-    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{},
-                                             emitter.shared, getLoc());
-    return emitter.emitResult(result.get(), this, dest);
-  }
-
-  // Use of forward alias references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
-    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
-    return emitter.emitResult(result, this, dest);
-  }
-
-  // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl)) {
-    PValue result(DeclRefType::get(decl.getSymbolRef()));
-    return emitter.emitResult(result, this, dest);
-  }
-
-  if (auto pvalue = decl.getIfPValue())
-    return emitter.emitResult(pvalue, this, dest);
-
-  // All the declarations below require resolving a dynamic value.
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(this);
-
-  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
-  // can check if it is captured in a function.
   Value mlirValue;
-  CValue value;
-
-  // 'let' declarations resolve to an SBvalue when they are register_passable.
-  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    mlirValue = letDecl.getResult();
-    value = SBValue(mlirValue);
-
-    if (emitter.shared.parserListener) {
-      // We notify the listener that a new reference has been resolved.
-      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
-                                           getLoc());
-    }
-
-    // Variable references resolve to an MBValue or LValue addressing the
-    // memory.
-  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    // We handle both var and let's as mutable lvalues and let check lifetimes
-    // diagnose any problems.  This allows us to handle late-initialized lets.
-    mlirValue = var.getResult();
-    value = LValue(mlirValue);
-
-    if (emitter.shared.parserListener) {
-      // We notify the listener that a new reference has been resolved.
-      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
-                                           getLoc());
-    }
-
-    // RValue's and LValues always resolve to their known value.
-  } else if (auto rvalue = decl.getIfRValue()) {
-    if (auto mrValue = rvalue.getIfMRValue())
-      mlirValue = mrValue;
-    else
-      mlirValue = rvalue.getIfSRValue();
-    value = rvalue;
-  } else if (auto bvalue = decl.getIfBValue()) {
-    if (auto mbValue = bvalue.getIfMBValue())
-      mlirValue = mbValue;
-    else
-      mlirValue = bvalue.getIfSBValue();
-    value = bvalue;
-  } else if (auto lvalue = decl.getIfLValue()) {
-    mlirValue = lvalue;
-    value = lvalue;
-
-  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
-    auto ref = emitter.builder->create<GlobalVarRefOp>(
-        emitter.translateLocation(getLoc()), globalOp);
-    mlirValue = ref;
-    if (globalOp.getIsLet())
-      value = MBValue(mlirValue);
-    else
-      value = SLValue(mlirValue);
-  } else {
-    emitter.emitError(getLoc(), "use of declaration \"")
-        << spelling << "\" as a value isn't supported yet" << getRange();
-    return {};
-  }
+  AnyValue result =
+      emitDeclReference(spelling, emitter, decls, this, dest, mlirValue);
+  if (!mlirValue)
+    return result;
+  CValue value = result.getIfCValue();
 
   // If this is a capture inside a nonparametric function, emit a copy.
   if (auto func =
@@ -930,6 +953,18 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     emitter.emitError(getLoc(), "MLIR type ")
         << baseRVType << " has no attributes" << base->getRange();
     return {};
+  }
+
+  // Handle module or package references.
+  if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
+    FailureOr<ArrayRef<ASTDecl *>> decls =
+        emitter.getDeclResolver().lookupDeclInModule(
+            *typeDecl, StringAttr::get(emitter.getContext(), attrSpelling),
+            getLoc());
+    if (failed(decls))
+      return {};
+    Value unused;
+    return emitDeclReference(attrSpelling, emitter, *decls, this, dest, unused);
   }
 
   if (!isa<StructDeclOp>(*typeDecl)) {
