@@ -71,10 +71,6 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   pm.addNestedPass<GeneratorOp>(createMem2Reg());
   pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
   pm.addNestedPass<GeneratorOp>(createConstraintReduction());
-
-  // At the end of the LIT lowering pipeline, pull in the bodies of constructs
-  // that were already elaborated.
-  pm.addPass(createLowerPreElaboratedLIT());
 }
 
 /// A default specialization evaluator that JITs and invokes the specialized
@@ -184,6 +180,10 @@ void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     BuildInfoAttr build, EvaluatorExecutorFn evaluatorExecutorFn,
     const CompilationOptions &options) {
+  // At the end of the LIT lowering pipeline, pull in the bodies of constructs
+  // that were already elaborated.
+  pm.addPass(createLowerPreElaboratedLIT());
+
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
