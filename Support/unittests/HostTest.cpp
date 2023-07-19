@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Host.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 #include "gtest/gtest.h"
 
