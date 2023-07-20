@@ -616,17 +616,32 @@ resolveModulePath(StringRef moduleName,
   // now, we just use the available include directories within the source
   // manager and the working directory of where the module is included.
 
+  // Functor used to check the status of the given path and include directory.
+  auto checkPathAndDir = [&](StringRef moduleName, StringRef includeDir) {
+    // Don't try to resolve modules that reside within a package.
+    if (isMojoSourcePackagePath(includeDir.str())) {
+      // TODO: It'd be nice to emit a list of potential modules that the name
+      // might correspond with if it did resolve to one inside of this package.
+      return std::optional<std::string>();
+    }
+    return resolveModulePath(moduleName, includeDir);
+  };
+
   // Check the auto import directory first.
   for (auto &rawPath : autoImportDirs) {
-    if (auto path = resolveModulePath(moduleName, rawPath))
-      return path;
+    if (auto path = checkPathAndDir(moduleName, rawPath))
+      return std::move(*path);
     // Cannot find the file, then check child directories of the auto import
     // directory.
     for (auto &childDir :
-         std::filesystem::recursive_directory_iterator(rawPath))
-      if (childDir.is_directory())
-        if (auto path = resolveModulePath(moduleName, childDir.path().string()))
-          return path;
+         std::filesystem::recursive_directory_iterator(rawPath)) {
+      // Skip non-directories and source packages, internal packages should be
+      // imported using a relative import.
+      if (!childDir.is_directory() || isMojoSourcePackagePath(childDir.path()))
+        continue;
+      if (auto path = checkPathAndDir(moduleName, childDir.path().string()))
+        return std::move(*path);
+    }
   }
 
   // Check the working directory.
@@ -636,13 +651,13 @@ resolveModulePath(StringRef moduleName,
   auto includerPath =
       std::filesystem::path(includeBuffer->getBufferIdentifier().str());
   if (auto path =
-          resolveModulePath(moduleName, includerPath.parent_path().string()))
-    return path;
+          checkPathAndDir(moduleName, includerPath.parent_path().string()))
+    return std::move(*path);
 
   // Then check the include directories.
   for (StringRef includeDir : sourceMgr.getIncludeDirs())
-    if (auto path = resolveModulePath(moduleName, includeDir))
-      return path;
+    if (auto path = checkPathAndDir(moduleName, includeDir))
+      return std::move(*path);
 
   return std::nullopt;
 }
