@@ -436,41 +436,58 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   return failure();
 }
 
-LogicalResult DeclResolver::importModule(ASTDecl &context,
+LogicalResult DeclResolver::importModule(ASTDecl &dest,
+                                         PackageOp currentPackage,
                                          StringAttr moduleName,
                                          StringAttr importName, SMLoc loc) {
-  ASTDecl &module = shared.importModule(moduleName, &context, loc);
+  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
-                          /*declName=*/StringAttr(), moduleName, loc, context);
+                          /*declName=*/StringAttr(), moduleName, loc, dest);
 }
 
-LogicalResult DeclResolver::importDeclFromModule(ASTDecl &context,
-                                                 StringAttr moduleName,
-                                                 StringAttr sourceName,
-                                                 StringAttr destName,
-                                                 SMLoc loc) {
+LogicalResult
+DeclResolver::importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
+                                   StringAttr moduleName, StringAttr sourceName,
+                                   StringAttr destName, SMLoc loc) {
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(moduleName, &context, loc);
+  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   FailureOr<ArrayRef<ASTDecl *>> results =
       lookupDeclInModule(module, sourceName, loc);
   if (failed(results))
     return failure();
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(*results), destName,
-                          sourceName, moduleName, loc, context);
+                          sourceName, moduleName, loc, dest);
 }
 
 LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
                                                           StringAttr moduleName,
+                                                          bool isFullImport,
                                                           llvm::SMLoc loc) {
+  PackageOp currentPackage = dyn_cast<PackageOp>(context);
+  if (!currentPackage && context.getIfOperation())
+    currentPackage = context.getIfOperation()->getParentOfType<PackageOp>();
+
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(moduleName, &context, loc);
+  ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   if (failed(resolveFully(module, loc)))
     return failure();
+
+  // Resolve pending wildcard imports in this module.
+  while (!module.unresolvedWildcardImports.empty()) {
+    auto it = module.unresolvedWildcardImports.begin();
+    auto [moduleName, locAndIsFullImport] = *it;
+    module.unresolvedWildcardImports.erase(it);
+
+    if (failed(importWildCardDeclsFromModule(module, moduleName,
+                                             locAndIsFullImport.second,
+                                             locAndIsFullImport.first)))
+      return failure();
+  }
 
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
   for (const auto &[name, decls] : module.declsInScope) {
-    if (name.getValue()[0] == '_')
+    if (!isFullImport && name.getValue()[0] == '_')
       continue;
     if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context)))
       result = failure();
@@ -637,8 +654,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   }
 
   // Utility for resolving a decl within the Startup module.
-  ASTDecl &startupModule =
-      shared.importModule("Builtin.Startup", &funcDecl, funcDecl.getLoc());
+  ASTDecl &startupModule = shared.importModule(
+      "Builtin.Startup", /*currentPackage=*/nullptr, funcDecl.getLoc());
   auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);
@@ -2771,6 +2788,14 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }
 
+  // Create a full wildcard import from the __init__, as the symbols defined
+  // there are visible from the package.
+  StringAttr importModule = builder.getStringAttr(".__init__");
+  builder.create<UnresolvedWildcardImportOp>(op->getLoc(), importModule,
+                                             /*fullImport=*/true);
+  decl.addUnresolvedWildCardImport(importModule, /*isFullImport=*/true,
+                                   decl.loc);
+
   return success();
 }
 
@@ -3783,14 +3808,16 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
 
 ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
                                            ASTDecl &decl) {
+  PackageOp packageOp = op->getParentOfType<PackageOp>();
+
   // Check if we are importing a specific decl within the module, or the
   // module itself.
   if (auto declName = op.getDeclNameAttr()) {
     return getDeclResolver().importDeclFromModule(
-        *decl.getParentDecl(), op.getModuleNameAttr(), declName,
+        *decl.getParentDecl(), packageOp, op.getModuleNameAttr(), declName,
         op.getImportNameAttr(), decl.getLoc());
   }
-  return getDeclResolver().importModule(*decl.getParentDecl(),
+  return getDeclResolver().importModule(*decl.getParentDecl(), packageOp,
                                         op.getModuleNameAttr(),
                                         op.getImportNameAttr(), decl.getLoc());
 }

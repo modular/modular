@@ -1446,7 +1446,8 @@ ParseResult StmtParser::parseFromImportStmt() {
     StringAttr moduleAttr = builder.getStringAttr(fullModuleName);
     builder.create<LIT::UnresolvedWildcardImportOp>(
         translateLocation(importLoc), moduleAttr);
-    getParentDecl().addUnresolvedWildCardImport(moduleAttr, importLoc);
+    getParentDecl().addUnresolvedWildCardImport(
+        moduleAttr, /*isFullImport=*/false, importLoc);
     return success();
   }
 

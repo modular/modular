@@ -90,19 +90,22 @@ public:
                                  StringAttr moduleName, llvm::SMLoc aliasLoc,
                                  ASTDecl &context);
 
-  /// Import the given module into the provided context.
-  LogicalResult importModule(ASTDecl &context, StringAttr moduleName,
-                             StringAttr importName, SMLoc loc);
+  /// Import the given module into the provided destination.
+  LogicalResult importModule(ASTDecl &dest, PackageOp currentPackage,
+                             StringAttr moduleName, StringAttr importName,
+                             SMLoc loc);
   /// Import the provided decl from the given module decl, into the provided
-  /// destination context.
-  LogicalResult importDeclFromModule(ASTDecl &context, StringAttr moduleName,
+  /// destination.
+  LogicalResult importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
+                                     StringAttr moduleName,
                                      StringAttr sourceName, StringAttr destName,
                                      SMLoc loc);
   /// Import decls from the given module into the provided destination context
-  /// using a wild-card import (i.e. import all decls that don't start with an
-  /// `_`).
+  /// using a wild-card import. If `isFullImport` is true, all decls are
+  /// imported, otherwise only decls that don't start with an `_` are imported.
   LogicalResult importWildCardDeclsFromModule(ASTDecl &context,
                                               StringAttr moduleName,
+                                              bool isFullImport,
                                               llvm::SMLoc loc);
 
   /// Lookup a declaration from within a given module or package, emitting an

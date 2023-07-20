@@ -117,8 +117,9 @@ public:
   ASTType computeSelfTypeForStruct(SharedState &state);
 
   /// Add an unresolved wild card import into this scope.
-  void addUnresolvedWildCardImport(StringAttr importedModule, SMLoc loc) {
-    unresolvedWildcardImports.insert({importedModule, loc});
+  void addUnresolvedWildCardImport(StringAttr importedModule, bool isFullImport,
+                                   SMLoc loc) {
+    unresolvedWildcardImports.insert({importedModule, {loc, isFullImport}});
   }
 
   /// Return the doc string for this decl, or nullptr if there isn't one.
@@ -228,8 +229,8 @@ private:
   llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;
 
   /// A set of modules with unresolved wildcard imports into this decl, mapped
-  /// to the location of the import.
-  llvm::MapVector<StringAttr, SMLoc> unresolvedWildcardImports;
+  /// to the location of the import and whether it's a full import.
+  llvm::MapVector<StringAttr, std::pair<SMLoc, bool>> unresolvedWildcardImports;
 };
 
 } // namespace M::KGEN::LIT

@@ -133,6 +133,13 @@ struct SharedState::Impl {
   /// A mapping between ASTDecl and the corresponding module state.
   llvm::MapVector<ASTDecl *, ModuleState *> moduleStates;
 
+  /// A mapping between packages and their corresponding module state. A nullptr
+  /// entry corresponds to the top level module state.
+  /// FIXME(#17327): This only exists to work around the fact that we can't rely
+  /// on an ASTDecl's parent reflecting the IR parent. When that issue gets
+  /// fixed, this map should be removed in favor of just `moduleStates`.
+  DenseMap<PackageOp, ModuleState *> packageStates;
+
   /// A list of included files used when importing modules. These are used to
   /// generate dependency files.
   SmallVector<std::string> includedFiles;
@@ -223,6 +230,7 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
   impl->topLevelDecl = &topLevelDecl;
   impl->topLevelModuleState = std::make_unique<ModuleState>(&topLevelDecl);
   impl->moduleStates[&topLevelDecl] = impl->topLevelModuleState.get();
+  impl->packageStates[nullptr] = impl->topLevelModuleState.get();
 
   // Build the builtins decl.
   // TODO: Add these:
@@ -443,21 +451,25 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       return result;
 
     // If the lookup failed, try to resolve any wildcard imports in the scope.
-    // Don't try wildcard imports if we wouldn't import this name anyways.
-    if (name.startswith("_"))
-      return {};
-
     // We don't know if these imports will actually provide the decl we are
     // looking for, so we have to try until we find one that does.
-    while (!scope.unresolvedWildcardImports.empty()) {
-      auto it = scope.unresolvedWildcardImports.begin();
-      auto [moduleName, loc] = *it;
+    for (int i = 0, e = scope.unresolvedWildcardImports.size(); i < e;) {
+      auto it = std::next(scope.unresolvedWildcardImports.begin(), i);
+      auto [moduleName, locAndIsFullImport] = *it;
+      auto [loc, isFullImport] = locAndIsFullImport;
+
+      // Don't try wildcard imports if we wouldn't import this name anyways.
+      if (!isFullImport && name.startswith("_")) {
+        ++i;
+        continue;
+      }
+      --e;
       scope.unresolvedWildcardImports.erase(it);
 
       // Resolve the import. If it fails, don't fail the search immediately,
       // keep checking for something that can resolve the decl we care about.
-      if (failed(declResolver->importWildCardDeclsFromModule(scope, moduleName,
-                                                             loc)))
+      if (failed(declResolver->importWildCardDeclsFromModule(
+              scope, moduleName, isFullImport, loc)))
         continue;
       // Re-check the lookup in the scope now that the wildcard import has
       // been resolved.
@@ -639,9 +651,11 @@ static StringAttr getMangledModuleName(MLIRContext *ctx, StringRef moduleName) {
   return StringAttr::get(ctx, "$" + moduleName);
 }
 
-ASTDecl &SharedState::importModule(StringRef name, ASTDecl *parentDecl,
+ASTDecl &SharedState::importModule(StringRef name, PackageOp currentPackage,
                                    llvm::SMLoc loc) {
-  return *importModuleState(name, parentDecl, loc).decl;
+  ModuleState *moduleState = impl->packageStates[currentPackage];
+  assert(moduleState && "unexpected package without a module state");
+  return *importModuleState(name, moduleState->decl, loc).decl;
 }
 
 SharedState::ModuleState &SharedState::importModuleState(StringRef name,
@@ -948,7 +962,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     ASTDecl &builtinsPackageDecl =
-        importModule("Builtin", impl->topLevelDecl, moduleDecl.getLoc());
+        *importModuleState("Builtin", impl->topLevelDecl, moduleDecl.getLoc())
+             .decl;
     if (failed(declResolver->resolveFully(builtinsPackageDecl,
                                           moduleDecl.getLoc())))
       return;
@@ -964,7 +979,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   }
 
   for (StringAttr import : impl->implicitBuiltinImports)
-    moduleDecl.addUnresolvedWildCardImport(import, moduleDecl.getLoc());
+    moduleDecl.addUnresolvedWildCardImport(import, /*isFullImport=*/false,
+                                           moduleDecl.getLoc());
 }
 
 ASTDecl &SharedState::createModule(StringRef moduleName,
@@ -1058,9 +1074,9 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
                                 FileLineColLoc loc) {
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
-  Operation *fileOp = moduleBuilder.create<PackageOp>(loc, mangledName);
+  PackageOp packageOp = moduleBuilder.create<PackageOp>(loc, mangledName);
   ASTDecl &decl =
-      declResolver->addDecl(fileOp, SMLoc(), declName, parentState.decl,
+      declResolver->addDecl(packageOp, SMLoc(), declName, parentState.decl,
                             parentState.decl->getCursor(),
                             parentState.decl->getCursor(), /*indentation=*/-1);
 
@@ -1069,6 +1085,7 @@ SharedState::createPackageState(StringAttr declName, StringAttr mangledName,
       {mangledName, std::make_unique<ModuleState>(&decl, packagePath)});
   ModuleState &moduleState = *it.first->second;
   impl->moduleStates[&decl] = &moduleState;
+  impl->packageStates[packageOp] = &moduleState;
 
   return moduleState;
 }
@@ -1122,6 +1139,7 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
   decl.setIRValue(&block->back());
   decl.loadedFromBytecode = true;
   decl.resolvedness = DeclResolvedness::signature;
+  impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
 
   return moduleState;
 }
@@ -1171,7 +1189,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
           dependencies.insert({importOp.getModuleNameAttr(), decl->getLoc()});
     }
     for (auto it : moduleDecl.unresolvedWildcardImports)
-      dependencies.insert(it);
+      dependencies.insert({it.first, it.second.first});
     return mlir::success();
   };
 
@@ -1512,7 +1530,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](UnresolvedWildcardImportOp op) {
             decl.addUnresolvedWildCardImport(op.getModuleNameAttr(),
-                                             decl.getLoc());
+                                             op.getFullImport(), decl.getLoc());
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
@@ -1544,6 +1562,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             auto it = packageState->nestedModules.insert(
                 {name, std::make_unique<ModuleState>(&decl)});
             impl->moduleStates[&decl] = &*it.first->second;
+            if constexpr (std::is_same_v<decltype(op), PackageOp>)
+              impl->packageStates[op] = &*it.first->second;
           })
           .Default([&](Operation *op) { deferredOps.push_back(op); });
     }
