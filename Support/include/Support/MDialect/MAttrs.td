@@ -265,6 +265,10 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
+def OptionalStringRefParameter : StringRefParameter<""> {
+  let defaultValue = "\"\"";
+}
+
 def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let summary = "Target configuration attribute.";
   let description = [{
@@ -286,7 +290,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     StringRefParameter<"">:$features,
     AttrParameter<"DataLayout", "data layout", "const DataLayout &">:
       $data_layout,
-    "int64_t":$simd_bit_width
+    "int64_t":$simd_bit_width,
+    OptionalStringRefParameter:$tune_cpu
   );
 
   let assemblyFormat = "`<` struct(params) `>`";

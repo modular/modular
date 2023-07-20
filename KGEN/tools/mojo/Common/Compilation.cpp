@@ -32,7 +32,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier linkDirsId,
     llvm::opt::OptSpecifier tripleId, llvm::opt::OptSpecifier cpuId,
     llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
-    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier mtuneId,
+    llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
@@ -54,6 +55,10 @@ ErrorOrSuccess M::parseCompilationOptions(
   StringRef mCpu = args.getLastArgValue(mcpuId);
   if (args.hasMultipleArgs(mcpuId))
     return Error("too many specified target cpus, expected exactly one");
+
+  StringRef mTune = args.getLastArgValue(mtuneId);
+  if (args.hasMultipleArgs(mtuneId))
+    return Error("too many specified tune cpus, expected exactly one");
 
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
@@ -107,7 +112,7 @@ ErrorOrSuccess M::parseCompilationOptions(
   ErrorOr<TargetInfoAttr> targetOr = nullptr;
   if (!mArch.empty() || !mCpu.empty()) {
     // Use `-march` to determine the feature set.
-    targetOr = getMArchFeatures(&ctx, mArch, mCpu);
+    targetOr = getMArchFeatures(&ctx, mArch, mCpu, mTune);
   } else {
     // Use the full triple, specific CPU, and manually specified features to
     // get the target info.

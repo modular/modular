@@ -151,6 +151,8 @@ public:
 
   cl::opt<std::string> mcpu{"mcpu", cl::desc("CPU to generate code for")};
 
+  cl::opt<std::string> mtune{"mtune", cl::desc("CPU to tune code for")};
+
   KGENCommonOptions() : RuntimeWorkQueueCLOptions(WorkQueueType::kThreadPool) {}
 
   /// Get the include directories that exist on the file system.

@@ -112,6 +112,9 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
       {b.getStringAttr("target-cpu"), b.getStringAttr(target.getCpu())}));
   attrs.push_back(b.getArrayAttr({b.getStringAttr("target-features"),
                                   b.getStringAttr(target.getFeatures())}));
+  if (!target.getTuneCpu().empty())
+    attrs.push_back(b.getArrayAttr(
+        {b.getStringAttr("tune-cpu"), b.getStringAttr(target.getTuneCpu())}));
   return b.getArrayAttr(attrs);
 }
 

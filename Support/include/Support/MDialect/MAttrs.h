@@ -325,7 +325,8 @@ TargetInfoAttr lookupTargetInfo(Operation *from);
 /// Get the target info for the specified target.
 ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
                                          StringRef targetTriple, StringRef cpu,
-                                         StringRef features);
+                                         StringRef features,
+                                         StringRef tuneCpu = "");
 /// Returns the target info partially describing the given HostMachineInfo.
 /// Only some fields are captured:
 ///  - triple (captured as triple)
