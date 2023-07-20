@@ -41,19 +41,19 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-static void buildDebugInfoValue(Operation *insertPt, Location loc,
-                                StringRef varName,
+static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
                                 DebugInfo::DIFileAttr fileAttr, Value value,
                                 Type type) {
+  Location loc = op->getLoc();
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
-  auto varScope = DebugInfo::extractScope<DebugInfo::DILocalScopeAttr>(loc);
+  auto varScope = DebugInfo::extractScope<DebugInfo::DILocalScopeAttr>(op);
   if (!fileLoc || !varScope)
     return;
 
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       varScope, varName, fileAttr, fileLoc.getLine(), /*arg=*/0,
       /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(type));
-  OpBuilder(insertPt).create<DebugInfo::ValueOp>(loc, value, varAttr);
+  b.create<DebugInfo::ValueOp>(loc, value, varAttr);
 }
 
 /// Flatten the given symbol reference, collapsing all nested scopes into one
@@ -113,9 +113,8 @@ static void lowerLITOps(LIT::FuncOp func) {
       mlir::IRRewriter b{OpBuilder(op)};
       // Build information for this decl if necessary.
       if (buildingDebugVars) {
-        buildDebugInfoValue(letDecl, letDecl.getLoc(), letDecl.getName(),
-                            funcSpAttr.getFile(), letDecl.getOperand(),
-                            letDecl.getType());
+        buildDebugInfoValue(b, letDecl, letDecl.getName(), funcSpAttr.getFile(),
+                            letDecl.getOperand(), letDecl.getType());
       }
 
       b.replaceOp(letDecl, letDecl.getOperand());
@@ -132,8 +131,9 @@ static void lowerLITOps(LIT::FuncOp func) {
       if (buildingDebugVars) {
         // TODO: Mark the value op as describing the "address" of the
         // variable, instead of claiming to describe the variable itself.
-        buildDebugInfoValue(allocOp->getNextNode(), allocOp.getLoc(), varName,
-                            funcSpAttr.getFile(), allocOp, varType);
+        b.setInsertionPointAfter(allocOp);
+        buildDebugInfoValue(b, allocOp, varName, funcSpAttr.getFile(), allocOp,
+                            varType);
       }
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);

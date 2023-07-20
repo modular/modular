@@ -63,8 +63,6 @@ public:
 //===----------------------------------------------------------------------===//
 
 namespace M::DebugInfo {
-/// Extract a debug info scope from the given location.
-DIScopeAttr extractScope(Location loc);
 /// Extract the debug info scope from the location of the given operation.
 DIScopeAttr extractScope(Operation *op);
 template <typename ScopeAttrT, typename T>

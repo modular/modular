@@ -2529,7 +2529,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(funcOp))
+  if (DebugInfo::DIScopeAttr spAttr = DebugInfo::extractScope(funcOp))
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // Set up information about for value arguments.
@@ -3420,7 +3420,7 @@ static void synthesizeMemberwiseInit(
                       /*varDeclCursor*/ nullptr);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(funcOp))
+  if (DebugInfo::DIScopeAttr spAttr = DebugInfo::extractScope(funcOp))
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // For a memory-only initializer, we emit a bunch of stores to fields indexing
@@ -3533,7 +3533,7 @@ static void synthesizeCopyMoveInit(
   DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(funcOp))
+  if (DebugInfo::DIScopeAttr spAttr = DebugInfo::extractScope(funcOp))
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   // For a memory-only initializer, we emit a bunch of copies/moves to fields
@@ -3704,7 +3704,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Push the debug scope for this struct if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (auto spAttr = DebugInfo::extractScope(structOp))
+  if (DebugInfo::DIScopeAttr spAttr = DebugInfo::extractScope(structOp))
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
   if (ParserBase::parseSuite(structDecl, lexer))
