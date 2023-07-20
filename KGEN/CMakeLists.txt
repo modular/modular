@@ -106,11 +106,11 @@ endmacro()
 # pass in the appropriate flags to the kgen compiler.
 macro(_setup_arch)
   if (NOT CMAKE_APPLE_SILICON_PROCESSOR AND NOT "${CPU_BUILD_ARCH}" STREQUAL "")
-    set(KGEN_ARCH_FLAGS "-march=${CPU_BUILD_ARCH}")
-    # TODO(17221): Merge MOJO_PACKAGE_ARCH_FLAGS with KGEN_ARCH_FLAGS once
-    # the mojo driver accepts flags with equals or we shift to compiling
-    # everything with the driver.
-    set(MOJO_PACKAGE_ARCH_FLAGS "-march" "${CPU_BUILD_ARCH}")
+    if (CPU_BUILD_ARCH STREQUAL "armv8.2-a")
+      set(MOJO_PACKAGE_ARCH_FLAGS "-march" "arm64")
+    else()
+      set(MOJO_PACKAGE_ARCH_FLAGS "-march" "${CPU_BUILD_ARCH}")
+    endif()
   endif()
 endmacro()
 
@@ -236,7 +236,7 @@ function(add_kgen_library target)
   add_custom_command(
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
-      ${KGEN_ARCH_FLAGS}
+      ${MOJO_PACKAGE_ARCH_FLAGS}
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
       -O${KGEN_OPTIMIZATION_LEVEL}
@@ -297,7 +297,7 @@ function(add_kgen_kernel target)
     OUTPUT ${header_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
-    ${KGEN_ARCH_FLAGS}
+    ${MOJO_PACKAGE_ARCH_FLAGS}
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
     -O${KGEN_OPTIMIZATION_LEVEL}
@@ -325,7 +325,7 @@ function(add_kgen_kernel target)
     OUTPUT ${archive_file_name}
 
     COMMAND $<TARGET_FILE:kgen> -emit
-    ${KGEN_ARCH_FLAGS}
+    ${MOJO_PACKAGE_ARCH_FLAGS}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
