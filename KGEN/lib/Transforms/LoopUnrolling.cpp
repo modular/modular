@@ -154,7 +154,7 @@ void LoopUnrolling::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // unroll loops from inner to outer
   for (auto loop : llvm::reverse(loopsToUnrollInOrder)) {
-    if (loop.isFullUnroll() || (loop.getTripCount() == 1)) {
+    if (loop.isFullUnroll() || (loop.getTripCount() <= 1)) {
       // Fully unroll if loop is decorated or has single iteration.
       if (succeeded(fullUnrollForLoop(loop)))
         continue;
