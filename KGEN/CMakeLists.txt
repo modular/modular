@@ -345,7 +345,10 @@ function(add_kgen_kernel target)
 
   add_library(${target} IMPORTED STATIC)
   add_dependencies(${target} ${KGEN_LIB_DEPENDS} kgen mojo-sdk ${target}-archive)
-  target_link_libraries(${target} INTERFACE KGENCompilerRT ${KGEN_SANITIZER_LIBS})
+  target_link_libraries(${target} INTERFACE KGENCompilerRT)
+  if (NOT LLVM_USE_SANITIZER)
+    target_link_libraries(${target} INTERFACE KGENCompilerRT ${KGEN_SANITIZER_LIBS})
+  endif()
   set_target_properties(${target} PROPERTIES
     IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/${archive_file_name}
     LINKER_LANGUAGE C
