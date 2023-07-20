@@ -10,7 +10,6 @@ from DType import DType
 from SIMD import Float32, SIMD
 from Object import object
 from String import String
-from Coroutine import Coroutine
 
 ##===----------------------------------------------------------------------===##
 # Conversions
@@ -318,7 +317,7 @@ fn call_async_fn_in_param():
     # expected-error @below {{cannot await in alias initializer}}
     alias await_it = await awaitable
     # expected-error @below {{cannot await inside a non-async function}}
-    await Coroutine[Int](async_function())
+    await async_function()
 
 # See Issue #15578
 def doIs(a: Int, b: Int):
