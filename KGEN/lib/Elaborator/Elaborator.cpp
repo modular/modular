@@ -2219,16 +2219,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
   // Since the function will have a new name, we need to update the linkage name
   // in the subprogram information.
-  if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(
-          newFunc.getLoc())) {
-    DebugInfo::DIAttrTypeReplacer replacer;
-    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
-      if (sp != funcSp)
-        return sp;
-      return sp.cloneWith(sp.getName(), newFunc.getSymName());
-    });
-    replacer.recursivelyReplaceElementsIn(newFunc);
-  }
+  DebugInfo::updateSubprogram(newFunc, newFunc.getSymNameAttr());
 
   std::function<LogicalResult(ImplNode *)> onComplete;
   if (config.elaborateLocations) {

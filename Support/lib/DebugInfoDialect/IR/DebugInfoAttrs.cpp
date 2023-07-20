@@ -168,3 +168,19 @@ LogicalResult DebugInfo::verifyFuncLocScope(mlir::FunctionOpInterface funcOp) {
       });
   return failure(res.wasInterrupted());
 }
+
+void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
+                                 StringAttr linkageName, StringAttr name) {
+  auto funcSp = extractScope<DISubprogramAttr>(funcOp);
+  if (!funcSp)
+    return;
+
+  if (!name)
+    name = funcSp.getName();
+  DISubprogramAttr newAttr = funcSp.cloneWith(name, linkageName);
+
+  DIAttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](DISubprogramAttr sp) { return sp == funcSp ? newAttr : sp; });
+  replacer.recursivelyReplaceElementsIn(funcOp);
+}

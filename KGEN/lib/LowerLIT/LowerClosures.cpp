@@ -118,7 +118,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   op.replaceAllUsesWith(call);
   op.erase();
 
-  DebugInfo::renameSubprogramsInScopes(name, lifted);
+  DebugInfo::updateSubprogram(lifted, name, name);
 }
 
 //===----------------------------------------------------------------------===//
@@ -170,7 +170,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 
-  DebugInfo::renameSubprogramsInScopes(name, lifted);
+  DebugInfo::updateSubprogram(lifted, name, name);
 }
 
 //===----------------------------------------------------------------------===//

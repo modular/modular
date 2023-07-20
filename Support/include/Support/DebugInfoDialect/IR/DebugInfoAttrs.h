@@ -90,20 +90,11 @@ public:
   void recursivelyReplaceElementsIn(Operation *op);
 };
 
-/// If the op has a subprogram scope, change the name and linkage name to that
-/// given, and replace all nested subprogram attributes recursively with it.
-template <typename OpTy>
-void renameSubprogramsInScopes(StringAttr name, OpTy op) {
-  auto sp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(op);
-  if (!sp)
-    return;
-
-  DebugInfo::DISubprogramAttr newSp = sp.cloneWith(name, name);
-  DebugInfo::DIAttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](DebugInfo::DISubprogramAttr attr) { return newSp; });
-  replacer.recursivelyReplaceElementsIn(op);
-}
+/// If the op has a subprogram scope, update it with the given linkage name
+/// (and optionally the given name, if not null), as well as all references to
+/// the scope recursively within the body.
+void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
+                      StringAttr name = {});
 
 /// Verify that a function-like op has the correct location scope. Succeeds if
 /// the location has no scope attached to it.

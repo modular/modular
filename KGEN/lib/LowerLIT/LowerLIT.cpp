@@ -86,9 +86,9 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   handleVariantOp->erase();
 }
 
-static void lowerLITOps(LIT::FuncOp func,
-                        DebugInfo::DISubprogramAttr funcSpAttr) {
+static void lowerLITOps(LIT::FuncOp func) {
   // Check if we are building debug info for source variables.
+  auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(func);
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
@@ -178,27 +178,16 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
              DenseMap<StringAttr, StringAttr> &renamedSymbols,
              Block::iterator symTableIt, const Twine &parentPrefix,
              ArrayRef<ParamDeclAttr> parentInputParams = {}) {
-  auto funcSpAttr = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(gen);
-
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
     StringAttr newName = flattenAndRenameSymbol(gen, symbolTable, symTableIt);
 
     // If this function has a subprogram attached, update its information to
     // account for the new name.
-    if (funcSpAttr) {
-      DebugInfo::DISubprogramAttr newSp =
-          funcSpAttr.cloneWith(funcSpAttr.getName(), newName);
-      DebugInfo::DIAttrTypeReplacer replacer;
-      replacer.addReplacement([&](DebugInfo::DISubprogramAttr attr) {
-        return attr == funcSpAttr ? newSp : attr;
-      });
-      replacer.recursivelyReplaceElementsIn(gen);
-      funcSpAttr = newSp;
-    }
+    DebugInfo::updateSubprogram(gen, newName);
   }
 
-  lowerLITOps(gen, funcSpAttr);
+  lowerLITOps(gen);
 
   ParamDeclArrayAttr inputParams = gen.getInputParamsAttr();
   SignatureType signature = gen.getSignature();
