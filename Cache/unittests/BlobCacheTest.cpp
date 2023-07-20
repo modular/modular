@@ -405,7 +405,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
                         createThreadPoolWorkQueue());
   auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
       getLocalDefaultBackendChain(runtime, cacheDir).takeValue());
-  ASSERT_TRUE(!std::filesystem::exists(tempDirectory))
+  ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }
 
