@@ -76,15 +76,18 @@ DISubprogramAttr DISubprogramAttr::cloneWith(StringRef name,
 // Support
 //===----------------------------------------------------------------------===//
 
-DIScopeAttr DebugInfo::extractScope(Location loc) {
+DIScopeAttr DebugInfo::extractScope(Operation *op) {
+  // Functions either have a subprogram scope fused directly to the location, or
+  // we consider them as not having any.
+  if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op))
+    if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(op->getLoc()))
+      return fusedLoc.getMetadata();
+
+  // For other ops, we look for the scope recursively.
   if (auto fusedLoc =
-          loc->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>())
+          op->getLoc()->findInstanceOf<mlir::FusedLocWith<DIScopeAttr>>())
     return fusedLoc.getMetadata();
   return {};
-}
-
-DIScopeAttr DebugInfo::extractScope(Operation *op) {
-  return extractScope(op->getLoc());
 }
 
 void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {
@@ -131,11 +134,11 @@ static ErrorOr<DIScopeAttr> getScopeWithinBody(Location loc) {
 
 LogicalResult DebugInfo::verifyFuncLocScope(mlir::FunctionOpInterface funcOp) {
   // If the function doesn't contain a location scope, we don't verify anything.
-  DebugInfo::DIScopeAttr scope = DebugInfo::extractScope(funcOp.getLoc());
+  DIScopeAttr scope = extractScope(funcOp);
   if (!scope)
     return success();
 
-  auto funcScope = dyn_cast<DebugInfo::DISubprogramAttr>(scope);
+  auto funcScope = dyn_cast<DISubprogramAttr>(scope);
   if (!funcScope) {
     return funcOp.emitOpError(
                "must have subprogram scope in location, but got ")
