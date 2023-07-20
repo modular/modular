@@ -51,7 +51,6 @@ fn where[
 
     let numel = input_buffer.dynamic_shape.flattened_length()
     if numel == 0:
-        out_chain.mark_ready()
         return
 
     var j: Int = 0
