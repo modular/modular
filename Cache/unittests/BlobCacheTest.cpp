@@ -49,24 +49,37 @@ protected:
 } // namespace
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
+  auto done = AsyncValueRef<Chain>::allocate(runtime);
   auto contains = cache->contains("does not exist");
-  contains.andThenSync([contains = contains.copy()] {
-    EXPECT_FALSE(*contains)
-        << "expected not to have item named 'does not exist'\n";
-  });
+  std::move(contains).andThenSync(
+      [done = done.copy()](AsyncValueRef<bool> contains) mutable {
+        ASSERT_FALSE(contains.isError())
+            << contains.getDiagnostic().getMessage() << '\n';
+        EXPECT_FALSE(*contains)
+            << "expected not to have item named 'does not exist'\n";
+        std::move(done).emplace();
+      });
+  await(done);
 }
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
+  auto done = AsyncValueRef<Chain>::allocate(runtime);
   auto dneOr = cache->find("does not exist");
-  dneOr.andThenSync([dneOr = dneOr.copy()] {
-    EXPECT_FALSE(dneOr.isError())
-        << "expected to not have an error for unknown item\n";
-    EXPECT_FALSE(dneOr->has_value())
-        << "expected not to have item named 'does not exist'\n";
-  });
+  std::move(dneOr).andThenSync(
+      [done =
+           done.copy()](AsyncValueRef<std::optional<BufferRef>> dneOr) mutable {
+        ASSERT_FALSE(dneOr.isError())
+            << dneOr.getDiagnostic().getMessage() << '\n';
+        EXPECT_FALSE(dneOr->has_value())
+            << "expected not to have item named 'does not exist'\n";
+        std::move(done).emplace();
+      });
+  await(done);
 }
 
 TEST_F(BlobCacheTest, ContainItemWhenInserted) {
+  auto done = AsyncValueRef<Chain>::allocate(runtime);
+
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
   auto zerosDataBuf = WriteableBuffer::get();
@@ -75,47 +88,72 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
 
   AsyncValueRef<std::string> insertOr =
       cache->insert("zeros", std::move(zerosBuf));
-  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr.isError())
-        << insertOr.getDiagnostic().getMessage() << '\n';
-    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
+  std::move(insertOr).andThenSync(
+      [cache = cache.copy(),
+       done = done.copy()](AsyncValueRef<std::string> insertOr) mutable {
+        ASSERT_FALSE(insertOr.isError())
+            << insertOr.getDiagnostic().getMessage() << '\n';
+        EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-    auto contains = cache->contains("zeros");
-    contains.andThenSync([contains = contains.copy()] {
-      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
-    });
-  });
+        auto contains = cache->contains("zeros");
+        std::move(contains).andThenSync(
+            [done = std::move(done)](AsyncValueRef<bool> contains) mutable {
+              ASSERT_FALSE(contains.isError())
+                  << contains.getDiagnostic().getMessage() << '\n';
+              EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+              std::move(done).emplace();
+            });
+      });
+  await(done);
 }
 
 TEST_F(BlobCacheTest, FindItemThatExists) {
+
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
   auto zerosDataBuf = WriteableBuffer::get();
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
+  auto inserted = AsyncValueRef<Chain>::allocate(runtime);
   AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
-  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr.isError())
-        << insertOr.getDiagnostic().getMessage() << '\n';
-    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
+  std::move(insertOr).andThenSync(
+      [cache = cache.copy(), inserted = inserted.copy()](
+          AsyncValueRef<std::string> insertOr) mutable {
+        ASSERT_FALSE(insertOr.isError())
+            << insertOr.getDiagnostic().getMessage() << '\n';
+        EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-    auto contains = cache->contains("zeros");
-    contains.andThenSync([contains = contains.copy()] {
-      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
-    });
-  });
+        auto contains = cache->contains("zeros");
+        std::move(contains).andThenSync(
+            [inserted =
+                 std::move(inserted)](AsyncValueRef<bool> contains) mutable {
+              ASSERT_FALSE(contains.isError())
+                  << contains.getDiagnostic().getMessage() << '\n';
+              EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+              std::move(inserted).emplace();
+            });
+      });
+  await(inserted);
 
+  auto found = AsyncValueRef<Chain>::allocate(runtime);
   auto zerosOr = cache->find("zeros");
-  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy()] {
-    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
-    BufferRef outZeros = std::move(**zerosOr);
-    ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
-        << "output buffer size did not match input buffer size\n";
-    EXPECT_TRUE(outZeros->getBuffer() == StringRef(zerosBuf->getBufferStart(),
-                                                   zerosBuf->getBufferSize()))
-        << "buffer returned did not match the buffer inputted\n";
-  });
+  std::move(zerosOr).andThenSync(
+      [zerosBuf = zerosBuf.copy(), found = found.copy()](
+          AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
+        ASSERT_FALSE(zerosOr.isError())
+            << zerosOr.getDiagnostic().getMessage() << '\n';
+        ASSERT_TRUE(zerosOr->has_value());
+        BufferRef outZeros = std::move(**zerosOr);
+        ASSERT_EQ(outZeros->getBufferSize(), zerosBuf->getBufferSize())
+            << "output buffer size did not match input buffer size\n";
+        EXPECT_TRUE(
+            outZeros->getBuffer() ==
+            StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
+            << "buffer returned did not match the buffer inputted\n";
+        std::move(found).emplace();
+      });
+  await(found);
 }
 
 TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
@@ -125,30 +163,46 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
+  auto inserted = AsyncValueRef<Chain>::allocate(runtime);
   AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
-  insertOr.andThenSync([cache = cache.copy(), insertOr = insertOr.copy()] {
-    EXPECT_FALSE(insertOr.isError())
-        << insertOr.getDiagnostic().getMessage() << '\n';
-    EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
+  std::move(insertOr).andThenSync(
+      [cache = cache.copy(), inserted = inserted.copy()](
+          AsyncValueRef<std::string> insertOr) mutable {
+        ASSERT_FALSE(insertOr.isError())
+            << insertOr.getDiagnostic().getMessage() << '\n';
+        EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-    auto contains = cache->contains("zeros");
-    contains.andThenSync([contains = contains.copy()] {
-      EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
-    });
-  });
+        auto contains = cache->contains("zeros");
+        std::move(contains).andThenSync(
+            [inserted =
+                 std::move(inserted)](AsyncValueRef<bool> contains) mutable {
+              ASSERT_FALSE(contains.isError())
+                  << contains.getDiagnostic().getMessage() << '\n';
+              EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
+              std::move(inserted).emplace();
+            });
+      });
+  await(inserted);
 
   // Get a buffer to read into.
   auto readBuf = WriteableBuffer::get(32);
 
+  auto found = AsyncValueRef<Chain>::allocate(runtime);
   auto zerosOr = cache->find("zeros", readBuf.copy());
-  zerosOr.andThenSync([zerosOr = zerosOr.copy(), zerosBuf = zerosBuf.copy(),
-                       readBuf = std::move(readBuf)]() mutable {
-    EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
-    ASSERT_TRUE(readBuf->getBufferSize() == 32)
-        << "output buffer size did not match expected buffer size\n";
-    EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
-        << "buffer returned did not match the buffer inputted\n";
-  });
+  std::move(zerosOr).andThenSync(
+      [zerosBuf = zerosBuf.copy(), readBuf = std::move(readBuf),
+       found = found.copy()](
+          AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
+        ASSERT_FALSE(zerosOr.isError())
+            << zerosOr.getDiagnostic().getMessage() << '\n';
+        ASSERT_TRUE(zerosOr->has_value());
+        ASSERT_TRUE(readBuf->getBufferSize() == 32)
+            << "output buffer size did not match expected buffer size\n";
+        EXPECT_TRUE(readBuf->getBuffer()[0] == '\0')
+            << "buffer returned did not match the buffer inputted\n";
+        std::move(found).emplace();
+      });
+  await(found);
 }
 
 TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
@@ -157,11 +211,11 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
   // Number of concurrent keys to insert then check.
   const int numThreads = 10;
 
-  for (int i = 0; i < numRuns; ++i) {
+  for (int run = 0; run < numRuns; ++run) {
     std::vector<std::thread> threads;
-    for (int j = 0; j < numThreads; ++j) {
-      threads.emplace_back([this, j]() {
-        std::string key = "zeros" + std::to_string(j);
+    for (int thread = 0; thread < numThreads; ++thread) {
+      threads.emplace_back([this, thread]() {
+        std::string key = "zeros" + std::to_string(thread);
 
         // Get an uninitialized buffer. We don't care what's in this, as long as
         // it goes in and comes out the same.
@@ -169,80 +223,88 @@ TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
         zerosDataBuf->write(0);
         BufferRef zerosBuf = std::move(zerosDataBuf);
 
-        auto insertCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+        auto inserted = AsyncValueRef<Chain>::allocate(runtime);
         AsyncValueRef<std::string> insertOr =
             cache->insert(key, zerosBuf.copy());
-        insertOr.andThenSync(
-            [key, cache = cache.copy(), insertOr = insertOr.copy(),
-             insertCheckDone = insertCheckDone.copy()]() mutable {
-              EXPECT_FALSE(insertOr.isError())
+        std::move(insertOr).andThenSync(
+            [key, cache = cache.copy(), inserted = inserted.copy()](
+                AsyncValueRef<std::string> insertOr) mutable {
+              ASSERT_FALSE(insertOr.isError())
                   << insertOr.getDiagnostic().getMessage() << '\n';
               EXPECT_FALSE(insertOr->empty())
                   << "expected to receive the hash key\n";
 
               auto contains = cache->contains(key);
-              contains.andThenSync(
-                  [key, contains = contains.copy(),
-                   insertCheckDone = std::move(insertCheckDone)]() mutable {
+              std::move(contains).andThenSync(
+                  [key, inserted = std::move(inserted)](
+                      AsyncValueRef<bool> contains) mutable {
+                    ASSERT_FALSE(contains.isError())
+                        << contains.getDiagnostic().getMessage() << '\n';
                     EXPECT_TRUE(*contains)
                         << "expected to have item named '" << key << "'\n";
-                    std::move(insertCheckDone).emplace();
+                    std::move(inserted).emplace();
                   });
             });
         // Use await to make the sequencing easier to follow.
-        await(insertCheckDone);
+        await(inserted);
 
-        auto zerosCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+        auto found = AsyncValueRef<Chain>::allocate(runtime);
         auto zerosOr = cache->find(key);
-        zerosOr.andThenSync([zerosOr = zerosOr.copy(),
-                             zerosBuf = zerosBuf.copy(),
-                             zerosCheckDone = zerosCheckDone.copy()]() mutable {
-          EXPECT_TRUE(zerosOr->has_value())
-              << zerosOr.getDiagnostic().getMessage();
-          BufferRef outZeros = std::move(**zerosOr);
-          ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
-              << "output buffer size did not match input buffer size\n";
-          EXPECT_TRUE(
-              outZeros->getBuffer() ==
-              StringRef(zerosBuf->getBufferStart(), zerosBuf->getBufferSize()))
-              << "buffer returned did not match the buffer inputted\n";
-          std::move(zerosCheckDone).emplace();
-        });
-        await(zerosCheckDone);
+        std::move(zerosOr).andThenSync(
+            [zerosBuf = zerosBuf.copy(), found = found.copy()](
+                AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
+              ASSERT_FALSE(zerosOr.isError())
+                  << zerosOr.getDiagnostic().getMessage() << '\n';
+              ASSERT_TRUE(zerosOr->has_value());
+
+              BufferRef outZeros = std::move(**zerosOr);
+              ASSERT_EQ(outZeros->getBufferSize(), zerosBuf->getBufferSize())
+                  << "output buffer size did not match input buffer size\n";
+              EXPECT_TRUE(outZeros->getBuffer() ==
+                          StringRef(zerosBuf->getBufferStart(),
+                                    zerosBuf->getBufferSize()))
+                  << "buffer returned did not match the buffer inputted\n";
+              std::move(found).emplace();
+            });
+        await(found);
       });
     }
 
     for (auto &thread : threads)
       thread.join();
 
-    auto clearCheckDone = AsyncValueRef<Chain>::allocate(runtime);
+    auto cleared = AsyncValueRef<Chain>::allocate(runtime);
     auto clearOr = cache->clear();
-    clearOr.andThenSync([this, clearOr = clearOr.copy(), cache = cache.copy(),
-                         clearCheckDone = clearCheckDone.copy()]() mutable {
-      EXPECT_FALSE(clearOr.isError())
+    std::move(clearOr).andThenSync([this, cache = cache.copy(),
+                                    cleared = cleared.copy()](
+                                       AsyncValueRef<Chain> clearOr) mutable {
+      ASSERT_FALSE(clearOr.isError())
           << clearOr.getDiagnostic().getMessage() << "\n";
 
       std::vector<AnyAsyncValueRef> chains;
       for (int j = 0; j < numThreads; ++j) {
-        auto containsCheckDone = AsyncValueRef<Chain>::allocate(runtime);
-        chains.emplace_back(containsCheckDone.copy());
+        auto checkedContains = AsyncValueRef<Chain>::allocate(runtime);
+        chains.emplace_back(checkedContains.copy());
         std::string key = "zeros" + std::to_string(j);
         auto contains = cache->contains(key);
-        contains.andThenSync([contains = contains.copy(),
-                              containsCheckDone =
-                                  std::move(containsCheckDone)]() mutable {
+        std::move(contains).andThenSync([checkedContains =
+                                             std::move(checkedContains)](
+                                            AsyncValueRef<bool>
+                                                contains) mutable {
+          ASSERT_FALSE(contains.isError())
+              << contains.getDiagnostic().getMessage() << "\n";
           EXPECT_FALSE(*contains)
               << "expected not to have item named 'zeros' after the clear\n";
-          std::move(containsCheckDone).emplace();
+          std::move(checkedContains).emplace();
         });
       }
       andThenSyncMoving(chains,
-                        [clearCheckDone = std::move(clearCheckDone)](
+                        [cleared = std::move(cleared)](
                             MutableArrayRef<AnyAsyncValueRef> chains) mutable {
-                          std::move(clearCheckDone).emplace();
+                          std::move(cleared).emplace();
                         });
     });
-    await(clearCheckDone);
+    await(cleared);
   }
 }
 
@@ -265,7 +327,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros");
   await(zerosOr);
-  EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+  ASSERT_FALSE(zerosOr.isError())
+      << zerosOr.getDiagnostic().getMessage() << '\n';
+  ASSERT_TRUE(zerosOr->has_value());
 
   BufferRef outZeros = std::move(**zerosOr);
   ASSERT_TRUE(outZeros->getBufferSize() == zerosBuf->getBufferSize())
@@ -298,7 +362,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros", readBuf.copy());
   await(zerosOr);
-  EXPECT_TRUE(zerosOr->has_value()) << zerosOr.getDiagnostic().getMessage();
+  ASSERT_FALSE(zerosOr.isError())
+      << zerosOr.getDiagnostic().getMessage() << '\n';
+  EXPECT_TRUE(zerosOr->has_value());
 
   ASSERT_TRUE(readBuf->getBufferSize() == 32)
       << "output buffer size did not match input buffer size\n";
@@ -310,8 +376,9 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
   // holding a read-only reference to the buffer).
   auto zerosOrAgain = fsCache->find("zeros", readBuf.copy());
   await(zerosOrAgain);
-  EXPECT_TRUE(zerosOrAgain->has_value())
-      << zerosOr.getDiagnostic().getMessage();
+  ASSERT_FALSE(zerosOrAgain.isError())
+      << zerosOrAgain.getDiagnostic().getMessage() << '\n';
+  EXPECT_TRUE(zerosOrAgain->has_value());
 
   ASSERT_TRUE(readBuf->getBufferSize() == 32)
       << "output buffer size did not match input buffer size\n";
@@ -468,7 +535,7 @@ TEST(FilesystemBackend, Hammer) {
 
       await(threadDone);
       EXPECT_FALSE(threadDone.isError())
-          << threadDone.getDiagnostic().getMessage().get();
+          << threadDone.getDiagnostic().getMessage().get() << '\n';
     });
   }
 
