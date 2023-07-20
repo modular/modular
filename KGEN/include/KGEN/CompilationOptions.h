@@ -7,6 +7,7 @@
 #ifndef KGEN_COMPILATIONOPTIONS_H
 #define KGEN_COMPILATIONOPTIONS_H
 
+#include "Support/Compiler/Sanitizers.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Target.h"
@@ -39,26 +40,6 @@ public:
   enum DebugAtLevel {
     /// Generate debug info for the LLVM output.
     kDebugAtLLVM
-  };
-
-  /// The sanitizers enabled for the compilation.
-  class Sanitizers {
-  public:
-    /// The various sanitizers that can be enabled.
-    enum SanitizerKind { kAddress, kThread };
-
-    Sanitizers(unsigned sanitizerMask = 0) : sanitizerMask(sanitizerMask) {}
-
-    /// Check if the given sanitizer is enabled.
-    bool has(SanitizerKind sanitizer) const {
-      return sanitizerMask & (1 << sanitizer);
-    }
-
-    /// Returns if any sanitizer is enabled.
-    operator bool() const { return sanitizerMask != 0; }
-
-  private:
-    unsigned sanitizerMask;
   };
 
   CompilationOptions(
@@ -130,11 +111,8 @@ public:
       }
     }
     if (sanitizers) {
-      os << ", sanitizers: ";
-      if (sanitizers.has(Sanitizers::kAddress))
-        os << " address";
-      if (sanitizers.has(Sanitizers::kThread))
-        os << " thread";
+      os << ", sanitizers:";
+      sanitizers.print(os);
     }
     if (enableXRayInstrumentation)
       os << ", enableXRayInstrumentation";

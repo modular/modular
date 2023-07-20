@@ -194,7 +194,7 @@ private:
   cl::opt<bool> optLevel3{"O3",
                           cl::desc("Aggressively enable all optimizations")};
 
-  using SanitizerKind = KGEN::CompilationOptions::Sanitizers::SanitizerKind;
+  using SanitizerKind = Sanitizers::SanitizerKind;
   llvm::cl::bits<SanitizerKind> sanitizerOptions{
       "sanitize", cl::desc("Enable the given sanitizer"),
       cl::values(clEnumValN(SanitizerKind::kAddress, "address",
