@@ -14,3 +14,5 @@ mlir_tablegen(LITAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=lit)
 mlir_tablegen(LITAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=lit)
 add_public_tablegen_target(MLIRLITAttrsIncGen)
 add_dependencies(MLIRLITIncGen MLIRLITAttrsIncGen)
+
+add_mlir_interface(LITInterfaces)

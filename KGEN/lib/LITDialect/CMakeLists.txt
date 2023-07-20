@@ -7,6 +7,7 @@
 add_modular_dialect_library(LITDialect
   LITAttrs.cpp
   LITDialect.cpp
+  LITInterfaces.cpp
   LITOps.cpp
   LifetimeTrackable.cpp
 

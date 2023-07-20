@@ -68,15 +68,9 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 DocStringAttr ASTDecl::getDocString() {
-  Operation *declOp = getIfOperation();
-  if (!declOp)
-    return DocStringAttr();
-
-  return TypeSwitch<Operation *, DocStringAttr>(declOp)
-      .Case<AliasDeclOp, AliasForwardDeclOp, GlobalVarDeclOp, FileModuleOp,
-            FuncOp, StructFieldOp, StructDeclOp, VarLetDeclOp>(
-          [&](auto op) { return op.getDocStringAttr(); })
-      .Default({});
+  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(*this))
+    return astDeclOp.getDocStringAttr();
+  return {};
 }
 
 ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringRef name) const {
@@ -1419,21 +1413,15 @@ void ParserBase::parseDocString(ASTDecl &decl) {
   Token docToken = getToken();
   if (!consumeIf(Token::string))
     return;
-  Operation *declOp = decl.getIfOperation();
-  if (!declOp)
-    return;
-  StringRef docSpelling = docToken.getSpelling();
-  Location loc = shared.diags.translateLocation(
-      lexer.getStringLiteralStartLoc(docSpelling));
+  if (auto astDeclOp = dyn_cast<ASTDeclInterface>(decl)) {
+    StringRef docSpelling = docToken.getSpelling();
+    Location loc = shared.diags.translateLocation(
+        lexer.getStringLiteralStartLoc(docSpelling));
 
-  TypeSwitch<Operation *>(declOp)
-      .Case<AliasDeclOp, AliasForwardDeclOp, GlobalVarDeclOp, FileModuleOp,
-            FuncOp, StructFieldOp, StructDeclOp>([&](auto op) {
-        op.setDocStringAttr(DocStringAttr::get(
-            StringAttr::get(getContext(),
-                            lexer.getStringLiteralValue(docSpelling)),
-            dyn_cast<FileLineColLoc>(loc)));
-      });
+    astDeclOp.setDocStringAttr(DocStringAttr::get(
+        StringAttr::get(getContext(), lexer.getStringLiteralValue(docSpelling)),
+        dyn_cast<FileLineColLoc>(loc)));
+  }
 }
 
 //===----------------------------------------------------------------------===//
