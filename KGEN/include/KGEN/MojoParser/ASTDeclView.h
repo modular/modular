@@ -52,6 +52,7 @@ public:
   //===----------------------------------------------------------------------===//
 
   enum DeclViewKind {
+    DK_AliasDeclView,
     DK_ArgumentDeclView,
     DK_FunctionDeclView,
     DK_ModuleDeclView,
@@ -64,7 +65,7 @@ protected:
   DeclView(DeclViewKind kind, StringRef name) : kind(kind), name(name) {}
 
 private:
-  const DeclViewKind kind;
+  DeclViewKind kind;
   StringRef name;
 };
 
@@ -142,6 +143,39 @@ private:
   std::string description;
 };
 
+/// View for alias decls.
+class AliasDeclView : public DeclView {
+public:
+  std::string getDeclarationSnippet() const override;
+
+  StringRef getValue() const { return value; }
+
+  llvm::json::Object toJSON() const override;
+
+public:
+  //===----------------------------------------------------------------------===//
+  // LLVM RTTI Support
+  //===----------------------------------------------------------------------===//
+
+  static bool classof(const DeclView *decl) {
+    return decl->getKind() == DK_AliasDeclView;
+  }
+
+private:
+  friend class MojoASTDeclRef;
+
+  AliasDeclView(MojoASTDeclRef declRef);
+
+  std::string value;
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
+  std::string summary;
+};
+
 /// View for functions of any kind, including closures, instance methods, fn
 /// functions, def functions, etc.
 class FunctionDeclView : public DeclView {
@@ -166,7 +200,7 @@ public:
   /// be empty if no docstring is available.
   std::string getMarkdownDocString() const;
 
-  /// Return the parameters of arguments of this function.
+  /// Return the parameters of this function.
   ArrayRef<ParameterDeclView> getParameters() const { return parameters; }
 
   // TODO: always return the type, including None. The doc and snippet
@@ -227,6 +261,9 @@ private:
 /// View for module decls.
 class ModuleDeclView : public DeclView {
 public:
+  /// Return the aliases defined at the top-level of this module.
+  llvm::ArrayRef<AliasDeclView> getAliases() const { return aliases; }
+
   std::string getDeclarationSnippet() const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
@@ -248,6 +285,8 @@ private:
   friend class MojoASTDeclRef;
 
   ModuleDeclView(MojoASTDeclRef declRef);
+
+  SmallVector<AliasDeclView> aliases;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
