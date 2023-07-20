@@ -261,18 +261,11 @@ lowerStructDecl(StructDeclOp structDecl, SymbolTable &symbolTable,
            structDecl.getFields().front().getOperations())) {
     if (isa<StructFieldOp>(member))
       continue; // Already lowered field.
-
-    if (auto varDecl = dyn_cast<VarLetDeclOp>(member)) {
-      Type elemType = ParamRefType::get(varDecl.getType().getElementType());
-      OpBuilder b(&member);
-      b.create<StructFieldOp>(member.getLoc(), varDecl.getName(), elemType,
-                              varDecl.getDocStringAttr());
-      varDecl->erase();
-      continue;
-    } else if (isa<AliasDeclOp>(member)) {
+    if (isa<AliasDeclOp>(member)) {
       member.erase();
       continue;
     }
+
     auto func = dyn_cast<LIT::FuncOp>(member);
     if (!func)
       return member.emitError("unsupported op in lit lowering");
@@ -497,7 +490,11 @@ lowerModuleDecl(Block *moduleBody, SymbolTable &symbolTable,
               op->getBlock()->getOperations().splice(
                   op->getIterator(), fileBody->getOperations(),
                   fileBody->begin(), fileBody->end());
-              op->erase();
+              // Make sure to remove the op from the symbol table if needed.
+              if (op->getParentOp() == symbolTable.getOp())
+                symbolTable.erase(op);
+              else
+                op->erase();
               return mlir::success();
             })
             .Case<AliasDeclOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
