@@ -10,6 +10,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/RCRef.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/Preprocessor.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SHA256.h"
@@ -339,4 +340,140 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
       getLocalDefaultBackendChain(runtime, cacheDir).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory))
       << "expected the temp directory to be deleted by cacheDir creation\n";
+}
+
+//===----------------------------------------------------------------------===//
+// Specialized FilesystemBackend tests
+//===----------------------------------------------------------------------===//
+
+/// Returns key for given thread and run.
+static std::string makeKeyStr(int thread, int run) {
+  return "key[" + std::to_string(thread) + "," + std::to_string(run) + "]";
+}
+
+/// Returns key in buffer form for thread and run.
+static BufferRef makeKey(int thread, int run) {
+  std::string key = makeKeyStr(thread, run);
+  auto writeableKeyBuffer = WriteableBuffer::get();
+  writeableKeyBuffer->write(key.data(), key.size());
+  return std::move(writeableKeyBuffer);
+}
+
+/// Returns buffer with distinguished byte value for thread and run.
+static BufferRef makeValue(size_t size, int numThreads, int thread, int run) {
+  uint8_t value = (thread * numThreads) + run;
+  auto writeableValueBuffer = WriteableBuffer::get(size);
+  memset(writeableValueBuffer->getBufferStart(), value, size);
+  return std::move(writeableValueBuffer);
+}
+
+static LLCL::EncodedLocation unknownLoc() {
+  return LLCL::UnknownLocationDecoder::getEncodedLocation();
+}
+
+static std::unique_ptr<Runtime> makeRuntime() {
+  return std::make_unique<Runtime>(
+      createLeakCheckAllocator(createMallocAllocator()),
+      createThreadPoolWorkQueue());
+}
+
+static RCRef<BlobCacheBackend> makeFilesytemBackend(Runtime &runtime) {
+  return getFilesystemBackend(runtime, STRINGIFY(CACHE_TEST_DIR));
+}
+
+/// Force the cache to be cleared, synchronously.
+static void clearCache() {
+  auto runtime = makeRuntime();
+  auto backend = makeFilesytemBackend(*runtime);
+  auto clearDone = backend->clear();
+  await(clearDone);
+  assert(clearDone.isValueAvailable());
+}
+
+TEST(FilesystemBackend, Hammer) {
+  const size_t size = 8000;
+  const int numThreads = 20;
+  const int numKeys = 200;
+
+  clearCache();
+
+  std::vector<std::thread> threads;
+  for (int thread = 0; thread < numThreads; ++thread) {
+    threads.emplace_back([thread]() {
+      auto runtime = makeRuntime();
+      auto backend = makeFilesytemBackend(*runtime);
+      auto threadDone = AsyncValueRef<Chain>::allocate(*runtime);
+
+      // Insert known values with known keys.
+      std::vector<AnyAsyncValueRef> insertsDone;
+      for (int run = 0; run < numKeys; ++run) {
+        insertsDone.emplace_back(backend->insert(
+            makeKey(thread, run), makeValue(size, numThreads, thread, run)));
+      }
+      andThenSyncMoving(insertsDone, [thread, runtime = runtime.get(),
+                                      backend = backend.copy(),
+                                      threadDone = threadDone.copy()](
+                                         MutableArrayRef<AnyAsyncValueRef>
+                                             insertsDone) mutable {
+        for (auto &ref : insertsDone) {
+          if (ref.isError())
+            return std::move(threadDone).setToError(ref.takeDiagnostic());
+        }
+
+        // Retrieve those values and check they match.
+        std::vector<AnyAsyncValueRef> findsDone;
+        for (int run = 0; run < numKeys; ++run) {
+          auto findDone = AsyncValueRef<Chain>::allocate(*runtime);
+          backend->find(makeKey(thread, run))
+              .andThenSync([thread, run, findDone = findDone.copy()](
+                               AsyncValueRef<std::optional<BufferRef>>
+                                   optResult) mutable {
+                if (optResult.isError())
+                  return std::move(findDone).setToError(
+                      optResult.takeDiagnostic());
+                if (!optResult->has_value())
+                  return std::move(findDone).setToError(
+                      {Twine("no entry for ") + makeKeyStr(thread, run),
+                       unknownLoc()});
+                if (optResult->value()->getBufferSize() != size)
+                  return std::move(findDone).setToError(
+                      {Twine("mismatched size for ") + makeKeyStr(thread, run) +
+                           ": actual size is " +
+                           Twine(optResult->value()->getBufferSize()),
+                       unknownLoc()});
+                BufferRef expectedValue =
+                    makeValue(size, numThreads, thread, run);
+                if (memcmp(optResult->value()->getBufferStart(),
+                           expectedValue->getBufferStart(), size))
+                  return std::move(findDone).setToError(
+                      {Twine("retrieved value does not match expected value "
+                             "for ") +
+                           makeKeyStr(thread, run),
+                       unknownLoc()});
+                std::move(findDone).emplace();
+              });
+          findsDone.emplace_back(std::move(findDone));
+        }
+        andThenSyncMoving(
+            findsDone,
+            [threadDone = std::move(threadDone)](
+                MutableArrayRef<AnyAsyncValueRef> findsDone) mutable {
+              for (auto &ref : findsDone) {
+                if (ref.isError())
+                  return std::move(threadDone).setToError(ref.takeDiagnostic());
+              }
+              std::move(threadDone).emplace();
+            });
+      });
+
+      await(threadDone);
+      EXPECT_FALSE(threadDone.isError())
+          << threadDone.getDiagnostic().getMessage().get();
+    });
+  }
+
+  for (auto &thread : threads)
+    thread.join();
+
+  clearCache();
 }
