@@ -692,6 +692,13 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   //===--------------------------------------------------------------------===//
   // Builtin
 
+  // Truncate index constants if required.
+  if (isa<IndexType>(attr.getType())) {
+    return b.create<LLVM::ConstantOp>(b.getIntegerAttr(
+        cast<IntegerType>(tc.getIndexType()),
+        cast<IntegerAttr>(attr).getValue().trunc(tc.getIndexTypeBitwidth())));
+  }
+
   // Drop the sign on integer attributes; LLVM is signless.
   if (auto intCst = dyn_cast<IntegerAttr>(attr)) {
     return b.create<LLVM::ConstantOp>(
