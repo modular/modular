@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITDialect.h"
+#include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/FunctionInterfaces.h"

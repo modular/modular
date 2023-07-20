@@ -10,6 +10,7 @@
 
 include "KGEN/LITDialect/LITAttrs.td"
 include "KGEN/LITDialect/LITDialect.td"
+include "KGEN/LITDialect/LITInterfaces.td"
 include "KGEN/LITDialect/LITTypes.td"
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENEnums.td"
@@ -40,7 +41,7 @@ def LIT_FuncOp : LITOp<"func", [
     DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
-    DeclInterface, FuncInterface, ExportInterface]> {
+    ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface]> {
   let summary = "High level generator definition";
   let description = [{
     The `lit.func` operation models a def/fn declaration at the Lit source
@@ -103,6 +104,9 @@ def LIT_FuncOp : LITOp<"func", [
     /// Check if a function is coming from an external package. This is
     /// signified by having the pre-compiled metadata on the func itself.
     bool isExternal() { return getPreCompiledModuleRef().has_value(); }
+
+    /// Return the decl name of the function.
+    StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
   let builders = [
@@ -122,7 +126,7 @@ def LIT_FuncOp : LITOp<"func", [
 //===----------------------------------------------------------------------===//
 
 def FileModuleOp : LITOp<"file_module", [
-    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
   let summary = "source file module";
@@ -144,6 +148,11 @@ def FileModuleOp : LITOp<"file_module", [
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
+  let extraClassDeclaration = [{
+    /// Return the decl name of the file.
+    StringAttr getDeclName() { return getSymNameAttr(); }
+  }];
+
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>,
   ];
@@ -156,7 +165,7 @@ def FileModuleOp : LITOp<"file_module", [
 //===----------------------------------------------------------------------===//
 
 def PackageOp : LITOp<"package", [
-    IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
   let summary = "mojo source package";
@@ -189,9 +198,15 @@ def PackageOp : LITOp<"package", [
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes,
     // The module containing the post-elaboration of this package when it was
     // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postElaborationModule
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postElaborationModule,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let extraClassDeclaration = [{
+    /// Return the decl name of the package.
+    StringAttr getDeclName() { return getSymNameAttr(); }
+  }];
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>,
@@ -249,7 +264,7 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
 
 def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
-    NoTerminator
+    ASTDeclInterface, NoTerminator
   ]> {
   let summary = "Struct declaration.";
   let description = [{
@@ -329,6 +344,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     bool isRegisterPassable() {
       return getRegisterPassable() != RP_MemoryOnly;
     }
+
+    /// Return the decl name of the struct.
+    StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
   let builders = [
@@ -345,7 +363,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 // StructFieldOp
 //===----------------------------------------------------------------------===//
 
-def LIT_StructFieldOp : LITOp<"struct.field", [HasParent<"StructDeclOp">]> {
+def LIT_StructFieldOp : LITOp<"struct.field", [
+    ASTDeclInterface, HasParent<"StructDeclOp">
+  ]> {
   let summary = "Struct field declaration.";
   let description = [{
     The `lit.struct.field` operations declares a named struct field and type.
@@ -611,7 +631,7 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 //===----------------------------------------------------------------------===//
 
 def LIT_AliasDeclOp : LITOp<"alias.decl", [
-    DeclareOpInterfaceMethods<ParamOpInterface>
+    ASTDeclInterface, DeclareOpInterfaceMethods<ParamOpInterface>
   ]>, OneParamDecl {
   let summary = "`alias x: T = value` declaration";
   let description = [{
@@ -635,6 +655,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 
   let extraClassDeclaration = [{
     StringAttr getName() { return getParamDecl().getName(); }
+    StringAttr getDeclName() { return getName(); }
     Type getType() { return getParamDecl().getType(); }
   }];
 
@@ -649,7 +670,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 def Builtin_LocationAttr : Builtin_Attr<"Location", []> {
 }
 
-def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
+def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl", [ASTDeclInterface]> {
   let summary = "`alias x: T` declaration for a callee return parameter";
 
   let description = [{
@@ -673,9 +694,11 @@ def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl"> {
 // LetRegDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_LetRegDeclOp : LITOp<"letreg.decl",
-         [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-          Pure, AllTypesMatch<["value", "result"]>,]> {
+def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
+    ASTDeclInterface,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+    Pure, AllTypesMatch<["value", "result"]>
+  ]> {
   let summary = "Register-primary local `let` declaration";
   let description = [{
     This declaration is used for register primary values assigned to a let
@@ -701,8 +724,10 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl",
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDeclOp : LITOp<"varlet.decl",
-    [DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
+def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
+    ASTDeclInterface,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>
+  ]> {
   let summary = "Addressible local let or var declaration";
   let description = [{
     This declaration is used for var and let declarations with an exposed
@@ -735,8 +760,9 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl",
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
-    ExportInterface]> {
+def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
+    ASTDeclInterface, Symbol, NoTerminator, ExportInterface
+  ]> {
   let summary = "Global variable declaration.";
   let description = [{
     The `lit.globalvar.decl` operation corresponds to a global variable
@@ -776,6 +802,11 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [Symbol, NoTerminator,
     attr-dict-with-keyword custom<OptionalDecorators>($decorators)
     (`isLet` $isLet^)?  custom<NoArgRegion>($ctor) `,`
     custom<NoArgRegion>($dtor)
+  }];
+
+  let extraClassDeclaration = [{
+    /// Return the decl name of the variable.
+    StringAttr getDeclName() { return getSymNameAttr(); }
   }];
 
   let builders = [
