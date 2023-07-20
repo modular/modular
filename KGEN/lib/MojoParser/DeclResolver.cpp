@@ -67,9 +67,15 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
 // ASTDecl
 //===----------------------------------------------------------------------===//
 
-DocStringAttr ASTDecl::getDocString() {
+DocStringAttr ASTDecl::getDocString() const {
   if (auto astDeclOp = dyn_cast<ASTDeclInterface>(*this))
     return astDeclOp.getDocStringAttr();
+  return {};
+}
+
+std::optional<DocString> ASTDecl::getParsedDocString() const {
+  if (auto rawDocStr = getDocString())
+    return DocString(rawDocStr);
   return {};
 }
 

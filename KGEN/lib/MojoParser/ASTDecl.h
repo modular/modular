@@ -27,6 +27,7 @@ class DeclRefType;
 
 namespace M::KGEN::LIT {
 class DocStringAttr;
+class DocString;
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
 /// declaration in a program.  These maintain type checking and other
@@ -123,7 +124,10 @@ public:
   }
 
   /// Return the doc string for this decl, or nullptr if there isn't one.
-  DocStringAttr getDocString();
+  DocStringAttr getDocString() const;
+
+  /// Return the parsed `DocString` for this decl if available.
+  std::optional<DocString> getParsedDocString() const;
 
   //===--------------------------------------------------------------------===//
   // Name lookup

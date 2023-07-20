@@ -36,6 +36,17 @@ static constexpr const char *kArgs = "Args";
 /// function.
 static constexpr const char *kReturns = "Returns";
 
+/// Return if a decl should be hidden given its name.
+static bool shouldHideName(StringRef name) {
+  // Non-underscore names are never hidden.
+  if (!name.startswith("_"))
+    return false;
+
+  // Keep special language names, which have leading and trailing underscores,
+  // even though they start with `_`.
+  return !(name.startswith("__") && name.endswith("__"));
+}
+
 /// Return the indentation level of the first line of the string.
 static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
@@ -152,6 +163,28 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   return paragraphOS.str();
 }
 
+/// Extract a list of directly child alias decls from a given decl. It omits
+/// aliases whose name start with _.
+static SmallVector<AliasDeclView> extractChildAliases(ASTDecl &decl) {
+  SmallVector<AliasDeclView> aliases;
+
+  for (const auto &[name, decls] : decl.getDeclsInScope()) {
+    if (shouldHideName(name) || decls.empty())
+      continue;
+    if (!isa<AliasDeclOp>(**decls.begin()))
+      continue;
+
+    for (auto &child : decls) {
+      // Skip declarations that were imported from other scopes.
+      if (child->getParentDecl() == &decl)
+        aliases.push_back(
+            cast<AliasDeclView>(*MojoASTDeclRef(child).getView()));
+    }
+  }
+
+  return aliases;
+}
+
 //===----------------------------------------------------------------------===//
 // DeclView
 //===----------------------------------------------------------------------===//
@@ -192,6 +225,34 @@ llvm::json::Object ArgumentDeclView::toJSON() const {
       {"description", description}, {"inout", inout}, {"kind", "parameter"},
       {"name", getName()},          {"type", type},
   };
+}
+
+//===----------------------------------------------------------------------===//
+// AliasDeclView
+//===----------------------------------------------------------------------===//
+
+std::string AliasDeclView::getDeclarationSnippet() const { return {}; }
+
+llvm::json::Object AliasDeclView::toJSON() const {
+  return llvm::json::Object{{"description", description},
+                            {"kind", "alias"},
+                            {"name", getName()},
+                            {"summary", summary},
+                            {"value", value}};
+}
+
+AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_AliasDeclView, declRef.getName().value_or(StringRef())) {
+  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+  auto aliasOp = cast<LIT::AliasDeclOp>(declRef.getIfOperation());
+
+  llvm::raw_string_ostream valueOS(value);
+  PValue(aliasOp.getValue()).printForDiag(valueOS);
+
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    description = llvm::join(docStr->getDescription(), "\n");
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -374,11 +435,9 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   if (!resultType.isNoneType())
     returnType = generateTypeString(resultType, selfType);
 
-  // Emit the doc string if present.
-  if (auto rawDocStr = decl.getDocString()) {
-    DocString docStr(rawDocStr);
-    summary = docStr.getSummary();
-    augmentWithDocumentation(docStr.getDescription());
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    augmentWithDocumentation(docStr->getDescription());
   }
 
   raisesFlag = funcOp.isThrows();
@@ -393,19 +452,27 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 std::string ModuleDeclView::getDeclarationSnippet() const { return {}; }
 
 llvm::json::Object ModuleDeclView::toJSON() const {
-  return llvm::json::Object{{"description", description},
+  llvm::json::Object result{{"description", description},
                             {"kind", "module"},
                             {"name", getName()},
                             {"summary", summary}};
+
+  llvm::json::Array jsonAliases;
+  for (const auto &alias : aliases)
+    jsonAliases.push_back(alias.toJSON());
+  result.insert({"aliases", std::move(jsonAliases)});
+
+  return result;
 }
 
 ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_ModuleDeclView, declRef.getName().value_or(StringRef())) {
   ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
 
-  if (auto rawDocStr = decl.getDocString()) {
-    DocString docStr(rawDocStr);
-    summary = docStr.getSummary();
-    description = llvm::join(docStr.getDescription(), "\n");
+  aliases = extractChildAliases(decl);
+
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    description = llvm::join(docStr->getDescription(), "\n");
   }
 }

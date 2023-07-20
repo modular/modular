@@ -14,24 +14,24 @@ spills over to the next line."""
 # CHECK:  "name": "mojo-doc",
 # CHECK:  "kind": "module",
 # CHECK:  "summary": "This is a module summary, that spills over to the next line.",
-# CHECK:  "description": "",
 
 # CHECK:  "aliases": [
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Type",
-# CHECK:  "value": "Int",
 # CHECK:  "summary": "An example alias of a Type",
+# CHECK:  "value": "Int"
 alias alias_Type = Int
 """An example alias of a Type"""
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Value",
-# CHECK:  "value": "10",
 # CHECK:  "summary": "An example alias of a Value",
+# CHECK:  "value": "10"
 alias alias_Value = 10
 """An example alias of a Value"""
 
 
+# CHECK:  "description": "",
 # CHECK:  "functions": [
 # CHECK:  "name": "empty_fn",
 # CHECK:  "overloads": [

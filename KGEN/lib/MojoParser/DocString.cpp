@@ -41,13 +41,6 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
-/// Extract a DocString from a given decl, or None if there is no doc string.
-static std::optional<DocString> getDocString(ASTDecl &decl) {
-  if (DocStringAttr rawDocString = decl.getDocString())
-    return DocString(rawDocString);
-  return std::nullopt;
-}
-
 /// A struct requires a doc string if it's defined at the top level of a module,
 /// unless its name begins with an underscore.
 static bool requiresDocString(StructDeclOp op) {
@@ -204,7 +197,7 @@ private:
     return false;
   }
 
-  void generateJSONForChildren(ASTDecl &decl) {
+  void generateJSONForChildren(ASTDecl &decl, bool omitAliases = false) {
     using ChildrenVecT =
         SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>;
     ChildrenVecT aliases, functions, structs, fields;
@@ -215,7 +208,7 @@ private:
       if (shouldHideName(name) || decls.empty())
         continue;
 
-      if (isa<AliasDeclOp>(**decls.begin()))
+      if (isa<AliasDeclOp>(**decls.begin()) && !omitAliases)
         aliases.emplace_back(name, decls);
       else if (isa<LIT::FuncOp>(**decls.begin()))
         functions.emplace_back(name, decls);
@@ -409,23 +402,7 @@ private:
   // Alias Generation
 
   void generateJSONFor(ASTDecl &decl, AliasDeclOp aliasOp) {
-    os.object([&] {
-      os.attribute("kind", "alias");
-      os.attribute("name",
-                   demangleParameterName(aliasOp.getParamDecl().getName()));
-
-      // Pretty print the value.
-      std::string valueStr;
-      llvm::raw_string_ostream valueOS(valueStr);
-      PValue(aliasOp.getValue()).printForDiag(valueOS);
-      os.attribute("value", valueOS.str());
-
-      // Emit the doc string if present.
-      if (std::optional<DocString> docStr = getDocString(decl)) {
-        os.attribute("summary", docStr->getSummary());
-        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
-      }
-    });
+    os.value(MojoASTDeclRef(&decl).getView()->toJSON());
   }
 
   //===--------------------------------------------------------------------===//
@@ -443,7 +420,7 @@ private:
       os.attribute("value", typeOS.str());
 
       // Emit the doc string if present.
-      if (std::optional<DocString> docStr = getDocString(decl)) {
+      if (std::optional<DocString> docStr = decl.getParsedDocString()) {
         os.attribute("summary", docStr->getSummary());
         os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
       }
@@ -487,7 +464,7 @@ private:
       os.attribute("name", structOp.getName());
 
       // Emit the doc string if present.
-      if (std::optional<DocString> docStr = getDocString(decl)) {
+      if (std::optional<DocString> docStr = decl.getParsedDocString()) {
         os.attribute("summary", docStr->getSummary());
 
         // Grab the types of the parameters to the struct.
@@ -529,12 +506,14 @@ private:
 
   void generateJSONFor(ASTDecl &decl, FileModuleOp moduleOp) {
     os.object([&] {
-      for (const auto &[key, value] : MojoASTDeclRef(&decl).getView()->toJSON())
+      for (const auto &[key, value] :
+           MojoASTDeclRef(&decl).getView()->toJSON()) {
         os.attribute(key, value);
+      }
 
       // Recursively generate documentation for the module's children.
       // TODO: move this to the DeclView API.
-      generateJSONForChildren(decl);
+      generateJSONForChildren(decl, /*omitAliases=*/true);
     });
   }
 
@@ -581,7 +560,7 @@ static bool isValidFirstCharacter(char c) { return c == '`' || isupper(c); }
 class DocStringValidator {
 public:
   DocStringValidator(SharedState &sharedState, ASTDecl &decl)
-      : sharedState(sharedState), docStr(getDocString(decl)) {
+      : sharedState(sharedState), docStr(decl.getParsedDocString()) {
     // If the doc string isn't valid, there's nothing to do.
     if (!docStr || !docStr->getLoc())
       return;

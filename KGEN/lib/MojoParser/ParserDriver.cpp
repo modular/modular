@@ -64,12 +64,14 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
 std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
   return TypeSwitch<ASTDecl &, std::optional<StringAttr>>(
              *unwrapMojoASTDecl(impl))
-      .Case<FuncOp, FileModuleOp, LetRegDeclOp, VarLetDeclOp>(
+      .Case<FileModuleOp, FuncOp, LetRegDeclOp, VarLetDeclOp>(
           [&](auto op) { return op.getNameAttr(); })
+      .Case<AliasDeclOp>([&](AliasDeclOp op) { return op.getName(); })
       .Default({});
 }
 
 std::optional<StringRef> MojoASTDeclRef::getName() const {
+
   return TypeSwitch<ASTDecl &, std::optional<StringRef>>(
              *unwrapMojoASTDecl(impl))
       .Case<LetRegDeclOp, VarLetDeclOp>([](auto op) { return op.getName(); })
@@ -85,6 +87,9 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
         fullName.consume_front("$");
         return fullName;
       })
+      .Case<AliasDeclOp>([](AliasDeclOp op) {
+        return demangleParameterName(op.getParamDecl().getName());
+      })
       .Default({});
 }
 
@@ -95,11 +100,14 @@ llvm::SMLoc MojoASTDeclRef::getLoc() const {
 std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
   return TypeSwitch<ASTDecl &, std::unique_ptr<DeclView>>(
              *unwrapMojoASTDecl(impl))
-      .Case<FuncOp>([&](auto op) {
-        return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
+      .Case<AliasDeclOp>([&](auto op) {
+        return std::unique_ptr<AliasDeclView>(new AliasDeclView(*this));
       })
       .Case<FileModuleOp>([&](auto op) {
         return std::unique_ptr<ModuleDeclView>(new ModuleDeclView(*this));
+      })
+      .Case<FuncOp>([&](auto op) {
+        return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
       })
       .Default({});
 }
