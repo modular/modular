@@ -11,11 +11,15 @@ This is a module summary, that
 spills over to the next line."""
 
 
+# CHECK:  "name": "mojo-doc",
+# CHECK:  "kind": "module",
+# CHECK:  "summary": "This is a module summary, that spills over to the next line.",
+
 # CHECK:  "aliases": [
-# CHECK:   "kind": "alias",
-# CHECK:   "name": "alias_Type",
-# CHECK:   "summary": "An example alias of a Type",
-# CHECK:   "value": "Int"
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_Type",
+# CHECK:  "summary": "An example alias of a Type",
+# CHECK:  "value": "Int"
 alias alias_Type = Int
 """An example alias of a Type"""
 
@@ -220,10 +224,10 @@ fn fn_with_variant(
     return
 
 
-# CHECK:  "kind": "module",
-# CHECK:  "name": "mojo-doc",
-
 # CHECK:  "structs": [
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "InMemoryStruct",
+
 # Check that special functions are ordered first, and with the correct
 # prioritization (i.e. not just name based).
 # CHECK:  "kind": "function",
@@ -255,8 +259,6 @@ fn fn_with_variant(
 # CHECK:      "returns": "This is a by-ref return value.",
 # CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, inout *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
-# CHECK:  "kind": "struct",
-# CHECK:  "name": "InMemoryStruct",
 
 
 struct InMemoryStruct:
@@ -290,8 +292,17 @@ struct InMemoryStruct:
         return arg
 
 
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "ParameterClass",
+# CHECK:  "summary": "This is a class summary.",
 # CHECK:  "constraints": "This describes the struct's constraints.",
+# CHECK:  "parameters": [
+# CHECK:      "name": "_type"
+# CHECK:      "type": "dtype"
+# CHECK:      "description": "This is a parameter."
+# CHECK:  ],
 # CHECK:  "description": "The is some kind of description.\n",
+
 # CHECK:      "kind": "function",
 # CHECK:      "name": "fn_with_self_param",
 # CHECK:          "parameters": [
@@ -299,14 +310,6 @@ struct InMemoryStruct:
 # CHECK:              "name": "param"
 # CHECK:              "type": "Self"
 # CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)"
-# CHECK:  "kind": "struct",
-# CHECK:  "name": "ParameterClass",
-# CHECK:  "parameters": [
-# CHECK:      "description": "This is a parameter."
-# CHECK:      "name": "_type"
-# CHECK:      "type": "dtype"
-# CHECK:  ],
-# CHECK:  "summary": "This is a class summary."
 
 
 @register_passable
@@ -329,6 +332,3 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
             param: This is a Self parameter.
         """
         return
-
-
-# CHECK:  "summary": "This is a module summary, that spills over to the next line."
