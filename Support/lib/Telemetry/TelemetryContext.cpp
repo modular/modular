@@ -30,6 +30,7 @@
 
 namespace M::Telemetry {
 
+#ifdef MODULAR_ENABLE_TELEMETRY
 static std::filesystem::path getTelemetryLogPath() {
   std::string filename = "telemetry.log";
   std::error_code ec;
@@ -40,6 +41,7 @@ static std::filesystem::path getTelemetryLogPath() {
   }
   return logPath;
 }
+#endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::TelemetryContext() {
 #ifdef MODULAR_ENABLE_TELEMETRY
