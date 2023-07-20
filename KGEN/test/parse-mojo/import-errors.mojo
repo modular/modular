@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -split-input-file -verify-diagnostics -I=%S %s
+# RUN: kgen-translate -import-mojo -split-input-file -verify-diagnostics -I=%S -I=%S/test_package %s
 
 # expected-error @+1 {{expected module name}}
 import --
@@ -61,6 +61,14 @@ from .module import foo
 
 # expected-error @below {{unable to locate module 'unknown_nested_module'}}
 from test_package.unknown_nested_module import bar
+
+# // -----
+
+# Check that we can't directly import `test_package.module_in_package` just
+# because `test_package` is in the path.
+
+# expected-error @below {{unable to locate module 'module_in_package'}}
+import module_in_package
 
 # // -----
 
