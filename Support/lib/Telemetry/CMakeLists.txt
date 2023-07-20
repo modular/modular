@@ -28,6 +28,8 @@ if(MODULAR_ENABLE_TELEMETRY)
     opentelemetry_exporter_otlp_http_metric
     opentelemetry_exporter_otlp_http_log
     opentelemetry_resources
+    opentelemetry_exporter_ostream_metrics
+    opentelemetry_exporter_ostream_logs
     )
 
   target_compile_definitions(MTelemetry PUBLIC MODULAR_ENABLE_TELEMETRY=${MODULAR_ENABLE_TELEMETRY})
