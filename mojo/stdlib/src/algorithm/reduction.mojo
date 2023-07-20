@@ -443,7 +443,7 @@ fn _reduce_generator[
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     init_value: SIMD[type, 1],
-    reduce_dim: Int,
+    reduce_dim_maybe_neg: Int,
     out_chain: OutputChainPtr,
 ):
     """Reduce the given tensor using the given reduction function.
@@ -461,7 +461,7 @@ fn _reduce_generator[
     Args:
         input: The tensor we are reducing.
         init_value: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
+        reduce_dim_maybe_neg: The dimension we are reducing.
         out_chain: The our chain to attach results to.
     """
     assert_param[rank == 1, "Specialization for 1D"]()
@@ -553,10 +553,14 @@ fn _reduce_generator[
     """
     assert_param[rank > 1, "Specialization for ND where N > 1"]()
 
+    let reduce_dim_normalized = (
+        rank + reduce_dim
+    ) if reduce_dim < 0 else reduce_dim
+
     # If the input is strided along the input dimension then we can simd
     # reduce over it directly.
     # TODO: Support more optimal case for reduce over non-strided.
-    if input.stride(reduce_dim) == 1:
+    if input.stride(reduce_dim_normalized) == 1:
         alias unroll_factor = simd_width * 8
         _reduce_along_dimension[
             type,
@@ -567,7 +571,7 @@ fn _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](input, init_value, reduce_dim, out_chain)
+        ](input, init_value, reduce_dim_normalized, out_chain)
     else:
         # Scalar fallback.
         _reduce_along_dimension[
@@ -579,7 +583,7 @@ fn _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](input, init_value, reduce_dim, out_chain)
+        ](input, init_value, reduce_dim_normalized, out_chain)
 
 
 @always_inline
