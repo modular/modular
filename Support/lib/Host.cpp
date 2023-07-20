@@ -766,10 +766,10 @@ HostMachineInfo::deserializeTargetInfoFromJSON(StringRef serializedTargetInfo) {
 
 ErrorOrSuccess HostMachineInfo::checkSatisfiesRequirements(
     const HostMachineInfo &required) const {
-  if (triple != required.triple)
-    return Error(Twine("host has arch-vendor-os of '") + triple +
+  if (!required.triple.empty() && triple != required.triple)
+    return Error(Twine("host has arch-vendor-os triple of '") + triple +
                  "' but model requires '" + required.triple + "'");
-  if (cpuArch != required.cpuArch)
+  if (!required.cpuArch.empty() && cpuArch != required.cpuArch)
     return Error(Twine("host has CPU architecture of '") + cpuArch +
                  "' but model requires '" + required.cpuArch + "'");
   DenseSet<StringRef> actualFeatures(cpuFeatures.begin(), cpuFeatures.end());

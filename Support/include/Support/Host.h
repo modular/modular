@@ -201,9 +201,12 @@ struct HostMachineInfo {
 
   /// Returns error if this host machine does not satisfy the assumptions
   /// in required. Only the following fields are checked:
-  ///  - triple (must be exactly string equal to required)
-  ///  - cpuArch (must be exactly string equal to required)
-  ///  - cpuFeatures (must be superset of required features)
+  ///  - triple: if required non-empty, actual must be string equal.
+  ///  - cpuArch: if required non-empty, actual must be string equal.
+  ///  - cpuFeatures: actual must be superset of required.
+  ///
+  /// NOTE: We may need to do some canonicalization on triples and cpuArch
+  ///       to remove unnecessary detail.
   ErrorOrSuccess
   checkSatisfiesRequirements(const HostMachineInfo &required) const;
 };

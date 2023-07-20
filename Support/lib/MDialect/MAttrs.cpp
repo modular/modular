@@ -1008,14 +1008,17 @@ M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
   // Somewhat frustratingly we need to recover the original HostMachineInfo
   // features from their encoded form, eg "+foo,+bar".
   SmallVector<StringRef> plusFeatureCommas;
-  targetInfoAttr.getFeatures().split(plusFeatureCommas, ',');
+  targetInfoAttr.getFeatures().split(plusFeatureCommas, ',', /*MaxSplit=*/-1,
+                                     /*KeepEmpty=*/false);
   std::vector<std::string> features;
   for (StringRef plusFeatureComma : plusFeatureCommas) {
     if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
-      return Error("ill-formed serialized target info feature");
+      return Error(Twine("ill-formed serialized target info features: '") +
+                   targetInfoAttr.getFeatures() + "'");
     StringRef feature = plusFeatureComma.trim("+,");
     if (feature.empty())
-      return Error("ill-formed serialized target info feature");
+      return Error("ill-formed serialized target info features: " +
+                   targetInfoAttr.getFeatures() + "'");
     features.emplace_back(feature);
   }
 
