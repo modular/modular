@@ -40,20 +40,11 @@ public:
   /// Generate a correct piece of code that summarizes this decl.
   virtual std::string getDeclarationSnippet() const = 0;
 
-  /// Get the description of this decl extracted from its docstring.
-  std::optional<StringRef> getDescription() const;
-
   /// Get the name of the decl. It might be empty.
   StringRef getName() const { return name; }
 
-  /// Get the type of the decl. It might be empty.
-  StringRef getType() const { return type; }
-
-  /// Set the description of this decl.
-  void setDescription(StringRef desc) { description = desc; }
-
   /// Serialize the fields in this view to JSON.
-  virtual llvm::json::Object toJSON() const;
+  virtual llvm::json::Object toJSON() const = 0;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -61,33 +52,38 @@ public:
   //===----------------------------------------------------------------------===//
 
   enum DeclViewKind {
-    DK_ParameterDeclView,
     DK_ArgumentDeclView,
-    DK_FunctionDeclView
+    DK_FunctionDeclView,
+    DK_ModuleDeclView,
+    DK_ParameterDeclView,
   };
 
   DeclViewKind getKind() const { return kind; }
 
 protected:
-  DeclView(DeclViewKind kind, StringRef name, StringRef type = {})
-      : kind(kind), name(name), type(type) {}
+  DeclView(DeclViewKind kind, StringRef name) : kind(kind), name(name) {}
 
 private:
   const DeclViewKind kind;
   StringRef name;
-  // TODO: convert to MojoASTTypeRef.
-  std::string type;
-  // TODO: convert into StringRef.
-  std::optional<std::string> description;
 };
 
 /// View for parameters of structs or functions.
 class ParameterDeclView : public DeclView {
 public:
   ParameterDeclView(StringRef name, StringRef type)
-      : DeclView(DK_ParameterDeclView, name, type){};
+      : DeclView(DK_ParameterDeclView, name), type(type){};
 
   std::string getDeclarationSnippet() const override;
+
+  /// Get the description of this decl extracted from its docstring. It might be
+  /// empty.
+  StringRef getDescription() const { return description; }
+
+  /// Set the description of this decl.
+  void setDescription(StringRef desc) { description = desc; }
+
+  llvm::json::Object toJSON() const override;
 
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support
@@ -96,19 +92,34 @@ public:
   static bool classof(const DeclView *decl) {
     return decl->getKind() == DK_ParameterDeclView;
   }
+
+private:
+  std::string type;
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
 };
 
 /// View for function arguments, including varargs arguments.
 class ArgumentDeclView : public DeclView {
 public:
   ArgumentDeclView(StringRef name, StringRef type, bool inout)
-      : DeclView(DK_ArgumentDeclView, name, type), inout(inout) {}
+      : DeclView(DK_ArgumentDeclView, name), type(type), inout(inout) {}
 
   std::string getDeclarationSnippet() const override;
 
+  /// Get the description of this decl extracted from its docstring. It might be
+  /// empty.
+  StringRef getDescription() const { return description; }
+
   bool isInout() const { return inout; }
 
-  /// Serialize the fields in this view to JSON.
+  /// Set the description of this decl.
+  void setDescription(StringRef desc) { description = desc; }
+
   llvm::json::Object toJSON() const override;
 
 public:
@@ -121,7 +132,14 @@ public:
   }
 
 private:
+  std::string type;
   bool inout;
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
 };
 
 /// View for functions of any kind, including closures, instance methods, fn
@@ -139,6 +157,10 @@ public:
   ArrayRef<ArgumentDeclView> getArgs() const { return args; }
 
   std::string getDeclarationSnippet() const override;
+
+  /// Get the description of this decl extracted from its docstring. It might be
+  /// empty.
+  StringRef getDescription() const { return description; }
 
   /// Return a nicely formatted markdown docstring of this declaration. It might
   /// be empty if no docstring is available.
@@ -196,9 +218,43 @@ private:
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
-  std::optional<std::string> summary;
-  std::optional<std::string> returns;
-  std::optional<std::string> constraints;
+  std::string constraints;
+  std::string description;
+  std::string returns;
+  std::string summary;
+};
+
+/// View for module decls.
+class ModuleDeclView : public DeclView {
+public:
+  std::string getDeclarationSnippet() const override;
+
+  /// Get the description of this decl extracted from its docstring. It might be
+  /// empty.
+  StringRef getDescription() const { return description; }
+
+  llvm::json::Object toJSON() const override;
+
+public:
+  //===----------------------------------------------------------------------===//
+  // LLVM RTTI Support
+  //===----------------------------------------------------------------------===//
+
+  static bool classof(const DeclView *decl) {
+    return decl->getKind() == DK_ModuleDeclView;
+  }
+
+private:
+  friend class MojoASTDeclRef;
+
+  ModuleDeclView(MojoASTDeclRef declRef);
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
+  std::string summary;
 };
 
 } // namespace M

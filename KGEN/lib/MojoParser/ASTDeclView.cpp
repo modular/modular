@@ -159,19 +159,19 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
 std::string ParameterDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
-  dumpParamOrArg(os, getName(), getType());
+  dumpParamOrArg(os, getName(), type);
   return buff;
 }
 
-std::optional<StringRef> DeclView::getDescription() const {
-  if (description)
-    return *description;
-  return std::nullopt;
-}
+//===----------------------------------------------------------------------===//
+// ParameterDeclView
+//===----------------------------------------------------------------------===//
 
-llvm::json::Object DeclView::toJSON() const {
-  return llvm::json::Object{
-      {"name", name}, {"type", type}, {"description", description}};
+llvm::json::Object ParameterDeclView::toJSON() const {
+  return llvm::json::Object{{"kind", "parameter"},
+                            {"name", getName()},
+                            {"type", type},
+                            {"description", description}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -183,40 +183,40 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   llvm::raw_string_ostream os(buff);
   if (inout)
     os << "inout ";
-  dumpParamOrArg(os, getName(), getType());
+  dumpParamOrArg(os, getName(), type);
   return buff;
 }
 
 llvm::json::Object ArgumentDeclView::toJSON() const {
-  auto result = DeclView::toJSON();
-  result.insert({"inout", inout});
-  return result;
+  return llvm::json::Object{
+      {"description", description}, {"inout", inout}, {"kind", "parameter"},
+      {"name", getName()},          {"type", type},
+  };
 }
 
 //===----------------------------------------------------------------------===//
 // FunctionDeclView
 //===----------------------------------------------------------------------===//
 
-void FunctionDeclView::augmentWithDocumentation(
-    ArrayRef<StringRef> description) {
+void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<StringRef> pureDescriptionLines;
-  for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
-    if (description[line] == (Twine(kArgs) + ":").str()) {
-      augmentDeclsWithDocumentation(description, line, lineE, args);
-    } else if (description[line] == (Twine(kParameters) + ":").str()) {
-      augmentDeclsWithDocumentation(description, line, lineE, parameters);
-    } else if (description[line] == (Twine(kReturns) + ":").str()) {
+  for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
+    if (desc[line] == (Twine(kArgs) + ":").str()) {
+      augmentDeclsWithDocumentation(desc, line, lineE, args);
+    } else if (desc[line] == (Twine(kParameters) + ":").str()) {
+      augmentDeclsWithDocumentation(desc, line, lineE, parameters);
+    } else if (desc[line] == (Twine(kReturns) + ":").str()) {
       if (returnType)
-        returns = parseDocStringSection(description, line, lineE);
-    } else if (description[line] == (Twine(kConstraints) + ":").str()) {
-      constraints = parseDocStringSection(description, line, lineE);
+        returns = parseDocStringSection(desc, line, lineE);
+    } else if (desc[line] == (Twine(kConstraints) + ":").str()) {
+      constraints = parseDocStringSection(desc, line, lineE);
     } else {
-      pureDescriptionLines.push_back(description[line]);
+      pureDescriptionLines.push_back(desc[line]);
     }
   }
 
-  setDescription(llvm::join(pureDescriptionLines, "\n"));
+  description = llvm::join(pureDescriptionLines, "\n");
 }
 
 std::string FunctionDeclView::getDeclarationSnippet() const {
@@ -241,35 +241,34 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  if (summary)
-    os << *summary << "\n";
+  if (!summary.empty())
+    os << summary << "\n";
 
   auto hasAnyItemDescription = [](const auto &items) {
-    return llvm::any_of(items, [](const auto &item) {
-      return item.getDescription().has_value();
-    });
+    return llvm::any_of(
+        items, [](const auto &item) { return !item.getDescription().empty(); });
   };
 
   if (hasAnyItemDescription(parameters)) {
     os << "\n#### Parameters:\n";
     for (const auto &param : parameters) {
-      if (auto desc = param.getDescription())
-        os << kMarkdownIndent << param.getName() << ": " << *desc << "  \n";
+      if (auto desc = param.getDescription(); !desc.empty())
+        os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
     }
   }
 
   if (hasAnyItemDescription(args)) {
     os << "\n#### Args:\n";
     for (const auto &arg : args)
-      if (auto desc = arg.getDescription())
-        os << kMarkdownIndent << arg.getName() << ": " << *desc << "  \n";
+      if (auto desc = arg.getDescription(); !desc.empty())
+        os << kMarkdownIndent << arg.getName() << ": " << desc << "  \n";
   }
 
-  if (returns)
-    os << "\n#### Returns:\n" << kMarkdownIndent << *returns << "\n";
+  if (!returns.empty())
+    os << "\n#### Returns:\n" << kMarkdownIndent << returns << "\n";
 
-  if (constraints)
-    os << "\n#### Constraints:\n" << kMarkdownIndent << *constraints << "\n";
+  if (!constraints.empty())
+    os << "\n#### Constraints:\n" << kMarkdownIndent << constraints << "\n";
 
   return markdown;
 }
@@ -304,7 +303,19 @@ std::string FunctionDeclView::getSignature() const {
 }
 
 llvm::json::Object FunctionDeclView::toJSON() const {
-  auto result = DeclView::toJSON();
+  llvm::json::Object result{
+      {"async", isAsync()},
+      {"constraints", constraints},
+      {"description", getDescription()},
+      {"isDef", isDef()},
+      {"kind", "function"},
+      {"name", getName()},
+      {"raises", raises()},
+      {"returns", returns},
+      {"returnType", returnType},
+      {"signature", getSignature()},
+      {"summary", summary},
+  };
 
   llvm::json::Array jsonArgs;
   for (const auto &arg : args)
@@ -315,16 +326,6 @@ llvm::json::Object FunctionDeclView::toJSON() const {
   for (const auto &param : parameters)
     jsonParameters.push_back(param.toJSON());
   result.insert({"parameters", std::move(jsonParameters)});
-
-  result.insert({"signature", getSignature()});
-  result.insert({"returnType", returnType});
-  result.insert({"async", isAsync()});
-  result.insert({"isDef", isDef()});
-  result.insert({"raises", raises()});
-  result.insert({"summary", summary});
-  result.insert({"description", getDescription()});
-  result.insert({"returns", returns});
-  result.insert({"constraints", constraints});
 
   return result;
 }
@@ -383,4 +384,28 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   raisesFlag = funcOp.isThrows();
   isAsyncFlag = funcOp.isAsync();
   isDefFlag = funcOp.getIsDef();
+}
+
+//===----------------------------------------------------------------------===//
+// ModuleDeclView
+//===----------------------------------------------------------------------===//
+
+std::string ModuleDeclView::getDeclarationSnippet() const { return {}; }
+
+llvm::json::Object ModuleDeclView::toJSON() const {
+  return llvm::json::Object{{"description", description},
+                            {"kind", "module"},
+                            {"name", getName()},
+                            {"summary", summary}};
+}
+
+ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_ModuleDeclView, declRef.getName().value_or(StringRef())) {
+  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+
+  if (auto rawDocStr = decl.getDocString()) {
+    DocString docStr(rawDocStr);
+    summary = docStr.getSummary();
+    description = llvm::join(docStr.getDescription(), "\n");
+  }
 }

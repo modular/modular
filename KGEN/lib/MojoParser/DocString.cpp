@@ -529,19 +529,11 @@ private:
 
   void generateJSONFor(ASTDecl &decl, FileModuleOp moduleOp) {
     os.object([&] {
-      os.attribute("kind", "module");
-
-      StringRef name = moduleOp.getName();
-      name.consume_front("$");
-      os.attribute("name", name);
-
-      // Emit the doc string if present.
-      if (std::optional<DocString> docStr = getDocString(decl)) {
-        os.attribute("summary", docStr->getSummary());
-        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
-      }
+      for (const auto &[key, value] : MojoASTDeclRef(&decl).getView()->toJSON())
+        os.attribute(key, value);
 
       // Recursively generate documentation for the module's children.
+      // TODO: move this to the DeclView API.
       generateJSONForChildren(decl);
     });
   }
