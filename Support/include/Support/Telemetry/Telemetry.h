@@ -136,6 +136,10 @@ public:
 
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
+  /// File output stream for OTel's OStream exporters (they require a
+  /// std::ostream). Note that OStream exporters take the ostream by reference,
+  /// and so this must be destroyed in last place.
+  std::unique_ptr<std::ofstream> outputFile;
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
