@@ -19,6 +19,7 @@
 #include "LLCL/Support/ThreadAffinity.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 
@@ -72,10 +73,9 @@ constexpr bool kDemonicNondet = false;
 namespace {
 
 /// If in 'demonic non-determinism' mode, sleep for up to a few milliseconds.
-void demonicSleep() {
-  if constexpr (kDemonicNondet) {
+static LLVM_ATTRIBUTE_ALWAYS_INLINE void demonicSleep() {
+  if constexpr (kDemonicNondet)
     std::this_thread::sleep_for(std::chrono::microseconds(10 + rand() % 2000));
-  }
 }
 
 /// Bit index i is true if the thread with workedID i is suspended.
