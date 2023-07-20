@@ -11,8 +11,8 @@ This is a module summary, that
 spills over to the next line."""
 
 
-# CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
+# CHECK:  "kind": "module",
 # CHECK:  "summary": "This is a module summary, that spills over to the next line.",
 # CHECK:  "description": "",
 
