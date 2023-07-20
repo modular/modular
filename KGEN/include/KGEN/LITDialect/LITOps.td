@@ -1164,18 +1164,25 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
   let summary = "Lexical unresolved wildcard import.";
   let description = [{
     The `lit.unresolved_wildcard_import` operation represents a wildcard module
-    import that is yet to be resolved.
+    import that is yet to be resolved. If `fullImport` is set, all symbols are
+    considered from import, not just public symbols.
 
     Example:
 
     ```mlir
     // Import from the given module.
-    lit.unresolved_wildcard_import from @module
+    lit.unresolved_wildcard_import (`all` $fullImport^)? from @module
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$moduleName);
+  let arguments = (ins SymbolNameAttr:$moduleName, UnitAttr:$fullImport);
   let assemblyFormat = "`from` $moduleName attr-dict";
+
+  let builders = [OpBuilder<(ins
+    "StringAttr":$moduleName, CArg<"bool", "false">:$isFullImport), [{
+    build($_builder, $_state, moduleName,
+          isFullImport ? $_builder.getUnitAttr() : mlir::UnitAttr());
+  }]>];
 }
 
 //===----------------------------------------------------------------------===//

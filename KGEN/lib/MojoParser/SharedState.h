@@ -44,6 +44,7 @@ class NoneAttr;
 class StructDeclOp;
 class FuncOp;
 class FileModuleOp;
+class PackageOp;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -176,7 +177,8 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
-  ASTDecl &importModule(StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc);
+  ASTDecl &importModule(StringRef name, PackageOp currentPackage,
+                        llvm::SMLoc loc);
 
   /// Create a new module with the given name, location, and body.
   ASTDecl &createModule(StringRef moduleName,
