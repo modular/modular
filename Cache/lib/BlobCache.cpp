@@ -251,6 +251,7 @@ struct InMemoryBackend : public BlobCacheBackend {
     auto found = cache.find(keyHash);
     if (found == cache.end())
       return std::nullopt;
+
     // No buffer provided, give back a ref to the buffer we have.
     if (!buf)
       return found->second.copy();
@@ -309,9 +310,12 @@ struct FilesystemBackend : public BlobCacheBackend {
       return success();
 
     // Get the absolute path and create any directories we need to create.
-    std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
+    ErrorOr<std::filesystem::path> filePathOr = getAbsolutePathForKey(keyHash);
+    if (filePathOr.isError())
+      return filePathOr.takeError();
+
     std::error_code dirErr;
-    std::filesystem::create_directories(filePath.parent_path(), dirErr);
+    std::filesystem::create_directories(filePathOr->parent_path(), dirErr);
     if (dirErr)
       return Error(dirErr.message());
 
@@ -327,24 +331,41 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // Safely process creating the file, taking into account that we may
     // have different processes trying to produce this file in parallel.
-    if (auto err = writeFileAtomically(filePath, writeContent); err.isError())
+    if (auto err = writeFileAtomically(*filePathOr, writeContent);
+        err.isError())
       return err.takeError();
 
     return success();
   }
 
   ErrorOr<bool> containsImpl(StringRef keyHash) const override {
-    auto abs = getAbsolutePathForKey(keyHash);
-    return std::filesystem::exists(abs) && !std::filesystem::is_directory(abs);
+    std::error_code ec;
+    ErrorOr<std::filesystem::path> absOr = getAbsolutePathForKey(keyHash);
+    if (absOr.isError())
+      return absOr.takeError();
+
+    bool exists = std::filesystem::exists(*absOr, ec);
+    if (ec)
+      return Error(ec.message());
+
+    if (!exists)
+      return false;
+
+    bool is_dir = std::filesystem::is_directory(*absOr, ec);
+    if (ec)
+      return Error(ec.message());
+    return !is_dir;
   }
 
   ErrorOr<std::optional<BufferRef>>
   findImpl(StringRef keyHash,
            std::optional<WriteableBufferRef> buf) const override {
     // Get the file path and open it.
-    std::filesystem::path filePath = getAbsolutePathForKey(keyHash);
+    ErrorOr<std::filesystem::path> filePath = getAbsolutePathForKey(keyHash);
+
     // No such file, return nullopt (not error).
-    if (!std::filesystem::exists(filePath))
+    std::error_code ec;
+    if (!std::filesystem::exists(*filePath, ec) || ec)
       return std::nullopt;
 
     // This callback does all the file reading/etc. we care to do while we hold
@@ -410,7 +431,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     };
 
     // If there was an error reading the file, return that.
-    if (auto err = readFileAtomically(filePath, doRead))
+    if (auto err = readFileAtomically(*filePath, doRead))
       return err.takeError();
 
     // If there was an error in our read callback, return that.
@@ -430,7 +451,9 @@ struct FilesystemBackend : public BlobCacheBackend {
     return success();
   }
 
-  std::filesystem::path getAbsolutePathForKey(StringRef keyHash) const {
+  ErrorOr<std::filesystem::path>
+  getAbsolutePathForKey(StringRef keyHash) const {
+    std::error_code ec;
     std::filesystem::path filepath(basePath);
     std::string encodedHash = llvm::encodeBase64(keyHash);
     std::replace_if(
@@ -438,7 +461,11 @@ struct FilesystemBackend : public BlobCacheBackend {
         '_');
     filepath /= encodedHash;
 
-    return std::filesystem::absolute(filepath);
+    std::filesystem::path absolute = std::filesystem::absolute(filepath, ec);
+    if (ec)
+      return Error(ec.message());
+
+    return absolute;
   }
 
   /// This is a CSPRNG-generated 32-byte string. It's used for integrity
@@ -604,9 +631,11 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
       // The directory entry must exist, be a directory, the parent must be
       // `base` and the directory 'filename' must not match
       // MODULAR_VERSION_STRING in order for it to be deleted.
+
+      [[maybe_unused]] std::error_code ec0, ec1;
       if (std::filesystem::is_directory(dirEntry.path(), ec) &&
-          (std::filesystem::canonical(dirEntry.path().parent_path()) ==
-           std::filesystem::canonical(base)) &&
+          (std::filesystem::canonical(dirEntry.path().parent_path(), ec0) ==
+           std::filesystem::canonical(base, ec1)) &&
           (dirEntry.path().filename() != version)) {
         std::filesystem::remove_all(dirEntry, ec);
       }
