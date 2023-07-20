@@ -824,6 +824,9 @@ fn reduce_add[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -841,17 +844,6 @@ fn reduce_add[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
-
-    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
-    # can be fused
-    @parameter
-    @always_inline
-    fn input_0_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
-        )
 
     @always_inline
     fn reduce_impl[
@@ -877,6 +869,9 @@ fn reduce_max[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -894,17 +889,6 @@ fn reduce_max[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
-
-    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
-    # can be fused
-    @parameter
-    @always_inline
-    fn input_0_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
-        )
 
     @always_inline
     fn reduce_impl[
@@ -930,6 +914,9 @@ fn reduce_min[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -947,17 +934,6 @@ fn reduce_min[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
-
-    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
-    # can be fused
-    @parameter
-    @always_inline
-    fn input_0_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
-        )
 
     @always_inline
     fn reduce_impl[
@@ -983,6 +959,9 @@ fn reduce_mul[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -1000,17 +979,6 @@ fn reduce_mul[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
-
-    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
-    # can be fused
-    @parameter
-    @always_inline
-    fn input_0_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
-        )
 
     @always_inline
     fn reduce_impl[
