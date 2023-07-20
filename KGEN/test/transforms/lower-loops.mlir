@@ -121,7 +121,7 @@ kgen.func @loop_carried_dependency() {
       kgen.call @foo(%7, %arg3) : (index, index) -> ()
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%7: index)] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full none>}
-    hlcf.for.yield [induction_var (%3 : index)] [retvals (%6: index)] [iterargs (%3: index)]
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%6, %3: index, index)] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full none>}
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()

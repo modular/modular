@@ -524,6 +524,10 @@ LogicalResult ForYieldOp::verify() {
     return emitOpError("operand types do not match parent for-loop's body "
                        "region argument types");
 
+  if (getReturnValues().size() != parentFor.getNumResults())
+    return emitOpError("number of operands in return value segment do not "
+                       "match parent for-loop's number of results.");
+
   for (auto [parentOperand, operand] :
        llvm::zip(parentFor.getIterArgs(), getOperands())) {
     if (parentOperand.getType() != operand.getType())

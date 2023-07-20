@@ -141,7 +141,7 @@ kgen.func @loop_carried_dependency() {
       %10 = index.add %arg3, %arg4
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%10: index)] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full full>}
-    hlcf.for.yield [induction_var (%3 : index)] [retvals (%5: index)] [iterargs (%6: index)]
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%5, %6: index, index)] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
@@ -205,4 +205,38 @@ kgen.func @single_iteration_no_decorator(%arg0: !pop.struct<pointer<scalar<f32>>
 
   } {unrollFactor = #hlcf<loop_unroll_full none>}
   kgen.return %1 : index
+}
+
+// CHECK-LABEL: @eliminate_zero_iter_loop_no_results
+kgen.func @eliminate_zero_iter_loop_no_results() {
+  %index1 = index.constant 1
+  %index0 = index.constant 0
+  // CHECK-NOT: hlcf.for
+  // CHECK-NOT: hlcf.loop
+  hlcf.for [%index1 to %index1 step %index1] (%arg2 = %index1 : index, %arg0 = %index0 : index, %arg1 = %index0 : index) {
+    %3 = index.add %arg2, %index1
+    kgen.call @foo(%3, %arg0, %arg1) : (index, index, index) -> ()
+    hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs (%3, %3: index, index)]
+  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  kgen.return
+}
+
+// CHECK-LABEL: @eliminate_zero_iter_loop_with_results
+kgen.func @eliminate_zero_iter_loop_with_results() {
+  %index1 = index.constant 1
+  %index0 = index.constant 0
+
+  // CHECK:      [[IDX0:%.*]] = index.constant 0
+  // CHECK-NEXT: kgen.call @foo([[IDX0]]) : (index) -> ()
+  // CHECK-NEXT: kgen.call @foo([[IDX0]]) : (index) -> ()
+  // CHECK-NOT: hlcf.for
+  // CHECK-NOT: hlcf.loop
+  %0:2 = hlcf.for [%index1 to %index1 step %index1] (%arg2 = %index1 : index, %arg0 = %index0 : index, %arg1 = %index0 : index) -> (index, index) {
+    %3 = index.add %arg2, %index1
+    kgen.call @foo(%3, %arg0) : (index, index) -> ()
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%3, %3: index, index)] [iterargs ()]
+  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  kgen.call @foo(%0#0) : (index) -> ()
+  kgen.call @foo(%0#1) : (index) -> ()
+  kgen.return
 }
