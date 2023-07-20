@@ -254,6 +254,14 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
         // None of the cases matched? Just clone the op directly.
         .Default([&](auto op) { b.clone(*op); });
   }
+
+  // Process the package to strip out various information from the package.
+  thePackage.walk([&](LIT::ASTDeclInterface astDeclOp) {
+    // Strip out locations from doc strings, these aren't needed anymore.
+    auto docAttr = astDeclOp.getDocStringAttr();
+    if (docAttr && docAttr.getLocation())
+      astDeclOp.setDocStringAttr(LIT::DocStringAttr::get(docAttr.getString()));
+  });
 }
 
 ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
