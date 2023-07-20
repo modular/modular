@@ -57,8 +57,6 @@ public:
     DK_FunctionDeclView,
     DK_ModuleDeclView,
     DK_ParameterDeclView,
-    DK_StructDeclView,
-    DK_StructFieldDeclView,
   };
 
   DeclViewKind getKind() const { return kind; }
@@ -260,117 +258,6 @@ private:
   std::string summary;
 };
 
-/// View for struct field.
-class StructFieldDeclView : public DeclView {
-public:
-  StructFieldDeclView(StringRef name, StringRef type)
-      : DeclView(DK_StructFieldDeclView, name), type(type) {}
-
-  std::string getDeclarationSnippet() const override;
-
-  llvm::json::Object toJSON() const override;
-
-public:
-  //===----------------------------------------------------------------------===//
-  // LLVM RTTI Support
-  //===----------------------------------------------------------------------===//
-
-  static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_StructFieldDeclView;
-  }
-
-private:
-  friend class MojoASTDeclRef;
-
-  StructFieldDeclView(MojoASTDeclRef declRef);
-
-  std::string type;
-  std::string value;
-
-  //===----------------------------------------------------------------------===//
-  // Parsed DocString
-  //===----------------------------------------------------------------------===//
-
-  std::string description;
-  std::string summary;
-};
-
-/// A collection of overloaded functions in the same scope.
-class FunctionDeclViewOverloadSet {
-public:
-  /// Create a list of function overload sets by grouping the given functions by
-  /// their name. It's assumed that the input list is sorted by name.
-  static SmallVector<FunctionDeclViewOverloadSet, 2>
-  fromSortedFunctions(SmallVector<FunctionDeclView, 2> &&functions);
-
-  /// Get the common name of the functions in this overload set.
-  StringRef getBaseName() const { return baseName; }
-
-  /// Get the functions in this overload set.
-  ArrayRef<FunctionDeclView> getFunctions() const { return functions; }
-
-  /// Serialize the fields in this view to JSON.
-  llvm::json::Object toJSON() const;
-
-private:
-  FunctionDeclViewOverloadSet(StringRef baseName) : baseName(baseName) {}
-
-  void append(FunctionDeclView function) {
-    functions.push_back(std::move(function));
-  }
-
-  std::string baseName;
-  SmallVector<FunctionDeclView, 2> functions;
-};
-
-/// View for struct decls.
-class StructDeclView : public DeclView {
-public:
-  /// Return the aliases defined at the top-level of this module.
-  llvm::ArrayRef<AliasDeclView> getAliases() const { return aliases; }
-
-  /// Return the fields of this struct.
-  ArrayRef<StructFieldDeclView> getFields() const { return fields; }
-
-  std::string getDeclarationSnippet() const override;
-
-  /// Return the parameters of this struct.
-  ArrayRef<ParameterDeclView> getParameters() const { return parameters; }
-
-  llvm::json::Object toJSON() const override;
-
-public:
-  //===----------------------------------------------------------------------===//
-  // LLVM RTTI Support
-  //===----------------------------------------------------------------------===//
-
-  static bool classof(const DeclView *decl) {
-    return decl->getKind() == DK_StructDeclView;
-  }
-
-private:
-  friend class MojoASTDeclRef;
-
-  StructDeclView(MojoASTDeclRef declRef);
-
-  /// Augment this struct view with docstring documentation, as well as its
-  /// parameters.
-  void augmentWithDocumentation(ArrayRef<StringRef> description);
-
-  SmallVector<AliasDeclView> aliases;
-  SmallVector<StructFieldDeclView> fields;
-  SmallVector<ParameterDeclView> parameters;
-  SmallVector<FunctionDeclViewOverloadSet, 2> functionOverloads;
-
-  //===----------------------------------------------------------------------===//
-  // Parsed DocString
-  //===----------------------------------------------------------------------===//
-
-  std::string constraints;
-  std::string description;
-  std::string summary;
-};
-
 /// View for module decls.
 class ModuleDeclView : public DeclView {
 public:
@@ -382,9 +269,6 @@ public:
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
   StringRef getDescription() const { return description; }
-
-  /// Return the structs defined at the top-level of this module.
-  llvm::ArrayRef<StructDeclView> getStructs() const { return structs; }
 
   llvm::json::Object toJSON() const override;
 
@@ -403,8 +287,6 @@ private:
   ModuleDeclView(MojoASTDeclRef declRef);
 
   SmallVector<AliasDeclView> aliases;
-  SmallVector<StructDeclView, 2> structs;
-  SmallVector<FunctionDeclViewOverloadSet, 2> functionOverloads;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString

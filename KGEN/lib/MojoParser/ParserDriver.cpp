@@ -64,8 +64,8 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
 std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
   return TypeSwitch<ASTDecl &, std::optional<StringAttr>>(
              *unwrapMojoASTDecl(impl))
-      .Case<FileModuleOp, FuncOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
-            VarLetDeclOp>([&](auto op) { return op.getNameAttr(); })
+      .Case<FileModuleOp, FuncOp, LetRegDeclOp, VarLetDeclOp>(
+          [&](auto op) { return op.getNameAttr(); })
       .Case<AliasDeclOp>([&](AliasDeclOp op) { return op.getName(); })
       .Default({});
 }
@@ -74,8 +74,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 
   return TypeSwitch<ASTDecl &, std::optional<StringRef>>(
              *unwrapMojoASTDecl(impl))
-      .Case<LetRegDeclOp, StructDeclOp, StructFieldOp, VarLetDeclOp>(
-          [](auto op) { return op.getName(); })
+      .Case<LetRegDeclOp, VarLetDeclOp>([](auto op) { return op.getName(); })
       .Case<FuncOp>([](FuncOp op) {
         // We remove the parameter section and argument section from the symbol
         // name to keep only the identifier.
@@ -109,13 +108,6 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
       })
       .Case<FuncOp>([&](auto op) {
         return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
-      })
-      .Case<StructDeclOp>([&](auto op) {
-        return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
-      })
-      .Case<StructFieldOp>([&](auto op) {
-        return std::unique_ptr<StructFieldDeclView>(
-            new StructFieldDeclView(*this));
       })
       .Default({});
 }
