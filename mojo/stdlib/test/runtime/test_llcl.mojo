@@ -6,7 +6,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Atomic import Atomic
-from Coroutine import Coroutine
 from DType import DType
 from IO import print
 from LLCL import TaskGroup, Runtime, OwningOutputChainPtr, AsyncTaskGroupPtr
@@ -24,13 +23,10 @@ fn test_sync_coro():
 
     @parameter
     async fn test_llcl_add_two_of_them(a: Int, b: Int) -> Int:
-        let t0 = Coroutine[Int](test_llcl_add[5](a))
-        let t1 = Coroutine[Int](test_llcl_add[2](b))
-        return await t0 + await t1
+        return await test_llcl_add[5](a) + await test_llcl_add[2](b)
 
-    let coro: Coroutine[Int] = test_llcl_add_two_of_them(20, 30)
     # CHECK: 57
-    print(coro())
+    print(test_llcl_add_two_of_them(20, 30)())
 
 
 # CHECK-LABEL: test_runtime_task
@@ -43,9 +39,9 @@ fn test_runtime_task():
 
     @parameter
     async fn test_llcl_add_two_of_them(rt: Runtime, a: Int, b: Int) -> Int:
-        let t0 = rt.create_task[Int](test_llcl_add[1](a))
-        let t1 = rt.create_task[Int](test_llcl_add[2](b))
-        return await t0 + await t1
+        return await rt.create_task[Int](
+            test_llcl_add[1](a)
+        ) + await rt.create_task[Int](test_llcl_add[2](b))
 
     with Runtime(4) as rt:
         let task = rt.create_task[Int](test_llcl_add_two_of_them(rt, 10, 20))
