@@ -71,10 +71,11 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
     return copy;
   };
 
+  std::vector<Operation *> worklist;
   mlir::AttrTypeWalker walker;
   walker.addWalk([&](FlatSymbolRefAttr ref) {
     if (Operation *decl = extractDependency(ref.getAttr()))
-      sliceDependencies(decl, sliceSymtab, symtab);
+      worklist.push_back(decl);
   });
   auto extractDependencies = [&](Operation *op) {
     // Extract references to type declarations.
@@ -85,7 +86,13 @@ static void sliceDependencies(Operation *op, SymbolTable &sliceSymtab,
       for (Type type : region.getArgumentTypes())
         walker.walk(type);
   };
-  op->walk(extractDependencies);
+
+  worklist.push_back(op);
+  while (!worklist.empty()) {
+    Operation *op = worklist.back();
+    worklist.pop_back();
+    op->walk(extractDependencies);
+  }
 }
 
 OwningOpRef<ModuleOp>
