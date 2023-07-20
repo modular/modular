@@ -34,7 +34,8 @@ static llvm::ErrorOr<std::string> getLLDB(const std::string &executable) {
   // Attempt to find an lldb installed alongside the driver.
   return llvm::sys::findProgramByName(
       "lldb",
-      /*Paths=*/{std::filesystem::path(executable).parent_path().c_str()});
+      /*Paths=*/ArrayRef<StringRef>(
+          std::filesystem::path(executable).parent_path().c_str()));
 }
 
 /// Returns the path to a MojoLLDB dynamic library, or an error if none exists.
