@@ -35,6 +35,21 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
   Triple triple;
   auto opts = std::make_shared<clang::TargetOptions>();
 
+  auto processExts = [&opts](StringRef &m) {
+    StringRef exts;
+    std::tie(m, exts) = m.split("+");
+    while (!exts.empty()) {
+      StringRef ext;
+      std::tie(ext, exts) = exts.split("+");
+      if (ext.startswith("no"))
+        opts->FeatureMap[ext.drop_front(2)] = false;
+      else
+        opts->FeatureMap[ext] = true;
+    }
+  };
+  processExts(march);
+  processExts(mcpu);
+
   auto tryParseX86 = [&](StringRef cpuName) {
     // Check for a 64-bit one first.
     if (X86::CPUKind x86_64Cpu = X86::parseArchX86(cpuName, /*Only64Bit=*/true);
