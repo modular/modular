@@ -32,10 +32,9 @@ struct REPLOptTable : public llvm::opt::PrecomputedOptTable {
 /// the REPL, or an error if none exists.
 static llvm::ErrorOr<std::string> getLLDB(const std::string &executable) {
   // Attempt to find an lldb installed alongside the driver.
-  return llvm::sys::findProgramByName(
-      "lldb",
-      /*Paths=*/ArrayRef<StringRef>(
-          std::filesystem::path(executable).parent_path().c_str()));
+  std::string str = std::filesystem::path(executable).parent_path().string();
+  return llvm::sys::findProgramByName("lldb",
+                                      /*Paths=*/ArrayRef<StringRef>(str));
 }
 
 /// Returns the path to a MojoLLDB dynamic library, or an error if none exists.
