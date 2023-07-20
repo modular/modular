@@ -104,7 +104,7 @@
         },
         "mojo.formatting.args": {
           "scope": "resource",
-          "type": "list",
+          "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
         }
       }

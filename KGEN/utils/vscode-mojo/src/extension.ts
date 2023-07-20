@@ -6,7 +6,6 @@
 
 import * as vscode from 'vscode';
 
-import {registerFormatter} from './formatter';
 import {MOJOContext} from './mojoContext';
 
 /**
@@ -16,10 +15,6 @@ import {MOJOContext} from './mojoContext';
 export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel('Mojo');
   context.subscriptions.push(outputChannel);
-
-  // Initialize the formatter.
-  context.subscriptions.push(registerFormatter(outputChannel, 'lit'));
-  context.subscriptions.push(registerFormatter(outputChannel, 'mojo'));
 
   // Initialize the Mojo context.
   const mojoContext = new MOJOContext();

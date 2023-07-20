@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -5,12 +11,15 @@ import * as vscodelc from 'vscode-languageclient/node';
 
 import * as config from './config';
 import * as configWatcher from './configWatcher';
+import {registerFormatter} from './formatter';
+import {MOJOSDK} from './mojoSDK';
 
 /**
  *  This class manages the Mojo extension state, including the language
  *  client.
  */
 export class MOJOContext implements vscode.Disposable {
+  sdk: MOJOSDK = new MOJOSDK();
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   outputChannel: vscode.OutputChannel;
@@ -47,6 +56,9 @@ export class MOJOContext implements vscode.Disposable {
             }
           }
         }));
+
+    // Initialize the formatter.
+    this.subscriptions.push(registerFormatter(outputChannel, this.sdk));
   }
 
   /**
@@ -207,14 +219,9 @@ export class MOJOContext implements vscode.Disposable {
       return filePath;
     }
 
-    // If a path hasn't been set, try to use the default path.
+    // If a path hasn't been set, resolve the default path via the SDK.
     if (filePath === '') {
-      if (defaultPath === '') {
-        return filePath;
-      }
-      filePath = defaultPath;
-
-      // Fallthrough to try resolving the default path.
+      return this.sdk.resolvePath(defaultPath, /*promptSDKInstall*/ true);
     }
 
     // Try to resolve the path relative to the workspace.
