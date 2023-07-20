@@ -321,6 +321,38 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   return std::move(*rtBuf);
 }
 
+/// Returns the path to a KGENCompilerRTShared dynamic library suitable for the
+/// target triple, or an error if none exists.
+static ErrorOr<std::filesystem::path>
+getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session) {
+  std::filesystem::path path;
+  if (std::optional<std::string> derivedPath =
+          llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
+    path = *derivedPath;
+    path /= "build";
+  } else if (std::optional<std::string> homePath =
+                 llvm::sys::Process::GetEnv("MODULAR_HOME")) {
+    path = *homePath;
+  } else {
+    return Error("either MODULAR_DERIVED_PATH or MODULAR_HOME environment "
+                 "variables must be specified in order to find the "
+                 "KGENCompilerRTShared dynamic library");
+  }
+
+  if (session.getTargetTriple().isOSBinFormatMachO()) {
+    path /= "lib";
+    path /= "libKGENCompilerRTShared.dylib";
+  } else if (session.getTargetTriple().isOSBinFormatELF()) {
+    path /= "lib";
+    path /= "libKGENCompilerRTShared.so";
+  } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
+    path /= "bin";
+    path /= "KGENCompilerRTShared.dll";
+  }
+
+  return path;
+}
+
 /// Initialize the CompilerRT dylib.
 static ErrorOrSuccess
 initializeCompilerRT(llvm::orc::ExecutionSession &session) {
@@ -336,25 +368,11 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
                                  compilerRTPath))
       return err.takeError();
   } else {
-    // TODO: This solution prevents cross-compilation.
-    auto envDir = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
-    if (!envDir)
-      return Error("must have MODULAR_DERIVED_PATH");
-
-    std::filesystem::path rtPath = *envDir;
-    rtPath /= "build";
-
-    if (session.getTargetTriple().isOSBinFormatMachO()) {
-      rtPath /= "lib";
-      rtPath /= "libKGENCompilerRTShared.dylib";
-    } else if (session.getTargetTriple().isOSBinFormatELF()) {
-      rtPath /= "lib";
-      rtPath /= "libKGENCompilerRTShared.so";
-    } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
-      rtPath /= "bin";
-      rtPath /= "KGENCompilerRTShared.dll";
-    }
-    compilerRTPath = rtPath.string();
+    ErrorOr<std::filesystem::path> rtPath =
+        getKGENCompilerRTSharedPath(session);
+    if (failed(rtPath))
+      return rtPath.takeError();
+    compilerRTPath = rtPath->string();
   }
 
   auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
