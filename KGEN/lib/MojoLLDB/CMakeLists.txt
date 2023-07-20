@@ -57,7 +57,7 @@ get_filename_component(logfile ${MOJO_REPL_DEBUG_LOG_FILE} ABSOLUTE)
 # And pull out its directory so we can make the directory if needed.
 get_filename_component(logfile_dir ${logfile} DIRECTORY)
 
-# Make the .derived/.repl directory and create the file so LLDB can use it.
+# Make the .derived/.mojorepl directory and create the file so LLDB can use it.
 file(MAKE_DIRECTORY ${logfile_dir})
 file(TOUCH ${logfile})
 
