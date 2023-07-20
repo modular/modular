@@ -51,7 +51,7 @@ def LIT_DocStringAttr : LITAttr<"DocString", "doc.string"> {
   let assemblyFormat = "`<` $string (`,` $location^)? `>`";
 
   let builders = [AttrBuilderWithInferredContext<(ins
-    "StringAttr":$string, "FileLineColLoc":$location),
+    "StringAttr":$string, CArg<"FileLineColLoc", "{}">:$location),
   [{
     return get(string.getContext(), string, location);
   }]>];
