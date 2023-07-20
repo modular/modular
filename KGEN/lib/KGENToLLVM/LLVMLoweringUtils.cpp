@@ -670,7 +670,7 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
       /*useOpaquePointers=*/false);
   // The actual string size does not include \0.
   Value sizeVal = b.create<LLVM::ConstantOp>(
-      b.getLoc(), b.getI64IntegerAttr(strAttr.size()));
+      b.getLoc(), IntegerAttr::get(strSizeType, strAttr.size()));
   Value undefOp = b.create<LLVM::UndefOp>(
       b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), strSizeType));
   Value structVal0 =

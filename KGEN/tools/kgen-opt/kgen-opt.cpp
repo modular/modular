@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -203,6 +204,7 @@ int main(int argc, char **argv) {
   KGEN::registerTweakSpilledAllocas();
   KGEN::registerVerifyParameters();
   KGEN::registerLowerToLLVMPipeline();
+  DebugInfo::registerDebugInfoToLLVM();
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
