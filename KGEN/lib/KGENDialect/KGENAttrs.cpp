@@ -1394,7 +1394,8 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
     return {};
 
   Builder b(field.getContext());
-  if (llvm::is_contained<StringRef>({"os", "cpu", "endianness"}, field))
+  if (llvm::is_contained<StringRef>({"triple", "os", "cpu", "endianness"},
+                                    field))
     resultType = b.getType<StringType>();
   else
     resultType = b.getIndexType();
@@ -1402,6 +1403,9 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   if (!target)
     return {};
 
+  if (field.getValue() == "triple")
+    return StringAttr::get(target.getTarget().getTriple().getTriple(),
+                           resultType);
   if (field.getValue() == "os")
     return StringAttr::get(target.getTarget().getOS(), resultType);
   if (field.getValue() == "cpu")

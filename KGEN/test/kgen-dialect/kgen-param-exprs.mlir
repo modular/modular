@@ -458,6 +458,13 @@ kgen.generator @target_has_feature<t0: target>()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @target_is_cuda_triple<t0: target>()
+kgen.generator @target_is_cuda_triple<t0: target>()
+  constraints <[eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda"),
+     "triple must be nvptx64-nvidia-cuda"]> {
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>()
   constraints <[eq(:string target_get_field(t0, "os"), "darwin"), "os must be darwin"]> {
