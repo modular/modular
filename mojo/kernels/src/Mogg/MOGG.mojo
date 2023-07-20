@@ -49,7 +49,7 @@ from Math import (
     abs,
     log1p,
 )
-from Limits import isinf
+from Limits import isinf, min_or_neginf, max_or_inf
 from Matmul import matmul_parallel_async, pack_b_ndbuffer
 from BatchedMatmul import (
     batched_matmul_parallel_async,
@@ -147,7 +147,10 @@ fn MOGGExport():
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
-    alias _sum = sum
+    alias _reduce_add = reduce_add
+    alias _reduce_max = reduce_max
+    alias _reduce_min = reduce_min
+    alias _reduce_mul = reduce_mul
     alias _splat = splat
     alias _transpose = transpose
     alias _elementwise = elementwise_wrapper
@@ -723,7 +726,6 @@ fn mogg_min[
 # ===----------------------------------------------------------------------===#
 
 
-# Cast a SIMD value to a new SIMD value of different type.
 @always_inline
 fn mean[
     type: DType,
@@ -731,9 +733,6 @@ fn mean[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -750,10 +749,18 @@ fn mean[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let zero_idx = StaticIntTuple[1]()
-    var reduce_dim = input_1_fn[index_type, 1, 1](zero_idx).to_int()
-    if reduce_dim < 0:
-        reduce_dim = rank + reduce_dim
+    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+
+    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
+    # can be fused
+    @parameter
+    @always_inline
+    fn input_0_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        )
 
     @always_inline
     fn reduce_impl[
@@ -813,17 +820,13 @@ fn mean[
 # ===----------------------------------------------------------------------===#
 
 
-# Cast a SIMD value to a new SIMD value of different type.
 @always_inline
-fn sum[
+fn reduce_add[
     type: DType,
     index_type: DType,
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_0_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     input_1_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
@@ -836,14 +839,22 @@ fn sum[
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    out_chain.trace[TraceLevel.OP]("mogg.sum")
+    out_chain.trace[TraceLevel.OP]("mogg.reduce_add")
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let zero_idx = StaticIntTuple[1]()
-    var reduce_dim = input_1_fn[index_type, 1, 1](zero_idx).to_int()
-    if reduce_dim < 0:
-        reduce_dim = rank + reduce_dim
+    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+
+    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
+    # can be fused
+    @parameter
+    @always_inline
+    fn input_0_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        )
 
     @always_inline
     fn reduce_impl[
@@ -860,6 +871,165 @@ fn sum[
         output_0_fn,
         reduce_impl,
     ](input_buffer, 0, reduce_dim, out_chain)
+
+
+@always_inline
+fn reduce_max[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain.trace[TraceLevel.OP]("mogg.reduce_max")
+
+    # Only one reduce dimension supported currently, it must be deduced from
+    # the attached input lambda rather than read directly.
+    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+
+    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
+    # can be fused
+    @parameter
+    @always_inline
+    fn input_0_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        )
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return max(v1, v2)
+
+    _reduce_generator[
+        type,
+        rank,
+        simdwidthof[type](),
+        single_thread_blocking_override,
+        input_0_fn,
+        output_0_fn,
+        reduce_impl,
+    ](input_buffer, min_or_neginf[type](), reduce_dim, out_chain)
+
+
+@always_inline
+fn reduce_min[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain.trace[TraceLevel.OP]("mogg.reduce_min")
+
+    # Only one reduce dimension supported currently, it must be deduced from
+    # the attached input lambda rather than read directly.
+    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+
+    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
+    # can be fused
+    @parameter
+    @always_inline
+    fn input_0_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        )
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return min(v1, v2)
+
+    _reduce_generator[
+        type,
+        rank,
+        simdwidthof[type](),
+        single_thread_blocking_override,
+        input_0_fn,
+        output_0_fn,
+        reduce_impl,
+    ](input_buffer, max_or_inf[type](), reduce_dim, out_chain)
+
+
+@always_inline
+fn reduce_mul[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    input_1_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+](
+    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    out_chain.trace[TraceLevel.OP]("mogg.reduce_mul")
+
+    # Only one reduce dimension supported currently, it must be deduced from
+    # the attached input lambda rather than read directly.
+    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+
+    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
+    # can be fused
+    @parameter
+    @always_inline
+    fn input_0_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
+        )
+
+    @always_inline
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+        return v1 * v2
+
+    _reduce_generator[
+        type,
+        rank,
+        simdwidthof[type](),
+        single_thread_blocking_override,
+        input_0_fn,
+        output_0_fn,
+        reduce_impl,
+    ](input_buffer, 1, reduce_dim, out_chain)
 
 
 # Slice op
@@ -988,8 +1158,7 @@ fn _gather_with_lambdas[
     out_chain: OutputChainPtr,
 ):
     # Look through the lambda to pull the index out.
-    let zero_idx = StaticIntTuple[1]()
-    let axis = input_2_fn[axis_type, 1, 1](zero_idx).to_int()
+    let axis = input_2_fn[axis_type, 1, 1](0).to_int()
 
     @parameter
     @always_inline
