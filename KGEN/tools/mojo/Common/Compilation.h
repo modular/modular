@@ -44,7 +44,8 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier linkDirsId,
     llvm::opt::OptSpecifier tripleId, llvm::opt::OptSpecifier cpuId,
     llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
-    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier mtuneId,
+    llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,

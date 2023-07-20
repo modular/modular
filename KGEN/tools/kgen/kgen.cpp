@@ -260,7 +260,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     ErrorOr<TargetInfoAttr> targetOr = nullptr;
     if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
       // Use `-march` to determine the feature set.
-      targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu);
+      targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu,
+                                  clOptions.mtune);
     } else {
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.

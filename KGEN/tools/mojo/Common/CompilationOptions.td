@@ -54,6 +54,10 @@ def mcpu : Separate<["-", "--"], "mcpu">, Group<CompilationOptionGroup>,
   Index<6>, MetaVarName<"CPU">,
   HelpText<"CPU to generate code for.">;
 
+def mtune : Separate<["-", "--"], "mtune">, Group<CompilationOptionGroup>,
+  Index<7>, MetaVarName<"TUNE">,
+  HelpText<"CPU to tune code for.">;
+
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "

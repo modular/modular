@@ -30,8 +30,10 @@ namespace M {
 /// For AArch64 architectures, `-march` specifies the base architecture or
 /// `-mcpu` specifies the specific CPU kind. If only an architecture is
 /// specified, `-mcpu=generic` will be used.
+///
+/// `-mtune` will specify the CPU to specifically tune code for.
 ErrorOr<TargetInfoAttr> getMArchFeatures(MLIRContext *ctx, StringRef march,
-                                         StringRef mcpu);
+                                         StringRef mcpu, StringRef mtune);
 } // namespace M
 
 #endif // SUPPORT_MARCHTARGET_H

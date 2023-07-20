@@ -959,7 +959,8 @@ TargetInfoAttr M::lookupTargetInfo(Operation *from) {
 
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             StringRef targetTriple,
-                                            StringRef cpu, StringRef features) {
+                                            StringRef cpu, StringRef features,
+                                            StringRef tuneCpu) {
   std::string errorMessage;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
@@ -978,7 +979,8 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), cpu, features,
-                             std::move(*dl), simdWidthFromFeatures(features));
+                             std::move(*dl), simdWidthFromFeatures(features),
+                             tuneCpu);
 }
 
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
@@ -986,10 +988,10 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
   // Leave the data layout empty.
   UNWRAP_ERROR(empty, DataLayout::parse(""));
 
-  return TargetInfoAttr::get(ctx, llvm::Triple(hostMachineInfo.triple),
-                             hostMachineInfo.cpuArch,
-                             getCPUFeatures(hostMachineInfo),
-                             /*data_layout=*/empty, /*simd_bit_width=*/0);
+  return TargetInfoAttr::get(
+      ctx, llvm::Triple(hostMachineInfo.triple), hostMachineInfo.cpuArch,
+      getCPUFeatures(hostMachineInfo),
+      /*data_layout=*/empty, /*simd_bit_width=*/0, /*tuneCpu=*/"");
 }
 
 ErrorOr<std::string>

@@ -21,7 +21,7 @@
 using namespace M;
 
 ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
-                                            StringRef mcpu) {
+                                            StringRef mcpu, StringRef mtune) {
   using namespace llvm;
 
   // Handle -march=native.
@@ -49,6 +49,9 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
   };
   processExts(march);
   processExts(mcpu);
+
+  if (!mtune.empty())
+    opts->TuneCPU = mtune;
 
   auto tryParseX86 = [&](StringRef cpuName) {
     // Check for a 64-bit one first.
@@ -166,5 +169,6 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
     featureStr.pop_back();
 
   // Use this to create the target info.
-  return getTargetInfoFor(ctx, opts->Triple, opts->CPU, featureStr);
+  return getTargetInfoFor(ctx, opts->Triple, opts->CPU, featureStr,
+                          opts->TuneCPU);
 }
