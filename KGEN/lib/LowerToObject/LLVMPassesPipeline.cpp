@@ -89,13 +89,13 @@ using namespace M::KGEN;
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
-  if (options.sanitizers.has(CompilationOptions::Sanitizers::kThread)) {
+  if (options.sanitizers.has(M::Sanitizers::kThread)) {
     modulePassManager.addPass(ModuleThreadSanitizerPass());
     modulePassManager.addPass(
         llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
   }
 
-  if (options.sanitizers.has(CompilationOptions::Sanitizers::kAddress)) {
+  if (options.sanitizers.has(M::Sanitizers::kAddress)) {
     AddressSanitizerOptions Opts;
     bool moduleUseAfterScope = false;
     bool useOdrIndicator = false;
