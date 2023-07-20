@@ -11,6 +11,7 @@
 #include "KGEN/MojoParser.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/JSON.h"
+#include <unistd.h>
 
 using namespace M;
 using namespace M::KGEN;
@@ -20,21 +21,34 @@ using namespace M::KGEN::LIT;
 /// identation.
 static constexpr const char *kMarkdownIndent = "&nbsp;&nbsp;";
 
-/// Within a doc string, the "Constraints" section describes invariants that
-/// must be true for the struct or function.
-static constexpr const char *kConstraints = "Constraints";
+/// Return an ordering priority number for the given decl name. Lower numbers
+/// are ordered first.
+static unsigned getDeclNamePriority(StringRef name) {
+  // If the name is a special function, use that as the priority.
+  SpecialFunctionKind specialFnKind = SpecialFunctionInfo::getKind(name);
+  if (specialFnKind != SpecialFunctionKind::kNormal)
+    return static_cast<unsigned>(specialFnKind);
 
-/// Within a doc string, the "Parameters" section lists descriptions of each
-/// parameter.
-static constexpr const char *kParameters = "Parameters";
+  // Otherwise, we can't discern any priorty from the name.
+  return std::numeric_limits<unsigned>::max();
+}
 
-/// Within a doc string, the "Args" section lists descriptions of each function
-/// argument.
-static constexpr const char *kArgs = "Args";
+/// Given the names of two decls, returns if `lhs` should be ordered before
+/// `rhs`.
+static bool compareDeclNames(StringRef lhs, StringRef rhs) {
+  // If the names are the same, we don't need to do anything.
+  if (lhs == rhs)
+    return false;
 
-/// Within a doc string, the "Returns" section describes the results of a
-/// function.
-static constexpr const char *kReturns = "Returns";
+  // First compare the priority of the names.
+  unsigned lhsPriority = getDeclNamePriority(lhs);
+  unsigned rhsPriority = getDeclNamePriority(rhs);
+  if (lhsPriority != rhsPriority)
+    return lhsPriority < rhsPriority;
+
+  // If there is no name priority, then leave in the original source order.
+  return false;
+}
 
 /// Return if a decl should be hidden given its name.
 static bool shouldHideName(StringRef name) {
@@ -163,26 +177,40 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   return paragraphOS.str();
 }
 
-/// Extract a list of directly child alias decls from a given decl. It omits
-/// aliases whose name start with _.
-static SmallVector<AliasDeclView> extractChildAliases(ASTDecl &decl) {
-  SmallVector<AliasDeclView> aliases;
+/// Extract a list of direct children decls from a given decl. It omits
+/// children whose name start with _, except for special functions that start
+/// and end with __.
+template <typename DeclViewType, typename OpType>
+static SmallVector<DeclViewType, 2> extractChildDecls(ASTDecl &decl) {
+  SmallVector<DeclViewType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
     if (shouldHideName(name) || decls.empty())
       continue;
-    if (!isa<AliasDeclOp>(**decls.begin()))
+    if (!isa<OpType>(**decls.begin()))
       continue;
 
     for (auto &child : decls) {
       // Skip declarations that were imported from other scopes.
       if (child->getParentDecl() == &decl)
-        aliases.push_back(
-            cast<AliasDeclView>(*MojoASTDeclRef(child).getView()));
+        children.push_back(
+            cast<DeclViewType>(*MojoASTDeclRef(child).getView()));
     }
   }
 
-  return aliases;
+  llvm::stable_sort(children, [](auto &lhs, auto &rhs) {
+    return compareDeclNames(lhs.getName(), rhs.getName());
+  });
+
+  return children;
+}
+
+template <typename JSONSerializableItems>
+static llvm::json::Array toJSONArray(const JSONSerializableItems &items) {
+  llvm::json::Array jsonItems;
+  for (const auto &item : items)
+    jsonItems.push_back(item.toJSON());
+  return jsonItems;
 }
 
 //===----------------------------------------------------------------------===//
@@ -263,14 +291,16 @@ void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<StringRef> pureDescriptionLines;
   for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
-    if (desc[line] == (Twine(kArgs) + ":").str()) {
+    if (desc[line] == (Twine(DocString::kSectionArgs) + ":").str()) {
       augmentDeclsWithDocumentation(desc, line, lineE, args);
-    } else if (desc[line] == (Twine(kParameters) + ":").str()) {
+    } else if (desc[line] ==
+               (Twine(DocString::kSectionParameters) + ":").str()) {
       augmentDeclsWithDocumentation(desc, line, lineE, parameters);
-    } else if (desc[line] == (Twine(kReturns) + ":").str()) {
+    } else if (desc[line] == (Twine(DocString::kSectionReturns) + ":").str()) {
       if (returnType)
         returns = parseDocStringSection(desc, line, lineE);
-    } else if (desc[line] == (Twine(kConstraints) + ":").str()) {
+    } else if (desc[line] ==
+               (Twine(DocString::kSectionConstraints) + ":").str()) {
       constraints = parseDocStringSection(desc, line, lineE);
     } else {
       pureDescriptionLines.push_back(desc[line]);
@@ -364,31 +394,15 @@ std::string FunctionDeclView::getSignature() const {
 }
 
 llvm::json::Object FunctionDeclView::toJSON() const {
-  llvm::json::Object result{
-      {"async", isAsync()},
-      {"constraints", constraints},
-      {"description", getDescription()},
-      {"isDef", isDef()},
-      {"kind", "function"},
-      {"name", getName()},
-      {"raises", raises()},
-      {"returns", returns},
-      {"returnType", returnType},
-      {"signature", getSignature()},
+  return llvm::json::Object{
+      {"args", toJSONArray(args)},  {"async", isAsync()},
+      {"constraints", constraints}, {"description", getDescription()},
+      {"isDef", isDef()},           {"kind", "function"},
+      {"name", getName()},          {"parameters", toJSONArray(parameters)},
+      {"raises", raises()},         {"returns", returns},
+      {"returnType", returnType},   {"signature", getSignature()},
       {"summary", summary},
   };
-
-  llvm::json::Array jsonArgs;
-  for (const auto &arg : args)
-    jsonArgs.push_back(arg.toJSON());
-  result.insert({"args", std::move(jsonArgs)});
-
-  llvm::json::Array jsonParameters;
-  for (const auto &param : parameters)
-    jsonParameters.push_back(param.toJSON());
-  result.insert({"parameters", std::move(jsonParameters)});
-
-  return result;
 }
 
 FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
@@ -446,30 +460,138 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
+// StructFieldDeclView
+//===----------------------------------------------------------------------===//
+
+std::string StructFieldDeclView::getDeclarationSnippet() const { return {}; }
+
+llvm::json::Object StructFieldDeclView::toJSON() const {
+  return llvm::json::Object{
+      {"description", description}, {"kind", "field"}, {"name", getName()},
+      {"summary", summary},         {"type", type},    {"value", value},
+  };
+}
+
+StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_StructFieldDeclView,
+               declRef.getName().value_or(StringRef{})) {
+  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+  auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
+
+  llvm::raw_string_ostream typeOS(value);
+  ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
+
+  if (std::optional<DocString> docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    description = llvm::join(docStr->getDescription(), "\n");
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// FunctionDeclViewOverloadSet
+//===----------------------------------------------------------------------===//
+
+SmallVector<FunctionDeclViewOverloadSet, 2>
+FunctionDeclViewOverloadSet::fromSortedFunctions(
+    SmallVector<FunctionDeclView, 2> &&functions) {
+  SmallVector<FunctionDeclViewOverloadSet, 2> overloads;
+  for (auto &function : functions) {
+    if (overloads.empty() ||
+        overloads.back().getBaseName() != function.getName())
+      overloads.emplace_back(FunctionDeclViewOverloadSet(function.getName()));
+
+    overloads.back().append(std::move(function));
+  }
+  return overloads;
+}
+
+llvm::json::Object FunctionDeclViewOverloadSet::toJSON() const {
+  return llvm::json::Object{{"kind", "function"},
+                            {"name", baseName},
+                            {"overloads", toJSONArray(functions)}};
+}
+
+//===----------------------------------------------------------------------===//
+// StructDeclView
+//===----------------------------------------------------------------------===//
+
+void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
+  // Process the lines of the description, looking for markers.
+  SmallVector<StringRef> pureDescriptionLines;
+  for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
+    if (desc[line] == (Twine(DocString::kSectionParameters) + ":").str())
+      augmentDeclsWithDocumentation(desc, line, lineE, parameters);
+    else if (desc[line] == (Twine(DocString::kSectionConstraints) + ":").str())
+      constraints = parseDocStringSection(desc, line, lineE);
+    else
+      pureDescriptionLines.push_back(desc[line]);
+  }
+
+  description = llvm::join(pureDescriptionLines, "\n");
+}
+
+std::string StructDeclView::getDeclarationSnippet() const { return {}; }
+
+llvm::json::Object StructDeclView::toJSON() const {
+  return llvm::json::Object{
+      {"aliases", toJSONArray(aliases)},
+      {"constraints", constraints},
+      {"description", description},
+      {"fields", toJSONArray(fields)},
+      {"functions", toJSONArray(functionOverloads)},
+      {"kind", "struct"},
+      {"name", getName()},
+      {"parameters", toJSONArray(parameters)},
+      {"summary", summary},
+  };
+}
+
+StructDeclView::StructDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_StructDeclView, declRef.getName().value_or(StringRef())) {
+  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+  auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
+
+  aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
+  fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(decl);
+  functionOverloads = FunctionDeclViewOverloadSet::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(decl));
+
+  // Grab the types of the parameters to the struct.
+  for (ParamDeclAttr param : structOp.getInputParams())
+    parameters.push_back(
+        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
+                          generateTypeString(param.getType())));
+
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    augmentWithDocumentation(docStr->getDescription());
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // ModuleDeclView
 //===----------------------------------------------------------------------===//
 
 std::string ModuleDeclView::getDeclarationSnippet() const { return {}; }
 
 llvm::json::Object ModuleDeclView::toJSON() const {
-  llvm::json::Object result{{"description", description},
+  return llvm::json::Object{{"aliases", toJSONArray(aliases)},
+                            {"description", description},
+                            {"functions", toJSONArray(functionOverloads)},
                             {"kind", "module"},
                             {"name", getName()},
+                            {"structs", toJSONArray(structs)},
                             {"summary", summary}};
-
-  llvm::json::Array jsonAliases;
-  for (const auto &alias : aliases)
-    jsonAliases.push_back(alias.toJSON());
-  result.insert({"aliases", std::move(jsonAliases)});
-
-  return result;
 }
 
 ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_ModuleDeclView, declRef.getName().value_or(StringRef())) {
   ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
 
-  aliases = extractChildAliases(decl);
+  aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
+  structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
+  functionOverloads = FunctionDeclViewOverloadSet::fromSortedFunctions(
+      extractChildDecls<FunctionDeclView, FuncOp>(decl));
 
   if (auto docStr = decl.getParsedDocString()) {
     summary = docStr->getSummary();

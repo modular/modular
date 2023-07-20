@@ -22,19 +22,19 @@ using namespace M::KGEN::LIT;
 
 /// Within a doc string, the "Constraints" section describes invariants that
 /// must be true for the struct or function.
-static constexpr const char *kConstraints = "Constraints";
+const char *DocString::kSectionConstraints = "Constraints";
 
 /// Within a doc string, the "Parameters" section lists descriptions of each
 /// parameter.
-static constexpr const char *kParameters = "Parameters";
+const char *DocString::kSectionParameters = "Parameters";
 
 /// Within a doc string, the "Args" section lists descriptions of each function
 /// argument.
-static constexpr const char *kArgs = "Args";
+const char *DocString::kSectionArgs = "Args";
 
 /// Within a doc string, the "Returns" section describes the results of a
 /// function.
-static constexpr const char *kReturns = "Returns";
+const char *DocString::kSectionReturns = "Returns";
 
 /// Return the indentation level of the first line of the string.
 static size_t getIndentationLevel(StringRef str) {
@@ -161,365 +161,12 @@ public:
   void generate(ASTDecl &decl) {
     TypeSwitch<ASTDecl &>(decl)
         .Case<AliasDeclOp, FileModuleOp, LIT::FuncOp, StructDeclOp,
-              StructFieldOp>([&](auto op) { generateJSONFor(decl, op); });
+              StructFieldOp>([&](auto op) {
+          os.value(MojoASTDeclRef(&decl).getView()->toJSON());
+        });
   }
 
 private:
-  //===--------------------------------------------------------------------===//
-  // Utils
-
-  /// Return an ordering priority number for the given decl name. Lower numbers
-  /// are ordered first.
-  static unsigned getDeclNamePriority(StringRef name) {
-    // If the name is a special function, use that as the priority.
-    SpecialFunctionKind specialFnKind = SpecialFunctionInfo::getKind(name);
-    if (specialFnKind != SpecialFunctionKind::kNormal)
-      return static_cast<unsigned>(specialFnKind);
-
-    // Otherwise, we can't discern any priorty from the name.
-    return std::numeric_limits<unsigned>::max();
-  }
-
-  /// Given the names of two decls, returns if `lhs` should be ordered before
-  /// `rhs`.
-  static bool compareDeclNames(StringRef lhs, StringRef rhs) {
-    // If the names are the same, we don't need to do anything.
-    if (lhs == rhs)
-      return false;
-
-    // First compare the priority of the names.
-    unsigned lhsPriority = getDeclNamePriority(lhs);
-    unsigned rhsPriority = getDeclNamePriority(rhs);
-    if (lhsPriority != rhsPriority)
-      return lhsPriority < rhsPriority;
-
-    // If there is no name priority, then leave in the original source order.
-    return false;
-  }
-
-  void generateJSONForChildren(ASTDecl &decl, bool omitAliases = false) {
-    using ChildrenVecT =
-        SmallVector<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>;
-    ChildrenVecT aliases, functions, structs, fields;
-
-    // Bucket the different types of children.
-    const auto &declsInScope = decl.getDeclsInScope();
-    for (auto &[name, decls] : declsInScope) {
-      if (shouldHideName(name) || decls.empty())
-        continue;
-
-      if (isa<AliasDeclOp>(**decls.begin()) && !omitAliases)
-        aliases.emplace_back(name, decls);
-      else if (isa<LIT::FuncOp>(**decls.begin()))
-        functions.emplace_back(name, decls);
-      else if (isa<StructDeclOp>(**decls.begin()))
-        structs.emplace_back(name, decls);
-      else if (isa<StructFieldOp>(**decls.begin()))
-        fields.emplace_back(name, decls);
-    }
-
-    // Functor used to generically process a bucket of children.
-    auto processChildren = [&](StringRef tag, ChildrenVecT &children,
-                               auto &&processChildFn) {
-      llvm::stable_sort(children, [](auto &lhs, auto &rhs) {
-        return compareDeclNames(lhs.first, rhs.first);
-      });
-
-      // Skip declarations that were imported from other scopes.
-      // TODO: We should note that these are imported/aliases.
-      auto filterChildren = [&](TinyPtrVector<ASTDecl *> &children) {
-        return llvm::make_filter_range(children, [&](ASTDecl *child) {
-          return child->getParentDecl() == &decl;
-        });
-      };
-
-      os.attributeArray(tag, [&] {
-        for (auto &[name, decls] : children) {
-          auto filteredChildren = filterChildren(decls);
-          if (!filteredChildren.empty())
-            processChildFn(name, filteredChildren);
-        }
-      });
-    };
-
-    // Functor used to process all of the given children.
-    auto processAllChildrenFn = [&](StringRef name, auto &&children) {
-      for (auto &childDecl : children)
-        generate(*childDecl);
-    };
-
-    // Process aliases.
-    if (!aliases.empty())
-      processChildren("aliases", aliases, processAllChildrenFn);
-
-    // Process fields.
-    if (!fields.empty())
-      processChildren("fields", fields, processAllChildrenFn);
-
-    // Process functions.
-    if (!functions.empty()) {
-      auto processFn = [&](StringRef name, auto &&children) {
-        generateJSONForFunctions(name, children);
-      };
-      processChildren("functions", functions, processFn);
-    }
-
-    // Process structs.
-    if (!structs.empty())
-      processChildren("structs", structs, processAllChildrenFn);
-  }
-
-  /// Return if the given name should be hidden from the output.
-  bool shouldHideName(StringRef name) {
-    // Non-underscore names are never hidden.
-    if (!name.startswith("_"))
-      return false;
-
-    // Keep special language names, which have leading and trailing underscores,
-    // even though they start with `_`.
-    return !(name.startswith("__") && name.endswith("__"));
-  }
-
-  /// Generate an array section from the given form:
-  ///
-  /// Header:
-  ///   Element1: ...
-  ///   Element2: ...
-  ///     ...
-  ///   ElementN: ...
-  ///
-  template <typename DetailMapT>
-  void generateArraySection(StringRef header, ArrayRef<StringRef> lines,
-                            size_t &line, size_t lineE, DetailMapT &&entryMap) {
-    std::string fullArgDesc;
-    llvm::raw_string_ostream fullArgDescOS(fullArgDesc);
-    os.attributeArray(header, [&] {
-      for (++line; line < lineE && !lines[line].empty();) {
-        // Extract the argument name and description.
-        auto [argName, argDesc] = lines[line].split(':');
-        argName = argName.trim();
-        argDesc = argDesc.trim();
-
-        fullArgDesc.clear();
-        fullArgDescOS << argDesc;
-
-        // Merge in additional description lines that have a larger indentation.
-        size_t indent = getIndentationLevel(lines[line]);
-        while (++line < lineE && getIndentationLevel(lines[line]) > indent)
-          fullArgDescOS << " " << lines[line].trim();
-
-        // If it's a known entry, process it, otherwise skip it.
-        if (auto it = entryMap.find(argName); it != entryMap.end()) {
-          os.object([&] {
-            os.attribute("name", it->first());
-            os.attribute("type", it->second);
-            os.attribute("description", fullArgDesc);
-          });
-        }
-      }
-    });
-  }
-
-  /// Generate a string attribute from the given paragraph form:
-  ///
-  /// Header:
-  ///   Element1...
-  void generateParagraphSection(StringRef header, ArrayRef<StringRef> lines,
-                                size_t &line, size_t lineE) {
-    std::string paragraph;
-    llvm::raw_string_ostream paragraphOS(paragraph);
-
-    // A doc string may end with "Header:". This is diagnosed by the validator,
-    // but invalid doc strings may still be emitted as JSON.
-    if (line >= lines.size()) {
-      os.attribute(header, paragraphOS.str());
-      return;
-    }
-
-    paragraphOS << lines[++line].trim();
-
-    // Merge in additional description lines that have equal or larger
-    // indentation.
-    size_t indent = getIndentationLevel(lines[line]);
-    while (++line < lineE && getIndentationLevel(lines[line]) >= indent)
-      paragraphOS << " " << lines[line].trim();
-    os.attribute(header, paragraphOS.str());
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Types
-
-  /// Generate a documentation string for the given type, with an optional
-  /// value convention, parent struct "Self" type.
-  std::string generateTypeString(
-      Type type, std::optional<ASTType> selfType = std::nullopt,
-      std::optional<ValueInputConvention> convention = std::nullopt) {
-    std::string typeName;
-    llvm::raw_string_ostream os(typeName);
-    ASTType astType(type);
-
-    // Handle variadic types.
-    if (isa<VariadicType>(type)) {
-      astType = astType.getVariadicElementType();
-      os << "*";
-    }
-
-    // Process the convention if present.
-    StringRef typeSuffix;
-    if (convention) {
-      switch (*convention) {
-      case ValueInputConvention::ByRef:
-      case ValueInputConvention::InitSelf:
-        astType = astType.getPointerElementType();
-        typeSuffix = "&";
-        break;
-      case ValueInputConvention::ByRefResult:
-        astType = astType.getPointerElementType();
-        break;
-      case ValueInputConvention::OwnedInMem:
-      case ValueInputConvention::BorrowedInMem:
-        // TODO: Produce "owned" marker in docs.
-        astType = astType.getPointerElementType();
-        break;
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::BorrowedInReg:
-        break;
-      }
-    }
-
-    // If this type is the same as the self type, use the "Self" keyword.
-    if (selfType && astType.isEqualCanon(*selfType))
-      os << "Self";
-    else
-      os << astType.getAsString(/*forDiag=*/true);
-
-    // Append the type suffix.
-    os << typeSuffix;
-    return os.str();
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Alias Generation
-
-  void generateJSONFor(ASTDecl &decl, AliasDeclOp aliasOp) {
-    os.value(MojoASTDeclRef(&decl).getView()->toJSON());
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Field Generation
-
-  void generateJSONFor(ASTDecl &decl, StructFieldOp fieldOp) {
-    os.object([&] {
-      os.attribute("kind", "field");
-      os.attribute("name", fieldOp.getName());
-
-      // Pretty print the value.
-      std::string valueStr;
-      llvm::raw_string_ostream typeOS(valueStr);
-      ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
-      os.attribute("value", typeOS.str());
-
-      // Emit the doc string if present.
-      if (std::optional<DocString> docStr = decl.getParsedDocString()) {
-        os.attribute("summary", docStr->getSummary());
-        os.attribute("description", llvm::join(docStr->getDescription(), "\n"));
-      }
-    });
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Function Generation
-
-  /// Generate documentation for the given function.
-  void generateJSONFor(ASTDecl &decl, LIT::FuncOp funcOp) {
-    // Strip off the mangled suffix from the base function name.
-    StringRef name =
-        funcOp.getName().take_until([](char c) { return c == '('; });
-    return generateJSONForFunctions(name, ArrayRef<ASTDecl *>(&decl));
-  }
-  template <typename DeclRangeT>
-  void generateJSONForFunctions(StringRef name, const DeclRangeT &decls) {
-    os.object([&] {
-      os.attribute("kind", "function");
-      os.attribute("name", name);
-      os.attributeArray("overloads", [&] {
-        for (auto *decl : decls)
-          generateJSONForOverload(*decl, cast<LIT::FuncOp>(*decl), name);
-      });
-    });
-  }
-
-  /// Generate a sub-section for the overload described by the given function.
-  void generateJSONForOverload(ASTDecl &decl, LIT::FuncOp funcOp,
-                               StringRef name) {
-    os.value(MojoASTDeclRef(&decl).getView()->toJSON());
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Struct Generation
-
-  void generateJSONFor(ASTDecl &decl, StructDeclOp structOp) {
-    os.object([&] {
-      os.attribute("kind", "struct");
-      os.attribute("name", structOp.getName());
-
-      // Emit the doc string if present.
-      if (std::optional<DocString> docStr = decl.getParsedDocString()) {
-        os.attribute("summary", docStr->getSummary());
-
-        // Grab the types of the parameters to the struct.
-        llvm::StringMap<std::string> paramToDetail;
-        for (ParamDeclAttr attr : structOp.getInputParams()) {
-          ParamDeclAttr demangled = demangleIfNeeded(attr);
-          paramToDetail[demangled.getName()] =
-              generateTypeString(demangled.getType());
-        }
-        processStructDocDescription(docStr->getDescription(), paramToDetail);
-      }
-
-      // Recursively generate documentation for the module's children.
-      generateJSONForChildren(decl);
-    });
-  }
-
-  void processStructDocDescription(
-      ArrayRef<StringRef> description,
-      const llvm::StringMap<std::string> &paramToDetail) {
-    // Process the lines of the description, looking for markers.
-    SmallVector<StringRef> pureDescriptionLines;
-    for (size_t line = 0, lineE = description.size(); line < lineE; ++line) {
-      if (description[line] == (Twine(kParameters) + ":").str()) {
-        generateArraySection("parameters", description, line, lineE,
-                             paramToDetail);
-        continue;
-      } else if (description[line] == (Twine(kConstraints) + ":").str()) {
-        generateParagraphSection("constraints", description, line, lineE);
-        continue;
-      }
-      pureDescriptionLines.push_back(description[line]);
-    }
-    os.attribute("description", llvm::join(pureDescriptionLines, "\n"));
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Module Generation
-
-  void generateJSONFor(ASTDecl &decl, FileModuleOp moduleOp) {
-    os.object([&] {
-      for (const auto &[key, value] :
-           MojoASTDeclRef(&decl).getView()->toJSON()) {
-        os.attribute(key, value);
-      }
-
-      // Recursively generate documentation for the module's children.
-      // TODO: move this to the DeclView API.
-      generateJSONForChildren(decl, /*omitAliases=*/true);
-    });
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Fields
-
   /// The output stream.
   llvm::json::OStream os;
 };
@@ -861,22 +508,22 @@ private:
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
-        {kConstraints, nullptr},
-        {kArgs, nullptr},
-        {kParameters, nullptr},
-        {kReturns, nullptr},
+        {DocString::kSectionConstraints, nullptr},
+        {DocString::kSectionArgs, nullptr},
+        {DocString::kSectionParameters, nullptr},
+        {DocString::kSectionReturns, nullptr},
     };
     ArrayRef<StringRef> description = docStr->getDescription();
     bool hasResults = !ASTType(funcOp.getUserResultType()).isNoneType();
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
-      if (section == kArgs)
+      if (section == DocString::kSectionArgs)
         return processArguments(loc, seenArguments, description, validation);
 
-      if (section == kParameters)
+      if (section == DocString::kSectionParameters)
         return processParameters(loc, seenParameters, description, validation);
 
-      if (section == kReturns && !hasResults)
+      if (section == DocString::kSectionReturns && !hasResults)
         emitWarning(loc, "unexpected 'Returns' in doc string for "
                          "function with no results");
 
@@ -890,15 +537,15 @@ private:
     processDocSections(description, sections, processFn);
 
     if (validation == ValidationKind::Strict) {
-      if (!sections[kParameters] && !seenParameters.empty())
+      if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function takes parameters, but no 'Parameters' in doc string");
-      if (!sections[kArgs] && !seenArguments.empty())
+      if (!sections[DocString::kSectionArgs] && !seenArguments.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function takes arguments, but no 'Args' in doc string");
-      if (!sections[kReturns] && hasResults)
+      if (!sections[DocString::kSectionReturns] && hasResults)
         sharedState.emitWarning(
             funcOp.getLoc(),
             "function has results, but no 'Returns' in doc string");
@@ -917,17 +564,17 @@ private:
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
-        {kParameters, nullptr},
+        {DocString::kSectionParameters, nullptr},
     };
     ArrayRef<StringRef> description = docStr->getDescription();
     auto processFn = [&](StringRef section, const char *loc) mutable {
-      if (section == kParameters)
+      if (section == DocString::kSectionParameters)
         processParameters(loc, seenParameters, description, validation);
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict && !sections[kParameters] &&
-        !seenParameters.empty())
+    if (validation == ValidationKind::Strict &&
+        !sections[DocString::kSectionParameters] && !seenParameters.empty())
       sharedState.emitWarning(
           structOp.getLoc(),
           "struct takes parameters, but no 'Parameters' in doc string");

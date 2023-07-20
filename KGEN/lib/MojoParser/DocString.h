@@ -39,6 +39,25 @@ public:
   /// string is not attached to a location.
   FileLineColLoc getLoc() const { return loc; }
 
+  //===----------------------------------------------------------------------===//
+  // Section names
+
+  /// Within a doc string, the "Constraints" section describes invariants that
+  /// must be true for the struct or function.
+  static const char *kSectionConstraints;
+
+  /// Within a doc string, the "Parameters" section lists descriptions of each
+  /// parameter.
+  static const char *kSectionParameters;
+
+  /// Within a doc string, the "Args" section lists descriptions of each
+  /// function argument.
+  static const char *kSectionArgs;
+
+  /// Within a doc string, the "Returns" section describes the results of a
+  /// function.
+  static const char *kSectionReturns;
+
 private:
   /// The short summary of the doc string.
   std::string summary;
