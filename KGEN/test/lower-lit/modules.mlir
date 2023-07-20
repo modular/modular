@@ -9,8 +9,6 @@ lit.file_module @module {
   }
 
   lit.struct.decl @Adder<size> {
-    %base = lit.varlet.decl "base", var = true, synth=false : <index>
-
     // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !kgen.declref<@"module::Adder"<size = size>>) {
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
     lit.func @__add__(%self: !kgen.declref<@module::@Adder<size = size>>)  {

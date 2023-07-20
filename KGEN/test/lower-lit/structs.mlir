@@ -1,15 +1,6 @@
 // RUN: kgen-opt -lower-lit -split-input-file %s | FileCheck %s
 
-// CHECK-LABEL: lit.struct.decl @AdderOneField {
-// CHECK-NEXT:    base : index
-// CHECK-NEXT:  }
-lit.struct.decl @AdderOneField {
-  %base = lit.varlet.decl "base", var = true, synth=false : <index>
-}
-
 lit.struct.decl @Adder<size> {
-  %base = lit.varlet.decl "base", var = true, synth=false : <index>
-
   // CHECK-LABEL: kgen.generator @"Adder::__add__"<size>(%arg0: !kgen.declref<@Adder<size = size>>) {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
@@ -20,10 +11,6 @@ lit.struct.decl @Adder<size> {
     kgen.return
   }
 }
-
-// CHECK-LABEL: lit.struct.decl @Adder<size> {
-// CHECK-NEXT:    base : index
-// CHECK-NEXT:  }
 
 // -----
 
@@ -78,26 +65,21 @@ lit.func @main(%a: !kgen.declref<@A<N = 1>>) {
 // -----
 
 lit.struct.decl @A {
-   %x = lit.varlet.decl "x", var = true, synth=false : <index>
- }
+}
 
-// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) -> !pop.array<0, i1> {
- lit.func @rhslitdeclref_no_params(%x: !kgen.declref<@A>) -> !lit.none {
-  // CHECK: kgen.param.constant: array<0, i1> = <[]>
-   %0 = kgen.param.constant: !lit.none = <#lit.none>
-   kgen.return %0 : !lit.none
- }
+// CHECK: kgen.generator @rhslitdeclref_no_params(%arg0: !kgen.declref<@A>) {
+lit.func @rhslitdeclref_no_params(%x: !kgen.declref<@A>) {
+  kgen.return
+}
 
 // -----
 
 lit.struct.decl @A<b, c> {
-  %x = lit.varlet.decl "x", var = true, synth=false : <index>
 }
-// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) -> !pop.array<0, i1> {
-lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) -> !lit.none {
-  // CHECK: kgen.param.constant: array<0, i1> = <[]>
-  %0 = kgen.param.constant: !lit.none = <#lit.none>
-  kgen.return %0 : !lit.none
+
+// CHECK: kgen.generator @rhslitdeclref_params(%arg0: !kgen.declref<@A<b = 10, c = 11>>) {
+lit.func @rhslitdeclref_params(%x: !kgen.declref<@A<b = 10, c = 11>>) {
+  kgen.return
 }
 
 // -----
