@@ -633,8 +633,6 @@ resolveModulePath(StringRef moduleName,
       return std::move(*path);
     // Cannot find the file, then check child directories of the auto import
     // directory.
-    if (!std::filesystem::is_directory(rawPath))
-      return {};
     for (auto &childDir :
          std::filesystem::recursive_directory_iterator(rawPath)) {
       // Skip non-directories and source packages, internal packages should be
