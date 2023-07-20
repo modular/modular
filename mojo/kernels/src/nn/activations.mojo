@@ -34,7 +34,12 @@ struct ActivationType:
     var value: Int
     alias IDENTITY = ActivationType(0)
     alias GELU = ActivationType(1)
-    alias RELU = ActivationType(2)
+    alias GELU_APPROX = ActivationType(2)
+    alias RELU = ActivationType(3)
+    alias SIGMOID = ActivationType(4)
+    alias SIGN = ActivationType(5)
+    alias TANH = ActivationType(6)
+    alias GELU_APPROX_SIGMOID = ActivationType(7)
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: ActivationType) -> Bool:
@@ -54,6 +59,16 @@ struct ActivationType:
             func[ActivationType.RELU]()
         elif self == ActivationType.GELU:
             func[ActivationType.GELU]()
+        elif self == ActivationType.GELU_APPROX:
+            func[ActivationType.GELU_APPROX]()
+        elif self == ActivationType.GELU_APPROX_SIGMOID:
+            func[ActivationType.GELU_APPROX_SIGMOID]()
+        elif self == ActivationType.SIGMOID:
+            func[ActivationType.SIGMOID]()
+        elif self == ActivationType.SIGN:
+            func[ActivationType.SIGN]()
+        elif self == ActivationType.TANH:
+            func[ActivationType.TANH]()
         else:
             out_chain.mark_error("Unsupported activation function.")
 
@@ -69,6 +84,16 @@ fn dispatch_activation_fn[
         return relu(val)
     elif activation == ActivationType.GELU:
         return gelu(val)
+    elif activation == ActivationType.GELU_APPROX:
+        return gelu_approximate(val)
+    elif activation == ActivationType.GELU_APPROX_SIGMOID:
+        return gelu_approximate_sigmoid(val)
+    elif activation == ActivationType.SIGMOID:
+        return sigmoid(val)
+    elif activation == ActivationType.SIGN:
+        return sign(val)
+    elif activation == ActivationType.TANH:
+        return _tanh(val)
     else:
         assert_param[False, "unsupported activation"]()
 
