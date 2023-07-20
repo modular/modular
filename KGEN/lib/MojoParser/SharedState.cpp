@@ -859,6 +859,11 @@ ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
 }
 
+ASTType SharedState::getBuiltinCoroutineType(ASTDecl &context,
+                                             llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, "Coroutine", *this);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType SharedState::getBuiltinTupleInstantion(ASTDecl &context,

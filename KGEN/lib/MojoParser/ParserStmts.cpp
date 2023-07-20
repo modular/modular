@@ -288,14 +288,18 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     }
   }
 
-  // If the expression returned an unevaluated coroutine, then the expression
-  // should be awaited.
-  if (isa<POP::CoroutineType>(valueType.mlirType)) {
-    auto loc = expr->getRange().getStart();
-    shared.emitWarning(expr->getLoc())
-        << "coroutine was never awaited" << expr->getRange()
-        << FixIt::insertBeforeToken(loc, "await ");
-    return;
+  // If the expression returned an unawaited value, then the expression should
+  // be awaited. Check for an '__await__' function.
+  if (ASTDecl *decl = valueType.getDecl(shared)) {
+    OverloadSet await(valueType, "__await__", expr, CallSyntax::kMethodCall,
+                      shared, /*no error on failure*/ {});
+    if (!await.isNull()) {
+      auto loc = expr->getRange().getStart();
+      shared.emitWarning(expr->getLoc())
+          << "awaitable " << valueType << " value was never awaited"
+          << expr->getRange() << FixIt::insertBeforeToken(loc, "await ");
+      return;
+    }
   }
 
   // Otherwise emit a warning, and suggest assigning to _.
