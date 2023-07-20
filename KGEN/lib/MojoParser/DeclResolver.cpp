@@ -2784,6 +2784,22 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   decl.addUnresolvedWildCardImport(importModule, /*isFullImport=*/true,
                                    decl.loc);
 
+  // Resolve the body of the __init__ within the package, and inherit some
+  // attributes from it if they are present.
+  LookupResult initResult =
+      shared.lookupAndResolveDecl("__init__", decl.loc, decl,
+                                  /*searchParentScopes=*/false);
+  if (initResult.isSuccess()) {
+    ASTDecl &initDecl = *initResult.getIfSuccess().front();
+    if (failed(resolveFully(initDecl, decl.loc)))
+      return failure();
+    if (auto initDeclOp = dyn_cast<ASTDeclInterface>(initDecl)) {
+      // Inherit the docstring from the __init__ if it is present.
+      if (auto docstring = initDeclOp.getDocStringAttr())
+        op.setDocStringAttr(docstring);
+    }
+  }
+
   return success();
 }
 

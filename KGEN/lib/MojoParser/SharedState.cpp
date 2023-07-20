@@ -515,11 +515,14 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   // If nothing was found, return a failure.
   if (entry.isFailure())
     return entry;
+  SmallVector<ASTDecl *> resultDecls(entry.getIfSuccess());
 
   // If the lookup succeeded, make sure the signature for the referenced decls
   // are understood. Make a copy of the entries to avoid dangling references if
   // we end up invalidating the decl map.
-  for (ASTDecl *decl : SmallVector<ASTDecl *>(entry.getIfSuccess())) {
+  bool wasUnresolvedImport =
+      !resultDecls.empty() && isa<UnresolvedImportOp>(*resultDecls.front());
+  for (ASTDecl *decl : resultDecls) {
     if (failed(
             declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
       // If the decl was erroneous somehow, then don't form a reference to it,
@@ -532,8 +535,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
   entry = getEntry();
   // If we are resolving an unresolved import, do another lookup now that import
   // has been resolved. The scope map should be updated with the proper decls.
-  if (entry.isSuccess() &&
-      isa<UnresolvedImportOp>(*entry.getIfSuccess().front()))
+  if (entry.isSuccess() && wasUnresolvedImport)
     return lookupAndResolveDecl(name, loc, scope, searchParentScopes);
 
   // We return a pointer into the TinyPtrVector entry in the scope.  This should
