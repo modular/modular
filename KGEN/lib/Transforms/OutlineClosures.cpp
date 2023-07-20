@@ -186,16 +186,8 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Since the lifted generator will have a new name, we need to update the
       // linkage name in the subprogram information.
-      if (auto funcSp = DebugInfo::extractScope<DebugInfo::DISubprogramAttr>(
-              liftedWrapper.getLoc())) {
-        DebugInfo::DIAttrTypeReplacer replacer;
-        replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
-          if (sp != funcSp)
-            return sp;
-          return sp.cloneWith(sp.getName(), liftedWrapper.getSymName());
-        });
-        replacer.recursivelyReplaceElementsIn(liftedWrapper);
-      }
+      DebugInfo::updateSubprogram(liftedWrapper,
+                                  liftedWrapper.getSymNameAttr());
 
       // We need to set the parameter bindings for the call to the lifted
       // region. This basically just means binding the wrapper's input params to

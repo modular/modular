@@ -271,7 +271,7 @@ public:
       return failure();
 
     // Update the subprogram scopes within the wrapper function.
-    DebugInfo::renameSubprogramsInScopes(name, wrapperFn);
+    DebugInfo::updateSubprogram(wrapperFn, name, name);
 
     return success();
   }

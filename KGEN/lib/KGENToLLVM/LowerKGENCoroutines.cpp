@@ -377,7 +377,8 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Move the body of the coroutine into the new async function.
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
-  DebugInfo::renameSubprogramsInScopes(asyncFn.getSymNameAttr(), asyncFn);
+  DebugInfo::updateSubprogram(asyncFn, asyncFn.getSymNameAttr(),
+                              asyncFn.getSymNameAttr());
   BlockArgument asyncCtxArg =
       asyncFnBody.addArgument(cache.i8PtrType, asyncFn.getLoc());
 
@@ -535,7 +536,8 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
   suspendFn.getBody().takeBody(op.getBody());
-  DebugInfo::renameSubprogramsInScopes(suspendFn.getSymNameAttr(), suspendFn);
+  DebugInfo::updateSubprogram(suspendFn, suspendFn.getSymNameAttr(),
+                              suspendFn.getSymNameAttr());
   b.setLoc(suspendFn.getLoc());
   b.setInsertionPointToEnd(&suspendFn.getBody().front());
   b.create<ReturnOp>(ValueRange());
