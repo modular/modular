@@ -150,6 +150,10 @@ class AliasDeclView : public DeclView {
 public:
   std::string getDeclarationSnippet() const override;
 
+  /// Return a nicely formatted markdown docstring of this declaration. It might
+  /// be empty if no docstring is available.
+  std::string getMarkdownDocString() const;
+
   StringRef getValue() const { return value; }
 
   llvm::json::Object toJSON() const override;

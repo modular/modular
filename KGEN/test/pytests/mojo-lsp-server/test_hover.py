@@ -242,3 +242,73 @@ struct SomeStruct[size: Int]
 ```""",
         ],
     )
+
+
+async def test_hover_alias_decls(client: LanguageClient):
+    doc = Document.from_file("aliases.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert result.range == range
+        assert isinstance(result.contents, MarkupContent)
+        assert contents == result.contents.value
+
+    await assert_decl(
+        "IntAlias",
+        """### alias `IntAlias`
+
+---
+
+###
+Int alias summary
+
+Int alias description.
+
+
+---
+
+###
+```mojo
+alias IntAlias = 12
+```""",
+    )
+
+    await assert_decl(
+        "ExplicitIntAlias",
+        """### alias `ExplicitIntAlias`
+
+---
+
+###
+```mojo
+alias ExplicitIntAlias = 123
+```""",
+    )
+
+    await assert_decl(
+        "AliasInsideFunction",
+        """### alias `AliasInsideFunction`
+
+---
+
+###
+```mojo
+alias AliasInsideFunction = "sdfsdf"
+```""",
+    )
+
+    await assert_decl(
+        "AliasToAlias",
+        """### alias `AliasToAlias`
+
+---
+
+###
+```mojo
+alias AliasToAlias = 12
+```""",
+    )

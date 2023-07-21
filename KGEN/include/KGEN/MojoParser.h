@@ -159,6 +159,11 @@ class MojoParserListener {
 public:
   virtual ~MojoParserListener() = default;
 
+  /// Notify the listener that a new `alias` declaration has been resolved by
+  /// the parser.
+  virtual void onAliasDecl(MojoASTDeclRef declRef,
+                           llvm::SMLoc identifierLoc) = 0;
+
   /// Notify the listener that a new `def` or `fn` function declaration has been
   /// resolved by the parser. This includes struct methods and closures.
   virtual void onFunctionDecl(MojoASTDeclRef declRef,
