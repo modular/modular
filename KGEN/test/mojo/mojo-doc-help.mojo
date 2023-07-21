@@ -10,4 +10,4 @@
 # Invoking the subcommand with `--help-text` prints its help text.
 # RUN: mojo doc -bad-option --doesnt-matter --help-text | FileCheck %s
 
-# CHECK: Compiles doc strings.
+# CHECK: Compiles doc strings

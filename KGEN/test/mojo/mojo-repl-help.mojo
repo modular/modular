@@ -10,4 +10,4 @@
 # Invoking the subcommand with `--help-text` prints its help text.
 # RUN: %repl -invalid-option --help-text | FileCheck %s
 
-# CHECK: Launches the REPL.
+# CHECK: Launches the REPL
