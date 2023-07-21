@@ -352,3 +352,13 @@ lit.globalvar.decl @global_let : !kgen.declref<@Error> isLet {
 }, {
   %0 = lit.globalvar.ref @global_let : <@Error>
 }
+
+// -----
+
+#file = #debuginfo.file<"foo.mlir" in "">
+#loc = loc("foo.mlir":7:8)
+
+// CHECK-LABEL: lit.struct.decl @Foo
+lit.struct.decl @Foo {
+  lit.struct.field value : index
+} loc(fused<#file>[#loc])

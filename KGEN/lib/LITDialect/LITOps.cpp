@@ -654,6 +654,17 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 LogicalResult StructDeclOp::verify() {
   if (getFields().getNumArguments())
     return emitOpError("expected declaration body to have no arguments");
+
+  // If the struct decl doesn't contain a location scope, we don't verify it.
+  Location loc = getLoc();
+  auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(loc);
+  if (!fusedLoc)
+    return success();
+
+  DebugInfo::DIScopeAttr scope = fusedLoc.getMetadata();
+  auto funcScope = dyn_cast<DebugInfo::DIFileAttr>(scope);
+  if (!funcScope)
+    return emitOpError("must have file scope in location, but got ") << scope;
   return success();
 }
 
