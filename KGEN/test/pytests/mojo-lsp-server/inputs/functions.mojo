@@ -7,7 +7,18 @@
 from String import String
 
 
-struct SomeStruct:
+struct SomeStruct[size: Int]:
+    """Docstring for SomeStruct.
+
+    More docstring for SomeStruct.
+
+    Constraints:
+        The contraints of SomeStruct.
+
+    Parameters:
+        size: The size of SomeStruct.
+    """
+
     fn __init__(inout self):
         pass
 

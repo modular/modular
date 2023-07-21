@@ -152,6 +152,7 @@ private:
 StringRef SymbolPrinter::getSymbolKindAsString() const {
   return TypeSwitch<Operation &, StringRef>(*symbol.declRef.getIfOperation())
       .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return "variable"; })
+      .Case<StructDeclOp>([&](auto op) { return "struct"; })
       .Case<FuncOp>([&](auto op) { return "function"; });
 }
 
@@ -176,6 +177,13 @@ SymbolPrinter::getDocStringAndCodeSnippet() const {
         os << "let " << symbol.identifier;
         if (auto typeRef = symbol.getDisplayType())
           os << ": " << typeRef.getAsString();
+      })
+      .Case<StructDeclOp>([&](StructDeclOp op) {
+        if (auto view = symbol.declRef.getView()) {
+          auto strct = cast<StructDeclView>(view.get());
+          os << strct->getDeclarationSnippet();
+          docString = strct->getMarkdownDocString();
+        }
       })
       .Case<FuncOp>([&](FuncOp op) {
         if (auto view = symbol.declRef.getView()) {
@@ -213,7 +221,6 @@ std::string SymbolPrinter::getMarkdownDeclaration() const {
 {0}
 ```)",
                       snippet);
-  llvm::errs() << buff << "\n";
   return buff;
 }
 
@@ -296,6 +303,8 @@ public:
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
 
   void onFunctionDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
+  void onStructDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
   void onVariableDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
@@ -675,6 +684,20 @@ void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
         getRangeForText(sourceMgr, identifierLoc, *identifier));
   }
 }
+
+void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
+                                     SMLoc identifierLoc) {
+
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    return;
+
+  if (std::optional<StringRef> identifier = declRef.getName()) {
+    mainDoc.symbolIndex.registerSymbol(
+        declRef, *identifier,
+        getRangeForText(sourceMgr, identifierLoc, *identifier));
+  }
+};
 
 void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
