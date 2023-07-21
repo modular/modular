@@ -457,8 +457,13 @@ void DebugInfoToLLVMPass::runOnOperation() {
   target.addLegalOp<LLVM::DbgValueOp>();
 
   // Unknown operations are legal if they don't have debug info attached.
-  target.markUnknownOpDynamicallyLegal(
-      [](Operation *op) { return !extractScope(op); });
+  target.markUnknownOpDynamicallyLegal([](Operation *op) -> bool {
+    if (auto fusedLoc =
+            op->getLoc()
+                ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIAttr>>())
+      return false;
+    return true;
+  });
 
   // Set LLVM lowering options.
   mlir::LowerToLLVMOptions options(&getContext());
