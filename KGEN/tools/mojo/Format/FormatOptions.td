@@ -11,7 +11,7 @@ include "Support/Driver/CommonOptions.td"
 // Format Options
 //===----------------------------------------------------------------------===//
 
-def FormatOptionGroup : OptionGroup<"Format Options">, Index<0>;
+def FormatOptionGroup : OptionGroup<"Format options">, Index<0>;
 
 def line_length : Separate<["--"], "line-length">,
   Group<FormatOptionGroup>, Index<0>, MetaVarName<"INTEGER">,
@@ -23,7 +23,7 @@ def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<0>,
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<1>;
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<1>;
 
 def quiet : Flag<["--"], "quiet">, Group<DiagnosticOptionGroup>,
   Index<0>, HelpText<"Don't emit non-error messages to stderr.">;

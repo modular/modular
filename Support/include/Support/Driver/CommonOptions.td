@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines a "Common Options" option group, as well as the "help"
+// This file defines a "Common options" option group, as well as the "help"
 // options "-h" and "--help".
 //
 // mojo-tblgen sorts option groups based on index; these common options are
@@ -18,7 +18,7 @@
 include "Support/Driver/DriverCommand.td"
 include "llvm/Option/OptParser.td"
 
-def CommonOptionGroup : OptionGroup<"Common Options">, Index<99>;
+def CommonOptionGroup : OptionGroup<"Common options">, Index<99>;
 
 def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<0>,
   HelpText<"Displays help information.">;
