@@ -11,17 +11,11 @@
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/Support/Timing.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringSet.h"
-#include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 #include <optional>
 
 namespace lsp = mlir::lsp;
@@ -97,12 +91,8 @@ struct Symbol {
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
 
-  /// Get the type of this symbol that resembles as closely as possible what is
-  /// written in the source code. In fact, the parser in some situations might
-  /// change the type of a decl to something different than what the code
-  /// specifies, e.g., vars are always converted to pointers to the original
-  /// type.
-  MojoASTTypeRef getDisplayType() const;
+  /// Return a nicely formatted markdown text of the declaration of this symbol.
+  std::string getMarkdownDeclaration() const;
 
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
@@ -115,103 +105,18 @@ struct Symbol {
 };
 } // namespace
 
-MojoASTTypeRef Symbol::getDisplayType() const {
-  return TypeSwitch<Operation &, MojoASTTypeRef>(*declRef.getIfOperation())
-      .Case<VarLetDeclOp>(
-          [&](auto op) { return declRef.getType().getPointerElementType(); })
-      .Case<LetRegDeclOp, FuncOp>([&](auto op) { return declRef.getType(); });
-}
+std::string Symbol::getMarkdownDeclaration() const {
 
-//===----------------------------------------------------------------------===//
-// SymbolPrinter
-//===----------------------------------------------------------------------===//
+  auto view = declRef.getView();
+  if (!view)
+    return {};
 
-namespace {
-/// Class used to print user readable representations of symbols and their
-/// metadata.
-class SymbolPrinter {
-public:
-  SymbolPrinter(const Symbol &symbol) : symbol(symbol) {}
-
-  /// Return a nicely formatted markdown text of the declaration of this symbol.
-  std::string getMarkdownDeclaration() const;
-
-  /// Return the symbol kind as a display string.
-  StringRef getSymbolKindAsString() const;
-
-private:
-  /// Return a nicely formatted markdown docstring of the symbol along with a
-  /// code snippet that summarizes the declaration of the symbol. The docstring
-  /// might be empty.
-  std::pair<std::string, std::string> getDocStringAndCodeSnippet() const;
-
-  const Symbol &symbol;
-};
-} // namespace
-
-StringRef SymbolPrinter::getSymbolKindAsString() const {
-  return TypeSwitch<Operation &, StringRef>(*symbol.declRef.getIfOperation())
-      .Case<VarLetDeclOp, LetRegDeclOp>([&](auto op) { return "variable"; })
-      .Case<StructDeclOp>([&](auto op) { return "struct"; })
-      .Case<AliasDeclOp>([&](auto op) { return "alias"; })
-      .Case<FuncOp>([&](auto op) { return "function"; });
-}
-
-std::pair<std::string, std::string>
-SymbolPrinter::getDocStringAndCodeSnippet() const {
-  std::string snippet;
-  llvm::raw_string_ostream os(snippet);
-  std::string docString;
-
-  auto &rawOp = *symbol.declRef.getIfOperation();
-  TypeSwitch<Operation &>(rawOp)
-      .Case<VarLetDeclOp>([&](auto op) {
-        // TODO:: switch this to use DeclView
-        os << (op.getIsVar() ? "var" : "let");
-
-        os << " " << symbol.identifier;
-        if (auto typeRef = symbol.getDisplayType())
-          os << ": " << typeRef.getAsString();
-      })
-      .Case<LetRegDeclOp>([&](auto op) {
-        // TODO:: switch this to use DeclView
-        os << "let " << symbol.identifier;
-        if (auto typeRef = symbol.getDisplayType())
-          os << ": " << typeRef.getAsString();
-      })
-      .Case<StructDeclOp>([&](StructDeclOp op) {
-        if (auto view = symbol.declRef.getView()) {
-          auto strct = cast<StructDeclView>(view.get());
-          os << strct->getDeclarationSnippet();
-          docString = strct->getMarkdownDocString();
-        }
-      })
-      .Case<AliasDeclOp>([&](AliasDeclOp op) {
-        if (auto view = symbol.declRef.getView()) {
-          auto alias = cast<AliasDeclView>(view.get());
-          os << alias->getDeclarationSnippet();
-          docString = alias->getMarkdownDocString();
-        }
-      })
-      .Case<FuncOp>([&](FuncOp op) {
-        if (auto view = symbol.declRef.getView()) {
-          auto function = cast<FunctionDeclView>(view.get());
-          os << function->getDeclarationSnippet();
-          docString = function->getMarkdownDocString();
-        }
-      });
-
-  return {docString, snippet};
-}
-
-std::string SymbolPrinter::getMarkdownDeclaration() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
-  os << formatv("### {0} `{1}`\n", getSymbolKindAsString(), symbol.identifier);
+  os << formatv("### {0} `{1}`\n", view->getKindAsString(), identifier);
 
-  auto [docString, snippet] = getDocStringAndCodeSnippet();
-  if (!docString.empty()) {
+  if (auto docString = view->getMarkdownDocString(); !docString.empty()) {
     os << llvm::formatv(R"(
 ---
 
@@ -228,7 +133,7 @@ std::string SymbolPrinter::getMarkdownDeclaration() const {
 ```mojo
 {0}
 ```)",
-                      snippet);
+                      view->getDeclarationSnippet());
   return buff;
 }
 
@@ -674,7 +579,7 @@ MojoDocument::onHover(const lsp::Position &pos) const {
 
   lsp::Hover hover(symbol->identifierRange);
   hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
-  hover.contents.value = SymbolPrinter(*symbol).getMarkdownDeclaration();
+  hover.contents.value = symbol->getMarkdownDeclaration();
   return hover;
 }
 

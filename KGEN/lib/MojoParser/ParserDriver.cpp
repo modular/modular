@@ -117,6 +117,9 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
         return std::unique_ptr<StructFieldDeclView>(
             new StructFieldDeclView(*this));
       })
+      .Case<LetRegDeclOp, VarLetDeclOp>([&](auto op) {
+        return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
+      })
       .Default({});
 }
 
