@@ -9,7 +9,6 @@ from Assert import assert_param
 from TypeUtilities import rebind
 from Pointer import Pointer
 
-
 # ===----------------------------------------------------------------------===#
 # Dim
 # ===----------------------------------------------------------------------===#
@@ -184,6 +183,15 @@ struct DimList:
             A dimension list.
         """
         return VariadicList[Dim](values)
+
+    @always_inline("nodebug")
+    fn __len__(self) -> Int:
+        """Gets the size of the DimList.
+
+        Returns:
+            The number of elements in the DimList.
+        """
+        return self.value.__len__()
 
     @always_inline("nodebug")
     fn at[i: Int](self) -> Dim:
