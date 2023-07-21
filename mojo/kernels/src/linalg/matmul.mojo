@@ -21,12 +21,15 @@ from Functional import (
     unroll,
     unroll,
     vectorize,
+    vectorize_unroll,
     async_parallelize,
 )
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
-from LLCL import OutputChainPtr
+from LLCL import OutputChainPtr, OwningOutputChainPtr
 from Math import min, fma, div_ceil, align_down
+from Memory import memset_zero
+from MOGG import soft_fusion_run_wrapper
 from MatmulUtils import (
     get_packB_unroll_factor,
     MatmulConfig,
@@ -1758,6 +1761,144 @@ struct BTileGenerator[
             )
 
         return packed_b
+
+
+@always_inline
+fn small_matmul_sync[
+    type: DType,
+    transpose_b: Bool,
+    epilogue_wrapper: fn[type: DType, width: Int] (
+        StaticIntTuple[2], SIMD[type, width]
+    ) capturing -> None,
+](
+    a: NDBuffer[2, DimList.create_unknown[2](), type],
+    b: NDBuffer[2, DimList.create_unknown[2](), type],
+    c: NDBuffer[2, DimList.create_unknown[2](), type],
+):
+
+    alias simd_width = simdwidthof[type]()
+    alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
+
+    let M = a.dim[0]()
+    let N = b.dim[0]() if transpose_b else b.dim[1]()
+    let K = a.dim[1]()
+
+    @parameter
+    if transpose_b:
+
+        for m in range(M):
+            for n in range(N):
+                var acc_vector = SIMD[type, simd_width]()
+                var acc_scalar = SIMD[type, 1]()
+
+                @always_inline
+                @parameter
+                fn compute_fn[width: Int](k: Int):
+                    @parameter
+                    if width == 1:
+                        acc_scalar += a[m, k] * b[n, k]
+                    else:
+                        acc_vector += a.simd_load[simd_width](
+                            m, k
+                        ) * b.simd_load[simd_width](n, k)
+
+                vectorize_unroll[simd_width, unroll_factor, compute_fn](K)
+
+                epilogue_wrapper[type, 1](
+                    Index(m, n), acc_vector.reduce_add() + acc_scalar
+                )
+    else:
+
+        @parameter
+        @always_inline
+        fn normal_update[
+            inner_type: DType, width: Int
+        ](coords: StaticIntTuple[2], val: SIMD[inner_type, width]):
+            c.simd_store[width](
+                Index(coords[0], coords[1]), rebind[SIMD[type, width]](val)
+            )
+
+        @parameter
+        @always_inline
+        fn last_update[
+            type: DType, width: Int
+        ](coords: StaticIntTuple[2], val: SIMD[type, width]):
+            epilogue_wrapper[type, width](coords, val)
+
+        @always_inline
+        @parameter
+        fn accum_out_row[
+            output_func: fn[type: DType, width: Int] (
+                StaticIntTuple[2], SIMD[type, width]
+            ) capturing -> None,
+        ](m: Int, k: Int):
+            let a_val = a[m, k]
+
+            @always_inline
+            @parameter
+            fn _wrapper[simd_width: Int](n: Int):
+                output_func[type, simd_width](
+                    Index(m, n),
+                    c.simd_load[simd_width](m, n)
+                    + a_val * b.simd_load[simd_width](k, n),
+                )
+
+            vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
+
+        for m in range(M):
+            memset_zero(c.data + m * N, N)
+            for k in range(K - 1):
+                accum_out_row[normal_update](m, k)
+            accum_out_row[last_update](m, K - 1)
+
+
+@always_inline
+fn matmul_parallel_async[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_lambda_fn: elementwise_lambda_fn_sig_type,
+    single_thread_blocking_override: Bool,
+](
+    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
+    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
+    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    out_chain: OutputChainPtr,
+    num_threads: Int = -1,
+):
+    @parameter
+    if (
+        single_thread_blocking_override
+        and not transpose_a
+        and not b_packed
+        and a_type == b_type
+        and b_type == c_type
+    ):
+        return small_matmul_sync[a_type, transpose_b, elementwise_lambda_fn](
+            a,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](b),
+            rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](c),
+        )
+
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        matmul_parallel_async[
+            a_type,
+            b_type,
+            c_type,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
+            elementwise_lambda_fn,
+        ](c, a, b, chain, num_threads)
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
 fn matmul_parallel_async[
