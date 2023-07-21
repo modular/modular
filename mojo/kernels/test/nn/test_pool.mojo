@@ -63,31 +63,31 @@ fn pool(pool_method: Int):
     alias out_shape = DimList(2, 2, 2, 2)
 
     # Create an input buffer.
-    var input_buffer = NDBuffer[
+    let input_buffer = NDBuffer[
         4, in_shape, DType.float32.value
     ].stack_allocation()
 
     fill_buffer[in_shape](input_buffer)
 
-    var input = ImageData[in_shape, DType.float32.value, Image2DLayout.NCHW](
+    let input = ImageData[in_shape, DType.float32.value, Image2DLayout.NCHW](
         input_buffer
     )
 
     # Create an output buffer.
-    var output_buffer = NDBuffer[
+    let output_buffer = NDBuffer[
         4, out_shape, DType.float32.value
     ].stack_allocation()
     output_buffer.fill(0)
 
-    var output = ImageData[out_shape, DType.float32.value, Image2DLayout.NCHW](
+    let output = ImageData[out_shape, DType.float32.value, Image2DLayout.NCHW](
         output_buffer
     )
 
-    var pad_h = StaticIntTuple[2](0, 0)
-    var pad_w = StaticIntTuple[2](0, 0)
-    var filter = StaticIntTuple[2](3, 2)
-    var stride = StaticIntTuple[2](2, 3)
-    var dilation = StaticIntTuple[2](1, 1)
+    let pad_h = StaticIntTuple[2](0, 0)
+    let pad_w = StaticIntTuple[2](0, 0)
+    let filter = StaticIntTuple[2](3, 2)
+    let stride = StaticIntTuple[2](2, 3)
+    let dilation = StaticIntTuple[2](1, 1)
 
     with Runtime() as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
