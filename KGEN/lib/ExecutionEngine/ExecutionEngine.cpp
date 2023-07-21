@@ -31,6 +31,14 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
+#ifndef KGEN_ASAN_LIB
+#define KGEN_ASAN_LIB ""
+#endif
+
+#ifndef KGEN_TSAN_LIB
+#define KGEN_TSAN_LIB ""
+#endif
+
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
@@ -229,9 +237,6 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
               llvm::orc::JITDylib &platformStdlib,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
-  // No path to the orc runtime, exit early.
-  if (orcRTPath.empty())
-    return success();
   const llvm::Triple &tt = session.getTargetTriple();
 
   // Add the current process symbols in.
@@ -246,6 +251,11 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
       return Error(toString(generator.takeError()));
   }
 
+  // No path to the orc runtime, exit early.
+  if (orcRTPath.empty())
+    return success();
+
+  // The ELFNixPlatform has memory leaks, don't set it up.
   if (tt.isOSBinFormatELF())
     return success();
 
@@ -453,6 +463,41 @@ ExecutionEngine::create(ExecutionEngineOptions options,
                                *ee->executionSession, *ee->objectLayer))
     return err.takeError();
 
+  // Pull in ASAN/TSAN if we have them, and they're requested.
+  if (options.sanitizers.has(Sanitizers::kAddress)) {
+    if constexpr (StringRef(KGEN_ASAN_LIB).empty()) {
+      return Error(
+          "asan requested, but could not find a platform asan library");
+    } else {
+      // If the asan symbols already exist in the target process, DO NOT re-init
+      // asan - we will get hard-to-debug failures that occur on initialization.
+      llvm::Expected<llvm::orc::ExecutorSymbolDef> asanInit =
+          ee->executionSession->lookup({&platformStdlib}, "__asan_init");
+      if (!asanInit) {
+        // Find and load the asan dylib.
+        if (auto generator = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+                *ee->executionSession, KGEN_ASAN_LIB))
+          platformStdlib.addGenerator(std::move(*generator));
+        else
+          return Error(llvm::toString(generator.takeError()));
+      }
+    }
+  }
+
+  if (options.sanitizers.has(Sanitizers::kThread)) {
+    if constexpr (StringRef(KGEN_TSAN_LIB).empty()) {
+      return Error(
+          "tsan requested, but could not find a platform tsan library");
+    } else {
+      // Find and load the tsan dylib.
+      if (auto generator = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+              *ee->executionSession, KGEN_TSAN_LIB))
+        platformStdlib.addGenerator(std::move(*generator));
+      else
+        return Error(llvm::toString(generator.takeError()));
+    }
+  }
+
   // COFF format binaries (Windows) need special handling to deal with
   // exported symbol visibility.
   if (tt.isOSBinFormatCOFF()) {
@@ -498,10 +543,6 @@ ExecutionEngine::create(ExecutionEngineOptions options,
               session, std::move(*registrar)));
     }
   }
-
-  // Add the platform dylib to the search order.
-  if (auto err = ee->addToSearchOrder(platformStdlibName, &platformStdlib))
-    return err.takeError();
 
   // Prepare the CompilerRT dylib.
   if (auto err = initializeCompilerRT(*ee->executionSession))
@@ -655,6 +696,8 @@ ErrorOrSuccess ExecutionEngine::addToSearchOrder(StringRef name,
   if (name != platformStdlibName) {
     dylib->addToLinkOrder(
         *executionSession->getJITDylibByName(compilerRTlibName));
+    dylib->addToLinkOrder(
+        *executionSession->getJITDylibByName(platformStdlibName));
   }
 
   // Use higher preference for newer dylibs.

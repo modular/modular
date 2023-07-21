@@ -285,7 +285,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
   auto engineOr = ExecutionEngine::createWithStandardLayers(
-      {/*registerDebugPlugins=*/false}, **tmOr);
+      {/*registerDebugPlugins=*/false,
+       /*sanitizers=*/compilationOptions.sanitizers},
+      **tmOr);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
