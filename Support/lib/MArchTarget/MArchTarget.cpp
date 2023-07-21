@@ -81,7 +81,8 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
     // Check for an AArch64 CPU.
   } else if (std::optional<AArch64::CpuInfo> aarch64Cpu =
                  AArch64::parseCpu(mcpu)) {
-    triple.setArchName(aarch64Cpu->Arch.Name);
+    triple.setArchName(march);
+    triple.setArch(Triple::aarch64, triple.getSubArch());
     opts->CPU = mcpu;
 
     // Check for an ARM CPU.
