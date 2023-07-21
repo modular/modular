@@ -212,6 +212,14 @@ static llvm::json::Array toJSONArray(const JSONSerializableItems &items) {
   return jsonItems;
 }
 
+// Lambda that returns true if at least one item of the given collection has
+// non-empty description.
+template <typename Items>
+static bool hasAnyItemDescription(const Items &items) {
+  return llvm::any_of(
+      items, [](const auto &item) { return !item.getDescription().empty(); });
+};
+
 //===----------------------------------------------------------------------===//
 // DeclView
 //===----------------------------------------------------------------------===//
@@ -334,10 +342,8 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   if (!summary.empty())
     os << summary << "\n";
 
-  auto hasAnyItemDescription = [](const auto &items) {
-    return llvm::any_of(
-        items, [](const auto &item) { return !item.getDescription().empty(); });
-  };
+  if (!description.empty())
+    os << "\n" << description << "\n";
 
   if (hasAnyItemDescription(parameters)) {
     os << "\n#### Parameters:\n";
@@ -529,7 +535,45 @@ void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   description = llvm::join(pureDescriptionLines, "\n");
 }
 
-std::string StructDeclView::getDeclarationSnippet() const { return {}; }
+std::string StructDeclView::getDeclarationSnippet() const {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  os << "struct " << getName();
+
+  if (!parameters.empty()) {
+    os << "[";
+    interleaveComma(getParameters(), os, [&](const auto &param) {
+      os << param.getDeclarationSnippet();
+    });
+    os << "]";
+  }
+
+  return snippet;
+}
+
+std::string StructDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+
+  if (!summary.empty())
+    os << summary << "\n";
+
+  if (!description.empty())
+    os << "\n" << description << "\n";
+
+  if (hasAnyItemDescription(parameters)) {
+    os << "\n#### Parameters:\n";
+    for (const auto &param : parameters) {
+      if (auto desc = param.getDescription(); !desc.empty())
+        os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
+    }
+  }
+
+  if (!constraints.empty())
+    os << "\n#### Constraints:\n" << kMarkdownIndent << constraints << "\n";
+
+  return markdown;
+}
 
 llvm::json::Object StructDeclView::toJSON() const {
   return llvm::json::Object{

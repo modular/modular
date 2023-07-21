@@ -3088,14 +3088,18 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
   bool paramVarargs = false;
+  SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
-      p.parseToken(Token::identifier,
-                   "internal error: checked by stmt parser") ||
+      p.parseToken(Token::identifier, "internal error: checked by stmt parser",
+                   &identifierLoc) ||
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                       resultParamDecls, paramVarargs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
+
+  if (shared.parserListener)
+    shared.parserListener->onStructDecl(MojoASTDeclRef(&decl), identifierLoc);
 
   // Propagate signature errors and decls.
   decl.hasReferenceError |= sigDecl.hasReferenceError;

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+from typing import List
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
@@ -208,4 +209,36 @@ fn exported_function()
 ```mojo
 def def_function() raises -> Int
 ```""",
+    )
+
+
+async def test_hover_struct_decls(client: LanguageClient):
+    doc = Document.from_file("functions.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: List[str]):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert result.range == range
+        assert isinstance(result.contents, MarkupContent)
+        for content in contents:
+            assert content in result.contents.value
+
+    await assert_decl(
+        "SomeStruct",
+        [
+            "### struct `SomeStruct`",
+            "Docstring for SomeStruct.",
+            "More docstring for SomeStruct.",
+            "#### Parameters:",
+            "size: The size of SomeStruct.",
+            "#### Constraints:",
+            "The contraints of SomeStruct.",
+            """###
+```mojo
+struct SomeStruct[size: Int]
+```""",
+        ],
     )
