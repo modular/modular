@@ -420,6 +420,7 @@ fn logsoftmax[
     # softmax and logsoftmax
     if axis != rank - 1:
         out_chain.mark_error("logsoftmax not supported on non-inner axis yet")
+        return
 
     if input.num_elements() == 0:
         return out_chain.mark_ready()
@@ -468,6 +469,7 @@ fn softmax[
     # softmax and logsoftmax
     if axis != rank - 1:
         out_chain.mark_error("softmax not supported on non-inner axis yet")
+        return
 
     if input.num_elements() == 0:
         return out_chain.mark_ready()
