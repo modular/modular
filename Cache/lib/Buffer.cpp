@@ -80,7 +80,7 @@ ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
 
 const char *Buffer::getBufferStart() const {
   if (isa<AllocatedBuffer>(storage))
-    return static_cast<const char *>(cast<AllocatedBuffer>(storage).data);
+    return cast<AllocatedBuffer>(storage).data.data();
 
   if (isa<mapped_file_region>(storage))
     return cast<mapped_file_region>(storage).const_data();
@@ -94,7 +94,7 @@ const char *Buffer::getBufferStart() const {
 const char *Buffer::getBufferEnd() const {
   if (isa<AllocatedBuffer>(storage)) {
     auto &allocStorage = cast<AllocatedBuffer>(storage);
-    return static_cast<const char *>(allocStorage.data) + allocStorage.size;
+    return allocStorage.data.data() + allocStorage.data.size();
   }
 
   if (isa<mapped_file_region>(storage)) {
@@ -110,7 +110,7 @@ const char *Buffer::getBufferEnd() const {
 
 size_t Buffer::getBufferSize() const {
   if (isa<AllocatedBuffer>(storage))
-    return cast<AllocatedBuffer>(storage).size;
+    return cast<AllocatedBuffer>(storage).data.size();
 
   if (isa<mapped_file_region>(storage))
     return cast<mapped_file_region>(storage).size();
@@ -123,18 +123,6 @@ size_t Buffer::getBufferSize() const {
 
 StringRef Buffer::getBuffer() const {
   return StringRef(getBufferStart(), getBufferSize());
-}
-
-//===----------------------------------------------------------------------===//
-// Buffer::AllocatedBuffer
-//===----------------------------------------------------------------------===//
-
-Buffer::AllocatedBuffer::AllocatedBuffer(StringRef str) {
-  align = alignof(std::max_align_t);
-  data = alignedAlloc(align, str.size());
-  assert(data && "malloc failed!");
-  size = str.size();
-  memcpy(data, str.begin(), size);
 }
 
 //===----------------------------------------------------------------------===//
@@ -186,19 +174,7 @@ void WriteableBuffer::write_impl(const char *ptr, size_t size) {
   assert(isa<AllocatedBuffer>(storage) && "cannot write to an mmap'd file");
 
   auto &allocStorage = cast<AllocatedBuffer>(storage);
-
-  // We don't have an aligned realloc, so allocate an aligned buffer.
-  void *tmp = alignedAlloc(allocStorage.align, allocStorage.size + size);
-  assert(tmp && "alignedAlloc failed");
-  // Copy the data in mallocd into tmp.
-  memcpy(tmp, allocStorage.data, allocStorage.size);
-  // Free the old thing now we've copied the data over.
-  alignedFree(allocStorage.data);
-  // Set mallocd to tmp to complete the 'realloc'
-  allocStorage.data = tmp;
-  // Finally, copy the new data in.
-  memcpy((char *)allocStorage.data + allocStorage.size, ptr, size);
-  allocStorage.size += size;
+  allocStorage.data.append(ptr, size);
 }
 
 // This implementation is essentially translated from the implementation of
@@ -216,26 +192,5 @@ void WriteableBuffer::pwrite_impl(const char *ptr, size_t size,
 
   // We currently don't support writing to a llvm::MemoryBuffer-backed buffer.
   auto &allocStorage = cast<AllocatedBuffer>(storage);
-
-  // Check how many bytes would be left over if we copied `size` bytes from
-  // `ptr` into `offset`. The number of bytes written to the range is logically
-  // offset + size. The number of bytes past the end will be getBufferSize() -
-  // (offset + size). If that number is negative, then we're writing more bytes
-  // than the buffer has.
-  int64_t overflowBytes = (int64_t)getBufferSize() - (int64_t)(offset + size);
-  if (overflowBytes >= 0) {
-    memcpy((char *)allocStorage.data + offset, ptr, size);
-    return;
-  }
-  // Set it to positive and assert that it is in fact positive, and less than
-  // size.
-  int64_t leftoverBytes = -overflowBytes;
-  assert(leftoverBytes > 0 && leftoverBytes < (int64_t)size &&
-         "invalid leftover bytes somehow");
-
-  // pwrite whatever won't overflow - the number of bytes until we get to the
-  // end of the buffer.
-  memcpy((char *)allocStorage.data + offset, ptr, size - leftoverBytes);
-  // And write the leftovers to the end.
-  write_impl(ptr + (size - leftoverBytes), leftoverBytes);
+  memcpy(allocStorage.data.data() + offset, ptr, size);
 }

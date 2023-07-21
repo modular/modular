@@ -72,6 +72,7 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
             if (pmResult.isError())
               return std::move(out).setToError(pmResult.takeDiagnostic());
 
+            TimeTraceScope<> traceScope("writeBytecodeToFile");
             if (failed(mlir::writeBytecodeToFile(op, *buf))) {
               return std::move(out).setToError(getMLIRDiagnostic(
                   "failed to write bytecode file", op->getLoc()));
