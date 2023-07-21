@@ -43,8 +43,16 @@ public:
   /// Get the name of the decl. It might be empty.
   StringRef getName() const { return name; }
 
+  /// Get a string representation of the kind of decl, e.g., 'variable',
+  /// 'function', etc.
+  StringRef getKindAsString() const;
+
   /// Serialize the fields in this view to JSON.
   virtual llvm::json::Object toJSON() const = 0;
+
+  /// Return a nicely formatted markdown docstring of this declaration. It might
+  /// be empty if no docstring is available.
+  virtual std::string getMarkdownDocString() const { return {}; }
 
 public:
   //===----------------------------------------------------------------------===//
@@ -59,6 +67,7 @@ public:
     DK_ParameterDeclView,
     DK_StructDeclView,
     DK_StructFieldDeclView,
+    DK_VariableDeclView,
   };
 
   DeclViewKind getKind() const { return kind; }
@@ -71,6 +80,32 @@ private:
   StringRef name;
 };
 
+/// View for `let` or `var` variables.
+class VariableDeclView : public DeclView {
+public:
+  /// Return true if this variable was declared with `var` instead of `let`.
+  bool isVar() const { return flagIsVar; }
+
+  std::string getDeclarationSnippet() const override;
+
+  llvm::json::Object toJSON() const override;
+
+  //===----------------------------------------------------------------------===//
+  // LLVM RTTI Support
+  //===----------------------------------------------------------------------===//
+
+  static bool classof(const DeclView *decl) {
+    return decl->getKind() == DK_VariableDeclView;
+  }
+
+private:
+  friend class MojoASTDeclRef;
+
+  VariableDeclView(MojoASTDeclRef declRef);
+
+  std::string type;
+  bool flagIsVar;
+};
 /// View for parameters of structs or functions.
 class ParameterDeclView : public DeclView {
 public:
@@ -150,9 +185,7 @@ class AliasDeclView : public DeclView {
 public:
   std::string getDeclarationSnippet() const override;
 
-  /// Return a nicely formatted markdown docstring of this declaration. It might
-  /// be empty if no docstring is available.
-  std::string getMarkdownDocString() const;
+  std::string getMarkdownDocString() const override;
 
   StringRef getValue() const { return value; }
 
@@ -205,9 +238,7 @@ public:
   /// empty.
   StringRef getDescription() const { return description; }
 
-  /// Return a nicely formatted markdown docstring of this declaration. It might
-  /// be empty if no docstring is available.
-  std::string getMarkdownDocString() const;
+  std::string getMarkdownDocString() const override;
 
   /// Return the parameters of this function.
   ArrayRef<ParameterDeclView> getParameters() const { return parameters; }
@@ -342,9 +373,7 @@ public:
 
   std::string getDeclarationSnippet() const override;
 
-  /// Return a nicely formatted markdown docstring of this declaration. It might
-  /// be empty if no docstring is available.
-  std::string getMarkdownDocString() const;
+  std::string getMarkdownDocString() const override;
 
   /// Return the parameters of this struct.
   ArrayRef<ParameterDeclView> getParameters() const { return parameters; }

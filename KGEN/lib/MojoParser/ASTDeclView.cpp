@@ -109,14 +109,15 @@ static std::string generateTypeString(
   return os.str();
 }
 
-// Helper function that dumps a parameter or argument along with an optional
+// Helper function that dumps an identifier along with an optional
 // type. It also takes care of varargs that need to encode * in the name.
-static void dumpParamOrArg(raw_ostream &os, StringRef name, StringRef type) {
+static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
+                                   StringRef type) {
   // If the argument is variadic, we put the star before the name when
   // printing a signature.
   if (type.consume_front("*"))
     os << "*";
-  os << name << ": " << type;
+  os << identifier << ": " << type;
 };
 
 /// Parse the given docstring lines and augment the provided decls with the
@@ -227,8 +228,59 @@ static bool hasAnyItemDescription(const Items &items) {
 std::string ParameterDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
-  dumpParamOrArg(os, getName(), type);
+  dumpIdentifierWithType(os, getName(), type);
   return buff;
+}
+
+StringRef DeclView::getKindAsString() const {
+  switch (kind) {
+  case DK_AliasDeclView:
+    return "alias";
+  case DK_ArgumentDeclView:
+    return "argument";
+  case DK_FunctionDeclView:
+    return "function";
+  case DK_ModuleDeclView:
+    return "module";
+  case DK_ParameterDeclView:
+    return "parameter";
+  case DK_StructDeclView:
+    return "struct";
+  case DK_StructFieldDeclView:
+    return "field";
+  case DK_VariableDeclView:
+    return "variable";
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// VariableDeclView
+//===----------------------------------------------------------------------===//
+
+std::string VariableDeclView::getDeclarationSnippet() const {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  os << (isVar() ? "var" : "let") << " ";
+  dumpIdentifierWithType(os, getName(), type);
+  return snippet;
+}
+
+llvm::json::Object VariableDeclView::toJSON() const {
+  return llvm::json::Object{{"isVar", isVar()},
+                            {"kind", getKindAsString()},
+                            {"name", getName()},
+                            {"type", type}};
+}
+
+VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})) {
+  if (auto op = dyn_cast<LIT::VarLetDeclOp>(declRef.getIfOperation())) {
+    flagIsVar = op.getIsVar();
+    type = declRef.getType().getPointerElementType().getAsString();
+  } else if (auto op = cast<LIT::LetRegDeclOp>(declRef.getIfOperation())) {
+    flagIsVar = false;
+    type = declRef.getType().getAsString();
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -236,7 +288,7 @@ std::string ParameterDeclView::getDeclarationSnippet() const {
 //===----------------------------------------------------------------------===//
 
 llvm::json::Object ParameterDeclView::toJSON() const {
-  return llvm::json::Object{{"kind", "parameter"},
+  return llvm::json::Object{{"kind", getKindAsString()},
                             {"name", getName()},
                             {"type", type},
                             {"description", description}};
@@ -251,14 +303,17 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   llvm::raw_string_ostream os(buff);
   if (inout)
     os << "inout ";
-  dumpParamOrArg(os, getName(), type);
+  dumpIdentifierWithType(os, getName(), type);
   return buff;
 }
 
 llvm::json::Object ArgumentDeclView::toJSON() const {
   return llvm::json::Object{
-      {"description", description}, {"inout", inout}, {"kind", "argument"},
-      {"name", getName()},          {"type", type},
+      {"description", description},
+      {"inout", inout},
+      {"kind", getKindAsString()},
+      {"name", getName()},
+      {"type", type},
   };
 }
 
@@ -290,7 +345,7 @@ std::string AliasDeclView::getMarkdownDocString() const {
 
 llvm::json::Object AliasDeclView::toJSON() const {
   return llvm::json::Object{{"description", description},
-                            {"kind", "alias"},
+                            {"kind", getKindAsString()},
                             {"name", getName()},
                             {"summary", summary},
                             {"value", value}};
@@ -426,7 +481,7 @@ llvm::json::Object FunctionDeclView::toJSON() const {
       {"description", getDescription()},
       {"isDef", isDef()},
       {"isStatic", isStatic()},
-      {"kind", "function"},
+      {"kind", getKindAsString()},
       {"name", getName()},
       {"parameters", toJSONArray(parameters)},
       {"raises", raises()},
@@ -499,8 +554,12 @@ std::string StructFieldDeclView::getDeclarationSnippet() const { return {}; }
 
 llvm::json::Object StructFieldDeclView::toJSON() const {
   return llvm::json::Object{
-      {"description", description}, {"kind", "field"}, {"name", getName()},
-      {"summary", summary},         {"type", type},    {"value", value},
+      {"description", description},
+      {"kind", getKindAsString()},
+      {"name", getName()},
+      {"summary", summary},
+      {"type", type},
+      {"value", value},
   };
 }
 
@@ -609,7 +668,7 @@ llvm::json::Object StructDeclView::toJSON() const {
       {"description", description},
       {"fields", toJSONArray(fields)},
       {"functions", toJSONArray(functionOverloads)},
-      {"kind", "struct"},
+      {"kind", getKindAsString()},
       {"name", getName()},
       {"parameters", toJSONArray(parameters)},
       {"summary", summary},
@@ -648,7 +707,7 @@ llvm::json::Object ModuleDeclView::toJSON() const {
   return llvm::json::Object{{"aliases", toJSONArray(aliases)},
                             {"description", description},
                             {"functions", toJSONArray(functionOverloads)},
-                            {"kind", "module"},
+                            {"kind", getKindAsString()},
                             {"name", getName()},
                             {"structs", toJSONArray(structs)},
                             {"summary", summary}};
