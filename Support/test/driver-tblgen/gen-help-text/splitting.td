@@ -29,7 +29,7 @@ include "Support/Driver/DriverCommand.td"
 // CHECK-NEXT: ultrices neque. Vitae turpis massa sed elementum tempus egestas sed.
 def : CommandDescription<
   "driver-tblgen-test", /*subcommand=*/"splitting",
-  "Test that text is split along word boundaries",
+  "Test that text is split along word boundaries.",
   "This subcommand has a long description that contains newline characters. It "
   "also contains some extra-long words.\n"
   "\n"
