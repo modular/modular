@@ -25,7 +25,11 @@ from Vector import InlinedFixedVector
 # ===----------------------------------------------------------------------===#
 
 
-struct ConcatInputs[rank: Int, type: DType]:
+struct _NDBufferVector[rank: Int, type: DType]:
+    """Utility to store a VariadicList of NDBuffers. Required because there is not
+    a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
+    of NDBuffers."""
+
     alias stack_capacity = 20
     alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
     alias StorageType = InlinedFixedVector[Self.stack_capacity, Self.BufferType]
@@ -106,7 +110,7 @@ fn _canonical_reshape_output[
 ](
     out_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: ConcatInputs[rank, type],
+    inputs: _NDBufferVector[rank, type],
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -125,7 +129,7 @@ fn _concat_parallel[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: ConcatInputs[rank, type],
+    inputs: _NDBufferVector[rank, type],
     out_chain: OutputChainPtr,
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
@@ -246,7 +250,7 @@ fn _concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: ConcatInputs[rank, type],
+    inputs: _NDBufferVector[rank, type],
 ):
     """Concatenate inputs along axis and store in output.
 
@@ -293,7 +297,7 @@ fn _concat_inner[
     rank: Int, type: DType, axis: Int
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    inputs: ConcatInputs[rank, type],
+    inputs: _NDBufferVector[rank, type],
 ):
     assert_param[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
@@ -307,7 +311,7 @@ fn _concat_inner[
 
 fn _check_input_consistency[
     rank: Int, type: DType
-](axis: Int, inputs: ConcatInputs[rank, type],):
+](axis: Int, inputs: _NDBufferVector[rank, type],):
     @parameter
     if not is_kernels_debug_build():
         return
@@ -333,7 +337,7 @@ fn _concat_serial[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: ConcatInputs[rank, type],
+    inputs: _NDBufferVector[rank, type],
 ):
     _check_input_consistency(axis, inputs)
 
@@ -351,7 +355,7 @@ fn concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    borrowed inputs: ConcatInputs[rank, type],
+    borrowed inputs: _NDBufferVector[rank, type],
     out_chain: OutputChainPtr,
 ):
     _check_input_consistency(axis, inputs)

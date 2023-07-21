@@ -5,13 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, DynamicRankBuffer
+from Buffer import Buffer, NDBuffer
+from Concat import _NDBufferVector
 from DType import DType
 from Index import product
-from List import Dim, VariadicList
+from Intrinsics import external_call
+from List import Dim, VariadicList, DimList
 from Memory import memcpy
 from Range import range
-
+from LLCL import OutputChainPtr
+from Functional import async_parallelize
 
 # ===----------------------------------------------------------------------===#
 # split
@@ -19,11 +22,12 @@ from Range import range
 
 
 fn _split[
-    type: DType
+    type: DType,
+    rank: Int,
 ](
-    input: Buffer[Dim(), type],
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    outputs: VariadicList[DynamicRankBuffer],
+    outputs: _NDBufferVector[rank, type],
 ):
     """splits input along axis and store in outputs.
 
@@ -37,9 +41,9 @@ fn _split[
 
     """
 
-    let rank = outputs[0].rank
-    let h = product(outputs[0].shape, 0, axis)
-    let c = product(outputs[0].shape, axis + 1, rank)
+    let shape = outputs[0].get_shape()
+    let h = product(shape, 0, axis)
+    let c = product(shape, axis + 1, rank)
 
     var w_in: Int = 0
     for i in range(outputs.__len__()):
@@ -52,7 +56,7 @@ fn _split[
     for i in range(outputs.__len__()):
         # copy one w x c slice along h at a time
         let w = outputs[i].dim(axis)
-        let out_buf = outputs[i].to_buffer[type]()
+        let out_buf = outputs[i].flatten()
         for j in range(h):
             let output_offset = j * w * c
             let input_offset = j * stride_h_in + w_offset * stride_w_in
@@ -66,12 +70,15 @@ fn _split[
 
 
 fn _split_inner[
-    type: DType, axis: Int
-](input: Buffer[Dim(), type], outputs: VariadicList[DynamicRankBuffer],):
+    type: DType, rank: Int, axis: Int
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    outputs: _NDBufferVector[rank, type],
+):
     assert_param[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(outputs.__len__()):
-        let output_buf = outputs[i].to_buffer[type]()
+        let output_buf = outputs[i].flatten()
         let buffer_len = output_buf.__len__()
         let input_buffer_offset = Buffer[Dim(), type](
             input.data.offset(num_elems_copied), buffer_len
@@ -81,29 +88,38 @@ fn _split_inner[
 
 
 fn split[
-    type: DType
+    type: DType,
+    rank: Int,
 ](
-    input: Buffer[Dim(), type],
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    outputs: VariadicList[DynamicRankBuffer],
+    outputs: _NDBufferVector[rank, type],
+    out_chain: OutputChainPtr,
 ):
     # check inputs have same rank and same dims except for axis dim
     for i in range(outputs.__len__()):
-        debug_assert(
-            outputs[0].rank == outputs[i].rank,
-            "all split inputs must have the same rank",
-        )
-        for j in range(outputs[i].rank):
-            debug_assert(
-                j == axis or outputs[0].dim(j) == outputs[i].dim(j),
-                (
+        if outputs[0].get_rank() != outputs[i].get_rank():
+            return out_chain.mark_error(
+                "all split inputs must have the same rank"
+            )
+        for j in range(outputs[i].get_rank()):
+            if j != axis and outputs[0].dim(j) != outputs[i].dim(j):
+                return out_chain.mark_error(
                     "all split outputs must have the same dimensions in the"
                     " non-split axes"
-                ),
-            )
+                )
 
-    if axis == 0:
-        _split_inner[type, 0](input, outputs)
-        return
+    @parameter
+    @always_inline
+    fn task_func(task_id: Int):
+        if axis == 0:
+            _split_inner[type, rank, 0](input, outputs)
+            return
 
-    _split[type](input, axis, outputs)
+        _split[type](input, axis, outputs)
+
+    async_parallelize[task_func](out_chain, 1)
+    # _NDBufferVector is not "async safe" so make sure it stays in scope
+    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+        out_chain.ptr
+    )
