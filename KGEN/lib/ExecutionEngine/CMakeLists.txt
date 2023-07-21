@@ -76,3 +76,5 @@ add_modular_library(KGENExecutionEngine
   MCache
   MSupport
 )
+target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_ASAN_LIB="${KGEN_ASAN_LIBRARY}")
+target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_TSAN_LIB="${KGEN_TSAN_LIBRARY}")

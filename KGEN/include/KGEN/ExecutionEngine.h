@@ -8,6 +8,7 @@
 #define KGEN_EXECUTION_ENGINE_H
 
 #include "Cache/Buffer.h"
+#include "Support/Compiler/Sanitizers.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
 #include "llvm/ADT/StringSet.h"
@@ -33,6 +34,9 @@ namespace M::KGEN {
 struct ExecutionEngineOptions {
   /// Whether or not to register the GDB plugins.
   bool registerDebugPlugins = false;
+
+  /// Which sanitizers were enabled on the build.
+  Sanitizers sanitizers;
 
   /// An ORC ExecutorProcessControl that the user can specify.
   std::unique_ptr<llvm::orc::ExecutorProcessControl> epc = nullptr;
