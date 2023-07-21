@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Activations import relu, gelu, sigmoid
-from Assert import assert_param
+from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
 from Concat import concat as _concat
 from DType import DType
@@ -1682,8 +1682,30 @@ fn split_ith_output_shape[
 ) -> StaticIntTuple[rank]:
 
     # extract relevant hyper parameters
+    # TODO(#17512)
+    debug_assert(
+        0 <= output_idx and output_idx < split_sizes_buf.size(),
+        "output index must be within range [0, len(split_sizes))",
+    )
     let output_split_size = split_sizes_buf[output_idx].to_int()
-    let split_axis = split_axis_buf[0].to_int()
+
+    var split_axis = split_axis_buf[0].to_int()
+    if split_axis < 0:
+        split_axis += rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= split_axis and split_axis < rank,
+        "normalized split axis must be within range [0, rank)",
+    )
+
+    var split_sizes_sum = 0
+    for i in range(split_sizes_buf.dim(0)):
+        split_sizes_sum += split_sizes_buf[i].to_int()
+    # TODO(#17512)
+    debug_assert(
+        split_sizes_sum == input_buf.dim(split_axis),
+        "sum of split sizes must be equal to input dimension at split axis",
+    )
 
     # compute and return the output shape
     var output_shape = input_buf.get_shape()
