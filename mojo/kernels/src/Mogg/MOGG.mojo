@@ -22,6 +22,7 @@ from Index import Index, StaticIntTuple
 from Memory import memset_zero
 from IO import print
 from List import Dim, DimList, VariadicList
+from OptionalParam import OptionalParamInt
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from Math import (
     add,
@@ -1162,7 +1163,7 @@ fn _gather_with_lambdas[
     out_chain: OutputChainPtr,
 ):
     # Look through the lambda to pull the index out.
-    let axis = input_2_fn[axis_type, 1, 1](0).to_int()
+    let axis = OptionalParamInt[Dim()](input_2_fn[axis_type, 1, 1](0).to_int())
 
     @parameter
     @always_inline
@@ -1187,7 +1188,7 @@ fn _gather_with_lambdas[
         @always_inline
         @parameter
         fn indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis]
+            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
 
         unroll[indices_rank, indices_get]()
 
@@ -1206,10 +1207,10 @@ fn _gather_with_lambdas[
         @always_inline
         @parameter
         fn input_indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis]
-            if unrolled_i == axis:
+            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+            if unrolled_i == axis.get():
                 data_indices[unrolled_i] = data_index
-            elif unrolled_i > axis:
+            elif unrolled_i > axis.get():
                 # Skip over any extra indices dimensions. These are essentially new dimensions.
                 data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
             else:
@@ -1226,7 +1227,7 @@ fn _gather_with_lambdas[
     alias unroll_factor = 1
 
     # If we are gathering on the last dimension then we have to be scalar.
-    if axis == in_rank - 1:
+    if axis.get() == in_rank - 1:
         _elementwise_impl[
             output_rank,
             1,
