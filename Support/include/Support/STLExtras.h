@@ -7,9 +7,11 @@
 #ifndef SUPPORT_STL_EXTRAS_H
 #define SUPPORT_STL_EXTRAS_H
 
+#include "Support/AlignedAlloc.h"
 #include "Support/LogicalResult.h"
 
 namespace M {
+
 //===----------------------------------------------------------------------===//
 // failableInterleave
 //===----------------------------------------------------------------------===//
@@ -124,6 +126,28 @@ private:
 
   T *ptr = nullptr;
   bool shouldDelete = false;
+};
+
+//===----------------------------------------------------------------------===//
+// AlignedAllocator
+//===----------------------------------------------------------------------===//
+
+/// An allocator that can be used in STL data structures with a dynamic
+/// alignment value.
+template <typename T>
+class AlignedAllocator {
+public:
+  using value_type = T;
+  using pointer = T *;
+
+  AlignedAllocator(size_t align) : align(align) {}
+
+  pointer allocate(size_t n) { return (pointer)alignedAlloc(align, n); }
+
+  void deallocate(pointer p, size_t n) { alignedFree(p); }
+
+private:
+  size_t align;
 };
 
 } // namespace M

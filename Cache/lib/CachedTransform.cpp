@@ -73,8 +73,9 @@ AnyAsyncValueRef Cache::cachedTransform(EncodedLocation loc,
 
         // No error but no cache hit.
 
-        // Run the transform.
-        WriteableBufferRef writeableTransformResult = WriteableBuffer::get();
+        // Run the transform. Use a 1 MB in-memory buffer.
+        WriteableBufferRef writeableTransformResult = WriteableBuffer::get(
+            /*size=*/0, /*aligment=*/{}, /*capacity=*/1024 * 1024);
         auto xform =
             transformFn(writeableTransformResult.copy(), std::move(foundOr));
 
