@@ -2384,8 +2384,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
       OpBuilder b(funcOp.getContext());
       b.setInsertionPointAfter(funcOp);
+      auto parent = funcOp->getParentOfType<M::KGEN::LIT::FuncOp>();
+      if (!parent)
+        return failure();
       decl.irValue = SBValue(b.create<CreateClosureOp>(
-          funcOp.getLoc(), funcOp.getSignature(),
+          parent.getLoc(), funcOp.getSignature(),
           ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
     }
   }

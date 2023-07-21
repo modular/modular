@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: kgen-translate -import-mojo -I %S -split-input-file -debug-level=full -mlir-print-debuginfo %s | FileCheck %s
-
 from imported_module import imported_fn
 
 # Check that we properly generate functions that get resolved within other functions.
@@ -27,9 +26,9 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 
 # CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<{{.*}}@"$Int"::@Int>>
 # CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<{{.*}}@"$Int"::@Int>) -> (!kgen.declref<{{.*}}@"$Int"::@Int>): DW_CC_normal>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$Int::Int,{{.*}}$Int::Int)", file = #{{.*}}, line = 35, scopeLine = 35, subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
-# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = 35, arg = 1> : ![[INT_TYPE]]
-# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = 35, arg = 2> : ![[INT_TYPE]]
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$Int::Int,{{.*}}$Int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
+# CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
 
 # CHECK-LABEL: lit.func @"power({{.*}}$Int::Int,{{.*}}$Int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:
@@ -40,7 +39,7 @@ fn power(lhs: Int, rhs: Int) -> Int:
 
 # // -----
 
-# CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i", {{.*}}, line = 8, arg = 1
+# CHECK-DAG: #[[LOCAL_VAR_I:.*]] = #debuginfo.local_variable<scope = #[[FOR_SP:.*]], name = "i", {{.*}}, line = [[LN:[0-9]+]], arg = 1
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
@@ -116,3 +115,42 @@ fn caller():
 @value
 struct MyValueStruct:
     var value: __mlir_type.index
+
+# COM: need this because otherwise FileCheck cannot separate the DAGs.
+# CHECK: #-}
+
+# // -----
+
+# COM: This tests that code generated to support capturing closures is located and scoped correctly.
+
+# CHECK-DAG: !subroutine = !debuginfo.subroutine<(index, index) -> (!kgen.signature<(index borrow) capturing -> index>): DW_CC_normal>
+# CHECK-DAG: !subroutine1 = !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
+
+# CHECK-DAG: #subprogram = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "makes_escaping_closure", linkageName = "makes_escaping_closure(__mlir_type.index,__mlir_type.index)", file = #{{.*}}, line = [[LN_PARENT:[0-9]+]], scopeLine = [[SCOPE_PARENT:.*]], subprogramFlags = "Definition|Optimized"> : !subroutine
+# CHECK-DAG: #subprogram1 = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "myclosure", linkageName = "myclosure(__mlir_type.index)", file = #{{.*}}, line = [[LN_NESTED:[0-9]+]], scopeLine = [[SCOPE_NESTED:.*]], subprogramFlags = "Definition|Optimized"> : !subroutine1
+
+# CHECK-DAG:    lit.func @"makes_escaping_closure
+# CHECK-DAG:      %[[V0:.*]] = pop.stack_allocation 1 x index  loc(#[[PARENT_FUNC_LOC0:.*]])
+# CHECK-DAG:      pop.store %m, %[[V0]] : !pop.pointer<index> loc(#[[PARENT_FUNC_LOC1:.*]])
+# CHECK-DAG:      %[[V1:.*]] = pop.load %[[V0]] : !pop.pointer<index> loc(#[[PARENT_FUNC_LOC0]])
+# CHECK-DAG:      lit.func *"myclosure
+# CHECK-DAG:        %[[W0:.*]] = pop.stack_allocation 1 x index  loc(#[[NESTED_FUNC_LOC:.*]])
+# CHECK-DAG:        pop.store %[[V1]], %[[W0]] : !pop.pointer<index> loc(#[[NESTED_FUNC_LOC]])
+# CHECK-DAG:        %[[W4:.*]] = pop.load %[[W0]] : !pop.pointer<index>
+# CHECK-DAG:        lit.return %[[W4]] : index
+# CHECK-DAG:        lit.end_func loc(#[[NESTED_FUNC_LOC]])
+# CHECK-DAG:      } loc(#[[NESTED_FUNC_LOC]])
+# CHECK-DAG:      %[[V2:.*]] = kgen.create_closure [<>(index borrow) capturing -> index: *"myclosure(__mlir_type.index)"]()  loc(#[[PARENT_FUNC_LOC0]])
+# CHECK-DAG:      lit.return %[[V2]]
+# CHECK-DAG:      lit.end_func loc(#[[PARENT_FUNC_LOC0]])
+# CHECK-DAG:    } loc(#[[PARENT_FUNC_LOC0]])
+
+# CHECK-DAG: #[[LOC2:.*]] = loc("{{.*}}":[[LN_PARENT]]:1)
+# CHECK-DAG: #[[LOC5:.*]] = loc("{{.*}}":[[LN_NESTED]]:3)
+# CHECK-DAG: #[[PARENT_FUNC_LOC0]] = loc(fused<#subprogram>[#[[LOC2]]
+# CHECK-DAG: #[[NESTED_FUNC_LOC]] = loc(fused<#subprogram1>[#[[LOC5]]
+
+fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn( __mlir_type.index) escaping ->  __mlir_type.index:
+  fn myclosure(n: __mlir_type.index) ->  __mlir_type.index:
+      return m
+  return myclosure
