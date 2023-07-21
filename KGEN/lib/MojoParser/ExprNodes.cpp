@@ -28,6 +28,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -634,42 +635,48 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   CValue value = result.getIfCValue();
 
   // If this is a capture inside a nonparametric function, emit a copy.
-  if (auto func =
+  if (auto nestedFunc =
           getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
-      func && !func.getIsParametric()) {
+      nestedFunc && !nestedFunc.getIsParametric()) {
     assert(mlirValue && "unexpected PValue");
-    if (mlirValue.getParentRegion()->isProperAncestor(&func.getBodyRegion())) {
+    if (mlirValue.getParentRegion()->isProperAncestor(
+            &nestedFunc.getBodyRegion())) {
       // This is a captured value. Emit a copy and bind the name within the
       // function to the copied value.
+      FuncOp parentFunc = nestedFunc->getParentOfType<FuncOp>();
       OpBuilder::InsertionGuard guard(*emitter.builder);
-      emitter.builder->setInsertionPoint(func);
+      emitter.builder->setInsertionPoint(nestedFunc);
       // Emit a raw stack allocation.
-      Location loc = emitter.translateLocation(getLoc());
       auto ptrType = POP::PointerType::get(value.getRValueType());
-      Value tmp =
-          emitter.builder->create<POP::StackAllocationOp>(loc, ptrType, 1);
+      Value tmp = emitter.builder->create<POP::StackAllocationOp>(
+          parentFunc.getLoc(), ptrType, 1);
       ValueDest copyDest(SLValue(tmp), EC_CaptureCopy);
+      DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+      if (auto spAttr = DebugInfo::extractScope(parentFunc))
+        diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(spAttr);
       if (!emitter.emitCopyOfValue({value, this}, copyDest)) {
         copyDest.resetForError();
         return {};
       }
       // Rig the closure formation into emitting a memcpy of the raw value
       // by causing the whole value to cross the closure boundary.
-      Value rawBytes = emitter.builder->create<POP::LoadOp>(loc, tmp);
+      Value rawBytes =
+          emitter.builder->create<POP::LoadOp>(parentFunc.getLoc(), tmp);
 
       // Redeclare the value inside the closure region using a raw stack
       // allocation. We want the lifetime tracker to ignore this: the object
       // will live inside the closure.
-      emitter.builder->setInsertionPointToStart(func.getBody());
-      Value localDecl =
-          emitter.builder->create<POP::StackAllocationOp>(loc, ptrType, 1);
+      emitter.builder->setInsertionPointToStart(nestedFunc.getBody());
+      Value localDecl = emitter.builder->create<POP::StackAllocationOp>(
+          nestedFunc.getLoc(), ptrType, 1);
       // Copy the raw bytes in.
-      emitter.builder->create<POP::StoreOp>(loc, rawBytes, localDecl);
+      emitter.builder->create<POP::StoreOp>(nestedFunc.getLoc(), rawBytes,
+                                            localDecl);
 
       // If the parent function was malformed somehow, it may not get added
       // to the symbol table.
       ASTDecl *parentDecl = emitter.getDeclResolver().getDeclForFuncSymbol(
-          getFullyResolvedSymbolRef(func));
+          getFullyResolvedSymbolRef(nestedFunc));
       if (!parentDecl)
         return {};
 
