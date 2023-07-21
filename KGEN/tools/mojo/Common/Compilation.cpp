@@ -177,9 +177,6 @@ M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   if (tmOr.isError())
     return tmOr.takeError();
 
-  // Forward the sanitizers into the execution engine.
-  executionEngineOptions.sanitizers = compilationOptions.sanitizers;
-
   auto engineOr = ExecutionEngine::createWithStandardLayers(
       std::move(executionEngineOptions), **tmOr);
   if (failed(engineOr))
