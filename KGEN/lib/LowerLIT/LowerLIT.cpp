@@ -46,8 +46,13 @@ static void buildDebugInfoValue(OpBuilder &b, Operation *op, StringRef varName,
                                 Type type) {
   Location loc = op->getLoc();
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
-  auto varScope = DebugInfo::extractScope<DebugInfo::DILocalScopeAttr>(op);
-  if (!fileLoc || !varScope)
+  if (!fileLoc)
+    return;
+  ErrorOr<DebugInfo::DIScopeAttr> scopeOr = DebugInfo::getScopeWithinBody(loc);
+  if (scopeOr.isError())
+    return;
+  auto varScope = dyn_cast_or_null<DebugInfo::DILocalScopeAttr>(*scopeOr);
+  if (!varScope)
     return;
 
   auto varAttr = DebugInfo::DILocalVariableAttr::get(

@@ -8,6 +8,7 @@
 #define SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H
 
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
+#include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 //===----------------------------------------------------------------------===//
@@ -99,6 +100,11 @@ public:
 /// the scope recursively within the body.
 void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
                       StringAttr name = {});
+
+/// Return the scope from a location of an op within a function's body,
+/// recursively walking up through a chain of inlined locations if needed,
+/// always following the caller location.
+ErrorOr<DebugInfo::DIScopeAttr> getScopeWithinBody(Location loc);
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H

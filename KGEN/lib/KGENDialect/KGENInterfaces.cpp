@@ -17,35 +17,6 @@ using namespace KGEN;
 // Verification
 //===----------------------------------------------------------------------===//
 
-/// Return the scope from a location of an op within a function's body,
-/// recursively walking up through a chain of inlined locations if needed,
-/// always following the caller location.
-static ErrorOr<DebugInfo::DIScopeAttr> getScopeWithinBody(Location loc) {
-  DebugInfo::DIScopeAttr scope;
-  if (auto fusedLoc = dyn_cast<FusedLoc>(loc)) {
-    // FusedLoc _may_ contain the scope. If it doesn't, we need to ensure that
-    // all the fused locations have the same scope, which we extract.
-    scope = dyn_cast_or_null<DebugInfo::DIScopeAttr>(fusedLoc.getMetadata());
-    if (ArrayRef<Location> nestedLocs = fusedLoc.getLocations();
-        !scope && !nestedLocs.empty()) {
-      UNWRAP_ERROR_OR_SET(scope, getScopeWithinBody(nestedLocs.back()));
-      for (Location nestedLoc : nestedLocs.drop_back()) {
-        UNWRAP_ERROR(nestedScope, getScopeWithinBody(nestedLoc));
-        if (nestedScope != scope)
-          return Error("contains inconsistent scopes in fused location");
-      }
-    }
-  }
-
-  // If not dealing with an inlined location, we return a scope (if found).
-  auto callSiteLoc = dyn_cast<mlir::CallSiteLoc>(loc);
-  if (!callSiteLoc)
-    return scope;
-
-  // Otherwise, we walk up the inlining chain.
-  return getScopeWithinBody(callSiteLoc.getCaller());
-}
-
 LogicalResult impl::verifyFunctionLike(FunctionLike op) {
   if (failed(HLCF::verifyControlFlow(op)))
     return failure();
@@ -70,7 +41,7 @@ LogicalResult impl::verifyFunctionLike(FunctionLike op) {
           return WalkResult::skip();
 
         ErrorOr<DebugInfo::DIScopeAttr> scopeOr =
-            getScopeWithinBody(op->getLoc());
+            DebugInfo::getScopeWithinBody(op->getLoc());
         if (scopeOr.isError()) {
           res = op->emitOpError(scopeOr.getError());
           return WalkResult::interrupt();

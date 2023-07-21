@@ -88,10 +88,10 @@ DIScopeAttr DebugInfo::extractScope(Operation *op) {
     return scopedOp.getLocScope();
 
   // For other ops, we look for the scope recursively.
-  if (auto fusedLoc =
-          op->getLoc()->findInstanceOf<mlir::FusedLocWith<DIScopeAttr>>())
-    return fusedLoc.getMetadata();
-  return {};
+  ErrorOr<DIScopeAttr> scopeOr = getScopeWithinBody(op->getLoc());
+  if (scopeOr.isError())
+    return {};
+  return *scopeOr;
 }
 
 void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {
@@ -109,7 +109,7 @@ void DIAttrTypeReplacer::recursivelyReplaceElementsIn(Operation *op) {
 
 void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
                                  StringAttr linkageName, StringAttr name) {
-  auto funcSp = extractScope<DISubprogramAttr>(funcOp);
+  DISubprogramAttr funcSp = extractScope(funcOp);
   if (!funcSp)
     return;
 
@@ -121,4 +121,30 @@ void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
   replacer.addReplacement(
       [&](DISubprogramAttr sp) { return sp == funcSp ? newAttr : sp; });
   replacer.recursivelyReplaceElementsIn(funcOp);
+}
+
+ErrorOr<DIScopeAttr> DebugInfo::getScopeWithinBody(Location loc) {
+  DIScopeAttr scope;
+  if (auto fusedLoc = dyn_cast<FusedLoc>(loc)) {
+    // FusedLoc _may_ contain the scope. If it doesn't, we need to ensure that
+    // all the fused locations have the same scope, which we extract.
+    scope = dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata());
+    if (ArrayRef<Location> nestedLocs = fusedLoc.getLocations();
+        !scope && !nestedLocs.empty()) {
+      UNWRAP_ERROR_OR_SET(scope, getScopeWithinBody(nestedLocs.back()));
+      for (Location nestedLoc : nestedLocs.drop_back()) {
+        UNWRAP_ERROR(nestedScope, getScopeWithinBody(nestedLoc));
+        if (nestedScope != scope)
+          return Error("contains inconsistent scopes in fused location");
+      }
+    }
+  }
+
+  // If not dealing with an inlined location, we return a scope (if found).
+  auto callSiteLoc = dyn_cast<mlir::CallSiteLoc>(loc);
+  if (!callSiteLoc)
+    return scope;
+
+  // Otherwise, we walk up the inlining chain.
+  return getScopeWithinBody(callSiteLoc.getCaller());
 }
