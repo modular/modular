@@ -7,7 +7,7 @@
 include "DescriptionBase.td"
 
 def RunDescription : MojoCommandDescription<
-  "run", "Builds and executes a Mojo file.",
+  "run", "Builds and executes a Mojo file",
   "Compiles the Mojo file at the given path and immediately executes it.\n"
   "\n"
   "Options for this command itself, such as the ones listed below, must appear "
