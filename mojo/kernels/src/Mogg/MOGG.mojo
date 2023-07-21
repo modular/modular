@@ -71,6 +71,7 @@ from TargetInfo import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
 from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
+from Split import split as _split
 from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
@@ -149,6 +150,7 @@ fn MOGGExport():
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
     alias _split_ith_output_shape = split_ith_output_shape
+    alias _split = split
     alias _reduce_add = reduce_add
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
@@ -670,6 +672,40 @@ fn concat[
     fn func(out_chain: OutputChainPtr):
         _concat[rank, type](
             output, axis_int, VariadicList(variadic_ins), out_chain
+        )
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+
+    # If we aren't using the trivial kernel we actually still have to wait.
+    # The variadics fall off the stack when captured by the lambda.
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.wait()
+
+
+# Not targetted yet because MOGG assumes single output
+@always_inline
+fn split[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    axis_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    out_chain: OutputChainPtr,
+    *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
+):
+    var axis_int = axis[0].to_int()
+    if axis_int < 0:
+        axis_int = axis_int + rank
+
+    @parameter
+    @always_inline
+    fn func(out_chain: OutputChainPtr):
+        _split[type, rank](
+            input, axis_int, VariadicList(variadic_outs), out_chain
         )
 
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
