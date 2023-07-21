@@ -147,6 +147,7 @@ fn MOGGExport():
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
+    alias _split_ith_output_shape = split_ith_output_shape
     alias _reduce_add = reduce_add
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
@@ -1659,6 +1660,35 @@ fn logsoftmax[
         rank,
         DimList.create_unknown[rank](),
     ](input, output, rank - 1, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG split
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn split_ith_output_shape[
+    output_idx: Int,
+    rank: Int,
+    input_type: DType,
+    split_size_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    split_sizes_buf: NDBuffer[1, DimList.create_unknown[1](), split_size_type],
+    split_axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[rank]:
+
+    # extract relevant hyper parameters
+    let output_split_size = split_sizes_buf[output_idx].to_int()
+    let split_axis = split_axis_buf[0].to_int()
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_shape()
+    output_shape[split_axis] = output_split_size
+    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
