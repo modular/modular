@@ -123,11 +123,11 @@ struct MyValueStruct:
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
-# CHECK-DAG: !subroutine = !debuginfo.subroutine<(index, index) -> (!kgen.signature<(index borrow) capturing -> index>): DW_CC_normal>
-# CHECK-DAG: !subroutine1 = !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
+# CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(index, index) -> (!kgen.signature<(index borrow) capturing -> index>): DW_CC_normal>
+# CHECK-DAG: ![[SR1:.*]] = !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
 
-# CHECK-DAG: #subprogram = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "makes_escaping_closure", linkageName = "makes_escaping_closure(__mlir_type.index,__mlir_type.index)", file = #{{.*}}, line = [[LN_PARENT:[0-9]+]], scopeLine = [[SCOPE_PARENT:.*]], subprogramFlags = "Definition|Optimized"> : !subroutine
-# CHECK-DAG: #subprogram1 = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "myclosure", linkageName = "myclosure(__mlir_type.index)", file = #{{.*}}, line = [[LN_NESTED:[0-9]+]], scopeLine = [[SCOPE_NESTED:.*]], subprogramFlags = "Definition|Optimized"> : !subroutine1
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "makes_escaping_closure", linkageName = "makes_escaping_closure(__mlir_type.index,__mlir_type.index)", file = #{{.*}}, line = [[LN_PARENT:[0-9]+]], scopeLine = [[SCOPE_PARENT:.*]], subprogramFlags = "Definition|Optimized"> : ![[SR]]
+# CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "myclosure", linkageName = "myclosure(__mlir_type.index)", file = #{{.*}}, line = [[LN_NESTED:[0-9]+]], scopeLine = [[SCOPE_NESTED:.*]], subprogramFlags = "Definition|Optimized"> : ![[SR1]]
 
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:      %[[V0:.*]] = pop.stack_allocation 1 x index  loc(#[[PARENT_FUNC_LOC0:.*]])
@@ -147,8 +147,8 @@ struct MyValueStruct:
 
 # CHECK-DAG: #[[LOC2:.*]] = loc("{{.*}}":[[LN_PARENT]]:1)
 # CHECK-DAG: #[[LOC5:.*]] = loc("{{.*}}":[[LN_NESTED]]:3)
-# CHECK-DAG: #[[PARENT_FUNC_LOC0]] = loc(fused<#subprogram>[#[[LOC2]]
-# CHECK-DAG: #[[NESTED_FUNC_LOC]] = loc(fused<#subprogram1>[#[[LOC5]]
+# CHECK-DAG: #[[PARENT_FUNC_LOC0]] = loc(fused<#[[SP]]>[#[[LOC2]]
+# CHECK-DAG: #[[NESTED_FUNC_LOC]] = loc(fused<#[[SP1]]>[#[[LOC5]]
 
 fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn( __mlir_type.index) escaping ->  __mlir_type.index:
   fn myclosure(n: __mlir_type.index) ->  __mlir_type.index:
