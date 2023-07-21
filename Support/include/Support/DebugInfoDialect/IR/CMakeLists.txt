@@ -15,3 +15,5 @@ mlir_tablegen(DebugInfoAttrs.h.inc -gen-attrdef-decls -dialect=debuginfo)
 mlir_tablegen(DebugInfoAttrs.cpp.inc -gen-attrdef-defs -dialect=debuginfo)
 add_public_tablegen_target(MLIRDebugInfoAttrsIncGen)
 add_dependencies(MLIRDebugInfoIncGen MLIRDebugInfoAttrsIncGen)
+
+add_mlir_interface(DebugInfoInterfaces)

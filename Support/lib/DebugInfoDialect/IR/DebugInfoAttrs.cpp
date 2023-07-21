@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
@@ -76,9 +76,16 @@ DISubprogramAttr DISubprogramAttr::cloneWith(StringRef name,
 // Support
 //===----------------------------------------------------------------------===//
 
+DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
+  if (auto fusedLoc =
+          dyn_cast<mlir::FusedLocWith<DISubprogramAttr>>(funcOp->getLoc()))
+    return fusedLoc.getMetadata();
+  return {};
+}
+
 DIScopeAttr DebugInfo::extractScope(Operation *op) {
-  // Functions either have a subprogram scope fused directly to the location, or
-  // we consider them as not having any.
+  if (auto scopedOp = dyn_cast<DebugInfo::ScopedLocation>(op))
+    return scopedOp.getLocScope();
   if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op))
     if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(op->getLoc()))
       return fusedLoc.getMetadata();
@@ -133,8 +140,13 @@ static ErrorOr<DIScopeAttr> getScopeWithinBody(Location loc) {
 }
 
 LogicalResult DebugInfo::verifyFuncLocScope(mlir::FunctionOpInterface funcOp) {
+  auto fusedLoc =
+      dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(funcOp->getLoc());
+  if (!fusedLoc)
+    return success();
+
   // If the function doesn't contain a location scope, we don't verify anything.
-  DIScopeAttr scope = extractScope(funcOp);
+  DebugInfo::DIScopeAttr scope = fusedLoc.getMetadata();
   if (!scope)
     return success();
 

@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/RegionKindInterface.h"
@@ -60,6 +61,10 @@ getUnboundSpecializedSignature(SignatureType type,
 
 } // namespace LIT
 } // namespace M::KGEN
+
+namespace M::DebugInfo {
+class DIFileAttr;
+} // namespace M::DebugInfo
 
 #define GET_OP_CLASSES
 #include "KGEN/LITDialect/LIT.h.inc"

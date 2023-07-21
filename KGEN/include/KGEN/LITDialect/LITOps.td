@@ -17,6 +17,7 @@ include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/POPDialect/POPTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
+include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "Support/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -264,7 +265,8 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
 
 def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
-    ASTDeclInterface, NoTerminator
+    ASTDeclInterface, NoTerminator,
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
   ]> {
   let summary = "Struct declaration.";
   let description = [{
