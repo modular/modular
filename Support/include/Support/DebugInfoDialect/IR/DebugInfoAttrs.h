@@ -63,6 +63,12 @@ public:
 //===----------------------------------------------------------------------===//
 
 namespace M::DebugInfo {
+/// Extract the scope from the location of a function. Functions either have a
+/// subprogram scope fused directly to the location, or we consider them as not
+/// having any. Therefore this never requires a recursion, and therefore can be
+/// done without a location cache.
+DISubprogramAttr extractScope(mlir::FunctionOpInterface funcOp);
+
 /// Extract the debug info scope from the location of the given operation.
 DIScopeAttr extractScope(Operation *op);
 template <typename ScopeAttrT, typename T>

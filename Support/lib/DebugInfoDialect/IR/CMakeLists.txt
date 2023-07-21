@@ -8,6 +8,7 @@ add_modular_dialect_library(DebugInfoDialect
   DIBuilder.cpp
   DebugInfoAttrs.cpp
   DebugInfoDialect.cpp
+  DebugInfoInterfaces.cpp
   DebugInfoOps.cpp
   DebugInfoTypes.cpp
 

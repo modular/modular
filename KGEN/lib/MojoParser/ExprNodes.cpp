@@ -652,7 +652,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           parentFunc.getLoc(), ptrType, 1);
       ValueDest copyDest(SLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-      if (auto spAttr = DebugInfo::extractScope(parentFunc))
+      if (DebugInfo::DIScopeAttr spAttr =
+              DebugInfo::extractScope(parentFunc.getOperation()))
         diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(spAttr);
       if (!emitter.emitCopyOfValue({value, this}, copyDest)) {
         copyDest.resetForError();

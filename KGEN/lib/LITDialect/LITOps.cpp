@@ -668,6 +668,13 @@ LogicalResult StructDeclOp::verify() {
   return success();
 }
 
+DebugInfo::DIScopeAttr StructDeclOp::getLocScope() {
+  if (auto fusedLoc =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DIFileAttr>>(getLoc()))
+    return fusedLoc.getMetadata();
+  return {};
+}
+
 /// Verify that there are no duplicate field names.
 LogicalResult StructDeclOp::verifyRegions() {
   SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;

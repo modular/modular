@@ -15,6 +15,7 @@ add_modular_dialect_library(LITDialect
   ${MODULAR_MAIN_INCLUDE_DIR}/LIT/LITDialect
 
   DEPENDS
+  MLIRDebugInfoIncGen
   MLIRKGENIncGen
   MLIRLITIncGen
 
