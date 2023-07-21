@@ -11,7 +11,7 @@ include "Support/Driver/CommonOptions.td"
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<0>;
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<0>;
 
 def version : Flag<["--", "-"], "version">, Group<DiagnosticOptionGroup>,
   Index<0>, HelpText<"Prints the Mojo version and exits.">;

@@ -7,7 +7,7 @@
 include "DescriptionBase.td"
 
 def REPLDescription : MojoCommandDescription<
-  "repl", "Launch the REPL",
+  "repl", "Launches the REPL.",
   "Launch a Mojo read-evaluate-print loop that allows for interactive "
   "development.\n"
   "\n"

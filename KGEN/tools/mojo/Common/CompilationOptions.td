@@ -19,7 +19,7 @@ include "Support/Driver/DriverCommand.td"
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation Options">, Index<1>;
+def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<1>;
 
 def no_optimization : Flag<["--", "-"], "no-optimization">,
   Group<CompilationOptionGroup>, Index<0>,
@@ -79,7 +79,7 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic Options">, Index<2>;
+def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<2>;
 
 def doc_validate : Flag<["--", "-"], "doc-validate">,
   Group<DiagnosticOptionGroup>, Index<0>,

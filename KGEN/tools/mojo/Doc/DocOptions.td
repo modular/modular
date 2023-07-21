@@ -11,7 +11,7 @@ include "Support/Driver/CommonOptions.td"
 // Output Options
 //===----------------------------------------------------------------------===//
 
-def OutputOptionGroup : OptionGroup<"Output Options">, Index<0>;
+def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
 def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
   MetaVarName<"PATH">, HelpText<"The path to which an output file "
@@ -21,7 +21,7 @@ def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation Options">, Index<1>;
+def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<1>;
 
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
   MetaVarName<"PATH">,
@@ -33,7 +33,7 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
 //===----------------------------------------------------------------------===//
 
 def ValidationOptionGroup :
-  OptionGroup<"Validation Options">, Index<2>,
+  OptionGroup<"Validation options">, Index<2>,
   HelpText<
     "During translation of doc strings, this tool may emit warnings if those "
     "doc strings do not meet certain criteria. By default, warnings are "

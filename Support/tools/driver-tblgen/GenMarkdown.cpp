@@ -22,13 +22,14 @@
 
 using namespace M;
 
-static void genTitle(raw_ostream &os, const CommandDescription &cmd) {
-  os << "# " << cmd.getName(/*join=*/" ") << "\n\n";
+static void genFrontMatter(raw_ostream &os, const CommandDescription &cmd) {
+  os << "---\n"
+     << "title: " << cmd.getName(/*join=*/" ") << "\n"
+     << "---\n\n";
 }
 
-static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
-  os << "## Name\n\n"
-     << llvm::formatv("{0} – {1}\n\n", cmd.getName(), cmd.getSummary());
+static void genSummarySection(raw_ostream &os, const CommandDescription &cmd) {
+  os << cmd.getSummary() << "\n\n";
 }
 
 static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
@@ -132,8 +133,8 @@ static bool genHelpText(raw_ostream &os, const llvm::RecordKeeper &records) {
   CommandDescription cmd = *cmdOrErr;
   std::vector<CommandOptionGroup> groups = CommandOptionGroup::getAll(records);
 
-  genTitle(os, cmd);
-  genNameSection(os, cmd);
+  genFrontMatter(os, cmd);
+  genSummarySection(os, cmd);
   genSynopsisSection(os, cmd, groups);
   genDescriptionSection(os, cmd);
   genSubcommandsSection(os, cmd);
