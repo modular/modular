@@ -189,6 +189,9 @@ public:
   /// declared with `fn`.
   bool isDef() const { return isDefFlag; }
 
+  /// Return true if this is a static struct method, i.e., marked with @static.
+  bool isStatic() const { return isStaticFlag; }
+
   /// Return the list of arguments of this function.
   ArrayRef<ArgumentDeclView> getArgs() const { return args; }
 
@@ -248,6 +251,7 @@ private:
 
   bool isAsyncFlag;
   bool isDefFlag;
+  bool isStaticFlag;
   bool raisesFlag;
 
   //===----------------------------------------------------------------------===//

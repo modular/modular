@@ -257,7 +257,7 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
 
 llvm::json::Object ArgumentDeclView::toJSON() const {
   return llvm::json::Object{
-      {"description", description}, {"inout", inout}, {"kind", "parameter"},
+      {"description", description}, {"inout", inout}, {"kind", "argument"},
       {"name", getName()},          {"type", type},
   };
 }
@@ -400,12 +400,19 @@ std::string FunctionDeclView::getSignature() const {
 
 llvm::json::Object FunctionDeclView::toJSON() const {
   return llvm::json::Object{
-      {"args", toJSONArray(args)},  {"async", isAsync()},
-      {"constraints", constraints}, {"description", getDescription()},
-      {"isDef", isDef()},           {"kind", "function"},
-      {"name", getName()},          {"parameters", toJSONArray(parameters)},
-      {"raises", raises()},         {"returns", returns},
-      {"returnType", returnType},   {"signature", getSignature()},
+      {"args", toJSONArray(args)},
+      {"async", isAsync()},
+      {"constraints", constraints},
+      {"description", getDescription()},
+      {"isDef", isDef()},
+      {"isStatic", isStatic()},
+      {"kind", "function"},
+      {"name", getName()},
+      {"parameters", toJSONArray(parameters)},
+      {"raises", raises()},
+      {"returns", returns},
+      {"returnType", returnType},
+      {"signature", getSignature()},
       {"summary", summary},
   };
 }
