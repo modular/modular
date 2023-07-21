@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: system-darwin
 
 # RUN: not mojo format 2>&1 | FileCheck %s --check-prefix=NO_INPUTS
 # NO_INPUTS: error: no inputs provided
