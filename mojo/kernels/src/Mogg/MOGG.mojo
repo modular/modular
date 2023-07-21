@@ -154,6 +154,7 @@ fn MOGGExport():
     alias _reduce_mul = reduce_mul
     alias _splat = splat
     alias _transpose = transpose
+    alias _transpose_shape = transpose_shape
     alias _elementwise = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
     alias _tensor_to_shape = tensor_to_shape
@@ -1085,6 +1086,43 @@ fn transpose[
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
         input.data, new_shape, input.dynamic_dtype, new_stride
     )
+
+
+@always_inline
+fn transpose_shape[
+    rank: Int,
+    type: DType,
+    int_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    perms: NDBuffer[1, DimList.create_unknown[1](), int_type],
+) -> StaticIntTuple[rank]:
+    debug_assert(
+        perms.dim(0) == rank,
+        (
+            "Size of transpose permutation vector doesn't match expected output"
+            " shape"
+        ),
+    )
+
+    @unroll
+    for i in range(rank):
+        let perm = perms[i].to_int()
+        # TODO(17512)
+        debug_assert(perm >= 0, "Transpose permutation is less than zero")
+        debug_assert(perm < rank, "Transpose permutation is out of range")
+
+    let out = transpose[rank, type, int_type, single_thread_blocking_override](
+        input, perms
+    ).dynamic_shape
+
+    # TODO(17512)
+    debug_assert(
+        out.flattened_length() == input.dynamic_shape.flattened_length(),
+        "Dynamic transpose has changed the number of elements",
+    )
+    return out
 
 
 # ===----------------------------------------------------------------------===#
