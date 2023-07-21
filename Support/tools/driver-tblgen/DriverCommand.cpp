@@ -107,9 +107,9 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
 
     StringRef summary = record->getValueAsString("summary");
     validateCapitalized(summary, record->getLoc(), "command summary");
-    if (summary.ends_with("."))
+    if (!summary.ends_with("."))
       llvm::PrintWarning(record->getLoc(),
-                         "command summary should not end with a period");
+                         "command summary should end with a period");
 
     StringRef description = record->getValueAsString("description");
     validateCapitalized(description, record->getLoc(), "command description");

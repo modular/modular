@@ -20,7 +20,7 @@ include "Support/Driver/DriverCommand.td"
 // CHECK-NEXT: .br
 def : CommandDescription<
   "driver-tblgen-test", /*subcommand=*/"",
-  "Test that options are output in a man page",
+  "Test that options are output in a man page.",
   "This command contains several option groups, each of which has several "
   "options, along with aliases.",
   [
@@ -34,7 +34,7 @@ def : CommandDescription<
 // CHECK-NEXT: .br
 def : CommandDescription<
   "driver-tblgen-test", "subcommand",
-  "Test that subcommands are output in a man page",
+  "Test that subcommands are output in a man page.",
   "This is the description of a subcommand.",
   [UsageInfo<"options", "input", /*variadicInput=*/false>]>, Index<0>;
 

@@ -14,7 +14,7 @@ include "REPL/REPLDescription.td"
 include "Run/RunDescription.td"
 
 def : MojoDriverDescription<
-  "The Mojo🔥 command line interface",
+  "The Mojo🔥 command line interface.",
   "This is the primary interface for Mojo's various features. When given a "
   "command argument, this launches that command. A list of all available "
   "commands appears below, and you may invoke each of them with the `--help` "
