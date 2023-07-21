@@ -266,7 +266,27 @@ llvm::json::Object ArgumentDeclView::toJSON() const {
 // AliasDeclView
 //===----------------------------------------------------------------------===//
 
-std::string AliasDeclView::getDeclarationSnippet() const { return {}; }
+std::string AliasDeclView::getDeclarationSnippet() const {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  os << "alias " << getName();
+  if (!value.empty())
+    os << " = " << value;
+  return snippet;
+}
+
+std::string AliasDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+
+  if (!summary.empty())
+    os << summary << "\n";
+
+  if (!description.empty())
+    os << "\n" << description << "\n";
+
+  return markdown;
+}
 
 llvm::json::Object AliasDeclView::toJSON() const {
   return llvm::json::Object{{"description", description},

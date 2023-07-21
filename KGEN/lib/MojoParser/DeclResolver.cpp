@@ -2949,10 +2949,12 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(lexer);
   auto decoratorExprs = p.parseDecorators(decl);
+  SMLoc identifierLoc;
 
   // Parse the type if present.
   if (p.parseToken(Token::kw_alias, "internal error: checked by stmt parser") ||
-      p.parseToken(Token::identifier, "internal error: checked by stmt parser"))
+      p.parseToken(Token::identifier, "internal error: checked by stmt parser",
+                   &identifierLoc))
     return failure();
 
   ASTType type;
@@ -2996,6 +2998,10 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
     // Process the doc string of the alias.
     p.parseDocString(decl);
+
+    if (shared.parserListener)
+      shared.parserListener->onAliasDecl(MojoASTDeclRef(&decl), identifierLoc);
+
     return success();
   }
 
@@ -3028,6 +3034,10 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
   // Process the doc string of the alias.
   p.parseDocString(decl);
+
+  if (shared.parserListener)
+    shared.parserListener->onAliasDecl(MojoASTDeclRef(&decl), identifierLoc);
+
   return success();
 }
 
