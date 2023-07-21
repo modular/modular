@@ -14,6 +14,7 @@
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionInterfaces.h"

@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
 #define KGEN_KGENDIALECT_KGENDECLINTERFACE_TD
 
+include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 
@@ -80,7 +81,7 @@ def DeclInterface : OpInterface<"DeclInterface"> {
   ];
 }
 
-def FunctionLike : OpInterface<"FunctionLike"> {
+def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_ScopedLocation]> {
   let description = [{
     The `FunctionLike` interface represents an operation whose regions behave
     like functions in terms of control-flow:
@@ -102,9 +103,25 @@ def FunctionLike : OpInterface<"FunctionLike"> {
     InterfaceMethod<[{
       Return the function-like region of the operation.
     }], "Region &", "getBodyRegion", (ins)>,
+    InterfaceMethod<[{
+      Return the location scope, or a null attribute if not available
+    }], "DebugInfo::DISubprogramAttr", "getSubprogramScope", (ins), [{}],
+    [{
+      return dyn_cast_or_null<DebugInfo::DISubprogramAttr>(this->getLocScope());
+    }]>,
   ];
 
-  let verify = [{ return HLCF::verifyControlFlow(cast<FunctionLike>($_op)); }];
+  let extraTraitClassDeclaration = [{
+    DebugInfo::DIScopeAttr getLocScope() {
+      Location loc = this->getOperation()->getLoc();
+      if (auto fusedLoc = dyn_cast<
+          mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(loc))
+        return fusedLoc.getMetadata();
+      return {};
+    }
+  }];
+
+  let verify = [{ return impl::verifyFunctionLike(cast<FunctionLike>($_op)); }];
 }
 
 def FuncInterface : OpInterface<"FuncInterface"> {

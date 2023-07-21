@@ -99,11 +99,6 @@ public:
 /// the scope recursively within the body.
 void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
                       StringAttr name = {});
-
-/// Verify that a function-like op has the correct location scope. Succeeds if
-/// the location has no scope attached to it.
-LogicalResult verifyFuncLocScope(mlir::FunctionOpInterface funcOp);
-
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H

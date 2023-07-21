@@ -88,8 +88,7 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
 
 static void lowerLITOps(LIT::FuncOp func) {
   // Check if we are building debug info for source variables.
-  auto funcSpAttr = DebugInfo::extractScope(
-      cast<mlir::FunctionOpInterface>(func.getOperation()));
+  DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
