@@ -1354,96 +1354,6 @@ fn soft_fusion_run_wrapper[
         func(out_chain)
 
 
-# TODO: move into kernel lib
-@always_inline
-fn small_matmul[
-    type: DType,
-    simd_width: Int,
-    transpose_b: Bool,
-    epilogue_wrapper: fn[type: DType, width: Int] (
-        StaticIntTuple[2], SIMD[type, width]
-    ) capturing -> None,
-](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), type],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
-):
-
-    alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
-
-    let M = a.dim[0]()
-    let N = b.dim[0]() if transpose_b else b.dim[1]()
-    let K = a.dim[1]()
-
-    @parameter
-    if transpose_b:
-
-        for m in range(M):
-            for n in range(N):
-                var acc_vector = SIMD[type, simd_width]()
-                var acc_scalar = SIMD[type, 1]()
-
-                @always_inline
-                @parameter
-                fn compute_fn[width: Int](k: Int):
-                    @parameter
-                    if width == 1:
-                        acc_scalar += a[m, k] * b[n, k]
-                    else:
-                        acc_vector += a.simd_load[simd_width](
-                            m, k
-                        ) * b.simd_load[simd_width](n, k)
-
-                vectorize_unroll[simd_width, unroll_factor, compute_fn](K)
-
-                epilogue_wrapper[type, 1](
-                    Index(m, n), acc_vector.reduce_add() + acc_scalar
-                )
-    else:
-
-        @parameter
-        @always_inline
-        fn normal_update[
-            inner_type: DType, width: Int
-        ](coords: StaticIntTuple[2], val: SIMD[inner_type, width]):
-            c.simd_store[width](
-                Index(coords[0], coords[1]), rebind[SIMD[type, width]](val)
-            )
-
-        @parameter
-        @always_inline
-        fn last_update[
-            type: DType, width: Int
-        ](coords: StaticIntTuple[2], val: SIMD[type, width]):
-            epilogue_wrapper[type, width](coords, val)
-
-        @always_inline
-        @parameter
-        fn accum_out_row[
-            output_func: fn[type: DType, width: Int] (
-                StaticIntTuple[2], SIMD[type, width]
-            ) capturing -> None,
-        ](m: Int, k: Int):
-            let a_val = a[m, k]
-
-            @always_inline
-            @parameter
-            fn _wrapper[simd_width: Int](n: Int):
-                output_func[type, simd_width](
-                    Index(m, n),
-                    c.simd_load[simd_width](m, n)
-                    + a_val * b.simd_load[simd_width](k, n),
-                )
-
-            vectorize_unroll[simd_width, unroll_factor, _wrapper](N)
-
-        for m in range(M):
-            memset_zero(c.data + m * N, N)
-            for k in range(K - 1):
-                accum_out_row[normal_update](m, k)
-            accum_out_row[last_update](m, K - 1)
-
-
 @always_inline
 fn matmul[
     type: DType,
@@ -1463,7 +1373,6 @@ fn matmul[
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
-    alias simd_width = simdwidthof[type]()
 
     assert_param[
         not (b_packed and transpose_b),
@@ -1479,12 +1388,6 @@ fn matmul[
         type: DType, width: Int
     ](coords: StaticIntTuple[2], val: SIMD[type, width]):
         output_0_fn[type, width, 2](coords, val)
-
-    @parameter
-    if single_thread_blocking_override and not transpose_a and not b_packed:
-        return small_matmul[type, simd_width, transpose_b, epilogue_wrapper](
-            a, b, c
-        )
 
     @always_inline
     @parameter
@@ -1502,26 +1405,22 @@ fn matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
-    @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
-        matmul_parallel_async[
-            type,  # a_type
-            type,  # b_type
-            type,  # c_type
-            transpose_a,
-            transpose_b,
-            b_packed,
-            lambdas_have_fusion,
-            epilogue_wrapper,
-        ](
-            c,
-            a,
-            b,
-            chain,
-        )
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+    matmul_parallel_async[
+        type,  # a_type
+        type,  # b_type
+        type,  # c_type
+        transpose_a,
+        transpose_b,
+        b_packed,
+        lambdas_have_fusion,
+        epilogue_wrapper,
+        single_thread_blocking_override,
+    ](
+        c,
+        a,
+        b,
+        out_chain,
+    )
 
 
 # ===----------------------------------------------------------------------===#
