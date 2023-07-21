@@ -15,6 +15,7 @@ add_modular_dialect_library(HLCFDialect
   HLCFUtils.cpp
 
   DEPENDS
+  MLIRDebugInfoIncGen
   MLIRHLCFIncGen
   MLIRKGENIncGen
 

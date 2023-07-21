@@ -591,11 +591,7 @@ void GeneratorOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
 }
 
-LogicalResult GeneratorOp::verify() {
-  if (failed(DebugInfo::verifyFuncLocScope(*this)))
-    return failure();
-  return verifyOneBlockOrCached(*this);
-}
+LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
 
 Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
 
@@ -679,9 +675,6 @@ LogicalResult FuncOp::verify() {
                       return inputConv == ValueInputConvention::OwnedInReg;
                     }))
     return emitOpError("can only have default value input conventions");
-
-  if (failed(DebugInfo::verifyFuncLocScope(*this)))
-    return failure();
   return verifyOneBlockOrCached(*this);
 }
 

@@ -10,6 +10,7 @@
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
@@ -21,8 +22,9 @@ class IRRewriter;
 
 namespace M::KGEN {
 class DeclInterface;
-class KGENCallOpInterface;
+class FunctionLike;
 class GeneratorUserOpInterface;
+class KGENCallOpInterface;
 
 /// Return the full signature of this declaration, including parameters from
 /// enclosing struct declarations.
@@ -82,6 +84,7 @@ struct ParamDefValue {
 namespace impl {
 void scanAllAttrsAndTypes(Operation *op, function_ref<void(Attribute)> scanAttr,
                           function_ref<void(Type)> scanType);
+LogicalResult verifyFunctionLike(FunctionLike op);
 LogicalResult verifyGeneratorUser(GeneratorUserOpInterface op);
 LogicalResult verifyIfTopLevel(DeclInterface decl,
                                SymbolTableCollection &symtab);

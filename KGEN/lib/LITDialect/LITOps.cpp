@@ -548,7 +548,7 @@ LogicalResult LIT::FuncOp::verify() {
                          "`lit.extern_func`");
   }
 
-  return DebugInfo::verifyFuncLocScope(*this);
+  return success();
 }
 
 void LIT::FuncOp::walkDeclarations(function_ref<void(ParamDeclAttr)> walkDecl) {
