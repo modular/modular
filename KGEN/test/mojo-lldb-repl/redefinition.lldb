@@ -10,11 +10,11 @@
 
 # Initially define an integer value of 10.
 let value = 10
-# CHECK: ({{.*}}$Int::Int) value
+# CHECK: ({{.*}}_"$Int"::_Int>) value
 
 # Check that we can redefine this in a followup expression.
 let value = True
-# CHECK: ({{.*}}$Bool::Bool) value
+# CHECK: ({{.*}}_"$Bool"::_Bool>) value
 
 # Check that we can redefine a function that has a return type defined in the
 # same expression.
@@ -24,7 +24,7 @@ struct Struct:
 fn xoo() -> Struct:
     return Struct()
 let abc = xoo()
-# CHECK: (Struct) abc =
+# CHECK: (pointer<_"$Expression [5]"::_Struct>) abc =
 
 struct Struct:
     fn __init__(inout self):
@@ -32,4 +32,4 @@ struct Struct:
 fn xoo() -> Struct:
     return Struct()
 let abc = xoo()
-# CHECK: (Struct) abc =
+# CHECK: (pointer<_"$Expression [6]"::_Struct>) abc =

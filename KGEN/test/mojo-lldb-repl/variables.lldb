@@ -13,10 +13,10 @@ from DType import DType
 from SIMD import SIMD
 let bigValue = SIMD[DType.float32, 64]()
 print(bigValue)
-# CHECK: ($SIMD::SIMD[{f32}, {64}]) bigValue
+# CHECK: (pointer<_"$SIMD"::_SIMD<_63x13_type: _"$DType"::_DType = #lit.struct<{value: dtype = f32}>, _63x26_size: _"$Builtin"::_"$Int"::_Int = #lit.struct<{value = 64}>>>) bigValue
 
 # Check that we can define variables with weird names.
-# CHECK: ({{.*}}$Int::Int) ^ weird name =
+# CHECK: ({{.*}}_"$Int"::_Int>) ^ weird name =
 let `^ weird name` = 12
 
 # CHECK: 12

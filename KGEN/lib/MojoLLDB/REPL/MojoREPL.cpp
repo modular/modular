@@ -17,6 +17,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/DataFormatters/DumpValueObjectOptions.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Utility/LLDBLog.h"
@@ -468,7 +469,14 @@ bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
   // just an automatically created expression result. These variables are
   // already printed by the REPL so this is done to prevent printing the
   // variable twice.
+  auto options = DumpValueObjectOptions::DefaultOptions();
+  options.SetShowTypes(true);
+  // By default, the printer doesn't print the values inside pointers. However,
+  // all persistent variables are wrapped in pointers, so we must tell LLDB to
+  // display the values contained in top-level pointers.
+  options.SetMaximumPointerDepth(DumpValueObjectOptions::PointerDepth{
+      DumpValueObjectOptions::PointerDepth::Mode::Default, 1});
 
-  valobj->Dump(*output);
+  valobj->Dump(*output, options);
   return true;
 }

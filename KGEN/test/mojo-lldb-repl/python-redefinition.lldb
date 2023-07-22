@@ -20,6 +20,6 @@ def foo():
 def foo():
   pass
 
-# CHECK-DAG: ($PythonObject::PythonObject) foo
-# CHECK-DAG: ($PythonObject::PythonObject) module
-# CHECK-DAG: ($PythonObject::PythonObject) num
+# CHECK-DAG: (pointer<_"$PythonObject"::_PythonObject>) foo
+# CHECK-DAG: (pointer<_"$PythonObject"::_PythonObject>) module
+# CHECK-DAG: (pointer<_"$PythonObject"::_PythonObject>) num

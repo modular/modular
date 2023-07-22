@@ -148,6 +148,10 @@ MojoASTTypeRef MojoASTTypeRef::getPointerElementType() const {
   return unwrapMojoASTType(impl).getPointerElementType().mlirType;
 }
 
+Type MojoASTTypeRef::getMLIRType() const {
+  return Type::getFromOpaquePointer(impl);
+}
+
 //===----------------------------------------------------------------------===//
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//

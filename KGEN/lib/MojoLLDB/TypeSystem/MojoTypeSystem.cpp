@@ -11,13 +11,17 @@
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/DumpDataExtractor.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
@@ -304,10 +308,61 @@ void MojoTypeSystem::handleEvent(
 // Type Queries
 //===----------------------------------------------------------------------===//
 
-bool MojoTypeSystem::ShouldTreatScalarValueAsAddress(
-    lldb::opaque_compiler_type_t type) {
-  return Flags(GetTypeInfo(type))
-      .AnySet(lldb::eTypeInstanceIsPointer | lldb::eTypeIsReference);
+bool MojoTypeSystem::IsPointerOrReferenceType(
+    lldb::opaque_compiler_type_t type,
+    lldb_private::CompilerType *pointeeType) {
+  return IsReferenceType(type, pointeeType, nullptr) ||
+         IsPointerType(type, pointeeType);
+}
+
+bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
+                                     lldb_private::CompilerType *pointeeType,
+                                     bool *isRValue) {
+  MojoASTTypeRef refType(type);
+  return isa<POP::PointerType>(refType.getMLIRType());
+}
+
+uint32_t MojoTypeSystem::GetTypeInfo(
+    lldb::opaque_compiler_type_t type,
+    lldb_private::CompilerType *pointeeOrElementCompilerType) {
+  if (!type)
+    return 0;
+
+  if (pointeeOrElementCompilerType)
+    pointeeOrElementCompilerType->Clear();
+
+  MojoASTTypeRef refType(type);
+  Type mlirType = refType.getMLIRType();
+
+  if (auto ptrType = dyn_cast<POP::PointerType>(mlirType)) {
+    if (pointeeOrElementCompilerType) {
+      pointeeOrElementCompilerType->SetCompilerType(
+          weak_from_this(),
+          const_cast<void *>(ptrType.getElementAsType().getAsOpaquePointer()));
+      return lldb::eTypeIsPointer | lldb::eTypeHasChildren |
+             lldb::eTypeHasValue;
+    }
+  }
+
+  if (isa<IndexType>(mlirType))
+    return lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
+
+  if (isa<IntegerType>(mlirType)) {
+    auto result =
+        lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
+    if (mlirType.isSignedInteger())
+      return result | lldb::eTypeIsSigned;
+    return result;
+  }
+
+  if (auto simd = dyn_cast<POP::SIMDType>(mlirType))
+    return lldb::eTypeHasChildren | lldb::eTypeIsArray;
+
+  if (auto declRef = getParserContext().getDecl(refType)) {
+    if (isa_and_present<LIT::StructDeclOp>(declRef.getIfOperation()))
+      return lldb::eTypeHasChildren | lldb::eTypeIsClass;
+  }
+  return {};
 }
 
 lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
@@ -316,7 +371,7 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
     return lldb::eFormatDecimal;
   if (flags & lldb::eTypeIsFloat)
     return lldb::eFormatFloat;
-  if (flags & lldb::eTypeIsPointer || flags & lldb::eTypeIsClass)
+  if (flags & lldb::eTypeIsPointer)
     return lldb::eFormatAddressInfo;
   if (flags & lldb::eTypeIsClass)
     return lldb::eFormatHex;
@@ -342,7 +397,7 @@ ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
 
   std::string name;
   llvm::raw_string_ostream os(name);
-  mlir::Type::getFromOpaquePointer(type).print(os);
+  Type::getFromOpaquePointer(type).print(os);
   return ConstString(name);
 }
 
@@ -352,7 +407,7 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
     return {};
 
   std::string name =
-      LIT::ASTType(mlir::Type::getFromOpaquePointer(type)).getAsString();
+      MojoASTTypeRef(Type::getFromOpaquePointer(type)).getAsString();
 
   auto mangledOr =
       LIT::MangledSymbol::demangle(StringAttr::get(&impl->mlirContext, name));
@@ -391,6 +446,97 @@ bool MojoTypeSystem::IsScalarType(lldb::opaque_compiler_type_t type) {
   return (GetTypeInfo(type) & lldb::eTypeIsScalar);
 }
 
+//===--------------------------------------------------------------------===//
+// Type Navigation
+//===--------------------------------------------------------------------===//
+
+uint32_t
+MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
+                               bool omitEmptyBaseClasses,
+                               const lldb_private::ExecutionContext *exeCtx) {
+  if (!type)
+    return 0;
+
+  MojoASTTypeRef refType(type);
+  Type mlirType = refType.getMLIRType();
+
+  if (isa<POP::PointerType>(mlirType))
+    return 1;
+
+  if (auto simdTy = dyn_cast<POP::SIMDType>(mlirType)) {
+    if (simdTy.isScalar())
+      return 1;
+    return 0;
+  }
+  // TODO: Change to return simdTy.getResolvedSize() when
+  // GetChildCompilerTypeAtIndex supports non-scalar SIMDs.
+
+  if (auto declRef = getParserContext().getDecl(refType)) {
+    if (Operation *op = declRef.getIfOperation()) {
+      if (LIT::StructDeclOp structDeclOp = dyn_cast<LIT::StructDeclOp>(op)) {
+        auto range = structDeclOp.getFieldDecls();
+        return std::distance(range.begin(), range.end());
+      }
+    }
+  }
+  return 0;
+}
+
+lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
+    lldb::opaque_compiler_type_t type, lldb_private::ExecutionContext *exeCtx,
+    size_t idx, bool transparent_pointers, bool omitEmptyBaseClasses,
+    bool ignoreArrayBounds, std::string &childName, uint32_t &childByteSize,
+    int32_t &childByteOffset, uint32_t &childBitfieldBitSize,
+    uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
+    bool &childIsDerefOfParent, lldb_private::ValueObject *valobj,
+    uint64_t &languageFlags) {
+  if (!type)
+    return lldb_private::CompilerType();
+
+  if (idx >= GetNumChildren(type, omitEmptyBaseClasses, exeCtx))
+    return {};
+
+  MojoASTTypeRef refType(type);
+  Type mlirType = refType.getMLIRType();
+
+  // Pointer only has one child, so just return the unwrapped pointer type
+  if (auto pointerType = dyn_cast<POP::PointerType>(mlirType))
+    return lldb_private::CompilerType(
+        weak_from_this(), refType.getPointerElementType().getAsVoidPointer());
+
+  if (auto simdType = dyn_cast<POP::SIMDType>(mlirType)) {
+    if (simdType.isScalar()) {
+      if (auto dtypeAttr =
+              llvm::dyn_cast<DTypeConstantAttr>(simdType.getDType())) {
+        Type mlirType;
+        if (auto floatType =
+                getEquivalentFloatType(getMLIRContext(), dtypeAttr.getDType()))
+          mlirType = floatType;
+        else if (auto intType = getEquivalentIntegerType(getMLIRContext(),
+                                                         dtypeAttr.getDType()))
+          mlirType = intType;
+        else
+          return {};
+        return lldb_private::CompilerType(
+            weak_from_this(),
+            const_cast<void *>(mlirType.getAsOpaquePointer()));
+      }
+    }
+    // TODO: Handle non-scalar SIMD vectors
+    return {};
+  }
+  auto declRef = getParserContext().getDecl(refType);
+  if (LIT::StructDeclOp structDeclOp =
+          dyn_cast_if_present<LIT::StructDeclOp>(declRef.getIfOperation())) {
+    auto field = *std::next(structDeclOp.getFieldDecls().begin(), idx);
+    childName.assign(field.getName());
+    MojoASTTypeRef childType = MojoASTTypeRef(field.getTypeAttr().getValue());
+    return lldb_private::CompilerType(weak_from_this(),
+                                      childType.getAsVoidPointer());
+  }
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // Expressions
 //===----------------------------------------------------------------------===//
@@ -409,4 +555,19 @@ UserExpression *MojoTypeSystem::GetUserExpression(
 
 PersistentExpressionState *MojoTypeSystem::GetPersistentExpressionState() {
   return &impl->persistentState;
+}
+
+//===--------------------------------------------------------------------===//
+// Dumping
+//===--------------------------------------------------------------------===//
+
+bool MojoTypeSystem::DumpTypeValue(
+    lldb::opaque_compiler_type_t type, lldb_private::Stream &s,
+    lldb::Format format, const lldb_private::DataExtractor &data,
+    lldb::offset_t dataOffset, size_t dataByteSize, uint32_t bitfieldBitSize,
+    uint32_t bitfieldBitOffset, lldb_private::ExecutionContextScope *exeScope) {
+  return lldb_private::DumpDataExtractor(
+      data, &s, dataOffset, format, dataByteSize,
+      /*itemCount=*/1, UINT32_MAX, LLDB_INVALID_ADDRESS, bitfieldBitSize,
+      bitfieldBitOffset, exeScope);
 }
