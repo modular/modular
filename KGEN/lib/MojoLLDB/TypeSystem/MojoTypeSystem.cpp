@@ -359,7 +359,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return lldb::eTypeHasChildren | lldb::eTypeIsArray;
 
   if (auto declRef = getParserContext().getDecl(refType)) {
-    if (isa_and_present<LIT::StructDeclOp>(declRef.getIfOperation()))
+    if (isa_and_nonnull<LIT::StructDeclOp>(declRef.getIfOperation()))
       return lldb::eTypeHasChildren | lldb::eTypeIsClass;
   }
   return {};

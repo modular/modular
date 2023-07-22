@@ -1159,10 +1159,8 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
   }
 
   // Run the function pipeline. Make sure the verifier is off. Don't do this
-  // if debuginfo needs to be updated first.
-  // FIXME: This should use `Pass::runPipeline` but it requires the pipeline to
-  // be nested at or below the current pass operation. Because this pass
-  // disconnects functions from their parent for parallelism, it won't work.
+  // if debuginfo needs to be updated first. Note that `Pass::runPipeline` is
+  // not thread safe due to analysis manager nesting.
   if (updateAttrName)
     return;
   TimeTraceScope scope("optimizeFunction");
@@ -1436,23 +1434,28 @@ void ForceInlinePass::runOnOperation() {
   if (updateAttrName) {
     TimeTraceScope traceScope("updateDebugInfo");
     ParallelState state(*rt);
+    std::atomic<bool> innerPipelineFailed;
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
       if (node.shouldInline() || node.callsites.empty())
         continue;
       state.startWork();
-      rt->getWorkQueue()->addTask([func = func, updateAttrName, &state, this] {
-        updateScopeDebugInfo(func, updateAttrName);
-        // Run the function pipeline here.
-        TimeTraceScope scope("optimizeFunction");
-        mlir::OpPassManager pm(FuncOp::getOperationName());
-        buildFuncPasses(pm);
-        if (failed(runPipeline(pm, func)))
-          signalPassFailure();
-        state.endWork();
-      });
+      rt->getWorkQueue()->addTask(
+          [func = func, updateAttrName, &state, this, &innerPipelineFailed] {
+            updateScopeDebugInfo(func, updateAttrName);
+            // Run the function pipeline here.
+            TimeTraceScope scope("optimizeFunction");
+            mlir::PassManager pm(&getContext(), FuncOp::getOperationName());
+            buildFuncPasses(pm);
+            pm.enableVerifier(false);
+            if (failed(pm.run(func)))
+              innerPipelineFailed = true;
+            state.endWork();
+          });
     }
     state.await();
+    if (innerPipelineFailed)
+      signalPassFailure();
   }
 }
 
