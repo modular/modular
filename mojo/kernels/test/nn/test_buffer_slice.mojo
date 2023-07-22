@@ -38,7 +38,7 @@ fn print_elements[
     with Runtime(1) as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
 
-        elementwise[in_rank, 1, 1, print_elements_lambda](
+        elementwise[in_rank, 1, print_elements_lambda](
             rebind[StaticIntTuple[in_rank]](tensor.dynamic_shape),
             out_chain.borrow(),
         )

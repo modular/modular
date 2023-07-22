@@ -110,4 +110,4 @@ fn slice_as_copy[
         )
 
     # Invoke copy.
-    elementwise[in_rank, 1, 1, copy](output.dynamic_shape, out_chain)
+    elementwise[in_rank, 1, copy](output.dynamic_shape, out_chain)

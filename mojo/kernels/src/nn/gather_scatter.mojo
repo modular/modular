@@ -259,12 +259,11 @@ fn gather[
             rebind[StaticIntTuple[output_rank]](out_coords), input_val
         )
 
-    alias unroll_factor = 1
     # Elementwise generator calls gather_fn on all coords in output.
     # We can determine the input element to gather using the information
     # in the output coords only.
     # This also enables vectorization since we are gather rows of the input.
-    elementwise[output_rank, simd_width, unroll_factor, gather_fn](
+    elementwise[output_rank, simd_width, gather_fn](
         output.get_shape(), out_chain
     )
 
