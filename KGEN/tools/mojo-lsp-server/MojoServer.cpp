@@ -221,6 +221,8 @@ public:
 
   void onStructDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
+  void onStructFieldDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
   void onVariableDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
   void onRef(MojoASTDeclRef declRef, StringRef spelling, SMLoc loc) override;
@@ -613,6 +615,19 @@ void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
   }
 }
 
+void LSPParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
+                                          SMLoc identifierLoc) {
+  // For now we don't index files other than the main one.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    return;
+
+  if (std::optional<StringRef> identifier = declRef.getName()) {
+    mainDoc.symbolIndex.registerSymbol(
+        declRef, *identifier,
+        getRangeForText(sourceMgr, identifierLoc, *identifier));
+  }
+}
+
 void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
                                      SMLoc identifierLoc) {
 
@@ -625,7 +640,7 @@ void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
         declRef, *identifier,
         getRangeForText(sourceMgr, identifierLoc, *identifier));
   }
-};
+}
 
 void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {

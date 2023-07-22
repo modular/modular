@@ -307,6 +307,18 @@ public:
 
   std::string getDeclarationSnippet() const override;
 
+  std::string getMarkdownDocString() const override;
+
+  /// The output of the generation is defined in the following format:
+  ///
+  /// Struct field:
+  /// {
+  ///   "kind": "field",
+  ///   "name": "foo",
+  ///   "description": "...",
+  ///   "summary": "...",
+  ///   "type": "Int"
+  /// }
   llvm::json::Object toJSON() const override;
 
 public:
