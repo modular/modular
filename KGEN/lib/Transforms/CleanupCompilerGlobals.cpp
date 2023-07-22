@@ -34,12 +34,8 @@ void CleanupCompilerGlobalsPass::runOnOperation() {
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
     if (auto load = dyn_cast<POP::CompilerGlobalLoadOp>(op)) {
       auto it = values.find(load.getNameAttr());
-      if (it == values.end()) {
-        load.emitError("load of unknown compiler global variable")
-                .attachNote(func.getLoc())
-            << "hint: try marking this function as @always_inline";
-        return WalkResult::interrupt();
-      }
+      if (it == values.end())
+        return WalkResult::advance();
       auto [loc, value] = it->second;
       if (value.getType() != load.getType()) {
         (load.emitError("compiler global load type does not match "
