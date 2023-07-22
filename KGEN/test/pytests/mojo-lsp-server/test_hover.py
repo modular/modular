@@ -312,3 +312,35 @@ alias AliasInsideFunction = "sdfsdf"
 alias AliasToAlias = 12
 ```""",
     )
+
+
+async def test_hover_struct_field_decls(client: LanguageClient):
+    doc = Document.from_file("struct_fields.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert result.range == range
+        assert isinstance(result.contents, MarkupContent)
+        assert contents == result.contents.value
+
+    await assert_decl(
+        "a_field",
+        """### field `a_field`
+
+---
+
+###
+Summary of a_field.
+
+
+---
+
+###
+```mojo
+var a_field: Int
+```""",
+    )

@@ -117,7 +117,9 @@ static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
   // printing a signature.
   if (type.consume_front("*"))
     os << "*";
-  os << identifier << ": " << type;
+  os << identifier;
+  if (!type.empty())
+    os << ": " << type;
 };
 
 /// Parse the given docstring lines and augment the provided decls with the
@@ -550,7 +552,26 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 // StructFieldDeclView
 //===----------------------------------------------------------------------===//
 
-std::string StructFieldDeclView::getDeclarationSnippet() const { return {}; }
+std::string StructFieldDeclView::getDeclarationSnippet() const {
+  std::string snippet;
+  llvm::raw_string_ostream os(snippet);
+  os << "var ";
+  dumpIdentifierWithType(os, getName(), type);
+  return snippet;
+}
+
+std::string StructFieldDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+
+  if (!summary.empty())
+    os << summary << "\n";
+
+  if (!description.empty())
+    os << "\n" << description << "\n";
+
+  return markdown;
+}
 
 llvm::json::Object StructFieldDeclView::toJSON() const {
   return llvm::json::Object{
@@ -559,7 +580,6 @@ llvm::json::Object StructFieldDeclView::toJSON() const {
       {"name", getName()},
       {"summary", summary},
       {"type", type},
-      {"value", value},
   };
 }
 
@@ -569,7 +589,7 @@ StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
   ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
-  llvm::raw_string_ostream typeOS(value);
+  llvm::raw_string_ostream typeOS(type);
   ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
 
   if (std::optional<DocString> docStr = decl.getParsedDocString()) {

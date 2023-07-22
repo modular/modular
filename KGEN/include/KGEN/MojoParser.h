@@ -182,6 +182,11 @@ public:
   virtual void onStructDecl(MojoASTDeclRef declRef,
                             llvm::SMLoc identifierLoc) = 0;
 
+  /// Notify the listener that a new `struct field` declaration has been
+  /// resolved by the parser.
+  virtual void onStructFieldDecl(MojoASTDeclRef declRef,
+                                 llvm::SMLoc identifierLoc) = 0;
+
   /// Notify the listener that a new `let` or `var` declaration has been
   /// resolved by the parser.
   virtual void onVariableDecl(MojoASTDeclRef declRef,

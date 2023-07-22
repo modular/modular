@@ -3108,9 +3108,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
 
-  if (shared.parserListener)
-    shared.parserListener->onStructDecl(MojoASTDeclRef(&decl), identifierLoc);
-
   // Propagate signature errors and decls.
   decl.hasReferenceError |= sigDecl.hasReferenceError;
   decl.declsInScope = std::move(sigDecl.declsInScope);
@@ -3135,6 +3132,10 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
         return processStructSignatureDecorator(decorator, structOp);
       });
+
+  if (shared.parserListener)
+    shared.parserListener->onStructDecl(MojoASTDeclRef(&decl), identifierLoc);
+
   return success();
 }
 
@@ -3806,16 +3807,20 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   auto decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;
+  SMLoc identifierLoc;
   // Parse the type if present.
   p.consumeToken(); // let or var.
-  if (p.parseToken(Token::identifier,
-                   "internal error: checked by stmt parser") ||
+  if (p.parseToken(Token::identifier, "internal error: checked by stmt parser",
+                   &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
 
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);
+  if (shared.parserListener)
+    shared.parserListener->onStructFieldDecl(MojoASTDeclRef(&decl),
+                                             identifierLoc);
   return success();
 }
 
