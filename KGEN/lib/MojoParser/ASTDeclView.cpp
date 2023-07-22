@@ -9,6 +9,7 @@
 #include "DocString.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/JSON.h"
 

@@ -15,6 +15,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDType.h"
