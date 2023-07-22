@@ -228,6 +228,9 @@ public:
   void onRef(MojoASTDeclRef declRef, StringRef spelling, SMLoc loc) override;
 
 private:
+  /// Reusable onDecl listener for most decls.
+  void onDeclCommon(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
+
   /// The main doc for which parsing was initiated.
   MojoDocument &mainDoc;
   llvm::SourceMgr &sourceMgr;
@@ -589,8 +592,8 @@ MojoDocument::onHover(const lsp::Position &pos) const {
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
-void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
-                                    SMLoc identifierLoc) {
+void LSPParserListener::onDeclCommon(MojoASTDeclRef declRef,
+                                     SMLoc identifierLoc) {
   // For now we don't index files other than the main one.
   if (!isMainFileLoc(sourceMgr, identifierLoc))
     return;
@@ -600,59 +603,31 @@ void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
         declRef, *identifier,
         getRangeForText(sourceMgr, identifierLoc, *identifier));
   }
+}
+
+void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
+                                    SMLoc identifierLoc) {
+  onDeclCommon(declRef, identifierLoc);
 }
 
 void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> identifier = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *identifier,
-        getRangeForText(sourceMgr, identifierLoc, *identifier));
-  }
+  onDeclCommon(declRef, identifierLoc);
 }
 
 void LSPParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
                                           SMLoc identifierLoc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> identifier = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *identifier,
-        getRangeForText(sourceMgr, identifierLoc, *identifier));
-  }
+  onDeclCommon(declRef, identifierLoc);
 }
 
 void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
                                      SMLoc identifierLoc) {
-
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> identifier = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *identifier,
-        getRangeForText(sourceMgr, identifierLoc, *identifier));
-  }
+  onDeclCommon(declRef, identifierLoc);
 }
 
 void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> identifier = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *identifier,
-        getRangeForText(sourceMgr, identifierLoc, *identifier));
-  }
+  onDeclCommon(declRef, identifierLoc);
 }
 
 void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
