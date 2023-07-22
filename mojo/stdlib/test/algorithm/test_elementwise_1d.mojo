@@ -45,7 +45,7 @@ fn test_elementwise_1d():
             vector.simd_store[simd_width](idx[0], val)
 
         let out_chain = OwningOutputChainPtr(rt)
-        elementwise[1, sizeof[DType.float32](), 8, func](
+        elementwise[1, sizeof[DType.float32](), func](
             StaticIntTuple[1](num_elements), out_chain.borrow()
         )
         out_chain.wait()

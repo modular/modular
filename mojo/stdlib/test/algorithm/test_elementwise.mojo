@@ -74,13 +74,13 @@ fn test_elementwise[
 
         @parameter
         if is_blocking:
-            _elementwise_impl[outer_rank, 1, 1, is_blocking, func](
+            _elementwise_impl[outer_rank, 1, is_blocking, func](
                 rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
                 OutputChainPtr(),
             )
         else:
             let out_chain = OwningOutputChainPtr(runtime)
-            _elementwise_impl[outer_rank, 1, 1, is_blocking, func](
+            _elementwise_impl[outer_rank, 1, is_blocking, func](
                 rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
                 out_chain.borrow(),
             )

@@ -925,7 +925,6 @@ fn _get_start_indices_of_nth_subvolume[
 fn elementwise[
     rank: Int,
     simd_width: Int,
-    unroll_factor: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
     """Executes func[width, rank](indices) as sub-tasks for a suitable
@@ -934,7 +933,6 @@ fn elementwise[
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        unroll_factor: The unroll factor to use.
         func: The body function.
 
     Args:
@@ -942,9 +940,7 @@ fn elementwise[
         out_chain: The our chain to attach results to.
     """
 
-    _elementwise_impl[rank, simd_width, unroll_factor, False, func](
-        shape, out_chain
-    )
+    _elementwise_impl[rank, simd_width, False, func](shape, out_chain)
 
 
 @always_inline
@@ -952,7 +948,6 @@ fn elementwise[
 fn _elementwise_impl[
     rank: Int,
     simd_width: Int,
-    unroll_factor: Int,
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
@@ -962,7 +957,6 @@ fn _elementwise_impl[
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        unroll_factor: The unroll factor to use.
         use_blocking_impl: If true this is a blocking op.
         func: The body function.
 
@@ -971,6 +965,8 @@ fn _elementwise_impl[
         out_chain: The our chain to attach results to.
     """
     assert_param[rank == 1, "Specialization for 1D"]()
+
+    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     let problem_size = shape.flattened_length()
 
@@ -1019,7 +1015,6 @@ fn _elementwise_impl[
 fn _elementwise_impl[
     rank: Int,
     simd_width: Int,
-    unroll_factor: Int,
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
@@ -1031,7 +1026,6 @@ fn _elementwise_impl[
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        unroll_factor: The unroll factor to use.
         use_blocking_impl: If true this is a blocking op.
         func: The body function.
 
@@ -1041,6 +1035,8 @@ fn _elementwise_impl[
     """
 
     assert_param[rank > 1, "Specialization for ND where N > 1"]()
+
+    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
