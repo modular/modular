@@ -70,6 +70,7 @@ function(cache_files target)
   endforeach ()
 
   set(OUTFILE ${CACHE_MGR_HEADER_NAME})
+  set(TMPFILE "${CACHE_MGR_HEADER_NAME}.tmp")
   set(NAMES ${CACHE_MGR_INPUT_NAMES})
   configure_file(${CMAKE_SOURCE_DIR}/Cache/cmake/ReadHashes.cmake.in ${UNIQUE_BINARY_DIR}/ReadHashes.cmake @ONLY)
 

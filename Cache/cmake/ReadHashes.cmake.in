@@ -45,4 +45,6 @@ ${STMTS}
 
 #endif // ${OUTFILE}_H")
 
-file(WRITE @OUTFILE@ "${CONTENTS}")
+file(WRITE @TMPFILE@ "${CONTENTS}")
+execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different @TMPFILE@ @OUTFILE@)
+file(REMOVE @TMPFILE)
