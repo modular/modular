@@ -7,6 +7,6 @@
 include "DescriptionBase.td"
 
 def BuildDescription : MojoCommandDescription<
-  "build", "Builds an executable from a Mojo file",
+  "build", "Builds an executable from a Mojo file.",
   "Compiles the Mojo file at the given path into an executable.",
   [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<1>;
