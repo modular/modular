@@ -56,9 +56,6 @@ class ConcreteAsyncValue;
 /// AsyncValueRef<T> smart pointer classes. The public methods in this class
 /// are intended for advanced users who which to explicitly manage reference
 /// counting.
-///
-/// Requires each static type to be registered ahead of its use in an AsyncValue
-/// using TypeID::registerType<T>().
 class AsyncValue {
 public:
   //===--------------------------------------------------------------------===//
@@ -271,41 +268,59 @@ public:
   SubclassKind getSubclassKind() const { return subclassKind; }
 
   // The state of AsyncValue.  This is mutable as the value evolves.
+  // It must fit within 3 bits.
   enum class State : uint8_t {
-    /// The payload's constructor has not been invoked so the value is not
-    /// ready for consumption. This state can transition to
-    /// `kUnconstructedInlineWaiterConstructing`, `kAvailable` and `kError`.
-    /// TODO: kUnconstructedInlineWaiterConstructing does not exist any more
+    /// Initial state.
+    /// The payload's constructor has not been invoked so the value is not ready
+    /// for consumption. This state can transition to
+    /// `kUnconstructedInitializingInlineWaiter`, `kAvailable` and `kError`.
     kUnconstructed = 0,
 
-    /// This is a transient state when the first waiter is added to an
-    /// kUnconstructed AsyncValue.  It is used for a few cycles when the inline
-    /// waiter is being initialized.  Any state-aware internal implementation
-    /// details of AsyncValue that encounters this should just spin until the
-    /// state changes to kUnconstructed0AvailableOOLWaiters.
-    /// TODO: kUnconstructed0AvailableOOLWaiters is not a real enum member,
-    /// what was this comment trying to refer to?
+    /// This is a transient state when the first waiter is added to a
+    /// `kUnconstructed` AsyncValue.  It is used for a few cycles when the
+    /// inline waiter is being initialized.  Any state-aware internal
+    /// implementation details of AsyncValue that encounters this should just
+    /// spin until the state changes to `kUnconstructed4ValidOOLWaiterSlots`
+    /// (ie +4).
     kUnconstructedInitializingInlineWaiter = 1,
 
     /// These states are used to keep track of how many entries are used in the
-    /// first out-of-line WaiterListNode, which is pointed to by
+    /// first out-of-line WaiterListNode, if any, which is pointed to by
     /// `waitersAndState`.  Encoding this information in the state integer in
     /// `waitersAndState` allows us to use compare/xchg to atomically allocate
     /// entries in the out of line waiter.  The enum values here are encoded
     /// this way to make certain operations against the state enum value more
     /// efficient.
+    ///
+    /// For the `kUnconstructed{1,2,3}ValidOOLWaiterSlots` states we know we
+    /// have both an inline waiter in the ConcreteAsyncValue or
+    /// IndirectAsyncValue subclass, and a WaiterListNode pointed to by the
+    /// waitersAndState pointer with that number of valid waiters.
+    ///
+    /// For the `kUnconstructed4ValidOOLWaiterSlots` state however there are
+    /// three possible sub-states:
+    ///  - We are in the process of emplacing a value which may or may not
+    ///    already have an inline waiter. This is used for interlock of
+    ///    emplacing and andThen'ing.
+    ///  - We have established the first inline waiter, but the
+    ///    `waitersAndState` pointer is null. This is the just-one-waiter state.
+    ///  - The `waitersAndState` points to a WaiterListNode which indeed has
+    ///    all four entries set to waiters.
     kUnconstructed1ValidOOLWaiterSlots = 2, //< 1 valid, 3 free slots.
     kUnconstructed2ValidOOLWaiterSlots = 3, //< 2 valid, 2 free slots.
     kUnconstructed3ValidOOLWaiterSlots = 4, //< 3 valid, 1 free slots.
     kUnconstructed4ValidOOLWaiterSlots = 5, //< 4 valid, 0 free slots.
 
+    /// Terminal state.
     /// The underlying value is constructed and ready for consumption by
     /// waiters and contains an initialized value. This state can not transition
     /// to any other state.
     kAvailable = 6,
 
+    /// Terminal state.
     /// This AsyncValue is ready and contains an error, along with an
-    /// uninitialized value. This state can not transition to any other state.
+    /// uninitialized value. This state can not transition to any other
+    /// state.
     kError = 7,
   };
 
