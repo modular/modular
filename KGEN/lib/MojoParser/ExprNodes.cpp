@@ -24,6 +24,7 @@
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"

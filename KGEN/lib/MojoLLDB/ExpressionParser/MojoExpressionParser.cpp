@@ -11,6 +11,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Logging.h"
 #include "MojoDiagnostic.h"

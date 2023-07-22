@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
