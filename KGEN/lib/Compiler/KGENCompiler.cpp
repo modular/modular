@@ -204,35 +204,34 @@ void KGEN::populateElaborateModulePasses(
 void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
                                          LLCL::Runtime &runtime,
                                          const CompilationOptions &options) {
-  // Run the inliner, DCE, and cleanup the compiler globals.
+  // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
+
+  // Run the inliner with an inner function pass pipeline.
+  auto buildInlinerFuncPasses = [](mlir::OpPassManager &pm) {
+    pm.addPass(createCleanupCompilerGlobals());
+    pm.addPass(createSimplifyCF());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createCanonicalizer());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(createCanonicalizer());
+  };
   pm.addPass(createForceInline(
       runtime,
-      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug}));
+      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug},
+      buildInlinerFuncPasses));
 
+  // Process debuginfo based on the selected debugging level.
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
     pm.addPass(createSynthesizeDebugInfo());
   else if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
-  pm.addNestedPass<FuncOp>(createSimplifyCF());
-  pm.addNestedPass<FuncOp>(createCleanupCompilerGlobals());
-  pm.addNestedPass<FuncOp>(createSROA());
-  pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(mlir::createCSEPass());
-  pm.addNestedPass<FuncOp>(createCanonicalizer());
-
-#if 0
-  // TODO(Issue #7158): This pass is causing a compile time explosion and needs
-  // to be investigated.  It is "just" a performance optimization for raised
-  // exceptions, so disable it until we can investigate it more.
-  // See: https://github.com/modularml/modular/issues/7158
-  pm.addPass(createPruneImpossibleVariants());
-#endif
-
-  pm.addNestedPass<FuncOp>(createSROA());
-  pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(createCanonicalizer());
+  // Long-tail optimization passes.
+  // FIXME: This section needs to be trimmed down.
   pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
@@ -244,19 +243,22 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
 
+  // Run passes that require closures to be lifted.
+  // FIXME: `hoist-trivial-invariants` and `stack-reuse` should be taught to run
+  // earlier.
   pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
   pm.addNestedPass<FuncOp>(createStackReuse());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
 
-  // Raise for-loops as late as possible to simplify loop bounds and step
-  // inferring.
+  // Loop raising must happen after `hoist-trivial-invariants`.
+  // FIXME: Move this earlier in the pipeline.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
   pm.addNestedPass<FuncOp>(createLoopUnrolling());
   pm.addNestedPass<FuncOp>(createLowerLoops());
 
-  // Externalize any functions that we've already compiled, so we don't send
-  // them to LLVM again.
+  // At the end of the pipeline, externalize any functions that have been
+  // precompiled so that they aren't sent to LLVM again.
   pm.addPass(createExternalizePrecompiledFunctions());
 }
 

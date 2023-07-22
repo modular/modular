@@ -23,6 +23,8 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Threading.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
@@ -1073,8 +1075,12 @@ struct InliningGraphNode
 
 struct InliningGraph
     : public InliningGraphBase<InliningGraph, InliningGraphNode> {
-  explicit InliningGraph(LLCL::Runtime &runtime, StringAttr updateAttrName)
-      : InliningGraphBase(runtime), updateAttrName(updateAttrName) {}
+  explicit InliningGraph(
+      LLCL::Runtime &runtime,
+      function_ref<void(mlir::OpPassManager &)> buildFuncPasses,
+      StringAttr updateAttrName)
+      : InliningGraphBase(runtime), buildFuncPasses(buildFuncPasses),
+        updateAttrName(updateAttrName) {}
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {
@@ -1085,6 +1091,10 @@ struct InliningGraph
   /// Inline all functions by invoking the function inliner.
   void performInlining(InliningGraphNode *caller);
 
+  /// The functor to construct a function pass pipeline.
+  function_ref<void(mlir::OpPassManager &)> buildFuncPasses;
+  /// Set to true if any of the inner pipelines failed.
+  std::atomic<bool> innerPipelineFailed = false;
   /// When updating debug info, defer the update by tagging scope operations
   /// with an attribute. This is null if updates are not needed.
   StringAttr updateAttrName;
@@ -1146,7 +1156,21 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     } else if (singleExit) {
       foldTrivialLoop(scope);
     }
-  };
+  }
+
+  // Run the function pipeline. Make sure the verifier is off. Don't do this
+  // if debuginfo needs to be updated first.
+  // FIXME: This should use `Pass::runPipeline` but it requires the pipeline to
+  // be nested at or below the current pass operation. Because this pass
+  // disconnects functions from their parent for parallelism, it won't work.
+  if (updateAttrName)
+    return;
+  TimeTraceScope scope("optimizeFunction");
+  mlir::PassManager pm(caller->func.getContext(), FuncOp::getOperationName());
+  buildFuncPasses(pm);
+  pm.enableVerifier(false);
+  if (failed(pm.run(caller->func)))
+    innerPipelineFailed = true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1363,13 +1387,19 @@ namespace M::KGEN {
 
 namespace {
 struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
-  explicit ForceInlinePass(const ForceInlineOptions &options = {},
-                           LLCL::Runtime *runtime = nullptr)
-      : ForceInlineBase(options), runtime(runtime) {}
+  explicit ForceInlinePass(
+      const ForceInlineOptions &options = {}, LLCL::Runtime *runtime = nullptr,
+      function_ref<void(mlir::OpPassManager &)> buildFuncPasses =
+          [](mlir::OpPassManager &) {})
+      : ForceInlineBase(options), runtime(runtime),
+        buildFuncPasses(buildFuncPasses) {}
 
   void runOnOperation() override;
 
+  /// The LLCL runtime to use.
   LLCL::Runtime *runtime;
+  /// The function pass pipeline builder.
+  function_ref<void(mlir::OpPassManager &)> buildFuncPasses;
 };
 } // namespace
 
@@ -1387,9 +1417,14 @@ void ForceInlinePass::runOnOperation() {
   StringAttr updateAttrName;
   if (updateDebugInfo)
     updateAttrName = StringAttr::get(&getContext(), "inliner_debuginfo_update");
-  InliningGraph graph(*rt, updateAttrName);
+
+  InliningGraph graph(*rt, buildFuncPasses, updateAttrName);
   graph.build(getOperation(), symtab);
   graph.process();
+
+  // If any inner function pipeline failed, then fail the overall pass.
+  if (graph.innerPipelineFailed)
+    return signalPassFailure();
 
   // Diagnose cycles, if there are any.
   if (graph.numProcessed != graph.nodes.size()) {
@@ -1406,8 +1441,14 @@ void ForceInlinePass::runOnOperation() {
       if (node.shouldInline() || node.callsites.empty())
         continue;
       state.startWork();
-      rt->getWorkQueue()->addTask([func = func, updateAttrName, &state] {
+      rt->getWorkQueue()->addTask([func = func, updateAttrName, &state, this] {
         updateScopeDebugInfo(func, updateAttrName);
+        // Run the function pipeline here.
+        TimeTraceScope scope("optimizeFunction");
+        mlir::OpPassManager pm(FuncOp::getOperationName());
+        buildFuncPasses(pm);
+        if (failed(runPipeline(pm, func)))
+          signalPassFailure();
         state.endWork();
       });
     }
@@ -1415,8 +1456,8 @@ void ForceInlinePass::runOnOperation() {
   }
 }
 
-std::unique_ptr<mlir::Pass>
-KGEN::createForceInline(LLCL::Runtime &runtime,
-                        const ForceInlineOptions &options) {
-  return std::make_unique<ForceInlinePass>(options, &runtime);
+std::unique_ptr<mlir::Pass> KGEN::createForceInline(
+    LLCL::Runtime &runtime, const ForceInlineOptions &options,
+    function_ref<void(mlir::OpPassManager &)> buildFuncPasses) {
+  return std::make_unique<ForceInlinePass>(options, &runtime, buildFuncPasses);
 }
