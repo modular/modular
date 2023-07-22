@@ -69,6 +69,7 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
   auto writeFile = [&]() -> ErrorOr<std::filesystem::path> {
     llvm::Error err = llvm::writeToOutput(filePathStr, [&](raw_ostream &os) {
       writeContent(os);
+      os.flush();
       return llvm::Error::success();
     });
     if (err)
@@ -142,6 +143,7 @@ ErrorOrSuccess M::writeTempFile(const Twine &model,
   // Write the runtime to the temp file.
   llvm::raw_fd_ostream tmpOS(tmpFileOr->getFD(), /*shouldClose=*/false);
   writeFn(tmpOS);
+  tmpOS.flush();
   tmpFileOr->keep();
   outPath = tmpFileOr->getPath().string();
 
