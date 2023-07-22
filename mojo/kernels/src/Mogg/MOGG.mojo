@@ -322,28 +322,21 @@ fn elementwise_wrapper[
     buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    alias unroll_factor: Int = 1
-
     @always_inline
     @parameter
     fn description_fn() -> String:
         let name_str = String("name=") + trace_description
         let shape_str = String("shape=") + String("x").join(buffer.get_shape())
 
-        let unroll_factor_str = String("unroll_factor=") + unroll_factor
         let vector_width_str = String("vector_width=") + simd_width
 
-        let res = String(";").join(
-            name_str, shape_str, unroll_factor_str, vector_width_str
-        )
+        let res = String(";").join(name_str, shape_str, vector_width_str)
 
         return res
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
-    _elementwise_impl[
-        rank, simd_width, unroll_factor, single_thread_blocking_override, func
-    ](
+    _elementwise_impl[rank, simd_width, single_thread_blocking_override, func](
         buffer.dynamic_shape,
         out_chain,
     )
@@ -1260,14 +1253,11 @@ fn _gather_with_lambdas[
         # Store it to the original index.
         output_0_fn[type, simd_width, rank](idx, data)
 
-    alias unroll_factor = 1
-
     # If we are gathering on the last dimension then we have to be scalar.
     if axis.get() == in_rank - 1:
         _elementwise_impl[
             output_rank,
             1,
-            unroll_factor,
             single_thread_blocking_override,
             gather_lambda,
         ](
@@ -1278,7 +1268,6 @@ fn _gather_with_lambdas[
         _elementwise_impl[
             output_rank,
             simd_width,
-            unroll_factor,
             single_thread_blocking_override,
             gather_lambda,
         ](
