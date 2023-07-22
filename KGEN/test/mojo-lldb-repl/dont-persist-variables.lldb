@@ -20,10 +20,10 @@ x = 1
 y = 2
 z = 1/0
 # CHECK: ZeroDivisionError: division by zero
-# CHECK-NOT: ($PythonObject::PythonObject) x =
-# CHECK-NOT: ($PythonObject::PythonObject) y =
-# CHECK-NOT: ($PythonObject::PythonObject) z =
+# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>) x =
+# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>) y =
+# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>) z =
 
 %%python
 a = 2
-# CHECK: ($PythonObject::PythonObject) a =
+# CHECK: (pointer<_"$PythonObject"::_PythonObject>) a =

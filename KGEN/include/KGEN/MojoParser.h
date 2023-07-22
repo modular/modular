@@ -18,6 +18,7 @@ class SourceMgr;
 } // namespace llvm
 namespace mlir {
 class TimingScope;
+class Type;
 } // namespace mlir
 
 namespace M {
@@ -137,6 +138,13 @@ public:
   /// If the current type is a pointer, return the type of the pointee. This
   /// aborts if the current type isn't a pointer.
   MojoASTTypeRef getPointerElementType() const;
+
+  /// Return the MLIR type associated with this
+  Type getMLIRType() const;
+
+  /// Returns the underlying pointer to the implementation backed by this class.
+  /// It can be used as a unique ID for this declaration.
+  void *getAsVoidPointer() const { return impl; }
 
 private:
   // Return the decl that defined this type.

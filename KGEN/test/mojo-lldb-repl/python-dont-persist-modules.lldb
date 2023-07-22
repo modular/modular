@@ -13,11 +13,11 @@
 %%python
 def foo():
   return "this is sparta"
-# CHECK: ($PythonObject::PythonObject) foo =
+# CHECK: (pointer<_"$PythonObject"::_PythonObject>) foo =
 
 %%python
 x = foo()
-# CHECK-NEXT: ($PythonObject::PythonObject) x =
+# CHECK: (pointer<_"$PythonObject"::_PythonObject>) x =
 
 %%python
 print(x)

@@ -17,6 +17,7 @@
 #include "lldb/Utility/Broadcaster.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Flags.h"
+#include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-private.h"
 
 namespace M {
@@ -182,9 +183,7 @@ public:
                      const lldb_private::DataExtractor &data,
                      lldb::offset_t dataOffset, size_t dataByteSize,
                      uint32_t bitfieldBitSize, uint32_t bitfieldBitOffset,
-                     lldb_private::ExecutionContextScope *exeScope) override {
-    return {};
-  }
+                     lldb_private::ExecutionContextScope *exeScope) override;
 
 #ifndef NDEBUG
   LLVM_DUMP_METHOD void dump(lldb::opaque_compiler_type_t type) const override {
@@ -241,9 +240,6 @@ public:
     return llvm::APFloatBase::Bogus();
   }
 
-  bool
-  ShouldTreatScalarValueAsAddress(lldb::opaque_compiler_type_t type) override;
-
   size_t
   GetNumberOfFunctionArguments(lldb::opaque_compiler_type_t type) override {
     return 0;
@@ -265,9 +261,7 @@ public:
 
   uint32_t GetTypeInfo(
       lldb::opaque_compiler_type_t type,
-      lldb_private::CompilerType *pointeeOrElementCompilerType) override {
-    return {};
-  }
+      lldb_private::CompilerType *pointeeOrElementCompilerType) override;
 
   /// An overload of GetTypeInfo that uses a null
   /// `pointeeOrElementCompilerType`.
@@ -367,9 +361,7 @@ public:
 
   bool
   IsPointerOrReferenceType(lldb::opaque_compiler_type_t type,
-                           lldb_private::CompilerType *pointeeType) override {
-    return false;
-  }
+                           lldb_private::CompilerType *pointeeType) override;
 
   bool IsTypedefType(lldb::opaque_compiler_type_t type) override {
     return false;
@@ -377,9 +369,7 @@ public:
 
   bool IsReferenceType(lldb::opaque_compiler_type_t type,
                        lldb_private::CompilerType *pointeeType,
-                       bool *isRValue) override {
-    return false;
-  }
+                       bool *isRValue) override;
 
   bool IsArrayType(lldb::opaque_compiler_type_t type,
                    lldb_private::CompilerType *elementType, uint64_t *size,
@@ -525,9 +515,7 @@ public:
 
   uint32_t
   GetNumChildren(lldb::opaque_compiler_type_t type, bool omitEmptyBaseClasses,
-                 const lldb_private::ExecutionContext *exeCtx) override {
-    return 0;
-  }
+                 const lldb_private::ExecutionContext *exeCtx) override;
 
   uint32_t GetNumFields(lldb::opaque_compiler_type_t type) override {
     return 0;
@@ -569,9 +557,7 @@ public:
       int32_t &childByteOffset, uint32_t &childBitfieldBitSize,
       uint32_t &childBitfieldBitOffset, bool &childIsBaseClass,
       bool &childIsDerefOfParent, lldb_private::ValueObject *valobj,
-      uint64_t &languageFlags) override {
-    return {};
-  }
+      uint64_t &languageFlags) override;
 
   uint32_t GetIndexOfChildWithName(lldb::opaque_compiler_type_t type,
                                    StringRef name,
