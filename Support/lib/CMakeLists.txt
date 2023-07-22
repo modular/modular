@@ -9,7 +9,6 @@ add_modular_library(MSupport
   AlignedAlloc.cpp
   BuildInfo.cpp
   CommonCLOptions.cpp
-  Configuration.cpp
   Error.cpp
   FileSystemExtras.cpp
   HMAC.cpp
