@@ -223,6 +223,22 @@ static bool hasAnyItemDescription(const Items &items) {
       items, [](const auto &item) { return !item.getDescription().empty(); });
 };
 
+/// Dump the markdown header common to all decls that support docstring
+/// documentation.
+static void dumpMarkdownDocumentationHeader(llvm::raw_ostream &os,
+                                            StringRef summary,
+                                            StringRef description) {
+  if (!summary.empty())
+    os << summary << "\n";
+
+  if (!description.empty())
+    os << "\n" << description << "\n";
+}
+
+static void dumpMarkdownSectionTitle(llvm::raw_ostream &os, StringRef title) {
+  os << "\n#### " << title << ":\n";
+}
+
 //===----------------------------------------------------------------------===//
 // DeclView
 //===----------------------------------------------------------------------===//
@@ -336,11 +352,7 @@ std::string AliasDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  if (!summary.empty())
-    os << summary << "\n";
-
-  if (!description.empty())
-    os << "\n" << description << "\n";
+  dumpMarkdownDocumentationHeader(os, summary, description);
 
   return markdown;
 }
@@ -416,14 +428,10 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  if (!summary.empty())
-    os << summary << "\n";
-
-  if (!description.empty())
-    os << "\n" << description << "\n";
+  dumpMarkdownDocumentationHeader(os, summary, description);
 
   if (hasAnyItemDescription(parameters)) {
-    os << "\n#### Parameters:\n";
+    dumpMarkdownSectionTitle(os, "Parameters");
     for (const auto &param : parameters) {
       if (auto desc = param.getDescription(); !desc.empty())
         os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
@@ -431,17 +439,21 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   }
 
   if (hasAnyItemDescription(args)) {
-    os << "\n#### Args:\n";
+    dumpMarkdownSectionTitle(os, "Args");
     for (const auto &arg : args)
       if (auto desc = arg.getDescription(); !desc.empty())
         os << kMarkdownIndent << arg.getName() << ": " << desc << "  \n";
   }
 
-  if (!returns.empty())
-    os << "\n#### Returns:\n" << kMarkdownIndent << returns << "\n";
+  if (!returns.empty()) {
+    dumpMarkdownSectionTitle(os, "Returns");
+    os << kMarkdownIndent << returns << "\n";
+  }
 
-  if (!constraints.empty())
-    os << "\n#### Constraints:\n" << kMarkdownIndent << constraints << "\n";
+  if (!constraints.empty()) {
+    dumpMarkdownSectionTitle(os, "Constraints");
+    os << kMarkdownIndent << constraints << "\n";
+  }
 
   return markdown;
 }
@@ -564,11 +576,7 @@ std::string StructFieldDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  if (!summary.empty())
-    os << summary << "\n";
-
-  if (!description.empty())
-    os << "\n" << description << "\n";
+  dumpMarkdownDocumentationHeader(os, summary, description);
 
   return markdown;
 }
@@ -661,22 +669,20 @@ std::string StructDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
-  if (!summary.empty())
-    os << summary << "\n";
-
-  if (!description.empty())
-    os << "\n" << description << "\n";
+  dumpMarkdownDocumentationHeader(os, summary, description);
 
   if (hasAnyItemDescription(parameters)) {
-    os << "\n#### Parameters:\n";
+    dumpMarkdownSectionTitle(os, "Parameters");
     for (const auto &param : parameters) {
       if (auto desc = param.getDescription(); !desc.empty())
         os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
     }
   }
 
-  if (!constraints.empty())
-    os << "\n#### Constraints:\n" << kMarkdownIndent << constraints << "\n";
+  if (!constraints.empty()) {
+    dumpMarkdownSectionTitle(os, "Constraints");
+    os << kMarkdownIndent << constraints << "\n";
+  }
 
   return markdown;
 }
