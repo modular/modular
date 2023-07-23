@@ -134,6 +134,9 @@ public:
 #endif
   }
 
+  /// Flush all the collected metrics.
+  void flush();
+
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
   /// File output stream for OTel's OStream exporters (they require a
@@ -147,6 +150,10 @@ private:
   // Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
+
+  /// We must not call export concurrently for the same exporter instance, so we
+  /// need to make sure we lock it.
+  std::mutex exportLock;
 #endif
 };
 
