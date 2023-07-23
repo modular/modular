@@ -4,9 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Telemetry/MetricReader.h"
 #include "Support/Telemetry/Telemetry.h"
-#include "llvm/Support/Process.h"
+
+#include "Support/Configuration.h"
+#include "Support/Telemetry/MetricReader.h"
+#include "llvm/ADT/Twine.h"
 #include <filesystem>
 #include <fstream>
 
@@ -30,30 +32,27 @@
 
 namespace M::Telemetry {
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-static std::filesystem::path getTelemetryLogPath() {
-  std::string filename = "telemetry.log";
-  std::error_code ec;
-  std::filesystem::path logPath;
-  if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
-    logPath = std::filesystem::absolute(*path, ec) / filename;
-    assert(!ec && "failed to get absolute path to derived dir");
-  }
-  return logPath;
-}
-#endif // MODULAR_ENABLE_TELEMETRY
-
 TelemetryContext::TelemetryContext() {
 #ifdef MODULAR_ENABLE_TELEMETRY
 
   // -------- Exporter options (export to file or to OTLP receiver) --------
-  std::string receiverUrl;
-  auto receiverUrlOr = llvm::sys::Process::GetEnv("MODULAR_TELEMETRY_URL");
-  if (receiverUrlOr) {
-    receiverUrl = *receiverUrlOr;
-  } else {
+  auto configOr = Config::open();
+  if (configOr.isError())
+    llvm::report_fatal_error(configOr.getError());
+  Config cfg = std::move(*configOr);
+  // TODO: Allow separate configuration for metrics and logs, and multiple
+  //       exporters for each (if OTel allows it).
+  StringRef httpEndpoint =
+      cfg.getValue("telemetry.exporters.metrics.http_endpoint");
+  std::filesystem::path filePath =
+      cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  if (httpEndpoint.empty()) {
+    // Default to MODULAR_HOME/telemetry.log
+    if (filePath.empty())
+      filePath = Config::getModularHomeDirPath() / "telemetry.log";
+
     outputFile = std::make_unique<std::ofstream>();
-    outputFile->open(getTelemetryLogPath(), std::ios_base::app);
+    outputFile->open(filePath, std::ios_base::app);
     assert(outputFile->is_open() && "could not open file for telemetry output");
   }
 
@@ -61,12 +60,12 @@ TelemetryContext::TelemetryContext() {
   // Create OpenTelemetry OTLP HTTP exporter.
   std::unique_ptr<opentelemetry::sdk::metrics::PushMetricExporter>
       metricExporter;
-  if (receiverUrl.empty()) {
+  if (httpEndpoint.empty()) {
     metricExporter = std::make_unique<
         opentelemetry::exporter::metrics::OStreamMetricExporter>(*outputFile);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
-    otlpOptions.url = receiverUrl + "/v1/metrics";
+    otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     metricExporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
@@ -85,13 +84,13 @@ TelemetryContext::TelemetryContext() {
 
   // -------- Logs --------
   std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> logExporter;
-  if (receiverUrl.empty()) {
+  if (httpEndpoint.empty()) {
     logExporter = std::make_unique<
         opentelemetry::exporter::logs::OStreamLogRecordExporter>(*outputFile);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         oltpLogOptions;
-    oltpLogOptions.url = receiverUrl + "/v1/logs";
+    oltpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     // Create OTLP exporter instance
     logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
