@@ -18,6 +18,7 @@ from LLCL import (
 from Math import div_ceil, min, max
 from Numerics import FlushDenormals
 from Range import range
+from TargetInfo import triple_is_nvidia_cuda
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -940,7 +941,15 @@ fn elementwise[
         out_chain: The our chain to attach results to.
     """
 
-    _elementwise_impl[rank, simd_width, False, func](shape, out_chain)
+    _elementwise_impl[
+        rank,
+        simd_width,
+        False
+        # On CUDA devices, we do not want to launch threads, so we use the
+        # blocking API
+        or triple_is_nvidia_cuda(),
+        func,
+    ](shape, out_chain)
 
 
 @always_inline
