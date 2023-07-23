@@ -7,7 +7,7 @@
 from String import String
 
 
-struct SomeStruct[size: Int]:
+struct SomeStruct[size: Int, other_param: Bool]:
     """Docstring for SomeStruct.
 
     More docstring for SomeStruct.
@@ -17,6 +17,7 @@ struct SomeStruct[size: Int]:
 
     Parameters:
         size: The size of SomeStruct.
+        other_param: Another param.
     """
 
     fn __init__(inout self):
