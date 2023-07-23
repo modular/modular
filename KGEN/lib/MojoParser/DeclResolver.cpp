@@ -571,6 +571,15 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
     // Resolve the decl.
     (void)resolveFully(*declIt, declIt->getLoc());
 
+    // If this is a package, resolve all of the modules within it as a pre-step.
+    // Normally these get lazily resolved, but if we're forcing pulling them in,
+    // we need to do it now.
+    if (isa<PackageOp>(*declIt)) {
+      for (auto &decls : llvm::make_second_range(declIt->declsInScope))
+        if (isa<UnresolvedImportOp>(*decls.front()))
+          (void)resolveFully(*decls.front(), declIt->getLoc());
+    }
+
     // Traverse the children. We don't resolve alias children, these will be
     // resolved separately if they actually got referenced.
     for (auto &decls : llvm::make_second_range(declIt->declsInScope)) {

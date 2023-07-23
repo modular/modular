@@ -104,8 +104,9 @@ static void getAutoImportPaths(SmallVector<std::string> &paths) {
 }
 
 struct SharedState::Impl {
-  Impl(MLIRContext *ctx)
-      : bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
+  Impl(MLIRContext *ctx, MojoParserConfig::CachingLevel moduleCachingLevel)
+      : moduleCachingLevel(moduleCachingLevel),
+        bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
 
   SymbolTableCollection symbolTables;
 
@@ -147,6 +148,9 @@ struct SharedState::Impl {
   /// The cache used to store cached transformations within the parser.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
+  /// The level of module caching enabled for the parser.
+  MojoParserConfig::CachingLevel moduleCachingLevel;
+
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
 
@@ -170,14 +174,13 @@ struct SharedState::Impl {
       closureWrappers;
 };
 
-SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                         bool enableCaching)
+SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
             config.maxNotesPerDiagnostic),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener), runtime(config.runtime),
-      impl(std::make_unique<Impl>(config.context)) {
+      impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
 
@@ -207,7 +210,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
   }
 
   // Create a cache for use by the parser.
-  if (enableCaching) {
+  if (config.moduleCachingLevel != MojoParserConfig::kCacheNone) {
     auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
         runtime, (std::filesystem::path(".kgen_cache") / "mojo").string(),
         KGEN_VERSION_STRING);
@@ -372,8 +375,9 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
 
 struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, StringRef sourcePath)
-      : decl(decl), sourcePath(sourcePath.str()) {}
+  ModuleState(ASTDecl *decl, StringRef sourcePath, bool enableCaching = false)
+      : decl(decl), sourcePath(sourcePath.str()),
+        canCacheModule(enableCaching) {}
   ~ModuleState() {
     // Drop any remaining operations in the reader to avoid dangling
     // unmaterialized operations. If these were neded, they would have been
@@ -416,6 +420,8 @@ struct SharedState::ModuleState {
   llvm::BLAKE3Result<> contentHash;
   /// The set of other modules that this module depends on.
   llvm::SmallSetVector<ModuleState *, 4> dependencies;
+  /// A flag indicating if this module can be cached.
+  bool canCacheModule = false;
 
   //===--------------------------------------------------------------------===//
   // Package Specific State
@@ -754,8 +760,9 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
       getSourceMgr().getMemoryBuffer(fileID);
   auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
                                                        /*column=*/0);
-  return createModuleState(declName, mangledName, moduleBuffer, *parentState,
-                           fileLoc);
+  return createModuleState(
+      declName, mangledName, moduleBuffer, *parentState, fileLoc,
+      impl->moduleCachingLevel != MojoParserConfig::kCacheNone);
 }
 
 SharedState::ModuleState &
@@ -916,6 +923,8 @@ void SharedState::loadModulesFromCache(
 
   // Check the cache results for the various modules.
   for (ModuleState *moduleState : moduleStates) {
+    if (!moduleState->canCacheModule)
+      continue;
     // If the module has already been resolved in any form, we shouldn't
     // try reading it from the cache.
     if (moduleState->decl->resolvedness > DeclResolvedness::unparsed)
@@ -1009,8 +1018,12 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
                                    const llvm::MemoryBuffer *moduleBuffer,
                                    FileLineColLoc loc) {
   StringAttr mangledName = getMangledModuleName(getContext(), moduleName);
-  ModuleState &state = createModuleState(mangledName, mangledName, moduleBuffer,
-                                         *impl->topLevelModuleState, loc);
+
+  // Create a new module state. This isn't an imported module, so we can only
+  // cache if we're caching everything.
+  ModuleState &state = createModuleState(
+      mangledName, mangledName, moduleBuffer, *impl->topLevelModuleState, loc,
+      impl->moduleCachingLevel == MojoParserConfig::kCacheAll);
   return *state.decl;
 }
 
@@ -1041,7 +1054,8 @@ bool SharedState::isModuleOrPackagePath(const std::filesystem::path &path) {
 SharedState::ModuleState &
 SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
                                const llvm::MemoryBuffer *moduleBuffer,
-                               ModuleState &parentState, FileLineColLoc loc) {
+                               ModuleState &parentState, FileLineColLoc loc,
+                               bool enableCaching) {
   Lexer lexer(*this, moduleBuffer);
 
   // Create a new decl for this module.
@@ -1055,8 +1069,9 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
   importBuiltinModules(moduleDecl);
 
   auto it = parentState.nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>(
-                        &moduleDecl, moduleBuffer->getBufferIdentifier())});
+      {mangledName,
+       std::make_unique<ModuleState>(
+           &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching)});
   ModuleState &moduleState = *it.first->second;
   impl->moduleStates[&moduleDecl] = &moduleState;
 
@@ -1132,6 +1147,11 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
       {mangledName, std::make_unique<ModuleState>(&decl)});
   ModuleState &moduleState = *it.first->second;
   impl->moduleStates[&decl] = &moduleState;
+
+  // Set the content hash of the package to the parsed buffer.
+  llvm::BLAKE3 contentHash;
+  contentHash.update((*packageBuffer)->getBuffer());
+  moduleState.contentHash = contentHash.final();
 
   // Read the cached package.
   Block *block = parentState.decl->getDeclEndBuilder().getBlock();
@@ -1339,7 +1359,7 @@ void SharedState::cacheParsedModules() {
 
   SmallVector<LLCL::AnyAsyncValueRef> results;
   for (auto &[decl, module] : impl->moduleStates) {
-    if (decl->loadedFromBytecode)
+    if (!module->canCacheModule || decl->loadedFromBytecode)
       continue;
     FileModuleOp moduleOp =
         dyn_cast_if_present<FileModuleOp>(module->decl->getIfOperation());
@@ -1564,7 +1584,13 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                                  op.getParamDecl().getName())));
           })
           .Case<AliasForwardDeclOp, LetRegDeclOp, StructFieldOp, VarLetDeclOp>(
-              [&](auto op) { addDeclForOp(op, op.getNameAttr()); })
+              [&](auto op) {
+                ASTDecl &varDecl = addDeclForOp(op, op.getNameAttr());
+
+                // Variables normally get resolved fully during parse phase, so
+                // resolve them as soon as we encounter them in bytecode.
+                (void)declResolver->resolveFully(varDecl, varDecl.getLoc());
+              })
           .Case([&](GlobalVarDeclOp op) {
             addDeclForOp(op, op.getSymNameAttr());
           })
@@ -1583,9 +1609,12 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             // Record a nested module state for this decl.
             auto it = packageState->nestedModules.insert(
                 {name, std::make_unique<ModuleState>(&decl)});
-            impl->moduleStates[&decl] = &*it.first->second;
+            ModuleState &moduleState = *it.first->second;
+            moduleState.contentHash = packageState->contentHash;
+
+            impl->moduleStates[&decl] = &moduleState;
             if constexpr (std::is_same_v<decltype(op), PackageOp>)
-              impl->packageStates[op] = &*it.first->second;
+              impl->packageStates[op] = &moduleState;
           })
           .Default([&](Operation *op) { deferredOps.push_back(op); });
     }

@@ -76,8 +76,7 @@ enum class DeclResolvedness : int8_t {
 /// which are always shared across them.
 class SharedState {
 public:
-  SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-              bool enableCaching = true);
+  SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
   ~SharedState();
 
   Diags diags; // Contains SourceMgr and MLIRContext pointers.
@@ -270,7 +269,8 @@ private:
   /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName, StringAttr mangledName,
                                  const llvm::MemoryBuffer *moduleBuffer,
-                                 ModuleState &parentState, FileLineColLoc loc);
+                                 ModuleState &parentState, FileLineColLoc loc,
+                                 bool enableCaching);
 
   /// Create a new module state for a package with the given name, location, and
   /// body.
