@@ -6,19 +6,23 @@
 # REQUIRES: nvptx_backend
 # RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 %s | FileCheck %s
 
-from Assert import assert_param
 from Activations import gelu
+from Assert import assert_param
 from DType import DType
-from Range import range
-from Pointer import DTypePointer
-from NvidiaGPU import *
+from Functional import elementwise
+from Index import StaticIntTuple
 from IO import print
-from TargetInfo import triple_is_nvidia_cuda
+from NvidiaGPU import *
+from Pointer import DTypePointer
+from Range import range
+from TargetInfo import triple_is_nvidia_cuda, simdwidthof
+from LLCL import OutputChainPtr
 
 
 # ===----------------------------------------------------------------------===#
 # Check parameterization
 # ===----------------------------------------------------------------------===#
+
 
 # COM: Checks if we can do parameterization on the triple_is_nvidia_cuda check.
 # COM: In this case the code that would run on CUDA would return 42 and the
@@ -45,8 +49,37 @@ fn parameterized_on_cuda() -> Int:
 
 
 # ===----------------------------------------------------------------------===#
+# Check elementwise kernel
+# ===----------------------------------------------------------------------===#
+
+
+# CHECK-LABEL: gelu_elementwise
+# CHECK-DAG: tid.x
+# CHECK-DAG: ntid.x
+# CHECK-DAG: ctaid.x
+@export
+fn gelu_elementwise(buf: DTypePointer[DType.float32], len: Int):
+    alias granularity = 16
+
+    let tid = granularity * (ThreadIdx.x() + BlockDim.x() * BlockIdx.x())
+
+    @always_inline
+    @parameter
+    fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let offset = tid + idx[0]
+        if offset >= len:
+            return
+        buf.store(offset, gelu(buf.load(offset)))
+
+    elementwise[1, simdwidthof[DType.float32](), func](
+        StaticIntTuple[1](granularity), OutputChainPtr()
+    )
+
+
+# ===----------------------------------------------------------------------===#
 # Check full kernel
 # ===----------------------------------------------------------------------===#
+
 
 # CHECK-LABEL: gelu_kernel
 # CHECK-DAG: tid.x
