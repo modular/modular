@@ -44,6 +44,19 @@ struct MojoParserConfig {
                    const KGEN::CompilationOptions &options)
       : context(context), runtime(runtime), options(options) {}
 
+  /// This enum defines different levels of caching acceptible for the parser.
+  enum CachingLevel {
+    /// No caching is allowed.
+    kCacheNone,
+
+    /// Caching is allowed just for imported modules, main/input/root modules
+    /// are not cached.
+    kCacheImports,
+
+    /// Caching is allowed for all modules.
+    kCacheAll,
+  };
+
   /// The MLIR context to use when parsing the file.
   MLIRContext *context;
 
@@ -61,8 +74,8 @@ struct MojoParserConfig {
   /// If true, this will process and validate the doc strings in the file.
   bool validateDocStrings = false;
 
-  /// If true, module caching is enabled for the parser.
-  bool enableModuleCaching = true;
+  /// The level of module caching enabled in the parser.
+  CachingLevel moduleCachingLevel = kCacheAll;
 
   /// An optional listener that is used to inspect certain events of the parser.
   /// For simplicity it is a single item, but it could evolve into a list of

@@ -654,7 +654,7 @@ static int package(const State &state) {
       [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
         // TODO: We allow naming the package but parser caching doesn't
         // currently take this into account.
-        parserConfig.enableModuleCaching = false;
+        parserConfig.moduleCachingLevel = MojoParserConfig::kCacheNone;
 
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) =

@@ -313,8 +313,10 @@ public:
       parserConfig.validateDocStrings = true;
       parserConfig.parserListener = &parserListener;
 
-      // TODO: Enable caching here when we can symbolize references from IR.
-      parserConfig.enableModuleCaching = false;
+      // TODO: Enable full caching here when we can symbolize references from
+      // IR. We can enable references from imported modules though, as we just
+      // need definitions from cached IR.
+      parserConfig.moduleCachingLevel = MojoParserConfig::kCacheImports;
       parserContext =
           std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
     }

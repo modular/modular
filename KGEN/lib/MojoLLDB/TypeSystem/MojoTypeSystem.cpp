@@ -78,7 +78,7 @@ struct MojoTypeSystem::Impl {
 
     // Configure the parser context.
     MojoParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);
-    parserConfig.enableModuleCaching = false;
+    parserConfig.moduleCachingLevel = MojoParserConfig::kCacheNone;
     parserContext =
         std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
   }

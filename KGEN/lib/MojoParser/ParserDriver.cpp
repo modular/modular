@@ -47,7 +47,7 @@ using llvm::SourceMgr;
 
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
                               MojoParserConfig &config)
-    : sharedState(sourceMgr, config, config.enableModuleCaching) {
+    : sharedState(sourceMgr, config) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &sharedState.declResolver->addDecl(
@@ -200,7 +200,7 @@ M::importMojoPackage(StringRef path, StringRef packageName,
                                "' does not correspond to a package");
     return {};
   }
-  SharedState sharedState(sourceMgr, config, config.enableModuleCaching);
+  SharedState sharedState(sourceMgr, config);
   auto [module, packageDecl] = importMojoImpl(
       path, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
@@ -223,7 +223,7 @@ OwningOpRef<mlir::ModuleOp>
 M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                   mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles) {
-  SharedState sharedState(sourceMgr, config, config.enableModuleCaching);
+  SharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -242,5 +242,12 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   ASTDecl &moduleDecl =
       impl->sharedState.createModule(moduleName, sourceBuf, fileLoc);
   impl->sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+
+  // Now that resolution is finished, cache the state of modules we have parsed.
+  // TODO: We should be able to cache even in the presence of warnings and
+  // errors. We can store the diagnostics and replay on cache load.
+  if (!impl->sharedState.diags.isDiagnosticEmitted())
+    impl->sharedState.cacheParsedModules();
+
   return MojoASTDeclRef(&moduleDecl);
 }
