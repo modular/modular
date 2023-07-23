@@ -61,6 +61,9 @@ struct MojoParserConfig {
   /// If true, this will process and validate the doc strings in the file.
   bool validateDocStrings = false;
 
+  /// If true, module caching is enabled for the parser.
+  bool enableModuleCaching = true;
+
   /// An optional listener that is used to inspect certain events of the parser.
   /// For simplicity it is a single item, but it could evolve into a list of
   /// listeners.
@@ -246,8 +249,7 @@ bool isMojoSourcePackagePath(const std::filesystem::path &path);
 OwningOpRef<ModuleOp>
 importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                mlir::TimingScope &ts,
-               SmallVectorImpl<std::string> *includedFiles = nullptr,
-               bool enableCaching = true);
+               SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse a single mojo package at the given path and return the full context
 /// MLIR module, and the corresponding PackageOp for it.
@@ -258,15 +260,7 @@ std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
 importMojoPackage(StringRef path, StringRef packageName,
                   llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
                   mlir::TimingScope &ts,
-                  SmallVectorImpl<std::string> *includedFiles = nullptr,
-                  bool enableCaching = true);
-
-/// Parse a single .mojo file and produce an appropriate document detailing the
-/// API within the module. The generated documentation is piped into the
-/// provided output stream, in markdown format.
-LogicalResult generateMojoDoc(llvm::SourceMgr &sourceMgr,
-                              MojoParserConfig &config, raw_ostream &outputOS,
-                              mlir::TimingScope &ts);
+                  SmallVectorImpl<std::string> *includedFiles = nullptr);
 } // namespace M
 
 #endif // KGEN_MOJOPARSER_H

@@ -9,6 +9,8 @@
 
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
+#include "KGEN/MojoParser/ASTDeclView.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
@@ -22,6 +24,7 @@
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -111,9 +114,18 @@ static int doc(const State &state) {
   if (!out)
     return state.reportError(outputError);
 
-  if (failed(
-          generateMojoDoc(sourceManager, parserConfig, out->os(), timingScope)))
+  MojoParserContext parserContext(sourceManager, parserConfig);
+  MojoASTDeclRef moduleDecl =
+      parserContext.parseFile(sourceManager.getMainFileID());
+  if (!moduleDecl)
     return state.reportError("could not generate documentation");
+
+  std::unique_ptr<DeclView> declView = moduleDecl.getView();
+  if (!declView)
+    return state.reportError("could not generate documentation");
+
+  llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
+  jsonOS.value(declView->toJSON());
   out->keep();
   return EXIT_SUCCESS;
 }

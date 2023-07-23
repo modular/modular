@@ -312,6 +312,9 @@ public:
 
       parserConfig.validateDocStrings = true;
       parserConfig.parserListener = &parserListener;
+
+      // TODO: Enable caching here when we can symbolize references from IR.
+      parserConfig.enableModuleCaching = false;
       parserContext =
           std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
     }

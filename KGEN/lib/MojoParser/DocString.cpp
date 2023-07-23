@@ -151,38 +151,6 @@ DocString::DocString(DocStringAttr rawDocStringAttr)
 }
 
 //===----------------------------------------------------------------------===//
-// JSON Generation
-//===----------------------------------------------------------------------===//
-
-namespace {
-class JSONGenerator {
-public:
-  JSONGenerator(raw_ostream &os) : os(os, /*IndentSize=*/2) {}
-
-  void generate(ASTDecl &decl) {
-    TypeSwitch<ASTDecl &>(decl)
-        .Case<AliasDeclOp, FileModuleOp, LIT::FuncOp, StructDeclOp,
-              StructFieldOp>([&](auto op) {
-          os.value(MojoASTDeclRef(&decl).getView()->toJSON());
-        });
-  }
-
-private:
-  /// The output stream.
-  llvm::json::OStream os;
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
-// Entry Point
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::LIT::generateMojoDocJSON(ASTDecl &decl, raw_ostream &os) {
-  JSONGenerator generator(os);
-  generator.generate(decl);
-}
-
-//===----------------------------------------------------------------------===//
 // Verification
 //===----------------------------------------------------------------------===//
 
