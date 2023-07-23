@@ -11,6 +11,7 @@
 #include "KGEN/ExecutionEngine/ORCCASID.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
@@ -325,29 +326,34 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
 /// target triple, or an error if none exists.
 static ErrorOr<std::filesystem::path>
 getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session) {
-  std::filesystem::path path;
-  if (std::optional<std::string> derivedPath =
-          llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
-    path = *derivedPath;
-    path /= "build";
-  } else if (std::optional<std::string> homePath =
-                 llvm::sys::Process::GetEnv("MODULAR_HOME")) {
-    path = *homePath;
-  } else {
-    return Error("either MODULAR_DERIVED_PATH or MODULAR_HOME environment "
-                 "variables must be specified in order to find the "
-                 "KGENCompilerRTShared dynamic library");
-  }
+  auto cfgOr = Config::open();
+  if (cfgOr.isError())
+    return cfgOr.takeError();
+  Config cfg = std::move(*cfgOr);
 
-  if (session.getTargetTriple().isOSBinFormatMachO()) {
-    path /= "lib";
-    path /= "libKGENCompilerRTShared.dylib";
-  } else if (session.getTargetTriple().isOSBinFormatELF()) {
-    path /= "lib";
-    path /= "libKGENCompilerRTShared.so";
-  } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
-    path /= "bin";
-    path /= "KGENCompilerRTShared.dll";
+  // First, attempt to get the direct path to the binary.
+  // TODO: This is a variable the package installer should set when installing
+  //       the SDK.
+  StringRef libPath = cfg.getValue("mojo.compilerrt.path");
+  std::filesystem::path path = libPath.str();
+  if (libPath.empty()) {
+    StringRef derivedPath = cfg.getValue("derived.path");
+    // If we don't have the derived path, then use the home dir as the path.
+    if (derivedPath.empty())
+      path = Config::getModularHomeDirPath();
+    else
+      path = std::filesystem::path(derivedPath.str()) / "build";
+
+    if (session.getTargetTriple().isOSBinFormatMachO()) {
+      path /= "lib";
+      path /= "libKGENCompilerRTShared.dylib";
+    } else if (session.getTargetTriple().isOSBinFormatELF()) {
+      path /= "lib";
+      path /= "libKGENCompilerRTShared.so";
+    } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
+      path /= "bin";
+      path /= "KGENCompilerRTShared.dll";
+    }
   }
 
   return path;
