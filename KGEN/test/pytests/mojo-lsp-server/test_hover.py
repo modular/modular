@@ -90,12 +90,12 @@ async def test_hover_function_decls(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_decl(func_name: str, contents: str):
+    async def assert_decl(func_name: str, expected: str):
         range = fail_if_none(doc.find_first_range(func_name))
         result = fail_if_none(await requests.hover(doc, range.start))
         assert result.range == range
         assert isinstance(result.contents, MarkupContent)
-        assert result.contents.value == contents
+        assert result.contents.value == expected
 
     await assert_decl(
         "__init__",
@@ -218,29 +218,40 @@ async def test_hover_struct_decls(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_decl(func_name: str, contents: List[str]):
+    async def assert_decl(func_name: str, expected: str):
         range = fail_if_none(doc.find_first_range(func_name))
         result = fail_if_none(await requests.hover(doc, range.start))
         assert result.range == range
         assert isinstance(result.contents, MarkupContent)
-        for content in contents:
-            assert content in result.contents.value
+        assert result.contents.value == expected
 
     await assert_decl(
         "SomeStruct",
-        [
-            "### struct `SomeStruct`",
-            "Docstring for SomeStruct.",
-            "More docstring for SomeStruct.",
-            "#### Parameters:",
-            "size: The size of SomeStruct.",
-            "#### Constraints:",
-            "The contraints of SomeStruct.",
-            """###
+        """### struct `SomeStruct`
+
+---
+
+###
+Docstring for SomeStruct.
+
+More docstring for SomeStruct.
+
+
+#### Parameters:
+&nbsp;&nbsp;size: The size of SomeStruct.
+\\
+&nbsp;&nbsp;other_param: Another param.
+
+#### Constraints:
+&nbsp;&nbsp;The contraints of SomeStruct.
+
+
+---
+
+###
 ```mojo
-struct SomeStruct[size: Int]
+struct SomeStruct[size: Int, other_param: Bool]
 ```""",
-        ],
     )
 
 
@@ -320,12 +331,12 @@ async def test_hover_struct_field_decls(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_decl(func_name: str, contents: str):
+    async def assert_decl(func_name: str, expected: str):
         range = fail_if_none(doc.find_first_range(func_name))
         result = fail_if_none(await requests.hover(doc, range.start))
         assert result.range == range
         assert isinstance(result.contents, MarkupContent)
-        assert contents == result.contents.value
+        assert result.contents.value == expected
 
     await assert_decl(
         "a_field",

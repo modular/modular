@@ -216,14 +216,6 @@ static llvm::json::Array toJSONArray(const JSONSerializableItems &items) {
   return jsonItems;
 }
 
-// Lambda that returns true if at least one item of the given collection has
-// non-empty description.
-template <typename Items>
-static bool hasAnyItemDescription(const Items &items) {
-  return llvm::any_of(
-      items, [](const auto &item) { return !item.getDescription().empty(); });
-};
-
 /// Dump the markdown header common to all decls that support docstring
 /// documentation.
 static void dumpMarkdownDocumentationHeader(llvm::raw_ostream &os,
@@ -238,6 +230,41 @@ static void dumpMarkdownDocumentationHeader(llvm::raw_ostream &os,
 
 static void dumpMarkdownSectionTitle(llvm::raw_ostream &os, StringRef title) {
   os << "\n#### " << title << ":\n";
+}
+
+/// Dump a markdown section with a list of decls. Each decl is printed with the
+/// format `name: description`. Decls without description are ommitted, and the
+/// section title is only dumped if there is at least one decl to show.
+template <typename DeclViewList>
+static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,
+                                        StringRef sectionTitle,
+                                        const DeclViewList &decls) {
+  bool isFirst = true;
+  for (const auto &decl : decls) {
+    if (decl.getDescription().empty())
+      continue;
+
+    if (isFirst) {
+      isFirst = false;
+      /// We only show the section title if there's at least one item to show.
+      dumpMarkdownSectionTitle(os, sectionTitle);
+    } else {
+      /// This is a special separator for unbulleted lists.
+      os << "\\\n";
+    }
+    os << kMarkdownIndent << decl.getName() << ": " << decl.getDescription()
+       << "\n";
+  }
+}
+
+/// Dump a markdown section with plain text as content and a section title. The
+/// section is only dumped if the text is not empty.
+static void dumpMarkdownTextSection(llvm::raw_ostream &os,
+                                    StringRef sectionTitle, StringRef text) {
+  if (!text.empty()) {
+    dumpMarkdownSectionTitle(os, sectionTitle);
+    os << kMarkdownIndent << text << "\n";
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -430,31 +457,10 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   llvm::raw_string_ostream os(markdown);
 
   dumpMarkdownDocumentationHeader(os, summary, description);
-
-  if (hasAnyItemDescription(parameters)) {
-    dumpMarkdownSectionTitle(os, "Parameters");
-    for (const auto &param : parameters) {
-      if (auto desc = param.getDescription(); !desc.empty())
-        os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
-    }
-  }
-
-  if (hasAnyItemDescription(args)) {
-    dumpMarkdownSectionTitle(os, "Args");
-    for (const auto &arg : args)
-      if (auto desc = arg.getDescription(); !desc.empty())
-        os << kMarkdownIndent << arg.getName() << ": " << desc << "  \n";
-  }
-
-  if (!returns.empty()) {
-    dumpMarkdownSectionTitle(os, "Returns");
-    os << kMarkdownIndent << returns << "\n";
-  }
-
-  if (!constraints.empty()) {
-    dumpMarkdownSectionTitle(os, "Constraints");
-    os << kMarkdownIndent << constraints << "\n";
-  }
+  dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
+  dumpMarkdownDeclListSection(os, DocString::kSectionArgs, args);
+  dumpMarkdownTextSection(os, DocString::kSectionReturns, returns);
+  dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
 
   return markdown;
 }
@@ -671,19 +677,8 @@ std::string StructDeclView::getMarkdownDocString() const {
   llvm::raw_string_ostream os(markdown);
 
   dumpMarkdownDocumentationHeader(os, summary, description);
-
-  if (hasAnyItemDescription(parameters)) {
-    dumpMarkdownSectionTitle(os, "Parameters");
-    for (const auto &param : parameters) {
-      if (auto desc = param.getDescription(); !desc.empty())
-        os << kMarkdownIndent << param.getName() << ": " << desc << "  \n";
-    }
-  }
-
-  if (!constraints.empty()) {
-    dumpMarkdownSectionTitle(os, "Constraints");
-    os << kMarkdownIndent << constraints << "\n";
-  }
+  dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
+  dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
 
   return markdown;
 }
