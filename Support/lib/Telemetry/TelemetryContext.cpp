@@ -11,6 +11,7 @@
 #include "llvm/ADT/Twine.h"
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/log_record_exporter.h"
@@ -106,10 +107,15 @@ TelemetryContext::TelemetryContext() {
 #endif // MODULAR_ENABLE_TELEMETRY
 }
 
-TelemetryContext::~TelemetryContext() {
+TelemetryContext::~TelemetryContext() { flush(); }
+
+void TelemetryContext::flush() {
 #ifdef MODULAR_ENABLE_TELEMETRY
+  // From OTel: Export must not be called concurrently for the same exporter
+  // instance (collectAndExport calls Export).
+  std::lock_guard<std::mutex> lock(exportLock);
   metricReader->collectAndExport();
-#endif
+#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 } // namespace M::Telemetry
