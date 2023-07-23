@@ -47,7 +47,7 @@ using llvm::SourceMgr;
 
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
                               MojoParserConfig &config)
-    : sharedState(sourceMgr, config, /*enableCaching=*/false) {
+    : sharedState(sourceMgr, config, config.enableModuleCaching) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &sharedState.declResolver->addDecl(
@@ -188,10 +188,11 @@ bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
   return false;
 }
 
-std::pair<OwningOpRef<ModuleOp>, PackageOp> M::importMojoPackage(
-    StringRef path, StringRef packageName, llvm::SourceMgr &sourceMgr,
-    MojoParserConfig &config, mlir::TimingScope &ts,
-    SmallVectorImpl<std::string> *includedFiles, bool enableCaching) {
+std::pair<OwningOpRef<ModuleOp>, PackageOp>
+M::importMojoPackage(StringRef path, StringRef packageName,
+                     llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+                     mlir::TimingScope &ts,
+                     SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -199,7 +200,7 @@ std::pair<OwningOpRef<ModuleOp>, PackageOp> M::importMojoPackage(
                                "' does not correspond to a package");
     return {};
   }
-  SharedState sharedState(sourceMgr, config, /*enableCaching=*/false);
+  SharedState sharedState(sourceMgr, config, config.enableModuleCaching);
   auto [module, packageDecl] = importMojoImpl(
       path, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
@@ -218,10 +219,11 @@ std::pair<OwningOpRef<ModuleOp>, PackageOp> M::importMojoPackage(
   return {std::move(module), cast<PackageOp>(*packageDecl)};
 }
 
-OwningOpRef<mlir::ModuleOp> M::importMojoFile(
-    llvm::SourceMgr &sourceMgr, MojoParserConfig &config, mlir::TimingScope &ts,
-    SmallVectorImpl<std::string> *includedFiles, bool enableCaching) {
-  SharedState sharedState(sourceMgr, config, enableCaching);
+OwningOpRef<mlir::ModuleOp>
+M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
+                  mlir::TimingScope &ts,
+                  SmallVectorImpl<std::string> *includedFiles) {
+  SharedState sharedState(sourceMgr, config, config.enableModuleCaching);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
@@ -241,17 +243,4 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
       impl->sharedState.createModule(moduleName, sourceBuf, fileLoc);
   impl->sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
   return MojoASTDeclRef(&moduleDecl);
-};
-
-LogicalResult M::generateMojoDoc(llvm::SourceMgr &sourceMgr,
-                                 MojoParserConfig &config,
-                                 raw_ostream &outputOS, mlir::TimingScope &ts) {
-  SharedState sharedState(sourceMgr, config);
-  auto [module, moduleDecl] = importMojoFileImpl(sourceMgr, sharedState, ts);
-  if (!module)
-    return failure();
-
-  auto docTS = ts.nest("Mojo Documentation Generation");
-  generateMojoDocJSON(*moduleDecl, outputOS);
-  return success();
 }

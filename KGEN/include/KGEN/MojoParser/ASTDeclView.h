@@ -189,6 +189,16 @@ public:
 
   StringRef getValue() const { return value; }
 
+  /// The output of the generation is defined in the following format:
+  ///
+  /// Alias:
+  ///  {
+  ///    "kind": "alias",
+  ///    "name": "...",
+  ///    "value": "...",
+  ///    "summary": "...",
+  ///    "description": "..."
+  ///  }
   llvm::json::Object toJSON() const override;
 
 public:
@@ -255,6 +265,36 @@ public:
   /// Return true if this function raises.
   bool raises() const { return raisesFlag; }
 
+  /// The output of the generation is defined in the following format:
+  ///
+  /// Function:
+  /// {
+  ///   "kind": "function",
+  ///   "name": "baz",
+  ///   "overloads": [
+  ///     {
+  ///       "signature": "baz() -> Int",
+  ///       "summary": "...",
+  ///       "description": "...",
+  ///       "args": [
+  ///         {
+  ///           "name": "foo",
+  ///           "type": "Int",
+  ///           "description": "...",
+  ///         }
+  ///       ]
+  ///       "parameters": [
+  ///         {
+  ///           "name": "bar",
+  ///           "type": "Int",
+  ///           "description": "...",
+  ///         }
+  ///       ],
+  ///       "returns": "...",
+  ///       "constraints": "..."
+  ///     }
+  ///   ]
+  /// }
   llvm::json::Object toJSON() const override;
 
 public:
@@ -390,6 +430,24 @@ public:
   /// Return the parameters of this struct.
   ArrayRef<ParameterDeclView> getParameters() const { return parameters; }
 
+  /// The output of the generation is defined in the following format:
+  /// Struct:
+  /// {
+  ///   "kind": "struct",
+  ///   "name": "...",
+  ///   "summary": "...",
+  ///   "description": "...",
+  ///   "parameters": [
+  ///     {
+  ///       "name": "bar",
+  ///       "type": "Int",
+  ///       "description": "...",
+  ///     }
+  ///   ],
+  ///   "aliases": [ ... ],
+  ///   "functions": [ ... ],
+  ///   "structs": [ ... ]
+  /// }
   llvm::json::Object toJSON() const override;
 
 public:
@@ -439,6 +497,18 @@ public:
   /// Return the structs defined at the top-level of this module.
   llvm::ArrayRef<StructDeclView> getStructs() const { return structs; }
 
+  /// The output of the generation is defined in the following format:
+  ///
+  /// Module:
+  /// {
+  ///   "kind": "module",
+  ///   "name": "...",
+  ///   "summary": "...",
+  ///   "description": "...",
+  ///   "aliases": [ ... ],
+  ///   "functions": [ ... ],
+  ///   "structs": [ ... ]
+  /// }
   llvm::json::Object toJSON() const override;
 
 public:
