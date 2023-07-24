@@ -241,6 +241,28 @@ lit.func @ref(%e: !kgen.declref<@Error>,
   lit.end_func
 }
 
+// CHECK-LABEL: lit.func @suppressed_try
+lit.func @suppressed_try() throws -> !lit.none {
+  lit.try {
+    lit.try.yield
+  } except (%err: !kgen.declref<@Error>) {
+    // CHECK: except (
+    // CHECK-NEXT: kgen.unreachable
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    lit.try.yield
+  } else {
+    %none = kgen.param.constant: !lit.none = <#lit.none>
+    lit.return %none : !lit.none
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  } {"suppressWarnings" = true}
+  // CHECK: kgen.unreachable
+  // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
+  kgen.param.constant: <>(!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
+  lit.end_func
+}
+
 // CHECK-LABEL: @parametric_throws
 // CHECK-SAME:  -> !pop.variant<@Error, !lit.none>
 lit.func @parametric_throws<fn: <>() throws -> !pop.variant<@Error, !lit.none>>() throws -> !pop.variant<@Error, !lit.none> {

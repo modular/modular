@@ -571,6 +571,8 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
     representation mode and is not modeled through the HLCF abstraction.
   }];
 
+  let arguments = (ins
+    DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
@@ -582,7 +584,8 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
   }];
 
   let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, {}, 1); }]>
+    OpBuilder<(ins CArg<"bool", "false">:$suppressWarnings),
+      [{ build($_builder, $_state, {}, suppressWarnings, 1); }]>,
   ];
 
   let extraClassDeclaration = [{
