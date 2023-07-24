@@ -152,6 +152,7 @@ fn MOGGExport():
     alias _softmax = softmax
     alias _split_ith_output_shape = split_ith_output_shape
     alias _split = split
+    alias _reduce_shape = reduce_shape
     alias _reduce_add = reduce_add
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
@@ -903,7 +904,7 @@ fn mean[
 
 
 # ===----------------------------------------------------------------------===#
-# Sum op
+# Reduction ops
 # ===----------------------------------------------------------------------===#
 
 
@@ -1087,8 +1088,37 @@ fn reduce_mul[
     ](input_buffer, 1, reduce_dim, out_chain)
 
 
+@always_inline
+fn reduce_shape[
+    rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[rank]:
+
+    # extract hyper parameter
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < rank,
+        "normalized axis must be within range [0, rank)",
+    )
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_shape()
+    output_shape[axis] = 1
+    return output_shape
+
+
+# ===----------------------------------------------------------------------===#
 # Slice op
 # ===----------------------------------------------------------------------===#
+
 
 # Wrapper for slice here to include the `single_thread_blocking_override`.
 @always_inline
