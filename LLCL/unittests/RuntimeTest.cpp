@@ -8,6 +8,7 @@
 
 #include "gtest/gtest.h"
 
+using namespace M;
 using namespace M::LLCL;
 
 std::unique_ptr<Runtime> createRuntime() {
@@ -18,53 +19,74 @@ std::unique_ptr<Runtime> createRuntime() {
 }
 
 //===----------------------------------------------------------------------===//
-// Runtime configuration
+// Runtime contexts
 //===----------------------------------------------------------------------===//
 
-struct ConfigA {
+struct ContextA {
   int i = 42;
 
-  ConfigA() = default;
-  ConfigA(int i) : i(i) {}
+  ContextA() = default;
+  ContextA(int i) : i(i) {}
 };
 
-struct ConfigB {
+struct ContextB {
   bool b = true;
   char lots[26]; // Give this struct a large but unaligned size
 
-  ConfigB() = default;
+  ContextB() = default;
 };
 
-struct ConfigC {
+struct ContextC {
   char c = 'a';
 };
 
-TEST(RuntimeTest, Configurations) {
+TEST(RuntimeTest, Contexts) {
   auto runtime = createRuntime();
 
-  ConfigA &configARef = runtime->emplaceConfig<ConfigA>(5);
-  runtime->emplaceConfig<ConfigB>();
+  ContextA &ContextARef = runtime->emplaceContext<ContextA>(5);
+  runtime->emplaceContext<ContextB>();
 
-  ++configARef.i;
+  ++ContextARef.i;
 
-  const ConfigA *configAPtr = runtime->getConfig<ConfigA>();
-  const ConfigB *configBPtr = runtime->getConfig<ConfigB>();
-  const ConfigC *configCPtr = runtime->getConfig<ConfigC>();
+  ContextA *ContextAPtr = runtime->getContext<ContextA>();
+  ContextB *ContextBPtr = runtime->getContext<ContextB>();
+  ContextC *ContextCPtr = runtime->getContext<ContextC>();
 
-  ASSERT_NE(configAPtr, nullptr);
-  EXPECT_EQ(configAPtr->i, 6);
-  ASSERT_NE(configBPtr, nullptr);
-  EXPECT_EQ(configBPtr->b, true);
-  EXPECT_EQ(configCPtr, nullptr);
+  ASSERT_NE(ContextAPtr, nullptr);
+  EXPECT_EQ(ContextAPtr->i, 6);
+  ASSERT_NE(ContextBPtr, nullptr);
+  EXPECT_EQ(ContextBPtr->b, true);
+  EXPECT_EQ(ContextCPtr, nullptr);
+
+  bool created = false;
+  ErrorOr<ContextC *> contextCOr = runtime->createContextIfMissing<ContextC>(
+      [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
+        created = true;
+        return std::make_unique<ContextC>();
+      });
+  ASSERT_TRUE(created);
+  ASSERT_FALSE(contextCOr.isError());
+  ASSERT_EQ((*contextCOr)->c, 'a');
+
+  created = false;
+  ErrorOr<ContextC *> contextCAgainOr =
+      runtime->createContextIfMissing<ContextC>(
+          [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
+            created = true;
+            return std::make_unique<ContextC>();
+          });
+  ASSERT_FALSE(created);
+  ASSERT_FALSE(contextCAgainOr.isError());
+  ASSERT_EQ(*contextCAgainOr, *contextCOr);
 }
 
 #ifndef NDEBUG
-TEST(RuntimeTest, Configurations_ExpectDeath) {
+TEST(RuntimeTest, Contexturations_ExpectDeath) {
   auto runtime = createRuntime();
 
-  runtime->emplaceConfig<ConfigA>();
+  runtime->emplaceContext<ContextA>();
 
-  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceConfig<ConfigA>(),
-                            "Runtime already holds configuration of type");
+  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextA>(),
+                            "Runtime already holds context of type");
 }
 #endif
