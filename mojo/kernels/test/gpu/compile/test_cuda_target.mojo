@@ -59,7 +59,8 @@ fn parameterized_on_cuda() -> Int:
 # CHECK-DAG: ctaid.x
 @export
 fn gelu_elementwise(buf: DTypePointer[DType.float32], len: Int):
-    alias granularity = 16
+    # Each thread will process 4 * simd_width elements.
+    alias granularity = 4 * simdwidthof[DType.float32]()
 
     let tid = granularity * (ThreadIdx.x() + BlockDim.x() * BlockIdx.x())
 
