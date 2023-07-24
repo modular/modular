@@ -111,6 +111,7 @@ fn MOGGExport():
     alias _equal = equal
     alias _floor = floor
     alias _gather = _gather_with_lambdas
+    alias _gather_shape = gather_shape
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _greater = greater
@@ -1362,6 +1363,60 @@ fn _gather_with_lambdas[
             output.dynamic_shape,
             out_chain,
         )
+
+
+@always_inline
+fn gather_shape[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    indices_buf: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[output_rank]:
+    assert_param[
+        output_rank == input_rank + indices_rank - 1,
+        "output rank must equal (input_rank + indices_rank - 1)",
+    ]()
+
+    # extract hyper parameter
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += input_rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < input_rank,
+        "normalized axis must be within range [0, input_rank)",
+    )
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[output_rank]()
+    var next_out_dim = 0
+
+    let input_shape = input_buf.get_shape()
+    for i in range(axis):
+        output_shape[next_out_dim] = input_shape[i]
+        next_out_dim += 1
+
+    let indices_shape = indices_buf.get_shape()
+    for i in range(indices_rank):
+        output_shape[next_out_dim] = indices_shape[i]
+        next_out_dim += 1
+
+    for i in range(axis + 1, input_rank):
+        output_shape[next_out_dim] = input_shape[i]
+        next_out_dim += 1
+
+    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
