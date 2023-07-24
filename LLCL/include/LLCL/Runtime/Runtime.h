@@ -38,7 +38,7 @@ class WorkQueue;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
-/// global context. This is also the natural unit for task cancellation.
+/// global context objects. This is also the natural unit for task cancellation.
 class Runtime final {
 public:
   /// Construct runtime with allocator and workQueue. If profileFilename is
@@ -105,36 +105,60 @@ public:
   }
 
   //===--------------------------------------------------------------------===//
-  // Configuration
+  // Contexts
   //===--------------------------------------------------------------------===//
 
-  /// Emplaces a new configuration of type T into the runtime's set of
-  /// configurations and returns a reference to it. The runtime can hold at
-  /// most one configuration per T. The returned reference is stable for the
-  /// life of the runtime. This method is not thread safe, and it is expected
-  /// all required configurations are emplaced before any tasks using getConfig
-  /// below begin execution.
+  /// Emplaces a new global context object of type T into the runtime's set of
+  /// contexts and returns a reference to it. The runtime can hold at
+  /// most one context object per T. The returned reference is stable for the
+  /// life of the runtime. Thread safe, though the caller is responsible for
+  /// thread safe access to the context object itself.
   template <typename T, typename... Args>
-  T &emplaceConfig(Args &&...args) {
+  T &emplaceContext(Args &&...args) {
+    std::lock_guard<std::mutex> lock(mu);
     auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
     auto denseIndex = genericPtr.getTypeID().getDenseIndex();
-    assert(!configs.contains(denseIndex) &&
-           "Runtime already holds configuration of type");
+    assert(!contexts.contains(denseIndex) &&
+           "Runtime already holds context of type");
     T &result = *genericPtr.template get<T>();
-    configs.insert({denseIndex, std::move(genericPtr)});
+    contexts.insert({denseIndex, std::move(genericPtr)});
     return result;
   }
 
-  /// Returns a pointer to the configuration of type T held by the runtime,
-  /// or nullptr if no such configuration is held. This method is thread safe,
-  /// on the assumption no further calls to emplaceConfig will be made.
+  /// Returns a pointer to the global context object of type T held by the
+  /// runtime, or nullptr if no such object is held. Thread safe, though the
+  /// caller is responsible for thread safe access to the context object itself.
   template <typename T>
-  const T *getConfig() const {
+  T *getContext() {
+    std::lock_guard<std::mutex> lock(mu);
     auto denseIndex = TypeID::get<T>().getDenseIndex();
-    auto itr = configs.find(denseIndex);
-    if (itr == configs.end())
+    auto itr = contexts.find(denseIndex);
+    if (itr == contexts.end())
       return nullptr;
     return itr->second.template get<T>();
+  }
+
+  /// If the runtime does not already hold a global context object of type T,
+  /// calls the creator function to create one and installs it. Returns either
+  /// the existing or freshly created object. Returns any error the creator
+  /// function returns. Thread safe, though the caller is responsible for
+  /// thread safe access to the context object itself.
+  template <typename T>
+  ErrorOr<T *> createContextIfMissing(
+      llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
+    std::lock_guard<std::mutex> lock(mu);
+    auto denseIndex = TypeID::get<T>().getDenseIndex();
+    auto itr = contexts.find(denseIndex);
+    if (itr != contexts.end())
+      return itr->second.template get<T>();
+    ErrorOr<std::unique_ptr<T>> errOr = creator();
+    if (errOr.isError())
+      return errOr.takeError();
+    T *result = errOr->get();
+    GenericUniquePtr genericPtr;
+    genericPtr.template reset(std::move(*errOr));
+    contexts.insert({denseIndex, std::move(genericPtr)});
+    return result;
   }
 
 private:
@@ -176,10 +200,13 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
+  /// Protects contexts.
+  std::mutex mu;
+
   /// A map from globally unique type identifiers TypeID::get<T>() (using
-  /// their 'dense index' form) to GenericUniquePtr holding the config object
-  /// of type T.
-  DenseMap<size_t, GenericUniquePtr> configs;
+  /// their 'dense index' form) to GenericUniquePtr holding the global context
+  /// object of type T.
+  DenseMap<size_t, GenericUniquePtr> contexts;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };
