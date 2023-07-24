@@ -207,6 +207,12 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Await(LLCLOutputChainRef outChain) {
   unwrap(outChain).await();
 }
 
+/// Assert fail if outChain is not ready.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady(LLCLOutputChainRef outChain) {
+  unwrap(outChain).assertReady();
+}
+
 /// Begins a profiling entry with name and detail when called, and ends it
 /// when outChain is completed. If an entry already exists, merge the name
 /// and details.
@@ -272,6 +278,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Destroy});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Await",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Await});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_Trace",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Trace});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask",

@@ -23,6 +23,11 @@ OutputChain OutputChain::fork() {
 
 void OutputChain::await() { LLCL::await(chain); }
 
+void OutputChain::assertReady() {
+  assert(chain.isValueAvailable() &&
+         "assertReady failed: output chain is not ready");
+}
+
 void OutputChain::transfer(LLCL::AnyAsyncValueRef &&argRef) {
   refs.emplace_back(std::move(argRef));
 }

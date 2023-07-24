@@ -70,33 +70,35 @@ struct OutputChain {
   OutputChain(AsyncValueRef<Chain> chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
 
-  // No implicit copying.
+  /// No implicit copying.
   OutputChain(OutputChain &) = delete;
   OutputChain &operator=(const OutputChain &) = delete;
 
   OutputChain(OutputChain &&) = default;
   OutputChain &operator=(OutputChain &&) = default;
 
-  // Return a 'fork' of this output chain:
-  //  - The chain and location are copied, so are valid in both this and the
-  //    result.
-  //  - The prototypeProfilerEntry and all refs are moved into the result,
-  //    on the assumption the caller will create sub-tasks and take
-  //    responsibility for calling markReady/markError when they complete.
-  //  - The profilerEntry is not moved or copied, on the assumption it
-  //    will be recorded by recordProfilerEntry.
-  //
-  // Called from Mojo asynchronous kernels to prepare for executing sub-tasks.
-  // The fork result will constructed into a heap allocated object, and
-  // deleted from the Mojo side when all sub-tasks have completed.
-  //
-  // Synchronous Mojo kernels will not call fork, and instead will work
-  // directly with the output chain passed to them.
+  /// Return a 'fork' of this output chain:
+  ///  - The chain and location are copied, so are valid in both this and the
+  ///    result.
+  ///  - The prototypeProfilerEntry and all refs are moved into the result,
+  ///    on the assumption the caller will create sub-tasks and take
+  ///    responsibility for calling markReady/markError when they complete.
+  ///  - The profilerEntry is not moved or copied, on the assumption it
+  ///    will be recorded by recordProfilerEntry.
+  ///
+  /// Called from Mojo asynchronous kernels to prepare for executing sub-tasks.
+  /// The fork result will constructed into a heap allocated object, and
+  /// deleted from the Mojo side when all sub-tasks have completed.
+  ///
+  /// Synchronous Mojo kernels will not call fork, and instead will work
+  /// directly with the output chain passed to them.
   OutputChain fork();
 
-  // Processes work items until the chain is completed.
-  // FOR USE BY TESTING AND SEARCH ONLY.
+  /// Processes work items until the chain is completed.
   void await();
+
+  /// Assert fail if the underlying chain is not ready.
+  void assertReady();
 
   /// Returns the runtime associated with this output chain.
   LLCL::CompactRuntimePtr getRuntime() const { return chain.getRuntime(); }
