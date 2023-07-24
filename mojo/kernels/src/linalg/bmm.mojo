@@ -25,7 +25,7 @@ from Memory import memset_zero
 from MOGG import soft_fusion_run_wrapper
 from TargetInfo import simdwidthof
 from Functional import (
-    async_parallelize,
+    sync_parallelize,
     _get_start_indices_of_nth_subvolume,
     vectorize_unroll,
 )
@@ -35,7 +35,7 @@ from Reductions import _reduce_generator
 
 
 @always_inline
-fn batched_matmul_parallel_async[
+fn batched_matmul_parallel_sync[
     rank: Int,
     type: DType,
     adj_a: Bool,
@@ -128,7 +128,7 @@ fn batched_matmul_parallel_async[
     @parameter
     @always_inline
     fn func(chain: OutputChainPtr):
-        return batched_matmul_parallel_async[
+        return batched_matmul_parallel_sync[
             rank,
             type,
             adj_a,
@@ -139,7 +139,7 @@ fn batched_matmul_parallel_async[
 
 
 @always_inline
-fn batched_matmul_parallel_async[
+fn batched_matmul_parallel_sync[
     rank: Int,
     type: DType,
     adj_a: Bool,
@@ -165,7 +165,7 @@ fn batched_matmul_parallel_async[
     ):
         pass
 
-    batched_matmul_parallel_async[
+    batched_matmul_parallel_sync[
         rank,
         type,
         adj_a,
@@ -177,7 +177,7 @@ fn batched_matmul_parallel_async[
 
 
 @always_inline
-fn batched_matmul_parallel_async[
+fn batched_matmul_parallel_sync[
     rank: Int,
     type: DType,
     adj_a: Bool,
@@ -369,7 +369,7 @@ fn batched_matmul_parallel_async[
                 rowwise_closure,
             )
 
-    async_parallelize[task_func](out_chain, num_tasks)
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 @always_inline

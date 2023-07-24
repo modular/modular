@@ -22,7 +22,7 @@ from Functional import (
     unroll,
     vectorize,
     vectorize_unroll,
-    async_parallelize,
+    sync_parallelize,
 )
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
@@ -1853,7 +1853,7 @@ fn small_matmul_sync[
 
 
 @always_inline
-fn matmul_parallel_async[
+fn matmul_parallel_sync[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1887,7 +1887,7 @@ fn matmul_parallel_async[
     @parameter
     @always_inline
     fn func(chain: OutputChainPtr):
-        matmul_parallel_async[
+        matmul_parallel_sync[
             a_type,
             b_type,
             c_type,
@@ -1901,7 +1901,7 @@ fn matmul_parallel_async[
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
-fn matmul_parallel_async[
+fn matmul_parallel_sync[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1921,7 +1921,7 @@ fn matmul_parallel_async[
     ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
         pass
 
-    matmul_parallel_async[
+    matmul_parallel_sync[
         a_type,
         b_type,
         c_type,
@@ -1933,7 +1933,7 @@ fn matmul_parallel_async[
     ](c, a, b, out_chain, num_threads)
 
 
-fn matmul_parallel_async[
+fn matmul_parallel_sync[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1984,13 +1984,9 @@ fn matmul_parallel_async[
             elementwise_lambda_fn,
         ](c, a, b, sub_matmul_config.shape, sub_matmul_config.offset)
 
-    async_parallelize[task_func](out_chain, num_tasks)
-
     # TODO (#12624): Closure captures some state on the stack so this needs
     # to be synchronous in order to keep that state alive
-    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-        out_chain.ptr
-    )
+    sync_parallelize[task_func](out_chain, num_tasks)
 
 
 fn _submatmul_sequential_sync[

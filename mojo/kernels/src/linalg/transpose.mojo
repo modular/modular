@@ -11,6 +11,7 @@ from DType import DType
 from Functional import (
     unroll,
     async_parallelize,
+    sync_parallelize,
     vectorize,
     unroll,
     tile,
@@ -1079,7 +1080,9 @@ fn _copy_with_strides[
                 next_input_offset += input_axis_stride
                 next_output_offset += output_axis_stride
 
-        async_parallelize[_parallel_copy](out_chain, num_tasks)
+        # TODO: transpose_strided is using stack allocated structueres and
+        # so depends on us being synchronous. We need a better way to do this.
+        sync_parallelize[_parallel_copy](out_chain, num_tasks)
 
 
 fn transpose_strided[
@@ -1113,6 +1116,8 @@ fn transpose_strided[
     # ~ output.at(offset([x, y, z], output_strides)) = input.at(offset([x, y, z], permuted_input_strides))
     # ~ output.at(offset(index, output_strides)) = input.at(offset(index, permuted_input_strides))
     alias init_axis = 0
+    # NOTE: Synchronous, so the stack allocated input_strides, permuted_input_strings
+    # and output_strides are safe to use.
     _copy_with_strides[rank, output_shape, type](
         init_axis,
         output,
@@ -1123,11 +1128,6 @@ fn transpose_strided[
         0,  # output_offset
         out_chain,
     )
-    # TODO: We need to figure out a better way to do this, since we do not want
-    # to await here, but then we cannot free until all threads have used the
-    # strides. We need an out_chain.andThen(...) mechanism.
-    if out_chain:
-        out_chain.wait()
     input_strides.free()
     permuted_input_strides.free()
     output_strides.free()
