@@ -1489,82 +1489,6 @@ fn batched_matmul[
     alias adj_a = False
     alias adj_b = False
 
-    alias simd_width = simdwidthof[type]()
-
-    @parameter
-    if single_thread_blocking_override and rank == 3:
-        let B = a.dim[0]()
-        let M = a.dim[1]()
-        let N = b.dim[2]()
-        let K = a.dim[2]()
-
-        if M == 1 and N == 1:
-            for batch in range(B):
-                let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    a.data + batch * K, Index(K), type
-                )
-                let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    b.data + batch * K, Index(K), type
-                )
-
-                @always_inline
-                @parameter
-                fn input_fn[
-                    type: DType, width: Int, rank: Int
-                ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
-                    return (
-                        a_view.simd_load[width](idx[0])
-                        * b_view.simd_load[width](idx[0])
-                    ).cast[type]()
-
-                @always_inline
-                @parameter
-                fn output_fn[
-                    out_type: DType, width: Int, r: Int
-                ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
-                    c.simd_store[width](
-                        StaticIntTuple[rank](batch, 0, 0), value.cast[type]()
-                    )
-
-                @always_inline
-                fn reduce_impl[
-                    ty: DType, width: Int
-                ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-                    return v1 + v2
-
-                _reduce_generator[
-                    type,
-                    1,
-                    simdwidthof[type](),
-                    single_thread_blocking_override,
-                    input_fn,
-                    output_fn,
-                    reduce_impl,
-                ](a_view, 0, 0, out_chain)
-
-        else:
-            for batch in range(B):
-                memset_zero(c.data + batch * M * N, M * N)
-                for m in range(M):
-                    for k in range(K):
-                        let a_val = a[batch, m, k]
-
-                        @always_inline
-                        @parameter
-                        fn compute_fn[simd_width: Int](n: Int):
-                            c.simd_store[simd_width](
-                                StaticIntTuple[rank](batch, m, n),
-                                c.simd_load[simd_width](batch, m, n)
-                                + a_val * b.simd_load[simd_width](batch, k, n),
-                            )
-
-                        alias unroll_factor = 2
-
-                        vectorize_unroll[simd_width, unroll_factor, compute_fn](
-                            N
-                        )
-        return
-
     @always_inline
     @parameter
     fn description_fn() -> String:
@@ -1579,17 +1503,9 @@ fn batched_matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
 
-    @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
-        return batched_matmul_parallel_async[
-            rank,
-            type,
-            adj_a,
-            adj_b,
-        ](c, a, b, chain)
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+    return batched_matmul_parallel_async[
+        rank, type, adj_a, adj_b, single_thread_blocking_override
+    ](c, a, b, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
