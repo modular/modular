@@ -97,6 +97,8 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   [[maybe_unused]] auto timeScope =
       sharedState.runtime.getTelemetryContext()->createUInt64Timer(
           "mojo.parser.compile.time");
+  [[maybe_unused]] auto flushTelemetry =
+      sharedState.runtime.getTelemetryContext()->autoFlush();
 
   // This is the result module we are parsing into.
   auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,

@@ -129,6 +129,8 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
   [[maybe_unused]] auto timeScope =
       runtime.getTelemetryContext()->createUInt64Timer(
           "mojo.llvm.optimize.time");
+  [[maybe_unused]] auto flushTelemetry =
+      runtime.getTelemetryContext()->autoFlush();
   using namespace llvm;
 
   LoopAnalysisManager loopAnalysisMgr;
