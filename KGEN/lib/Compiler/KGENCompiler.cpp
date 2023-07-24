@@ -357,6 +357,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
     [[maybe_unused]] auto timeScope =
         runtime.getTelemetryContext()->createUInt64Timer(
             "mojo.kgen.compile.time");
+    [[maybe_unused]] auto flushTelemetry =
+        runtime.getTelemetryContext()->autoFlush();
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, regionCache.copy(), transformCache.copy(),

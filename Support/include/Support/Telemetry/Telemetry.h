@@ -7,6 +7,7 @@
 #ifndef SUPPORT_TELEMETRY_H
 #define SUPPORT_TELEMETRY_H
 
+#include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Instruments.h"
@@ -136,6 +137,20 @@ public:
 
   /// Flush all the collected metrics.
   void flush();
+
+  /// This struct provides an RAII-style way to flush telemetry at the end of a
+  /// scope.
+  struct AutoFlush {
+    AutoFlush(LLCL::RCRef<TelemetryContext> ctx) : context(std::move(ctx)) {}
+    ~AutoFlush() { context->flush(); }
+
+    LLCL::RCRef<TelemetryContext> context;
+  };
+
+  /// Get an AutoFlush object from `this`.
+  AutoFlush autoFlush() {
+    return AutoFlush(LLCL::RCRef<TelemetryContext>::copy(this));
+  }
 
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
