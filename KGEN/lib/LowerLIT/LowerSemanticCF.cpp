@@ -378,7 +378,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
         Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
         // If the finally region is not empty, then this could be a
         // try-finally pattern.
-        if (tryOp.hasTrivialFinally()) {
+        if (!tryOp.getSuppressWarnings() && tryOp.hasTrivialFinally()) {
           if (!firstOpInExcept.hasTrait<OpTrait::IsTerminator>()) {
             emitWarning(firstOpInExcept.getLoc(),
                         "'except' logic is unreachable, try doesn't raise an "

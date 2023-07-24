@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s 2>&1 | FileCheck %s
 
 from IO import print
 
@@ -48,6 +48,7 @@ fn with_no_throw() -> Int:
 
 
 def with_it() -> Int:
+    # CHECK-NOT: warning: 'except' logic is unreachable, try doesn't raise an exception
     with MyCtxtMgr():
         return 2
 

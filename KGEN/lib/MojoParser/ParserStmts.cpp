@@ -1147,7 +1147,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(loc);
+  auto tryOp = builder.create<TryOp>(loc, /*suppressWarnings=*/true);
   // Stub the 'except' and 'else' regions.
   Block *parentExceptBlock = builder.createBlock(&tryOp.getExceptRegion());
   builder.create<TryYieldOp>(loc);
@@ -1215,7 +1215,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   }
 
   // Generate the nested try. Stub the 'else' and 'finally' regions.
-  auto nestedTryOp = builder.create<TryOp>(loc);
+  auto nestedTryOp = builder.create<TryOp>(loc, /*suppressWarnings=*/true);
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&nestedTryOp.getElseRegion());
   builder.create<TryYieldOp>(loc);
