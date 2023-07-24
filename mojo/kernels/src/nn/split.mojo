@@ -14,7 +14,7 @@ from List import Dim, VariadicList, DimList
 from Memory import memcpy
 from Range import range
 from LLCL import OutputChainPtr
-from Functional import async_parallelize
+from Functional import sync_parallelize
 
 # ===----------------------------------------------------------------------===#
 # split
@@ -118,8 +118,6 @@ fn split[
 
         _split[type](input, axis, outputs)
 
-    async_parallelize[task_func](out_chain, 1)
-    # _NDBufferVector is not "async safe" so make sure it stays in scope
-    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-        out_chain.ptr
-    )
+    # The task_func closure captures the stack allocated _NDBufferVector,
+    # so this kernel must run synchronously.
+    sync_parallelize[task_func](out_chain, 1)

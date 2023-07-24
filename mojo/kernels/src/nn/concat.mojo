@@ -8,7 +8,7 @@ from Assert import assert_param, debug_assert
 from Buffer import Buffer, DynamicRankBuffer, NDBuffer
 from BuildInfo import is_kernels_debug_build
 from DType import DType
-from Functional import async_parallelize
+from Functional import sync_parallelize
 from Index import product
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
@@ -238,10 +238,9 @@ fn _concat_parallel[
             "amount_traversed != total_output_bytes",
         )
 
-    async_parallelize[do_chunk](out_chain, num_chunks)
-    external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-        out_chain.ptr
-    )
+    # The do_chunk closure captures the stack allocated _NDBufferVector,
+    # so this kernel must be run synchronously.
+    sync_parallelize[do_chunk](out_chain, num_chunks)
 
 
 @always_inline
@@ -371,9 +370,8 @@ fn concat[
     let output_bytes = output.num_elements() * sizeof[type]()
 
     if output_bytes < min_work_for_parallel:
-        async_parallelize[dispatch_serial](out_chain, 1)
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-            out_chain.ptr
-        )
+        # The dispatch_serial closure captures the stack allocated
+        # _NDBufferVector, so this kernel must be run synchronously.
+        sync_parallelize[dispatch_serial](out_chain, 1)
     else:
         _concat_parallel(output, axis, inputs, out_chain)

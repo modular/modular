@@ -26,6 +26,7 @@ from DType import DType
 from Functional import (
     unroll,
     async_parallelize,
+    sync_parallelize,
     tile,
     unswitch,
     vectorize_unroll,
@@ -1889,13 +1890,9 @@ struct ConvIm2ColNHWC[
             )
             conv._run_implicit_matmul()
 
-        async_parallelize[task_func](out_chain, num_tasks)
-
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-            out_chain.ptr
-        )
+        sync_parallelize[task_func](out_chain, num_tasks)
 
     fn __init__(
         inout self,
@@ -2599,9 +2596,8 @@ struct ConvDirectNHWC[
 
                 vectorize_unroll[simd_size, 4, sum](reduce_range[1])
 
-            async_parallelize[reduce_task](out_chain, num_threads)
-
-            out_chain.wait()
+            # NOTE: synchronous, so use of locally allocated output_ptr is safe.
+            sync_parallelize[reduce_task](out_chain, num_threads)
             output_ptr.free()
         else:
             async_parallelize[task_func](out_chain, num_tasks)
