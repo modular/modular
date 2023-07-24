@@ -9,7 +9,7 @@ from DType import DType
 from Buffer import NDBuffer
 from List import DimList
 from LLCL import OutputChainPtr
-from Index import StaticIntTuple
+from Index import StaticIntTuple, Index
 from SIMD import SIMD
 from Math import max, min, div_ceil, gcd
 from MatmulUtils import (
@@ -21,10 +21,121 @@ from MatmulUtils import (
     partition_work,
 )
 from Matmul import _submatmul_sequential_sync
+from Memory import memset_zero
+from MOGG import soft_fusion_run_wrapper
 from TargetInfo import simdwidthof
-from Functional import async_parallelize, _get_start_indices_of_nth_subvolume
+from Functional import (
+    async_parallelize,
+    _get_start_indices_of_nth_subvolume,
+    vectorize_unroll,
+)
 from String import String
 from Range import range
+from Reductions import _reduce_generator
+
+
+@always_inline
+fn batched_matmul_parallel_async[
+    rank: Int,
+    type: DType,
+    adj_a: Bool,
+    adj_b: Bool,
+    single_thread_blocking_override: Bool,
+](
+    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    alias simd_width = simdwidthof[type]()
+
+    # TODO: generalize to > rank 3
+    @parameter
+    if single_thread_blocking_override and rank == 3:
+        let B = a_buf.dim[0]()
+        let M = a_buf.dim[1]()
+        let N = b_buf.dim[2]()
+        let K = a_buf.dim[2]()
+
+        if M == 1 and N == 1:
+            for batch in range(B):
+                let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                    a_buf.data + batch * K, Index(K), type
+                )
+                let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                    b_buf.data + batch * K, Index(K), type
+                )
+
+                @always_inline
+                @parameter
+                fn input_fn[
+                    type: DType, width: Int, rank: Int
+                ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+                    return (
+                        a_view.simd_load[width](idx[0])
+                        * b_view.simd_load[width](idx[0])
+                    ).cast[type]()
+
+                @always_inline
+                @parameter
+                fn output_fn[
+                    out_type: DType, width: Int, r: Int
+                ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
+                    c_buf.simd_store[width](
+                        StaticIntTuple[rank](batch, 0, 0), value.cast[type]()
+                    )
+
+                @always_inline
+                fn reduce_impl[
+                    ty: DType, width: Int
+                ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+                    return v1 + v2
+
+                _reduce_generator[
+                    type,
+                    1,
+                    simdwidthof[type](),
+                    single_thread_blocking_override,
+                    input_fn,
+                    output_fn,
+                    reduce_impl,
+                ](a_view, 0, 0, out_chain)
+
+        else:
+            for batch in range(B):
+                memset_zero(c_buf.data + batch * M * N, M * N)
+                for m in range(M):
+                    for k in range(K):
+                        let a_val = a_buf[batch, m, k]
+
+                        @always_inline
+                        @parameter
+                        fn compute_fn[simd_width: Int](n: Int):
+                            c_buf.simd_store[simd_width](
+                                StaticIntTuple[rank](batch, m, n),
+                                c_buf.simd_load[simd_width](batch, m, n)
+                                + a_val
+                                * b_buf.simd_load[simd_width](batch, k, n),
+                            )
+
+                        alias unroll_factor = 2
+
+                        vectorize_unroll[simd_width, unroll_factor, compute_fn](
+                            N
+                        )
+        return
+
+    @parameter
+    @always_inline
+    fn func(chain: OutputChainPtr):
+        return batched_matmul_parallel_async[
+            rank,
+            type,
+            adj_a,
+            adj_b,
+        ](c_buf, a_buf, b_buf, chain)
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
 @always_inline
