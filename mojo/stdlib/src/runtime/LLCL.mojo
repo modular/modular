@@ -419,16 +419,6 @@ struct OutputChainPtr:
             message.length.value,
         )
 
-    fn wait(self):
-        """Returns only when the underlying LLCL::OutputChain is emplaced
-        or set to an error. May execute arbitrary tasks while waiting.
-
-        FOR USE IN TEST CODE ONLY. Kernels should never await.
-        """
-        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
-            self.ptr
-        )
-
     @always_inline
     fn trace[level: TraceLevel](self, label: StringRef):
         """If enabled, begin a time profile entry with label which will end
@@ -528,12 +518,19 @@ struct OwningOutputChainPtr:
     fn wait(self):
         """Returns only when the underlying LLCL::OutputChain is emplaced
         or set to an error. May execute arbitrary tasks while waiting.
-
-        FOR USE IN TEST CODE ONLY. Kernels should never await.
         """
         external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
             self.ptr
         )
+
+    fn assert_ready(self):
+        """Asserts that the underlying LLCL::OutputChain is ready.
+
+        FOR USE IN TESTS ONLY.
+        """
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_AssertReady", NoneType
+        ](self.ptr)
 
 
 # ===----------------------------------------------------------------------===#
