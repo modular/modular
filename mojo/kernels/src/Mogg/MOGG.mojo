@@ -104,6 +104,7 @@ fn MOGGExport():
     alias _cast = cast
     alias _ceil = ceil
     alias _concat = concat
+    alias _concat_shape = concat_shape
     alias _div = div
     alias _erf = erf
     alias _exp = exp
@@ -643,6 +644,11 @@ fn cast[
     return value.cast[new_type]()
 
 
+# ===----------------------------------------------------------------------===#
+# Concat op
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline
 fn concat[
     type: DType,
@@ -674,6 +680,58 @@ fn concat[
     @parameter
     if not single_thread_blocking_override:
         out_chain.wait()
+
+
+@always_inline
+fn concat_shape[
+    rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    *input_bufs: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+) -> StaticIntTuple[rank]:
+
+    # extract hyper parameters
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < rank,
+        "normalized split axis must be within range [0, rank)",
+    )
+
+    @always_inline
+    fn shape_equal_ignore_axis(
+        s1: StaticIntTuple[rank], s2: StaticIntTuple[rank]
+    ) -> Bool:
+        for i in range(rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+    for i in range(VariadicList(input_bufs).__len__()):
+        concat_axis_dim_sum += input_bufs[i].dim(axis)
+        # TODO(#17512)
+        debug_assert(
+            shape_equal_ignore_axis(
+                input_bufs[0].get_shape(), input_bufs[i].get_shape()
+            ),
+            "input shapes must be equal except for at the concat axis",
+        )
+
+    # compute and return the output shape
+    var output_shape = input_bufs[0].get_shape()
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Split op
+# ===----------------------------------------------------------------------===#
 
 
 # Not targetted yet because MOGG assumes single output
