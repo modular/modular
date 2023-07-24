@@ -58,13 +58,9 @@ void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
   auto reportMessage = [&](StringRef type, StringRef message) {
     // If the LLDB Expression logs are enabled, we should send our message
     // there. This has the benefit of being able to automatically send our logs
-    // to a file if the LLDB log has been configured to do so. And if not, they
-    // will appear in the error stream anyway.
+    // to a file if the LLDB log has been configured to do so.
     if (Log *log = GetLog(LLDBLog::Expressions)) {
       LLDB_LOG(log, "[{0}] {1}", type, message);
-    } else {
-      errorStream->AsRawOstream() << "[" << type << "] " << message << "\n";
-      errorStream->Flush();
     }
   };
 
