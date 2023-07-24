@@ -51,9 +51,9 @@ from Math import (
     log1p,
 )
 from Limits import isinf, min_or_neginf, max_or_inf
-from Matmul import matmul_parallel_async, pack_b_ndbuffer
+from Matmul import matmul_parallel_sync, pack_b_ndbuffer
 from BatchedMatmul import (
-    batched_matmul_parallel_async,
+    batched_matmul_parallel_sync,
     get_trace_information as get_trace_information_batched_matmul,
 )
 from MatmulUtils import (
@@ -671,17 +671,12 @@ fn concat[
     @parameter
     @always_inline
     fn func(out_chain: OutputChainPtr):
+        # NOTE: Synchronous, so stack allocated variadic list is safe
         _concat[rank, type](
             output, axis_int, VariadicList(variadic_ins), out_chain
         )
 
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
-
-    # If we aren't using the trivial kernel we actually still have to wait.
-    # The variadics fall off the stack when captured by the lambda.
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.wait()
 
 
 @always_inline
@@ -757,17 +752,12 @@ fn split[
     @parameter
     @always_inline
     fn func(out_chain: OutputChainPtr):
+        # NOTE: Synchronous, so stack allocated variadic list is safe
         _split[type, rank](
             input, axis_int, VariadicList(variadic_outs), out_chain
         )
 
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
-
-    # If we aren't using the trivial kernel we actually still have to wait.
-    # The variadics fall off the stack when captured by the lambda.
-    @parameter
-    if not single_thread_blocking_override:
-        out_chain.wait()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1537,7 +1527,7 @@ fn matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
-    matmul_parallel_async[
+    matmul_parallel_sync[
         type,  # a_type
         type,  # b_type
         type,  # c_type
@@ -1588,7 +1578,7 @@ fn batched_matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
 
-    return batched_matmul_parallel_async[
+    return batched_matmul_parallel_sync[
         rank, type, adj_a, adj_b, single_thread_blocking_override
     ](c, a, b, out_chain)
 
