@@ -271,7 +271,8 @@ fn async_parallelize[
     func: fn (Int) capturing -> None
 ](out_chain: OutputChainPtr, num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    return immediately.
+    returns immediately. The out_chain will be marked as ready only when all
+    sub-tasks have completed.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel and
     mark out_chain as ready when all functions have returned. This function
@@ -286,16 +287,17 @@ fn async_parallelize[
        @register_passable and any internal pointers are to memory with
        lifetime at least until out_chain is ready. In practice, this means
        only pointers to buffers held alive by the runtime.
+    Consider using sync_parallelize if this requirement is too onerous.
 
     If num_work_items is 0 then the out_chain is marked as ready
-    before async_parallelize returns. If num_work_items is 1 then func(0) is
-    still executed as a sub-task.
+    before async_parallelize returns. If num_work_items is 1 then func(0) may
+    still be executed as a sub-task.
 
     Parameters:
         func: The function to invoke.
 
     Args:
-        out_chain: Out chain to attach results too.
+        out_chain: Out chain onto which to signal completion.
         num_work_items: Number of parallel tasks.
     """
 
@@ -330,20 +332,51 @@ fn async_parallelize[
         atg.add_task(coroutine ^)
 
 
-# ===----------------------------------------------------------------------===#
-# Parallelize
-# ===----------------------------------------------------------------------===#
+@always_inline
+fn sync_parallelize[
+    func: fn (Int) capturing -> None
+](out_chain: OutputChainPtr, num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel.
+    Marks out_chain as ready and returns only when all sub-tasks have
+    completed.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel,
+    and return only when they have all functions have returned. The runtime
+    may execute the sub-tasks in any order and with any degree of concurrency.
+    The out_chain will be marked as ready before returning.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        out_chain: Out chain onto which to signal completion.
+        num_work_items: Number of parallel tasks.
+    """
+
+    # CAUTION CAUTION CAUTION: out_chain may be the overall model's final
+    # output chain, in which case emplacing it may signal that the model has
+    # finished and the overall model runtime can be torn down. However,
+    # this call is still nested inside a Mojo and C++ call stack which may
+    # still depend on the runtime. Thus we must be very careful to emplace
+    # out_chain in a way that its waiters will be run only after this call
+    # has returned all the way back to the worker thread loop. We do this
+    # using a fresh chain.
+    let local_chain = OwningOutputChainPtr(out_chain.get_runtime())
+    async_parallelize[func](local_chain.borrow(), num_work_items)
+    local_chain.wait()
+    out_chain.mark_ready()
 
 
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None]():
-    """Executes func(0) ... func(N-1) as sub-tasks in parallel and block until
-    completion. N is chosen to be the number of physical processors on the
+    """Executes func(0) ... func(N-1) as sub-tasks in parallel and returns when
+    all are complete. N is chosen to be the number of physical processors on the
     system.
 
     Execute func(0) ... func(N-1) as sub-tasks in parallel. This function will
-    return after all the sub-tasks have completely been executed
-    (and unlike async_parallelize this is a blocking operation).
+    return only after all the sub-tasks have completed.
+
+    CAUTION: Creates and destroys a local runtime! Do not use from kernels!
 
     Parameters:
         func: The function to invoke.
@@ -354,11 +387,12 @@ fn parallelize[func: fn (Int) capturing -> None]():
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
-    block until completion.
+    returns when all are complete.
 
     Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
-    function will return after all the sub-tasks have completely been executed
-    (and unlike async_parallelize this is a blocking operation).
+    function will return only after all the sub-tasks have completed.
+
+    CAUTION: Creates and destroys a local runtime! Do not use from kernels!
 
     Parameters:
         func: The function to invoke.
