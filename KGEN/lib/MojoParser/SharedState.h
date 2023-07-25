@@ -221,6 +221,13 @@ public:
   void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
 
   //===--------------------------------------------------------------------===//
+  // Listener Interface
+
+  /// Notify the parser listener, if present, that an import of a module within
+  /// the given package is currently being resolved.
+  void notifyListenerOnImport(ASTDecl &packageDecl, SMLoc importLoc);
+
+  //===--------------------------------------------------------------------===//
   // Builtin Module
 
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if

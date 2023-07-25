@@ -1521,17 +1521,34 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
   // module. If we do emit any notifications, keep track of the currently
   // resolved module/package so that the listener can have context for the
   // import.
+  ASTDecl *currentResolvedModule = nullptr;
   auto notifyListenerOfImport = [&]() {
     if (!shared.parserListener)
       return;
-    SMLoc importLoc = getToken().getLoc();
+    SMLoc loc = getToken().getLoc();
 
     // If there isn't a module name, this is a top-level import.
     if (moduleNames.empty())
-      return shared.parserListener->onImport(importLoc);
+      return shared.parserListener->onImport(loc);
 
-    // Otherwise, this is importing from within a package.
-    // TODO: Notify on importing nested packages/modules.
+    // Otherwise, this is importing from within a package. Grab the parent
+    // package by resolving into the previously resolved module using whatever
+    // name was last parsed.
+    if (!currentResolvedModule) {
+      currentResolvedModule = &shared.importModule(
+          llvm::join(moduleNames, "."),
+          curDeclScope->getIfOperation()->getParentOfType<PackageOp>(), loc);
+      if (!isa<PackageOp>(*currentResolvedModule))
+        return;
+    } else if (auto curPackage = dyn_cast<PackageOp>(*currentResolvedModule)) {
+      currentResolvedModule =
+          &shared.importModule(moduleNames.back(), curPackage, loc);
+    } else {
+      // The current thing isn't a package, so just bail (we'll error out later
+      // anyways, no need to notify the listener).
+      return;
+    }
+    shared.notifyListenerOnImport(*currentResolvedModule, loc);
   };
 
   // Parse the relative '.' indicators that resolve to a parent package. These

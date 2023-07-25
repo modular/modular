@@ -26,6 +26,7 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -1732,4 +1733,35 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
     impl->closureWrappers[key] = existing;
   }
   return existing;
+}
+
+//===----------------------------------------------------------------------===//
+// Listener Interface
+
+/// Resolve the given decl in preparation for passing it to the listener for
+/// member lookup.
+static void resolveDeclForListenerLookup(DeclResolver &declResolver,
+                                         ASTDecl &decl, SMLoc loc) {
+  // Before passing off to the listener, resolve the signature of nested decls.
+  // This lets the listener see the full set of declarations in the module, as
+  // unresolved imports are generally lazily resolved.
+  if (failed(declResolver.resolveFully(decl, loc)))
+    return;
+  const llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> &decls =
+      decl.getDeclsInScope();
+  for (int i = 0, e = decls.size(); i < e; ++i) {
+    // Resolution may invalidate the decls vector, so we can't rely on
+    // iterators here.
+    auto &[name, children] = *std::next(decls.begin(), i);
+    if (failed(declResolver.resolveSignature(*children.front(), loc)))
+      return;
+  }
+}
+
+void SharedState::notifyListenerOnImport(ASTDecl &packageDecl,
+                                         SMLoc importLoc) {
+  if (!parserListener)
+    return;
+  resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
+  parserListener->onImport(&packageDecl, importLoc);
 }

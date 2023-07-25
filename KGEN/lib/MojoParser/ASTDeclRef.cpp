@@ -103,6 +103,30 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
 }
 
 //===----------------------------------------------------------------------===//
+// Children
+
+MojoASTDeclRef::ChildEntry MojoASTDeclRef::ChildIterator::operator*() const {
+  ASTDecl *decl = unwrapMojoASTDecl(const_cast<void *>(getBase()));
+  auto it = std::next(decl->getDeclsInScope().begin(), getIndex());
+  ArrayRef<ASTDecl *> decls = it->second;
+  ArrayRef<void *> rawDecls(reinterpret_cast<void *const *>(decls.data()),
+                            decls.size());
+  return ChildEntry(it->first, rawDecls);
+}
+
+MojoASTDeclRef::ChildIterator::ChildIterator(MojoASTDeclRef decl, size_t index)
+    : llvm::indexed_accessor_iterator<ChildIterator, const void *, ChildEntry,
+                                      ChildEntry, ChildEntry>(
+          decl.getAsVoidPointer(), index) {}
+
+llvm::iterator_range<MojoASTDeclRef::ChildIterator>
+MojoASTDeclRef::getChildren() const {
+  ASTDecl *decl = unwrapMojoASTDecl(impl);
+  return llvm::make_range(ChildIterator(*this, 0),
+                          ChildIterator(*this, decl->getDeclsInScope().size()));
+}
+
+//===----------------------------------------------------------------------===//
 // MojoASTTypeRef
 //===----------------------------------------------------------------------===//
 

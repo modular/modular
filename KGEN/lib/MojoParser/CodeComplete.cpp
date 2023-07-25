@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/CodeComplete.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "llvm/ADT/StringSet.h"
@@ -55,6 +56,25 @@ struct CodeCompletionListener : public MojoParserListener {
         else if (extension == ".mojopkg" || extension == ".📦" ||
                  isMojoSourcePackagePath(it.path()))
           addImportCompletion(it.path().stem().string(), /*isPackage=*/true);
+      }
+    }
+  }
+
+  /// Notify the listener that an import of a module within the given package is
+  /// currently being resolved.
+  void onImport(MojoASTDeclRef packageDecl, SMLoc importLoc) override {
+    if (loc != importLoc)
+      return;
+    for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
+      StringRef name = child.getName();
+      if (!name.consume_front("$") || name == "__init__")
+        continue;
+
+      for (MojoASTDeclRef decl : child.getDecls()) {
+        if (llvm::isa_and_present<FileModuleOp>(decl.getIfOperation()))
+          results.emplace_back(name, CodeCompletionResult::kModule);
+        else if (llvm::isa_and_present<PackageOp>(decl.getIfOperation()))
+          results.emplace_back(name, CodeCompletionResult::kPackage);
       }
     }
   }
