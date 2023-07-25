@@ -1434,7 +1434,7 @@ void ForceInlinePass::runOnOperation() {
   if (updateAttrName) {
     TimeTraceScope traceScope("updateDebugInfo");
     ParallelState state(*rt);
-    std::atomic<bool> innerPipelineFailed;
+    std::atomic<bool> innerPipelineFailed(false);
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
       if (node.shouldInline() || node.callsites.empty())
