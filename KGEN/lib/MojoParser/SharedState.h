@@ -29,6 +29,7 @@ class DIBuilder;
 namespace M::KGEN {
 class CompilationOptions;
 class ParamDeclAttr;
+class SignatureType;
 } // namespace M::KGEN
 
 namespace M::LLCL {
@@ -252,8 +253,14 @@ public:
 
   /// Emitters invoke this method to get a closure declaration.
   StructDeclOp getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
-                                                 Type signatureType,
+                                                 SignatureType signatureType,
                                                  FileModuleOp fileModuleOp);
+
+  /// Emitters invoke this method to get a closure declaration.
+  StructDeclOp getOrGenerateClosureImplStruct(llvm::SMLoc location,
+                                              SignatureType signatureType,
+                                              unsigned captureCount,
+                                              FileModuleOp fileModuleOp);
 
 private:
   /// The internal state of an imported module or package.

@@ -2108,6 +2108,53 @@ void DeclResolver::setLocationDebugScope(
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
 
+static void emitClosureInstance(SignatureType closureSignature,
+                                SharedState &shared, LIT::FuncOp nestedFunction,
+                                SMLoc location) {
+  llvm::SetVector<Value> captures;
+  mlir::getUsedValuesDefinedAbove(nestedFunction->getRegions(), captures);
+  SmallVector<Type> inputTypes;
+  SmallVector<ValueInputConvention> conventions;
+  // TODO: Enable expression of how to capture.
+  for (Value value : captures) {
+    if (auto declref = dyn_cast<DeclRefType>(value.getType())) {
+      ASTDecl &astDecl =
+          shared.declResolver->getDeclForTypeSymbol(declref.getSymbol());
+      if (auto structOp = dyn_cast<StructDeclOp>(astDecl)) {
+        if (structOp.isRegisterPassable()) {
+          inputTypes.push_back(declref);
+          conventions.push_back(ValueInputConvention::BorrowedInReg);
+        } else {
+          inputTypes.push_back(POP::PointerType::get(declref));
+          conventions.push_back(ValueInputConvention::BorrowedInMem);
+        }
+      } else {
+        llvm_unreachable("Encountered a declref that is not registered with "
+                         "the declResolver");
+      }
+    } else {
+      // If it's not a declref, then it must be an MLIR type.
+      inputTypes.push_back(value.getType());
+      conventions.push_back(ValueInputConvention::BorrowedInReg);
+    }
+  }
+  // Create the closure impl signature from the captures and the wrapper
+  // signature.
+  llvm::append_range(inputTypes, closureSignature.getValueInputs());
+  llvm::append_range(conventions,
+                     closureSignature.getMetadata().getInputConventions());
+  SignatureType closureImplSignature =
+      SignatureType::get(closureSignature.getInputParamTypes(),
+                         closureSignature.getResultParamTypes(),
+                         FunctionType::get(shared.getContext(), inputTypes,
+                                           closureSignature.getValueResults()),
+                         MetadataAttr::get(shared.getContext(), conventions, {},
+                                           closureSignature.getFnEffects()));
+  shared.getOrGenerateClosureImplStruct(
+      location, closureImplSignature, captures.size(),
+      nestedFunction->getParentOfType<FileModuleOp>());
+}
+
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
@@ -2176,15 +2223,19 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Check for function effects.
-  if (p.getToken().is(Token::identifier)) {
+  while (p.getToken().is(Token::identifier)) {
     SMLoc loc = p.getToken().getLoc();
     if (p.getToken().getSpelling() == "raises") {
       if (bitEnumContainsAny(effects, FnEffects::Throws))
         p.emitError(loc, "function effect 'raises' was already specified");
       effects = effects | FnEffects::Throws;
+    } else if (p.getToken().getSpelling() == "escaping") {
+      if (bitEnumContainsAny(effects, FnEffects::Escaping))
+        emitError(loc, "function effect 'escaping' was already specified");
+      effects = effects | FnEffects::Escaping;
     } else {
       emitError(loc, "unknown function effect '")
-          << p.getToken().getSpelling() << "', expected 'raises'";
+          << p.getToken().getSpelling() << "', expected 'raises' or 'escaping'";
     }
     p.consumeToken();
   }
@@ -2218,7 +2269,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   decl.hasReferenceError |= sigDecl.hasReferenceError;
   decl.declsInScope = std::move(sigDecl.declsInScope);
 
-  if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls))
+  if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
+      !bitEnumContainsAny(effects, FnEffects::Escaping))
     effects = effects | FnEffects::Capturing;
 
   // Now that we have figured out the lexical structure, allow decorators to
@@ -2355,7 +2407,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   funcOp.getBody()->addArguments(argTypes, argLocs);
 
-  if (!funcOp->getParentOfType<FuncOp>() || !signature.isCapturing())
+  if (!funcOp->getParentOfType<FuncOp>() ||
+      (!signature.isCapturing() && !signature.isEscaping()))
     funcOp.setIsParametric(true);
 
   // Upon fully resolving a nonparametric closure, immediately materialize it
@@ -2389,9 +2442,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
       OpBuilder b(funcOp.getContext());
       b.setInsertionPointAfter(funcOp);
-      auto parent = funcOp->getParentOfType<M::KGEN::LIT::FuncOp>();
+      auto parent = funcOp->getParentOfType<LIT::FuncOp>();
       if (!parent)
         return failure();
+      // Emit Closure structures necessary for instantiating an escaping
+      // closure.
+      if (signature.isEscaping()) {
+        emitClosureInstance(signature, shared, funcOp, decl.getLoc());
+      }
       decl.irValue = SBValue(b.create<CreateClosureOp>(
           parent.getLoc(), funcOp.getSignature(),
           ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
