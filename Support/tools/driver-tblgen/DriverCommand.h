@@ -101,8 +101,9 @@ private:
 class CommandOptionGroup {
 public:
   /// Given a set of parsed TableGen records, returns a sorted list of all the
-  /// option groups defined therein, along with their options.
-  static std::vector<CommandOptionGroup>
+  /// option groups defined therein, along with their options. If any of the
+  /// option group records are invalid, returns an error.
+  static ErrorOr<std::vector<CommandOptionGroup>>
   getAll(const llvm::RecordKeeper &records);
 
   /// Return the underlying LLVM `OptionGroup` record.
@@ -118,8 +119,9 @@ public:
   std::optional<int64_t> getIndex() const;
 
   /// Given an LLVM `Option` record, either add it to the sorted list of group
-  /// options, or return the option that was already added.
-  CommandOption &findOrCreateOption(const llvm::Record *option);
+  /// options, or return the option that was already added. If the option record
+  /// is to be newly added but is invalid, this returns an error.
+  ErrorOr<CommandOption &> findOrCreateOption(const llvm::Record *option);
 
 private:
   /// Initializes the wrapper with the given `OptionGroup` record.
@@ -163,7 +165,9 @@ public:
   std::optional<int64_t> getIndex() const;
 
   /// Add an LLVM `Option` to the sorted list of aliases for this option.
-  void addAlias(const llvm::Record *alias);
+  /// If an alias is newly added and is not valid, returns a failure. Otherwise,
+  /// returns success.
+  LogicalResult addAlias(const llvm::Record *alias);
 
   /// Return all the aliases of this option.
   ArrayRef<const llvm::Record *> getAliases() const { return aliases; }
@@ -185,7 +189,7 @@ private:
     assert(option->isSubClassOf("Option") && "unexpected record class");
   }
   /// Allow `CommandOptionGroup` to construct instances of this class.
-  friend CommandOption &
+  friend ErrorOr<CommandOption &>
   CommandOptionGroup::findOrCreateOption(const llvm::Record *);
 
   const llvm::Record *option;

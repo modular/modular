@@ -165,7 +165,14 @@ static bool genManPage(raw_ostream &os, const llvm::RecordKeeper &records) {
     return true;
   }
   CommandDescription cmd = *cmdOrErr;
-  std::vector<CommandOptionGroup> groups = CommandOptionGroup::getAll(records);
+
+  ErrorOr<std::vector<CommandOptionGroup>> groupsOrErr =
+      CommandOptionGroup::getAll(records);
+  if (failed(groupsOrErr)) {
+    llvm::PrintError(groupsOrErr.getError());
+    return true;
+  }
+  std::vector<CommandOptionGroup> groups = *groupsOrErr;
 
   genTitle(os, cmd);
   genNameSection(os, cmd);
