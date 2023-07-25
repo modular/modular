@@ -704,6 +704,14 @@ fn get_trace_information(
 fn dispatch_is_critical_stride[
     func: fn[x: Bool] () capturing -> None,
 ](k: Int):
+    # The critical stride dispatch is only useful on neon systems (we can
+    # actually restrict that even further to just graviton). So, do not
+    # perform the dispatch on x86 systems.
+    @parameter
+    if not has_neon():
+        func[False]()
+        return
+
     if is_critical_stride(k):
         func[True]()
     else:
