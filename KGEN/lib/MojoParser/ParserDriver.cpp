@@ -42,6 +42,24 @@ using namespace M::KGEN::LIT;
 using llvm::SourceMgr;
 
 //===----------------------------------------------------------------------===//
+// MojoParserListener
+//===----------------------------------------------------------------------===//
+
+void MojoParserListener::onAliasDecl(MojoASTDeclRef declRef,
+                                     llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
+                                        llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onImport(llvm::SMLoc importLoc) {}
+void MojoParserListener::onStructDecl(MojoASTDeclRef declRef,
+                                      llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
+                                           llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onVariableDecl(MojoASTDeclRef declRef,
+                                        llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
+                               llvm::SMLoc loc) {}
+
+//===----------------------------------------------------------------------===//
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//
 
@@ -75,6 +93,16 @@ ModuleOp MojoParserContext::getModule() {
 
 llvm::SourceMgr &MojoParserContext::getSourceMgr() {
   return impl->sharedState.getSourceMgr();
+}
+
+std::vector<std::string>
+MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
+  std::vector<std::string> searchDirs;
+  impl->sharedState.traverseImportDirectories(fileId, [&](StringRef dir) {
+    searchDirs.push_back(dir.str());
+    return WalkResult::advance();
+  });
+  return searchDirs;
 }
 
 const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
@@ -184,8 +212,9 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
 
 bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
   if (std::filesystem::is_directory(path)) {
-    return std::filesystem::exists(path / "__init__.mojo") ||
-           std::filesystem::exists(path / "__init__.🔥");
+    std::error_code ec;
+    return std::filesystem::exists(path / "__init__.mojo", ec) ||
+           std::filesystem::exists(path / "__init__.🔥", ec);
   }
   return false;
 }

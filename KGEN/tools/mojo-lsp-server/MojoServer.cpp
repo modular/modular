@@ -10,6 +10,7 @@
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDeclView.h"
+#include "KGEN/MojoParser/CodeComplete.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -287,6 +288,8 @@ public:
 
   //===--------------------------------------------------------------------===//
   // Language Features
+
+  lsp::CompletionList getCodeCompletion(const lsp::Position &completePos) const;
 
   std::optional<lsp::Location> onDefinition(const lsp::Position &pos) const;
 
@@ -574,6 +577,46 @@ void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
 // MojoDocument: Language Features
 //===----------------------------------------------------------------------===//
 
+lsp::CompletionList
+MojoDocument::getCodeCompletion(const lsp::Position &completePos) const {
+  if (!context)
+    return lsp::CompletionList();
+  SMLoc posLoc = completePos.getAsSMLoc(context->sourceMgr);
+  if (!posLoc.isValid())
+    return lsp::CompletionList();
+  unsigned locBuffer = context->sourceMgr.FindBufferContainingLoc(posLoc);
+  const llvm::MemoryBuffer *buffer =
+      context->sourceMgr.getMemoryBuffer(locBuffer);
+
+  // Query the mojo parser for potential completion results.
+  uint64_t rawCompletePos = posLoc.getPointer() - buffer->getBuffer().data();
+  std::vector<KGEN::Mojo::CodeCompletionResult> results =
+      KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &context->mlirContext,
+                               runtime, context->compilationOptions);
+
+  // Map the Mojo results to LSP results.
+  lsp::CompletionList completionList;
+  for (const KGEN::Mojo::CodeCompletionResult &it : results) {
+    lsp::CompletionItem item;
+    item.label = it.label;
+    item.sortText = std::to_string(static_cast<unsigned>(it.kind));
+
+    switch (it.kind) {
+    case KGEN::Mojo::CodeCompletionResult::kUnknown:
+      item.kind = lsp::CompletionItemKind::Missing;
+      break;
+    case KGEN::Mojo::CodeCompletionResult::kModule:
+      item.kind = lsp::CompletionItemKind::Module;
+      break;
+    case KGEN::Mojo::CodeCompletionResult::kPackage:
+      item.kind = lsp::CompletionItemKind::Folder;
+      break;
+    }
+    completionList.items.push_back(item);
+  }
+  return completionList;
+}
+
 std::optional<lsp::Location>
 MojoDocument::onDefinition(const lsp::Position &pos) const {
   if (Symbol *symbol = symbolIndex.getSymbolAt(pos))
@@ -717,6 +760,15 @@ void MojoServer::getCodeActions(const lsp::URIForFile &uri,
                                 std::vector<lsp::CodeAction> &actions) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
     doc->getCodeActions(uri, pos, context, actions);
+}
+
+lsp::CompletionList
+MojoServer::getCodeCompletion(const lsp::URIForFile &uri,
+                              const lsp::Position &completePos) {
+  if (MojoDocument *doc = impl->findDocument(uri.file()))
+    return doc->getCodeCompletion(completePos);
+
+  return lsp::CompletionList();
 }
 
 std::optional<lsp::Location>

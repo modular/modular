@@ -120,6 +120,9 @@ struct StmtParser : public ParserBase {
   // Declarations.
   ParseResult parseFromImportStmt();
   ParseResult parseImportStmt();
+  ParseResult parseImportModuleName(bool allowRelativeModules,
+                                    StringAttr &parsedName,
+                                    StringRef *leafModuleName = nullptr);
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
@@ -1416,39 +1419,13 @@ ParseResult StmtParser::parseFromImportStmt() {
   consumeToken(Token::kw_from);
 
   SMLoc importLoc = getToken().getLoc();
-
-  // The individual name components making up a relative module.
-  SmallVector<StringRef> moduleNames;
-
-  // Parse the relative '.' indicators that resolve to a parent package. These
-  // push "" to the set to indicate relative resolution.
-  while (true) {
-    if (consumeIf(Token::dot))
-      moduleNames.push_back("");
-    else if (consumeIf(Token::dot_dot_dot))
-      llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
-    else
-      break;
-  }
-
-  moduleNames.push_back(getTokenSpelling());
-  if (parseToken(Token::identifier, "expected module name"))
-    return failure();
-
-  // Parse nested module names.
-  while (consumeIf(Token::dot)) {
-    moduleNames.push_back(getTokenSpelling());
-    if (parseToken(Token::identifier, "expected module name"))
-      return failure();
-  }
-  std::string fullModuleName = llvm::join(moduleNames, ".");
-
-  if (parseToken(Token::kw_import, "expected 'import' after module name"))
+  StringAttr moduleAttr;
+  if (parseImportModuleName(/*allowRelativeModules=*/true, moduleAttr) ||
+      parseToken(Token::kw_import, "expected 'import' after module name"))
     return failure();
 
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
-    StringAttr moduleAttr = builder.getStringAttr(fullModuleName);
     builder.create<LIT::UnresolvedWildcardImportOp>(
         translateLocation(importLoc), moduleAttr);
     getParentDecl().addUnresolvedWildCardImport(
@@ -1475,8 +1452,7 @@ ParseResult StmtParser::parseFromImportStmt() {
     // Create an unresolved decl for this import.
     StringAttr importDestNameAttr = builder.getStringAttr(importDestName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importSourceNameLoc),
-        builder.getStringAttr(fullModuleName), importDestNameAttr,
+        translateLocation(importSourceNameLoc), moduleAttr, importDestNameAttr,
         builder.getStringAttr(importSourceName));
     getDeclResolver().addDecl(
         importDecl, importSourceNameLoc, importDestNameAttr, curDeclScope,
@@ -1507,19 +1483,13 @@ ParseResult StmtParser::parseImportStmt() {
   // Parse the next module to import.
   do {
     SMLoc importLoc = getToken().getLoc();
-    SmallVector<StringRef> moduleNames(1, getTokenSpelling());
-    if (parseToken(Token::identifier, "expected module name"))
+    StringAttr moduleAttr;
+    StringRef boundModuleName;
+    if (parseImportModuleName(/*allowRelativeModules=*/true, moduleAttr,
+                              &boundModuleName))
       return failure();
 
-    // Parse nested module names.
-    while (consumeIf(Token::dot)) {
-      moduleNames.push_back(getTokenSpelling());
-      if (parseToken(Token::identifier, "expected module name"))
-        return failure();
-    }
-
     // Check for a name binding.
-    StringRef boundModuleName = moduleNames.back();
     if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
       if (parseToken(Token::identifier, "expected name to bind import"))
@@ -1529,13 +1499,72 @@ ParseResult StmtParser::parseImportStmt() {
     // Create an unresolved decl for the import.
     StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importLoc),
-        builder.getStringAttr(llvm::join(moduleNames, ".")), importDestNameAttr,
+        translateLocation(importLoc), moduleAttr, importDestNameAttr,
         /*declName=*/StringAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);
   } while (consumeIf(Token::comma));
+  return success();
+}
+
+/// Parse a module name for use in an import statement.
+/// module          ::=  (identifier ".")* identifier
+/// relative_module ::=  "."* module | "."+
+ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
+                                              StringAttr &parsedName,
+                                              StringRef *leafModuleName) {
+  // The individual name components making up a module.
+  SmallVector<StringRef> moduleNames;
+
+  // A functor used to signal to any parser listener that we're importing a
+  // module. If we do emit any notifications, keep track of the currently
+  // resolved module/package so that the listener can have context for the
+  // import.
+  auto notifyListenerOfImport = [&]() {
+    if (!shared.parserListener)
+      return;
+    SMLoc importLoc = getToken().getLoc();
+
+    // If there isn't a module name, this is a top-level import.
+    if (moduleNames.empty())
+      return shared.parserListener->onImport(importLoc);
+
+    // Otherwise, this is importing from within a package.
+    // TODO: Notify on importing nested packages/modules.
+  };
+
+  // Parse the relative '.' indicators that resolve to a parent package. These
+  // push "" to the set to indicate relative resolution.
+  if (allowRelativeModules) {
+    while (true) {
+      if (consumeIf(Token::dot))
+        moduleNames.push_back("");
+      else if (consumeIf(Token::dot_dot_dot))
+        llvm::append_range(moduleNames, ArrayRef<StringRef>{"", "", ""});
+      else
+        break;
+    }
+  }
+
+  // Parse the first module name.
+  notifyListenerOfImport();
+  moduleNames.push_back(getTokenSpelling());
+  if (parseToken(Token::identifier, "expected module name"))
+    return failure();
+
+  // Parse nested module names.
+  while (consumeIf(Token::dot)) {
+    notifyListenerOfImport();
+
+    moduleNames.push_back(getTokenSpelling());
+    if (parseToken(Token::identifier, "expected module name"))
+      return failure();
+  }
+
+  parsedName = builder.getStringAttr(llvm::join(moduleNames, "."));
+  if (leafModuleName)
+    *leafModuleName = moduleNames.back();
   return success();
 }
 

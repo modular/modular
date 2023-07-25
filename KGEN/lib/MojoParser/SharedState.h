@@ -211,6 +211,12 @@ public:
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
 
+  /// Traverse the directories available for importing modules and packages,
+  /// calling the given callback for each directory found.
+  void
+  traverseImportDirectories(unsigned importBufferFileId,
+                            function_ref<WalkResult(StringRef)> callback) const;
+
   /// Builds the debug info for a block argument if needed.
   void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
 

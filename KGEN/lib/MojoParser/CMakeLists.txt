@@ -9,6 +9,7 @@ add_modular_conversion_library(MojoParser
   ASTDeclRef.cpp
   ASTType.cpp
   CallEmission.cpp
+  CodeComplete.cpp
   DeclResolver.cpp
   Diags.cpp
   DocString.cpp
