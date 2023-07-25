@@ -22,7 +22,10 @@ namespace M::TF {
 /// The helper also has the functionality to record these statistics to a
 /// configurable report file.
 struct StatsReport {
-  StatsReport() : numTotalOps(0), numFallbackOps(0) {}
+  explicit StatsReport(llvm::StringRef name)
+      : name(name), numTotalOps(0), numFallbackOps(0) {}
+
+  StatsReport() : StatsReport("") {}
 
   /// Record one instance of an input op.
   void countOp();
@@ -32,6 +35,7 @@ struct StatsReport {
   void writeToFile();
 
 private:
+  std::string name;
   size_t numTotalOps;
   size_t numFallbackOps;
   std::unordered_map<std::string, int> fallbackHistogram;
