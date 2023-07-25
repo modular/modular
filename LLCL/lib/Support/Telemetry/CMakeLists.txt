@@ -12,11 +12,12 @@ if(MODULAR_ENABLE_TELEMETRY)
 
   include(AddOpenTelemetry)
 
-  add_modular_library(MTelemetry
+  add_modular_library(LLCLTelemetry
     TelemetryContext.cpp
     MetricReader.cpp
 
     LINK_LIBS PUBLIC
+    LLCLSupport
     opentelemetry_metrics
     opentelemetry_logs
 
@@ -32,10 +33,10 @@ if(MODULAR_ENABLE_TELEMETRY)
     opentelemetry_exporter_ostream_logs
     )
 
-  target_compile_definitions(MTelemetry PUBLIC MODULAR_ENABLE_TELEMETRY=${MODULAR_ENABLE_TELEMETRY})
+  target_compile_definitions(LLCLTelemetry PUBLIC MODULAR_ENABLE_TELEMETRY=${MODULAR_ENABLE_TELEMETRY})
 
 else()
-  add_modular_library(MTelemetry
+  add_modular_library(LLCLTelemetry
     TelemetryContext.cpp
     MetricReader.cpp
     )

@@ -66,7 +66,7 @@ static int repl(const State &state) {
   }
 
   // Initialize telemetry.
-  auto telemetryCtx = LLCL::RCRef<Telemetry::TelemetryContext>::create();
+  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
   initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Find the path to the lldb executable and the MojoLLDB plugin library.

@@ -66,7 +66,7 @@ static int demangle(const State &state) {
   }
 
   // Initialize telemetry.
-  auto telemetryCtx = LLCL::RCRef<Telemetry::TelemetryContext>::create();
+  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
   initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.

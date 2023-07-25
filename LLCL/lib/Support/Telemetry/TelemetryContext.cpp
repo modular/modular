@@ -4,11 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Telemetry/Telemetry.h"
+#include "LLCL/Support/Telemetry/Telemetry.h"
 
+#include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
-#include "Support/Telemetry/MetricReader.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Threading.h"
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -31,7 +32,9 @@
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::Telemetry {
+using namespace M;
+using namespace LLCL;
+using namespace Telemetry;
 
 TelemetryContext::TelemetryContext() {
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -117,5 +120,3 @@ void TelemetryContext::flush() {
   metricReader->collectAndExport();
 #endif // MODULAR_ENABLE_TELEMETRY
 }
-
-} // namespace M::Telemetry

@@ -9,8 +9,8 @@
 using namespace M;
 
 void M::initializeTelemetry(
-    LLCL::RCRef<Telemetry::TelemetryContext> telemetryCtx, const State &state,
-    const llvm::opt::InputArgList &args,
+    LLCL::RCRef<LLCL::Telemetry::TelemetryContext> telemetryCtx,
+    const State &state, const llvm::opt::InputArgList &args,
     ArrayRef<llvm::opt::OptSpecifier> privateArgs) {
   if (!telemetryCtx)
     return;
