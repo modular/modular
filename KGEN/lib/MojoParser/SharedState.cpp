@@ -1382,18 +1382,19 @@ buildBytecodeDeclReferenceResolver(SharedState &sharedState,
       return WalkResult::advance();
 
     // Functor used to look up and resolve a decl with the given mangled name.
+    SMLoc loc = decl.getLoc();
     auto lookupDecl = [&](StringRef mangledSymbol, ASTDecl &container,
                           DeclResolvedness howResolved =
                               DeclResolvedness::fully) -> ASTDecl * {
       StringRef baseName = mangledSymbol.split('(').first.split('[').first;
       LookupResult result = sharedState.lookupAndResolveDecl(
-          baseName, decl.getLoc(), container, /*searchParentScopes=*/false);
+          baseName, loc, container, /*searchParentScopes=*/false);
       if (!result.isSuccess())
         return nullptr;
 
       // Functor used to emit an error if we couldn't find the symbol.
       auto emitLookupError = [&] {
-        sharedState.emitError(decl.getLoc(), "unable to find '")
+        sharedState.emitError(loc, "unable to find '")
             << baseName << "' symbol";
         return nullptr;
       };
@@ -1406,17 +1407,21 @@ buildBytecodeDeclReferenceResolver(SharedState &sharedState,
           continue;
 
         // Resolve the decl now that we've found it.
-        if (failed(
-                declResolver.resolve(*resultDecl, howResolved, decl.getLoc())))
+        if (failed(declResolver.resolve(*resultDecl, howResolved, loc)))
           return nullptr;
         return resultDecl;
       }
       return emitLookupError();
     };
 
-    // Resolve the top-level container for the reference.
-    ASTDecl *decl = lookupDecl(attr.getRootReference(), topLevelDecl);
-    if (!decl)
+    // Resolve the top-level container for the reference. This should be a
+    // package or module.
+    StringRef moduleName = attr.getRootReference();
+    assert(moduleName.starts_with("$") &&
+           "expected all references to be bound to a module/package");
+    ASTDecl *decl = &declResolver.shared.importModule(
+        moduleName.drop_front(), /*currentPackage=*/nullptr, loc);
+    if (decl->hasReferenceError)
       return WalkResult::interrupt();
     ArrayRef<FlatSymbolRefAttr> nestedRefs = attr.getNestedReferences();
     for (FlatSymbolRefAttr name : nestedRefs.drop_back())
@@ -1485,11 +1490,6 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   } while ((parentDecl = parentDecl->parentDecl));
   assert(bytecodeReader && "bytecode decl doesn't have a bytecode reader");
 
-  if (bytecodeReader->isMaterializable(declOp)) {
-    if (failed(bytecodeReader->materialize(declOp)))
-      return failure();
-  }
-
   // Functor used to resolve references within a single operation.
   auto resolveSingleOp = [&](Operation *op) -> WalkResult {
     if (bytecodeReader->isMaterializable(op) &&
@@ -1525,6 +1525,12 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   ModuleState *packageState = nullptr;
   if (isa<PackageOp>(declOp))
     packageState = impl->moduleStates[&decl];
+
+  // Materialize the body of the decl.
+  if (bytecodeReader->isMaterializable(declOp)) {
+    if (failed(bytecodeReader->materialize(declOp)))
+      return failure();
+  }
 
   // Process the parsed region bodies, generating any necessary nested decls.
   SmallVector<Operation *> deferredOps;
