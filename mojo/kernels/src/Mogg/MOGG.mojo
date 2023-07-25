@@ -7,7 +7,7 @@
 from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
-from Concat import concat as _concat
+from Concat import concat as _concat, concat_shape
 from DType import DType
 from Functional import (
     _elementwise_impl,
@@ -16,7 +16,7 @@ from Functional import (
     vectorize_unroll,
     async_parallelize,
 )
-from Reductions import _reduce_generator
+from Reductions import _reduce_generator, reduce_shape
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from Memory import memset_zero
@@ -64,6 +64,7 @@ from MatmulUtils import (
     search_mm_config,
 )
 
+from Pad import pad_shape
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -76,7 +77,7 @@ from String import String
 from Slice import slice_as_view
 from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
-from GatherScatter import scatter_nd as _scatter_nd
+from GatherScatter import scatter_nd as _scatter_nd, gather_shape
 from Where import where, where_shape
 
 
@@ -737,53 +738,6 @@ fn concat[
     soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
-@always_inline
-fn concat_shape[
-    rank: Int,
-    input_type: DType,
-    axis_type: DType,
-    single_thread_blocking_override: Bool,
-](
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    *input_bufs: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-) -> StaticIntTuple[rank]:
-
-    # extract hyper parameters
-    var axis = axis_buf[0].to_int()
-    if axis < 0:
-        axis += rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= axis and axis < rank,
-        "normalized split axis must be within range [0, rank)",
-    )
-
-    @always_inline
-    fn shape_equal_ignore_axis(
-        s1: StaticIntTuple[rank], s2: StaticIntTuple[rank]
-    ) -> Bool:
-        for i in range(rank):
-            if i != axis and s1[i] != s2[i]:
-                return False
-        return True
-
-    var concat_axis_dim_sum = 0
-    for i in range(VariadicList(input_bufs).__len__()):
-        concat_axis_dim_sum += input_bufs[i].dim(axis)
-        # TODO(#17512)
-        debug_assert(
-            shape_equal_ignore_axis(
-                input_bufs[0].get_shape(), input_bufs[i].get_shape()
-            ),
-            "input shapes must be equal except for at the concat axis",
-        )
-
-    # compute and return the output shape
-    var output_shape = input_bufs[0].get_shape()
-    output_shape[axis] = concat_axis_dim_sum
-    return output_shape
-
-
 # ===----------------------------------------------------------------------===#
 # Split op
 # ===----------------------------------------------------------------------===#
@@ -950,40 +904,6 @@ fn mean[
             wrapped_output_div,
             reduce_impl,
         ](input_buffer, 0, reduce_dim, out_chain)
-
-
-# ===----------------------------------------------------------------------===#
-# Pad op
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn pad_shape[
-    input_rank: Int,
-    input_type: DType,
-    paddings_type: DType,
-    single_thread_blocking_override: Bool,
-](
-    input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
-    ],
-    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
-) -> StaticIntTuple[input_rank]:
-
-    # TODO(#17512)
-    debug_assert(
-        paddings_buf.dim(0) == input_rank and paddings_buf.dim(1) == 2,
-        "paddings shape must be (input_rank, 2)",
-    )
-
-    # compute and return the output shape
-    var output_shape = StaticIntTuple[input_rank]()
-    for axis in range(input_rank):
-        let pre_pad = paddings_buf[axis, 0].to_int()
-        let post_pad = paddings_buf[axis, 1].to_int()
-        output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
-
-    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -1169,33 +1089,6 @@ fn reduce_mul[
         output_0_fn,
         reduce_impl,
     ](input_buffer, 1, reduce_dim, out_chain)
-
-
-@always_inline
-fn reduce_shape[
-    rank: Int,
-    input_type: DType,
-    axis_type: DType,
-    single_thread_blocking_override: Bool,
-](
-    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-) -> StaticIntTuple[rank]:
-
-    # extract hyper parameter
-    var axis = axis_buf[0].to_int()
-    if axis < 0:
-        axis += rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= axis and axis < rank,
-        "normalized axis must be within range [0, rank)",
-    )
-
-    # compute and return the output shape
-    var output_shape = input_buf.get_shape()
-    output_shape[axis] = 1
-    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -1520,60 +1413,6 @@ fn _gather_with_lambdas[
             output.dynamic_shape,
             out_chain,
         )
-
-
-@always_inline
-fn gather_shape[
-    input_rank: Int,
-    indices_rank: Int,
-    output_rank: Int,
-    input_type: DType,
-    indices_type: DType,
-    axis_type: DType,
-    single_thread_blocking_override: Bool,
-](
-    input_buf: NDBuffer[
-        input_rank, DimList.create_unknown[input_rank](), input_type
-    ],
-    indices_buf: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
-    ],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-) -> StaticIntTuple[output_rank]:
-    assert_param[
-        output_rank == input_rank + indices_rank - 1,
-        "output rank must equal (input_rank + indices_rank - 1)",
-    ]()
-
-    # extract hyper parameter
-    var axis = axis_buf[0].to_int()
-    if axis < 0:
-        axis += input_rank
-    # TODO(#17512)
-    debug_assert(
-        0 <= axis and axis < input_rank,
-        "normalized axis must be within range [0, input_rank)",
-    )
-
-    # compute and return the output shape
-    var output_shape = StaticIntTuple[output_rank]()
-    var next_out_dim = 0
-
-    let input_shape = input_buf.get_shape()
-    for i in range(axis):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
-
-    let indices_shape = indices_buf.get_shape()
-    for i in range(indices_rank):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
-
-    for i in range(axis + 1, input_rank):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
-
-    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
