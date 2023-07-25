@@ -9,7 +9,7 @@ from Buffer import Buffer, DynamicRankBuffer, NDBuffer
 from BuildInfo import is_kernels_debug_build
 from DType import DType
 from Functional import sync_parallelize
-from Index import product
+from Index import product, StaticIntTuple
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
 from LLCL import OutputChainPtr
@@ -375,3 +375,69 @@ fn concat[
         sync_parallelize[dispatch_serial](out_chain, 1)
     else:
         _concat_parallel(output, axis, inputs, out_chain)
+
+
+@always_inline
+fn concat_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    *input_bufs: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `pad` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Input_rank of the input tensor.
+        input_type: Type of the input tensor.
+        axis_type: Type of the axis tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        axis_buf: The axis tensor.
+        input_bufs: The variadic input tensors.
+
+    Returns:
+        The output shape.
+    """
+
+    # extract hyper parameters
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += input_rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < input_rank,
+        "normalized split axis must be within range [0, input_rank)",
+    )
+
+    @always_inline
+    fn shape_equal_ignore_axis(
+        s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
+    ) -> Bool:
+        for i in range(input_rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+    for i in range(VariadicList(input_bufs).__len__()):
+        concat_axis_dim_sum += input_bufs[i].dim(axis)
+        # TODO(#17512)
+        debug_assert(
+            shape_equal_ignore_axis(
+                input_bufs[0].get_shape(), input_bufs[i].get_shape()
+            ),
+            "input shapes must be equal except for at the concat axis",
+        )
+
+    # compute and return the output shape
+    var output_shape = input_bufs[0].get_shape()
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape

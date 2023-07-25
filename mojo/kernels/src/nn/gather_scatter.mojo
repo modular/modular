@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
+from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
 from DType import DType
 from Functional import (
@@ -385,3 +385,79 @@ fn scatter_nd[
             output_1d[index * D + d] = updates_1d[n * D + d]
 
     out_chain.mark_ready()
+
+
+@always_inline
+fn gather_shape[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    indices_buf: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[output_rank]:
+    """
+    Compute the output shape of a `gather` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
+        input_type: Type of the input tensor.
+        indices_type: Type of the indices tensor.
+        axis_type: Type of the axis tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The input tensor.
+        indices_buf: The indices tensor.
+        axis_buf: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    assert_param[
+        output_rank == input_rank + indices_rank - 1,
+        "output rank must equal (input_rank + indices_rank - 1)",
+    ]()
+
+    # extract hyper parameter
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += input_rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < input_rank,
+        "normalized axis must be within range [0, input_rank)",
+    )
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[output_rank]()
+    var next_out_dim = 0
+
+    let input_shape = input_buf.get_shape()
+    for i in range(axis):
+        output_shape[next_out_dim] = input_shape[i]
+        next_out_dim += 1
+
+    let indices_shape = indices_buf.get_shape()
+    for i in range(indices_rank):
+        output_shape[next_out_dim] = indices_shape[i]
+        next_out_dim += 1
+
+    for i in range(axis + 1, input_rank):
+        output_shape[next_out_dim] = input_shape[i]
+        next_out_dim += 1
+
+    return output_shape

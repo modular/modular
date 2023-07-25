@@ -12,6 +12,7 @@
 from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
 from DType import DType
+from Index import StaticIntTuple
 from List import Dim, DimList
 from Memory import memcpy
 from Pointer import DTypePointer
@@ -162,3 +163,49 @@ fn _pad_impl[
         if not is_within_padding:
             next_input_offset += input_axis_stride
         next_output_offset += output_axis_stride
+
+
+@always_inline
+fn pad_shape[
+    input_rank: Int,
+    input_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `pad` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        input_type: Type of the input tensor.
+        paddings_type: Type of the padding tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The tensor to pad.
+        paddings_buf: The paddings tensor, of shape (input_rank, 2).
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(
+        paddings_buf.dim(0) == input_rank and paddings_buf.dim(1) == 2,
+        "paddings shape must be (input_rank, 2)",
+    )
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[input_rank]()
+    for axis in range(input_rank):
+        let pre_pad = paddings_buf[axis, 0].to_int()
+        let post_pad = paddings_buf[axis, 1].to_int()
+        output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
+
+    return output_shape
