@@ -6,9 +6,9 @@
 
 # RUN: kgen-translate -verify-diagnostics -import-mojo -debug-level=full -mlir-print-debuginfo %s | FileCheck %s
 
-# CHECK-DAG: #subprogram = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__del__{{.*}}", linkageName = "__del__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !subroutine
-# CHECK-DAG: #subprogram1 = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__moveinit__{{.*}}", linkageName = "__moveinit__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !subroutine1
-# CHECK-DAG: #subprogram2 = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__copyinit__{{.*}}", linkageName = "__copyinit__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !subroutine1
+# CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__del__{{.*}}", linkageName = "__del__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR1:.*]]
+# CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__moveinit__{{.*}}", linkageName = "__moveinit__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR2:.*]]
+# CHECK-DAG: #[[SP3:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__copyinit__{{.*}}", linkageName = "__copyinit__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR2]]
 
 
 # CHECK-DAG: lit.func @"__del__($module-code-gen-debug-info::_CW_
@@ -38,9 +38,9 @@
 # CHECK-DAG: kgen.call_signature %[[W5]](%[[W2]], %[[W3]]) {{.*}} loc(#[[LOC_COPY]])
 # CHECK-DAG: } loc(#[[LOC_COPY]])
 
-# CHECK-DAG: #[[LOC_DEL]] = loc(fused<#subprogram>[#loc1])
-# CHECK-DAG: #[[LOC_MOV]] = loc(fused<#subprogram1>[#loc1])
-# CHECK-DAG: #[[LOC_COPY]] = loc(fused<#subprogram2>[#loc1])
+# CHECK-DAG: #[[LOC_DEL]] = loc(fused<#[[SP1]]>[#[[LOC:loc[0-9]+]]])
+# CHECK-DAG: #[[LOC_MOV]] = loc(fused<#[[SP2]]>[#[[LOC]]])
+# CHECK-DAG: #[[LOC_COPY]] = loc(fused<#[[SP3]]>[#[[LOC]]])
 
 fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn( __mlir_type.index) escaping ->  __mlir_type.index:
    fn myclosure(n: __mlir_type.index) ->  __mlir_type.index:
