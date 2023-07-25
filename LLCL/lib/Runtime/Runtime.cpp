@@ -14,7 +14,7 @@
 #include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "Support/Telemetry/Telemetry.h"
+#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -48,7 +48,7 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename),
-      telemetryContext(RCRef<M::Telemetry::TelemetryContext>::create()),
+      telemetryContext(RCRef<Telemetry::TelemetryContext>::create()),
       runtimeIndex(M::LLCL::Globals::addRuntime(this)),
       readyChain(createReadyChain(*this)) {
 
@@ -76,7 +76,7 @@ Runtime::~Runtime() {
   }
 }
 
-RCRef<M::Telemetry::TelemetryContext> Runtime::getTelemetryContext() {
+RCRef<Telemetry::TelemetryContext> Runtime::getTelemetryContext() {
   return telemetryContext.copy();
 }
 

@@ -20,14 +20,14 @@ add_modular_library(LLCLRuntime
 
   LINK_LIBS PUBLIC
   LLCLSupport
+  LLCLTelemetry
   LLVMSupport
   MSupport
   Threads::Threads
-  MTelemetry
   )
 
 if (MODULAR_ENABLE_TELEMETRY)
-  # For some reason, MTelemetry's compile definitions don't propagate to LLCLRuntime's
+  # For some reason, LLCLTelemetry's compile definitions don't propagate to LLCLRuntime's
   # cpp files (Runtime.cpp, AsyncValue.cpp, etc.), but transitively they do propagate
   # to any libraries that link with LLCLRuntime.
   # This is a workaround to force these definitions on LLCLRuntime's source files.

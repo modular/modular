@@ -17,12 +17,12 @@
 #include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

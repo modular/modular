@@ -8,11 +8,11 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
+#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Host.h"
-#include "Support/Telemetry/Telemetry.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
@@ -184,9 +184,9 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
 static LogicalResult
 runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
              llvm::raw_pwrite_stream &os, llvm::CodeGenFileType fileType,
-             LLCL::RCRef<Telemetry::TelemetryContext> telemetryCtx = {}) {
+             LLCL::RCRef<LLCL::Telemetry::TelemetryContext> telemetryCtx = {}) {
   TimeTraceScope<> traceScope("llvm-codegen", module.getName());
-  std::optional<Telemetry::Timer<uint64_t>> timeScope;
+  std::optional<LLCL::Telemetry::Timer<uint64_t>> timeScope;
   if (telemetryCtx)
     timeScope = telemetryCtx->createUInt64Timer("mojo.llvm.optimize.time");
   using namespace llvm;

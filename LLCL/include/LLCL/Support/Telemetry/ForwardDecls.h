@@ -7,10 +7,10 @@
 #ifndef TELEMETRY_FORWARD_DECLS_H
 #define TELEMETRY_FORWARD_DECLS_H
 
-namespace M::Telemetry {
+namespace M::LLCL::Telemetry {
 
 class TelemetryContext;
 
-} // namespace M::Telemetry
+} // namespace M::LLCL::Telemetry
 
 #endif // TELEMETRY_FORWARD_DECLS_H

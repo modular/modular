@@ -9,9 +9,9 @@
 
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
+#include "LLCL/Support/Telemetry/Instruments.h"
+#include "LLCL/Support/Telemetry/Logs.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/Telemetry/Instruments.h"
-#include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringRef.h"
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger_provider.h"
@@ -20,7 +20,7 @@
 #include "opentelemetry/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::Telemetry {
+namespace M::LLCL::Telemetry {
 
 class ManualExportingMetricReader;
 
@@ -172,6 +172,6 @@ private:
 #endif
 };
 
-} // namespace M::Telemetry
+} // namespace M::LLCL::Telemetry
 
 #endif // SUPPORT_TELEMETRY_H
