@@ -75,7 +75,7 @@ enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
 #if MODULAR_PARANOID
 /// Sleep for a random period to try to tickle data races.
 static void randomSleep() {
-  std::chrono::milliseconds delay{(random() % 4) * 2000};
+  std::chrono::milliseconds delay{(rand() % 4) * 2000};
   if (delay.count() > 0) {
     TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.randomSleep"));
     std::this_thread::sleep_for(delay);
@@ -449,7 +449,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     while (!localTaskList.empty()) {
 #if MODULAR_DEBUG
       // Try to tickle bugs by working through tasks in random order.
-      size_t i = random() % localTaskList.size();
+      size_t i = rand() % localTaskList.size();
       TaskFunction taskFunction = std::move(localTaskList[i]);
       localTaskList.erase(localTaskList.begin() + i);
 #else
