@@ -1341,3 +1341,54 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, True
     )
+
+
+# ===----------------------------------------------------------------------===#
+# shape function
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn reduce_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `pad` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Input_rank of the input tensor.
+        input_type: Type of the input tensor.
+        axis_type: Type of the axis tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The input tensor.
+        axis_buf: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # extract hyper parameter
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += input_rank
+    # TODO(#17512)
+    debug_assert(
+        0 <= axis and axis < input_rank,
+        "normalized axis must be within range [0, input_rank)",
+    )
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_shape()
+    output_shape[axis] = 1
+    return output_shape
