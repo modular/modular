@@ -87,6 +87,8 @@ fn MOGGExport():
     alias _out_chain = OutputChainPtrDef
     alias _simd_typedef = SimdTypeDef
     alias _index_typedef = IndexTypeDef
+    alias _dtype_bfloat16 = DTypeBFloat16TypeDef
+    alias _dtype_float16 = DTypeFloat16TypeDef
     alias _dtype_float32 = DTypeFloat32TypeDef
     alias _dtype_float64 = DTypeFloat64TypeDef
     alias _dtype_si8 = DTypeInt8TypeDef
@@ -177,6 +179,14 @@ fn MOGGExport():
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
 # ===----------------------------------------------------------------------===#
+
+
+fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
+    return DType.bfloat16.value
+
+
+fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
+    return DType.float16.value
 
 
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
