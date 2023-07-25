@@ -18,21 +18,28 @@
 
 using namespace M;
 
-/// If the given text is non-empty, prints a warning if it does not begin with a
-/// lowercase character, and returns false. If it is empty, prints a warning and
-/// returns true.
-static bool validateCapitalized(StringRef text, ArrayRef<llvm::SMLoc> locs,
-                                Twine description) {
-  if (text.empty()) {
-    llvm::PrintWarning(locs, description + " should not be empty");
-    return true;
-  }
+/// Prints the given `message` as an error at the given `locations` and returns
+/// `true`.
+static bool printError(ArrayRef<llvm::SMLoc> locations, const Twine &message) {
+  llvm::PrintError(locations, message);
+  return true;
+}
+
+/// Prints an error and returns a failure if the given text is empty, or if it
+/// does not begin with a lowercase character. Otherwise, prints nothing and
+/// returns success.
+static LogicalResult validateCapitalized(StringRef text,
+                                         ArrayRef<llvm::SMLoc> locs,
+                                         Twine description) {
+  if (text.empty())
+    return success(
+        /*isSuccess=*/!printError(locs, description + " should not be empty"));
 
   if (!isupper(text.front()))
-    llvm::PrintWarning(locs,
-                       description + " should begin with a capital letter");
+    return success(/*isSuccess=*/!printError(
+        locs, description + " should begin with a capital letter"));
 
-  return false;
+  return success();
 }
 
 /// Given a TableGen record, return its 'index' integer value, if one is
@@ -66,7 +73,7 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
   for (const llvm::Record *record : descriptions) {
     if (record->getValueAsString("subcommand").empty()) {
       if (topLevel) {
-        llvm::PrintError(
+        printError(
             record->getLoc(),
             "a second top-level 'CommandDescription' record is defined here");
         llvm::PrintNote(topLevel->getLoc(),
@@ -81,9 +88,8 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
     }
   }
   if (!topLevel && subcommands.size() > 1) {
-    llvm::PrintError(
-        subcommands.back()->getLoc(),
-        "a second subcommand 'CommandDescription' is defined here");
+    printError(subcommands.back()->getLoc(),
+               "a second subcommand 'CommandDescription' is defined here");
     llvm::PrintNote(
         subcommands.front()->getLoc(),
         "a subcommand 'CommandDescription' has already been defined here");
@@ -100,53 +106,59 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
 
   // Now that we have our description and its subcommands, perform some
   // validation.
-  auto validateDescription = [](const llvm::Record *record) {
+  auto validateDescription = [](const llvm::Record *record) -> LogicalResult {
+    bool invalid = false;
     if (record->getValueAsString("executable").empty())
-      llvm::PrintWarning(record->getLoc(),
-                         "command executable name should not be empty");
+      invalid |= printError(record->getLoc(),
+                            "command executable name should not be empty");
 
     StringRef summary = record->getValueAsString("summary");
-    validateCapitalized(summary, record->getLoc(), "command summary");
+    invalid |= failed(
+        validateCapitalized(summary, record->getLoc(), "command summary"));
     if (!summary.ends_with("."))
-      llvm::PrintWarning(record->getLoc(),
-                         "command summary should end with a period");
+      invalid |= printError(record->getLoc(),
+                            "command summary should end with a period");
 
     StringRef description = record->getValueAsString("description");
-    validateCapitalized(description, record->getLoc(), "command description");
+    invalid |= failed(validateCapitalized(description, record->getLoc(),
+                                          "command description"));
     if (!description.ends_with("."))
-      llvm::PrintWarning(record->getLoc(),
-                         "command description should end with a period");
+      invalid |= printError(record->getLoc(),
+                            "command description should end with a period");
 
     std::vector<llvm::Record *> usages = record->getValueAsListOfDefs("usages");
     if (usages.empty())
-      llvm::PrintWarning(record->getLoc(),
-                         "command should include at least one usage");
+      invalid |= printError(record->getLoc(),
+                            "command should include at least one usage");
+
     for (const llvm::Record *usage : usages) {
       StringRef optionsName = usage->getValueAsString("optionsName");
       if (optionsName.lower() != optionsName)
-        llvm::PrintWarning(usage->getLoc(),
-                           "usage options name should be lowercase");
+        invalid |= printError(usage->getLoc(),
+                              "usage options name should be lowercase");
 
       StringRef metaVarName = usage->getValueAsString("inputName");
       if (metaVarName.lower() != metaVarName)
-        llvm::PrintWarning(usage->getLoc(),
-                           "usage input metavar name should be lowercase");
+        invalid |= printError(usage->getLoc(),
+                              "usage input metavar name should be lowercase");
     }
+
+    return success(/*isSuccess=*/!invalid);
   };
 
   // First validate the main description.
-  validateDescription(record);
+  bool invalid = failed(validateDescription(record));
 
   // Then, validate any subcommands it may have.
   DenseMap<int64_t, const llvm::Record *> indices;
   for (const llvm::Record *sub : subcommands) {
-    validateDescription(sub);
+    invalid |= failed(validateDescription(sub));
 
     // In addition to the standard validations applied to all descriptions,
     // subcommands must also be ordered by index.
     std::optional<int64_t> index = getValueAsOptionalIndex(sub);
     if (!index) {
-      llvm::PrintWarning(
+      invalid |= printError(
           sub->getLoc(),
           llvm::formatv(
               "subcommand '{0}' has no index with which to order it by; "
@@ -156,7 +168,7 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
     }
 
     if (!indices.insert({*index, sub}).second) {
-      llvm::PrintWarning(
+      invalid |= printError(
           sub->getLoc(),
           llvm::formatv(
               "subcommand '{0}' has index {1}, which has already been "
@@ -171,6 +183,9 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
     }
   }
 
+  if (invalid)
+    return Error("command description failed to validate");
+
   llvm::sort(subcommands, LessIndex());
   return CommandDescription(record, subcommands);
 }
@@ -179,7 +194,7 @@ M::CommandDescription::get(const llvm::RecordKeeper &records) {
 // CommandOptionGroup
 //===----------------------------------------------------------------------===//
 
-std::vector<CommandOptionGroup>
+ErrorOr<std::vector<CommandOptionGroup>>
 M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
   // Create a sorted list of groups.
   std::vector<CommandOptionGroup> groups;
@@ -199,33 +214,41 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
   for (llvm::Record *option : records.getAllDerivedDefinitions("Option"))
     if (llvm::Record *group = option->getValueAsOptionalDef("Group"))
       groupOptions[group].push_back(option);
+
   // Then, add each group record's options to their (sorted) lists.
+  bool invalid = false;
   for (CommandOptionGroup &group : groups) {
     llvm::SmallSet<int64_t, 4> optionIndices;
     for (const llvm::Record *option : groupOptions[group.getGroup()]) {
       // If the option is an alias, don't add it to the group, add it to its
       // aliased option.
       if (llvm::Record *aliased = option->getValueAsOptionalDef("Alias")) {
-        CommandOption &aliasedOption = group.findOrCreateOption(aliased);
-        aliasedOption.addAlias(option);
+        ErrorOr<CommandOption &> aliasedOption =
+            group.findOrCreateOption(aliased);
+        if (failed(aliasedOption)) {
+          invalid = true;
+          continue;
+        }
+
+        invalid |= failed(aliasedOption.get().addAlias(option));
         continue;
       }
 
-      group.findOrCreateOption(option);
+      invalid |= failed(group.findOrCreateOption(option));
     }
 
     // Now that we've constructed a group and all of its options, perform some
     // additional validation.
     if (std::optional<int64_t> index = group.getIndex()) {
       if (!groupIndices.insert(*index).second) {
-        llvm::PrintWarning(
+        invalid |= printError(
             group.getGroup()->getLoc(),
             llvm::formatv("group '{0}' has index {1}, which has already been "
                           "used; it will appear in a non-deterministic order",
                           group.getGroupName(), *index));
       }
     } else {
-      llvm::PrintWarning(
+      invalid |= printError(
           group.getGroup()->getLoc(),
           llvm::formatv("group '{0}' has no index with which to order it by; "
                         "it will appear in a non-deterministic order",
@@ -233,12 +256,15 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
     }
 
     if (group.getOptions().empty())
-      llvm::PrintWarning(
+      invalid |= printError(
           group.getGroup()->getLoc(),
           llvm::formatv("publicly documented group '{0}' has no publicly "
                         "documented options",
                         group.getGroupName()));
   }
+
+  if (invalid)
+    return Error("option groups failed to validate");
 
   return groups;
 }
@@ -247,7 +273,7 @@ std::optional<int64_t> CommandOptionGroup::getIndex() const {
   return getValueAsOptionalIndex(group);
 }
 
-CommandOption &
+ErrorOr<CommandOption &>
 M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
   assert(group == option->getValueAsDef("Group") &&
          "option does not belong to this group");
@@ -262,32 +288,37 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
   // validation.
   StringRef name = option->getValueAsString("Name");
   StringRef helpText = result.getHelpText();
-  validateCapitalized(
+  bool invalid = failed(validateCapitalized(
       helpText, option->getLoc(),
-      llvm::formatv("help text for publicly visible option '{0}'", name));
+      llvm::formatv("help text for publicly visible option '{0}'", name)));
 
   if (std::optional<StringRef> metaVarName = result.getMetaVarName()) {
     if (metaVarName->empty())
-      llvm::PrintWarning(
+      invalid |= printError(
           option->getLoc(),
           llvm::formatv("option '{0}' metavar name should not be empty", name));
+
     if (metaVarName->upper() != *metaVarName)
-      llvm::PrintWarning(
+      invalid |= printError(
           option->getLoc(),
           llvm::formatv("option '{0}' metavar name should be uppercase", name));
   } else if (!result.isFlag()) {
-    llvm::PrintWarning(option->getLoc(),
-                       llvm::formatv("option '{0}' takes a value, but does not "
-                                     "define a metavar name for that value",
-                                     name));
+    invalid |=
+        printError(option->getLoc(),
+                   llvm::formatv("option '{0}' takes a value, but does not "
+                                 "define a metavar name for that value",
+                                 name));
   }
 
   if (!result.getIndex())
-    llvm::PrintWarning(
+    invalid |= printError(
         option->getLoc(),
         llvm::formatv("option '{0}' has no index with which to order it by; "
                       "it will appear in a non-deterministic order",
                       name));
+
+  if (invalid)
+    return Error("option failed to validate");
 
   return result;
 }
@@ -300,21 +331,22 @@ std::optional<int64_t> CommandOption::getIndex() const {
   return getValueAsOptionalIndex(option);
 }
 
-void CommandOption::addAlias(const llvm::Record *alias) {
+LogicalResult CommandOption::addAlias(const llvm::Record *alias) {
   assert(alias->isSubClassOf("Option") && "unexpected record class");
 
+  bool invalid = false;
   std::optional<int64_t> aliasIndex = getValueAsOptionalIndex(alias);
   auto it = llvm::lower_bound(aliases, alias, LessIndex());
   if (it != aliases.end()) {
     // If the alias already exists in the collection, no need to insert it.
     if (*it == alias)
-      return;
+      return success();
 
     // If we're inserting an alias behind another, they may have the same
     // index value. If so, emit a warning.
     if (std::optional<int64_t> index = getValueAsOptionalIndex(*it))
       if (aliasIndex && aliasIndex == *index)
-        llvm::PrintWarning(
+        invalid |= printError(
             alias->getLoc(),
             llvm::formatv("alias '{0}' has index {1}, which has already been "
                           "used; it will appear in a non-deterministic order",
@@ -324,13 +356,14 @@ void CommandOption::addAlias(const llvm::Record *alias) {
   // Now that we're adding this alias for the first time, perform some
   // validation.
   if (!aliasIndex)
-    llvm::PrintWarning(
+    invalid |= printError(
         alias->getLoc(),
         llvm::formatv("alias '{0}' has no index with which to order it by; "
                       "it will appear in a non-deterministic order",
                       alias->getValueAsString("Name")));
 
   aliases.insert(it, alias);
+  return success(/*isSuccess=*/!invalid);
 }
 
 //===----------------------------------------------------------------------===//
