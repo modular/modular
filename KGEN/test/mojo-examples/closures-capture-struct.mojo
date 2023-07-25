@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo %s | FileCheck %s
-# RUN: kgen %s %mojo_cpu_build_arch -emit -debug-level=full --O0 -o /dev/null
+# RUN: %mojo %s -debug-level=full | FileCheck %s
 
 from IO import print
 from Vector import DynamicVector
