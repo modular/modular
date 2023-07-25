@@ -1033,6 +1033,56 @@ static void foldTrivialLoop(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+/// This class manages a pass manager instance for each thread.
+class PerThreadPassManagers {
+public:
+  explicit PerThreadPassManagers(
+      MLIRContext *ctx,
+      function_ref<void(mlir::OpPassManager &)> buildFuncPasses)
+      : ctx(ctx), buildFuncPasses(buildFuncPasses) {
+    // Reserve the thread-local cache map so that it never resizes.
+    pms.reserve(ctx->isMultithreadingEnabled()
+                    ? ctx->getThreadPool().getThreadCount()
+                    : 1);
+  }
+
+  /// Get the pass manager for the current thread, initializing it if one does
+  /// not exist.
+  mlir::PassManager &getPassManager() {
+    int64_t threadId = llvm::get_threadid();
+    {
+      llvm::sys::SmartScopedReader<true> lock(mutex);
+      if (auto it = pms.find(threadId); it != pms.end())
+        return *it->second;
+    }
+
+    // Emplace a new pass manager for this thread.
+    mutex.lock();
+    mlir::PassManager &pm =
+        *pms.try_emplace(threadId, std::make_unique<mlir::PassManager>(
+                                       ctx, FuncOp::getOperationName()))
+             .first->second;
+    mutex.unlock();
+
+    // Initialize the pass manager.
+    buildFuncPasses(pm);
+    pm.enableVerifier(false);
+    // Enable time tracing on the nested pass manager.
+    pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
+    return pm;
+  }
+
+private:
+  /// The MLIR context.
+  MLIRContext *ctx;
+  /// The functor to populate the passes.
+  function_ref<void(mlir::OpPassManager &)> buildFuncPasses;
+  /// The pass managers for each thread.
+  DenseMap<uint64_t, std::unique_ptr<mlir::PassManager>> pms;
+  /// The mutex guarding the per-thread pass managers map.
+  llvm::sys::SmartRWMutex<true> mutex;
+};
+
 struct InliningGraphNode
     : public InliningGraphNodeBase<InliningGraphNode, FuncOp,
                                    KGENCallOpInterface> {
@@ -1076,12 +1126,9 @@ struct InliningGraphNode
 
 struct InliningGraph
     : public InliningGraphBase<InliningGraph, InliningGraphNode> {
-  explicit InliningGraph(
-      LLCL::Runtime &runtime,
-      function_ref<void(mlir::OpPassManager &)> buildFuncPasses,
-      StringAttr updateAttrName)
-      : InliningGraphBase(runtime), buildFuncPasses(buildFuncPasses),
-        updateAttrName(updateAttrName) {}
+  explicit InliningGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
+                         StringAttr updateAttrName)
+      : InliningGraphBase(runtime), pms(pms), updateAttrName(updateAttrName) {}
 
   /// Inline all functions marked `always_inline`.
   bool shouldInline(InliningGraphNode *node) const {
@@ -1092,8 +1139,8 @@ struct InliningGraph
   /// Inline all functions by invoking the function inliner.
   void performInlining(InliningGraphNode *caller);
 
-  /// The functor to construct a function pass pipeline.
-  function_ref<void(mlir::OpPassManager &)> buildFuncPasses;
+  /// The pass managers to use.
+  PerThreadPassManagers &pms;
   /// Set to true if any of the inner pipelines failed.
   std::atomic<bool> innerPipelineFailed = false;
   /// When updating debug info, defer the update by tagging scope operations
@@ -1113,21 +1160,6 @@ bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
     return false;
   }
   return true;
-}
-
-/// Run a nested function pipeline.
-static LogicalResult
-optimizeFunction(FuncOp func,
-                 function_ref<void(mlir::OpPassManager &)> buildFuncPasses) {
-  TimeTraceScope scope("optimizeFunction");
-  mlir::PassManager pm(func.getContext(), FuncOp::getOperationName());
-  buildFuncPasses(pm);
-  pm.enableVerifier(false);
-  // Enable time tracing on the nested pass manager.
-  TimeProfilerTimingManager tm;
-  mlir::TimingScope ts = tm.getRootScope();
-  pm.enableTiming(ts);
-  return pm.run(func);
 }
 
 void InliningGraph::performInlining(InliningGraphNode *caller) {
@@ -1179,8 +1211,11 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
   // not thread safe due to analysis manager nesting.
   if (updateAttrName)
     return;
-  if (failed(optimizeFunction(caller->func, buildFuncPasses)))
-    innerPipelineFailed = true;
+  {
+    TimeTraceScope traceScope("optimizeFunction");
+    if (failed(pms.getPassManager().run(caller->func)))
+      innerPipelineFailed = true;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1428,7 +1463,8 @@ void ForceInlinePass::runOnOperation() {
   if (updateDebugInfo)
     updateAttrName = StringAttr::get(&getContext(), "inliner_debuginfo_update");
 
-  InliningGraph graph(*rt, buildFuncPasses, updateAttrName);
+  PerThreadPassManagers pms(&getContext(), buildFuncPasses);
+  InliningGraph graph(*rt, pms, updateAttrName);
   graph.build(getOperation(), symtab);
   graph.process();
 
@@ -1453,10 +1489,11 @@ void ForceInlinePass::runOnOperation() {
         continue;
       state.startWork();
       rt->getWorkQueue()->addTask(
-          [func = func, updateAttrName, &state, this, &innerPipelineFailed] {
+          [func = func, updateAttrName, &state, &innerPipelineFailed, &pms] {
             updateScopeDebugInfo(func, updateAttrName);
             // Run the function pipeline here.
-            if (failed((optimizeFunction(func, buildFuncPasses))))
+            TimeTraceScope traceScope("optimizeFunction");
+            if (failed(pms.getPassManager().run(func)))
               innerPipelineFailed = true;
             state.endWork();
           });
