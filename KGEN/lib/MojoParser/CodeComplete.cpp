@@ -49,7 +49,7 @@ struct CodeCompletionListener : public MojoParserListener {
       for (const auto &it : std::filesystem::directory_iterator(dir, ec)) {
         if (ec)
           continue;
-        std::string extension = it.path().extension();
+        std::string extension = it.path().extension().string();
         if (extension == ".mojo" || extension == ".🔥")
           addImportCompletion(it.path().stem().string(), /*isPackage=*/false);
         else if (extension == ".mojopkg" || extension == ".📦" ||
