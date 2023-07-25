@@ -674,6 +674,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
       }
       return nullptr;
     }
+    ASTDecl *decl = result.getIfSuccess().front();
+    if (failed(resolveFully(*decl, decl->getLoc())))
+      return nullptr;
     return result.getIfSuccess().front();
   };
 
