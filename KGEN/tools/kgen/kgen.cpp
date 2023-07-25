@@ -328,8 +328,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // This currently compiles the module, so we don't need to try to look
   // anything up.
-  // TODO(#10893): We will have to look up the symbols we want to emit at some
-  //   point.
   if (auto err = compileLayer.add("exec", *theModule))
     return failure(clOptions.reportError("compilation failed"));
 
