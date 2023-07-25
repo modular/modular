@@ -44,7 +44,13 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
   case WorkQueueType::kThreadPool:
     // Let the ThreadPoolWorkQueue decide on an appropriate number of threads
     // if it is zero. It may be more sophisticated than getNumThreads().
-    workQueue = createThreadPoolWorkQueue(numThreads);
+    workQueue = createThreadPoolWorkQueue(numThreads,
+                                          /*mainWillDonate=*/true
+#if MODULAR_PARANOID
+                                          ,
+                                          paranoid
+#endif
+    );
     break;
   }
   return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),

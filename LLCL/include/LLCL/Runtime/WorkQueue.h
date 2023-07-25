@@ -86,6 +86,13 @@ public:
   /// may itself call await. It is valid for the caller to be running on
   /// any thread, including a worker thread managed by this WorkQueue or any
   /// 'foreign' thread.
+  ///
+  /// CAUTION: Though await will only return when all values are ready, that
+  /// does NOT imply all the waiters for values have been run. Furthermore,
+  /// since await itself relies on waiters, two awaits on the same value from
+  /// different threads can return in any order. Thus, care must be taken
+  /// when using await to decide when a computation is 'done' and its resources
+  /// (or the whole Runtime) can be destroyed.
   virtual void await(ArrayRef<AnyAsyncValueRef> values,
                      bool mayDonate = true) = 0;
 
@@ -131,8 +138,9 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// threads are expected to add a task for their request and sleep.
 ///
 /// The work queue must be shutdown before being destroyed.
-std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true);
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
+                                                     bool mainWillDonate = true,
+                                                     bool paranoid = false);
 
 } // namespace M::LLCL
 
