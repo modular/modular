@@ -98,33 +98,34 @@ public:
 
   /// Notify the listener that a new `alias` declaration has been resolved by
   /// the parser.
-  virtual void onAliasDecl(MojoASTDeclRef declRef,
-                           llvm::SMLoc identifierLoc) = 0;
+  virtual void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new `def` or `fn` function declaration has been
   /// resolved by the parser. This includes struct methods and closures.
   virtual void onFunctionDecl(MojoASTDeclRef declRef,
-                              llvm::SMLoc identifierLoc) = 0;
+                              llvm::SMLoc identifierLoc);
+
+  /// Notify the listener that an import is currently being resolved.
+  virtual void onImport(llvm::SMLoc importLoc);
 
   /// Notify the listener that a new `struct` declaration has been resolved by
   /// the parser.
-  virtual void onStructDecl(MojoASTDeclRef declRef,
-                            llvm::SMLoc identifierLoc) = 0;
+  virtual void onStructDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new `struct field` declaration has been
   /// resolved by the parser.
   virtual void onStructFieldDecl(MojoASTDeclRef declRef,
-                                 llvm::SMLoc identifierLoc) = 0;
+                                 llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new `let` or `var` declaration has been
   /// resolved by the parser.
   virtual void onVariableDecl(MojoASTDeclRef declRef,
-                              llvm::SMLoc identifierLoc) = 0;
+                              llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new reference has been resolved by the parser,
   /// i.e. its declaration is known.
   virtual void onRef(MojoASTDeclRef declRef, StringRef spelling,
-                     llvm::SMLoc loc) = 0;
+                     llvm::SMLoc loc);
 };
 
 //===----------------------------------------------------------------------===//
@@ -188,6 +189,10 @@ public:
 
   /// Return the source manager used by the parser.
   llvm::SourceMgr &getSourceMgr();
+
+  /// Return the full list of directories considered for module lookup from
+  /// the given file.
+  std::vector<std::string> getModuleSearchDirectories(unsigned fileId);
 
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();

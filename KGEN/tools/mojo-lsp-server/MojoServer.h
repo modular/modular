@@ -45,6 +45,11 @@ public:
                       const mlir::lsp::CodeActionContext &context,
                       std::vector<mlir::lsp::CodeAction> &actions);
 
+  /// Get the code completion list for the position within the given file.
+  mlir::lsp::CompletionList
+  getCodeCompletion(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &completePos);
+
   /// Get the location of identifier of the declaration of the symbol that
   /// contains the given position.
   std::optional<mlir::lsp::Location>

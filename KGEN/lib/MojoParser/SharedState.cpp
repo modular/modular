@@ -614,58 +614,26 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
 
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
-static std::optional<std::string>
-resolveModulePath(StringRef moduleName,
-                  const SmallVector<std::string> &autoImportDirs,
-                  llvm::SourceMgr &sourceMgr, llvm::SMLoc includeLoc) {
-  // Python has lots of magic rules surrounding how modules get resolved. For
-  // now, we just use the available include directories within the source
-  // manager and the working directory of where the module is included.
+static std::optional<std::string> resolveModulePath(SharedState &sharedState,
+                                                    StringRef moduleName,
+                                                    llvm::SMLoc includeLoc) {
+  unsigned includeBufferId =
+      sharedState.getSourceMgr().FindBufferContainingLoc(includeLoc);
 
-  // Functor used to check the status of the given path and include directory.
-  auto checkPathAndDir = [&](StringRef moduleName, StringRef includeDir) {
+  std::optional<std::string> result;
+  sharedState.traverseImportDirectories(includeBufferId, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
-    if (isMojoSourcePackagePath(includeDir.str())) {
-      // TODO: It'd be nice to emit a list of potential modules that the name
-      // might correspond with if it did resolve to one inside of this package.
-      return std::optional<std::string>();
+    if (isMojoSourcePackagePath(dir.str())) {
+      // TODO: It'd be nice to emit a list of potential modules that the
+      // name might correspond with if it did resolve to one inside of this
+      // package.
+      return WalkResult::advance();
     }
-    return resolveModulePath(moduleName, includeDir);
-  };
-
-  // Check the auto import directory first.
-  for (auto &rawPath : autoImportDirs) {
-    if (auto path = checkPathAndDir(moduleName, rawPath))
-      return std::move(*path);
-    // Cannot find the file, then check child directories of the auto import
-    // directory.
-    for (auto &childDir :
-         std::filesystem::recursive_directory_iterator(rawPath)) {
-      // Skip non-directories and source packages, internal packages should be
-      // imported using a relative import.
-      if (!childDir.is_directory() || isMojoSourcePackagePath(childDir.path()))
-        continue;
-      if (auto path = checkPathAndDir(moduleName, childDir.path().string()))
-        return std::move(*path);
-    }
-  }
-
-  // Check the working directory.
-  const llvm::MemoryBuffer *includeBuffer =
-      sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(includeLoc));
-  assert(includeBuffer && "must be in a source buffer");
-  auto includerPath =
-      std::filesystem::path(includeBuffer->getBufferIdentifier().str());
-  if (auto path =
-          checkPathAndDir(moduleName, includerPath.parent_path().string()))
-    return std::move(*path);
-
-  // Then check the include directories.
-  for (StringRef includeDir : sourceMgr.getIncludeDirs())
-    if (auto path = checkPathAndDir(moduleName, includeDir))
-      return std::move(*path);
-
-  return std::nullopt;
+    if ((result = resolveModulePath(moduleName, dir)))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  return result;
 }
 
 /// Return a mangled version of the given module name. This is used to avoid
@@ -726,8 +694,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     // name.
     declName = StringAttr::get(getContext(), name);
   } else {
-    modulePath =
-        resolveModulePath(name, impl->autoImportDirs, getSourceMgr(), loc);
+    modulePath = resolveModulePath(*this, name, loc);
   }
   if (!modulePath) {
     return createErrorModuleState(loc, mangledName, *parentState->decl,
@@ -1661,6 +1628,50 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
 
 ArrayRef<std::string> SharedState::getIncludedFiles() const {
   return impl->includedFiles;
+}
+
+void SharedState::traverseImportDirectories(
+    unsigned importBufferFileId,
+    function_ref<WalkResult(StringRef)> callback) const {
+  // Python has lots of magic rules surrounding how modules get resolved. For
+  // now, we just use the available include directories within the source
+  // manager and the working directory of where the module is included.
+  SourceMgr &sourceMgr = getSourceMgr();
+
+  // Check the auto import directory first.
+  for (auto &rawPath : impl->autoImportDirs) {
+    if (callback(rawPath).wasInterrupted())
+      return;
+
+    // Cannot find the file, then check child directories of the auto import
+    // directory.
+    std::error_code ec;
+    for (auto &childDir :
+         std::filesystem::recursive_directory_iterator(rawPath, ec)) {
+      if (ec)
+        continue;
+      // Skip non-directories and source packages, internal packages should be
+      // imported using a relative import.
+      if (!childDir.is_directory() || isMojoSourcePackagePath(childDir.path()))
+        continue;
+      if (callback(childDir.path().string()).wasInterrupted())
+        return;
+    }
+  }
+
+  // Check the working directory.
+  if (const auto *includeBuffer =
+          sourceMgr.getMemoryBuffer(importBufferFileId)) {
+    auto includerPath =
+        std::filesystem::path(includeBuffer->getBufferIdentifier().str());
+    if (callback(includerPath.parent_path().string()).wasInterrupted())
+      return;
+  }
+
+  // Check the include directories.
+  for (StringRef includeDir : getSourceMgr().getIncludeDirs())
+    if (callback(includeDir).wasInterrupted())
+      return;
 }
 
 void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,

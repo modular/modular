@@ -53,6 +53,9 @@ struct LSPServer {
   //===--------------------------------------------------------------------===//
   // Language Features
 
+  void onCompletion(const CompletionParams &params,
+                    Callback<CompletionList> reply);
+
   void onDefinition(const TextDocumentPositionParams &params,
                     Callback<llvm::json::Value> reply);
 
@@ -83,6 +86,15 @@ void LSPServer::onInitialize(const InitializeParams &params,
                              Callback<llvm::json::Value> reply) {
   // Send a response with the capabilities of this server.
   llvm::json::Object serverCaps{
+      {"completionProvider",
+       llvm::json::Object{
+           {"allCommitCharacters",
+            {"\t", "(", ")", "[", "]", "{",  "}", "<", ">",
+             ":",  ";", ",", "+", "-", "/",  "*", "%", "^",
+             "&",  "#", "?", ".", "=", "\"", "'", "|"}},
+           {"resolveProvider", false},
+           {"triggerCharacters", {"."}},
+       }},
       {"definitionProvider", true},
       {"hoverProvider", true},
       {"textDocumentSync",
@@ -175,6 +187,11 @@ void LSPServer::onCodeAction(const CodeActionParams &params,
 //===----------------------------------------------------------------------===//
 // Language Features
 
+void LSPServer::onCompletion(const CompletionParams &params,
+                             Callback<CompletionList> reply) {
+  reply(server.getCodeCompletion(params.textDocument.uri, params.position));
+}
+
 void LSPServer::onDefinition(const TextDocumentPositionParams &params,
                              Callback<llvm::json::Value> reply) {
   reply(server.onDefinition(params.textDocument.uri, params.position));
@@ -213,10 +230,11 @@ mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(MojoServer &server,
                         &LSPServer::onCodeAction);
 
   // Language Features
-  messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
-
+  messageHandler.method("textDocument/completion", &lspServer,
+                        &LSPServer::onCompletion);
   messageHandler.method("textDocument/definition", &lspServer,
                         &LSPServer::onDefinition);
+  messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
 
   // Diagnostics
   lspServer.publishDiagnostics =

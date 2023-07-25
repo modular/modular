@@ -6,7 +6,8 @@
 // CHECK-NEXT:  "result": {
 // CHECK-NEXT:    "capabilities": {
 // CHECK-NEXT:      "codeActionProvider": true,
-// CHECK-NEXT:      "definitionProvider": true,
+// CHECK-NEXT:      "completionProvider":
+// CHECK:           "definitionProvider": true,
 // CHECK-NEXT:      "hoverProvider": true,
 // CHECK-NEXT:      "textDocumentSync": {
 // CHECK-NEXT:        "change": 2,
