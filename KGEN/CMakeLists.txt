@@ -51,7 +51,8 @@ endif()
 add_subdirectory(tools/mojo)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
-# ${KGEN_INCLUDE_FLAGS}.
+# ${KGEN_INCLUDE_FLAGS}. It also read ${KGEN_LINK_DIRS} and appends those
+# to the include path.
 macro(_setup_libs)
   set(KGEN_LIB_DEPENDS "")
   set(KGEN_INCLUDE_FLAGS "")
@@ -62,6 +63,9 @@ macro(_setup_libs)
     get_target_property(lib_include_dir ${lib} INCLUDE_DIRECTORIES)
     list(APPEND KGEN_INCLUDE_FLAGS "-I=${lib_include_dir}")
     list(APPEND KGEN_LIB_DEPENDS "${lib}")
+  endforeach ()
+  foreach (lib_include_dir ${KGEN_LINK_DIRS})
+    list(APPEND KGEN_INCLUDE_FLAGS "-I=${lib_include_dir}")
   endforeach ()
 endmacro()
 
@@ -138,7 +142,7 @@ add_custom_target(mojo-sdk DEPENDS mojo)
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_mojo_package target)
-  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "STDLIB" "PACKAGE_DIR;OUTPUT_NAME" "PRIVATE;PUBLIC;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -225,7 +229,7 @@ endfunction()
 # specify this target in the LINK_LIBS of another kgen_library or kgen_kernel
 # and the include flags will be setup correctly.
 function(add_kgen_library target)
-  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SAVE_TEMPS;NO_DEBUG" "OUTPUT" "LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
@@ -272,7 +276,7 @@ endfunction()
 # This function will pull its include flags from the linked libs to avoid
 # having too many search paths.
 function(add_kgen_kernel target)
-  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS" ${ARGN})
+  cmake_parse_arguments(KGEN "SFF_DEBUG;ENABLE_SEARCH;NO_DEBUG" "SOURCE;OUTPUT_NAME" "KERNELS;LINK_LIBS;LINK_DIRS" ${ARGN})
 
   _setup_libs()
   _setup_arch()
