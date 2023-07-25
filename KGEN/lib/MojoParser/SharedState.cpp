@@ -1065,15 +1065,15 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
       fileOp, lexer.getToken().getLoc(), declName, parentState.decl,
       lexer.getCursor(), LexerCursor::getEOF(moduleBuffer), /*indentation=*/-1);
 
-  // Auto-import the core language modules.
-  importBuiltinModules(moduleDecl);
-
   auto it = parentState.nestedModules.insert(
       {mangledName,
        std::make_unique<ModuleState>(
            &moduleDecl, moduleBuffer->getBufferIdentifier(), enableCaching)});
   ModuleState &moduleState = *it.first->second;
   impl->moduleStates[&moduleDecl] = &moduleState;
+
+  // Auto-import the core language modules.
+  importBuiltinModules(moduleDecl);
 
   // Build a content hash for the module from its input buffer.
   llvm::BLAKE3 contentHash;
