@@ -67,7 +67,8 @@ void M::TF::StatsReport::countFallback(mlir::Operation &op) {
     if (attrVal.size() < 32)
       ss << attrVal;
     else
-      ss << attrVal.substr(32) << "...";
+      ss << attrVal.substr(0, 14) << "..."
+         << attrVal.substr(attrVal.size() - 14, 14);
   }
   ss << "}";
 
@@ -118,6 +119,7 @@ void M::TF::StatsReport::writeToFile() {
   }
 
   reportFile.keep();
+  reportFile.os() << name << "\n";
   reportFile.os() << "TOTAL OPS\t" << numTotalOps << "\n";
   reportFile.os() << "FALLBACK OPS\t" << numFallbackOps << "\n";
 
