@@ -64,12 +64,21 @@ class [[nodiscard]] ErrorOr {
   using StorageMode = Error::StorageMode;
 
 public:
-  using value_type = T;
+  using value_type =
+      std::conditional_t<std::is_reference_v<T>,
+                         std::reference_wrapper<std::remove_reference_t<T>>, T>;
 
+private:
+  using reference = std::remove_reference_t<T> &;
+  using const_reference = const std::remove_reference_t<T> &;
+  using pointer = std::remove_reference_t<T> *;
+  using const_pointer = const std::remove_reference_t<T> *;
+
+public:
   ~ErrorOr() {
     switch (storageMode) {
     case StorageMode::kValue:
-      valueStorage.~T();
+      valueStorage.~value_type();
       return;
     case StorageMode::kStaticError:
       return;
@@ -96,7 +105,7 @@ public:
   template <class OtherT,
             typename = std::enable_if_t<std::is_convertible<OtherT, T>::value>>
   ErrorOr(OtherT &&val) : storageMode(StorageMode::kValue) {
-    new (&valueStorage) T(std::forward<OtherT>(val));
+    new (&valueStorage) value_type(std::forward<OtherT>(val));
   }
 
   /// Move constructor from ErrorOr.
@@ -105,7 +114,7 @@ public:
   ErrorOr(ErrorOr<OtherT> &&other) : storageMode(other.storageMode) {
     switch (storageMode) {
     case StorageMode::kValue:
-      new (&valueStorage) T(std::forward<OtherT>(other.valueStorage));
+      new (&valueStorage) value_type(std::forward<OtherT>(other.valueStorage));
       return;
     case StorageMode::kStaticError:
       errorStorage = other.errorStorage;
@@ -161,16 +170,16 @@ public:
   /// Return true if this contains an error instead of a value.
   bool isError() const { return storageMode != Error::kValue; }
 
-  T &get() {
+  reference get() {
     assert(storageMode == Error::kValue && "don't have a value!");
     return valueStorage;
   }
 
-  const T &get() const { return const_cast<ErrorOr<T> *>(this)->get(); }
+  const_reference get() const { return const_cast<ErrorOr<T> *>(this)->get(); }
 
   /// Given an ErrorOr with a value, take ownership of the underlying value away
   /// from the ErrorOr.
-  T takeValue() { return std::move(get()); }
+  value_type takeValue() { return std::move(get()); }
 
   const char *getError() const {
     assert(storageMode <= StorageMode::kValue && "invalid storage mode");
@@ -203,10 +212,10 @@ public:
     llvm_unreachable("unsupported StorageMode");
   }
 
-  T *operator->() { return &get(); }
-  T &operator*() { return get(); }
-  const T *operator->() const { return &get(); }
-  const T &operator*() const { return get(); }
+  pointer operator->() { return &get(); }
+  reference operator*() { return get(); }
+  const_pointer operator->() const { return &get(); }
+  const_reference operator*() const { return get(); }
 
 private:
   template <class OtherT>
@@ -217,7 +226,7 @@ private:
   ErrorOr &operator=(const ErrorOr &other) = delete; // use copy() explicitly.
 
   union {
-    T valueStorage;
+    value_type valueStorage;
     const char *errorStorage;
   };
   StorageMode storageMode : 2;
