@@ -895,7 +895,9 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
 
-def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock]> {
+def LIT_AsyncExecuteOp : LITOp<"async.execute",
+  [SingleBlock, DebugInfo_SubprogramScoped]
+>{
   let summary = "Execute an async region.";
   let description = [{
     The `lit.async.execute` operation asynchronously executes a region and
@@ -914,8 +916,8 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock]> {
   }];
 
   let results = (outs POP_CoroutineType:$coroutine);
-  let regions = (region SizedRegion<1>:$region);
-  let assemblyFormat = "type($coroutine) $region attr-dict";
+  let regions = (region SizedRegion<1>:$bodyRegion);
+  let assemblyFormat = "type($coroutine) $bodyRegion attr-dict";
 
   let hasVerifier = 1;
 }
