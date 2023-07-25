@@ -447,7 +447,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
     while (!localTaskList.empty()) {
-#if MODULAR_DEBUG
+#if MODULAR_PARANOID
       // Try to tickle bugs by working through tasks in random order.
       size_t i = rand() % localTaskList.size();
       TaskFunction taskFunction = std::move(localTaskList[i]);
