@@ -28,14 +28,19 @@ public:
   SingleThreadWorkQueue(size_t cpuID) : cpuID(cpuID) {}
 
   void shutdown() override {
+    WorkQueueState expected = kReady;
+    assert(state.compare_exchange_strong(expected, kShuttingDown));
     // Complete any work that's still in-flight.
     runUntil([]() -> bool { return false; });
+    expected = kShuttingDown;
+    assert(state.compare_exchange_strong(expected, kShutdown));
   }
 
-  ~SingleThreadWorkQueue() override = default;
+  ~SingleThreadWorkQueue() override { assert(!workItems.dequeue()); }
 
   void addTask(TaskFunction &&work) override {
     assert(work);
+    assert(state != kShutdown);
     workItems.enqueue(std::move(work));
   }
 
@@ -61,8 +66,16 @@ private:
     taskFunction();
   }
 
+  enum WorkQueueState : uint8_t {
+    kReady = 0,
+    kShuttingDown = 1,
+    kShutdown = 2
+  };
+
   /// CPU ID to set affinity to when running the runUntil loop.
   size_t cpuID;
+  /// True when work queue has been shutdown.
+  std::atomic<WorkQueueState> state = kReady;
   /// Pending work items.
   ConcurrentQueue<TaskFunction> workItems;
 };
@@ -70,6 +83,8 @@ private:
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
                                   bool mayDonate) {
+  assert(state == kReady);
+
   // Note we must ignore mayDonate.
 
   // We are done when values_remaining drops to zero.
@@ -88,6 +103,7 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
   assert(numRemaining == 0 &&
          "Some AsyncValues are not ready yet no further "
          "tasks are available to run. Are all input AsyncValues ready?");
+  assert(state == kReady);
 }
 
 template <typename StopPredicateFn>

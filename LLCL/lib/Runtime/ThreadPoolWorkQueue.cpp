@@ -63,19 +63,22 @@ constexpr size_t kTaskListSlotsPerThread = 16;
 /// sleep on a semaphore.
 constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
 
-/// If true, insert randomized sleeps to tickle concurrency bugs.
-constexpr bool kDemonicNondet = false;
-
 //===----------------------------------------------------------------------===//
 // WorkerThread
 //===----------------------------------------------------------------------===//
 
 namespace {
 
-/// If in 'demonic non-determinism' mode, sleep for up to a few milliseconds.
-static LLVM_ATTRIBUTE_ALWAYS_INLINE void demonicSleep() {
-  if constexpr (kDemonicNondet)
-    std::this_thread::sleep_for(std::chrono::microseconds(10 + rand() % 2000));
+/// Tracks the overall shutdown progress for the work queue.
+enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
+
+/// Sleep for a random period to try to tickle data races.
+static void randomSleep() {
+  std::chrono::milliseconds delay{(random() % 4) * 2000};
+  if (delay.count() > 0) {
+    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.randomSleep"));
+    std::this_thread::sleep_for(delay);
+  }
 }
 
 /// Bit index i is true if the thread with workedID i is suspended.
@@ -95,6 +98,19 @@ static constexpr auto printWorkerId(size_t workerID) {
 struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
+
+#if MODULAR_PARANOID
+  /// If true, try to tickle race conditions with sleeps.
+  /// Very expensive, hence guard by a runtime flag in addition to the
+  /// compile-time MODULAR_PARANOID flag.
+  bool paranoid = false;
+#endif
+
+#if MODULAR_PARANOID
+  /// Track when the overall work queue is entering the shutdown quiescence
+  /// period.
+  std::atomic<WorkQueueState> state = kReady;
+#endif
 
   /// This flag indicates when a thread should quit working and get ready to be
   /// joined.
@@ -230,6 +246,8 @@ struct WorkQueueThread {
       thread.emplace(&WorkQueueThread::runOnThread, this);
   }
 
+  ~WorkQueueThread() { assert(localTaskList.empty()); }
+
   /// Schedule this work item on the localTaskList to be executed on the next
   /// runItems loop.
   ///
@@ -254,14 +272,29 @@ struct WorkQueueThread {
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(TaskFunction &&taskFunction) {
-    demonicSleep();
+#if MODULAR_PARANOID
+    if (sharedState.paranoid)
+      randomSleep();
+#endif
+
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
           IsWaiter ? "llcl.waiter" : "llcl.doWork"));
       // Do the work.
       taskFunction();
     }
-    demonicSleep();
+
+#if MODULAR_PARANOID
+    if constexpr (IsWaiter) {
+      assert(sharedState.state != kShutdown &&
+             "ThreadPoolWorkQueue was shutdown while a waiter closure was "
+             "still in-flight");
+    } else {
+      assert(sharedState.state != kShutdown &&
+             "ThreadPoolWorkQueue was shutdown while a task clouser was still "
+             "in-flight");
+    }
+#endif
   }
 
   /// Returns true if the calling thread can be considered to own this
@@ -412,8 +445,15 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
     while (!localTaskList.empty()) {
+#if MODULAR_DEBUG
+      // Try to tickle bugs by working through tasks in random order.
+      size_t i = random() % localTaskList.size();
+      TaskFunction taskFunction = std::move(localTaskList[i]);
+      localTaskList.erase(localTaskList.begin() + i);
+#else
       TaskFunction taskFunction = std::move(localTaskList.back());
       localTaskList.pop_back();
+#endif
       doWork</*IsWaiter=*/true>(std::move(taskFunction));
     }
 
@@ -525,7 +565,7 @@ public:
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
   ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                      size_t taskListCapacity);
+                      size_t taskListCapacity, bool paranoid);
 
   ~ThreadPoolWorkQueue() override;
 
@@ -567,7 +607,7 @@ private:
   /// This is the set of worker threads in the WorkQueue. Entry #0 is reserved
   /// for at most one foreign thread which may donate to this work queue.
   const size_t numWorkers;
-  WorkQueueThread *workers;
+  WorkQueueThread *workers = nullptr;
 
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
@@ -584,9 +624,14 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                                         size_t taskListCapacity)
+                                         size_t taskListCapacity, bool paranoid)
     : numWorkers(cpuIDs.size()), taskList(taskListCapacity) {
   assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
+#if MODULAR_PARANOID
+  sharedState.paranoid = paranoid;
+#else
+  assert(!paranoid);
+#endif
   // Initialize each thread with its required state. Note that workerID #0
   // does not start itself since it represents all 'foreign' threads.
   // We're doing this the hard way since WorkQueueThreads have non-moveable
@@ -601,12 +646,20 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
+  assert(!taskList.dequeue());
+
+  // Destroy all the threads datastructures.
   for (size_t i = 0; i < numWorkers; ++i)
     workers[i].~WorkQueueThread();
   free(workers);
 }
 
 void ThreadPoolWorkQueue::shutdown() {
+#if MODULAR_PARANOID
+  WorkQueueState expected = kReady;
+  assert(sharedState.state.compare_exchange_strong(expected, kShuttingDown));
+#endif
+
   TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
 
   WorkQueueThread *callingWorker = getCurrentWorkQueueThread();
@@ -627,7 +680,12 @@ void ThreadPoolWorkQueue::shutdown() {
       /*spinningLabel=*/"llcl.shutdown.spinning",
       /*sleepingLabel=*/"llcl.shutdown.sleeping");
 
-  // Now we can tell all the threads to exit.
+#if MODULAR_PARANOID
+  expected = kShuttingDown;
+  assert(sharedState.state.compare_exchange_strong(expected, kShutdown));
+#endif
+
+  // Tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
 
   // Post on the semaphore for every thread to wake up if it is waiting.
@@ -647,6 +705,11 @@ void ThreadPoolWorkQueue::shutdown() {
 
 void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
   assert(work);
+#if MODULAR_PARANOID
+  // This is not a true interlock, but will at least catch obvious
+  // use-after-shutdowns.
+  assert(sharedState.state != kShutdown);
+#endif
 
   // Try to add this work to the lock-free queue.
   if (taskList.enqueue(work)) {
@@ -680,13 +743,23 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
 
 void ThreadPoolWorkQueue::addLocalTask(TaskFunction &&work) {
   assert(work);
+#if MODULAR_PARANOID
+  // This is not a true interlock, but will at least catch obvious
+  // use-after-shutdowns.
+  assert(sharedState.state != kShutdown);
+#endif
   WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
   if (callerWorker->workerID == 0 &&
       callerWorker->threadID != llvm::get_threadid()) {
-    // Called from a foreign worker which is not within a runItems loop, so
-    // there's no local task list we can enqueue to on this thread.
+#if MODULAR_PARANOID
+    assert(false && "addLocalTask from a foreign thread is not supported in "
+                    "MODULAR_PARANOID builds");
+#else
+    // Called from a foreign thread which is not (yet) within a runItems loop,
+    // so there's no local task list we can enqueue to on this thread.
     // Add as a task instead.
     addTask(std::move(work));
+#endif
     return;
   }
 
@@ -697,6 +770,12 @@ void ThreadPoolWorkQueue::addLocalTask(TaskFunction &&work) {
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
                                 bool mayDonate) {
+#if MODULAR_PARANOID
+  // This is not a true interlock, but will at least catch obvious
+  // use-after-shutdowns.
+  assert(sharedState.state == kReady);
+#endif
+
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))
     return;
@@ -794,6 +873,10 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
   }
 
   assert(numRemaining.load() == 0);
+#if MODULAR_PARANOID
+  // Try to catch if the runtime was torn down while we were awaiting.
+  assert(sharedState.state == kReady);
+#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -801,7 +884,23 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue>
-M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate) {
+M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
+                                   bool paranoid) {
+#if MODULAR_PARANOID
+#ifdef NDEBUG
+  llvm::dbgs() << "CAUTION: Asked for a MODULAR_PARANOID build with NDEBUG. "
+                  "Asserts will not be active, which is unlikely to be what "
+                  "you intended.\n";
+#else
+  if (paranoid)
+    llvm::dbgs() << "CAUTION: Running a MODULAR_PARANOID build with additional "
+                    "checks enabled by the paranoid flag.\n";
+  else
+    llvm::dbgs() << "CAUTION: Running a MODULAR_PARANOID build. Consider using "
+                    "the paranoid flag for even more paranoia.\n";
+#endif
+#endif
+
   // Using numThreads as a hint, figure out a CPU for each worker thread
   // and the main thread. The CPU ids may end up as kNoAffinity, but the
   // vector size will still guide the construction of worker threads.
@@ -836,5 +935,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate) {
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
 
-  return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity);
+  return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity,
+                                               paranoid);
 }

@@ -111,6 +111,15 @@ protected:
     return workQueueType;
   }
 
+#if MODULAR_PARANOID
+  /// If true, and in a MODULAR_PARANOID build, perform additional (and
+  /// very expensive!) runtime actions to make race conditions and other
+  /// undefined behaviour more likely to be observed by unit tests.
+  llvm::cl::opt<bool> paranoid{"paranoid",
+                               llvm::cl::desc("Turn on paranoid mode"),
+                               llvm::cl::init(false)};
+#endif
+
   /// Constructor allows to specify default work queue (e.g. to force always
   /// using single thread)
   RuntimeWorkQueueCLOptions(
