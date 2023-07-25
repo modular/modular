@@ -72,6 +72,7 @@ namespace {
 /// Tracks the overall shutdown progress for the work queue.
 enum WorkQueueState : uint8_t { kReady = 0, kShuttingDown = 1, kShutdown = 2 };
 
+#if MODULAR_PARANOID
 /// Sleep for a random period to try to tickle data races.
 static void randomSleep() {
   std::chrono::milliseconds delay{(random() % 4) * 2000};
@@ -80,6 +81,7 @@ static void randomSleep() {
     std::this_thread::sleep_for(delay);
   }
 }
+#endif
 
 /// Bit index i is true if the thread with workedID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
