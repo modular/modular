@@ -142,7 +142,8 @@ fn MOGGExport():
     alias _tanh = tanh
     alias _relu = relu
     alias _reshape = reshape
-    alias _broadcast = broadcast_to_tensor
+    alias _broadcast_to_shape = broadcast_to_shape
+    alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_nd = scatter_nd
     alias _slice = slice
     alias _simd_load = simd_load
@@ -618,6 +619,51 @@ fn broadcast_to_tensor[
     )
 
     return out
+
+
+@always_inline
+fn broadcast_to_shape[
+    input_rank: Int,
+    output_rank: Int,
+    input_type: DType,
+    target_shape_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    target_shape_buf: NDBuffer[
+        1, DimList.create_unknown[1](), target_shape_type
+    ],
+) -> StaticIntTuple[output_rank]:
+
+    # TODO(#17512)
+    debug_assert(
+        output_rank == target_shape_buf.dim(0),
+        "output rank must match target shape",
+    )
+    debug_assert(
+        input_rank <= output_rank,
+        "input rank must not exceed output rank",
+    )
+
+    # move the output shape from buffer into a static int tuple
+    var output_shape = StaticIntTuple[output_rank]()
+    for axis in range(output_rank):
+        output_shape[axis] = target_shape_buf[axis].to_int()
+
+    # Validate the compatibility between input and output shapes
+    # NOTE we don't need to check the padded dims
+    for i in range(input_rank):
+        let input_axis = input_rank - i - 1
+        let output_axis = output_rank - i - 1
+        let input_dim = input_buf.dim(input_axis)
+        let output_dim = output_shape[output_axis]
+        debug_assert(
+            input_dim == 1 or input_dim == output_dim,
+            "input dim must be either 1 or equal to corresponding output dim",
+        )
+    return output_shape
 
 
 # When we have many SIMD types in one kernel we need to use the `min` of them.
