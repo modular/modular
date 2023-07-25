@@ -24,4 +24,42 @@ def DebugInfo_ScopedLocation : OpInterface<"ScopedLocation"> {
   ];
 }
 
+def DebugInfo_SubprogramScoped : OpInterface<
+  "SubprogramScoped", [DebugInfo_ScopedLocation]
+>{
+  let description = [{
+    This interface represents an operation that can have a debuginfo subprogram
+    scope in its location, and a body whose operations (except other nested
+    SubprogramScoped ops) must have the same scope.
+  }];
+  let cppNamespace = "::M::DebugInfo";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the function-like region of the operation.
+    }], "Region &", "getBodyRegion", (ins)>,
+    InterfaceMethod<[{
+      Return the location scope, or a null attribute if not available
+    }], "DebugInfo::DISubprogramAttr", "getSubprogramScope", (ins), [{}],
+    [{
+      return dyn_cast_or_null<DebugInfo::DISubprogramAttr>(this->getLocScope());
+    }]>,
+  ];
+
+  let extraTraitClassDeclaration = [{
+    DebugInfo::DIScopeAttr getLocScope() {
+      Location loc = this->getOperation()->getLoc();
+      if (auto fusedLoc = dyn_cast<
+          mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(loc))
+        return fusedLoc.getMetadata();
+      return {};
+    }
+  }];
+
+  let verify = [{
+    return impl::verifySubprogramScoped(cast<SubprogramScoped>($_op));
+  }];
+}
+
+
 #endif // SUPPORT_DEBUGINFODIALECT_DEBUGINFOINTERFACES_TD
