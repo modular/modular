@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s --debug-level=full | FileCheck %s
+
 from IO import print
 from Range import range
 from Len import len
