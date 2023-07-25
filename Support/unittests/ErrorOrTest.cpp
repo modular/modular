@@ -51,5 +51,15 @@ TEST(ErrorOr, equality) {
   EXPECT_NE(ErrorOr<int>(5), ErrorOr<int>(Error("File not found")));
 }
 
+TEST(ErrorOr, referenceType) {
+  std::vector<int> v1 = {1, 2, 3};
+  std::vector<int> v2 = {4, 5, 6};
+  ErrorOr<std::vector<int> &> v1OrErr = v1;
+  EXPECT_EQ(v1OrErr, ErrorOr<std::vector<int> &>(v1));
+  EXPECT_NE(v1OrErr, ErrorOr<std::vector<int> &>(v2));
+  EXPECT_EQ(std::vector<int>({1, 2, 3}), v1OrErr.get());
+  EXPECT_EQ(std::vector<int>({1, 2, 3}), *v1OrErr);
+}
+
 // TODO(akirchhoff): Test move semantics
 // TODO(akirchhoff): Test copying
