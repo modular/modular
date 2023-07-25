@@ -116,6 +116,7 @@ fn MOGGExport():
     alias _gather_shape = gather_shape
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
+    alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
     alias _isinf = isinf
@@ -902,6 +903,40 @@ fn mean[
             wrapped_output_div,
             reduce_impl,
         ](input_buffer, 0, reduce_dim, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# Pad op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn pad_shape[
+    input_rank: Int,
+    input_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+) -> StaticIntTuple[input_rank]:
+
+    # TODO(#17512)
+    debug_assert(
+        paddings_buf.dim(0) == input_rank and paddings_buf.dim(1) == 2,
+        "paddings shape must be (input_rank, 2)",
+    )
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[input_rank]()
+    for axis in range(input_rank):
+        let pre_pad = paddings_buf[axis, 0].to_int()
+        let post_pad = paddings_buf[axis, 1].to_int()
+        output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
+
+    return output_shape
 
 
 # ===----------------------------------------------------------------------===#
