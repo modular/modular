@@ -58,3 +58,32 @@ import IO
         item.label == "Builtin" and item.kind == CompletionItemKind.Folder
         for item in items
     )
+
+
+async def test_completion_nested_import(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+import Builtin.
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    results = fail_if_none(
+        await client.text_document_completion_async(
+            params=CompletionParams(
+                position=Position(line=1, character=15),
+                text_document=doc.identifier,
+            )
+        )
+    )
+    if isinstance(results, CompletionList):
+        items = results.items
+    else:
+        items = results
+
+    assert any(
+        item.label == "Bool" and item.kind == CompletionItemKind.Module
+        for item in items
+    )

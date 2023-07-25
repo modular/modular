@@ -108,6 +108,10 @@ public:
   /// Notify the listener that an import is currently being resolved.
   virtual void onImport(llvm::SMLoc importLoc);
 
+  /// Notify the listener that an import of a module within the given package is
+  /// currently being resolved.
+  virtual void onImport(MojoASTDeclRef packageDecl, llvm::SMLoc importLoc);
+
   /// Notify the listener that a new `struct` declaration has been resolved by
   /// the parser.
   virtual void onStructDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);

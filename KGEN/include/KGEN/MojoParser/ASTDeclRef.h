@@ -28,9 +28,7 @@ class MojoASTTypeRef;
 /// This class provides a view into a Mojo AST declaration.
 class MojoASTDeclRef {
 public:
-  MojoASTDeclRef() : MojoASTDeclRef(nullptr) {}
-
-  MojoASTDeclRef(void *impl) : impl(impl) {}
+  MojoASTDeclRef(void *impl = nullptr) : impl(impl) {}
 
   /// Returns the operation corresponding to this decl if there is one, nullptr
   /// otherwise. The returned operation should only be used for introspection,
@@ -61,6 +59,57 @@ public:
   /// Get a DeclView that can be used for more easily inspecting the metadata of
   /// this decl.
   std::unique_ptr<DeclView> getView() const;
+
+  //===--------------------------------------------------------------------===//
+  // Children
+  //===--------------------------------------------------------------------===//
+
+  /// This class represents an individual child entry. It contains the name of
+  /// the child declaration, and the group of declarations that share the same
+  /// name.
+  class ChildEntry {
+  public:
+    /// Return the name of this entry.
+    StringRef getName() const { return name; }
+
+    /// Return the declarations within this entry.
+    auto getDecls() const {
+      return llvm::map_range(rawEntries, [](const void *entry) {
+        return MojoASTDeclRef(const_cast<void *>(entry));
+      });
+    }
+
+  private:
+    friend MojoASTDeclRef;
+
+    /// Constructs a new child entry.
+    ChildEntry(StringRef name, ArrayRef<void *> rawEntries)
+        : name(name), rawEntries(rawEntries) {}
+
+    /// The name of this entry.
+    StringRef name;
+
+    /// The raw entry array.
+    ArrayRef<void *> rawEntries;
+  };
+
+  /// This class defines an iterator over the children of a declaration.
+  class ChildIterator
+      : public llvm::indexed_accessor_iterator<
+            ChildIterator, const void *, ChildEntry, ChildEntry, ChildEntry> {
+  public:
+    /// Accesses the entry at the current position.
+    ChildEntry operator*() const;
+
+  private:
+    friend MojoASTDeclRef;
+
+    /// Constructs a new iterator.
+    ChildIterator(MojoASTDeclRef decl, size_t index);
+  };
+
+  /// Return the children of this declaration.
+  llvm::iterator_range<ChildIterator> getChildren() const;
 
 private:
   /// Allow MojoParserContext to access the internal implementation.
