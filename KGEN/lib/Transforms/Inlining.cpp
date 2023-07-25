@@ -15,6 +15,7 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/ThreadLocalCache.h"
@@ -1114,6 +1115,21 @@ bool InliningGraph::prepareForInlining(InliningGraphNode *node) {
   return true;
 }
 
+/// Run a nested function pipeline.
+static LogicalResult
+optimizeFunction(FuncOp func,
+                 function_ref<void(mlir::OpPassManager &)> buildFuncPasses) {
+  TimeTraceScope scope("optimizeFunction");
+  mlir::PassManager pm(func.getContext(), FuncOp::getOperationName());
+  buildFuncPasses(pm);
+  pm.enableVerifier(false);
+  // Enable time tracing on the nested pass manager.
+  TimeProfilerTimingManager tm;
+  mlir::TimingScope ts = tm.getRootScope();
+  pm.enableTiming(ts);
+  return pm.run(func);
+}
+
 void InliningGraph::performInlining(InliningGraphNode *caller) {
   TimeTraceScope traceScope(
       "InliningGraph::performInlining",
@@ -1163,11 +1179,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
   // not thread safe due to analysis manager nesting.
   if (updateAttrName)
     return;
-  TimeTraceScope scope("optimizeFunction");
-  mlir::PassManager pm(caller->func.getContext(), FuncOp::getOperationName());
-  buildFuncPasses(pm);
-  pm.enableVerifier(false);
-  if (failed(pm.run(caller->func)))
+  if (failed(optimizeFunction(caller->func, buildFuncPasses)))
     innerPipelineFailed = true;
 }
 
@@ -1434,7 +1446,7 @@ void ForceInlinePass::runOnOperation() {
   if (updateAttrName) {
     TimeTraceScope traceScope("updateDebugInfo");
     ParallelState state(*rt);
-    std::atomic<bool> innerPipelineFailed(false);
+    std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
       if (node.shouldInline() || node.callsites.empty())
@@ -1444,11 +1456,7 @@ void ForceInlinePass::runOnOperation() {
           [func = func, updateAttrName, &state, this, &innerPipelineFailed] {
             updateScopeDebugInfo(func, updateAttrName);
             // Run the function pipeline here.
-            TimeTraceScope scope("optimizeFunction");
-            mlir::PassManager pm(&getContext(), FuncOp::getOperationName());
-            buildFuncPasses(pm);
-            pm.enableVerifier(false);
-            if (failed(pm.run(func)))
+            if (failed((optimizeFunction(func, buildFuncPasses))))
               innerPipelineFailed = true;
             state.endWork();
           });
