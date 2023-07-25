@@ -156,7 +156,7 @@ public:
       return errOr.takeError();
     T *result = errOr->get();
     GenericUniquePtr genericPtr;
-    genericPtr.template reset(std::move(*errOr));
+    genericPtr.reset(std::move(*errOr));
     contexts.insert({denseIndex, std::move(genericPtr)});
     return result;
   }
