@@ -573,23 +573,23 @@ ExecutionEngine::~ExecutionEngine() {
 
 ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
 
+bool ExecutionEngine::libraryExists(llvm::StringRef libName) {
+  llvm::orc::JITDylib *dylib = executionSession->getJITDylibByName(libName);
+  return dylib != nullptr;
+}
+
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
-  llvm::Expected<llvm::orc::ExecutorSymbolDef> sym =
-      executionSession->lookup(searchOrder, mangleAndIntern(symbol));
-  if (!sym) {
-    // Check to see if any of the layers have errors.
-    auto found = llvm::find_if(
-        layers, [](const auto &layer) { return layer->hasError(); });
-    // If not, return the error returned by the ORC.
-    if (found == layers.end())
-      return Error(llvm::toString(sym.takeError()));
+  return lookupWithSearchOrder(searchOrder, symbol);
+}
 
-    // Add the additional context from the layer's error.
-    return Error(llvm::toString(sym.takeError()) +
-                 " (from the layer: " + (*found)->takeError().get() + ")");
-  }
+ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef libName,
+                                              StringRef symbol) {
+  llvm::orc::JITDylib *dylib = executionSession->getJITDylibByName(libName);
+  if (!dylib)
+    return Error("could not find JITDylib with name: " + libName);
 
-  return CompiledFunc(sym->getAddress().toPtr<void *>());
+  return lookupWithSearchOrder(llvm::orc::makeJITDylibSearchOrder({dylib}),
+                               symbol);
 }
 
 ErrorOrSuccess
@@ -667,4 +667,24 @@ ErrorOrSuccess ExecutionEngine::addToSearchOrder(StringRef name,
   searchOrder.insert(searchOrder.begin(),
                      {dylib, llvm::orc::JITDylibLookupFlags::MatchAllSymbols});
   return success();
+}
+
+ErrorOr<CompiledFunc> ExecutionEngine::lookupWithSearchOrder(
+    const llvm::orc::JITDylibSearchOrder &order, llvm::StringRef symbol) {
+  // Look up this symbol with the search order provided.
+  llvm::Expected<llvm::orc::ExecutorSymbolDef> sym =
+      executionSession->lookup(order, mangleAndIntern(symbol));
+  if (sym)
+    return CompiledFunc(sym->getAddress().toPtr<void *>());
+
+  // Check to see if any of the layers have errors.
+  auto found = llvm::find_if(
+      layers, [](const auto &layer) { return layer->hasError(); });
+  // If not, return the error returned by the ORC.
+  if (found == layers.end())
+    return Error(llvm::toString(sym.takeError()));
+
+  // Add the additional context from the layer's error.
+  return Error(llvm::toString(sym.takeError()) +
+               " (from the layer: " + (*found)->takeError().get() + ")");
 }

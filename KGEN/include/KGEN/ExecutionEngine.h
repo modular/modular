@@ -281,11 +281,24 @@ public:
   }
 
   //===--------------------------------------------------------------------===//
+  // JITDylib management
+  //===--------------------------------------------------------------------===//
+
+  /// Check if we have the given JITDylib. Return true if the library already
+  /// exists, false if it does not.
+  bool libraryExists(StringRef libName);
+
+  //===--------------------------------------------------------------------===//
   // Compiled symbol lookup
   //===--------------------------------------------------------------------===//
 
   /// Look up a func and return it as a CompiledFunc object if we can find it.
   ErrorOr<CompiledFunc> lookup(StringRef symbol);
+
+  /// Look up the provided symbol only in the provided dylib and any others
+  /// added to its link order. Note that this bypasses the default search order,
+  /// and must therefore must be used with caution.
+  ErrorOr<CompiledFunc> lookup(StringRef libName, StringRef symbol);
 
   //===--------------------------------------------------------------------===//
   // JIT Execution
@@ -317,6 +330,13 @@ private:
   /// dylib already exists - users should generally be cautious about adding
   /// dylibs to the search order.
   ErrorOrSuccess addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
+
+  /// Look up the provided symbol with the given search order. This is a
+  /// generalization of the two lookup methods above, we just don't want to
+  /// expose the notion of a 'search order' to users cause it's easy to mis-use.
+  ErrorOr<CompiledFunc>
+  lookupWithSearchOrder(const llvm::orc::JITDylibSearchOrder &order,
+                        StringRef symbol);
 
   /// The ORC requires an ExecutionSession - this is how it coordinates
   /// execution across processes/machines.
