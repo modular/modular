@@ -173,6 +173,8 @@ struct SharedState::Impl {
   /// name.
   llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
       closureWrappers;
+  llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
+      closureImpls;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
@@ -1696,25 +1698,30 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-static StringAttr getClosureStructNameFromType(FileModuleOp fileModuleOp,
-                                               SignatureType signatureType) {
-  std::string closure_wrapper_name = "_CW_";
-  llvm::raw_string_ostream stream(closure_wrapper_name);
+static StringAttr getClosureNameFromType(StringRef prefix,
+                                         FileModuleOp fileModuleOp,
+                                         SignatureType signatureType) {
+  std::string base(prefix);
+  llvm::raw_string_ostream stream(base);
   stream << fileModuleOp.getSymName() << "_";
   stream << DeclResolver::getMangledName(
-      StringAttr::get(fileModuleOp.getContext(), stream.str()), signatureType);
+      StringAttr::get(fileModuleOp.getContext(), ""), signatureType);
+  for (FnEffects effect : {FnEffects::Throws, FnEffects::Async})
+    if (bitEnumContainsAny(signatureType.getFnEffects(), effect))
+      stream << effect;
   return StringAttr::get(signatureType.getContext(), stream.str());
 }
 
-LIT::StructDeclOp SharedState::getOrGenerateClosureWrapperStruct(
-    llvm::SMLoc location, Type signatureTypeMaybe, FileModuleOp fileModuleOp) {
-  SignatureType signatureType = dyn_cast<SignatureType>(signatureTypeMaybe);
-  assert(signatureType && "must be SignatureType");
+LIT::StructDeclOp
+SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
+                                               SignatureType signatureType,
+                                               FileModuleOp fileModuleOp) {
   std::pair<SignatureType, StringAttr> key(signatureType,
                                            fileModuleOp.getSymNameAttrName());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
-    StringAttr name = getClosureStructNameFromType(fileModuleOp, signatureType);
+    StringAttr name =
+        getClosureNameFromType("_CW_", fileModuleOp, signatureType);
     ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
     existing = emitter.createClosureWrapperStructDecl(
         name, translateLocation(location), signatureType);
@@ -1764,4 +1771,34 @@ void SharedState::notifyListenerOnImport(ASTDecl &packageDecl,
     return;
   resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
   parserListener->onImport(&packageDecl, importLoc);
+}
+
+LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
+    llvm::SMLoc location, SignatureType signatureType, unsigned captureCount,
+    FileModuleOp fileModuleOp) {
+  assert(captureCount < signatureType.getValueInputs().size() &&
+         "Cannot capture more values than inputs");
+  std::pair<SignatureType, StringAttr> key(signatureType,
+                                           fileModuleOp.getSymNameAttrName());
+  StructDeclOp existing = impl->closureImpls[key];
+  if (!existing) {
+    StringAttr name =
+        getClosureNameFromType("_CI_", fileModuleOp, signatureType);
+    ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
+    existing = emitter.createClosureImplStructDecl(
+        name, translateLocation(location), signatureType, captureCount);
+    ASTDecl &decl = declResolver->addFullyResolvedDecl(
+        existing.getOperation(), existing.getSymNameAttr(), location,
+        impl->topLevelDecl);
+    for (StructFieldOp field : existing.getFieldDecls())
+      declResolver->addFullyResolvedDecl(field.getOperation(),
+                                         field.getNameAttr(), location, &decl);
+
+    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>())
+      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
+                                         funcOp.getSymNameAttr(), location,
+                                         impl->topLevelDecl);
+    impl->closureImpls[key] = existing;
+  }
+  return existing;
 }

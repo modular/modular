@@ -13,7 +13,13 @@ from String import String
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.file_module @"$module-code-gen" {
-# CHECK-NEXT: lit.struct.decl @"_CW_
+# CHECK-NEXT:    lit.struct.decl @"_CI_$module-code-gen_\22($String::String,$String::String)\22throws"
+# CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@"$String"::@String>
+# CHECK-NEXT:    }
+# CHECK-NEXT:    lit.struct.decl @"_CI_$module-code-gen_\22($String::String,$String::String)\22"
+# CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@"$String"::@String>
+# CHECK-NEXT:    }
+# CHECK-NEXT: lit.struct.decl @"_CW_$module-code-gen_\22(,$String::String)\22"
 # CHECK-NEXT:     lit.struct.field field0 : !pop.pointer<array<0, i1>>
 # CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
@@ -50,6 +56,12 @@ from String import String
 # CHECK-SAME:  -> !kgen.signature<(!pop.pointer<{{.*}}@String> byref_result, !pop.pointer<{{.*}}@String> borrow_in_mem) capturing -> !lit.none> 
 # CHECK-SAME: attributes {isParametric, specialFnKind = 0 : i8} {
 fn makes_escaping_closure(m: String, z:String, y:Bool) -> fn(String) escaping -> String:
+   fn dummy(n:String) escaping -> String:
+      return n + m
+   fn duplicate(n:String) escaping -> String:
+      return n + m
+   fn two_effects(n:String) escaping raises -> String:
+      return n + m
    fn myclosure(n:String) -> String:
       return n + m
    return myclosure

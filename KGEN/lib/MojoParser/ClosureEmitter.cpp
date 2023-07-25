@@ -65,15 +65,14 @@ static LIT::FuncOp addVoidMethod(StructDeclOp selfStruct, StringRef prefix,
 }
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
-                                 SmallVector<TypeAttr> const &fields,
-                                 Location location) {
+                                 ArrayRef<Type> fields, Location location) {
   OpBuilder b(module.getRegion());
   StructDeclOp declOp = b.create<StructDeclOp>(location, nameAttr);
   if (declOp.getFields().empty())
     declOp.getFields().push_back(new Block());
   b.setInsertionPointToStart(&declOp.getFields().front());
   unsigned i = 0;
-  for (TypeAttr type : fields)
+  for (Type type : fields)
     b.create<StructFieldOp>(
         location,
         StringAttr::get(b.getContext(), "field" + std::to_string(i++)), type,
@@ -124,8 +123,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     StringAttr name, Location location, SignatureType signatureType) {
   auto emptyList =
       POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
-  auto opaquePointer = TypeAttr::get(POP::PointerType::get(emptyList));
-  SmallVector<TypeAttr> fieldTypes;
+  auto opaquePointer = POP::PointerType::get(emptyList);
+  SmallVector<Type> fieldTypes;
   fieldTypes.push_back(opaquePointer);
   StructDeclOp declOp = createStruct(fileModuleOp, name, fieldTypes, location);
   TypedAttr signatureAttr = SymbolConstantAttr::get(
@@ -139,11 +138,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   auto dtor = b.create<StructFieldOp>(
       location, StringAttr::get(b.getContext(), "dtor"),
-      SignatureType::get(b.getContext(), TypeRange({opaquePointer.getValue()}),
-                         noneType),
+      SignatureType::get(b.getContext(), TypeRange({opaquePointer}), noneType),
       nullptr);
   SmallVector<Type> callInputTypes;
-  callInputTypes.push_back(opaquePointer.getValue());
+  callInputTypes.push_back(opaquePointer);
   llvm::append_range(callInputTypes, signatureType.getValueInputs());
   auto createCopyOrMoveMember = [&](bool isCopy) {
     SmallVector<ValueInputConvention> inputConventions;
@@ -204,4 +202,44 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   populateMoveCopy(builder, copy, copyFunc, impl, noneType);
   populateMoveCopy(builder, move, moveFunc, impl, noneType);
   return declOp;
+}
+
+StructDeclOp
+ClosureEmitter::createClosureImplStructDecl(StringAttr name, Location loc,
+                                            SignatureType closureImplSignature,
+                                            unsigned captureCount) {
+  SmallVector<Type> types;
+  int i = 0;
+  for (auto [type, convention] :
+       llvm::zip(closureImplSignature.getValueInputs(),
+                 closureImplSignature.getMetadata().getInputConventions())) {
+    if (i >= captureCount)
+      break;
+    // The convention defines a map from the closureImplSignature parameter type
+    // to the field type. The parameter type in the ClosureImpl initializer that
+    // corresponds to this field will match the type in the closureImplSignature
+    // but the fieldType may differ.
+    switch (convention) {
+    case ValueInputConvention::InitSelf:
+    case ValueInputConvention::ByRefResult:
+    case ValueInputConvention::ByRef: {
+      assert(isa<POP::PointerType>(type) &&
+             "convention does not match type requirement.");
+      types.emplace_back(type);
+      break;
+    }
+    case ValueInputConvention::OwnedInReg:
+    case ValueInputConvention::BorrowedInReg:
+      types.emplace_back(type);
+      break;
+    case ValueInputConvention::OwnedInMem:
+    case ValueInputConvention::BorrowedInMem: {
+      POP::PointerType ptr = cast<POP::PointerType>(type);
+      types.emplace_back(ptr.getElementAsType());
+      break;
+    }
+    }
+    i++;
+  }
+  return createStruct(fileModuleOp, name, types, loc);
 }

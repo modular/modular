@@ -31,6 +31,12 @@ public:
   Type getNoneType() const { return noneType; }
   SharedState &sharedState() const { return shared; }
 
+  /// Generate a Closure Implementation Struct, a struct that contains the
+  /// capture list.
+  StructDeclOp createClosureImplStructDecl(StringAttr name, Location loc,
+                                           SignatureType closureImplSignature,
+                                           unsigned captureCount);
+
 private:
   FileModuleOp fileModuleOp;
   Type noneType;
