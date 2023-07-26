@@ -1,0 +1,19 @@
+// RUN: kgen-opt -force-inline %s | FileCheck %s
+// RUN: kgen-opt -force-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
+
+// CHECK-LABEL: kgen.func @top
+// CANON-LABEL: kgen.func @top
+kgen.func @top() -> index {
+  %idx0 = index.constant 0
+  // CHECK: index.add %idx0, %idx0
+  // CANON-NOT: index.add
+  %0 = kgen.call @bar(%idx0) : (index) -> index
+  // CHECK-NEXT: return %0
+  // CANON: return %idx0
+  kgen.return %0 : index
+}
+
+kgen.func @bar(%arg0: index) -> index always_inline {
+  %0 = index.add %arg0, %arg0
+  kgen.return %0 : index
+}
