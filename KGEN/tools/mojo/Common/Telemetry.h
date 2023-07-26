@@ -20,7 +20,7 @@ namespace M {
 void initializeTelemetry(
     LLCL::RCRef<LLCL::Telemetry::TelemetryContext> telemetryCtx,
     const State &state, const llvm::opt::InputArgList &args,
-    ArrayRef<llvm::opt::OptSpecifier> privateArgs = {});
+    ArrayRef<unsigned> privateArgs = {});
 } // namespace M
 
 #endif // KGEN_TOOLS_MOJO_COMMON_TELEMETRY_H
