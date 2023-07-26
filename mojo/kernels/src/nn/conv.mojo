@@ -56,6 +56,7 @@ from MatmulUtils import (
 from Memory import memset_zero
 from Pointer import DTypePointer
 from Range import range
+from ShapeFuncUtils import get_sliding_window_out_dim
 from SIMD import SIMD
 from TargetInfo import simd_byte_width, simdwidthof, alignof
 
@@ -3178,3 +3179,87 @@ fn pack_filter_rscf_to_frscf[
     let remaining = packed_filter.num_elements() - filter_size
     if remaining > 0:
         memset_zero[type](packed_filter.data.offset(filter_size), remaining)
+
+
+@always_inline
+fn conv_shape[
+    input_rank: Int,
+    filter_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    filter_buf: NDBuffer[
+        filter_rank, DimList.create_unknown[filter_rank](), filter_type
+    ],
+    strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
+    dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `conv` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        filter_rank: Rank of the filter tensor.
+        input_type: Type of the input tensor.
+        filter_type: Type of the filter tensor.
+        strides_type: Type of the strides tensor.
+        dilations_type: Type of the dilations tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The input tensor.
+        filter_buf: The filter tensor.
+        strides_buf: The filter tensor.
+        dilations_buf: The filter tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # TODO(#17512)
+    debug_assert(input_rank == 4, "input rank must be 4")
+    debug_assert(input_rank == filter_rank, "input rank must match filter rank")
+    debug_assert(
+        strides_buf.dim(0) == input_rank - 2
+        and dilations_buf.dim(0) == input_rank - 2,
+        "strides and dilations size must be input rank - 2",
+    )
+
+    # Assume input has layout NHWC
+    let batch_size = input_buf.dim(0)
+    let input_channels = input_buf.dim(3)
+    # Assume filter has layout RSCF
+    let filter_channels = filter_buf.dim(2)
+    let output_channels = filter_buf.dim(3)
+
+    # TODO(#17512)
+    debug_assert(
+        input_channels == filter_channels,
+        "channel dimension of input and filter must match",
+    )
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[input_rank]()
+    output_shape[0] = batch_size
+    output_shape[1] = get_sliding_window_out_dim(
+        input_buf.dim(1),
+        filter_buf.dim(0),
+        dilations_buf[0].to_int(),
+        strides_buf[0].to_int(),
+    )
+    output_shape[2] = get_sliding_window_out_dim(
+        input_buf.dim(2),
+        filter_buf.dim(1),
+        dilations_buf[1].to_int(),
+        strides_buf[1].to_int(),
+    )
+    output_shape[3] = output_channels
+
+    return output_shape
