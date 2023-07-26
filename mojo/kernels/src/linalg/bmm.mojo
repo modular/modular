@@ -51,7 +51,12 @@ fn batched_matmul_parallel_sync[
 
     # TODO: generalize to > rank 3
     @parameter
-    if single_thread_blocking_override and rank == 3:
+    if (
+        single_thread_blocking_override
+        and rank == 3
+        and not adj_a
+        and not adj_b
+    ):
         let B = a_buf.dim[0]()
         let M = a_buf.dim[1]()
         let N = b_buf.dim[2]()
