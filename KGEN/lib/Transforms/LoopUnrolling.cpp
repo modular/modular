@@ -231,8 +231,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // 1. A loop with trip count of 2 and a body of 2 unrolled original body.
     // Also change the result to include all iteration args except the induction
     // variable.
-    // 2. A loop to handle the tail iterations (5 %2 = 1). Use the orignal loop
-    // here but update the bounds to match the tails.
+    // 2. Fully unroll the tail iterations.
     //
     // %0:2 = hlcf.for [5 to 2 step 2] (%arg0, %arg1, %arg2) -> index {
     //   %1 = index.sub %arg0, 1
@@ -242,11 +241,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     //   hlcf.for.yield [induction_var (%2)] [retvals (%2, %2)] [iterargs ()]
     // } {unrollFactor = #hlcf<loop_unroll_full none>}
     //
-    // %1 = hlcf.for [2 to 1 step 1] (%arg0, %arg1=%0:0, %arg2=%0:1) -> index {
-    //   %0 = index.sub %arg0, 1
-    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
-    //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
-    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+    // kgen.call @foo(%0:0, %0:1) : (index) -> ()
 
     int64_t newTailLowerBound;
     if (lowerBound < upperBound) {
@@ -305,7 +300,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
                                         loop.getStep(), newLowerBoundV};
       llvm::append_range(newOperands, forOp.getResults());
       loop->setOperands(newOperands);
-      loop.setUnrollFactorAttr(forOp.getUnrollFactorAttr());
+      return unrollForLoopN(loop, count.value() % unrollFactorN);
     } else {
       // Replace the loop return value, only take the original retVals instead
       // of the combination of retVals and iterArgs from the results of the new
