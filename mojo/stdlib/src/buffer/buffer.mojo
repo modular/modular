@@ -19,6 +19,7 @@ from Range import range
 from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import sizeof, simdwidthof, alignof
+from TypeUtilities import rebind
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
@@ -1348,6 +1349,19 @@ struct NDBuffer[
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         return Buffer[Dim(), type](self.data, self.size())
+
+    @always_inline
+    fn make_dims_unknown(
+        self,
+    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+        """Rebinds the NDBuffer to one with unknown shape.
+
+        Returns:
+            The rebound NDBuffer with unknown shape.
+        """
+        return rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](
+            self
+        )
 
     @always_inline
     fn bytecount(self) -> Int:
