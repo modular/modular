@@ -17,11 +17,20 @@
 using namespace M;
 
 ErrorOr<Config> Config::open() {
-  std::filesystem::path configFilePath = getConfigFilePath();
+  std::filesystem::path homeDirPath = getModularHomeDirPath();
 
+  std::error_code ec;
+  // If the modular home directory doesn't even exist, try to create it first.
+  if (!std::filesystem::exists(homeDirPath, ec) && !ec)
+    std::filesystem::create_directories(homeDirPath, ec);
+  if (ec)
+    return Error(ec.message());
+
+  // OK great - we have the modular home path, now try and get the config file
+  // path.
+  std::filesystem::path configFilePath = getConfigFilePath();
   // If we don't have a config, then that's not an error! Simply return an empty
   // config.
-  std::error_code ec;
   if (!std::filesystem::exists(configFilePath, ec)) {
     if (ec)
       return Error(ec.message());
