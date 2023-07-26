@@ -1102,14 +1102,16 @@ fn reduce_mul[
 @always_inline
 fn slice[
     type: DType,
-    index_type: DType,
+    start_type: DType,
+    end_type: DType,
+    step_type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
 ](
     tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    starts: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    ends: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    steps: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    starts: NDBuffer[1, DimList.create_unknown[1](), start_type],
+    ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
+    steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     return slice_as_view(tensor, starts, ends, steps)
 
