@@ -1517,6 +1517,7 @@ fn matmul[
 fn batched_matmul[
     rank: Int,
     type: DType,
+    transpose_in_1: Bool,  # matches name of MO attribute
     single_thread_blocking_override: Bool,
 ](
     a: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -1525,7 +1526,7 @@ fn batched_matmul[
     out_chain: OutputChainPtr,
 ):
     alias adj_a = False
-    alias adj_b = False
+    alias adj_b = transpose_in_1
 
     @always_inline
     @parameter
