@@ -11,7 +11,10 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
+
+#ifdef LLVM_ON_UNIX
 #include <sys/mman.h>
+#endif // LLVM_ON_UNIX
 
 using namespace M;
 
