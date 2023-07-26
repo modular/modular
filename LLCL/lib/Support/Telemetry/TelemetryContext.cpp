@@ -10,6 +10,7 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include <filesystem>
 #include <fstream>
@@ -33,6 +34,8 @@
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
+#define DEBUG_TYPE "telemetry-context"
+
 using namespace M;
 using namespace LLCL;
 using namespace Telemetry;
@@ -55,11 +58,6 @@ TelemetryContext::TelemetryContext() {
     if (filePath.empty())
       filePath = Config::getModularHomeDirPath() / "telemetry.log";
   }
-
-  // Allocate 4K for the string up front, and construct the stream from that
-  // string.
-  outputBuffer.reserve(4096);
-  outputStream = std::stringstream(outputBuffer);
 
   // -------- Metrics --------
   // Create OpenTelemetry OTLP HTTP exporter.
@@ -116,21 +114,24 @@ TelemetryContext::~TelemetryContext() { flush(); }
 void TelemetryContext::flush() {
 #ifdef MODULAR_ENABLE_TELEMETRY
   // From OTel: Export must not be called concurrently for the same exporter
-  // instance (collectAndExport calls Export).
+  // instance (collectAndExport calls Export). This also conveniently holds the
+  // export lock so we don't have multiple flushes attempting to mutate the put
+  // pointer on the stream.
   std::lock_guard<std::mutex> lock(exportLock);
   metricReader->collectAndExport();
-  // Flush the stream to a file, if it exists.
-  if (!filePath.empty()) {
-    outputStream.flush();
-    auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
-      os.write(outputBuffer.data(), outputBuffer.size());
-    });
-    if (err.isError())
-      llvm::report_fatal_error(err.getError());
 
-    // Reset the stream.
-    outputBuffer.clear();
-    outputStream = std::stringstream(outputBuffer);
-  }
+  if (filePath.empty())
+    return;
+
+  // Flush the stream to a file, if it exists.
+  auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
+    // Do the stream manipulation inside the atomic region - other things may
+    // try to write during this, and we need to hold the lock.
+    os << outputStream.str();
+    // Seek back to the beginning.
+    outputStream.seekp(0, std::ios_base::beg);
+  });
+  if (err.isError())
+    LLVM_DEBUG(llvm::dbgs() << err.getError());
 #endif // MODULAR_ENABLE_TELEMETRY
 }
