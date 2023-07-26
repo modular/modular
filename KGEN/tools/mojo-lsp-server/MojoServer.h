@@ -9,35 +9,34 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
+#include "llvm/ADT/FunctionExtras.h"
 
 namespace M::KGEN::LIT {
+using SendDiagnosticsFn =
+    llvm::unique_function<void(const mlir::lsp::PublishDiagnosticsParams &)>;
 
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
 /// separate from the logic that involves LSP server/client communication.
 class MojoServer {
 public:
-  MojoServer();
+  MojoServer(SendDiagnosticsFn sendDiagnosticsFn);
   ~MojoServer();
 
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
   void addDocument(const mlir::lsp::URIForFile &uri, StringRef contents,
-                   int64_t version,
-                   std::vector<mlir::lsp::Diagnostic> &diagnostics);
+                   int64_t version);
 
   /// Update the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
   void
   updateDocument(const mlir::lsp::URIForFile &uri,
                  ArrayRef<mlir::lsp::TextDocumentContentChangeEvent> changes,
-                 int64_t version,
-                 std::vector<mlir::lsp::Diagnostic> &diagnostics);
+                 int64_t version);
 
-  /// Remove the document with the given uri. Returns the version of the removed
-  /// document, or std::nullopt if the uri did not have a corresponding document
-  /// within the server.
-  std::optional<int64_t> removeDocument(const mlir::lsp::URIForFile &uri);
+  /// Remove the document with the given uri.
+  void removeDocument(const mlir::lsp::URIForFile &uri);
 
   /// Get the set of code actions within the file.
   void getCodeActions(const mlir::lsp::URIForFile &uri,

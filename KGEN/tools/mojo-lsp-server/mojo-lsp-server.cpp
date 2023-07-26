@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPServer.h"
-#include "MojoServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
@@ -97,6 +96,5 @@ int main(int argc, char **argv) {
   }
 
   // Start the server.
-  MojoServer server;
-  return failed(runMojoLSPServer(server, transport));
+  return failed(runMojoLSPServer(transport));
 }

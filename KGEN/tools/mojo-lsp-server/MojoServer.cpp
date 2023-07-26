@@ -217,29 +217,27 @@ private:
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
+using SendDiagnosticsFnRef =
+    function_ref<void(const mlir::lsp::PublishDiagnosticsParams &)>;
+
 namespace {
 /// This class represents all of the information pertaining to a specific Mojo
 /// document.
 struct MojoDocument {
 public:
   MojoDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
-               std::vector<lsp::Diagnostic> &diagnostics,
-               LLCL::Runtime &runtime);
+               SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime);
   MojoDocument(const MojoDocument &) = delete;
   MojoDocument &operator=(const MojoDocument &) = delete;
-
-  /// Return the current version of this document.
-  int64_t getVersion() const { return version; }
+  ~MojoDocument();
 
   /// Initialize the document based on the current set of contents.
-  void initialize(const lsp::URIForFile &uri,
-                  std::vector<lsp::Diagnostic> &diagnostics);
+  void initialize(const lsp::URIForFile &uri);
 
   /// Update the file to the new version using the provided set of content
   /// changes. Returns failure if the update was unsuccessful.
   LogicalResult update(const lsp::URIForFile &uri, int64_t newVersion,
-                       ArrayRef<lsp::TextDocumentContentChangeEvent> changes,
-                       std::vector<lsp::Diagnostic> &diagnostics);
+                       ArrayRef<lsp::TextDocumentContentChangeEvent> changes);
 
   //===--------------------------------------------------------------------===//
   // LSP Queries
@@ -315,6 +313,9 @@ public:
   /// The version of this file.
   int64_t version = 0;
 
+  /// The function used to send diagnostics for this document.
+  SendDiagnosticsFnRef sendDiagnosticsFn;
+
   /// An ordered set of fixits for diagnostics emitted for the current version
   /// of the file.
   std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
@@ -333,12 +334,19 @@ public:
 
 MojoDocument::MojoDocument(const lsp::URIForFile &uri, StringRef contents,
                            int64_t version,
-                           std::vector<lsp::Diagnostic> &diagnostics,
+                           SendDiagnosticsFnRef sendDiagnosticsFn,
                            LLCL::Runtime &runtime)
-    : uri(uri), contents(contents.str()), version(version), runtime(runtime) {}
+    : uri(uri), contents(contents.str()), version(version),
+      sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime) {}
 
-void MojoDocument::initialize(const lsp::URIForFile &uri,
-                              std::vector<lsp::Diagnostic> &diagnostics) {
+MojoDocument::~MojoDocument() {
+  // Empty out the diagnostics shown for this document. This will clear out
+  // anything currently displayed by the client for this document (e.g. in the
+  // "Problems" pane of VSCode).
+  sendDiagnosticsFn(lsp::PublishDiagnosticsParams(uri, version));
+}
+
+void MojoDocument::initialize(const lsp::URIForFile &uri) {
   // Reset the source manager and parse the file.
   context = std::make_unique<Context>(runtime, *this);
 
@@ -366,17 +374,18 @@ void MojoDocument::initialize(const lsp::URIForFile &uri,
   context->parserContext->parseFile(context->sourceMgr.getMainFileID());
 
   // Process the collected diagnostics.
+  lsp::PublishDiagnosticsParams diagParams(uri, version);
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
     if (auto lspDiag =
             buildLspDiagnosticFromSMDiagnostic(context->sourceMgr, diags, uri))
-      diagnostics.push_back(*lspDiag);
+      diagParams.diagnostics.push_back(*lspDiag);
   }
+  sendDiagnosticsFn(diagParams);
 }
 
 LogicalResult
 MojoDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
-                     ArrayRef<lsp::TextDocumentContentChangeEvent> changes,
-                     std::vector<lsp::Diagnostic> &diagnostics) {
+                     ArrayRef<lsp::TextDocumentContentChangeEvent> changes) {
   if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
     lsp::Logger::error("Failed to update contents of {0}", uri.file());
     return failure();
@@ -388,7 +397,7 @@ MojoDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
   // If the file contents were properly changed, reinitialize the text file.
   // TODO: We shouldn't need to reinitialize the entire file here, we should be
   // able to selectively update the parts that actually changed.
-  initialize(uri, diagnostics);
+  initialize(uri);
   return success();
 }
 
@@ -681,6 +690,9 @@ void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
+  Impl(SendDiagnosticsFn sendDiagnosticsFn)
+      : sendDiagnosticsFn(std::move(sendDiagnosticsFn)) {}
+
   /// Retrieve the document that matches completely the given filename. Return
   /// `nullptr` if no document is found.
   MojoDocument *findDocument(StringRef filename) {
@@ -689,6 +701,9 @@ struct MojoServer::Impl {
       return nullptr;
     return it->second.get();
   }
+
+  /// The function used to send diagnostics to the client.
+  SendDiagnosticsFn sendDiagnosticsFn;
 
   /// The runtime used when processing files.
   LLCL::Runtime runtime{LLCL::createMallocAllocator(),
@@ -702,42 +717,35 @@ struct MojoServer::Impl {
 // MojoServer
 //===----------------------------------------------------------------------===//
 
-MojoServer::MojoServer() : impl(std::make_unique<Impl>()) {}
-
+MojoServer::MojoServer(SendDiagnosticsFn sendDiagnosticsFn)
+    : impl(std::make_unique<Impl>(std::move(sendDiagnosticsFn))) {}
 MojoServer::~MojoServer() = default;
 
 void MojoServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
-                             int64_t version,
-                             std::vector<lsp::Diagnostic> &diagnostics) {
+                             int64_t version) {
   auto [it, _] = impl->files.try_emplace(
-      uri.file(), std::make_unique<MojoDocument>(uri, contents, version,
-                                                 diagnostics, impl->runtime));
+      uri.file(),
+      std::make_unique<MojoDocument>(uri, contents, version,
+                                     impl->sendDiagnosticsFn, impl->runtime));
   auto &document = *it->second;
-  document.initialize(uri, diagnostics);
+  document.initialize(uri);
 }
 
 void MojoServer::updateDocument(
     const lsp::URIForFile &uri,
-    ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version,
-    std::vector<lsp::Diagnostic> &diagnostics) {
+    ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version) {
   auto it = impl->files.find(uri.file());
   if (it == impl->files.end())
     return;
 
   // Try to update the document. If we fail, erase the file from the server. A
   // failed updated generally means we've fallen out of sync somewhere.
-  if (failed(it->second->update(uri, version, changes, diagnostics)))
+  if (failed(it->second->update(uri, version, changes)))
     impl->files.erase(it);
 }
 
-std::optional<int64_t> MojoServer::removeDocument(const lsp::URIForFile &uri) {
-  auto it = impl->files.find(uri.file());
-  if (it == impl->files.end())
-    return std::nullopt;
-
-  int64_t version = it->second->getVersion();
-  impl->files.erase(it);
-  return version;
+void MojoServer::removeDocument(const lsp::URIForFile &uri) {
+  impl->files.erase(uri.file());
 }
 
 void MojoServer::getCodeActions(const lsp::URIForFile &uri,

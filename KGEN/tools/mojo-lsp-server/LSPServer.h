@@ -16,11 +16,8 @@ class JSONTransport;
 } // namespace mlir
 
 namespace M::KGEN::LIT {
-class MojoServer;
-
-/// Run the main loop using the given Mojo server and transport.
-mlir::LogicalResult runMojoLSPServer(MojoServer &server,
-                                     mlir::lsp::JSONTransport &transport);
+/// Run the main loop using the given transport.
+mlir::LogicalResult runMojoLSPServer(mlir::lsp::JSONTransport &transport);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H
