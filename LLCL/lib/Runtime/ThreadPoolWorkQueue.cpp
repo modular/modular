@@ -31,22 +31,15 @@ using namespace M::LLCL;
 //
 // Terminology:
 //  - Worker thread: a thread we create which is running a dedicated runItems
-//    loop. These threads have a 'workerID' > 0.
-//  - Foreign thread: any non-worker thread which interacts with the
-//    ThreadPoolWorkQueue. It's ok to have any number of foreign threads,
-//    for example a server which creates a thread per request may
-//    trigger calls to the ThreadPoolWorkQueue to addTasks or await.
-//  - Working foreign thread: a distinguished foreign thread currently running
-//    a runItems loop within an await or shutdown. At most one working foreign
-//    thread can be active at a time, however it's ok for different threads to
-//    become working foreign threads over time. In effect, a working foreign
-//    thread has temporarily donated itself to be a worker.
-//  - Blocked foreign thread: a foreign thread which has called await when
-//     a) there already exists a working foreign thread, or
-//     b) when mayDonate is false
-//    The thread sleeps on a semaphore until its dependent async values are
-//    ready, thus relying on existing worker threads (and maybe the working
-//    foreign thread) to run work items on its behalf.
+//    loop.
+//  - Main thread: if in mainWillDonate mode, this is the thread which created
+//    the work queue. That thread may call await to donate itself to processing
+//    work items alongside the worker threads while waiting for values. That
+//    thread must also be the one to call shutdown.
+//  - Foreign thread: any thread other than a worker or main thread. Foreign
+//    threads may call addTasks and await. If not in mainWillDonate mode,
+//    a foreign thread may also call shutdown. A foreign thread will never
+//    donate itself to processing work items.
 //
 
 //===----------------------------------------------------------------------===//
@@ -101,21 +94,36 @@ struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
 
+  SharedThreadState(bool mainWillDonate, bool paranoid)
+      : mainWillDonate(mainWillDonate)
+#if MODULAR_PARANOID
+        ,
+        paranoid(paranoid)
+#endif
+  {
+  }
+
+  /// If true, the 'main' thread which constructed the work queue is going to
+  /// call await to donate itself as another worker alongside the
+  /// numWorkers - 1 other worker threads. That thread must eventually call
+  /// shutdown.
+  ///
+  /// Otherwise there is no 'main' thread, just 'worker' and 'foreign' threads.
+  bool mainWillDonate;
+
 #if MODULAR_PARANOID
   /// If true, try to tickle race conditions with sleeps.
   /// Very expensive, hence guard by a runtime flag in addition to the
   /// compile-time MODULAR_PARANOID flag.
-  bool paranoid = false;
-#endif
+  bool paranoid;
 
-#if MODULAR_PARANOID
-  /// Track when the overall work queue is entering the shutdown quiescence
-  /// period.
+  /// Track when the overall work queue is entering or exited the shutdown
+  /// quiescence period.
   std::atomic<WorkQueueState> state = kReady;
 #endif
 
-  /// This flag indicates when a thread should quit working and get ready to be
-  /// joined.
+  /// This flag indicates when a worker thread should quit working and get
+  /// ready to be joined.
   std::atomic<bool> doneFlag = false;
 
   /// This keeps a bitset of suspended threads, indexed by workerID.  This will
@@ -186,16 +194,15 @@ struct SharedThreadState {
 namespace {
 
 /// The index of the current thread within the WorkQueueThread workers
-/// vector.
+/// vector. Will be left zero for 'main' and 'foreign' threads.
 static thread_local size_t workerIDInTLS = 0;
 
-/// The SharedThreadState for the current thread.
-static thread_local const SharedThreadState *sharedThreadStateInTLS = nullptr;
-
-/// Wrapper around an std::thread created for each worker thread.
+/// Wrapper around an std::thread created for each worker thread, or
+/// a placeholder for the 'main' thread.
 struct WorkQueueThread {
   /// Overall state shared by all threads.
   SharedThreadState &sharedState;
+
   /// 'Local' tasks which can be run on this thread as they become available.
   /// No threading synchronization is required here since tasks are added to
   /// and removed only by the unique thread (currently) tied to this object.
@@ -204,38 +211,42 @@ struct WorkQueueThread {
   /// Tasks on this list always take precedence over those in taskList and
   /// overflowTaskList.
   SmallVector<TaskFunction, 6> localTaskList;
-  /// The lock-free queue of pending tasks available for any worker.
+
+  /// The lock-free queue of pending tasks available for any worker to
+  /// process.
   ///
   /// Tasks on this list always take precedence over those in overflowTaskList.
   LockFreeRingBuffer<TaskFunction> &taskList;
-  /// The mutex-protected queue of pending tasks available for any worker.
+
+  /// The mutex-protected queue of pending 'overflow' tasks available for any
+  /// worker to process. Since synchronization is expensive, should only be
+  /// checked before the worker thread would otherwise sleep.
   std::mutex &overflowMutex; // Protects overflowTaskList
   SmallVectorImpl<TaskFunction> &overflowTaskList;
-  /// Unique index for this thread. Index #0 is reserved to represent all
-  /// 'foreign' threads, and will not have a dedicated thread.
+
+  /// Unique index for this thread.
   size_t workerID;
+
   /// The CPU we'd prefer this worker to have affinity for, or ~0 if no
   /// affinity is intended for this worker.
   size_t cpuID;
+
   /// This is a per-worker semaphore that this blocks on when they run
   /// out of things to do.
   Semaphore sema;
-  /// The system id for the thread which is currently executing runItems using
-  /// this object. May be zero if this object represents all 'foreign threads
-  /// (ie has workerID 0) and no foreign thread is currently in a runItems loop.
-  /// At most one 'foreign' thread can be running a runItems loop at a time.
-  std::atomic<uint64_t> threadID = 0;
-  /// The number of recursive calls to runItems made by the current foreign
-  /// thread. This supports tasks which themselves (unfortunately) need to
-  /// await.
-  size_t numRecursiveCalls = 0;
-  // The underlying worker thread, or none if this object represents all
-  // 'foreign' threads.
+
+  /// The system's identifier for the thread associated with this
+  /// WorkQueueThread, either a 'worker' or the 'main' thread if in
+  /// mainWillDonate mode.
+  uint64_t threadID = 0;
+
+  // The underlying worker thread, or none if this WorkQueueThread represents
+  // the 'main' thread in mainWillDonate mode.
   std::optional<std::thread> thread;
 
-  /// Create a `WorkQueueThread` representing the worker with workerID.
-  /// Unless representing all 'foreign' threads, a new thread is created
-  /// and enters a runItems loop.
+  /// Create a WorkQueueThread representing the worker with workerID. If
+  /// necessary, the underlying worker thread will be created and it will
+  /// enter its runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
                   LockFreeRingBuffer<TaskFunction> &taskList,
                   std::mutex &overflowMutex,
@@ -244,18 +255,22 @@ struct WorkQueueThread {
       : sharedState(sharedState), taskList(taskList),
         overflowMutex(overflowMutex), overflowTaskList(overflowTaskList),
         workerID(workerID), cpuID(cpuID) {
-    if (workerID > 0)
+    if (sharedState.mainWillDonate && workerID == 0) {
+      // We can leave workerIDInTLS as zero.
+      // Remember the caller is to be our 'main' thread, and will call
+      // await to process work items.
+      threadID = llvm::get_threadid();
+      assert(threadID && "get_threadid returned zero for the main thread");
+    } else {
+      // Start a 'worker' thread.
       thread.emplace(&WorkQueueThread::runOnThread, this);
+    }
   }
 
   ~WorkQueueThread() { assert(localTaskList.empty()); }
 
   /// Schedule this work item on the localTaskList to be executed on the next
   /// runItems loop.
-  ///
-  /// For the 'foreign' thread this item won't be executed until await is
-  /// called to start processing work items. All worker threads will pick
-  /// the item up on their next time around the work loop.
   void addLocalTask(TaskFunction &&work) {
     localTaskList.emplace_back(std::move(work));
   }
@@ -293,27 +308,11 @@ struct WorkQueueThread {
              "still in-flight");
     } else {
       assert(sharedState.state != kShutdown &&
-             "ThreadPoolWorkQueue was shutdown while a task clouser was still "
+             "ThreadPoolWorkQueue was shutdown while a task closure was still "
              "in-flight");
     }
 #endif
   }
-
-  /// Returns true if the calling thread can be considered to own this
-  /// object. If the caller is a worker thread just returns true. If the
-  /// caller is a foreign thread, ensures the foreign thread is the only
-  /// 'working foreign' thread and returns true. Otherwise returns false.
-  ///
-  /// Must be paired with a call to releaseOwningThread iff returns true.
-  bool ensureOwningThread();
-
-  /// If necessary, indicates the calling thread has relinquished ownership
-  /// of this object. This is a no-op if the caller is a worker thread.
-  /// Otherwise may allow another foreign thread to become a 'working
-  /// foreign' thread.
-  ///
-  /// Must be paired with ensureOwningThread iff the former return true.
-  void releaseOwningThread();
 
   /// This implements the main worker loop, used by runOnThread, await and
   /// shutdown. The loop runs until earlyStopPredicate or lateStopPredicate
@@ -350,17 +349,18 @@ private:
 } // namespace
 
 void WorkQueueThread::runOnThread() {
-  assert(workerID != 0 && "The WorkQueueThread representing all 'foreign' "
-                          "threads should not be run");
+  assert(!sharedState.mainWillDonate ||
+         workerID != 0 &&
+             "The WorkQueueThread for the main thread should not be run");
 
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
   workerIDInTLS = workerID;
-  sharedThreadStateInTLS = &sharedState;
 
-  // Though not needed for interlock, capture the worker's system thread id
-  // for debugging.
+  // Capture the worker's thread id so we can distinguish worker threads
+  // from different work queues.
   threadID = llvm::get_threadid();
+  assert(threadID && "get_threadid returned zero for a worker thread");
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
@@ -370,7 +370,7 @@ void WorkQueueThread::runOnThread() {
   LLCL::setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
-  runItemsOnOwningThread(
+  runItemsImpl(
       /*earlyStopPredicate=*/[]() { return false; }, // Always loop.
       /*lateStopPredicate=*/
       [this]() {
@@ -383,47 +383,13 @@ void WorkQueueThread::runOnThread() {
       /*sleepingLabel=*/"llcl.runOnThread.sleeping");
 }
 
-bool WorkQueueThread::ensureOwningThread() {
-  if (workerID == 0) {
-    // Caller is a 'foreign' thread.
-    uint64_t callerThreadID = llvm::get_threadid();
-    uint64_t expectedThreadID = 0;
-    if (threadID.compare_exchange_strong(expectedThreadID, callerThreadID)) {
-      // Caller now has ownership and is a 'working foreign' thread.
-      return true;
-    } else if (expectedThreadID == callerThreadID) {
-      // Caller already had ownership, keep track of the number of recursive
-      // calls.
-      ++numRecursiveCalls;
-      return true;
-    } else {
-      // Some other foreign thread is already doing work, so caller is
-      // about to become a 'blocked foreign' thread.
-      return false;
-    }
-  } else {
-    // This is a worker thread, no shenanigans required.
-    return true;
-  }
-}
-
-void WorkQueueThread::releaseOwningThread() {
-  if (workerID == 0) {
-    if (numRecursiveCalls == 0)
-      threadID = 0;
-    else
-      --numRecursiveCalls;
-  }
-}
-
 template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
 void WorkQueueThread::runItemsOnOwningThread(
     EarlyStopPredicateFn earlyStopPredicate,
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringRef spinningLabel, StringRef sleepingLabel) {
-  if (workerID == 0) {
-    // Since caller is a 'foreign' thread, temporarily set its thread
-    // affinity.
+  if (sharedState.mainWillDonate && workerID == 0) {
+    // Temporarily set the main thread's affinity while it is processing work.
     LLCL::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
@@ -567,7 +533,8 @@ public:
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
   ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                      size_t taskListCapacity, bool paranoid);
+                      size_t taskListCapacity, bool mainWillDonate,
+                      bool paranoid);
 
   ~ThreadPoolWorkQueue() override;
 
@@ -577,37 +544,49 @@ public:
 
   void addLocalTask(TaskFunction &&work) override;
 
-  void await(ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
+  void await(ArrayRef<AnyAsyncValueRef> values) override;
+
+  bool callerIsForeign() const override;
 
   size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created
-    // by the work queue +1 for a foreign thread.
+    // by the work queue, plus one for the 'main' thread if in mainWillDonate
+    // mode.
     // TODO(#1903): This is a poor heuristic for subdividing work.
     return numWorkers;
   }
 
 private:
-  /// Returns the WorkQueueThread corresponding to the caller. If the caller
-  /// is a foreign thread the same WorkQueueThread will be returned.
-  WorkQueueThread *getCurrentWorkQueueThread() {
-    if (sharedThreadStateInTLS != &sharedState)
-      // Caller is a foreign thread or a worker thread from some other pool.
-      // Use the WorkQueueThread at index 0 to represent it as 'foreign'.
-      return workers;
-
+  /// If the caller is a worker thread or the 'main' thread for this work queue
+  /// then return the WorkQueueThread which represents it. Otherwise, if the
+  /// caller is a 'foreign' thread (including workers from other work queues)
+  /// then return null.
+  WorkQueueThread *getOwningWorkQueueThread() const {
     size_t workerID = workerIDInTLS;
-    assert(workerID < numWorkers);
-    return workers + workerID;
+
+    if (workerID >= numWorkers)
+      // Presumably a 'worker' thread from some other work queue.
+      return nullptr;
+
+    WorkQueueThread *worker = workers + workerID;
+
+    if (worker->threadID != llvm::get_threadid())
+      // A 'foreign' thread.
+      return nullptr;
+
+    // Either the 'main' or a 'worker' thread associated with this work queue.
+    return worker;
   }
 
   /// Returns the WorkQueueThread for workerID.
-  WorkQueueThread *getWorkQueueThread(size_t workerID) {
+  WorkQueueThread *getWorkQueueThread(size_t workerID) const {
     assert(workerID < numWorkers);
     return workers + workerID;
   }
 
-  /// This is the set of worker threads in the WorkQueue. Entry #0 is reserved
-  /// for at most one foreign thread which may donate to this work queue.
+  /// This is the set of WorkQueueThread objects in the WorkQueue. If in
+  /// mainWillDonate mode then the first entry will represent the 'main'
+  /// thread.
   const size_t numWorkers;
   WorkQueueThread *workers = nullptr;
 
@@ -626,18 +605,14 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
-                                         size_t taskListCapacity, bool paranoid)
-    : numWorkers(cpuIDs.size()), taskList(taskListCapacity) {
+                                         size_t taskListCapacity,
+                                         bool mainWillDonate, bool paranoid)
+    : numWorkers(cpuIDs.size()), sharedState(mainWillDonate, paranoid),
+      taskList(taskListCapacity) {
   assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
-#if MODULAR_PARANOID
-  sharedState.paranoid = paranoid;
-#else
-  assert(!paranoid);
-#endif
-  // Initialize each thread with its required state. Note that workerID #0
-  // does not start itself since it represents all 'foreign' threads.
-  // We're doing this the hard way since WorkQueueThreads have non-moveable
-  // atomics.
+  // Initialize each thread with its required state.
+  // Note that we're constructing the array manually since WorkQueueThreads have
+  // non-moveable atomics.
   workers = static_cast<WorkQueueThread *>(
       malloc(sizeof(WorkQueueThread) * numWorkers));
   assert(workers);
@@ -648,6 +623,8 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
+  // Note we can't assert state == kShutdown since queue may be created
+  // and destroyed without ever being included in a runtime.
   assert(!taskList.dequeue());
 
   // Destroy all the threads datastructures.
@@ -664,28 +641,29 @@ void ThreadPoolWorkQueue::shutdown() {
 
   TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
 
-  WorkQueueThread *callingWorker = getCurrentWorkQueueThread();
-  bool isOwning = callingWorker->ensureOwningThread();
-  // If isOwning is false then some other foreign thread is still in a runItems
-  // loop. We could sleep here, but that would require a new shutdown
-  // synchronization point. Instead we'll just assert, on the assumption
-  // if the work queue is being used by multiple foreign threads then there's
-  // already going to be shutdown & draining synchronization on their side.
-  assert(isOwning && "attempting to shutdown while another foreign thread is "
-                     "running work items");
+  WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 
-  // Donate this thread to help drain the work queue if there's anything left.
-  callingWorker->runItemsOnOwningThread(
-      /*earlyStopPredicate=*/[]() { return false; }, // Always loop
-      /*lateStopPredicate=*/[]() { return false; },  // Always loop
-      /*waitForTasks=*/false,
-      /*spinningLabel=*/"llcl.shutdown.spinning",
-      /*sleepingLabel=*/"llcl.shutdown.sleeping");
+  if (sharedState.mainWillDonate) {
+    assert(callingWorker && callingWorker->workerID == 0 &&
+           "must shutdown from the 'main' thread in mainWillDonate mode");
+  } else {
+    assert(
+        !callingWorker &&
+        "must shutdown from a 'foreign' thread if not in mainWillDonate mode");
+  }
 
-#if MODULAR_PARANOID
-  expected = kShuttingDown;
-  assert(sharedState.state.compare_exchange_strong(expected, kShutdown));
-#endif
+  if (callingWorker) {
+    // Donate this thread to help drain the work queue if there's anything left.
+    callingWorker->runItemsOnOwningThread(
+        /*earlyStopPredicate=*/[]() { return false; }, // Always loop
+        /*lateStopPredicate=*/[]() { return false; },  // Always loop
+        /*waitForTasks=*/false,
+        /*spinningLabel=*/"llcl.shutdown.spinning",
+        /*sleepingLabel=*/"llcl.shutdown.sleeping");
+  }
+  // else: the existing workers will keep processing work items until they
+  // test the lateStopPredicate. This is as good a synchronization we can
+  // guarantee if not in mainWillDonate mode.
 
   // Tell all the threads to exit.
   sharedState.doneFlag.store(true, std::memory_order_release);
@@ -703,6 +681,11 @@ void ThreadPoolWorkQueue::shutdown() {
   // Join all the threads when they shut down cleanly.
   for (size_t i = 0; i < numWorkers; ++i)
     workers[i].join();
+
+#if MODULAR_PARANOID
+  expected = kShuttingDown;
+  assert(sharedState.state.compare_exchange_strong(expected, kShutdown));
+#endif
 }
 
 void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
@@ -715,8 +698,8 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
 
   // Try to add this work to the lock-free queue.
   if (taskList.enqueue(work)) {
-    // If there are any suspended workers, kick one of them now that there is
-    // new work to do.
+    // If there are any suspended workers, kick one of them now to make sure
+    // there's at least one worker still awake to pick up work.
     int workerIDToPoke = sharedState.takeAnySuspendedThread();
     if (workerIDToPoke != -1)
       getWorkQueueThread(static_cast<size_t>(workerIDToPoke))->sema.post();
@@ -750,28 +733,20 @@ void ThreadPoolWorkQueue::addLocalTask(TaskFunction &&work) {
   // use-after-shutdowns.
   assert(sharedState.state != kShutdown);
 #endif
-  WorkQueueThread *callerWorker = getCurrentWorkQueueThread();
-  if (callerWorker->workerID == 0 &&
-      callerWorker->threadID != llvm::get_threadid()) {
-#if MODULAR_PARANOID
-    assert(false && "addLocalTask from a foreign thread is not supported in "
-                    "MODULAR_PARANOID builds");
-#else
-    // Called from a foreign thread which is not (yet) within a runItems loop,
-    // so there's no local task list we can enqueue to on this thread.
-    // Add as a task instead.
+  WorkQueueThread *callerWorker = getOwningWorkQueueThread();
+  if (callerWorker == nullptr) {
+    // Called from a foreign thread, so there's no local task list we can
+    // enqueue to on this thread. Add as a task instead.
     addTask(std::move(work));
-#endif
     return;
   }
 
-  // Called from either a worker thread or the distinguished awaiting
-  // foreign thread. Safe to enqueue directly.
+  // Called from either a worker thread or the 'main' therad. Safe to enqueue
+  // directly.
   callerWorker->addLocalTask(std::move(work));
 }
 
-void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
-                                bool mayDonate) {
+void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 #if MODULAR_PARANOID
   // This is not a true interlock, but will at least catch obvious
   // use-after-shutdowns.
@@ -783,16 +758,16 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
     return;
 
   // Figure out which WorkerThread this is being invoked from. This could be
-  // one of our workers or a foreign thread.
-  WorkQueueThread *awaitingWorker = getCurrentWorkQueueThread();
+  // one of our workers, the 'main' thread, or a 'foreign' thread.
+  WorkQueueThread *awaitingWorker = getOwningWorkQueueThread();
 
   // We are done when numRemaining drops to zero.
   std::atomic<ssize_t> numRemaining = values.size();
 
-  // Figure out if the calling thread can be considered to own the
-  // WorkQueueThread, and thus can start processing work items while
-  // waiting.
-  if (mayDonate && awaitingWorker->ensureOwningThread()) {
+  if (awaitingWorker) {
+    // The caller is a worker or main thread, so is willing to donate itself
+    // to processing work items while awaiting.
+
     // As each value becomes available, we can decrement our counts.  When done,
     // we signal the semaphore for this worker to make sure to wake it up if it
     // fell asleep.
@@ -848,20 +823,15 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
         /*spinningLabel=*/"llcl.await.spinning",
         /*sleepingLabel=*/"llcl.await.sleeping");
 
-    awaitingWorker->releaseOwningThread();
-
   } else {
-    // The caller is a 'foreign' thread, and either some other foreign thread is
-    // already in an await loop, or the caller does not wish to run work items
-    // while waiting. Simply sleep until all values are available, letting the
-    // other workers do work on the caller's behalf.
+    // The caller is a 'foreign' thread. Sleep until all values are available,
+    // letting the other workers do work on the caller's behalf.
     //
     // Ideally we'd sleep only until all our values are ready or the other
     // foreign thread is done with its runItems loop, whichever is sooner.
     Semaphore sema;
     // As each value becomes available, we can decrement our counts.  When done,
-    // we signal the semaphore for this worker to make sure to wake it up if it
-    // fell asleep.
+    // we signal the semaphore to wake up the awaiting foreign thread.
     for (auto &value : values) {
       value.andThenSync([&numRemaining, &sema]() {
         // Decrement the count of async values that we're waiting on.
@@ -881,6 +851,10 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values,
 #endif
 }
 
+bool ThreadPoolWorkQueue::callerIsForeign() const {
+  return getOwningWorkQueueThread() == nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
@@ -893,15 +867,19 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
   llvm::dbgs() << "CAUTION: Asked for a MODULAR_PARANOID build with NDEBUG. "
                   "Asserts will not be active, which is unlikely to be what "
                   "you intended.\n";
-#else
+#else  // NDEBUG
   if (paranoid)
     llvm::dbgs() << "CAUTION: Running a MODULAR_PARANOID build with additional "
                     "checks enabled by the paranoid flag.\n";
   else
     llvm::dbgs() << "CAUTION: Running a MODULAR_PARANOID build. Consider using "
                     "the paranoid flag for even more paranoia.\n";
-#endif
-#endif
+#endif // NDEBUG
+#else  // MODULAR_PARANOID
+  if (paranoid)
+    llvm::dbgs() << "CAUTION: The paranoid flag is ignored in non "
+                    "MODULAR_PARANOID builds\n";
+#endif // MODULAR_PARANOID
 
   // Using numThreads as a hint, figure out a CPU for each worker thread
   // and the main thread. The CPU ids may end up as kNoAffinity, but the
@@ -921,16 +899,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
         << ") differs from number of cores (" << numCores
         << "), possibly since ignoring hyperthreading and other sockets.\n");
 
-  if (!mainWillDonate) {
-    // Since we don't expect any foreign thread to call await with mayDonate
-    // true, allocate an additional worker, and mark the cpu for worker #0
-    // as kNoAffinity.
-    // However, no great harm comes if such a foreign thread does end up
-    // calling await with mayDonate true -- it will process work items, just
-    // without any specific cpu affinity.
-    cpuIDs.insert(cpuIDs.begin(), kNoAffinity);
-  }
-
   size_t taskListCapacity =
       std::max(kMinTaskListCapacity, numThreads * kTaskListSlotsPerThread);
   LLVM_DEBUG(llvm::dbgs()
@@ -938,5 +906,5 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
              << taskListCapacity << " slots.\n");
 
   return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity,
-                                               paranoid);
+                                               mainWillDonate, paranoid);
 }

@@ -209,6 +209,7 @@ private:
   DenseMap<size_t, GenericUniquePtr> contexts;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
+  friend void checkKnownCallingThread(const Runtime &runtime);
 };
 
 /// In debug builds, assert the given runtime's 'signature' agrees with what
@@ -221,6 +222,15 @@ inline void checkUniqueRuntime(const Runtime &runtime) {
          "It appears your process has statically linked the Modular Runtime "
          "multiple times across dynamic library / executable boundaries. "
          "Please don't do that.");
+}
+
+// In debug builds, assert the caller is one of threads managed by the given
+// runtime's work queue. The thread may be an actual worker thread or the
+// 'main' thread (if the work queue has that notion).
+inline void checkKnownCallingThread(const Runtime &runtime) {
+  assert(!runtime.workQueue->callerIsForeign() &&
+         "Attempting to process work on a 'foreign' thread. Are you missing an "
+         "addTask?");
 }
 
 } // namespace M::LLCL
