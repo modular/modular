@@ -10,6 +10,7 @@
 #include "LLCL/Support/Telemetry/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger.h"
@@ -72,10 +73,10 @@ public:
   private:
     friend class Logger;
 
-    LogStream(StringRef eventName, Severity severity,
+    LogStream(const Twine &eventName, Severity severity,
               std::shared_ptr<Logger> logger)
-        : raw_string_ostream(body), eventName(eventName), severity(severity),
-          logger(logger) {}
+        : raw_string_ostream(body), eventName(eventName.str()),
+          severity(severity), logger(logger) {}
 
     std::string body;
     std::string eventName;
@@ -85,32 +86,32 @@ public:
   };
 
   /// Get raw_ostream to write a log with a severity of trace.
-  LogStream getTrace(StringRef eventName) {
+  LogStream getTrace(const Twine &eventName) {
     return LogStream(eventName, Severity::kTrace, shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of debug.
-  LogStream getDebug(StringRef eventName) {
+  LogStream getDebug(const Twine &eventName) {
     return LogStream(eventName, Severity::kDebug, shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of info.
-  LogStream getInfo(StringRef eventName) {
+  LogStream getInfo(const Twine &eventName) {
     return LogStream(eventName, Severity::kInfo, shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of warn.
-  LogStream getWarn(StringRef eventName) {
+  LogStream getWarn(const Twine &eventName) {
     return LogStream(eventName, Severity::kWarn, shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of error.
-  LogStream getError(StringRef eventName) {
+  LogStream getError(const Twine &eventName) {
     return LogStream(eventName, Severity::kError, shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of fatal.
-  LogStream getFatal(StringRef eventName) {
+  LogStream getFatal(const Twine &eventName) {
     return LogStream(eventName, Severity::kFatal, shared_from_this());
   }
 

@@ -6,6 +6,7 @@
 
 #include "mojo-format.h"
 
+#include "../Common/Telemetry.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"
@@ -56,6 +57,10 @@ static int format(const State &state) {
   std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no inputs provided");
+
+  // Initialize telemetry.
+  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
+  initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.
   std::error_code ec;
