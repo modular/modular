@@ -392,6 +392,7 @@ struct PackMatrixCols[
     type: DType,
     simd_size: Int,
     column_inner_size: Int,
+    use_vnni: Bool,
 ]:
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension.
@@ -517,9 +518,32 @@ struct PackMatrixCols[
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)
 
+    @adaptive
+    fn _pack(self):
+        """Copy the B tile from the original matrix to the packed buffer for VNNI."""
+        assert_param[use_vnni]()
+        let kc = min(self.valid_data_dim[0], self.pack_tile_dim[0])
+        let nc = min(self.valid_data_dim[1], self.pack_tile_dim[1])
+        let nr = column_inner_size
+        for i in range(0, kc, 4):
+            for j in range(nc // nr):
+                for p in range(nr):
+
+                    @unroll
+                    for l in range(4):
+                        let global_idx = self.global_offset + Index(
+                            i + l, p + nr * j
+                        )
+                        self.packed_matrix.simd_store[1](
+                            Index(j, i // 4, 4 * p + l),
+                            self.original_matrix[global_idx],
+                        )
+
+    @adaptive
     fn _pack(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
+        assert_param[not use_vnni]()
         let valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
 
         alias unroll_factor = get_packB_unroll_factor()
@@ -967,7 +991,7 @@ struct MatmulInnerLoopBPacked[
         let global_k = self.global_offset.K + tile_n_k_idx[1]
 
         let b_ptr = self.b_packed._offset(
-            Index(n_outer_idx, tile_n_k_idx[1], 0)
+            Index(n_outer_idx, tile_n_k_idx[1] // 4, 0)
         ).bitcast[DType.int32]()
 
         # Prefetch B matrix.
@@ -1205,6 +1229,7 @@ struct TiledMatmul[
             global_tile_offset(GemmShape): tile offset on the original buffer.
             global_tile_shape(GemmShape): tile shape this call will process.
         """
+
         let tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size
         ](global_tile_shape)
@@ -1501,6 +1526,7 @@ fn pack_b[
                     type,
                     simd_size,
                     inner_size,
+                    False,
                 ].run(
                     packed_dst_view,
                     src,
@@ -1681,9 +1707,14 @@ struct BTileGenerator[
             A view of the packed tile.
 
         """
+
+        let vnni_factor = 4 if config.use_vnni else 1
         let tile_shape_nopack = DimList(
-            tile_dim_nk[0] // inner_size, tile_dim_nk[1], inner_size
+            tile_dim_nk[0] // inner_size,
+            tile_dim_nk[1] // vnni_factor,
+            vnni_factor * inner_size,
         )
+
         let packed_b = NDBuffer[3, config.packed_shape, type](
             self.b_tile_stack_ptr,
             tile_shape_nopack,
@@ -1716,6 +1747,7 @@ struct BTileGenerator[
                 type,
                 config.simd_size,
                 inner_size,
+                config.use_vnni,
             ].run(
                 packed_b,
                 self.b,
@@ -2025,7 +2057,9 @@ fn _submatmul_sequential_sync[
 
     @parameter
     fn dispatch_on_critical_stride[critical_stride: Bool]():
-        alias mm_config = search_mm_config[c_type, b_packed, critical_stride]()
+        alias mm_config = search_mm_config[
+            a_type, b_type, c_type, b_packed, critical_stride
+        ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
             elementwise_epilogue_c_tile[

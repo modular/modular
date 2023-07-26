@@ -12,6 +12,7 @@ from SIMD import SIMD, Float32
 from String import String
 from TargetInfo import (
     has_avx512f,
+    has_avx512_vnni,
     has_neon,
     os_is_macos,
     simdwidthof,
@@ -58,6 +59,9 @@ struct MatmulConfig:
 
     # Prefetch distance for packed b vectors in micro kernels.
     var prefetch_b_distance_k: Int
+
+    # use VNNI
+    var use_vnni: Bool
 
 
 @register_passable("trivial")
@@ -266,7 +270,6 @@ fn calculate_tile_n_k[
     let tile_k = min(largest_tile_k, k)
 
     # Calculate number of InnerSize to fit in tile_n dimension,
-    #  guranteed to be at least 2.
     let max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
     let full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
     let tile_n_in_inner_size = min(
@@ -605,7 +608,11 @@ fn get_pack_data_size[type: DType]() -> Int:
 
 @always_inline
 fn search_mm_config[
-    type: DType, b_packed: Bool, critical_stride: Bool
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    b_packed: Bool,
+    critical_stride: Bool,
 ]() -> MatmulConfig:
     alias a_row_size = get_matmul_a_row_size[critical_stride]()
     alias pack_inner_size = get_matmul_pack_inner_size[critical_stride]()
@@ -629,7 +636,9 @@ fn search_mm_config[
     #     alias pack_inner_size = (
     #         __mlir_attr.`#kgen.param.decl.ref<"result_hidden2"> : index`
     #     )
-    alias mm_config1 = get_matmul_config[type, a_row_size, pack_inner_size]()
+    alias mm_config1 = get_matmul_config[
+        a_type, b_type, c_type, a_row_size, pack_inner_size
+    ]()
     # FIXME: The 8,2 config is giving erroneous results.
     # alias mm_config2 = get_matmul_config[8, 2]()
 
@@ -637,18 +646,31 @@ fn search_mm_config[
     return mm_config1
 
 
+@always_inline
+fn search_mm_config[
+    type: DType, b_packed: Bool, critical_stride: Bool
+]() -> MatmulConfig:
+    return search_mm_config[type, type, type, b_packed, critical_stride]()
+
+
 fn get_matmul_config[
-    type: DType, a_row_size: Int, pack_inner_size: Int
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    a_row_size: Int,
+    pack_inner_size: Int,
 ]() -> MatmulConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[c_type]()
 
     # number of k iterations to prefetch ahead on the
     #   inner micro kernel loop.
     alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
+
+    alias use_vnni = has_avx512_vnni() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
 
     return MatmulConfig {
         shape_a: DimList.create_unknown[2](),
@@ -659,8 +681,9 @@ fn get_matmul_config[
         simd_size: simd_size,
         a_row_size: a_row_size,
         pack_inner_size: pack_inner_size * simd_size,
-        pack_data_size: get_pack_data_size[type](),
+        pack_data_size: get_pack_data_size[b_type](),
         prefetch_b_distance_k: prefetch_b_distance_k,
+        use_vnni: use_vnni,
     }
 
 

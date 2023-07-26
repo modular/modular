@@ -686,6 +686,8 @@ struct PackInterface[
                 static_state.simd_size,
                 # pack inner size, in number of elements.
                 inner_size,
+                # use VNNI
+                False,
             ].run(
                 # Input is [K, N]:
                 b_packed_buffer,

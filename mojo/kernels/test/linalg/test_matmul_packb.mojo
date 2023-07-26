@@ -38,6 +38,7 @@ fn pack_b(
         type,
         simd_size,
         tile_inner_size,
+        False,
     ].run(
         packed_b,
         b,
