@@ -467,12 +467,6 @@ bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
   // variable twice.
   auto options = DumpValueObjectOptions::DefaultOptions();
   options.SetShowTypes(true);
-  // By default, the printer doesn't print the values inside pointers. However,
-  // all persistent variables are wrapped in pointers, so we must tell LLDB to
-  // display the values contained in top-level pointers.
-  options.SetMaximumPointerDepth(DumpValueObjectOptions::PointerDepth{
-      DumpValueObjectOptions::PointerDepth::Mode::Default, 1});
-
   valobj->Dump(*output, options);
   return true;
 }

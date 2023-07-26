@@ -607,12 +607,13 @@ static void collectPersistentVariables(
     if (!persistentVariableNames.insert(var->GetName()).second)
       continue;
 
-    // All persistent variable types are wrapped in a pointer type, so unwrap
+    // All persistent variable types are wrapped in a reference type, so unwrap
     // the types before adding them to the current expression.
-    auto ptrType = cast<POP::PointerType>(mlir::Type::getFromOpaquePointer(
-        var->GetCompilerType().GetOpaqueQualType()));
+    auto ptrType =
+        cast<LIT::REPLResultRefType>(mlir::Type::getFromOpaquePointer(
+            var->GetCompilerType().GetOpaqueQualType()));
 
-    mlir::Type varType = ptrType.getElementAsType();
+    mlir::Type varType = ptrType.getElementType();
     variables.emplace_back(var->GetName().GetStringRef(), varType);
   }
 }
@@ -836,9 +837,9 @@ Status MojoExpressionParser::prepareForExecution(
   // Register the newly created persistent variables.
   std::vector<lldb::ExpressionVariableSP> peristentVariables;
   for (auto [name, mlirType] : impl->newPersistentVariables) {
-    // All persistent variables in the REPL are pointers, so wrap them in a
-    // pointer type.
-    auto ptr = POP::PointerType::get(mlirType);
+    // All persistent variables in the REPL are references, so wrap them in a
+    // reference type.
+    auto ptr = LIT::REPLResultRefType::get(mlirType);
     CompilerType lldbType(impl->typeSystem->weak_from_this(),
                           const_cast<void *>(ptr.getAsOpaquePointer()));
     lldb::ExpressionVariableSP var = persistentState->CreatePersistentVariable(

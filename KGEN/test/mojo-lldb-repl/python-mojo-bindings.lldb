@@ -24,14 +24,14 @@ class bar:
   def func():
     z = None
 
-# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>) a =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) b =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) foo =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) myjson =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) os =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) platform =
-# CHECK: (pointer<_"$PythonObject"::_PythonObject>) sys =
-# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>) z =
+# CHECK-NOT: (PythonObject) a =
+# CHECK: (PythonObject) b =
+# CHECK: (PythonObject) foo =
+# CHECK: (PythonObject) myjson =
+# CHECK: (PythonObject) os =
+# CHECK: (PythonObject) platform =
+# CHECK: (PythonObject) sys =
+# CHECK-NOT: (PythonObject) z =
 
 # Expressions that don't declare symbols shouldn't fail and shouldn't produce
 # output variables.
@@ -40,4 +40,4 @@ class bar:
 print(420)
 
 # CHECK: 420
-# CHECK-NOT: (pointer<_"$PythonObject"::_PythonObject>)
+# CHECK-NOT: (PythonObject)

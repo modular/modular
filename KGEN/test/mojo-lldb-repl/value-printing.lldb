@@ -1,0 +1,9 @@
+
+# RUN: %repl <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# CHECK: (Int) x = 0x{{.*}}: {
+# CHECK:   (Int)  = {
+# CHECK:     (index) value = 12
+let x = 12
