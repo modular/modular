@@ -132,18 +132,20 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
   ];
 
   let extraClassDeclaration = [{
-    // Get integer value for lowerBound.
+    /// Get integer value for lowerBound.
     std::optional<int64_t> getLowerBoundAsInt();
-    // Get integer value for upperBound.
+    /// Get integer value for upperBound.
     std::optional<int64_t> getUpperBoundAsInt();
-    // Get integer value for step.
+    /// Get integer value for step.
     std::optional<int64_t> getStepAsInt();
-    // Get args that will be return values.
+    /// Get args that will be return values.
     ValueRange getReturnValueArgs();
-    // Get loop trip count.
+    /// Get loop trip count.
     std::optional<int64_t> getTripCount();
-    // Check if the loop is decorated to be fully unrolled.
+    /// Check if the loop is decorated to be fully unrolled.
     bool isFullUnroll();
+    /// Get unroll factor if the loop is decorated.
+    std::optional<int64_t> getUnrollFactorN();
   }];
 
   let hasVerifier = 1;
@@ -245,7 +247,11 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   ];
 
   let extraClassDeclaration = [{
+    /// Check if the loop is decorated to be fully unrolled.
     bool isFullUnroll();
+
+    /// Get unroll factor if the loop is decorated with an constant.
+    std::optional<int64_t> getUnrollFactorN();
   }];
 
   let hasCanonicalizer = 1;
@@ -327,9 +333,10 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
   }]>];
 
   let extraClassDeclaration = [{
-    // Return OpBuilder's pointing the end of the then/else block.
+    /// Return OpBuilder's pointing the end of the then/else block.
     OpBuilder getThenBodyBuilder();
     OpBuilder getElseBodyBuilder();
+
     /// Get 'then' block.
     Block& getThenBlock();
     /// Get 'else' block.
@@ -539,7 +546,7 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
   }];
 
   let extraClassDeclaration = [{
-    // Get the operand that is used as for-loop's induction variable.
+    /// Get the operand that is used as for-loop's induction variable.
     Value getForInductionVariableOperand();
   }];
 

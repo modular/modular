@@ -165,6 +165,13 @@ bool ForOp::isFullUnroll() {
   return false;
 }
 
+std::optional<int64_t> ForOp::getUnrollFactorN() {
+  if (auto n = dyn_cast<IntegerAttr>(getUnrollFactorAttr()))
+    return n.getInt();
+
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
@@ -249,6 +256,14 @@ bool LoopOp::isFullUnroll() {
   if (auto unroll = dyn_cast<HLCF::LoopUnrollFullAttr>(getUnrollFactorAttr()))
     return unroll.getValue() == HLCF::LoopUnrollFull::Full;
   return false;
+}
+
+std::optional<int64_t> LoopOp::getUnrollFactorN() {
+  if (!getUnrollFactor())
+    return {};
+  if (auto n = dyn_cast<IntegerAttr>(getUnrollFactorAttr()))
+    return n.getInt();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

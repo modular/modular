@@ -46,10 +46,10 @@ private:
   SmallVector<ForOp> loopsToUnrollInOrder;
 
   /// Walk loops in program order.
-  void walkLoopsPreorder(Operation *op);
+  void walkLoopsPreorder(Operation *cur);
 
-  /// Fully unroll a simple loop that has no early exits and known iterations.
-  LogicalResult fullUnrollForLoop(ForOp loop);
+  /// Unroll a for-loop by a factor of unrollFactorN.
+  static LogicalResult unrollForLoopN(ForOp loop, int64_t unrollFactorN);
 };
 } // namespace
 
@@ -68,35 +68,49 @@ void LoopUnrolling::walkLoopsPreorder(Operation *cur) {
   });
 }
 
-LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
-  std::optional<int64_t> count = loop.getTripCount();
-  if (!count)
-    return failure();
-
-  mlir::IRRewriter rewriter{OpBuilder(loop)};
-
-  Region &scopeBody = loop->getParentOp()->getRegion(0);
-  Block &body = loop.getBody().front();
-
+/// Helper function to clone/move the operations to unroll a for loop.
+static SmallVector<Value>
+mergeOrInlineUnrollBlock(Block *dest, Block *original, int64_t urollFactorN,
+                         bool copyLastIter, bool isUnrollByFactor,
+                         bool hasParentFor, mlir::IRRewriter &rewriter,
+                         Operation *inlineBeforeOp, ValueRange initValues) {
+  SmallVector<Value> retValues = initValues;
   ForYieldOp newForYield;
-  SmallVector<Value> retValues;
-  retValues = loop.getIterArgs();
+  Region *scopeBody = original->getParent();
 
-  for (int64_t i = 0; i < count; ++i) {
+  for (int64_t i = 0; i < urollFactorN; ++i) {
     IRMapping map;
-    Block *block = rewriter.createBlock(&scopeBody);
+    Block *block = rewriter.createBlock(scopeBody);
 
-    if (i + 1 == count) {
-      // Last iteration, move ops instead of cloning.
-      for (BlockArgument arg : body.getArguments())
+    if (!copyLastIter && i + 1 == urollFactorN) {
+      // Last iteration, move ops instead of cloning if required.
+
+      for (BlockArgument arg : original->getArguments())
         rewriter.replaceAllUsesWith(
             arg, block->addArgument(arg.getType(), arg.getLoc()));
 
       Operation *prevOp = nullptr;
-      for (Operation &op : llvm::make_early_inc_range(body.getOperations())) {
-        if (auto y = dyn_cast<ForYieldOp>(op)) {
+      for (Operation &op :
+           llvm::make_early_inc_range(original->getOperations())) {
+        if (auto yield = dyn_cast<ForYieldOp>(op)) {
           // Don't move last ForYieldOp.
-          newForYield = y;
+          if (isUnrollByFactor) {
+            // When unroll by a factor, make the new ForYieldOp's return segment
+            // contain all the iteration args, including both of the original
+            // retVals and other iterArgs. This helps to get the right iteration
+            // args to the tail part of unrollFactorN is not divisible by trip
+            // count.
+            SmallVector<Value> newOperands = yield.getReturnValues();
+            llvm::append_range(newOperands, yield.getOtherIterValues());
+            rewriter.setInsertionPointAfter(prevOp);
+
+            newForYield = rewriter.create<ForYieldOp>(
+                op.getLoc(), yield.getInductionVar(), newOperands,
+                ValueRange{});
+          } else {
+            // Don't move last ForYieldOp.
+            newForYield = yield;
+          }
           continue;
         }
 
@@ -108,41 +122,202 @@ LogicalResult LoopUnrolling::fullUnrollForLoop(ForOp loop) {
 
         prevOp = &op;
       }
+    } else {
+      for (BlockArgument arg : original->getArguments())
+        map.map(arg, block->addArgument(arg.getType(), arg.getLoc()));
 
+      for (Operation &op : original->getOperations()) {
+        Operation *newOp = rewriter.clone(op, map);
+        if (auto yield = dyn_cast<ForYieldOp>(newOp)) {
+          if (isUnrollByFactor) {
+            SmallVector<Value> newOperands = yield.getReturnValues();
+            llvm::append_range(newOperands, yield.getOtherIterValues());
+            newForYield = rewriter.create<ForYieldOp>(
+                op.getLoc(), yield.getInductionVar(), newOperands,
+                SmallVector<Value>{});
+
+            rewriter.eraseOp(newOp);
+          } else {
+            newForYield = yield;
+          }
+        }
+      }
+    }
+
+    if (isUnrollByFactor) {
       // Add unrolled block before the loop.
-      rewriter.inlineBlockBefore(block, loop, retValues);
-
-      // Get result value of the loop.
-      retValues = newForYield.getOperands();
-      break;
+      rewriter.mergeBlocks(block, dest, retValues);
+    } else {
+      // Add unrolled block before the loop.
+      rewriter.inlineBlockBefore(block, inlineBeforeOp, retValues);
     }
-
-    for (BlockArgument arg : body.getArguments())
-      map.map(arg, block->addArgument(arg.getType(), arg.getLoc()));
-
-    for (Operation &op : body.getOperations()) {
-      auto newOp = rewriter.clone(op, map);
-      if (auto y = dyn_cast<ForYieldOp>(newOp))
-        newForYield = y;
-    }
-
-    // Add unrolled block before the loop.
-    rewriter.inlineBlockBefore(block, loop, retValues);
 
     // Update next iteration's inputs
     retValues = newForYield.getOperands();
 
-    // Erase ForYieldOp.
-    rewriter.eraseOp(newForYield);
+    // Erase ForYieldOp except for the last iteration.
+    if (i + 1 != urollFactorN || !hasParentFor)
+      rewriter.eraseOp(newForYield);
   }
 
-  // Replace the loop return value, which are first group of operands of
-  // ForYieldOp.
-  loop.replaceAllUsesWith(llvm::drop_begin(
-      llvm::drop_end(retValues, retValues.size() - loop.getNumResults() - 1)));
+  return retValues;
+}
 
-  // Erase the original loop.
-  rewriter.eraseOp(loop);
+LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
+  std::optional<int64_t> count = loop.getTripCount();
+  if (!count)
+    return failure();
+
+  mlir::IRRewriter rewriter{OpBuilder(loop)};
+
+  int64_t lowerBound = loop.getLowerBoundAsInt().value();
+  int64_t upperBound = loop.getUpperBoundAsInt().value();
+  int64_t step = loop.getStepAsInt().value();
+  int64_t newStep = step * unrollFactorN;
+
+  Block &originalBody = loop.getBody().front();
+
+  if (count <= unrollFactorN) {
+    // Fully unroll.
+    SmallVector<Value> retValues = mergeOrInlineUnrollBlock(
+        /*dest=*/nullptr, &originalBody, /*unrollFactorN*/ count.value(),
+        /*copyLastIter=*/false, /*isUnrollByFactor*/ false,
+        /*hasParentFor*/ false, rewriter, loop.getOperation(),
+        loop.getIterArgs());
+
+    // Replace the loop return value, which are first group of operands of
+    // ForYieldOp.
+    loop.replaceAllUsesWith(llvm::drop_begin(llvm::drop_end(
+        retValues, retValues.size() - loop.getNumResults() - 1)));
+
+    // Erase the original loop.
+    rewriter.eraseOp(loop);
+
+  } else {
+    // Unroll by a factor.
+    //
+    // Example1: unroll the following ForOp (trip count 6) by 2
+    // %idx5 = index.constant 7
+    // %idx1 = index.constant 1
+    // %1 = hlcf.for [7 to 1 step 1] (%arg0, %arg1, %arg2) -> index {
+    //   %0 = index.sub %arg0, 1
+    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
+    //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
+    // } {unrollFactor = 2: index }
+    //
+    // To a loop with trip count of 3 and a body of 2 unrolled original body.
+    // Also change the result to include all iteration args except the induction
+    // variable.
+    //
+    // %0:2 = hlcf.for [7 to 1 step 2] (%arg0, %arg1, %arg2) -> index {
+    //   %1 = index.sub %arg0, 1
+    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
+    //   %2 = index.sub %1, 1
+    //   kgen.call @foo(%1, %1) : (index) -> ()
+    //   hlcf.for.yield [induction_var (%2)] [retvals (%2, %2)] [iterargs ()]
+    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+    //
+    // Example2: unroll the following ForOp (trip count 5) by 2 where 5 is not
+    // divisible  by 2.
+    // %idx5 = index.constant 5
+    // %idx1 = index.constant 1
+    // %1 = hlcf.for [5 to 1 step 1] (%arg0, %arg1, %arg2) -> index {
+    //   %0 = index.sub %arg0, 1
+    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
+    //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
+    // } {unrollFactor = 2: index }
+    //
+    // To
+    // 1. A loop with trip count of 2 and a body of 2 unrolled original body.
+    // Also change the result to include all iteration args except the induction
+    // variable.
+    // 2. A loop to handle the tail iterations (5 %2 = 1). Use the orignal loop
+    // here but update the bounds to match the tails.
+    //
+    // %0:2 = hlcf.for [5 to 2 step 2] (%arg0, %arg1, %arg2) -> index {
+    //   %1 = index.sub %arg0, 1
+    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
+    //   %2 = index.sub %1, 1
+    //   kgen.call @foo(%1, %1) : (index) -> ()
+    //   hlcf.for.yield [induction_var (%2)] [retvals (%2, %2)] [iterargs ()]
+    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+    //
+    // %1 = hlcf.for [2 to 1 step 1] (%arg0, %arg1=%0:0, %arg2=%0:1) -> index {
+    //   %0 = index.sub %arg0, 1
+    //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
+    //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
+    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+
+    int64_t newTailLowerBound;
+    if (lowerBound < upperBound) {
+      // Ascending.
+      newTailLowerBound =
+          lowerBound +
+          std::abs((count.value() / unrollFactorN) * step * unrollFactorN);
+    } else {
+      // Descending.
+      newTailLowerBound =
+          lowerBound -
+          std::abs((count.value() / unrollFactorN) * step * unrollFactorN);
+    }
+    int64_t newUnrollNUpperBound = newTailLowerBound;
+
+    rewriter.setInsertionPoint(loop);
+    // Create the new ForOp with reordered operands.
+    // create new step
+    auto newStepOp = rewriter.create<mlir::index::ConstantOp>(
+        loop.getStep().getLoc(), newStep);
+
+    auto newUnrollNUpperBoundOp = rewriter.create<mlir::index::ConstantOp>(
+        loop.getUpperBound().getLoc(), newUnrollNUpperBound);
+
+    // New forOp returns all iterArgs except the induction variable (retVals and
+    // otherArgs). This helps to pass all the iteration variables if there is a
+    // tail part of the unrolling after this ForOp.
+    auto forOp = rewriter.create<HLCF::ForOp>(
+        loop->getLoc(),
+        SmallVector<Type>{llvm::drop_begin(loop.getIterArgs().getTypes())},
+        loop.getLowerBound(), newUnrollNUpperBoundOp, newStepOp,
+        loop.getIterArgs(),
+        HLCF::LoopUnrollFullAttr::get(loop->getContext(),
+                                      HLCF::LoopUnrollFull::None));
+
+    // Create the block for the new ForOp.
+    Block *forBody = rewriter.createBlock(&forOp.getBody());
+
+    SmallVector<Value> initValues;
+    for (BlockArgument arg : originalBody.getArguments())
+      initValues.push_back(forBody->addArgument(arg.getType(), arg.getLoc()));
+
+    bool hasTailFor = (count.value() % unrollFactorN != 0);
+
+    SmallVector<Value> retValues = mergeOrInlineUnrollBlock(
+        /*dest*/ forBody, &originalBody, unrollFactorN, hasTailFor,
+        /*isUnrollByFactor*/ true, /*hasParentFor*/ true, rewriter,
+        /*inlineBeforeOp*/ nullptr, initValues);
+
+    if (hasTailFor) {
+      // Add tail iterations.
+      rewriter.setInsertionPoint(loop);
+      auto newLowerBoundV = rewriter.create<mlir::index::ConstantOp>(
+          loop->getLoc(), newTailLowerBound);
+      SmallVector<Value> newOperands = {newLowerBoundV, loop.getUpperBound(),
+                                        loop.getStep(), newLowerBoundV};
+      llvm::append_range(newOperands, forOp.getResults());
+      loop->setOperands(newOperands);
+      loop.setUnrollFactorAttr(forOp.getUnrollFactorAttr());
+    } else {
+      // Replace the loop return value, only take the original retVals instead
+      // of the combination of retVals and iterArgs from the results of the new
+      // ForOp.
+      loop.replaceAllUsesWith(
+          llvm::drop_end(forOp.getResults(),
+                         forOp.getResults().size() - loop.getResults().size()));
+
+      // Erase the original loop.
+      rewriter.eraseOp(loop);
+    }
+  }
 
   return success();
 }
@@ -154,14 +329,21 @@ void LoopUnrolling::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // unroll loops from inner to outer
   for (auto loop : llvm::reverse(loopsToUnrollInOrder)) {
-    if (loop.isFullUnroll() || (loop.getTripCount() <= 1)) {
-      // Fully unroll if loop is decorated or has single iteration.
-      if (succeeded(fullUnrollForLoop(loop)))
+    std::optional<int64_t> tripCount = loop.getTripCount();
+    if (!tripCount)
+      continue;
+    if (loop.isFullUnroll() || (tripCount.value() <= 1)) {
+      // Fully unroll if loop is decorated or has single or zero iteration.
+      if (succeeded(unrollForLoopN(loop, tripCount.value())))
         continue;
+
       // TODO: unroll with a factor based on cost model if a for loop decorated
       // with fully unroll is not a loop that has no early exits.
-    } else {
-      // TODO: unroll loops with decorator of an unroll factor
+    } else if (loop.getUnrollFactorN()) {
+      // unroll loops with decorator of an unroll factor
+      if (failed(unrollForLoopN(loop, loop.getUnrollFactorN().value()))) {
+        signalPassFailure();
+      }
     }
   }
 }
