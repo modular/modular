@@ -8,6 +8,7 @@ from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
 from Concat import concat as _concat, concat_shape
+from Conv import conv_shape
 from DType import DType
 from Functional import (
     _elementwise_impl,
@@ -108,6 +109,7 @@ fn MOGGExport():
     alias _ceil = ceil
     alias _concat = concat
     alias _concat_shape = concat_shape
+    alias _conv = conv_shape
     alias _div = div
     alias _erf = erf
     alias _exp = exp
