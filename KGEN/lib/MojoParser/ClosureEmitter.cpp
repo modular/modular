@@ -209,10 +209,9 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name, Location loc,
                                             SignatureType closureImplSignature,
                                             unsigned captureCount) {
   SmallVector<Type> types;
-  int i = 0;
-  for (auto [type, convention] :
-       llvm::zip(closureImplSignature.getValueInputs(),
-                 closureImplSignature.getMetadata().getInputConventions())) {
+  for (auto [i, type, convention] : llvm::enumerate(
+           closureImplSignature.getValueInputs(),
+           closureImplSignature.getMetadata().getInputConventions())) {
     if (i >= captureCount)
       break;
     // The convention defines a map from the closureImplSignature parameter type
@@ -239,7 +238,6 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name, Location loc,
       break;
     }
     }
-    i++;
   }
   return createStruct(fileModuleOp, name, types, loc);
 }
