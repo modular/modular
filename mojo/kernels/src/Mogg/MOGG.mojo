@@ -1342,8 +1342,10 @@ fn gather[
 ):
     # Look through the lambda to pull the index out.
     alias axis_static = Dim()
-    let axis = OptionalParamInt[axis_static](
-        input_2_fn[axis_type, 1, 1](0).to_int()
+    let axis = input_2_fn[axis_type, 1, 1](0).to_int()
+
+    let axis_normalized = OptionalParamInt[axis_static](
+        axis + in_rank if axis < 0 else axis
     )
 
     @parameter
@@ -1369,7 +1371,7 @@ fn gather[
         output_0_fn,
         no_prefetch,
         axis_static,
-    ](axis, input, indices, output, out_chain)
+    ](axis_normalized, input, indices, output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
