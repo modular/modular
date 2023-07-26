@@ -42,18 +42,15 @@ using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
 // Helpers that wait for values.
 //===----------------------------------------------------------------------===//
 
-/// Returns only when all of the given async values are available. If
-/// mayDonate is true then may donate the caller's thread to running pending
-/// work items while waiting. Otherwise the caller may block.
-inline static void await(ArrayRef<AnyAsyncValueRef> values,
-                         bool mayDonate = true) {
+/// Returns only when all of the given async values are available.
+inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0].getRuntime()->getWorkQueue()->await(values, mayDonate);
+    values[0].getRuntime()->getWorkQueue()->await(values);
 }
 
 template <typename T>
-inline static void await(const AsyncValueRef<T> &value, bool mayDonate = true) {
-  await(ArrayRef<AnyAsyncValueRef>(value), mayDonate);
+inline static void await(const AsyncValueRef<T> &value) {
+  await(ArrayRef<AnyAsyncValueRef>(value));
 }
 
 //===----------------------------------------------------------------------===//

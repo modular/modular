@@ -36,7 +36,11 @@ public:
     assert(state.compare_exchange_strong(expected, kShutdown));
   }
 
-  ~SingleThreadWorkQueue() override { assert(!workItems.dequeue()); }
+  ~SingleThreadWorkQueue() override {
+    // Note we can't assert state == kShutdown since queue may be created
+    // and destroyed without ever being included in a runtime.
+    assert(!workItems.dequeue());
+  }
 
   void addTask(TaskFunction &&work) override {
     assert(work);
@@ -46,7 +50,10 @@ public:
 
   void addLocalTask(TaskFunction &&work) override { addTask(std::move(work)); }
 
-  void await(llvm::ArrayRef<AnyAsyncValueRef> values, bool mayDonate) override;
+  void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
+
+  bool callerIsForeign() const override { return false; }
+
   size_t getParallelismLevel() const override { return 1; }
 
 private:
@@ -81,11 +88,8 @@ private:
 };
 } // namespace
 
-void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values,
-                                  bool mayDonate) {
+void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   assert(state == kReady);
-
-  // Note we must ignore mayDonate.
 
   // We are done when values_remaining drops to zero.
   size_t numRemaining = values.size();

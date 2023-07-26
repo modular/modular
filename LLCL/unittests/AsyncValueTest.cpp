@@ -572,8 +572,7 @@ TEST_P(AsyncValueTest, AwaitWithoutDonating) {
 
   std::thread foreign[nTasks];
   for (size_t i = 0; i < nTasks; ++i)
-    foreign[i] = std::thread(
-        [i, &finished]() { await(finished[i], /*mayDonate=*/false); });
+    foreign[i] = std::thread([i, &finished]() { await(finished[i]); });
 
   for (size_t i = 0; i < nTasks; ++i)
     canRun[i].post();

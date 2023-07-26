@@ -75,26 +75,34 @@ public:
   virtual void addLocalTask(TaskFunction &&work) = 0;
 
   /// Returns when the given values are ready, either as emplaced values or
-  /// as errors.
+  /// as errors. Depending on the WorkQueue implementation and the caller's
+  /// thread, the await may sleep, may 'donate' itself to running work items,
+  /// or both.
   ///
-  /// In single-threaded environments mayDonate is ignored. In multi-threaded
-  /// environments mayDonate indicates if the caller's thread may be 'donated'
-  /// towards running pending work items while waiting. However even with
-  /// mayDonate the caller's thread may sleep.
+  /// It is valid for await to be called recursively, ie a task may itself
+  /// call await, effectively 'blocking' it. However, that just means the
+  /// task will start processing other tasks while 'waiting' for its values
+  /// to become ready. Try to avoid this in favor of using synchronization
+  /// via AsyncValues only.
   ///
-  /// It is valid for await to be called recursively, ie a task being processed
-  /// may itself call await. It is valid for the caller to be running on
-  /// any thread, including a worker thread managed by this WorkQueue or any
-  /// 'foreign' thread.
+  /// It is valid for the caller to be running on any thread, including a
+  /// worker thread managed by this WorkQueue, a worker thread managed by
+  /// some other WorkQueue, the 'main' thread which created the WorkQueue,
+  /// or some 'foreign' thread.
   ///
   /// CAUTION: Though await will only return when all values are ready, that
-  /// does NOT imply all the waiters for values have been run. Furthermore,
-  /// since await itself relies on waiters, two awaits on the same value from
-  /// different threads can return in any order. Thus, care must be taken
-  /// when using await to decide when a computation is 'done' and its resources
-  /// (or the whole Runtime) can be destroyed.
-  virtual void await(ArrayRef<AnyAsyncValueRef> values,
-                     bool mayDonate = true) = 0;
+  /// does NOT imply all the waiters for those values have been run (and any
+  /// work triggered by those waiter have been run, and so on to quiescence).
+  /// Furthermore, since await itself relies on waiters, two awaits on the
+  /// same value from different threads can return in any order. Thus, care
+  /// must be taken when using await to decide when a computation is 'done'
+  /// and the resources it depends on can be destroyed. Generally, only a
+  /// shutdown() can guarantee that all in-flight computation has completed.
+  virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;
+
+  /// Returns true if the calling thread is known to be 'foreign' to this
+  /// work queue. What this means depends on the work queue implementation.
+  virtual bool callerIsForeign() const = 0;
 
   /// Return the pool size maintained by this work queue. Kernels can use
   /// this as a hint indicating the maximum useful number of work items
@@ -103,8 +111,8 @@ public:
 
   /// Shutdown the thread pool and quiesce in preparation for destruction.
   /// Must be called before the WorkQueue is destroyed. Must be called from
-  /// outside of any task. No other 'foreign' thread may be running an await
-  /// loop.
+  /// outside of any task. Depending on WorkQueue implementation, may need
+  /// to be called from the same thread which created the WorkQueue.
   virtual void shutdown() = 0;
 
 protected:
@@ -125,19 +133,27 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// the first socket in the system. Generally this will ignore hyperthreading
 /// to minimize cache contention, and will avoid cross-NUMA memory traffic.
 ///
+/// If mainWillDonate is false (the default) then numThreads worker threads will
+/// be created. Arbitrary threads may then addTasks and call await, but will not
+/// themselves contribute to processing work items. This is most appropriate for
+/// multi-threaded servers which wish to share the same work queue across
+/// multiple request threads.
+///
 /// If mainWillDonate is true then only numThreads - 1 worker threads will be
-/// created, on the assumption the calling thread or some other distinguished
-/// 'main' thread will eventually donate themselves to processing work items
-/// by calling await with mayDonate true. This is most appropriate for systems
-/// driven my a single main thread, such as an REPL or execution tool.
+/// created, on the assumption the calling thread will eventually call await
+/// and 'donate' itself to processing work items alongside the worker threads.
+/// This is most appropriate for systems driven my a single, distinguished main
+/// thread, such as a REPL or execution tool.
 ///
-/// If mainWillDonate is false then numThreads worker threads will be created,
-/// on the assumption await will only be called with mayDonate false. This is
-/// most appropriate for multi-threaded servers which wish to share the same
-/// threading work queue across multiple requesting threads. The requesting
-/// threads are expected to add a task for their request and sleep.
+/// The work queue must be shutdown before being destroyed. Until shutdown has
+/// returned any number of work items may be executing, so no resources they
+/// depend on should be destroyed. If mainWillDonate is true, the calling
+/// thread must be the one to call shutdown, at which point it may (again)
+/// contribute to processing outstanding work items. Otherwise shutdown
+/// may be called from any foreign thread.
 ///
-/// The work queue must be shutdown before being destroyed.
+/// If in a MODULAR_PARANOID build, the paranoid flag can be used to inject
+/// random delays into work items to attempt to tickle race conditions.
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
                                                      bool mainWillDonate = true,
                                                      bool paranoid = false);
