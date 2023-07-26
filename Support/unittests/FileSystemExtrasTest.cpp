@@ -13,7 +13,7 @@
 
 using namespace M;
 
-/// This test checks that each thread appends to the file atomically - *not*
+/// This test checks that each thread appends to the file serializably - *not*
 /// that it must happen in a specific order. The only guarantee provided is that
 /// the thread won't be interrupted!
 TEST(FileSystemExtras, Append) {
@@ -30,12 +30,12 @@ TEST(FileSystemExtras, Append) {
   // Each thread will write a list of integers to the temp file.
   for (int thread = 0; thread < numThreads; ++thread) {
     threads.emplace_back([thread, &tmpFileOr]() {
-      auto err = appendFileAtomically(tmpFileOr->getPath(),
-                                      [thread](llvm::raw_ostream &os) {
-                                        for (int i = 0; i < numValues; ++i)
-                                          os << thread << ",";
-                                        os << "\n";
-                                      });
+      auto err = appendFileUnderLock(tmpFileOr->getPath(),
+                                     [thread](llvm::raw_ostream &os) {
+                                       for (int i = 0; i < numValues; ++i)
+                                         os << thread << ",";
+                                       os << "\n";
+                                     });
       ASSERT_FALSE(err.isError()) << err.getError();
     });
   }
