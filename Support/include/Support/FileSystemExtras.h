@@ -37,6 +37,13 @@ ErrorOrSuccess readFileAtomically(
     const std::filesystem::path &filePath,
     llvm::function_ref<void(const std::filesystem::path &)> read);
 
+/// Safely process potentially creating, but always appending, to the file,
+/// taking into account that we may have different writers trying to do the
+/// same in parallel.
+ErrorOrSuccess
+appendFileAtomically(const std::filesystem::path &filePath,
+                     llvm::function_ref<void(raw_ostream &)> appendContent);
+
 /// Invokes the provided callback, writing the output to a temporary file whose
 /// name is based on the provided model. On success, `outPath` is populated with
 /// the path of temporary file.

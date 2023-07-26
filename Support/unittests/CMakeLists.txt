@@ -22,6 +22,7 @@ add_modular_unittest(
   DTypeTest.cpp
   ErrorTest.cpp
   ErrorOrTest.cpp
+  FileSystemExtrasTest.cpp
   FunctionExtrasTest.cpp
   HostTest.cpp
   HMACTest.cpp
