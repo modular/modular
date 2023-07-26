@@ -1434,8 +1434,7 @@ namespace {
 struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
   explicit ForceInlinePass(
       const ForceInlineOptions &options = {}, LLCL::Runtime *runtime = nullptr,
-      function_ref<void(mlir::OpPassManager &)> buildFuncPasses =
-          [](mlir::OpPassManager &) {})
+      function_ref<void(mlir::OpPassManager &)> buildFuncPasses = nullptr)
       : ForceInlineBase(options), runtime(runtime),
         buildFuncPasses(buildFuncPasses) {}
 
@@ -1450,6 +1449,13 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 
 void ForceInlinePass::runOnOperation() {
   TimeTraceScope traceScope("ForceInlinePass::runOnOperation");
+
+  // Parse the pass pipeline if provided.
+  auto buildFromPipelineStr = [this](mlir::OpPassManager &pm) {
+    (void)mlir::parsePassPipeline(funcPipelineStr, pm);
+  };
+  if (!buildFuncPasses)
+    buildFuncPasses = buildFromPipelineStr;
 
   // Create a runtime instance if needed.
   auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(

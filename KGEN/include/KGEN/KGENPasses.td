@@ -443,7 +443,9 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
 
   let options = [
     Option<"updateDebugInfo", "update-debug-info", "bool", "true",
-           "If true, debug info of inlined functions are updated accordingly.">
+           "If true, debug info of inlined functions are updated accordingly.">,
+    Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
+           "Specify the inner pipeline to use on functions.">
   ];
 }
 
