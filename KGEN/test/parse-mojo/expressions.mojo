@@ -1054,6 +1054,20 @@ fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
 
 
 @register_passable
+struct RegWeirdArray:
+    fn __getitem__(self, idx: Int) -> Int:
+        return idx
+    fn __setitem__(self, idx: Int, value: Int):
+        pass
+
+
+# CHECK-LABEL: lit.func @"dlValueToPValue
+fn dlValueToPValue[arr: RegWeirdArray]():
+    # CHECK-NEXT: lit.alias.decl {{.*}}x: {{.*}}@Int = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}, {{.*}}arr, #lit.struct<{value = 2}>)>
+    alias x = arr[2]
+
+
+@register_passable
 struct ConstDynamicObject:
     fn __init__() -> Self:
         return Self{}

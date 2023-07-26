@@ -656,6 +656,17 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
       return {};
   }
 
+  // If this is a DLValue, see if it can be emitted as a PValue. PValues are
+  // immutable, so try to load the DLValue in a parameter context.
+  if (auto dl = value.ir.getIfDLValue()) {
+    ValueDest dest;
+    value.ir = dl->emitLoad(dest, *this);
+    if (!value.ir) {
+      dest.resetForError();
+      return {};
+    }
+  }
+
   // If this is a parameter, return it.
   if (auto result = value.ir.getIfPValue())
     return result;
