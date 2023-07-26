@@ -54,6 +54,10 @@ public:
   /// be empty if no docstring is available.
   virtual std::string getMarkdownDocString() const { return {}; }
 
+  /// Return a nicely formatted markdown blob containing the declaration snippet
+  /// and doc string of the decl.
+  std::string getFullMarkdownString() const;
+
 public:
   //===----------------------------------------------------------------------===//
   // LLVM RTTI Support

@@ -108,35 +108,9 @@ struct Symbol {
 } // namespace
 
 std::string Symbol::getMarkdownDeclaration() const {
-
-  auto view = declRef.getView();
-  if (!view)
-    return {};
-
-  std::string buff;
-  llvm::raw_string_ostream os(buff);
-
-  os << formatv("### {0} `{1}`\n", view->getKindAsString(), identifier);
-
-  if (auto docString = view->getMarkdownDocString(); !docString.empty()) {
-    os << llvm::formatv(R"(
----
-
-###
-{0}
-)",
-                        docString);
-  }
-
-  os << llvm::formatv(R"(
----
-
-###
-```mojo
-{0}
-```)",
-                      view->getDeclarationSnippet());
-  return buff;
+  if (auto view = declRef.getView())
+    return view->getFullMarkdownString();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -611,7 +585,19 @@ MojoDocument::getCodeCompletion(const lsp::Position &completePos) const {
     case KGEN::Mojo::CodeCompletionResult::kPackage:
       item.kind = lsp::CompletionItemKind::Folder;
       break;
+    case KGEN::Mojo::CodeCompletionResult::kStruct:
+      item.kind = lsp::CompletionItemKind::Struct;
+      break;
+    case KGEN::Mojo::CodeCompletionResult::kFunction:
+      item.kind = lsp::CompletionItemKind::Function;
+      break;
+    case KGEN::Mojo::CodeCompletionResult::kField:
+      item.kind = lsp::CompletionItemKind::Field;
+      break;
     }
+
+    if (!it.documentation.empty())
+      item.documentation = {lsp::MarkupKind::Markdown, it.documentation};
     completionList.items.push_back(item);
   }
   return completionList;

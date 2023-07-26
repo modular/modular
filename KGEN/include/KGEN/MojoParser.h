@@ -112,6 +112,10 @@ public:
   /// currently being resolved.
   virtual void onImport(MojoASTDeclRef packageDecl, llvm::SMLoc importLoc);
 
+  /// Notify the listener that a member within the given decl is being looked
+  /// up.
+  virtual void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc);
+
   /// Notify the listener that a new `struct` declaration has been resolved by
   /// the parser.
   virtual void onStructDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);

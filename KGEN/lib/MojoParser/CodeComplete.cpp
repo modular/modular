@@ -8,7 +8,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
+#include "KGEN/MojoParser/ASTDeclView.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
@@ -17,6 +19,21 @@ using namespace M::KGEN::LIT;
 using namespace M::KGEN::Mojo;
 
 using llvm::SMLoc;
+
+/// Returns true if the given member should be shown during lookup within
+/// `decl`. If `isModuleLookup` is true, we are looking up nested modules.
+static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
+                                 bool isModuleLookup = false) {
+  if (llvm::isa_and_present<PackageOp>(decl.getIfOperation())) {
+    // If this is a module lookup, we only want to show non-init modules defined
+    // within the package.
+    if (isModuleLookup)
+      return member.consume_front("$") && member != "__init__";
+    // Otherwise, show everything but internally defined modules.
+    return !member.starts_with("$");
+  }
+  return true;
+}
 
 //===----------------------------------------------------------------------===//
 // Listener
@@ -67,16 +84,51 @@ struct CodeCompletionListener : public MojoParserListener {
       return;
     for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
       StringRef name = child.getName();
-      if (!name.consume_front("$") || name == "__init__")
+      if (!showDeclDuringLookup(packageDecl, name, /*isModuleLookup=*/true))
         continue;
 
-      for (MojoASTDeclRef decl : child.getDecls()) {
-        if (llvm::isa_and_present<FileModuleOp>(decl.getIfOperation()))
-          results.emplace_back(name, CodeCompletionResult::kModule);
-        else if (llvm::isa_and_present<PackageOp>(decl.getIfOperation()))
-          results.emplace_back(name, CodeCompletionResult::kPackage);
-      }
+      addCompletionForOp(name, *child.getDecls().begin(), [](Operation *op) {
+        return isa<FileModuleOp, PackageOp>(op);
+      });
     }
+  }
+
+  /// Notify the listener that a member within the given decl is being looked
+  /// up.
+  void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc) override {
+    if (loc != lookupLoc)
+      return;
+    for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
+      StringRef name = child.getName();
+      if (!showDeclDuringLookup(decl, name))
+        continue;
+
+      // TODO: Include information about overloads here and just handle multi
+      // decls in general.
+      addCompletionForOp(name, *child.getDecls().begin());
+    }
+  }
+
+  /// Utility function to add a completion result for the given decl. An
+  /// optional filter that returns which operations should be considered.
+  void addCompletionForOp(StringRef name, MojoASTDeclRef decl,
+                          function_ref<bool(Operation *)> filter = {}) {
+    Operation *op = decl.getIfOperation();
+    if (!op || (filter && !filter(op)))
+      return;
+    auto kind =
+        TypeSwitch<Operation *, CodeCompletionResult::Kind>(op)
+            .Case([](FileModuleOp) { return CodeCompletionResult::kModule; })
+            .Case([](PackageOp) { return CodeCompletionResult::kPackage; })
+            .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
+            .Case([](FuncOp) { return CodeCompletionResult::kFunction; })
+            .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
+            .Default(CodeCompletionResult::kUnknown);
+
+    CodeCompletionResult result(name, kind);
+    if (auto view = decl.getView())
+      result.documentation = view->getFullMarkdownString();
+    results.emplace_back(result);
   }
 
   /// The results that have been collected so far.
@@ -101,6 +153,8 @@ std::vector<CodeCompletionResult>
 Mojo::codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
                    MLIRContext *context, LLCL::Runtime &runtime,
                    const KGEN::CompilationOptions &options) {
+  if (buffer.getBufferSize() < completionPosition)
+    return {};
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(buffer),
                                SMLoc());

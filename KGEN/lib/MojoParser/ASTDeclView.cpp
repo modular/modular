@@ -299,6 +299,35 @@ StringRef DeclView::getKindAsString() const {
   }
 }
 
+std::string DeclView::getFullMarkdownString() const {
+  std::string buff;
+  llvm::raw_string_ostream os(buff);
+
+  // A code snippet used when rendering the documentation string.
+  const char *docStringSnippet = R"(
+---
+
+###
+{0}
+)";
+
+  // A code snippet used when rendering the declaration snippet.
+  const char *declarationSnippet = R"(
+---
+
+###
+```mojo
+{0}
+```)";
+
+  os << formatv("### {0} `{1}`\n", getKindAsString(), getName());
+  if (auto docString = getMarkdownDocString(); !docString.empty())
+    os << llvm::formatv(docStringSnippet, docString);
+
+  os << llvm::formatv(declarationSnippet, getDeclarationSnippet());
+  return buff;
+}
+
 //===----------------------------------------------------------------------===//
 // VariableDeclView
 //===----------------------------------------------------------------------===//

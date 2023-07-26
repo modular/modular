@@ -1748,6 +1748,36 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
   return existing;
 }
 
+LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
+    llvm::SMLoc location, SignatureType signatureType, unsigned captureCount,
+    FileModuleOp fileModuleOp) {
+  assert(captureCount < signatureType.getValueInputs().size() &&
+         "Cannot capture more values than inputs");
+  std::pair<SignatureType, StringAttr> key(signatureType,
+                                           fileModuleOp.getSymNameAttrName());
+  StructDeclOp existing = impl->closureImpls[key];
+  if (!existing) {
+    StringAttr name =
+        getClosureNameFromType("_CI_", fileModuleOp, signatureType);
+    ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
+    existing = emitter.createClosureImplStructDecl(
+        name, translateLocation(location), signatureType, captureCount);
+    ASTDecl &decl = declResolver->addFullyResolvedDecl(
+        existing.getOperation(), existing.getSymNameAttr(), location,
+        impl->topLevelDecl);
+    for (StructFieldOp field : existing.getFieldDecls())
+      declResolver->addFullyResolvedDecl(field.getOperation(),
+                                         field.getNameAttr(), location, &decl);
+
+    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>())
+      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
+                                         funcOp.getSymNameAttr(), location,
+                                         impl->topLevelDecl);
+    impl->closureImpls[key] = existing;
+  }
+  return existing;
+}
+
 //===----------------------------------------------------------------------===//
 // Listener Interface
 
@@ -1779,32 +1809,9 @@ void SharedState::notifyListenerOnImport(ASTDecl &packageDecl,
   parserListener->onImport(&packageDecl, importLoc);
 }
 
-LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
-    llvm::SMLoc location, SignatureType signatureType, unsigned captureCount,
-    FileModuleOp fileModuleOp) {
-  assert(captureCount < signatureType.getValueInputs().size() &&
-         "Cannot capture more values than inputs");
-  std::pair<SignatureType, StringAttr> key(signatureType,
-                                           fileModuleOp.getSymNameAttrName());
-  StructDeclOp existing = impl->closureImpls[key];
-  if (!existing) {
-    StringAttr name =
-        getClosureNameFromType("_CI_", fileModuleOp, signatureType);
-    ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-    existing = emitter.createClosureImplStructDecl(
-        name, translateLocation(location), signatureType, captureCount);
-    ASTDecl &decl = declResolver->addFullyResolvedDecl(
-        existing.getOperation(), existing.getSymNameAttr(), location,
-        impl->topLevelDecl);
-    for (StructFieldOp field : existing.getFieldDecls())
-      declResolver->addFullyResolvedDecl(field.getOperation(),
-                                         field.getNameAttr(), location, &decl);
-
-    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>())
-      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
-                                         funcOp.getSymNameAttr(), location,
-                                         impl->topLevelDecl);
-    impl->closureImpls[key] = existing;
-  }
-  return existing;
+void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
+  if (!parserListener)
+    return;
+  resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
+  parserListener->onMemberLookup(&decl, lookupLoc);
 }

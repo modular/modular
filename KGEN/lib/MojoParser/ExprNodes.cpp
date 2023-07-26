@@ -175,9 +175,12 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     // operation's attribute list, and emitPValue only supports TypedAttrs.
     if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
       auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
-      if (mlirAttr && mlirAttr->spelling == "__mlir_attr")
+      if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
+        if (attrRef->attrSpelling.empty())
+          return {};
         return parseMLIRAttrFromString(attrRef->attrSpelling, attrRef->getLoc(),
                                        emitter.shared);
+      }
     }
 
     // Likewise, special case the __mlir_attr[a,b,c] syntax to support
@@ -939,6 +942,12 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Find the decl for the type we're looking up into.
   ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
   if (!typeDecl) {
+    // If the attribute spelling is empty, we couldn't find a name to look up.
+    // This was already diagnosed during initial parsing, so we can just bail
+    // here.
+    if (attrSpelling.empty())
+      return {};
+
     // If there is no decl, the type is an MLIR type.
     Type baseMLIRType = baseRVType.mlirType;
 
@@ -962,6 +971,18 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         << baseRVType << " has no attributes" << base->getRange();
     return {};
   }
+
+  // Notify the listener of a member lookup.
+  if (emitter.shared.parserListener) {
+    emitter.shared.notifyListenerOnMemberLookup(*typeDecl,
+                                                getAttributeNameLoc());
+  }
+
+  // If the attribute spelling is empty, we couldn't find a name to look up.
+  // This was already diagnosed during initial parsing, so we can just bail
+  // here.
+  if (attrSpelling.empty())
+    return {};
 
   // Handle module or package references.
   if (isa<PackageOp, FileModuleOp>(*typeDecl)) {

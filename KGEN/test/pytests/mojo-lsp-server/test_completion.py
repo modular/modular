@@ -87,3 +87,37 @@ import Builtin.
         item.label == "Bool" and item.kind == CompletionItemKind.Module
         for item in items
     )
+
+
+async def test_completion_member_lookup(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn function(arg: Int):
+    arg.
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    results = fail_if_none(
+        await client.text_document_completion_async(
+            params=CompletionParams(
+                position=Position(line=2, character=8),
+                text_document=doc.identifier,
+            )
+        )
+    )
+    if isinstance(results, CompletionList):
+        items = results.items
+    else:
+        items = results
+
+    assert any(
+        item.label == "__add__" and item.kind == CompletionItemKind.Function
+        for item in items
+    )
+    assert any(
+        item.label == "value" and item.kind == CompletionItemKind.Field
+        for item in items
+    )
