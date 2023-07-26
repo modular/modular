@@ -122,7 +122,7 @@ void TelemetryContext::flush() {
   // Flush the stream to a file, if it exists.
   if (!filePath.empty()) {
     outputStream.flush();
-    auto err = appendFileAtomically(filePath, [&](llvm::raw_ostream &os) {
+    auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
       os.write(outputBuffer.data(), outputBuffer.size());
     });
     if (err.isError())

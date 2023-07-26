@@ -16,11 +16,12 @@
 
 using namespace M;
 
-/// Do an atomic file operation - readFileAtomically and writeFileAtomically do
-/// almost exactly the same thing, so this keeps the common code common.
+/// Do a file operation under an LLVM file lock - readFileUnderLock and
+/// writeFileUnderLock do almost exactly the same thing, so this keeps the
+/// common code common.
 template <typename T>
 static ErrorOr<T>
-doAtomicFileOperation(const std::filesystem::path &filePath,
+doLockedFileOperation(const std::filesystem::path &filePath,
                       llvm::function_ref<ErrorOr<T>()> callable) {
   std::string filePathStr = filePath.string();
 
@@ -61,8 +62,8 @@ doAtomicFileOperation(const std::filesystem::path &filePath,
 }
 
 ErrorOr<std::filesystem::path>
-M::writeFileAtomically(const std::filesystem::path &filePath,
-                       llvm::function_ref<void(raw_ostream &)> writeContent) {
+M::writeFileUnderLock(const std::filesystem::path &filePath,
+                      llvm::function_ref<void(raw_ostream &)> writeContent) {
   std::string filePathStr = filePath.string();
 
   // A helper function to write the content into the file.
@@ -77,16 +78,16 @@ M::writeFileAtomically(const std::filesystem::path &filePath,
     return filePath;
   };
 
-  return doAtomicFileOperation<std::filesystem::path>(filePath, writeFile);
+  return doLockedFileOperation<std::filesystem::path>(filePath, writeFile);
 }
 
-ErrorOrSuccess M::readFileAtomically(
+ErrorOrSuccess M::readFileUnderLock(
     const std::filesystem::path &filePath,
     llvm::function_ref<void(const std::filesystem::path &)> read) {
   std::string filePathStr = filePath.string();
 
   ErrorOr<Detail::Empty> err =
-      doAtomicFileOperation<Detail::Empty>(filePath, [&]() {
+      doLockedFileOperation<Detail::Empty>(filePath, [&]() {
         read(filePath);
         return Detail::Empty();
       });
@@ -98,8 +99,8 @@ ErrorOrSuccess M::readFileAtomically(
 }
 
 ErrorOrSuccess
-M::appendFileAtomically(const std::filesystem::path &filePath,
-                        llvm::function_ref<void(raw_ostream &)> appendContent) {
+M::appendFileUnderLock(const std::filesystem::path &filePath,
+                       llvm::function_ref<void(raw_ostream &)> appendContent) {
   std::string filePathStr = filePath.string();
 
   // A helper function to append to a file.
@@ -117,7 +118,7 @@ M::appendFileAtomically(const std::filesystem::path &filePath,
   };
 
   ErrorOr<Detail::Empty> err =
-      doAtomicFileOperation<Detail::Empty>(filePath, appendFile);
+      doLockedFileOperation<Detail::Empty>(filePath, appendFile);
   if (err)
     return err.takeError();
   return success();

@@ -87,8 +87,8 @@ LogicalResult M::KGEN::emitHeader(SymbolTable &symtab,
 
   // Safely process creating the header, taking into account that we may have
   // different processes trying to produce this header in parallel.
-  if (auto err = writeFileAtomically(filePath,
-                                     [&](raw_ostream &os) { os << *header; });
+  if (auto err =
+          writeFileUnderLock(filePath, [&](raw_ostream &os) { os << *header; });
       err.isError())
     return mlir::emitError(symtab.getOp()->getLoc(), err.getError());
 

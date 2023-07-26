@@ -24,25 +24,33 @@ std::optional<std::string> findDirInEnvPath(StringRef subdirName,
                                             StringRef envName = "PATH",
                                             char separator = ':');
 
-/// Safely process creating and writing the file, taking into account that we
-/// may have different processes trying to produce this file in parallel.
+/// Write to a file (creating if necessary) serialized with any other
+/// ...UnderLock operation, even in parallel across processes.  Writing will
+/// also appear atomic to readers not aware of LLVM lock files.
 ErrorOr<std::filesystem::path>
-writeFileAtomically(const std::filesystem::path &filePath,
-                    llvm::function_ref<void(raw_ostream &)> writeContent);
+writeFileUnderLock(const std::filesystem::path &filePath,
+                   llvm::function_ref<void(raw_ostream &)> writeContent);
 
-/// Safely process reading the file, taking into account that we may have
-/// another process writing this file in parallel. Returns an error if the file
-/// does not exist. The read callback is executed while the lock is held.
-ErrorOrSuccess readFileAtomically(
-    const std::filesystem::path &filePath,
-    llvm::function_ref<void(const std::filesystem::path &)> read);
-
-/// Safely process potentially creating, but always appending, to the file,
-/// taking into account that we may have different writers trying to do the
-/// same in parallel.
+/// Read a file exclusively, serializing with other ...UnderLock operations,
+/// even in parallel across processes.  Other processes using readFileUnderLock
+/// will wait for the operation to complete before initating their reads.  The
+/// operation is only atomic with respect to processes abiding by the LLVM lock
+/// file convention -- no atomicity guarantees are provided with respect to
+/// writers not aware of the LLVM lock file convention concurrently operating
+/// on the file.
 ErrorOrSuccess
-appendFileAtomically(const std::filesystem::path &filePath,
-                     llvm::function_ref<void(raw_ostream &)> appendContent);
+readFileUnderLock(const std::filesystem::path &filePath,
+                  llvm::function_ref<void(const std::filesystem::path &)> read);
+
+/// Append to a file exclusively, serializing with other ...UnderLock
+/// operations, even in parallel across processes.  Other processes appending
+/// will block while the append is in progress.  If the process crashes in the
+/// middle of appending, other processes may witness a partially-appended
+/// state.  Processes not aware of the LLVM lock file convention may also
+/// witness partially-appended states while the append is in progress.
+ErrorOrSuccess
+appendFileUnderLock(const std::filesystem::path &filePath,
+                    llvm::function_ref<void(raw_ostream &)> appendContent);
 
 /// Invokes the provided callback, writing the output to a temporary file whose
 /// name is based on the provided model. On success, `outPath` is populated with

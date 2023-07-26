@@ -331,8 +331,7 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // Safely process creating the file, taking into account that we may
     // have different processes trying to produce this file in parallel.
-    if (auto err = writeFileAtomically(*filePathOr, writeContent);
-        err.isError())
+    if (auto err = writeFileUnderLock(*filePathOr, writeContent); err.isError())
       return err.takeError();
 
     return success();
@@ -431,7 +430,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     };
 
     // If there was an error reading the file, return that.
-    if (auto err = readFileAtomically(*filePath, doRead))
+    if (auto err = readFileUnderLock(*filePath, doRead))
       return err.takeError();
 
     // If there was an error in our read callback, return that.

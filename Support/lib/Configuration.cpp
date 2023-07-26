@@ -44,7 +44,7 @@ ErrorOr<Config> Config::open() {
   std::optional<Error> error = std::nullopt;
   unsigned bufferIdx = 0;
   // Read the file atomically - we may have multiple processes writing.
-  ErrorOrSuccess err = readFileAtomically(
+  ErrorOrSuccess err = readFileUnderLock(
       configFilePath, [&](const std::filesystem::path &filePath) {
         auto mBufOr =
             llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
@@ -214,8 +214,8 @@ ErrorOrSuccess Config::flush() {
   std::filesystem::path configFilePath = getConfigFilePath();
 
   // Write the config file to the output atomically.
-  auto pathOr = writeFileAtomically(configFilePath,
-                                    [&](llvm::raw_ostream &os) { flush(os); });
+  auto pathOr = writeFileUnderLock(configFilePath,
+                                   [&](llvm::raw_ostream &os) { flush(os); });
   if (pathOr.isError())
     return pathOr.takeError();
 
