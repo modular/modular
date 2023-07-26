@@ -22,12 +22,16 @@ from TypeUtilities import rebind
 
 @always_inline
 fn slice_as_view[
-    type: DType, index_type: DType, rank: Int
+    type: DType,
+    start_type: DType,
+    end_type: DType,
+    step_type: DType,
+    rank: Int,
 ](
     tensor: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    starts: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    ends: NDBuffer[1, DimList.create_unknown[1](), index_type],
-    steps: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    starts: NDBuffer[1, DimList.create_unknown[1](), start_type],
+    ends: NDBuffer[1, DimList.create_unknown[1](), end_type],
+    steps: NDBuffer[1, DimList.create_unknown[1](), step_type],
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
 
     var new_shape = StaticIntTuple[rank]()
@@ -96,9 +100,7 @@ fn slice_as_copy[
 ):
 
     # Apply slice to the tensor
-    let sliced = slice_as_view[type, index_type, in_rank](
-        tensor, start, end, step
-    )
+    let sliced = slice_as_view(tensor, start, end, step)
 
     # Copy lambda sliced view into output buffer.
     @always_inline

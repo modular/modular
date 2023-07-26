@@ -107,7 +107,7 @@ fn test_slice[
         x += 1
 
     # Perform the slice even if we are testing the copy so we get the target size.
-    let sliced = slice_as_view[dtype, DType.index, outer_rank](
+    let sliced = slice_as_view(
         rebind[
             NDBuffer[outer_rank, DimList.create_unknown[outer_rank](), dtype]
         ](in_tensor),
