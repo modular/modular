@@ -20,6 +20,7 @@
 #include "ExprNode.h"
 #include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "llvm/ADT/StringExtras.h"
 
 namespace M::KGEN {
 class SignatureType;
@@ -183,6 +184,15 @@ struct CallArgument {
   /// Return true if this is a positional argument with a string literal
   /// containing the specified string.
   bool isPositionalStringLiteral(StringRef str) const;
+
+  template <typename N>
+  bool isPositionalIntLiteral(N &value, unsigned base = 0) const {
+    auto *intExpr = dyn_cast<IntLiteralNode>(expr);
+    if (kind == kPositional && intExpr) {
+      return llvm::to_integer(intExpr->spelling, value, base);
+    }
+    return false;
+  }
 };
 
 struct CallNode final : public ExprNode {

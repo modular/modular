@@ -223,10 +223,14 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 
 
   let builders = [
-    OpBuilder<(ins CArg<"bool", "false">:$isFullUnroll), [{
+    OpBuilder<(ins CArg<"bool", "false">:$isFullUnroll,
+                   CArg<"int64_t", "-1">:$unrollFactorN), [{
        if(isFullUnroll)
            build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
                $_state.getContext(), HLCF::LoopUnrollFull::Full));
+       else if (unrollFactorN > 0)
+           build($_builder, $_state, {}, {}, {},
+               $_builder.getIndexAttr(unrollFactorN));
        else
            build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
                $_state.getContext(), HLCF::LoopUnrollFull::None));

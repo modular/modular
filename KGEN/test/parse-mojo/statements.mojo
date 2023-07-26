@@ -343,6 +343,11 @@ fn unroll_for():
     # CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
     # CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
 
+    @unroll(2)
+    for j in range (1, 4):
+        print (j)
+    # CHECK: } {unrollFactor = 2 : index}
+
 # CHECK-LABEL: lit.func @"unroll_while()"
 fn unroll_while():
   let i = 1
