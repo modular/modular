@@ -85,10 +85,11 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
     return tmOr.takeError();
 
   // Create the execution engine.
-  UNWRAP_ERROR(
-      engine,
-      ExecutionEngine::createWithStandardLayers(
-          ExecutionEngineOptions{/*registerDebugPlugins=*/false}, **tmOr));
+  UNWRAP_ERROR(engine,
+               ExecutionEngine::createWithStandardLayers(
+                   ExecutionEngineOptions{/*registerDebugPlugins=*/false,
+                                          /*sanitizers=*/options.sanitizers},
+                   **tmOr));
 
   // Create the object compiler so we can add its layer to the execution engine.
   mlir::PassManager mgr(target.getContext());
