@@ -13,6 +13,7 @@ from Functional import (
     async_parallelize,
     unroll,
     elementwise,
+    _elementwise_impl,
 )
 from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
@@ -24,6 +25,7 @@ from Range import range
 from SIMD import SIMD
 from TargetInfo import sizeof
 from TypeUtilities import rebind
+from OptionalParam import OptionalParamInt
 
 ## gather_reduce_2D_axis_1
 @adaptive
@@ -165,22 +167,20 @@ fn gather_reduce[
     async_parallelize[task_func](out_chain, num_tasks)
 
 
-@adaptive
 fn gather[
     output_rank: Int,
-    output_shape: DimList,
     input_rank: Int,
-    input_shape: DimList,
     indices_rank: Int,
-    indices_shape: DimList,
     type: DType,
     indices_type: DType,
     axis: Int,
     simd_width: Int,
 ](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[indices_rank, indices_shape, indices_type],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
     out_chain: OutputChainPtr,
 ):
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -189,53 +189,23 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
 
-    # Gathers contiguous rows of the input
-    assert_param[axis != input_rank - 1]()
-
-    let indices_len = indices.size()
-    # Short-circuit for trivial cases, and to avoid divide-by-zero
-    if input.size() == 0 or indices_len == 0:
-        # No-op
-        out_chain.mark_ready()
-        return
-
     alias prefetch_offset = 12  # TODO: search
 
     let end_indices_ptr = indices.flatten().data.offset(indices.size())
 
-    @always_inline
     @parameter
-    fn gather_fn[width: Int, rank: Int](out_coords: StaticIntTuple[rank]):
-        # out_coords consists of 3 chunks:
-        #   out_coords[0:axis] = input coords[0:axis]
-        #   out_coords[axis:axis+indices_rank] = indices_coords
-        #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
-        # and input_coords[axis] = indices[indices_coords]
-        var indices_coords = StaticIntTuple[indices_rank]()
-        var input_coords = StaticIntTuple[input_rank]()
-
-        @always_inline
-        @parameter
-        fn _get_indices_coords[idx: Int]():
-            indices_coords[idx] = out_coords[axis + idx]
-
-        unroll[indices_rank, _get_indices_coords]()
-
-        let idx = indices[indices_coords]
-
-        @always_inline
-        @parameter
-        fn _get_input_coords_before_ax[idx: Int]():
-            input_coords[idx] = out_coords[idx]
-
-        unroll[axis, _get_input_coords_before_ax]()
-
-        @always_inline
-        @parameter
-        fn _get_input_coords_after_ax[idx: Int]():
-            input_coords[idx + axis + 1] = out_coords[idx + axis + indices_rank]
-
-        unroll[output_rank - axis - 1, _get_input_coords_after_ax]()
+    @always_inline
+    fn prefetch_fn[
+        _input_rank: Int, _indices_rank: Int
+    ](
+        _input_coords: StaticIntTuple[_input_rank],
+        _indices_coords: StaticIntTuple[_indices_rank],
+    ):
+        let __input_coords = _input_coords
+        var input_coords = rebind[StaticIntTuple[input_rank]](__input_coords)
+        let indices_coords = rebind[StaticIntTuple[indices_rank]](
+            _indices_coords
+        )
 
         @parameter
         if prefetch_offset > 0:
@@ -252,73 +222,168 @@ fn gather[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](input_coords)
 
-        input_coords[axis] = idx.to_int()
-
-        let input_val = input.simd_load[width](input_coords)
-        output.simd_store[width](
-            rebind[StaticIntTuple[output_rank]](out_coords), input_val
+    @parameter
+    @always_inline
+    fn input_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            input.simd_load[width](rebind[StaticIntTuple[input_rank]](coords))
         )
 
-    # Elementwise generator calls gather_fn on all coords in output.
-    # We can determine the input element to gather using the information
-    # in the output coords only.
-    # This also enables vectorization since we are gather rows of the input.
-    elementwise[output_rank, simd_width, gather_fn](
-        output.get_shape(), out_chain
-    )
+    @parameter
+    @always_inline
+    fn indices_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            indices.simd_load[width](
+                rebind[StaticIntTuple[indices_rank]](coords)
+            )
+        )
 
+    @parameter
+    @always_inline
+    fn output_fn[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank], val: SIMD[_type, width]):
+        output.simd_store[width](
+            rebind[StaticIntTuple[output_rank]](coords),
+            rebind[SIMD[type, width]](val),
+        )
 
-# gather_ND_input_MD_indices
-@adaptive
-fn gather[
-    output_rank: Int,
-    output_shape: DimList,
-    input_rank: Int,
-    input_shape: DimList,
-    indices_rank: Int,
-    indices_shape: DimList,
-    type: DType,
-    indices_type: DType,
-    axis: Int,
-    simd_width: Int,
-](
-    output: NDBuffer[output_rank, output_shape, type],
-    input: NDBuffer[input_rank, input_shape, type],
-    indices: NDBuffer[
-        indices_rank,
-        indices_shape,
+    gather[
+        type,
+        input_rank,
         indices_type,
+        indices_rank,
+        output_rank,
+        simd_width,
+        False,  # single_thread_blocking_override
+        input_fn,
+        indices_fn,
+        output_fn,
+        prefetch_fn,
+        Dim(axis),
+    ](OptionalParamInt[axis](axis), input, indices, output, out_chain)
+
+
+@always_inline
+fn gather[
+    type: DType,
+    input_rank: Int,
+    indices_type: DType,
+    indices_rank: Int,
+    output_rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    input_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    indices_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    prefetch_fn: fn[input_rank: Int, indices_rank: Int] (
+        StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
+    ) capturing -> None,
+    axis_static: Dim,
+](
+    axis: OptionalParamInt[axis_static],
+    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
     out_chain: OutputChainPtr,
 ):
-    """Computes output[d0, d1, ..., s0, s1, ..., sm, ..., dn-1, dn] =
-    input[d0, d1, ..., indices[s0, s1, ..., sm], ..., dn-1, dn]"""
-    assert_param[axis == input_rank - 1]()
+    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
-    let outer_dynamic = prod_dims[0, axis](input)
-    let indices_size = indices.size()
-    let inner_dynamic = prod_dims[axis + 1, input_rank](input)
+    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
+    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
+    """
+    # Short-circuit for trivial cases, and to avoid divide-by-zero
+    let indices_len = indices.size()
+    if input.size() == 0 or indices_len == 0:
+        # No-op
+        out_chain.mark_ready()
+        return
 
-    @always_inline
     @parameter
-    fn task_func(task_id: Int):
-        for s in range(indices_size):
-            let tuple_s = indices.get_nd_index(s)
-            let idx: Int = indices[tuple_s].to_int()
-            for do in range(outer_dynamic):
-                for di in range(inner_dynamic):
-                    output[
-                        output.get_nd_index(
-                            ((do * indices_size + s) * inner_dynamic) + di
-                        )
-                    ] = input[
-                        input.get_nd_index(
-                            ((do * input.dim[axis]() + idx) * inner_dynamic)
-                            + di
-                        )
-                    ]
+    @always_inline
+    fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        # out_coords consists of 3 chunks:
+        #   out_coords[0:axis] = input coords[0:axis]
+        #   out_coords[axis:axis+indices_rank] = indices_coords
+        #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+        # and input_coords[axis] = indices[indices_coords]
+        # Get the gather indices.
+        var indices_index = StaticIntTuple[indices_rank]()
 
-    async_parallelize[task_func](out_chain, 1)
+        # Get the indices of the index.
+        @always_inline
+        @parameter
+        fn indices_get[unrolled_i: Int]():
+            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+
+        unroll[indices_rank, indices_get]()
+
+        # The index we are gathering.
+        let data_index = indices_fn[indices_type, 1, indices_rank](
+            indices_index
+        ).to_int()
+
+        # Update the indices with the new data index.
+        var data_indices = StaticIntTuple[input_rank]()
+
+        let skip_factor = indices_rank - 1
+
+        # Build the indices for the input. We have replaced in index in 'axis'
+        # with an index from the indices tensor.
+        @always_inline
+        @parameter
+        fn input_indices_get[unrolled_i: Int]():
+            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
+            if unrolled_i == axis.get():
+                data_indices[unrolled_i] = data_index
+            elif unrolled_i > axis.get():
+                # Skip over any extra indices dimensions. These are essentially new dimensions.
+                data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
+            else:
+                data_indices[unrolled_i] = idx[unrolled_i]
+
+        unroll[input_rank, input_indices_get]()
+
+        # Load the the data.
+        prefetch_fn[input_rank, indices_rank](data_indices, indices_index)
+        let data = input_fn[type, simd_width, input_rank](data_indices)
+
+        # Store it to the original index.
+        output_fn[type, simd_width, rank](idx, data)
+
+    # If we are gathering on the last dimension then we have to be scalar.
+    if axis.get() == input_rank - 1:
+        _elementwise_impl[
+            output_rank,
+            1,
+            single_thread_blocking_override,
+            gather_lambda,
+        ](
+            output.dynamic_shape,
+            out_chain,
+        )
+    else:
+        _elementwise_impl[
+            output_rank,
+            simd_width,
+            single_thread_blocking_override,
+            gather_lambda,
+        ](
+            output.dynamic_shape,
+            out_chain,
+        )
 
 
 # ===----------------------------------------------------------------------===#

@@ -68,18 +68,12 @@ fn test_gather():
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
-            gather[
-                2,
-                DimList(num_indices, row_size),
-                2,
-                DimList(num_rows, row_size),
-                1,
-                DimList(num_indices),
-                DType.float32,
-                indices_type,
-                0,
-                simd_width,
-            ](output, input, indices, out_chain.borrow())
+            gather[2, 2, 1, DType.float32, indices_type, 0, simd_width](
+                output.make_dims_unknown(),
+                input.make_dims_unknown(),
+                indices.make_dims_unknown(),
+                out_chain.borrow(),
+            )
             out_chain.wait()
 
         print(output[StaticIntTuple[2](0, 0)])
@@ -142,18 +136,12 @@ fn test_gather_3d():
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
-            gather[
-                4,
-                DimList(num_indices, 1, row_size, 1),
-                3,
-                DimList(num_rows, row_size, 1),
-                2,
-                DimList(num_indices, 1),
-                DType.float32,
-                indices_type,
-                0,
-                simd_width,
-            ](output, input, indices, out_chain.borrow())
+            gather[4, 3, 2, DType.float32, indices_type, 0, simd_width](
+                output.make_dims_unknown(),
+                input.make_dims_unknown(),
+                indices.make_dims_unknown(),
+                out_chain.borrow(),
+            )
             out_chain.wait()
 
         print(output[StaticIntTuple[4](0, 0, 0, 0)])
@@ -220,18 +208,12 @@ fn test_gather_empty_indices():
 
         with Runtime(4) as rt:
             let out_chain = OwningOutputChainPtr(rt)
-            gather[
-                2,
-                DimList(num_indices, row_size),
-                2,
-                DimList(num_rows, row_size),
-                1,
-                DimList(num_indices),
-                DType.float32,
-                indices_type,
-                0,
-                simd_width,
-            ](output, input, indices, out_chain.borrow())
+            gather[2, 2, 1, DType.float32, indices_type, 0, simd_width](
+                output.make_dims_unknown(),
+                input.make_dims_unknown(),
+                indices.make_dims_unknown(),
+                out_chain.borrow(),
+            )
             out_chain.wait()
 
     _test_gather[DType.int32]()
