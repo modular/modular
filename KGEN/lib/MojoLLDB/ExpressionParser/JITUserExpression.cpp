@@ -34,6 +34,46 @@
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;
 
+namespace {
+//----------------------------------------------------------------------------//
+// ThreadPlanCallMojoUserExpression
+//----------------------------------------------------------------------------//
+
+class ThreadPlanCallMojoUserExpression : public ThreadPlanCallUserExpression {
+public:
+  using ThreadPlanCallUserExpression::ThreadPlanCallUserExpression;
+
+  bool ShouldAutoContinue(Event *event_ptr) override {
+    Log *log = GetLog(LLDBLog::Expressions | LLDBLog::Step);
+
+    if (auto realStopInfo = GetPrivateStopInfo()) {
+      LLDB_LOG(log,
+               "ThreadPlanCallMojoUserExpression::ShouldAutoContinue: Got stop "
+               "reason - {0}.",
+               Thread::StopReasonAsString(realStopInfo->GetStopReason()));
+
+      switch (realStopInfo->GetStopReason()) {
+      case lldb::eStopReasonFork:
+      case lldb::eStopReasonVFork:
+      case lldb::eStopReasonVForkDone:
+      case lldb::eStopReasonExec:
+        // On Linux, LLDB's user expression thread plans abruptly stop on forks
+        // and execs by default, which leaves the expression unterminated.
+        // However, that's not the behavior we want, especially because we rely
+        // on the mojo invoking python for its own python setup.
+        LLDB_LOG(log, "ThreadPlanCallMojoUserExpression::ShouldAutoContinue: "
+                      "Will auto continue.");
+
+        return true;
+      default:
+        return false;
+      }
+    }
+    return false;
+  }
+};
+} // namespace
+
 //----------------------------------------------------------------------------//
 // JitUserExpression
 //----------------------------------------------------------------------------//
@@ -106,7 +146,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
     return lldb::eExpressionSetupError;
   }
 
-  lldb::ThreadPlanSP callPlan(new ThreadPlanCallUserExpression(
+  lldb::ThreadPlanSP callPlan(new ThreadPlanCallMojoUserExpression(
       exeCtx.GetThreadRef(), wrapperAddress, args, options, sharedPtrToMe));
 
   StreamString ss;
@@ -115,8 +155,8 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
     return lldb::eExpressionSetupError;
   }
 
-  ThreadPlanCallUserExpression *userExpressionPlan =
-      static_cast<ThreadPlanCallUserExpression *>(callPlan.get());
+  ThreadPlanCallMojoUserExpression *userExpressionPlan =
+      static_cast<ThreadPlanCallMojoUserExpression *>(callPlan.get());
 
   lldb::addr_t functionStackPointer =
       userExpressionPlan->GetFunctionStackPointer();
