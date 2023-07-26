@@ -72,8 +72,6 @@ ErrorOr<Config> Config::open() {
 }
 
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
-  const char *curPtr = buffer.begin();
-
   auto emitError = [&](llvm::SMLoc loc, Twine msg) -> Error {
     if (!mgr)
       return {msg};
@@ -85,32 +83,24 @@ ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
     return {errMsg};
   };
 
-  auto takeLine = [&curPtr](size_t &outsz) {
-    while (true) {
-      char c = *curPtr++;
-      switch (c) {
-      case '\n':
-      case '\r':
-      case '\f':
-      case '\v':
-        return;
-      default:
-        ++outsz;
-        continue;
-      }
+  auto takeLine = [&buffer]() -> StringRef {
+    size_t newlineLoc = buffer.find_first_of("\n\r\f\v");
+    size_t toDrop;
+    if (newlineLoc == StringRef::npos) {
+      newlineLoc = buffer.size();
+      toDrop = newlineLoc;
+    } else {
+      toDrop = newlineLoc + 1;
     }
+    auto line = buffer.take_front(newlineLoc);
+    buffer = buffer.drop_front(toDrop);
+    return line;
   };
 
   // While the current pointer is inside the buffer, parse.
   std::string currentSection;
-  size_t lineLen = 0;
-  while (curPtr < buffer.end()) {
-    auto resetLineLen = llvm::make_scope_exit([&]() { lineLen = 0; });
-
-    llvm::SMLoc lineStart = llvm::SMLoc::getFromPointer(curPtr);
-    takeLine(lineLen);
-    // Build a StringRef from this.
-    StringRef tmp(lineStart.getPointer(), lineLen);
+  while (!buffer.empty()) {
+    StringRef tmp = takeLine();
 
     // If there's nothing but whitespace in it, continue.
     if (tmp.trim().empty())

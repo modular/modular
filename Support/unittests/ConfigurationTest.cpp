@@ -6,10 +6,12 @@
 
 #include "Support/Configuration.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Memory.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
+#include <sys/mman.h>
 
 using namespace M;
 
@@ -173,3 +175,33 @@ malformed line here
 ^
 )"));
 }
+
+#ifdef LLVM_ON_UNIX
+// Regression test for a bug in Configuration
+TEST(Configuration, PageBoundary) {
+  auto pageSize = llvm::cantFail(llvm::sys::Process::getPageSize());
+  std::error_code ec;
+  llvm::sys::OwningMemoryBlock block(llvm::sys::Memory::allocateMappedMemory(
+      2 * pageSize, nullptr,
+      llvm::sys::Memory::MF_READ | llvm::sys::Memory::MF_WRITE, ec));
+  ASSERT_FALSE(ec) << "Failed to allocate memory block: " << ec.message();
+  // Can't use llvm::sys::Memory::protectMappedMemory because it considers
+  // PFlags = 0 to be invalid.
+  int mprotectResult = ::mprotect(
+      reinterpret_cast<char *>(block.base()) + pageSize, pageSize, PROT_NONE);
+  ASSERT_NE(mprotectResult, -1)
+      << std::error_code(errno, std::generic_category()).message();
+  // Note: No trailing newline!
+  StringRef content("key = value");
+  char *contentPlacePtr =
+      reinterpret_cast<char *>(block.base()) + pageSize - content.size();
+  StringRef contentInPlace(contentPlacePtr, content.size());
+  memcpy(contentPlacePtr, content.data(), content.size());
+  ASSERT_EQ(content, contentInPlace);
+  // OK, now try to parse!
+  Config cfg;
+  auto err = cfg.parseFrom(contentInPlace);
+  ASSERT_FALSE(err.isError()) << err.getError();
+  EXPECT_EQ(cfg.getValue("key"), "value");
+}
+#endif // LLVM_ON_UNIX
