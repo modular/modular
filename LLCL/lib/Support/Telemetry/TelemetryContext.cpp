@@ -8,6 +8,7 @@
 
 #include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
+#include "Support/FileSystemExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Threading.h"
 #include <filesystem>
@@ -48,17 +49,17 @@ TelemetryContext::TelemetryContext() {
   //       exporters for each (if OTel allows it).
   StringRef httpEndpoint =
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
-  std::filesystem::path filePath =
-      cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  filePath = cfg.getValue("telemetry.exporters.metrics.file_path").str();
   if (httpEndpoint.empty()) {
     // Default to MODULAR_HOME/telemetry.log
     if (filePath.empty())
       filePath = Config::getModularHomeDirPath() / "telemetry.log";
-
-    outputFile = std::make_unique<std::ofstream>();
-    outputFile->open(filePath, std::ios_base::app);
-    assert(outputFile->is_open() && "could not open file for telemetry output");
   }
+
+  // Allocate 4K for the string up front, and construct the stream from that
+  // string.
+  outputBuffer.reserve(4096);
+  outputStream = std::stringstream(outputBuffer);
 
   // -------- Metrics --------
   // Create OpenTelemetry OTLP HTTP exporter.
@@ -66,7 +67,7 @@ TelemetryContext::TelemetryContext() {
       metricExporter;
   if (httpEndpoint.empty()) {
     metricExporter = std::make_unique<
-        opentelemetry::exporter::metrics::OStreamMetricExporter>(*outputFile);
+        opentelemetry::exporter::metrics::OStreamMetricExporter>(outputStream);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
@@ -90,7 +91,7 @@ TelemetryContext::TelemetryContext() {
   std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> logExporter;
   if (httpEndpoint.empty()) {
     logExporter = std::make_unique<
-        opentelemetry::exporter::logs::OStreamLogRecordExporter>(*outputFile);
+        opentelemetry::exporter::logs::OStreamLogRecordExporter>(outputStream);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         oltpLogOptions;
@@ -118,5 +119,18 @@ void TelemetryContext::flush() {
   // instance (collectAndExport calls Export).
   std::lock_guard<std::mutex> lock(exportLock);
   metricReader->collectAndExport();
+  // Flush the stream to a file, if it exists.
+  if (!filePath.empty()) {
+    outputStream.flush();
+    auto err = appendFileAtomically(filePath, [&](llvm::raw_ostream &os) {
+      os.write(outputBuffer.data(), outputBuffer.size());
+    });
+    if (err.isError())
+      llvm::report_fatal_error(err.getError());
+
+    // Reset the stream.
+    outputBuffer.clear();
+    outputStream = std::stringstream(outputBuffer);
+  }
 #endif // MODULAR_ENABLE_TELEMETRY
 }

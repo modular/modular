@@ -18,6 +18,8 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
+#include <filesystem>
+#include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::LLCL::Telemetry {
@@ -154,10 +156,11 @@ public:
 
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
-  /// File output stream for OTel's OStream exporters (they require a
-  /// std::ostream). Note that OStream exporters take the ostream by reference,
-  /// and so this must be destroyed in last place.
-  std::unique_ptr<std::ofstream> outputFile;
+  /// Buffer OTel's outputs in a string and flush it atomically to a file every
+  /// time we call `flush`.
+  std::string outputBuffer;
+  std::stringstream outputStream;
+  std::filesystem::path filePath;
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
