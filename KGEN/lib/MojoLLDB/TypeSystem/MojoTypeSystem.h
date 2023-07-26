@@ -49,6 +49,9 @@ public:
   /// Return the Mojo parser context attached to this type system.
   MojoParserContext &getParserContext();
 
+  /// Return a CompilerType wrapping type.
+  lldb_private::CompilerType getCompilerTypeFromType(Type type);
+
   /// Return if the given language is supported by this type system.
   bool SupportsLanguage(lldb::LanguageType language) override {
     return language == lldb::eLanguageTypeMojo;

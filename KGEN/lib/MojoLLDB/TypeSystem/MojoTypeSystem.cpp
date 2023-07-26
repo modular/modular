@@ -124,6 +124,11 @@ MojoParserContext &MojoTypeSystem::getParserContext() {
   return *impl->parserContext;
 }
 
+lldb_private::CompilerType MojoTypeSystem::getCompilerTypeFromType(Type type) {
+  return lldb_private::CompilerType(
+      weak_from_this(), const_cast<void *>(type.getAsOpaquePointer()));
+}
+
 LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
 
 //===----------------------------------------------------------------------===//
@@ -321,7 +326,7 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
                                      lldb_private::CompilerType *pointeeType,
                                      bool *isRValue) {
   MojoASTTypeRef refType(type);
-  return isa<POP::PointerType>(refType.getMLIRType());
+  return (isa<POP::PointerType, LIT::REPLResultRefType>(refType.getMLIRType()));
 }
 
 uint32_t MojoTypeSystem::GetTypeInfo(
@@ -336,14 +341,23 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   MojoASTTypeRef refType(type);
   Type mlirType = refType.getMLIRType();
 
+  if (auto refType = dyn_cast<LIT::REPLResultRefType>(mlirType)) {
+    if (pointeeOrElementCompilerType) {
+      pointeeOrElementCompilerType->SetCompilerType(
+          weak_from_this(),
+          const_cast<void *>(refType.getElementType().getAsOpaquePointer()));
+    }
+    return lldb::eTypeIsReference | lldb::eTypeHasChildren |
+           lldb::eTypeHasValue;
+  }
+
   if (auto ptrType = dyn_cast<POP::PointerType>(mlirType)) {
     if (pointeeOrElementCompilerType) {
       pointeeOrElementCompilerType->SetCompilerType(
           weak_from_this(),
           const_cast<void *>(ptrType.getElementAsType().getAsOpaquePointer()));
-      return lldb::eTypeIsPointer | lldb::eTypeHasChildren |
-             lldb::eTypeHasValue;
     }
+    return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
   }
 
   if (isa<IndexType>(mlirType))
@@ -368,6 +382,11 @@ uint32_t MojoTypeSystem::GetTypeInfo(
 }
 
 lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
+  if (auto replRefType =
+          dyn_cast<LIT::REPLResultRefType>(MojoASTTypeRef(type).getMLIRType()))
+    return GetFormat(getCompilerTypeFromType(replRefType.getElementType())
+                         .GetOpaqueQualType());
+
   auto flags = GetTypeInfo(type);
   if (flags & lldb::eTypeIsInteger)
     return lldb::eFormatDecimal;
@@ -397,9 +416,19 @@ ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
   if (!type)
     return {};
 
+  MojoASTTypeRef astType(type);
+  Type typeToPrint;
+  // We don't want to expose the REPLResultRefType to the user, so we'll only
+  // print the element type.
+  if (auto replRef = dyn_cast<LIT::REPLResultRefType>(astType.getMLIRType()))
+    typeToPrint = Type::getFromOpaquePointer(
+        replRef.getElementType().getAsOpaquePointer());
+  else
+    typeToPrint = Type::getFromOpaquePointer(type);
+
   std::string name;
   llvm::raw_string_ostream os(name);
-  Type::getFromOpaquePointer(type).print(os);
+  typeToPrint.print(os);
   return ConstString(name);
 }
 
@@ -408,8 +437,17 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
   if (!type)
     return {};
 
-  std::string name =
-      MojoASTTypeRef(Type::getFromOpaquePointer(type)).getAsString();
+  MojoASTTypeRef astType(type);
+  std::string name;
+
+  // We don't want to expose the REPLResultRefType to the user, so we'll only
+  // print the element type.
+  if (auto replRef = dyn_cast<LIT::REPLResultRefType>(astType.getMLIRType()))
+    name = MojoASTTypeRef(Type::getFromOpaquePointer(
+                              replRef.getElementType().getAsOpaquePointer()))
+               .getAsString();
+  else
+    name = MojoASTTypeRef(Type::getFromOpaquePointer(type)).getAsString();
 
   auto mangledOr =
       LIT::MangledSymbol::demangle(StringAttr::get(&impl->mlirContext, name));
@@ -462,7 +500,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   MojoASTTypeRef refType(type);
   Type mlirType = refType.getMLIRType();
 
-  if (isa<POP::PointerType>(mlirType))
+  if (isa<POP::PointerType, LIT::REPLResultRefType>(mlirType))
     return 1;
 
   if (auto simdTy = dyn_cast<POP::SIMDType>(mlirType)) {
@@ -501,10 +539,15 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   MojoASTTypeRef refType(type);
   Type mlirType = refType.getMLIRType();
 
+  // ReplResultRefType only has one child, so just return the unwrapped
+  // reference type
+  if (auto replRefType = dyn_cast<LIT::REPLResultRefType>(mlirType))
+    return getCompilerTypeFromType(replRefType.getElementType());
+
   // Pointer only has one child, so just return the unwrapped pointer type
-  if (auto pointerType = dyn_cast<POP::PointerType>(mlirType))
-    return lldb_private::CompilerType(
-        weak_from_this(), refType.getPointerElementType().getAsVoidPointer());
+  if (isa<POP::PointerType>(mlirType))
+    return getCompilerTypeFromType(
+        refType.getPointerElementType().getMLIRType());
 
   if (auto simdType = dyn_cast<POP::SIMDType>(mlirType)) {
     if (simdType.isScalar()) {
@@ -519,9 +562,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
           mlirType = intType;
         else
           return {};
-        return lldb_private::CompilerType(
-            weak_from_this(),
-            const_cast<void *>(mlirType.getAsOpaquePointer()));
+        return getCompilerTypeFromType(mlirType);
       }
     }
     // TODO: Handle non-scalar SIMD vectors

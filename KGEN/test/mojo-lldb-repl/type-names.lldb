@@ -8,21 +8,21 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# CHECK: ({{.*}}_"$Int"::_Int>) x =
+# CHECK: (Int) x =
 let x = 12
 
-# CHECK: ({{.*}}"$StringLiteral"::_StringLiteral>) y =
+# CHECK: (StringLiteral) y =
 let y = "foo"
 
 struct Bar:
   fn __init__(inout self):
     pass
 
-# CHECK: (pointer<_"$Expression [5]"::_Bar>) z =
+# CHECK: (Bar) z =
 let z = Bar()
 
-# CHECK: (pointer<_"$DType"::_DType>) dtype =
-# CHECK: (pointer<dtype>) dtype_value =
+# CHECK: (DType) dtype =
+# CHECK: (dtype) dtype_value =
 from DType import DType
 var dtype = DType.bool
 var dtype_value = dtype.get_value()

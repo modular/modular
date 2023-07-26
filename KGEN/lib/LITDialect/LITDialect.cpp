@@ -126,6 +126,11 @@ Type RefType::getElementAsType() {
   return ParamRefType::get(elemType);
 }
 
+REPLResultRefType REPLResultRefType::get(Type elementType) {
+  auto *ctx = elementType.getContext();
+  return get(ctx, elementType);
+}
+
 /// Print/Parse a parameter value that is known to have `lifetime` type.
 static void printLifetimeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
