@@ -29,6 +29,7 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 
@@ -230,9 +231,6 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
               llvm::orc::JITDylib &platformStdlib,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
-  // No path to the orc runtime, exit early.
-  if (orcRTPath.empty())
-    return success();
   const llvm::Triple &tt = session.getTargetTriple();
 
   // Add the current process symbols in.
@@ -247,6 +245,11 @@ setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
       return Error(toString(generator.takeError()));
   }
 
+  // No path to the orc runtime, exit early.
+  if (orcRTPath.empty())
+    return success();
+
+  // The ELFNixPlatform has memory leaks, don't set it up.
   if (tt.isOSBinFormatELF())
     return success();
 
@@ -325,12 +328,7 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
 /// Returns the path to a KGENCompilerRTShared dynamic library suitable for the
 /// target triple, or an error if none exists.
 static ErrorOr<std::filesystem::path>
-getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session) {
-  auto cfgOr = Config::open();
-  if (cfgOr.isError())
-    return cfgOr.takeError();
-  Config cfg = std::move(*cfgOr);
-
+getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session, Config &cfg) {
   // First, attempt to get the direct path to the binary.
   // TODO: This is a variable the package installer should set when installing
   //       the SDK.
@@ -360,8 +358,8 @@ getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session) {
 }
 
 /// Initialize the CompilerRT dylib.
-static ErrorOrSuccess
-initializeCompilerRT(llvm::orc::ExecutionSession &session) {
+static ErrorOrSuccess initializeCompilerRT(llvm::orc::ExecutionSession &session,
+                                           Config &cfg) {
   auto compilerRTBuf = extractRTFromCache(M::CASID::kCompilerRT);
   if (compilerRTBuf.isError())
     return compilerRTBuf.takeError();
@@ -375,7 +373,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
       return err.takeError();
   } else {
     ErrorOr<std::filesystem::path> rtPath =
-        getKGENCompilerRTSharedPath(session);
+        getKGENCompilerRTSharedPath(session, cfg);
     if (failed(rtPath))
       return rtPath.takeError();
     compilerRTPath = rtPath->string();
@@ -388,6 +386,89 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session) {
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
   libJD->addGenerator(std::move(*generatorOr));
   return success();
+}
+
+/// Search for the specified sanitizer library path. This currently only allows
+/// clang and libclang_rt.* sanitizers.
+static ErrorOr<std::string>
+findSanitizerLibraryPath(Sanitizers which, llvm::orc::ExecutionSession &session,
+                         Config &cfg) {
+  // No sanitizer on the build, return an empty string.
+  if (!which)
+    return "";
+
+#ifdef _WIN32
+  return Error("cannot find sanitizer libraries on windows");
+#endif
+
+  std::string configName =
+      llvm::formatv("mojo.sanitizer.{0}",
+                    which.has(Sanitizers::kAddress) ? "address" : "thread");
+
+  // We may have simply been provided the path to the sanitizer we want!
+  StringRef sanitizerPath = cfg.getValue(configName);
+
+  // Ensure it exists, but as long as it does, use it unmodified.
+  std::error_code ec;
+  if (!sanitizerPath.empty() &&
+      std::filesystem::exists(sanitizerPath.str(), ec) && !ec)
+    return sanitizerPath.str();
+
+  if (ec)
+    return Error(ec.message());
+
+  // Get the sanitizer library name. We only have macOS and linux here because
+  // we don't support windows in this function anyway.
+  StringRef shortenedSanitizer =
+      which.has(Sanitizers::kAddress) ? "asan" : "tsan";
+  std::string sanitizerLibName;
+  if (session.getTargetTriple().isOSBinFormatMachO()) {
+    sanitizerLibName =
+        llvm::formatv("libclang_rt.{0}_osx_dynamic.dylib", shortenedSanitizer);
+  } else if (session.getTargetTriple().isOSBinFormatELF()) {
+    // TODO: This only supports clang sanitizers - we could in theory check GCC
+    //       sanitizers as well.
+    sanitizerLibName =
+        llvm::formatv("libclang_rt.{0}-{1}.so", shortenedSanitizer,
+                      session.getTargetTriple().getArchName());
+  }
+
+  // Create tempfile for stdout.
+  auto tmpOutOr = TempFile::create("sanitizer-lib-out-%%%%%.tmp");
+  if (tmpOutOr.isError())
+    return tmpOutOr.takeError();
+
+  // Get the system clang, so we can attempt to use it to print the sanitizer
+  // path.
+  llvm::ErrorOr<std::string> clangOr = llvm::sys::findProgramByName("clang");
+  if (!clangOr)
+    return Error("unable to find the system compiler: " +
+                 clangOr.getError().message() + " - please set " + configName);
+
+  // Redirects here are stdin(0), stdout(1), and stderr(2).
+  std::string err;
+  int result = llvm::sys::ExecuteAndWait(
+      *clangOr,
+      /*Args=*/
+      {*clangOr, "--print-file-name", sanitizerLibName},
+      /*Env=*/std::nullopt,
+      /*Redirects=*/
+      {std::nullopt, tmpOutOr->getPath().string(), std::nullopt},
+      /*SecondsToWait=*/1, /*MemoryLimit=*/0, /*ErrMsg=*/&err);
+  if (result != 0)
+    return Error("failed to execute system compiler: " + err);
+
+  // Read the file that has the result of calling the system compiler and set it
+  // in the config.
+  auto fileOr = Cache::Buffer::getFile(tmpOutOr->getPath());
+  if (fileOr.isError())
+    return fileOr.takeError();
+
+  // Set the value in the config - make sure to trim off trailing whitespace.
+  cfg.setValue(configName, (*fileOr)->getBuffer().rtrim());
+
+  // And return the value directly from the config.
+  return cfg.getValue(configName).str();
 }
 
 M::ErrorOr<std::unique_ptr<ExecutionEngine>>
@@ -459,6 +540,48 @@ ExecutionEngine::create(ExecutionEngineOptions options,
                                *ee->executionSession, *ee->objectLayer))
     return err.takeError();
 
+  // Open the config object so we can use it.
+  auto cfgOr = Config::open();
+  if (cfgOr.isError())
+    return cfgOr.takeError();
+  Config cfg = std::move(*cfgOr);
+
+  // Find the path to the sanitizer library.
+  auto pathOr =
+      findSanitizerLibraryPath(options.sanitizers, *ee->executionSession, cfg);
+  if (pathOr.isError())
+    return pathOr.takeError();
+
+  // Pull in ASAN/TSAN if we have them, and they're requested.
+  if (options.sanitizers.has(Sanitizers::kAddress)) {
+    // If the asan symbols already exist in the target process, DO NOT re-init
+    // asan - we will get hard-to-debug failures that occur on initialization.
+    llvm::Expected<llvm::orc::ExecutorSymbolDef> asanInit =
+        ee->executionSession->lookup({&platformStdlib}, "__asan_init");
+    if (!asanInit) {
+      // Consume the error - we don't care what it was.
+      llvm::consumeError(asanInit.takeError());
+      // Now, try and find the thing.
+      assert(!pathOr->empty() &&
+             "we didn't specify which sanitizer to findSanitizerLibraryPath?");
+      // Find and load the asan dylib.
+      if (auto generator = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+              *ee->executionSession, pathOr->c_str()))
+        platformStdlib.addGenerator(std::move(*generator));
+      else
+        return Error(llvm::toString(generator.takeError()));
+    }
+  } else if (options.sanitizers.has(Sanitizers::kThread)) {
+    assert(!pathOr->empty() &&
+           "we didn't specify which sanitizer to findSanitizerLibraryPath?");
+    // Find and load the tsan dylib.
+    if (auto generator = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+            *ee->executionSession, pathOr->c_str()))
+      platformStdlib.addGenerator(std::move(*generator));
+    else
+      return Error(llvm::toString(generator.takeError()));
+  }
+
   // COFF format binaries (Windows) need special handling to deal with
   // exported symbol visibility.
   if (tt.isOSBinFormatCOFF()) {
@@ -510,7 +633,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return err.takeError();
 
   // Prepare the CompilerRT dylib.
-  if (auto err = initializeCompilerRT(*ee->executionSession))
+  if (auto err = initializeCompilerRT(*ee->executionSession, cfg))
     return err.takeError();
 
   return std::move(ee);
