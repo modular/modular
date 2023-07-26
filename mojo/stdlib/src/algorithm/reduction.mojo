@@ -624,7 +624,7 @@ fn _reduce_along_dimension[
         input: The tensor we are reducing
         init_value: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
-        out_chain: The our chain to attach results to.
+        out_chain: The chain to attach results to.
     """
     let shape = input.dynamic_shape
 
@@ -1341,6 +1341,76 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     return reduce_boolean[simd_width, size, type, _reduce_fn, _continue_fn](
         src, True
     )
+
+
+@export
+@always_inline
+fn argmax[
+    type: DType,
+    out_type: DType,
+    axis_type: DType,
+    rank: Int,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_chain: OutputChainPtr,
+):
+    """
+    Finds the indices of the maximum element along the specified axis.
+
+    Parameters:
+        type: Type of the input tensor.
+        out_type: Type of the output tensor.
+        axis_type: Type of the axis tensor.
+        rank: The rank of the input / output.
+
+    Args:
+        input: The input tensor.
+        axis_buf: The axis tensor.
+        output: The axis tensor.
+        out_chain: The chain to attach results to.
+    """
+
+    assert_param[rank == 2, "ArgMax: rank other than 2 not supported yet"]()
+
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis = axis + rank
+    if (axis < 0) and (axis >= rank):
+        out_chain.mark_error("axis must be between [0, <input rank>)")
+        return
+
+    # TODO: Generalize to mid axis.
+    if axis != rank - 1:
+        out_chain.mark_error("axis other than innermost not supported yet")
+        return
+
+    let d0 = input.dim(0)
+    let d1 = input.dim(1)
+
+    if output.dim(0) != d0:
+        out_chain.mark_error("input and output dims[0] must match")
+        return
+
+    @always_inline
+    @parameter
+    fn task_func(task_id: Int):
+        for i in range(d0):
+            # TODO: Parameterize the comparator.
+            var max_val = min_or_neginf[type]()
+            var max_idx = 0
+            # TODO: Consider using quckselect instead?
+            for j in range(d1):
+                let item = input[i, j]
+                if max_val < item:
+                    max_val = item
+                    max_idx = j
+            let outIndices = StaticIntTuple[rank](i, 0)
+            output[outIndices] = max_idx
+
+    # TODO: Shard by dim 0.
+    async_parallelize[task_func](out_chain, 1)
 
 
 # ===----------------------------------------------------------------------===#
