@@ -1343,6 +1343,113 @@ fn none_true[size: Dim, type: DType](src: Buffer[size, type]) -> Bool:
     )
 
 
+# ===----------------------------------------------------------------------===#
+# _argn
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _argn[
+    type: DType,
+    out_type: DType,
+    axis_type: DType,
+    rank: Int,
+    is_max: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_chain: OutputChainPtr,
+):
+    """
+    Finds the indices of the maximum/minimum element along the specified axis.
+
+    Parameters:
+        type: Type of the input tensor.
+        out_type: Type of the output tensor.
+        axis_type: Type of the axis tensor.
+        rank: The rank of the input / output.
+        is_max: If True compute then compute argmax, otherwise compute the
+                argmin.
+
+    Args:
+        input: The input tensor.
+        axis_buf: The axis tensor.
+        output: The axis tensor.
+        out_chain: The chain to attach results to.
+    """
+    alias simd_width = simdwidthof[type]()
+
+    var axis = axis_buf[0].to_int()
+    if axis < 0:
+        axis += rank
+    if not 0 <= axis < rank:
+        out_chain.mark_error("axis must be between [0, <input rank>)")
+        return
+
+    # TODO: Generalize to mid axis.
+    if axis != rank - 1:
+        out_chain.mark_error("axis other than innermost not supported yet")
+        return
+
+    let d0 = input.dim(0)
+    let d1 = input.dim(1)
+
+    if output.dim(0) != d0:
+        out_chain.mark_error("input and output dims[0] must match")
+        return
+
+    @always_inline
+    @parameter
+    fn task_func(task_id: Int):
+        for i in range(d0):
+            # TODO: Parameterize the comparator.
+            var global_val: SIMD[type, 1]
+
+            @parameter
+            if is_max:
+                global_val = min_or_neginf[type]()
+            else:
+                global_val = max_or_inf[type]()
+            var idx = 0
+
+            @always_inline
+            @parameter
+            fn compute_row[simd_width: Int](j: Int):
+                let vec = input.simd_load[simd_width](i, j)
+
+                @parameter
+                if is_max:
+                    let curr_max = vec.reduce_max()
+                    if global_val < curr_max:
+                        global_val = curr_max
+
+                        @unroll
+                        for k in range(simd_width):
+                            idx = j + k
+                else:
+                    let curr_min = vec.reduce_min()
+                    if global_val < curr_min:
+                        global_val = curr_min
+
+                        @unroll
+                        for k in range(simd_width):
+                            idx = j + k
+
+            vectorize[simd_width, compute_row](d1)
+
+            let outIndices = StaticIntTuple[rank](i, 0)
+            output[outIndices] = idx
+
+    # TODO: Shard by dim 0.
+    async_parallelize[task_func](out_chain, 1)
+
+
+# ===----------------------------------------------------------------------===#
+# argmax
+# ===----------------------------------------------------------------------===#
+
+
 @export
 @always_inline
 fn argmax[
@@ -1374,43 +1481,50 @@ fn argmax[
 
     assert_param[rank == 2, "ArgMax: rank other than 2 not supported yet"]()
 
-    var axis = axis_buf[0].to_int()
-    if axis < 0:
-        axis = axis + rank
-    if (axis < 0) and (axis >= rank):
-        out_chain.mark_error("axis must be between [0, <input rank>)")
-        return
+    _argn[type, out_type, axis_type, rank, True](
+        input, axis_buf, output, out_chain
+    )
 
-    # TODO: Generalize to mid axis.
-    if axis != rank - 1:
-        out_chain.mark_error("axis other than innermost not supported yet")
-        return
 
-    let d0 = input.dim(0)
-    let d1 = input.dim(1)
+# ===----------------------------------------------------------------------===#
+# argmin
+# ===----------------------------------------------------------------------===#
 
-    if output.dim(0) != d0:
-        out_chain.mark_error("input and output dims[0] must match")
-        return
 
-    @always_inline
-    @parameter
-    fn task_func(task_id: Int):
-        for i in range(d0):
-            # TODO: Parameterize the comparator.
-            var max_val = min_or_neginf[type]()
-            var max_idx = 0
-            # TODO: Consider using quckselect instead?
-            for j in range(d1):
-                let item = input[i, j]
-                if max_val < item:
-                    max_val = item
-                    max_idx = j
-            let outIndices = StaticIntTuple[rank](i, 0)
-            output[outIndices] = max_idx
+@export
+@always_inline
+fn argmin[
+    type: DType,
+    out_type: DType,
+    axis_type: DType,
+    rank: Int,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_chain: OutputChainPtr,
+):
+    """
+    Finds the indices of the minimum element along the specified axis.
 
-    # TODO: Shard by dim 0.
-    async_parallelize[task_func](out_chain, 1)
+    Parameters:
+        type: Type of the input tensor.
+        out_type: Type of the output tensor.
+        axis_type: Type of the axis tensor.
+        rank: The rank of the input / output.
+
+    Args:
+        input: The input tensor.
+        axis_buf: The axis tensor.
+        output: The axis tensor.
+        out_chain: The chain to attach results to.
+    """
+
+    assert_param[rank == 2, "ArgMin: rank other than 2 not supported yet"]()
+
+    _argn[type, out_type, axis_type, rank, True](
+        input, axis_buf, output, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
