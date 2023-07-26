@@ -25,6 +25,7 @@ from Range import range
 from SIMD import SIMD
 from TargetInfo import sizeof
 from TypeUtilities import rebind
+from Tracing import TraceLevel
 from OptionalParam import OptionalParamInt
 
 ## gather_reduce_2D_axis_1
@@ -304,6 +305,38 @@ fn gather[
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
+
+    if axis.get() < 0:
+        return out_chain.mark_error(
+            "gather kernel does not support negative axis"
+        )
+
+    # The output shape has the same shape as the input, with the indexed-axis
+    # replaced by the shape of the indices
+    for i in range(axis.get()):
+        if output.dim(i) != input.dim(i):
+            return out_chain.mark_error(
+                "gather: output_shape[0:axis] does not match"
+                " input_shape[0:axis]"
+            )
+    for i in range(axis.get(), axis.get() + indices_rank):
+        if output.dim(i) != indices.dim(i - axis.get()):
+            return out_chain.mark_error(
+                "gather: output_shape[axis:axis+indices_rank] does not match"
+                " indices_shape"
+            )
+    for i in range(axis.get() + indices_rank, output_rank):
+        if output.dim(i) != input.dim(i - indices_rank + 1):
+            return out_chain.mark_error(
+                "gather: output_shape[axis + indices_rank:] does not match"
+                " input_shape[axis:]"
+            )
+
+    if axis.get() >= input_rank:
+        return out_chain.mark_error("gather: axis must be less than input rank")
+
+    out_chain.trace[TraceLevel.OP]("mojo.gather")
+
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     let indices_len = indices.size()
     if input.size() == 0 or indices_len == 0:
