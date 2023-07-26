@@ -97,6 +97,32 @@ ErrorOrSuccess M::readFileAtomically(
   return success();
 }
 
+ErrorOrSuccess
+M::appendFileAtomically(const std::filesystem::path &filePath,
+                        llvm::function_ref<void(raw_ostream &)> appendContent) {
+  std::string filePathStr = filePath.string();
+
+  // A helper function to append to a file.
+  auto appendFile = [&]() -> ErrorOr<Detail::Empty> {
+    std::error_code ec;
+    // We want to open an existing file, or create one if it doesn't already
+    // exist. We only want to write to it, and we want to append to the end.
+    llvm::raw_fd_ostream stream(filePathStr, ec, llvm::sys::fs::CD_OpenAlways,
+                                llvm::sys::fs::FA_Write,
+                                llvm::sys::fs::OF_Append);
+    if (ec)
+      return Error(ec.message());
+    appendContent(stream);
+    return Detail::Empty();
+  };
+
+  ErrorOr<Detail::Empty> err =
+      doAtomicFileOperation<Detail::Empty>(filePath, appendFile);
+  if (err)
+    return err.takeError();
+  return success();
+}
+
 // llvm::sys::Process has a function called `llvm::sys::Process::FindInEnvPath`
 // which looks for files (and files only) in PATH like environment variables.
 // The version here is inspired by the original and has a similar contract but
