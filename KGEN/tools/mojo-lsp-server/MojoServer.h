@@ -14,6 +14,8 @@
 namespace M::KGEN::LIT {
 using SendDiagnosticsFn =
     llvm::unique_function<void(const mlir::lsp::PublishDiagnosticsParams &)>;
+template <typename T>
+using OnResultFn = llvm::unique_function<void(T)>;
 
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
@@ -25,7 +27,7 @@ public:
 
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
-  void addDocument(const mlir::lsp::URIForFile &uri, StringRef contents,
+  void addDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version);
 
   /// Update the document, with the provided `version`, at the given URI. Any
@@ -39,25 +41,25 @@ public:
   void removeDocument(const mlir::lsp::URIForFile &uri);
 
   /// Get the set of code actions within the file.
-  void getCodeActions(const mlir::lsp::URIForFile &uri,
-                      const mlir::lsp::Range &pos,
-                      const mlir::lsp::CodeActionContext &context,
-                      std::vector<mlir::lsp::CodeAction> &actions);
+  void
+  getCodeActions(const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &pos,
+                 const mlir::lsp::CodeActionContext &context,
+                 OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn);
 
   /// Get the code completion list for the position within the given file.
-  mlir::lsp::CompletionList
-  getCodeCompletion(const mlir::lsp::URIForFile &uri,
-                    const mlir::lsp::Position &completePos);
+  void onCodeCompletion(const mlir::lsp::URIForFile &uri,
+                        const mlir::lsp::Position &completePos,
+                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
 
   /// Get the location of identifier of the declaration of the symbol that
   /// contains the given position.
-  std::optional<mlir::lsp::Location>
-  onDefinition(const mlir::lsp::URIForFile &uri,
-               const mlir::lsp::Position &pos);
+  void
+  onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
+               OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn);
 
   /// Get a `Hover` element corresponding to the given document position.
-  std::optional<mlir::lsp::Hover> onHover(const mlir::lsp::URIForFile &uri,
-                                          const mlir::lsp::Position &pos);
+  void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
+               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
 private:
   struct Impl;

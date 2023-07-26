@@ -127,7 +127,8 @@ void LSPServer::onShutdown(const NoParams &, Callback<std::nullptr_t> reply) {
 // Document Change
 
 void LSPServer::onDocumentDidOpen(const DidOpenTextDocumentParams &params) {
-  server.addDocument(params.textDocument.uri, params.textDocument.text,
+  server.addDocument(params.textDocument.uri,
+                     std::string(params.textDocument.text),
                      params.textDocument.version);
 }
 void LSPServer::onDocumentDidClose(const DidCloseTextDocumentParams &params) {
@@ -155,10 +156,14 @@ void LSPServer::onCodeAction(const CodeActionParams &params,
   };
 
   // We provide a code action for fixes on the specified diagnostics.
-  std::vector<CodeAction> actions;
-  if (isKindAllowed(CodeAction::kQuickFix))
-    server.getCodeActions(uri, params.range.start, params.context, actions);
-  reply(std::move(actions));
+  if (!isKindAllowed(CodeAction::kQuickFix))
+    return reply(std::vector<CodeAction>());
+
+  server.getCodeActions(
+      uri, params.range.start, params.context,
+      [reply = std::move(reply)](std::vector<CodeAction> actions) mutable {
+        reply(std::move(actions));
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -166,17 +171,29 @@ void LSPServer::onCodeAction(const CodeActionParams &params,
 
 void LSPServer::onCompletion(const CompletionParams &params,
                              Callback<CompletionList> reply) {
-  reply(server.getCodeCompletion(params.textDocument.uri, params.position));
+  server.onCodeCompletion(
+      params.textDocument.uri, params.position,
+      [reply = std::move(reply)](CompletionList list) mutable {
+        reply(std::move(list));
+      });
 }
 
 void LSPServer::onDefinition(const TextDocumentPositionParams &params,
                              Callback<llvm::json::Value> reply) {
-  reply(server.onDefinition(params.textDocument.uri, params.position));
+  server.onDefinition(params.textDocument.uri, params.position,
+                      [reply = std::move(reply)](
+                          std::optional<mlir::lsp::Location> location) mutable {
+                        reply(std::move(location));
+                      });
 }
 
 void LSPServer::onHover(const TextDocumentPositionParams &params,
                         Callback<llvm::json::Value> reply) {
-  reply(server.onHover(params.textDocument.uri, params.position));
+  server.onHover(
+      params.textDocument.uri, params.position,
+      [reply = std::move(reply)](std::optional<Hover> hover) mutable {
+        reply(std::move(hover));
+      });
 }
 
 //===----------------------------------------------------------------------===//

@@ -135,9 +135,6 @@ public:
   /// position in the document.
   Symbol *getSymbolAt(const lsp::Position &position) const;
 
-  /// Remove all symbols and references in this index.
-  void clear();
-
 private:
   using MapT = llvm::IntervalMap<
       lsp::Position, Symbol *,
@@ -170,11 +167,6 @@ void SymbolIndex::registerRef(MojoASTDeclRef declRef,
 
 Symbol *SymbolIndex::getSymbolAt(const lsp::Position &position) const {
   return rangeToSymbol.lookup(position, nullptr);
-}
-
-void SymbolIndex::clear() {
-  symbolTable.clear();
-  rangeToSymbol.clear();
 }
 
 //===----------------------------------------------------------------------===//
@@ -225,22 +217,49 @@ namespace {
 /// document.
 struct MojoDocument {
 public:
-  MojoDocument(const lsp::URIForFile &uri, StringRef contents, int64_t version,
-               SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime);
+  MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
+               int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
+               LLCL::Runtime &runtime);
   MojoDocument(const MojoDocument &) = delete;
   MojoDocument &operator=(const MojoDocument &) = delete;
-  ~MojoDocument();
 
   /// Initialize the document based on the current set of contents.
   void initialize(const lsp::URIForFile &uri);
 
-  /// Update the file to the new version using the provided set of content
-  /// changes. Returns failure if the update was unsuccessful.
-  LogicalResult update(const lsp::URIForFile &uri, int64_t newVersion,
-                       ArrayRef<lsp::TextDocumentContentChangeEvent> changes);
+  /// Return the contents of this document.
+  StringRef getContents() const { return contents; }
+
+  /// Return the version of this document.
+  int64_t getVersion() const { return version; }
 
   //===--------------------------------------------------------------------===//
-  // LSP Queries
+  // Asynchronous LSP Queries
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Code Actions
+
+  void getCodeActions(const lsp::Range &pos,
+                      const lsp::CodeActionContext &context,
+                      OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions);
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  void
+  onCodeCompletion(const lsp::Position &completePos,
+                   OnResultFn<mlir::lsp::CompletionList> onCompletionFn) const;
+
+  void onDefinition(
+      const lsp::Position &pos,
+      OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) const;
+
+  void onHover(const lsp::Position &pos,
+               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) const;
+
+private:
+  //===--------------------------------------------------------------------===//
+  // Synchronous LSP Queries
   //===--------------------------------------------------------------------===//
 
   //===--------------------------------------------------------------------===//
@@ -254,18 +273,19 @@ public:
   //===--------------------------------------------------------------------===//
   // Code Actions
 
-  void getCodeActions(const lsp::URIForFile &uri, const lsp::Range &pos,
-                      const lsp::CodeActionContext &context,
-                      std::vector<lsp::CodeAction> &actions);
+  std::vector<lsp::CodeAction>
+  getCodeActionsSync(const lsp::Range &pos,
+                     const lsp::CodeActionContext &context);
 
   //===--------------------------------------------------------------------===//
   // Language Features
 
-  lsp::CompletionList getCodeCompletion(const lsp::Position &completePos) const;
+  lsp::CompletionList
+  onCodeCompletionSync(const lsp::Position &completePos) const;
 
-  std::optional<lsp::Location> onDefinition(const lsp::Position &pos) const;
+  std::optional<lsp::Location> onDefinitionSync(const lsp::Position &pos) const;
 
-  std::optional<lsp::Hover> onHover(const lsp::Position &pos) const;
+  std::optional<lsp::Hover> onHoverSync(const lsp::Position &pos) const;
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -304,6 +324,12 @@ public:
     std::unique_ptr<MojoParserContext> parserContext;
   };
 
+  //===--------------------------------------------------------------------===//
+  // Static Fields
+
+  /// The following fields are always available for access and don't require
+  /// additional synchronization.
+
   /// The uri of the file.
   lsp::URIForFile uri;
 
@@ -316,13 +342,19 @@ public:
   /// The function used to send diagnostics for this document.
   SendDiagnosticsFnRef sendDiagnosticsFn;
 
+  /// The runtime used when parsing the file.
+  LLCL::Runtime &runtime;
+
+  //===--------------------------------------------------------------------===//
+  // Parsed Fields
+
+  /// Allow access to the parser fields.
+  friend LSPParserListener;
+
   /// An ordered set of fixits for diagnostics emitted for the current version
   /// of the file.
   std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
       fixits;
-
-  /// The runtime used when parsing the file.
-  LLCL::Runtime &runtime;
 
   /// An index of all symbols in this document.
   SymbolIndex symbolIndex;
@@ -332,19 +364,12 @@ public:
 };
 } // namespace
 
-MojoDocument::MojoDocument(const lsp::URIForFile &uri, StringRef contents,
+MojoDocument::MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
                            LLCL::Runtime &runtime)
-    : uri(uri), contents(contents.str()), version(version),
+    : uri(uri), contents(std::move(contents)), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime) {}
-
-MojoDocument::~MojoDocument() {
-  // Empty out the diagnostics shown for this document. This will clear out
-  // anything currently displayed by the client for this document (e.g. in the
-  // "Problems" pane of VSCode).
-  sendDiagnosticsFn(lsp::PublishDiagnosticsParams(uri, version));
-}
 
 void MojoDocument::initialize(const lsp::URIForFile &uri) {
   // Reset the source manager and parse the file.
@@ -381,24 +406,6 @@ void MojoDocument::initialize(const lsp::URIForFile &uri) {
       diagParams.diagnostics.push_back(*lspDiag);
   }
   sendDiagnosticsFn(diagParams);
-}
-
-LogicalResult
-MojoDocument::update(const lsp::URIForFile &uri, int64_t newVersion,
-                     ArrayRef<lsp::TextDocumentContentChangeEvent> changes) {
-  if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
-    lsp::Logger::error("Failed to update contents of {0}", uri.file());
-    return failure();
-  }
-  version = newVersion;
-  fixits.clear();
-  symbolIndex.clear();
-
-  // If the file contents were properly changed, reinitialize the text file.
-  // TODO: We shouldn't need to reinitialize the entire file here, we should be
-  // able to selectively update the parts that actually changed.
-  initialize(uri);
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,11 +543,17 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 // MojoDocument: Code Action
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
-                                  const lsp::Range &pos,
-                                  const lsp::CodeActionContext &context,
-                                  std::vector<lsp::CodeAction> &actions) {
+void MojoDocument::getCodeActions(
+    const lsp::Range &pos, const lsp::CodeActionContext &context,
+    OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions) {
+  onActions(getCodeActionsSync(pos, context));
+}
+
+std::vector<lsp::CodeAction>
+MojoDocument::getCodeActionsSync(const lsp::Range &pos,
+                                 const lsp::CodeActionContext &context) {
   // Create actions for any diagnostics in this file.
+  std::vector<lsp::CodeAction> actions;
   for (auto &diag : context.diagnostics) {
     if (diag.source != "mojo")
       continue;
@@ -554,14 +567,21 @@ void MojoDocument::getCodeActions(const lsp::URIForFile &uri,
       actions.back().diagnostics = {diag};
     }
   }
+  return actions;
 }
 
 //===----------------------------------------------------------------------===//
-// MojoDocument: Language Features
+// MojoDocument: Code Completion
 //===----------------------------------------------------------------------===//
 
+void MojoDocument::onCodeCompletion(
+    const lsp::Position &completePos,
+    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) const {
+  onCompletionFn(onCodeCompletionSync(completePos));
+}
+
 lsp::CompletionList
-MojoDocument::getCodeCompletion(const lsp::Position &completePos) const {
+MojoDocument::onCodeCompletionSync(const lsp::Position &completePos) const {
   if (!context)
     return lsp::CompletionList();
   SMLoc posLoc = completePos.getAsSMLoc(context->sourceMgr);
@@ -573,9 +593,10 @@ MojoDocument::getCodeCompletion(const lsp::Position &completePos) const {
 
   // Query the mojo parser for potential completion results.
   uint64_t rawCompletePos = posLoc.getPointer() - buffer->getBuffer().data();
+  MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   std::vector<KGEN::Mojo::CodeCompletionResult> results =
-      KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &context->mlirContext,
-                               runtime, context->compilationOptions);
+      KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &mlirContext, runtime,
+                               context->compilationOptions);
 
   // Map the Mojo results to LSP results.
   lsp::CompletionList completionList;
@@ -612,16 +633,36 @@ MojoDocument::getCodeCompletion(const lsp::Position &completePos) const {
   return completionList;
 }
 
+//===----------------------------------------------------------------------===//
+// MojoDocument: Definitions and References
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onDefinition(
+    const lsp::Position &pos,
+    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) const {
+  onDefinitionFn(onDefinitionSync(pos));
+}
+
 std::optional<lsp::Location>
-MojoDocument::onDefinition(const lsp::Position &pos) const {
+MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
   if (Symbol *symbol = symbolIndex.getSymbolAt(pos))
     return lsp::Location(uri, symbol->identifierRange);
 
   return std::nullopt;
 }
 
+//===----------------------------------------------------------------------===//
+// MojoDocument: Hover
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onHover(
+    const lsp::Position &pos,
+    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) const {
+  onHoverFn(onHoverSync(pos));
+}
+
 std::optional<lsp::Hover>
-MojoDocument::onHover(const lsp::Position &pos) const {
+MojoDocument::onHoverSync(const lsp::Position &pos) const {
   Symbol *symbol = symbolIndex.getSymbolAt(pos);
   if (!symbol)
     return std::nullopt;
@@ -721,14 +762,13 @@ MojoServer::MojoServer(SendDiagnosticsFn sendDiagnosticsFn)
     : impl(std::make_unique<Impl>(std::move(sendDiagnosticsFn))) {}
 MojoServer::~MojoServer() = default;
 
-void MojoServer::addDocument(const lsp::URIForFile &uri, StringRef contents,
+void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
-  auto [it, _] = impl->files.try_emplace(
-      uri.file(),
-      std::make_unique<MojoDocument>(uri, contents, version,
-                                     impl->sendDiagnosticsFn, impl->runtime));
-  auto &document = *it->second;
-  document.initialize(uri);
+  auto [it, _] = impl->files.try_emplace(uri.file(), nullptr);
+  it->second =
+      std::make_unique<MojoDocument>(uri, std::move(contents), version,
+                                     impl->sendDiagnosticsFn, impl->runtime);
+  it->second->initialize(uri);
 }
 
 void MojoServer::updateDocument(
@@ -740,43 +780,54 @@ void MojoServer::updateDocument(
 
   // Try to update the document. If we fail, erase the file from the server. A
   // failed updated generally means we've fallen out of sync somewhere.
-  if (failed(it->second->update(uri, version, changes)))
-    impl->files.erase(it);
+  std::string contents = it->second->getContents().str();
+  if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
+    lsp::Logger::error("Failed to update contents of {0}", uri.file());
+    return removeDocument(uri);
+  }
+
+  // Overrite the original document with the new contents.
+  addDocument(uri, std::move(contents), version);
 }
 
 void MojoServer::removeDocument(const lsp::URIForFile &uri) {
-  impl->files.erase(uri.file());
+  auto it = impl->files.find(uri.file());
+  if (it == impl->files.end())
+    return;
+
+  // Empty out the diagnostics shown for this document. This will clear out
+  // anything currently displayed by the client for this document (e.g. in the
+  // "Problems" pane of VSCode).
+  impl->sendDiagnosticsFn(
+      lsp::PublishDiagnosticsParams(uri, it->second->getVersion()));
+  impl->files.erase(it);
 }
 
-void MojoServer::getCodeActions(const lsp::URIForFile &uri,
-                                const lsp::Range &pos,
-                                const lsp::CodeActionContext &context,
-                                std::vector<lsp::CodeAction> &actions) {
+void MojoServer::getCodeActions(
+    const lsp::URIForFile &uri, const lsp::Range &pos,
+    const lsp::CodeActionContext &context,
+    OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
-    doc->getCodeActions(uri, pos, context, actions);
+    doc->getCodeActions(pos, context, std::move(onActionsFn));
 }
 
-lsp::CompletionList
-MojoServer::getCodeCompletion(const lsp::URIForFile &uri,
-                              const lsp::Position &completePos) {
+void MojoServer::onCodeCompletion(
+    const lsp::URIForFile &uri, const lsp::Position &completePos,
+    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
-    return doc->getCodeCompletion(completePos);
-
-  return lsp::CompletionList();
+    doc->onCodeCompletion(completePos, std::move(onCompletionFn));
 }
 
-std::optional<lsp::Location>
-MojoServer::onDefinition(const lsp::URIForFile &uri, const lsp::Position &pos) {
+void MojoServer::onDefinition(
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
-    return doc->onDefinition(pos);
-
-  return std::nullopt;
+    doc->onDefinition(pos, std::move(onDefinitionFn));
 }
 
-std::optional<lsp::Hover> MojoServer::onHover(const lsp::URIForFile &uri,
-                                              const lsp::Position &pos) {
+void MojoServer::onHover(
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   if (MojoDocument *doc = impl->findDocument(uri.file()))
-    return doc->onHover(pos);
-
-  return std::nullopt;
+    doc->onHover(pos, std::move(onHoverFn));
 }
