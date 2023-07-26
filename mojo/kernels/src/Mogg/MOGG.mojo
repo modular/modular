@@ -75,7 +75,7 @@ from TypeUtilities import rebind
 from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from Split import split as _split
 from String import String
-from Slice import slice_as_view
+from Slice import slice_as_view, slice_shape
 from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
 from GatherScatter import scatter_nd as _scatter_nd, gather_shape
@@ -166,6 +166,7 @@ fn MOGGExport():
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
     alias _reduce_mul = reduce_mul
+    alias _slice_shape = slice_shape
     alias _splat = splat
     alias _transpose = transpose
     alias _transpose_shape = transpose_shape
@@ -1286,6 +1287,7 @@ fn transpose_shape[
         debug_assert(perm >= 0, "Transpose permutation is less than zero")
         debug_assert(perm < rank, "Transpose permutation is out of range")
 
+    # NOTE this assumes `transpose` can handle input with null data pointer
     let out = transpose[rank, type, int_type, single_thread_blocking_override](
         input, perms
     ).dynamic_shape
