@@ -16,7 +16,7 @@ include "mlir/IR/AttrTypeBase.td"
 
 // Base class for other typedefs. Provides dialact-specific defaults.
 class LITType<string name, string typeMnemonic, list<Trait> traits = []>
-    : TypeDef<LITDialect, name, traits> {
+  : TypeDef<LITDialect, name, traits> {
   let mnemonic = typeMnemonic;
 }
 
@@ -27,13 +27,12 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 def LIT_TypeCheckErrorType : LITType<"TypeCheckError", "typecheckerror"> {
   let summary = "Type used for values and decls that can't be type checked";
   let description = [{
-      This type is assigned to values and declarations when their signature
-          cannot be type checked or there is some other problem that might make
-              references to it produce spurious downstream errors.Because the
-                  presence of this type silences downstream errors,
-      it should only be used when a primary error has already been emitted(
-          about whatever is wrong with the decl)
-          .}];
+    This type is assigned to values and declarations when their signature cannot
+    be type checked or there is some other problem that might make references to
+    it produce spurious downstream errors.  Because the presence of this type
+    silences downstream errors, it should only be used when a primary error has
+    already been emitted (about whatever is wrong with the decl).
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -59,10 +58,9 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 def LIT_NoneType : LITType<"None", "none"> {
   let summary = "Type used for 'void' function results";
   let description = [{
-    This type is nominal static type of the 'None' keyword,
-    which is the result type of functions with no declared result type
-        .TODO:
-             This should be replaced with an empty tuple when we have variadics.
+    This type is nominal static type of the 'None' keyword, which is the result
+    type of functions with no declared result type.
+    TODO: This should be replaced with an empty tuple when we have variadics.
   }];
 }
 
@@ -73,52 +71,44 @@ def LIT_NoneType : LITType<"None", "none"> {
 def LIT_MetaTypeType : LITType<"MetaType", "metatype"> {
   let summary = "Type of a type value.";
   let description = [{
-    The `!lit
-            .metatype` type represents the type of a type
-            value(tongue twister)
-            .The meta -
-        type stores the prototype of a type value in its type so that member
-            inspection can be performed through the type system during member
-                lookup or implicit conversions to other meta -
-        types
-            .
+    The `!lit.metatype` type represents the type of a type value (tongue
+    twister). The meta-type stores the prototype of a type value in its type so
+    that member inspection can be performed through the type system during
+    member lookup or implicit conversions to other meta-types.
 
-        Example :
-
-    ```mlir !lit.metatype<@SomeStruct>
-    ```
-
-        The meta -
-        type is propagated through values by attaching itself to type values
-            .
-
-        Example :
+    Example:
 
     ```mlir
-// Concrete type value.
-#kgen.concretetype.constant < !kgen.declref < @SomeStruct>>
-        : !lit.metatype<@SomeStruct>
+    !lit.metatype<@SomeStruct>
+    ```
 
-// Parametric type value.
-#kgen.param.decl.ref < "some_type"> : !lit.metatype < @SomeStruct>
+    The meta-type is propagated through values by attaching itself to type
+    values.
+
+    Example:
+
+    ```mlir
+    // Concrete type value.
+    #kgen.concretetype.constant<!kgen.declref<@SomeStruct>>
+      : !lit.metatype<@SomeStruct>
+
+    // Parametric type value.
+    #kgen.param.decl.ref<"some_type"> : !lit.metatype<@SomeStruct>
     ```
   }];
 
-  let parameters = (ins "SymbolRefAttr"
-                    : $symbol, "ParamBindArrayAttr"
-                    : $paramValues);
+  let parameters = (ins "SymbolRefAttr":$symbol,
+                        "ParamBindArrayAttr":$paramValues);
   let assemblyFormat = [{
-    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>` }];
+    `<` $symbol `` custom<OptionalParamBindSpec>($paramValues) `>`
+  }];
 
-  let builders =
-      [TypeBuilderWithInferredContext<(ins "SymbolRefAttr"
-                                       : $symbol),
-                                      [{
-                                        return get(
-                                            symbol.getContext(), symbol,
-                                            ParamBindArrayAttr::get(
-                                                symbol.getContext(), {}));
-                                      }]>];
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), symbol,
+                 ParamBindArrayAttr::get(symbol.getContext(), {}));
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -140,34 +130,30 @@ def LIT_LifetimeType : LITType<"Lifetime", "lifetime"> {
 def LIT_RefType : LITType<"Ref", "ref"> {
   let summary = "lifetime-bound reference type";
   let description = [{
-    This type represents a typed reference to a memory object with a
-        lifetime.This is lowered to a !pop
-            .pointer after CheckLifetimes verifies that the uses of it are all
-                correct.Examples:
+    This type represents a typed reference to a memory object with a lifetime.
+    This is lowered to a !pop.pointer after CheckLifetimes verifies that the
+    uses of it are all correct.  Examples:
 
     ```mlir
-                        // A reference to a scalar.
-                        !lit.ref<f32, some_lifetime>
+    // A reference to a scalar.
+    !lit.ref<f32, some_lifetime>
     ```
   }];
 
-  let parameters = (ins "BoolAttr"
-                    : $isMutable, "TypedAttr"
-                    : $elementType, "TypedAttr"
-                    : $lifetime);
+  let parameters = (ins "BoolAttr":$isMutable,
+                        "TypedAttr":$elementType, "TypedAttr":$lifetime);
   let assemblyFormat = [{
-    `<` custom<MutFlag>($isMutable) `` custom<PrettyType>($elementType) `,` custom<
-           LifetimeParamValue>($lifetime) `>` }];
+    `<` custom<MutFlag>($isMutable) `` custom<PrettyType>($elementType) `,`
+        custom<LifetimeParamValue>($lifetime) `>`
+  }];
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "bool"
-                                    : $isMutable, "TypedAttr"
-                                    : $elementType, "TypedAttr"
-                                    : $lifetime)>,
-    TypeBuilderWithInferredContext<(ins "bool"
-                                    : $isMutable, "Type"
-                                    : $elementType, "TypedAttr"
-                                    : $lifetime)>,
+    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
+                                        "TypedAttr":$elementType,
+                                        "TypedAttr":$lifetime)>,
+    TypeBuilderWithInferredContext<(ins "bool":$isMutable,
+                                        "Type":$elementType,
+                                        "TypedAttr":$lifetime)>,
   ];
 
   let extraClassDeclaration = [{

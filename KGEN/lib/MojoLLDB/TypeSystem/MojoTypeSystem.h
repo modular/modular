@@ -50,7 +50,7 @@ public:
   MojoParserContext &getParserContext();
 
   /// Return a CompilerType wrapping type.
-  lldb_private::CompilerType getCompilerTypeFromType(Type type);
+  lldb_private::CompilerType getCompilerTypeFromType(mlir::Type type);
 
   /// Return if the given language is supported by this type system.
   bool SupportsLanguage(lldb::LanguageType language) override {

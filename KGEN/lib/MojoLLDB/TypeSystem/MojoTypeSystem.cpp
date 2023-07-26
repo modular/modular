@@ -124,7 +124,8 @@ MojoParserContext &MojoTypeSystem::getParserContext() {
   return *impl->parserContext;
 }
 
-lldb_private::CompilerType MojoTypeSystem::getCompilerTypeFromType(Type type) {
+lldb_private::CompilerType
+MojoTypeSystem::getCompilerTypeFromType(mlir::Type type) {
   return lldb_private::CompilerType(
       weak_from_this(), const_cast<void *>(type.getAsOpaquePointer()));
 }
