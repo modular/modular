@@ -57,8 +57,8 @@ public:
     // the name is valid or that the returned counter is not NOOP. Same for
     // other instruments.
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Counter<uint64_t>(
-        meter->CreateUInt64Counter(name, description, unit));
+    return Counter<uint64_t>(meter->CreateUInt64Counter(
+        name.data(), description.data(), unit.data()));
 #else
     return Counter<uint64_t>();
 #endif
@@ -69,7 +69,8 @@ public:
                                       StringRef description = "",
                                       StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Counter<double>(meter->CreateDoubleCounter(name, description, unit));
+    return Counter<double>(meter->CreateDoubleCounter(
+        name.data(), description.data(), unit.data()));
 #else
     return Counter<double>();
 #endif
@@ -80,8 +81,8 @@ public:
                                             StringRef description = "",
                                             StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Histogram<uint64_t>(
-        meter->CreateUInt64Histogram(name, description, unit));
+    return Histogram<uint64_t>(meter->CreateUInt64Histogram(
+        name.data(), description.data(), unit.data()));
 #else
     return Histogram<uint64_t>();
 #endif
