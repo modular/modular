@@ -113,3 +113,46 @@ fn slice_as_copy[
 
     # Invoke copy.
     elementwise[in_rank, 1, copy](output.dynamic_shape, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# slice_shape
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn slice_shape[
+    input_rank: Int,
+    input_type: DType,
+    start_type: DType,
+    stop_type: DType,
+    step_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    start_buf: NDBuffer[1, DimList.create_unknown[1](), start_type],
+    stop_buf: NDBuffer[1, DimList.create_unknown[1](), stop_type],
+    step_buf: NDBuffer[1, DimList.create_unknown[1](), step_type],
+) -> StaticIntTuple[input_rank]:
+
+    # TODO(17512)
+    debug_assert(
+        input_rank == start_buf.dim(0),
+        "start indices size must equal input rank",
+    )
+    debug_assert(
+        input_rank == stop_buf.dim(0), "stop indices size must equal input rank"
+    )
+    debug_assert(
+        input_rank == step_buf.dim(0), "step indices size must equal input rank"
+    )
+    for axis in range(input_rank):
+        debug_assert(step_buf[axis].to_int() != 0, "step must be non-zero")
+
+    # NOTE this assumes `slice_as_view` can handle input with null data pointer
+    let output_shape = slice_as_view(
+        input_buf, start_buf, stop_buf, step_buf
+    ).dynamic_shape
+    return output_shape
