@@ -33,8 +33,6 @@ if(MODULAR_ENABLE_TELEMETRY)
     opentelemetry_exporter_ostream_logs
     )
 
-  target_compile_definitions(LLCLTelemetry PUBLIC MODULAR_ENABLE_TELEMETRY=${MODULAR_ENABLE_TELEMETRY})
-
 else()
   add_modular_library(LLCLTelemetry
     TelemetryContext.cpp

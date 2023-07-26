@@ -11,7 +11,7 @@
 #include <chrono>
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/metrics/sync_instruments.h"
-#endif
+#endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::LLCL::Telemetry {
 
@@ -30,7 +30,7 @@ private:
   Counter() {}
 };
 
-#else
+#else // MODULAR_ENABLE_TELEMETRY
 
 template <typename T>
 class Counter {
@@ -49,7 +49,7 @@ private:
   std::unique_ptr<opentelemetry::metrics::Counter<T>> counter;
 };
 
-#endif
+#endif // MODULAR_ENABLE_TELEMETRY
 
 // -------- Histogram and Timer --------
 
@@ -74,7 +74,7 @@ private:
   Timer() {}
 };
 
-#else
+#else // MODULAR_ENABLE_TELEMETRY
 
 template <typename T>
 class Histogram {
@@ -128,7 +128,7 @@ private:
   TimePointType start;
 };
 
-#endif
+#endif // MODULAR_ENABLE_TELEMETRY
 
 } // namespace M::LLCL::Telemetry
 
