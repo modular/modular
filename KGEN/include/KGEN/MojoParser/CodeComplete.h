@@ -32,6 +32,9 @@ struct CodeCompletionResult {
     kUnknown,
     kPackage,
     kModule,
+    kStruct,
+    kFunction,
+    kField,
   };
 
   CodeCompletionResult() = default;
@@ -40,6 +43,9 @@ struct CodeCompletionResult {
 
   /// The label of this completion item.
   std::string label;
+
+  /// The documentation of this completion item.
+  std::string documentation;
 
   /// The kind of this completion item.
   Kind kind = Kind::kUnknown;

@@ -52,6 +52,7 @@ void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
 void MojoParserListener::onImport(llvm::SMLoc importLoc) {}
 void MojoParserListener::onImport(MojoASTDeclRef packageDecl,
                                   llvm::SMLoc importLoc) {}
+void MojoParserListener::onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc loc) {}
 void MojoParserListener::onStructDecl(MojoASTDeclRef declRef,
                                       llvm::SMLoc identifierLoc) {}
 void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,

@@ -228,6 +228,10 @@ public:
   /// the given package is currently being resolved.
   void notifyListenerOnImport(ASTDecl &packageDecl, SMLoc importLoc);
 
+  /// Notify the parser listener, if present, that a member within the given
+  /// decl is being looked up.
+  void notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 

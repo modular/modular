@@ -690,8 +690,12 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
 ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
                                                 SMLoc dotLoc) {
   StringRef spelling = getTokenSpelling();
-  if (parseToken(Token::identifier, "expected name in attribute reference"))
-    return failure();
+  if (parseToken(Token::identifier, "expected name in attribute reference")) {
+    // If we didn't get an identifier, recover by using an empty string.
+    // Reuse the spelling buffer to preserve the expected location of the
+    // identifier.
+    spelling = StringRef(spelling.data(), 0);
+  }
 
   result = alloc<AttributeRefNode>(result, dotLoc, spelling);
   return success();

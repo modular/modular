@@ -48,6 +48,14 @@ fn testMLIR():
   # expected-error @+1 {{MLIR attribute is not a TypedAttr: #index<cmp_predicate eq>}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
+  # expected-error @below {{expected name in attribute reference}}
+  # expected-note @below {{escape keyword '_' with backticks to use it as an identifier}}
+  __mlir_attr.
+
+  # expected-error @below {{expected name in attribute reference}}
+  # expected-error @below {{attribute spec requires an attribute name and attr value}}
+  _ = __mlir_op.`test.op`[__mlir_attr.]
+
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
   _ = __mlir_type.index(42)
 
