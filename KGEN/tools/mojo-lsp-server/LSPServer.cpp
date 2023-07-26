@@ -69,10 +69,6 @@ struct LSPServer {
   MojoServer &server;
   JSONTransport &transport;
 
-  /// An outgoing notification used to send diagnostics to the client when they
-  /// are ready to be processed.
-  OutgoingNotification<PublishDiagnosticsParams> publishDiagnostics;
-
   /// Used to indicate that the 'shutdown' request was received from the
   /// Language Server client.
   bool shutdownRequestReceived = false;
@@ -131,34 +127,15 @@ void LSPServer::onShutdown(const NoParams &, Callback<std::nullptr_t> reply) {
 // Document Change
 
 void LSPServer::onDocumentDidOpen(const DidOpenTextDocumentParams &params) {
-  PublishDiagnosticsParams diagParams(params.textDocument.uri,
-                                      params.textDocument.version);
   server.addDocument(params.textDocument.uri, params.textDocument.text,
-                     params.textDocument.version, diagParams.diagnostics);
-
-  // Publish any recorded diagnostics.
-  publishDiagnostics(diagParams);
+                     params.textDocument.version);
 }
 void LSPServer::onDocumentDidClose(const DidCloseTextDocumentParams &params) {
-  std::optional<int64_t> version =
-      server.removeDocument(params.textDocument.uri);
-  if (!version)
-    return;
-
-  // Empty out the diagnostics shown for this document. This will clear out
-  // anything currently displayed by the client for this document (e.g. in the
-  // "Problems" pane of VSCode).
-  publishDiagnostics(
-      PublishDiagnosticsParams(params.textDocument.uri, *version));
+  server.removeDocument(params.textDocument.uri);
 }
 void LSPServer::onDocumentDidChange(const DidChangeTextDocumentParams &params) {
-  PublishDiagnosticsParams diagParams(params.textDocument.uri,
-                                      params.textDocument.version);
   server.updateDocument(params.textDocument.uri, params.contentChanges,
-                        params.textDocument.version, diagParams.diagnostics);
-
-  // Publish any recorded diagnostics.
-  publishDiagnostics(diagParams);
+                        params.textDocument.version);
 }
 
 //===----------------------------------------------------------------------===//
@@ -206,10 +183,12 @@ void LSPServer::onHover(const TextDocumentPositionParams &params,
 // Entry Point
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(MojoServer &server,
-                                                   JSONTransport &transport) {
-  LSPServer lspServer(server, transport);
+mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport) {
   MessageHandler messageHandler(transport);
+  MojoServer server(
+      messageHandler.outgoingNotification<PublishDiagnosticsParams>(
+          "textDocument/publishDiagnostics"));
+  LSPServer lspServer(server, transport);
 
   // Initialization
   messageHandler.method("initialize", &lspServer, &LSPServer::onInitialize);
@@ -235,11 +214,6 @@ mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(MojoServer &server,
   messageHandler.method("textDocument/definition", &lspServer,
                         &LSPServer::onDefinition);
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
-
-  // Diagnostics
-  lspServer.publishDiagnostics =
-      messageHandler.outgoingNotification<PublishDiagnosticsParams>(
-          "textDocument/publishDiagnostics");
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {
