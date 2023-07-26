@@ -17,7 +17,7 @@ from Functional import (
     vectorize_unroll,
     async_parallelize,
 )
-from Reductions import _reduce_generator, reduce_shape
+from Reductions import argmax, _reduce_generator, reduce_shape
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from Memory import memset_zero
