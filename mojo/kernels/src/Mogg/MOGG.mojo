@@ -78,7 +78,11 @@ from String import String
 from Slice import slice_as_view, slice_shape
 from MatrixSolve import matrix_solve as _matrix_solve
 from Index import Index
-from GatherScatter import scatter_nd as _scatter_nd, gather_shape
+from GatherScatter import (
+    scatter_nd as _scatter_nd,
+    gather_shape,
+    gather as _gather,
+)
 from Where import where, where_shape
 
 
@@ -115,8 +119,8 @@ fn MOGGExport():
     alias _exp = exp
     alias _equal = equal
     alias _floor = floor
-    alias _gather = _gather_with_lambdas
     alias _gather_shape = gather_shape
+    alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pad_shape = pad_shape
@@ -1306,7 +1310,7 @@ fn transpose_shape[
 
 
 @always_inline
-fn _gather_with_lambdas[
+fn gather[
     type: DType,
     in_rank: Int,
     indices_type: DType,
@@ -1337,88 +1341,35 @@ fn _gather_with_lambdas[
     out_chain: OutputChainPtr,
 ):
     # Look through the lambda to pull the index out.
-    let axis = OptionalParamInt[Dim()](input_2_fn[axis_type, 1, 1](0).to_int())
+    alias axis_static = Dim()
+    let axis = OptionalParamInt[axis_static](
+        input_2_fn[axis_type, 1, 1](0).to_int()
+    )
 
     @parameter
     @always_inline
-    fn gather_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        # Get the gather indices.
-        var indices_index = StaticIntTuple[indices_rank]()
+    fn no_prefetch[
+        input_rank: Int, indices_rank: Int
+    ](
+        input_cooords: StaticIntTuple[input_rank],
+        indices_coords: StaticIntTuple[indices_rank],
+    ):
+        pass
 
-        # The gather can be in the form of:
-        # InTensor = <10, 20, 30, 40>
-        # Indices = <3, 6, 9>
-        # Axis = 1
-        # In this case we are inserting 3 new dimensions so the output shape is:
-        # InTensor<10, 3, 6, 9, 30, 40>
-        #
-
-        # So the index that we access the indices tensor at should be the sub
-        # indices over the input within the range of axis -> indices rank.
-        # Accessing the output at indices <1, 2, 3, 8, 4, 6>
-        # Would access the indices at <2, 3, 8>
-
-        # Get the indices of the index.
-        @always_inline
-        @parameter
-        fn indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
-
-        unroll[indices_rank, indices_get]()
-
-        # The index we are gathering.
-        let data_index = input_1_fn[indices_type, 1, indices_rank](
-            indices_index
-        ).to_int()
-
-        # Update the indices with the new data index.
-        var data_indices = StaticIntTuple[in_rank]()
-
-        let skip_factor = indices_rank - 1
-
-        # Build the indices for the input. We have replaced in index in 'axis'
-        # with an index from the indices tensor.
-        @always_inline
-        @parameter
-        fn input_indices_get[unrolled_i: Int]():
-            indices_index[unrolled_i] = idx[unrolled_i + axis.get()]
-            if unrolled_i == axis.get():
-                data_indices[unrolled_i] = data_index
-            elif unrolled_i > axis.get():
-                # Skip over any extra indices dimensions. These are essentially new dimensions.
-                data_indices[unrolled_i] = idx[unrolled_i + skip_factor]
-            else:
-                data_indices[unrolled_i] = idx[unrolled_i]
-
-        unroll[in_rank, input_indices_get]()
-
-        # Load the the data.
-        let data = input_0_fn[type, simd_width, in_rank](data_indices)
-
-        # Store it to the original index.
-        output_0_fn[type, simd_width, rank](idx, data)
-
-    # If we are gathering on the last dimension then we have to be scalar.
-    if axis.get() == in_rank - 1:
-        _elementwise_impl[
-            output_rank,
-            1,
-            single_thread_blocking_override,
-            gather_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
-        )
-    else:
-        _elementwise_impl[
-            output_rank,
-            simd_width,
-            single_thread_blocking_override,
-            gather_lambda,
-        ](
-            output.dynamic_shape,
-            out_chain,
-        )
+    _gather[
+        type,
+        in_rank,
+        indices_type,
+        indices_rank,
+        output_rank,
+        simd_width,
+        single_thread_blocking_override,
+        input_0_fn,
+        input_1_fn,
+        output_0_fn,
+        no_prefetch,
+        axis_static,
+    ](axis, input, indices, output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
