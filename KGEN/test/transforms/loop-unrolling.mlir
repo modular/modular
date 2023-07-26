@@ -240,3 +240,63 @@ kgen.func @eliminate_zero_iter_loop_with_results() {
   kgen.call @foo(%0#1) : (index) -> ()
   kgen.return
 }
+
+// CHECK-LABEL: @unroll_factor_divisible
+kgen.func @unroll_factor_divisible() -> index {
+  %idx5 = index.constant 5
+  %idx1 = index.constant 1
+
+  // CHECK:      [[IDX5:%.*]] = index.constant 5
+  // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2
+  // CHECK-NEXT: [[V0:%.*]]:2 = hlcf.for [[[IDX5]] to [[IDX1]] step [[IDX2]]] (%arg0 = [[IDX5]] : index, %arg1 = [[IDX1]] : index, %arg2 = [[IDX1]] : index) -> (index, index) {
+  // CHECK-NEXT:   [[V1:%.*]] = index.sub %arg0, %idx1
+  // CHECK-NEXT:   kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
+  // CHECK-NEXT:   [[V2:%.*]] = index.sub [[V1]], %idx1
+  // CHECK-NEXT:   kgen.call @foo([[V1]], [[V1]]) : (index, index) -> ()
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V2]] : index)] [retvals ([[V2]], [[V2]] : index, index)] [iterargs ()]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
+  // CHECK-NEXT: kgen.return [[V0]]#0 : index
+
+  %1 = hlcf.for [%idx5 to %idx1 step %idx1] (%arg0 = %idx5: index, %arg1 = %idx1: index, %arg2 = %idx1: index) -> index {
+    %0 = index.sub %arg0, %idx1
+    kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
+    hlcf.for.yield [induction_var (%0 : index)] [retvals (%0: index)] [iterargs (%0: index)]
+  } {unrollFactor = 2: index }
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @unroll_factor_not_divisible
+kgen.func @unroll_factor_not_divisible() -> index {
+  %idx5 = index.constant 5
+  %idx1 = index.constant 1
+
+  // CHECK:      [[IDX5:%.*]] = index.constant 5
+  // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[IDX3:%.*]] = index.constant 3
+  // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2
+  // CHECK-NEXT: [[V0:%.*]]:2 = hlcf.for [[[IDX5]] to [[IDX2]] step [[IDX3]]] (%arg0 = [[IDX5]] : index, %arg1 = [[IDX1]] : index, %arg2 = [[IDX1]] : index) -> (index, index) {
+  // CHECK-NEXT:   [[V2:%.*]] = index.sub %arg0, [[IDX1]]
+  // CHECK-NEXT:   kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
+  // CHECK-NEXT:   [[V3:%.*]] = index.sub [[V2]], [[IDX1]]
+  // CHECK-NEXT:   kgen.call @foo([[V2]], [[V2]]) : (index, index) -> ()
+  // CHECK-NEXT:   [[V4:%.*]] = index.sub [[V3]], [[IDX1]]
+  // CHECK-NEXT:   kgen.call @foo([[V3]], [[V3]]) : (index, index) -> ()
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V4]] : index)] [retvals ([[V4]], [[V4]] : index, index)] [iterargs ()]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
+  // CHECK-NEXT: [[V1:%.*]] = hlcf.for [[[IDX2]] to [[IDX1]] step [[IDX1]]] (%arg0 = [[IDX2]] : index, %arg1 = [[V0]]#0 : index, %arg2 = [[V0]]#1 : index) -> index {
+  // CHECK-NEXT:   [[V20:%.*]] = index.sub %arg0, [[IDX1]]
+  // CHECK-NEXT:   kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V20]] : index)] [retvals ([[V20]] : index)] [iterargs ([[V20]] : index)]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
+  // CHECK-NEXT: kgen.return [[V1]] : index
+
+  %1 = hlcf.for [%idx5 to %idx1 step %idx1] (%arg0 = %idx5: index, %arg1 = %idx1: index, %arg2 = %idx1: index) -> index {
+    %0 = index.sub %arg0, %idx1
+    kgen.call @foo(%arg1, %arg2) : (index, index) -> ()
+    hlcf.for.yield [induction_var (%0 : index)] [retvals (%0: index)] [iterargs (%0: index)]
+  } {unrollFactor = 3: index }
+
+  kgen.return %1 : index
+}
+
