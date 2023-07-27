@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <string>
 
+#include <curl/curl.h>
+
 namespace M {
 
 class HTTPContext;
@@ -62,7 +64,7 @@ public:
 
 private:
   HTTPContextRef context;
-  void *curl = nullptr;
+  CURL *curl = nullptr;
 };
 
 } // namespace M
