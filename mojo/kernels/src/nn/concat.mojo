@@ -308,6 +308,7 @@ fn _concat_inner[
         num_elems_copied += buffer_len
 
 
+@always_inline
 fn _check_input_consistency[
     rank: Int, type: DType
 ](axis: Int, inputs: _NDBufferVector[rank, type],):
