@@ -181,3 +181,42 @@ kgen.func @foo() {
   %index1 = kgen.param.constant = <1> loc(callsite(#loc at fused[#loc1, #funcLoc]))
   kgen.return loc(#funcLoc)
 } loc(#funcLoc)
+
+// -----
+
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 44,
+  scopeLine = 44,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "SomeClosure",
+  linkageName = "SomeClosure",
+  file = #file,
+  line = 325,
+  scopeLine = 325,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+#loc4 = loc(fused<#subprogram>[#loc1])
+#loc5 = loc(fused<#subprogram1>[#loc2])
+
+kgen.func @foo() {
+  %0 = kgen.stage_closure = () {
+    kgen.return loc(#loc5)
+  // CHECK: foo.mlir:325:11: error: 'kgen.stage_closure' op must have callsite location
+  } loc(#loc5)
+  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.return loc(#loc4)
+} loc(#loc4)
