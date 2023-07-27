@@ -27,7 +27,7 @@ using namespace POP;
 // liftClosureRegion
 //===----------------------------------------------------------------------===//
 
-/// Isolate a closure region from above by replacing uses of capture SSA values
+/// Isolate a closure region from above by replacing uses of captured SSA values
 /// in the region with block arguments. Certain zero-cost operations, like
 /// constants, should be cloned into the region instead of passed as a capture,
 /// since the latter has additional overhead.
@@ -42,9 +42,13 @@ static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures) {
     Operation *capturingOp = capture.getDefiningOp();
     // Clone ConstantLike operations into the region.
     if (capturingOp && capturingOp->hasTrait<OpTrait::ConstantLike>()) {
-      ImplicitLocOpBuilder b(capturingOp->getLoc(),
-                             OpBuilder::atBlockBegin(&body.front()));
+      auto b = OpBuilder::atBlockBegin(&body.front());
       Operation *cloned = b.clone(*capturingOp);
+      // We update the location of the cloned constant, as if it was inlined
+      // into the region.
+      cloned->setLoc(mlir::CallSiteLoc::get(capturingOp->getLoc(),
+                                            body.getParentOp()->getLoc()));
+
       for (auto [orig, replacement] :
            llvm::zip(capturingOp->getResults(), cloned->getResults()))
         replaceAllUsesInRegionWith(orig, replacement, body);
@@ -112,6 +116,8 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 
   // Create the call with a dummy callee.
   b.setInsertionPoint(op);
+  if (mlir::LocationAttr callLoc = op.getCallLocAttr())
+    b.setLoc(callLoc);
   auto call = b.create<CallOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
       ArrayRef<ParamDeclAttr>(), captures);
@@ -133,13 +139,13 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
   liftClosureRegion(body, captures);
-  // Add the capture arguments to the front so they can be partially applied by
+  // Add the captured arguments to the front so they can be partially applied by
   // `kgen.create_closure`.
   std::rotate(body.getArguments().begin(),
               body.getArguments().begin() + numArgs, body.getArguments().end());
 
   // Construct the signature of the lifted body.
-  OpBuilder b(op.getContext());
+  ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
   auto functionType = b.getFunctionType(body.getArgumentTypes(),
                                         op.getType().getValueResults());
   auto none = TypeArrayAttr::get(op.getContext(), {});
@@ -164,9 +170,11 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
       });
 
   b.setInsertionPoint(op);
+  if (mlir::LocationAttr callLoc = op.getCallLocAttr())
+    b.setLoc(callLoc);
   auto create = b.create<CreateClosureOp>(
-      op.getLoc(), op.getType(),
-      SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig), captures);
+      op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
+      captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 
