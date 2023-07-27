@@ -65,7 +65,7 @@ from MatmulUtils import (
     search_mm_config,
 )
 
-from Pad import pad_shape
+from Pad import pad as _pad, pad_shape
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD
@@ -123,6 +123,7 @@ fn MOGGExport():
     alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
+    alias _pad = pad
     alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -966,6 +967,36 @@ fn mean[
             wrapped_output_div,
             reduce_impl,
         ](input_buffer, 0, reduce_dim, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# Pad op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn pad[
+    rank: Int,
+    type: DType,
+    paddings_type: DType,
+    constant_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    paddings_buf: NDBuffer[2, DimList.create_unknown[2](), paddings_type],
+    constant_buf: NDBuffer[1, DimList.create_unknown[1](), constant_type],
+    output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    @always_inline
+    fn func(out_chain: OutputChainPtr):
+        let paddings_ptr = paddings_buf.data
+        let constant_simd = constant_buf[0]
+        _pad(output_buf, input_buf, paddings_ptr, constant_simd)
+        out_chain.mark_ready()
+
+    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
 
 
 # ===----------------------------------------------------------------------===#
