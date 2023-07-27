@@ -520,12 +520,12 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
     scope = b.create<LIT::AsyncExecuteOp>(callee->getParentOp()->getLoc(),
-                                          asyncCall.getType());
+                                          asyncCall.getType(), call->getLoc());
     b.createBlock(&scope->getRegions().front());
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
     scope = b.create<StageClosureOp>(callee->getParentOp()->getLoc(),
-                                     createClosure.getType());
+                                     createClosure.getType(), call->getLoc());
     b.createBlock(&scope->getRegions().front());
     for (BlockArgument arg :
          callee->getArguments().drop_front(createClosure.getCaptures().size()))
@@ -539,8 +539,6 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
        llvm::zip(call->getOperands(), callee->getArguments()))
     map.map(map.lookupOrDefault(genArg), callArg);
 
-  bool scopeIsNotSubprogram =
-      !llvm::isa_and_present<DebugInfo::SubprogramScoped>(scope);
   Operation *terminator = callee->front().getTerminator();
   // Handle debug info as we clone.
   for (Operation &op : callee->front()) {
@@ -556,15 +554,13 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
       if (isa<DebugInfo::ValueOp>(clonedOp))
         return clonedOp->erase();
 
-      // Update locations to be CallSiteLoc.
+      // Update locations if needed.
       if (alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug) {
         clonedOp->setLoc(call.getLoc());
-      } else if (scopeIsNotSubprogram &&
-                 !isa<DebugInfo::SubprogramScoped>(clonedOp)) {
-        // Nested functions have their own subprogram scope, so we do not update
-        // their locations, or the ops within their scopes.
-        clonedOp->setLoc(
-            mlir::CallSiteLoc::get(clonedOp->getLoc(), call.getLoc()));
+      } else if (!scope) {
+        // If the scope is not null, it must be defined a nested function, and
+        // we do not update any locations.
+        DebugInfo::updateInlinedLoc(clonedOp, call.getLoc());
       }
     });
   }
@@ -2021,22 +2017,32 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
 
-/// Concretizes the location of an op or a block argument.
-template <typename ArgOrOp>
-static LogicalResult concretizeLoc(ArgOrOp &argOrOp, ImplNode *inode) {
-  Location loc = argOrOp.getLoc();
+/// Concretizes the location that may contains parameters. If unsuccessful, sets
+/// the ImplNode to the error state and returns null.
+static mlir::LocationAttr concretizeLoc(mlir::LocationAttr loc,
+                                        ImplNode *inode) {
   auto exprResult =
       inode->getEvaluator().concretizeParameterExpr(inode, loc, loc, true);
   if (exprResult.isError()) {
     inode->setToError(exprResult.takeError());
-    return failure();
-  } else if (!*exprResult) {
+    return {};
+  }
+  if (LLVM_UNLIKELY(!*exprResult)) {
     inode->setToError(
         ErrorTree(loc, "conretized parameter expression in location is null"));
-    return failure();
+    return {};
   }
-  argOrOp.setLoc(cast<Location>(*exprResult));
-  return success();
+  return cast<mlir::LocationAttr>(*exprResult);
+}
+
+/// Concretizes the location of an op or a block argument.
+template <typename ArgOrOp>
+static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
+  if (mlir::LocationAttr newLocAttr = concretizeLoc(argOrOp.getLoc(), inode)) {
+    argOrOp.setLoc(newLocAttr);
+    return success();
+  }
+  return failure();
 };
 
 /// Try extracting a short name from a mangled name.
@@ -2253,15 +2259,21 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // processed all kgen.param.decl ops.
     onComplete = [&](ImplNode *inode) -> LogicalResult {
       inode->func->walk([&](Operation *op) -> WalkResult {
-        if (failed(concretizeLoc(*op, inode)))
+        if (failed(concretizeLocOf(*op, inode)))
           return WalkResult::interrupt();
+
+        // To be defensive, we only concretize location attributes if we know
+        // what we are dealing with.
+        if (auto callable = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
+          if (mlir::LocationAttr callLoc = callable.getCallLocAttr())
+            callable.setCallLocAttr(concretizeLoc(callLoc, inode));
 
         // When elaboration is complete, only the first block in any region is
         // valid (any other block may be illegal, e.g. due to how kgen.param.if
         // is handled). So we only need to go through the region arguments.
         for (Region &r : op->getRegions()) {
           for (BlockArgument arg : r.getArguments())
-            if (failed(concretizeLoc(arg, inode)))
+            if (failed(concretizeLocOf(arg, inode)))
               return WalkResult::interrupt();
         }
 

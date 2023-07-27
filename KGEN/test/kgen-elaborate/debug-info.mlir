@@ -25,12 +25,15 @@
 // CHECK-DAG: #[[LOC_TRY_FILE:.*]] = loc("silly.mlir":17:3)
 // CHECK-DAG: #[[LOC_TRY:.*]] = loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])
 #locTry = loc("silly.mlir":17:3)
+// CHECK-DAG: #[[FILE_LOC2:.*]] = loc("test.mlir":3:10)
+// CHECK-DAG: #[[CALL_LOC:.*]] = loc(fused<#[[SP]]>[#[[FILE_LOC2]]])
+#loc10 = loc(fused<#callerSp>["test.mlir":2:3])
 
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index
 kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> {
-  // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
+  // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC]])
   %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
-  // CHECK: debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC:.*]])
+  // CHECK: debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC]])
   debuginfo.value #local_variable = %0 : !kgen.paramref<ty> loc(#loc11)
   // CHECK: kgen.param.constant = <17> loc(#[[FW_LOC:.*]])
   %1 = kgen.param.constant = <17> loc(#locFwParam)
@@ -49,11 +52,11 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -
 
   // CHECK: %1 = kgen.stage_closure
   // CHECK:   kgen.return loc(#[[LOC_CL:.*]])
-  // CHECK: } loc(#[[LOC_CL]])
-  kgen.param.declare.region SomeClosure = (%arg0: index) capturing {
+  // CHECK: } callLoc(#[[CALL_LOC]]) loc(#[[LOC_CL]])
+  kgen.param.declare.region SomeClosure = (%arg0: index) {
     kgen.return loc(#locClosure)
   } loc(#locClosure)
-  %2 = kgen.create_closure [<>(index) capturing -> (): SomeClosure]() loc(fused<#callerSp>[])
+  %2 = kgen.create_closure [<>(index) capturing -> (): SomeClosure]() loc(#loc11)
 
   // CHECK: kgen.return %[[RES]] : index loc(#[[SP_LOC:.*]])
   kgen.return %0 : !kgen.paramref<ty> loc(#loc10)
@@ -73,14 +76,11 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 // CHECK-DAG: #[[FILE_LOC1:.*]] = loc("test.mlir":2:3)
 // CHECK-DAG: #[[SP_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC1]]])
 
-// CHECK-DAG: #[[FILE_LOC2:.*]] = loc("test.mlir":3:10)
-// CHECK-DAG: #[[CALL_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC2]]])
-
 // CHECK-DAG: #[[FILE_LOC3:.*]] = loc("test.mlir":4:3)
 // CHECK-DAG: #[[PARAM_REF_LOC:.*]] = loc(fused<1 : index>[#[[FILE_LOC3]]])
 // CHECK-DAG: #[[FW_LOC]] = loc(fused<#[[SP]]>[#[[PARAM_REF_LOC]]])
 
-#loc10 = loc(fused<#callerSp>["test.mlir":2:3])
+
 #loc11 = loc(fused<#callerSp>["test.mlir":3:10])
 #paramRefLoc = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
 #locFwParam = loc(fused<#callerSp>[#paramRefLoc])

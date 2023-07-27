@@ -936,7 +936,12 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
 // StageClosureOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionLike]> {
+// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
+def Builtin_LocationAttr : Builtin_Attr<"Location", []> {}
+
+def KGEN_StageClosureOp : KGENOp<"stage_closure",
+  [Pure, FunctionLike, DebugInfo_InlinedSubprogramScoped]
+>{
   let summary = "Stage a closure declaring a concrete region";
   let description = [{
     The `kgen.stage_closure` operation declares a named concrete region. The
@@ -951,11 +956,14 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure", [Pure, FunctionLike]> {
     }
     ```
   }];
+
+  let arguments = (ins OptionalAttr<Builtin_LocationAttr>:$callLoc);
   let results = (outs KGEN_SignatureType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
     custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
+    (`callLoc` `(` $callLoc^ `)`)?
   }];
 
   let extraClassDeclaration = [{

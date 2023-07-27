@@ -105,6 +105,10 @@ void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
 /// recursively walking up through a chain of inlined locations if needed,
 /// always following the caller location.
 ErrorOr<DebugInfo::DIScopeAttr> getScopeWithinBody(Location loc);
+
+/// Update the location of the op as if it was inlined at the given caller
+/// location, handling special location interfaces.
+void updateInlinedLoc(Operation *op, Location callerLoc);
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H
