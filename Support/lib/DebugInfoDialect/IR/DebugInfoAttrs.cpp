@@ -150,9 +150,9 @@ ErrorOr<DIScopeAttr> DebugInfo::getScopeWithinBody(Location loc) {
 }
 
 void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc) {
-  if (auto callable = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
-    if (mlir::LocationAttr callLoc = callable.getCallLocAttr())
-      callable.setCallLocAttr(mlir::CallSiteLoc::get(callLoc, callerLoc));
+  if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
+    if (mlir::LocationAttr callLoc = inlined.getCallLocAttr())
+      inlined.setCallLocAttr(mlir::CallSiteLoc::get(callLoc, callerLoc));
   } else if (!isa<DebugInfo::SubprogramScoped>(op)) {
     op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callerLoc));
   }

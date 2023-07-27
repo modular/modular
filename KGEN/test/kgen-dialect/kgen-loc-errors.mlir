@@ -40,14 +40,6 @@ kgen.generator @foo() {
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1,
-  alignInBits = 32
-> : !debuginfo.unresolved<i32>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -76,14 +68,6 @@ kgen.func @foo() {
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1,
-  alignInBits = 32
-> : !debuginfo.unresolved<i32>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -112,14 +96,6 @@ kgen.func @foo() {
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1,
-  alignInBits = 32
-> : !debuginfo.unresolved<i32>
 
 #loc = loc("foo.mlir":7:8)
 #loc1 = loc("bar.mlir":5:6)
@@ -195,14 +171,6 @@ kgen.func @foo() {
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
-#local_variable = #debuginfo.local_variable<
-  scope = #subprogram,
-  name = "foo",
-  file = #file,
-  line = 10,
-  arg = 1,
-  alignInBits = 32
-> : !debuginfo.unresolved<i32>
 
 #loc = loc("foo.mlir":7:8)
 #loc1 = loc("bar.mlir":5:6)

@@ -118,7 +118,7 @@ kgen.func @no_hoist() {
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
     lit.async.return  loc(#loc5)
-  } {inliner_debuginfo_update = 1 : i8} loc(#loc5)
+  } loc(#loc5)
   kgen.return loc(#loc4)
 } loc(#loc4)
 
@@ -132,6 +132,6 @@ kgen.func @hoist() {
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
     pop.store %array, %1 : !pop.pointer<array<1, index>>
     lit.async.return
-  } {inliner_debuginfo_update = 1 : i8}
+  }
   kgen.return
 }
