@@ -12,7 +12,9 @@
 #include "LLCL/Support/Telemetry/Instruments.h"
 #include "LLCL/Support/Telemetry/Logs.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include <variant>
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/logs/event_logger_provider.h"
 #include "opentelemetry/logs/logger_provider.h"
@@ -39,8 +41,18 @@ class ManualExportingMetricReader;
 /// subject to change.
 class TelemetryContext : public LLCL::ReferenceCounted<TelemetryContext> {
 public:
-  // TODO: add options, like exporter options (HTTP URL, file name).
-  TelemetryContext();
+  /// This is just a copy of the OTel OwnedAttributeValue - we can use this to
+  /// provide resources to the telemetry context. We don't support the lists
+  /// yet, we can add those as necessary.
+  using AttributeValue =
+      std::variant<bool, int32_t, int64_t, uint32_t, double, StringRef,
+                   ArrayRef<bool>, ArrayRef<int32_t>, ArrayRef<int64_t>,
+                   ArrayRef<uint32_t>, ArrayRef<double>, uint64_t,
+                   ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
+
+  /// Construct a TelemetryContext with additional resource strings. These will
+  /// be added to the OTel resources that are attached to every log message.
+  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {});
 
   ~TelemetryContext();
 

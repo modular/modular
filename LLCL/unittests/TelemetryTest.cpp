@@ -237,4 +237,41 @@ TEST(Telemetry, Logger) {
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
+
+TEST(Telemetry, Resources) {
+  TempFile tmpFile = setupLogFile("log");
+
+  llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
+  StringRef resourceVal = "aResource value here";
+  extras["aResource"] = resourceVal;
+  extras["aNumber"] = 32;
+
+  RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create(extras);
+
+  auto logger = ctx->getLogger("basic.log");
+  logger->getInfo("test") << StringRef("foo");
+  ctx->flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        auto getLineStartingAt = [&](auto pos) {
+          StringRef str = mbuf->getBuffer().substr(pos);
+          return str.take_until([](char c) { return c == '\n'; });
+        };
+
+        auto resourcePos = mbuf->getBuffer().find("aResource");
+        StringRef resourceLine = getLineStartingAt(resourcePos);
+        EXPECT_EQ(resourceLine.split(':').second.trim(), resourceVal);
+
+        auto numberPos = mbuf->getBuffer().find("aNumber");
+        StringRef numberLine = getLineStartingAt(numberPos);
+        EXPECT_EQ(numberLine.split(':').second.trim(), "32");
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
 #endif // MODULAR_ENABLE_TELEMETRY
