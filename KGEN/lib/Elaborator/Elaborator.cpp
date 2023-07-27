@@ -10,7 +10,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Elaborator.h"
-#include "Cache/CacheDialect/CachedTransform.h"
 #include "IREvaluator.h"
 #include "KGEN/CLOptions.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
@@ -20,7 +19,6 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
-#include "LLCL/Support/AwaitingMutex.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -847,6 +845,9 @@ private:
   /// The callgraph being expanded.
   ExpansionGraph g;
 
+  /// The mutex to use when verifying elaborated function candidates.
+  llvm::sys::SmartRWMutex<true> verifyMutex;
+
   /// This is the cached parameter collector analysis.
   ThreadLocalCache<ParameterCollector::Analysis> paramCache;
 
@@ -961,33 +962,37 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
   std::string verificationErrorStr;
   llvm::raw_string_ostream verificationError(verificationErrorStr);
   std::optional<Location> verificationLoc;
-  mlir::ScopedDiagnosticHandler diagHandler(
-      func.getContext(), [&](Diagnostic &diag) -> LogicalResult {
-        // Combine multiple verification errors.
-        if (verificationLoc) {
-          verificationError << "; " << diag.str();
-          verificationLoc =
-              FusedLoc::get(verificationLoc->getContext(),
-                            {*verificationLoc, diag.getLocation()});
-        } else {
-          verificationError << diag.str();
-          verificationLoc = diag.getLocation();
-        }
-        return success();
-      });
+  auto diagHandler = [&](Diagnostic &diag) -> LogicalResult {
+    // Combine multiple verification errors.
+    if (verificationLoc) {
+      verificationError << "; " << diag.str();
+      verificationLoc = FusedLoc::get(verificationLoc->getContext(),
+                                      {*verificationLoc, diag.getLocation()});
+    } else {
+      verificationError << diag.str();
+      verificationLoc = diag.getLocation();
+    }
+    return success();
+  };
+
   // C-exported functions are required to have valid C identifiers. During
   // elaboration, mangled function names may trigger a verifier error. Names are
   // updated after elaboration but reset them here temporarily.
   StringAttr mangledName = func.getSymNameAttr();
   func.setSymNameAttr(node->parent->gen.getSymNameAttr());
   auto reset = llvm::make_scope_exit([&] { func.setSymNameAttr(mangledName); });
-  // Verify the function.
+  // Verify the function. Acquire a lock around the verifier because other
+  // threads could be verifying functions at the same time.
   LogicalResult result = success();
   {
     TimeTraceScope<> traceScope("verifyFunction");
+    llvm::sys::SmartScopedWriter<true> lock(verifyMutex);
+    mlir::ScopedDiagnosticHandler handler(func.getContext(),
+                                          std::move(diagHandler));
     result = verify(func);
   }
   if (failed(result)) {
+    assert(verificationLoc && "was the diagnostic lost?");
     node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
                                                      verificationError.str()));
     LLVM_DEBUG(logger.scope("Result: Failure")
