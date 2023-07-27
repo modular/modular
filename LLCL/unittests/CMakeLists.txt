@@ -14,6 +14,7 @@ add_modular_unittest(
   AsyncValueTest.cpp
   DebuggingAllocatorsTest.cpp
   GenericUniquePtrTest.cpp
+  TelemetryTest.cpp
   TypeIDTest.cpp
   RuntimeTest.cpp
 
