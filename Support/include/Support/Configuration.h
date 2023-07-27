@@ -70,6 +70,13 @@ public:
   /// key.
   void setValue(StringRef key, StringRef value) { kv[key.lower()] = value; }
 
+  /// Given a section name, get a list of all the values in that section. Global
+  /// properties (properties without a section) can be listed by simply using an
+  /// empty string for the section.
+  void
+  getValuesInSection(StringRef section,
+                     SmallVectorImpl<std::pair<StringRef, StringRef>> &values);
+
   /// Flush the configs to the provided stream.
   // TODO: Preserve user comments.
   void flush(llvm::raw_ostream &os);
