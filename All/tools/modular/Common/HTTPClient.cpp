@@ -9,6 +9,8 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/Support/FormatVariadic.h"
 
+#include <curl/curl.h>
+
 using namespace M;
 
 HTTPContextRef HTTPContext::init() {
