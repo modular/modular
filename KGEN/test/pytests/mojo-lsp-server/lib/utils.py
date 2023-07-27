@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Optional, TypeVar
 
 from lsprotocol.types import (
+    DefinitionParams,
     DidOpenTextDocumentParams,
-    Hover,
     HoverParams,
     InitializeParams,
     Position,
@@ -107,4 +107,9 @@ class Requests:
     async def hover(self, doc: Document, pos: Position):
         return await self.client.text_document_hover_async(
             params=HoverParams(position=pos, text_document=doc.identifier)
+        )
+
+    async def definition(self, doc: Document, pos: Position):
+        return await self.client.text_document_definition_async(
+            params=DefinitionParams(position=pos, text_document=doc.identifier)
         )
