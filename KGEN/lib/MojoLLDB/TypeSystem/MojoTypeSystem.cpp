@@ -343,13 +343,9 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   Type mlirType = refType.getMLIRType();
 
   if (auto refType = dyn_cast<LIT::REPLResultRefType>(mlirType)) {
-    if (pointeeOrElementCompilerType) {
-      pointeeOrElementCompilerType->SetCompilerType(
-          weak_from_this(),
-          const_cast<void *>(refType.getElementType().getAsOpaquePointer()));
-    }
-    return lldb::eTypeIsReference | lldb::eTypeHasChildren |
-           lldb::eTypeHasValue;
+    return GetTypeInfo(
+        getCompilerTypeFromType(refType.getElementType()).GetOpaqueQualType(),
+        pointeeOrElementCompilerType);
   }
 
   if (auto ptrType = dyn_cast<POP::PointerType>(mlirType)) {
@@ -501,7 +497,12 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   MojoASTTypeRef refType(type);
   Type mlirType = refType.getMLIRType();
 
-  if (isa<POP::PointerType, LIT::REPLResultRefType>(mlirType))
+  if (auto replRefType = dyn_cast<LIT::REPLResultRefType>(mlirType))
+    return GetNumChildren(getCompilerTypeFromType(replRefType.getElementType())
+                              .GetOpaqueQualType(),
+                          omitEmptyBaseClasses, exeCtx);
+
+  if (isa<POP::PointerType>(mlirType))
     return 1;
 
   if (auto simdTy = dyn_cast<POP::SIMDType>(mlirType)) {
@@ -540,10 +541,16 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   MojoASTTypeRef refType(type);
   Type mlirType = refType.getMLIRType();
 
-  // ReplResultRefType only has one child, so just return the unwrapped
-  // reference type
-  if (auto replRefType = dyn_cast<LIT::REPLResultRefType>(mlirType))
-    return getCompilerTypeFromType(replRefType.getElementType());
+  // Unwrap the REPLResultRefType and return the child type of it's element type
+  if (auto replRefType = dyn_cast<LIT::REPLResultRefType>(mlirType)) {
+    return GetChildCompilerTypeAtIndex(
+        getCompilerTypeFromType(replRefType.getElementType())
+            .GetOpaqueQualType(),
+        exeCtx, idx, transparent_pointers, omitEmptyBaseClasses,
+        ignoreArrayBounds, childName, childByteSize, childByteOffset,
+        childBitfieldBitSize, childBitfieldBitOffset, childIsBaseClass,
+        childIsDerefOfParent, valobj, languageFlags);
+  }
 
   // Pointer only has one child, so just return the unwrapped pointer type
   if (isa<POP::PointerType>(mlirType))
