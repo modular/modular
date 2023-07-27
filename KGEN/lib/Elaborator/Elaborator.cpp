@@ -32,7 +32,6 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
-#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -946,10 +945,13 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
 
 void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
   TimeTraceScope<> traceScope("finalizeAndVerifyFunction");
-  // Erase any unreachable blocks that might have arisen.
+  // Erase everything but the entry blocks of each region.
   FuncOp func = node->func;
-  mlir::IRRewriter b(func.getContext());
-  (void)mlir::eraseUnreachableBlocks(b, func.getBodyRegion());
+  func.walk<mlir::WalkOrder::PreOrder>([](Operation *op) {
+    for (Region &region : op->getRegions())
+      for (Block &block : llvm::make_early_inc_range(llvm::drop_begin(region)))
+        block.erase();
+  });
 
   // Check that the thing we just built is correct IR!  We want to catch any
   // errors produced by the verify pass, we don't want them to actually get
@@ -2466,11 +2468,6 @@ bool ElaboratorImpl::diagnoseAndBreakRecursion(unsigned generation,
 LogicalResult ElaboratorImpl::run(ModuleOp theModule,
                                   ArrayRef<GeneratorOp> primaryGenerators) {
   LLVM_DEBUG(logger << "Starting Elaboration\n");
-
-  // Detect common errors early and report them cleanly.
-  for (auto &op : theModule.getOps())
-    if (op.getName().getStringRef() == "lit.func")
-      return op.emitError("unlowered lit.func discovered in KGEN elaborator");
 
   // Find any kgen.func we have already - they're already elaborated, and we do
   // not want to re-process them. Add concrete ImplNodes for each one.
