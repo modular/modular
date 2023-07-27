@@ -1072,6 +1072,11 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
     }
     loadModulesFromCache(modulesToLoad);
   }
+
+  if (parserListener)
+    parserListener->onModuleDecl(MojoASTDeclRef(&moduleDecl),
+                                 moduleDecl.getLoc());
+
   return moduleState;
 }
 

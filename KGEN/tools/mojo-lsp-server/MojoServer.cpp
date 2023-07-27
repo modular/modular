@@ -44,7 +44,7 @@ getURIFromLoc(llvm::SourceMgr &mgr, SMLoc loc,
 
 /// Returns true if the given location is in the main file of the source
 /// manager.
-static bool isMainFileLoc(llvm::SourceMgr &mgr, SMLoc loc) {
+static bool isMainFileLoc(const llvm::SourceMgr &mgr, SMLoc loc) {
   return mgr.FindBufferContainingLoc(loc) == mgr.getMainFileID();
 }
 
@@ -71,7 +71,7 @@ getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
 }
 
 /// Returns a `Range` for a given `text` that starts at the location `loc`.
-static lsp::Range getRangeForText(llvm::SourceMgr &sourceMgr, SMLoc loc,
+static lsp::Range getRangeForText(const llvm::SourceMgr &sourceMgr, SMLoc loc,
                                   StringRef text) {
   auto [line, col] = sourceMgr.getLineAndColumn(loc);
   return {lsp::Position(line - 1, col - 1),
@@ -85,10 +85,9 @@ static lsp::Range getRangeForText(llvm::SourceMgr &sourceMgr, SMLoc loc,
 namespace {
 /// Common representation for any kind of symbol.
 struct Symbol {
-  Symbol(MojoASTDeclRef declRef, StringRef identifier,
-         const lsp::Range &identifierRange)
-      : identifier(identifier), declRef(declRef),
-        identifierRange(identifierRange) {}
+  Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
+      : identifier(identifier), declRef(declRef), identifierLoc(identifierLoc) {
+  }
 
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
@@ -96,14 +95,19 @@ struct Symbol {
   /// Return a nicely formatted markdown text of the declaration of this symbol.
   std::string getMarkdownDeclaration() const;
 
+  /// Get the LSP range of the identifier at the declaration point.
+  lsp::Range getIdentifierRange(const llvm::SourceMgr &sourceMgr) const {
+    return getRangeForText(sourceMgr, identifierLoc, identifier);
+  }
+
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
 
   /// API for accessing the internals of this decl.
   MojoASTDeclRef declRef;
 
-  /// The document range where the symbol name was declared.
-  lsp::Range identifierRange;
+  /// The location of the identifier of this decl.
+  SMLoc identifierLoc;
 };
 } // namespace
 
@@ -122,14 +126,16 @@ std::string Symbol::getMarkdownDeclaration() const {
                           docString);
     }
 
-    os << llvm::formatv(R"(
+    if (auto snippet = view.getDeclarationSnippet(); !snippet.empty()) {
+      os << llvm::formatv(R"(
 ---
 
 ###
 ```mojo
 {0}
 ```)",
-                        view.getDeclarationSnippet());
+                          snippet);
+    }
     return buff;
   };
 
@@ -150,26 +156,35 @@ namespace {
 /// Database of symbols in a single file.
 class SymbolIndex {
 public:
-  SymbolIndex() : rangeToSymbol(allocator) {}
+  SymbolIndex(const llvm::SourceMgr &sourceMgr)
+      : sourceMgr(sourceMgr), rangeToSymbol(allocator) {}
 
   /// Store a new symbol in this index.
   template <typename... Args>
-  void registerSymbol(MojoASTDeclRef declRef, Args &&...args);
+  void registerSymbol(MojoASTDeclRef declRef,
+                      std::optional<StringRef> identifier, Args &&...args);
 
-  /// Store a new reference to a symbol in this index. No error is thrown if
-  /// the expected symbol doesn't exist in the index.
-  void registerRef(MojoASTDeclRef declRef, const lsp::Range &refRange);
+  /// Store a new reference to a symbol. No error is thrown if the expected
+  /// symbol doesn't exist in the index.
+  void registerRef(MojoASTDeclRef declRef, SMLoc loc, StringRef spelling);
 
   /// Look for the symbol whose declaration or references contain the given
   /// position in the document.
   Symbol *getSymbolAt(const lsp::Position &position) const;
 
 private:
+  /// Store the range corresponding to the reference or the declaration of a
+  /// symbol in the main doc.
+  void insertRangeInMainDoc(const lsp::Range &range, Symbol &symbol) {
+    rangeToSymbol.insert(range.start, range.end, &symbol);
+  }
+
   using MapT = llvm::IntervalMap<
       lsp::Position, Symbol *,
       llvm::IntervalMapImpl::NodeSizer<lsp::Position, Symbol *>::LeafSize,
       llvm::IntervalMapHalfOpenInfo<lsp::Position>>;
 
+  const llvm::SourceMgr &sourceMgr;
   MapT::Allocator allocator;
   MapT rangeToSymbol;
   /// Mapping from an opaque pointer of a MojoASTDeclRef to an LSP Symbol.
@@ -178,20 +193,37 @@ private:
 } // namespace
 
 template <typename... Args>
-void SymbolIndex::registerSymbol(MojoASTDeclRef declRef, Args &&...args) {
+void SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
+                                 std::optional<StringRef> identifier,
+                                 Args &&...args) {
+  // We don't index symbols without a proper name.
+  if (!identifier.has_value() || identifier->empty())
+    return;
+
   auto [it, _] = symbolTable.try_emplace(
-      declRef.getAsVoidPointer(), std::make_unique<Symbol>(declRef, args...));
-  Symbol *symbol = it->second.get();
-  rangeToSymbol.insert(symbol->identifierRange.start,
-                       symbol->identifierRange.end, symbol);
+      declRef.getAsVoidPointer(),
+      std::make_unique<Symbol>(declRef, *identifier, args...));
+  Symbol &symbol = *it->second;
+
+  // We only add symbols to the range map if they belong to the main file.
+  if (isMainFileLoc(sourceMgr, symbol.identifierLoc))
+    insertRangeInMainDoc(symbol.getIdentifierRange(sourceMgr), symbol);
 }
 
-void SymbolIndex::registerRef(MojoASTDeclRef declRef,
-                              const lsp::Range &refRange) {
+void SymbolIndex::registerRef(MojoASTDeclRef declRef, SMLoc loc,
+                              StringRef spelling) {
+  // We don't index empty spellings nor references in files other than the main
+  // one.
+  if (spelling.empty() || !isMainFileLoc(sourceMgr, loc))
+    return;
+
   auto it = symbolTable.find(declRef.getAsVoidPointer());
+  // If haven't indexed the decl, we do nothing.
   if (it == symbolTable.end())
     return;
-  rangeToSymbol.insert(refRange.start, refRange.end, it->getSecond().get());
+
+  insertRangeInMainDoc(getRangeForText(sourceMgr, loc, spelling),
+                       *it->getSecond());
 }
 
 Symbol *SymbolIndex::getSymbolAt(const lsp::Position &position) const {
@@ -209,7 +241,7 @@ struct MojoDocument;
 /// features like symbol indices.
 class LSPParserListener : public MojoParserListener {
 public:
-  LSPParserListener(MojoDocument &mainDoc, llvm::SourceMgr &sourceMgr)
+  LSPParserListener(MojoDocument &mainDoc, const llvm::SourceMgr &sourceMgr)
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
 
   void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) override;
@@ -218,6 +250,11 @@ public:
                       llvm::SMLoc identifierLoc) override;
 
   void onFunctionDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
+  void onModuleDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
+  void onModuleImport(MojoASTDeclRef declRef, StringRef spelling,
+                      SMLoc loc) override;
 
   void onStructDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
@@ -228,12 +265,9 @@ public:
   void onRef(MojoASTDeclRef declRef, StringRef spelling, SMLoc loc) override;
 
 private:
-  /// Reusable onDecl listener for most decls.
-  void onDeclCommon(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
-
   /// The main doc for which parsing was initiated.
   MojoDocument &mainDoc;
-  llvm::SourceMgr &sourceMgr;
+  const llvm::SourceMgr &sourceMgr;
 };
 } // namespace
 
@@ -330,7 +364,7 @@ private:
     Context(LLCL::Runtime &runtime, MojoDocument &mainDoc)
         : mlirContext(MLIRContext::Threading::DISABLED),
           parserConfig(&mlirContext, runtime, compilationOptions),
-          parserListener(mainDoc, sourceMgr) {
+          symbolIndex(sourceMgr), parserListener(mainDoc, sourceMgr) {
       // We add the main doc to the SourceMgr here to ensure it's considered the
       // "main" file.
       auto buffer = llvm::MemoryBuffer::getMemBuffer(mainDoc.contents,
@@ -352,6 +386,7 @@ private:
     MLIRContext mlirContext;
     MojoParserConfig parserConfig;
     llvm::SourceMgr sourceMgr;
+    SymbolIndex symbolIndex;
     LSPParserListener parserListener;
     std::unique_ptr<MojoParserContext> parserContext;
   };
@@ -387,9 +422,6 @@ private:
   /// of the file.
   std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
       fixits;
-
-  /// An index of all symbols in this document.
-  SymbolIndex symbolIndex;
 
   /// The overall parser context.
   std::unique_ptr<Context> context;
@@ -677,8 +709,12 @@ void MojoDocument::onDefinition(
 
 std::optional<lsp::Location>
 MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
-  if (Symbol *symbol = symbolIndex.getSymbolAt(pos))
-    return lsp::Location(uri, symbol->identifierRange);
+  if (Symbol *symbol = context->symbolIndex.getSymbolAt(pos))
+    if (auto symbolUri =
+            getURIFromLoc(context->sourceMgr, symbol->identifierLoc, uri))
+      return lsp::Location(*symbolUri, getRangeForText(context->sourceMgr,
+                                                       symbol->identifierLoc,
+                                                       symbol->identifier));
 
   return std::nullopt;
 }
@@ -695,11 +731,11 @@ void MojoDocument::onHover(
 
 std::optional<lsp::Hover>
 MojoDocument::onHoverSync(const lsp::Position &pos) const {
-  Symbol *symbol = symbolIndex.getSymbolAt(pos);
+  Symbol *symbol = context->symbolIndex.getSymbolAt(pos);
   if (!symbol)
     return std::nullopt;
 
-  lsp::Hover hover(symbol->identifierRange);
+  lsp::Hover hover(symbol->getIdentifierRange(context->sourceMgr));
   hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
   hover.contents.value = symbol->getMarkdownDeclaration();
   return hover;
@@ -709,58 +745,58 @@ MojoDocument::onHoverSync(const lsp::Position &pos) const {
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
-void LSPParserListener::onDeclCommon(MojoASTDeclRef declRef,
-                                     SMLoc identifierLoc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    return;
-
-  if (std::optional<StringRef> identifier = declRef.getName()) {
-    mainDoc.symbolIndex.registerSymbol(
-        declRef, *identifier,
-        getRangeForText(sourceMgr, identifierLoc, *identifier));
-  }
-}
-
 void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
                                     SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
 }
 
 void LSPParserListener::onArgumentDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
 }
 
 void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
+}
+
+void LSPParserListener::onModuleDecl(MojoASTDeclRef declRef,
+                                     SMLoc identifierLoc) {
+  // We don't index the module of the main file.
+  if (!isMainFileLoc(sourceMgr, identifierLoc))
+    mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                                identifierLoc);
+}
+
+void LSPParserListener::onModuleImport(MojoASTDeclRef declRef,
+                                       StringRef spelling, SMLoc loc) {
+  mainDoc.context->symbolIndex.registerRef(declRef, loc, spelling);
 }
 
 void LSPParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
                                           SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
 }
 
 void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
                                      SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
 }
 
 void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                        SMLoc identifierLoc) {
-  onDeclCommon(declRef, identifierLoc);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
 }
 
 void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
                               SMLoc loc) {
-  // For now we don't index files other than the main one.
-  if (!isMainFileLoc(sourceMgr, loc) ||
-      !isMainFileLoc(sourceMgr, declRef.getLoc()))
-    return;
-
-  mainDoc.symbolIndex.registerRef(declRef,
-                                  getRangeForText(sourceMgr, loc, spelling));
+  mainDoc.context->symbolIndex.registerRef(declRef, loc, spelling);
 }
 
 //===----------------------------------------------------------------------===//

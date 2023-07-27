@@ -124,6 +124,16 @@ public:
   /// up.
   virtual void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc);
 
+  /// Notify the listener that a new `module` decl has been created by the
+  /// parser.
+  virtual void onModuleDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
+
+  /// Notify the listener that a new import of the form `from Module [as Alias]`
+  /// has been resolved by the parser. The provided location and spelling
+  /// correspond to the module name and not to its optional alias.
+  virtual void onModuleImport(MojoASTDeclRef declRef, StringRef spelling,
+                              llvm::SMLoc loc);
+
   /// Notify the listener that a new `struct` declaration has been resolved by
   /// the parser.
   virtual void onStructDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);

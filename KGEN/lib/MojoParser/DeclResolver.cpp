@@ -439,6 +439,11 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
                                          StringAttr moduleName,
                                          StringAttr importName, SMLoc loc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
+
+  if (shared.parserListener)
+    shared.parserListener->onModuleImport(MojoASTDeclRef(&module), moduleName,
+                                          loc);
+
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
                           /*declName=*/StringAttr(), moduleName, loc, dest);
 }
