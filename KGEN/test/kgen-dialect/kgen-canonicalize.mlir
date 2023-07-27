@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalize %s | FileCheck %s
+// RUN: kgen-opt -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
@@ -39,7 +39,7 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
 }
 
 // CHECK-LABEL: kgen.func @cast_from_folds
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32>) -> !pop.scalar<f32> {
+// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32> loc({{.*}})) -> !pop.scalar<f32> {
 kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
   // A-B-A cast.
@@ -51,7 +51,7 @@ kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 }
 
 // CHECK-LABEL: kgen.func @cast_to_folds
-// CHECK-SAME: (%[[ARG0:.*]]: f32) -> f32 {
+// CHECK-SAME: (%[[ARG0:.*]]: f32 loc({{.*}})) -> f32 {
 kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
@@ -163,5 +163,69 @@ lit.struct.decl @Struct {
 kgen.generator @callNested() {
   // CHECK-NEXT: kgen.call @Struct::@Nested
   kgen.call_param[() -> (): @Struct::@Nested]()
+  kgen.return
+}
+
+// -----
+
+// COM: Check that constant are only hoisted from subprogram regions if there is
+// COM: no debuginfo scope given.
+
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 44,
+  scopeLine = 44,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "SomeClosure",
+  linkageName = "SomeClosure",
+  file = #file,
+  line = 325,
+  scopeLine = 325,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+#loc3 = loc("bar.mlir":327:17)
+#loc4 = loc(fused<#subprogram>[#loc1])
+#loc5 = loc(fused<#subprogram1>[#loc2])
+#loc6 = loc(fused<#subprogram1>[#loc3])
+
+// CHECK-LABEL: kgen.func @no_hoist
+kgen.func @no_hoist() {
+  // CHECK-NEXT: kgen.stage_closure = () {
+  %0 = kgen.stage_closure = () {
+    // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
+    %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
+    %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
+    pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
+    kgen.return loc(#loc5)
+  } {inliner_debuginfo_update = 1 : i8} loc(#loc5)
+  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.return loc(#loc4)
+} loc(#loc4)
+
+// CHECK-LABEL: kgen.func @hoist
+kgen.func @hoist() {
+  // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
+  // CHECK-NEXT: kgen.stage_closure = () {
+  %0 = kgen.stage_closure = () -> () {
+    // CHECK-NOT: kgen.param.constant: array<1, index> = <[0]>
+    %array = kgen.param.constant: array<1, index> = <[0]>
+    %1 = pop.stack_allocation 1 x !pop.array<1, index>
+    pop.store %array, %1 : !pop.pointer<array<1, index>>
+    kgen.return
+  } {inliner_debuginfo_update = 1 : i8}
+  kgen.call_signature %0() : () -> () loc(#loc4)
   kgen.return
 }

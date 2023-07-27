@@ -34,9 +34,16 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
 
   /// Never hoist a constant out of a declaration scope. We could scan the
   /// parameters declarations to find the highest scope a constant could be
-  /// hoisted into, but that is expensive to do.
+  /// hoisted into, but that is expensive to do. We also do not hoist constants
+  /// out of ops that define a subprogram location scope, since the hoisted
+  /// constant would carry incorrect scope information into their new scope.
   bool shouldMaterializeInto(Region *region) const override {
-    return isa<DeclInterface>(region->getParentOp());
+    Operation *parent = region->getParentOp();
+    if (auto scopedParent = dyn_cast<DebugInfo::SubprogramScoped>(parent))
+      if (scopedParent.getLocScope())
+        return true;
+
+    return isa<DeclInterface>(parent);
   }
 };
 } // namespace

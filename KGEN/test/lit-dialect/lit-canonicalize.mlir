@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalize %s | FileCheck %s
+// RUN: kgen-opt -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // This shouldn't crash.
 // https://github.com/modularml/modular/issues/2480
@@ -72,4 +72,66 @@ lit.func @struct_ops_fold() -> (!kgen.declref<@FooStruct>, !kgen.declref<@FooStr
 
   // CHECK: return %[[V0]], %[[V1]], %[[V2]]
   kgen.return %0, %2, %3 : !kgen.declref<@FooStruct>, !kgen.declref<@FooStruct>, index
+}
+
+// -----
+
+// COM: Check that constant are only hoisted from subprogram regions if there is
+// COM: no debuginfo scope given.
+
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 44,
+  scopeLine = 44,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "SomeClosure",
+  linkageName = "SomeClosure",
+  file = #file,
+  line = 325,
+  scopeLine = 325,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+#loc3 = loc("bar.mlir":327:17)
+#loc4 = loc(fused<#subprogram>[#loc1])
+#loc5 = loc(fused<#subprogram1>[#loc2])
+#loc6 = loc(fused<#subprogram1>[#loc3])
+
+// CHECK-LABEL: kgen.func @no_hoist
+kgen.func @no_hoist() {
+  // CHECK-NEXT: lit.async.execute <() -> ()> {
+  %0 = lit.async.execute <() -> ()> {
+    // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
+    %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
+    %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
+    pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
+    lit.async.return  loc(#loc5)
+  } {inliner_debuginfo_update = 1 : i8} loc(#loc5)
+  kgen.return loc(#loc4)
+} loc(#loc4)
+
+// CHECK-LABEL: kgen.func @hoist
+kgen.func @hoist() {
+  // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
+  // CHECK-NEXT: lit.async.execute <() -> ()> {
+  %0 = lit.async.execute <() -> ()> {
+    // CHECK-NOT: kgen.param.constant: array<1, index> = <[0]>
+    %array = kgen.param.constant: array<1, index> = <[0]>
+    %1 = pop.stack_allocation 1 x !pop.array<1, index>
+    pop.store %array, %1 : !pop.pointer<array<1, index>>
+    lit.async.return
+  } {inliner_debuginfo_update = 1 : i8}
+  kgen.return
 }
