@@ -66,3 +66,13 @@ async def test_struct_alias_ref(client: LanguageClient):
     requests.open_document(doc)
 
     await assert_hover_and_decl_location(requests, doc, "AliasInStruct")
+
+
+async def test_global_variables_ref(client: LanguageClient):
+    doc = Document.from_file("global_variables.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    await assert_hover_and_decl_location(requests, doc, "let_global_variable")
+    await assert_hover_and_decl_location(requests, doc, "var_global_variable")

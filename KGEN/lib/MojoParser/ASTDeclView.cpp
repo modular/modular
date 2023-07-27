@@ -11,6 +11,7 @@
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
 
 using namespace M;
@@ -349,13 +350,19 @@ llvm::json::Object VariableDeclView::toJSON() const {
 
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_VariableDeclView, declRef.getName().value_or(StringRef{})) {
-  if (auto op = dyn_cast<LIT::VarLetDeclOp>(declRef.getIfOperation())) {
-    flagIsVar = op.getIsVar();
-    type = declRef.getType().getPointerElementType().getAsString();
-  } else if (auto op = cast<LIT::LetRegDeclOp>(declRef.getIfOperation())) {
-    flagIsVar = false;
-    type = declRef.getType().getAsString();
-  }
+  TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
+      .Case([&](VarLetDeclOp op) {
+        flagIsVar = op.getIsVar();
+        type = declRef.getType().getPointerElementType().getAsString();
+      })
+      .Case([&](LetRegDeclOp op) {
+        flagIsVar = false;
+        type = declRef.getType().getAsString();
+      })
+      .Case([&](GlobalVarDeclOp op) {
+        flagIsVar = !op.getIsLet();
+        type = declRef.getType().getAsString();
+      });
 }
 
 //===----------------------------------------------------------------------===//

@@ -490,3 +490,40 @@ An arg in a function with by-ref result.
 arg_in_function_that_raises: Int
 ```""",
     )
+
+
+async def test_hover_global_variables(client: LanguageClient):
+    doc = Document.from_file("global_variables.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert contents == result.contents.value
+
+    await assert_decl(
+        "let_global_variable",
+        """### variable `let_global_variable`
+
+---
+
+###
+```mojo
+let let_global_variable: Int
+```""",
+    )
+
+    await assert_decl(
+        "var_global_variable",
+        """### variable `var_global_variable`
+
+---
+
+###
+```mojo
+var var_global_variable: Int
+```""",
+    )
