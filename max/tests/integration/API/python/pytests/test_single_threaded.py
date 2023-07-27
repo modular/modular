@@ -41,14 +41,3 @@ def test_single_threaded_execute_onnx(model_path_fixture, request) -> None:
     compile_and_execute_on_random_input(
         request.getfixturevalue(model_path_fixture)
     )
-
-
-@pytest.mark.parametrize(
-    "model_path_fixture",
-    ["tflite_basic_mlp", "tflite_camembert"],
-)
-def test_single_threaded_execute_tflite(model_path_fixture, request) -> None:
-    """Test model execute has no errors."""
-    compile_and_execute_on_random_input(
-        request.getfixturevalue(model_path_fixture)
-    )
