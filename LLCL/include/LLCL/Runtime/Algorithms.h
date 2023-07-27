@@ -20,6 +20,25 @@
 namespace M::LLCL {
 
 //===----------------------------------------------------------------------===//
+// Internal helpers
+//===----------------------------------------------------------------------===//
+
+namespace Detail {
+// Extract the result type of a function passed to addTask(Runtime, fn).
+template <typename T>
+struct UnwrapErrorOr {
+  using type = T;
+};
+template <typename T>
+struct UnwrapErrorOr<ErrorOr<T>> {
+  using type = T;
+};
+
+template <typename F>
+using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
+} // namespace Detail
+
+//===----------------------------------------------------------------------===//
 // Helpers that wait for values.
 //===----------------------------------------------------------------------===//
 
@@ -272,8 +291,10 @@ andThenAsyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
 
 /// Add some non-blocking work to the WorkQueue managed by the specified
 /// Runtime.
-inline static void addTask(Runtime &runtime, WorkItem &&workItem) {
-  runtime.getWorkQueue()->addTask(std::move(workItem));
+template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
+          std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
+inline static void addTask(Runtime &runtime, FnTy f) {
+  runtime.getWorkQueue()->addTask(std::forward<FnTy>(f));
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
