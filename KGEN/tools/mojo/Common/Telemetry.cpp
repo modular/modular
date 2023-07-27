@@ -38,5 +38,8 @@ void M::initializeTelemetry(
   });
   llvm::interleave(
       publicArgs, os,
-      [&](const auto *arg) { os << args.getArgString(arg->getIndex()); }, " ");
+      [&](const auto *arg) {
+        os << StringRef(args.getArgString(arg->getIndex()));
+      },
+      " ");
 }
