@@ -59,8 +59,8 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*unwrapMojoASTDecl(impl))
-      .Case<VarLetDeclOp, LetRegDeclOp>(
-          [](auto op) { return MojoASTTypeRef(op.getType()); })
+      .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(
+          [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Default({});
 }
 
@@ -92,8 +92,8 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     if (!op)
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
-        .Case<LetRegDeclOp, StructDeclOp, StructFieldOp, VarLetDeclOp>(
-            [](auto op) { return op.getName(); })
+        .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
+              VarLetDeclOp>([](auto op) { return op.getName(); })
         .Case([](FuncOp op) {
           // FIXME(#18029): We should use MangledSymbol::demangle instead of
           // doing this.
@@ -154,7 +154,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
   if (isa<StructFieldOp>(astDecl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<LetRegDeclOp, VarLetDeclOp>(astDecl))
+  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(astDecl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
 
   // After failing to match with regular Ops, we then inspect the IR to identify

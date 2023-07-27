@@ -2931,8 +2931,10 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
         decl.getLoc(), "internal error: should be checked by statement parser");
   }
   StringAttr name;
-  if (p.parseIdentifier(
-          name, "internal error: should be checked by statement parser"))
+  SMLoc identifierLoc;
+  if (p.parseIdentifier(name,
+                        "internal error: should be checked by statement parser",
+                        &identifierLoc))
     return failure();
 
   // Parse the type if present.
@@ -3015,6 +3017,9 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   };
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, processDecorator);
+
+  if (shared.parserListener)
+    shared.parserListener->onVariableDecl(MojoASTDeclRef(&decl), identifierLoc);
 
   return success();
 }
