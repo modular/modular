@@ -773,6 +773,13 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
 
 std::string ModuleDeclView::getDeclarationSnippet() const { return {}; }
 
+std::string ModuleDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, summary, description);
+  return markdown;
+}
+
 llvm::json::Object ModuleDeclView::toJSON() const {
   return llvm::json::Object{{"aliases", toJSONArray(aliases)},
                             {"description", description},

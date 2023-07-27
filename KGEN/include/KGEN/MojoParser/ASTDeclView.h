@@ -505,6 +505,8 @@ public:
   /// empty.
   StringRef getDescription() const { return description; }
 
+  std::string getMarkdownDocString() const override;
+
   /// Return the structs defined at the top-level of this module.
   llvm::ArrayRef<StructDeclView> getStructs() const { return structs; }
 

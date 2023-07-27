@@ -398,11 +398,11 @@ async def test_hover_argument(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_decl(func_name: str, contents: str):
+    async def assert_decl(func_name: str, expected: str):
         range = fail_if_none(doc.find_first_range(func_name))
         result = fail_if_none(await requests.hover(doc, range.start))
         assert isinstance(result.contents, MarkupContent)
-        assert contents == result.contents.value
+        assert result.contents.value == expected
 
     await assert_decl(
         "self",
@@ -498,11 +498,11 @@ async def test_hover_global_variables(client: LanguageClient):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_decl(func_name: str, contents: str):
+    async def assert_decl(func_name: str, expected: str):
         range = fail_if_none(doc.find_first_range(func_name))
         result = fail_if_none(await requests.hover(doc, range.start))
         assert isinstance(result.contents, MarkupContent)
-        assert contents == result.contents.value
+        assert result.contents.value == expected
 
     await assert_decl(
         "let_global_variable",
@@ -526,4 +526,41 @@ let let_global_variable: Int
 ```mojo
 var var_global_variable: Int
 ```""",
+    )
+
+
+async def test_hover_import(client: LanguageClient):
+    doc = Document.from_file("imports.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_import(func_name: str, expected: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert result.contents.value == expected
+
+    await assert_import(
+        "String",
+        """### module `String`
+
+---
+
+###
+Implements basic object methods for working with strings.
+
+""",
+    )
+
+    await assert_import(
+        "SIMD",
+        """### module `SIMD`
+
+---
+
+###
+Implements SIMD struct.
+
+""",
     )
