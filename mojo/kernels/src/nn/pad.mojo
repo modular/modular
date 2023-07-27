@@ -35,11 +35,13 @@ fn pad[
     output_shape: DimList,
     input_shape: DimList,
     type: DType,
+    paddings_type: DType,
+    constant_type: DType,
 ](
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
-    paddings: DTypePointer[DType.index],
-    constant: SIMD[type, 1],
+    paddings: DTypePointer[paddings_type],
+    constant: SIMD[constant_type, 1],
 ):
     """
     Fill `output` with values from `input`, and edges padded with `constant`
@@ -69,12 +71,12 @@ fn pad[
     _fill_strides(output, output_strides_buf)
 
     alias init_axis = 0
-    _pad_impl[rank, output_shape, type](
+    _pad_impl(
         init_axis,
         output,
         input.data,
         paddings,
-        constant,
+        constant.cast[type](),
         output_strides_buf.data,
         input_strides_buf.data,
         0,  # output_offset
@@ -87,11 +89,12 @@ fn _pad_impl[
     rank: Int,
     output_shape: DimList,
     type: DType,
+    paddings_type: DType,
 ](
     axis: Int,
     output: NDBuffer[rank, output_shape, type],
     input: DTypePointer[type],
-    paddings: DTypePointer[DType.index],
+    paddings: DTypePointer[paddings_type],
     constant: SIMD[type, 1],
     output_strides: DTypePointer[DType.index],
     input_strides: DTypePointer[DType.index],
@@ -117,8 +120,8 @@ fn _pad_impl[
     """
 
     let axis_dim = output.dim(axis)
-    let pre_pad = paddings.load(2 * axis).value
-    let post_pad = paddings.load(2 * axis + 1).value
+    let pre_pad = paddings.load(2 * axis).to_int()
+    let post_pad = paddings.load(2 * axis + 1).to_int()
     let non_pad = axis_dim - pre_pad - post_pad
 
     if axis + 1 == rank:
@@ -148,7 +151,7 @@ fn _pad_impl[
     for i in range(axis_dim):
         let is_within_padding = (i < pre_pad) or (pre_pad + non_pad <= i)
         let next_pad_with_constant = pad_with_constant or is_within_padding
-        _pad_impl[rank, output_shape, type](
+        _pad_impl(
             axis + 1,
             output,
             input,

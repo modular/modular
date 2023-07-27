@@ -11,6 +11,7 @@ from Index import StaticIntTuple
 from IO import print
 from List import DimList
 from Pad import pad
+from SIMD import SIMD
 
 
 # CHECK-LABEL: test_pad_1d
@@ -38,8 +39,10 @@ fn test_pad_1d():
     var output = NDBuffer[1, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
+    let constant = SIMD[DType.index, 1](5)
+
     # pad
-    pad(output, input, paddings.data, 5)
+    pad(output, input, paddings.data, constant)
 
     # output should have form
     # [5, 1, 2, 3, 5, 5]
@@ -89,8 +92,10 @@ fn test_pad_2d():
     var output = NDBuffer[2, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
+    let constant = SIMD[DType.index, 1](6)
+
     # pad
-    pad(output, input, paddings.data, 6)
+    pad(output, input, paddings.data, constant)
 
     # output should have form
     # [[6, 6, 6, 6]
@@ -159,8 +164,10 @@ fn test_pad_3d():
     var output = NDBuffer[3, out_shape, DType.index].stack_allocation()
     output.fill(0)
 
+    let constant = SIMD[DType.index, 1](7)
+
     # pad
-    pad(output, input, paddings.data, 7)
+    pad(output, input, paddings.data, constant)
 
     # output should have form
     # [[[7, 7, 7]
