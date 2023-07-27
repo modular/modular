@@ -672,8 +672,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 //===----------------------------------------------------------------------===//
 
 // TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", []> {
-}
+def Builtin_LocationAttr : Builtin_Attr<"Location", []> {}
 
 def LIT_AliasForwardDeclOp : LITOp<"alias.fwd.decl", [ASTDeclInterface]> {
   let summary = "`alias x: T` declaration for a callee return parameter";
@@ -896,7 +895,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
 //===----------------------------------------------------------------------===//
 
 def LIT_AsyncExecuteOp : LITOp<"async.execute",
-  [SingleBlock, DebugInfo_SubprogramScoped]
+  [SingleBlock, DebugInfo_InlinedSubprogramScoped]
 >{
   let summary = "Execute an async region.";
   let description = [{
@@ -915,9 +914,12 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute",
     ```
   }];
 
+  let arguments = (ins OptionalAttr<Builtin_LocationAttr>:$callLoc);
   let results = (outs POP_CoroutineType:$coroutine);
   let regions = (region SizedRegion<1>:$bodyRegion);
-  let assemblyFormat = "type($coroutine) $bodyRegion attr-dict";
+  let assemblyFormat = [{
+    type($coroutine) $bodyRegion attr-dict (`callLoc` `(` $callLoc^ `)`)?
+  }];
 
   let hasVerifier = 1;
 }

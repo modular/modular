@@ -61,5 +61,27 @@ def DebugInfo_SubprogramScoped : OpInterface<
   }];
 }
 
+def DebugInfo_InlinedSubprogramScoped : OpInterface<
+  "InlinedSubprogramScoped", [DebugInfo_SubprogramScoped]
+>{
+  let description = [{
+    This interface represents a SubprogramScoped operation that also acts as the
+    callsite to the subprogram represented by the op's body region. These ops
+    have to carry additional location information of where the call is, which
+    could contain callstack information due to inlining, etc.
+  }];
+
+  let dependentTraits = [DebugInfo_ScopedLocation];
+  let cppNamespace = "::M::DebugInfo";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the location of the call to the subprogram.
+    }], "mlir::LocationAttr", "getCallLocAttr", (ins)>,
+    InterfaceMethod<[{
+      Set the location of the call to the subprogram.
+    }], "void", "setCallLocAttr", (ins "mlir::LocationAttr":$attr)>,
+  ];
+}
 
 #endif // SUPPORT_DEBUGINFODIALECT_DEBUGINFOINTERFACES_TD
