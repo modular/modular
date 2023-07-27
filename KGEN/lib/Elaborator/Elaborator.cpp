@@ -2264,9 +2264,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
         // To be defensive, we only concretize location attributes if we know
         // what we are dealing with.
-        if (auto callable = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
-          if (mlir::LocationAttr callLoc = callable.getCallLocAttr())
-            callable.setCallLocAttr(concretizeLoc(callLoc, inode));
+        if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
+          if (mlir::LocationAttr callLoc = inlined.getCallLocAttr())
+            inlined.setCallLocAttr(concretizeLoc(callLoc, inode));
 
         // When elaboration is complete, only the first block in any region is
         // valid (any other block may be illegal, e.g. due to how kgen.param.if
