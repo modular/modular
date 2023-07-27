@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -590,30 +591,6 @@ void KGEN::inlineGeneratorCall(CallOp call, GeneratorOp callee,
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This struct contains the parallelism state of the graph traversal.
-struct ParallelState {
-  explicit ParallelState(LLCL::Runtime &runtime)
-      : done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
-
-  /// Start a new work item.
-  void startWork() { numWorkItems.fetch_add(1); }
-  /// End a work item. Emplace the chain if everything is done.
-  void endWork() {
-    if (numWorkItems.fetch_sub(1) == 1)
-      done.copy().emplace();
-  }
-  /// Called by the main thread, this function waits for all work to complete.
-  void await() {
-    endWork();
-    LLCL::await(done);
-  }
-
-  /// This chain is set when all in-flight work items are processed.
-  LLCL::AsyncValueRef<LLCL::Chain> done;
-  /// This is the number of in-flight work items.
-  std::atomic<size_t> numWorkItems = 1;
-};
-
 /// A node in the inlining graph contains a function, edges to its callers, and
 /// edges to its callees. A node is ready to inline its callees when all of
 /// its callees have been processed.
@@ -691,8 +668,8 @@ struct InliningGraphBase {
   /// The runtime to use.
   LLCL::Runtime &runtime;
 
-  /// The parallelism state.
-  ParallelState state;
+  /// The inlining task state.
+  LLCL::ForkJoin state;
   /// The number of nodes that complete processing. If this is not equal to the
   /// number of nodes, then there are cycles in the graph.
   std::atomic<size_t> numProcessed = 0;
@@ -755,13 +732,11 @@ void InliningGraphBase<DerivedT, NodeT>::complete(NodeT *node) {
     if (caller->numProcessedCalls.fetch_add(1) + 1 != caller->callsites.size())
       continue;
     // This caller is ready. Increment the number of active work items.
-    state.startWork();
-    runtime.getWorkQueue()->addTask([caller, this] {
+    state.fork([caller, this] {
       // Compute the parameter use-def graph of the function as a caller.
       // Inline all callees.
       getDerived().performInlining(caller);
       complete(caller);
-      state.endWork();
     });
   }
 }
@@ -777,14 +752,10 @@ void InliningGraphBase<DerivedT, NodeT>::process() {
       continue;
     NodeT *caller = &node;
     // Increment the number of in-flight tasks.
-    state.startWork();
-    runtime.getWorkQueue()->addTask([caller, this] {
-      complete(caller);
-      state.endWork();
-    });
+    state.fork([caller, this] { complete(caller); });
   }
   // Wait on all active work items.
-  state.await();
+  state.join();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1495,24 +1466,21 @@ void ForceInlinePass::runOnOperation() {
   // If we need to handle debug info, do that now.
   if (updateAttrName) {
     TimeTraceScope traceScope("updateDebugInfo");
-    ParallelState state(*rt);
+    LLCL::ForkJoin state(*rt);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
       if (node.shouldInline() || node.callsites.empty())
         continue;
-      state.startWork();
-      rt->getWorkQueue()->addTask(
-          [func = func, updateAttrName, &state, &innerPipelineFailed, &pms] {
-            updateScopeDebugInfo(func, updateAttrName);
-            // Run the function pipeline here.
-            TimeTraceScope traceScope("optimizeFunction");
-            if (failed(pms.getPassManager().run(func)))
-              innerPipelineFailed = true;
-            state.endWork();
-          });
+      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
+        updateScopeDebugInfo(func, updateAttrName);
+        // Run the function pipeline here.
+        TimeTraceScope traceScope("optimizeFunction");
+        if (failed(pms.getPassManager().run(func)))
+          innerPipelineFailed = true;
+      });
     }
-    state.await();
+    state.join();
     if (innerPipelineFailed)
       signalPassFailure();
   }

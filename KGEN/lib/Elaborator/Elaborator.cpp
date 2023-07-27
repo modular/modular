@@ -21,6 +21,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Support/AwaitingMutex.h"
+#include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/MDialect/MAttrs.h"
@@ -30,6 +31,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -980,7 +982,12 @@ void ElaboratorImpl::finalizeAndVerifyFunction(ImplNode *node) {
   func.setSymNameAttr(node->parent->gen.getSymNameAttr());
   auto reset = llvm::make_scope_exit([&] { func.setSymNameAttr(mangledName); });
   // Verify the function.
-  if (failed(verify(func))) {
+  LogicalResult result = success();
+  {
+    TimeTraceScope<> traceScope("verifyFunction");
+    result = verify(func);
+  }
+  if (failed(result)) {
     node->setToError(ErrorTree(*verificationLoc, Twine("verification error: ") +
                                                      verificationError.str()));
     LLVM_DEBUG(logger.scope("Result: Failure")
@@ -2507,28 +2514,31 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   }
 
   // Process all current work.
-  unsigned cycleGeneration = 0;
-  while (true) {
-    signalWorklist();
-    LLCL::await(g.worklistCh);
-    assert(g.numWorkItems == 0);
+  {
+    TimeTraceScope traceScope("doElaboration");
+    unsigned cycleGeneration = 0;
+    while (true) {
+      signalWorklist();
+      LLCL::await(g.worklistCh);
+      assert(g.numWorkItems == 0);
 
-    // Check if all primary generators are done. If so, break.
-    if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }))
-      break;
-    g.numWorkItems = 1;
+      // Check if all primary generators are done. If so, break.
+      if (llvm::all_of(primaryChs, [](auto &ch) { return ch.isReady(); }))
+        break;
+      g.numWorkItems = 1;
 
-    // Re-initialize the worklist chain.
-    g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
+      // Re-initialize the worklist chain.
+      g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
 
-    // Check for deferred search.
-    if (processDeferredSearchFns())
-      continue;
-    // The only other possibility is a cycle due to recursion.
-    if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
-      continue;
-    // Anything else indicates a bug/race condition.
-    llvm_unreachable("no work left, no deferred search, and no recursion?");
+      // Check for deferred search.
+      if (processDeferredSearchFns())
+        continue;
+      // The only other possibility is a cycle due to recursion.
+      if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
+        continue;
+      // Anything else indicates a bug/race condition.
+      llvm_unreachable("no work left, no deferred search, and no recursion?");
+    }
   }
 
   // Check for any errors and emit them. Emit as many errors as possible.
@@ -2557,46 +2567,64 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
   // them with their concrete implementations. Only handle the primary
   // generators - everything else we don't care about.
   DenseMap<StringAttr, StringAttr> funcsToRename;
-  for (ParamNode &node :
-       llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
-    FuncOp first;
-    // Erase all erroneous functions.
-    for (ImplNode &impl : llvm::make_pointee_range(node.impls)) {
-      if (impl.error)
-        symtab.get().erase(impl.func);
-      else if (!first)
-        first = impl.func;
+  {
+    TimeTraceScope traceScope("eraseFuncs");
+    LLCL::ForkJoin eraseState(runtime);
+    auto eraseFunc = [&eraseState, this](Operation *op) {
+      symtab.get().remove(op);
+      op->remove();
+      eraseState.fork([op] { op->erase(); });
+    };
+    for (ParamNode &node :
+         llvm::make_pointee_range(llvm::make_second_range(g.nodes.get()))) {
+      FuncOp first;
+      // Erase all erroneous functions.
+      for (ImplNode &impl : llvm::make_pointee_range(node.impls)) {
+        if (impl.error)
+          eraseFunc(impl.func);
+        else if (!first)
+          first = impl.func;
+      }
+
+      // Rename the first successful function for concrete top-level generators,
+      // if there is one.
+      symtab.get().remove(node.gen);
+      if (node.inputParams.empty() && first) {
+        StringAttr newName = node.gen.getSymNameAttr();
+        funcsToRename[first.getNameAttr()] = newName;
+        symtab.get().remove(first);
+        first.setSymNameAttr(newName);
+        symtab.get().insert(first);
+      }
     }
 
-    // Rename the first successful function for concrete top-level generators,
-    // if there is one.
-    symtab.get().remove(node.gen);
-    if (node.inputParams.empty() && first) {
-      StringAttr newName = node.gen.getSymNameAttr();
-      funcsToRename[first.getNameAttr()] = newName;
-      symtab.get().remove(first);
-      first.setSymNameAttr(newName);
-      symtab.get().insert(first);
-    }
+    // Erase all generators.
+    for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>()))
+      eraseFunc(gen);
+
+    eraseState.join();
   }
-
-  // Erase all generators.
-  for (auto gen : llvm::make_early_inc_range(theModule.getOps<GeneratorOp>()))
-    symtab.get().erase(gen);
 
   // Perform any renaming at the end.  We cannot use the
   // SymbolTable::replaceAllSymbolUses method, because it doesn't tolerate
   // unregistered operations.  It also doesn't support batch renaming.
-  theModule->walk([&](GeneratorUserOpInterface call) {
-    // If this is a reference to a function that got renamed, update its
-    // target.
-    auto callee = cast<SymbolConstantAttr>(call.getCallee());
-    if (StringAttr newName = funcsToRename.lookup(
-            cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
-      call.updateCallee(SymbolConstantAttr::get(FlatSymbolRefAttr::get(newName),
-                                                callee.getType()));
-    }
-  });
+  {
+    TimeTraceScope traceScope("replaceCallSymbols");
+    mlir::parallelForEach(
+        theModule.getContext(), theModule.getOps<FuncOp>(),
+        [&funcsToRename](FuncOp func) {
+          func.getBodyRegion().walk([&](GeneratorUserOpInterface call) {
+            // If this is a reference to a function that got renamed, update its
+            // target.
+            auto callee = cast<SymbolConstantAttr>(call.getCallee());
+            if (StringAttr newName = funcsToRename.lookup(
+                    cast<FlatSymbolRefAttr>(callee.getSymbol()).getAttr())) {
+              call.updateCallee(SymbolConstantAttr::get(
+                  FlatSymbolRefAttr::get(newName), callee.getType()));
+            }
+          });
+        });
+  }
 
   return success();
 }
