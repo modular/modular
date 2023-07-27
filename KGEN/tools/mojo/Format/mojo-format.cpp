@@ -58,8 +58,11 @@ static int format(const State &state) {
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no inputs provided");
 
+  // Empty attr list, for some reason without this we get linker errors...
+  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
+  auto telemetryCtx =
+      LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
   // Initialize telemetry.
-  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
   initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.

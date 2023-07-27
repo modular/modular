@@ -629,11 +629,16 @@ static int package(const State &state) {
   LLCL::Runtime runtime(LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue());
 
+  // Empty attr list, for some reason without this we get linker errors...
+  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
+  auto telemetryCtx = RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
+
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   initializeTelemetry(
-      runtime.getTelemetryContext(), state, args, /*privateArgs=*/
+      telemetryCtx.copy(), state, args, /*privateArgs=*/
       {options::OPT_D, options::OPT_I, options::OPT_L, options::OPT_o});
+  runtime.emplaceContext<decltype(telemetryCtx)>(std::move(telemetryCtx));
 
   //===--------------------------------------------------------------------===//
   // Build the package

@@ -7,7 +7,7 @@
 find_package(Threads)
 
 add_modular_library(LLCLRuntime
-  OBJECT # Always generate an obj.${name} target.
+  STATIC OBJECT # Always generate an obj.${name} target.
 
   AsyncValue.cpp
   DebuggingAllocators.cpp
