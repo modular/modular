@@ -347,6 +347,18 @@ alias AliasToAlias = 12
 ```""",
     )
 
+    await assert_decl(
+        "AliasInStruct",
+        """### alias `AliasInStruct`
+
+---
+
+###
+```mojo
+alias AliasInStruct = Int
+```""",
+    )
+
 
 async def test_hover_struct_field_decls(client: LanguageClient):
     doc = Document.from_file("struct_fields.mojo")

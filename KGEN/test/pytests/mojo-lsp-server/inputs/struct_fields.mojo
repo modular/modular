@@ -8,3 +8,11 @@
 struct SomeStruct:
     var a_field: Int
     """Summary of a_field."""
+
+    fn __init__(inout self):
+        pass
+
+
+fn main():
+    let someStruct = SomeStruct()
+    _ = someStruct.a_field
