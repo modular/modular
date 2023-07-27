@@ -21,7 +21,7 @@ class HTTPContext;
 using HTTPContextRef = LLCL::RCRef<HTTPContext>;
 /// Provides a presistant HTTP context to create HTTPClients.
 /// Initializes and cleans up the global CURL initalization.
-/// Ideally should be scope to your applications main method.
+/// Ideally should scope to your applications main method.
 class HTTPContext : public LLCL::ReferenceCounted<HTTPContext> {
 public:
   ~HTTPContext();
@@ -41,6 +41,7 @@ protected:
 /// TODO: Add support for passing HTTP headers, setting methods, etc.
 struct HTTPRequest {
   std::string URL;
+  bool verify_tls_peer = true;
 };
 
 /// HTTPClient that wraps libcurl.

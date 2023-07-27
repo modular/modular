@@ -78,12 +78,15 @@ ErrorOrSuccess HTTPClient::executeRequest(const HTTPRequest &request,
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &streamWriter);
   // Set our user data object for our callback.
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
+  // Verify SSL certificate against peers
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
+                   request.verify_tls_peer ? 1 : 0);
 
   // Execute our reqeust.
   CURLcode res = curl_easy_perform(curl);
 
   if (res != CURLE_OK) {
-    return Error(llvm::formatv("failed to reach URL {} with cURL error {}",
+    return Error(llvm::formatv("failed to reach URL {0} with cURL error {1}",
                                request.URL, curl_easy_strerror(res)));
   }
   return success();
