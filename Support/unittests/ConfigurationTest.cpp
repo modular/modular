@@ -208,3 +208,46 @@ TEST(Configuration, PageBoundary) {
   EXPECT_EQ(cfg.getValue("key"), "value");
 }
 #endif // LLVM_ON_UNIX
+
+TEST(Configuration, GetValuesInSection) {
+  StringRef input = R"(
+key = value
+#maybe a comment in between these guys
+key4 = value4
+
+# this is a comment
+[section]
+key2 = value2 # with a comment
+; another comment
+key3 = value3
+
+[section.withdot]
+key5 = value5
+)";
+
+  Config cfg;
+  auto err = cfg.parseFrom(input);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  SmallVector<std::pair<StringRef, StringRef>> globals;
+  cfg.getValuesInSection("", globals);
+  EXPECT_EQ(globals.size(), 2u);
+  EXPECT_EQ(globals[0].first, "key") << globals[0].first;
+  EXPECT_EQ(globals[0].second, "value") << globals[0].second;
+  EXPECT_EQ(globals[1].first, "key4") << globals[1].first;
+  EXPECT_EQ(globals[1].second, "value4") << globals[1].second;
+
+  SmallVector<std::pair<StringRef, StringRef>> section;
+  cfg.getValuesInSection("section", section);
+  EXPECT_EQ(section.size(), 2u);
+  EXPECT_EQ(section[0].first, "key2") << section[0].first;
+  EXPECT_EQ(section[0].second, "value2") << section[0].second;
+  EXPECT_EQ(section[1].first, "key3") << section[1].first;
+  EXPECT_EQ(section[1].second, "value3") << section[1].second;
+
+  SmallVector<std::pair<StringRef, StringRef>> withdot;
+  cfg.getValuesInSection("section.withdot", withdot);
+  EXPECT_EQ(withdot.size(), 1u);
+  EXPECT_EQ(withdot[0].first, "key5") << withdot[0].first;
+  EXPECT_EQ(withdot[0].second, "value5") << withdot[0].second;
+}

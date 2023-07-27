@@ -161,6 +161,31 @@ StringRef Config::getValue(StringRef key) {
   return kv[key.lower()];
 }
 
+void Config::getValuesInSection(
+    StringRef section,
+    SmallVectorImpl<std::pair<StringRef, StringRef>> &values) {
+  // Iterate all the properties in the map.
+  for (auto &properties : kv) {
+    // Split on the last '.' - that's the section.
+    auto [header, prop] = properties.first().rsplit('.');
+    // If the property is empty, that means we didn't have a header (split
+    // always fills the first return value). Swap header and prop here cause if
+    // we want everything that doesn't have a section, then section should be an
+    // empty string.
+    if (prop.empty())
+      std::swap(header, prop);
+
+    if (header == section)
+      values.emplace_back(prop, properties.second);
+  }
+
+  // Sort the values so they come out in a deterministic order.
+  llvm::stable_sort(values, [](const std::pair<StringRef, StringRef> &lhs,
+                               const std::pair<StringRef, StringRef> &rhs) {
+    return lhs.first < rhs.first;
+  });
+}
+
 void Config::flush(raw_ostream &os) {
   llvm::StringMap<std::vector<std::string>> map;
 
