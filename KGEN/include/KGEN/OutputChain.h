@@ -9,6 +9,7 @@
 
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Support/Chain.h"
+#include "LLCL/Support/GenericUniquePtr.h"
 #include "LLCL/Support/Profiling.h"
 #include "llvm/ADT/ArrayRef.h"
 
@@ -66,6 +67,8 @@ struct OutputChain {
   /// AsyncValue references to hold alive until markReady() or markError()
   /// is called.
   SmallVector<LLCL::AnyAsyncValueRef> refs;
+  /// Other odd's 'n end's to keep alive also.
+  SmallVector<LLCL::GenericUniquePtr> extras;
 
   OutputChain(AsyncValueRef<Chain> chain, LLCL::EncodedLocation loc)
       : chain(std::move(chain)), loc(std::move(loc)) {}
@@ -80,7 +83,7 @@ struct OutputChain {
   /// Return a 'fork' of this output chain:
   ///  - The chain and location are copied, so are valid in both this and the
   ///    result.
-  ///  - The prototypeProfilerEntry and all refs are moved into the result,
+  ///  - The prototypeProfilerEntry, refs, and extras are moved into the result,
   ///    on the assumption the caller will create sub-tasks and take
   ///    responsibility for calling markReady/markError when they complete.
   ///  - The profilerEntry is not moved or copied, on the assumption it
@@ -108,8 +111,13 @@ struct OutputChain {
   /// the OutputChain is completed.
   ///
   /// Called from the MEF side.
-  void transfer(LLCL::AnyAsyncValueRef &&argRef);
-  void transfer(SmallVector<LLCL::AnyAsyncValueRef> &&argRefs);
+  void transfer(LLCL::AnyAsyncValueRef argRef);
+  void transfer(SmallVector<LLCL::AnyAsyncValueRef> argRefs);
+
+  /// Similarly for extras.
+  ///
+  /// Called from the MEF side.
+  void transfer(LLCL::GenericUniquePtr extra);
 
   /// Adds tracing entry with name and detail.
   ///
@@ -119,8 +127,8 @@ struct OutputChain {
   /// Indicate the Mojo call is complete.
   ///
   /// Called from the Mojo side.  The chain is not consumed so that we can
-  //  /// always safely await and check for errors on the chain irrespective of
-  //  /// whether the Mojo kernel is asynchronous or synchronous.
+  /// always safely await and check for errors on the chain irrespective of
+  /// whether the Mojo kernel is asynchronous or synchronous.
   void markReady();
 
   /// Indicate the Mojo call failed with the given message.
@@ -156,7 +164,7 @@ struct OutputChain {
   void recordProfilerEntry() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
-  /// pointer to by resume.
+  /// pointed to by resume.
   void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId);
 
 private:

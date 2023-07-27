@@ -14,9 +14,10 @@ using namespace KGEN;
 OutputChain OutputChain::fork() {
   // Chain and location are copied.
   OutputChain result(chain.copy(), loc.copy());
-  // The 'prototype' profiler entry and references can be moved.
+  // The 'prototype' profiler entry, references and extras can be moved.
   result.prototypeProfilerEntry = std::move(prototypeProfilerEntry);
   result.refs = std::move(refs);
+  result.extras = std::move(extras);
   // The actual profiler entry is left alone.
   return result;
 }
@@ -28,13 +29,17 @@ void OutputChain::assertReady() {
          "assertReady failed: output chain is not ready");
 }
 
-void OutputChain::transfer(LLCL::AnyAsyncValueRef &&argRef) {
+void OutputChain::transfer(LLCL::AnyAsyncValueRef argRef) {
   refs.emplace_back(std::move(argRef));
 }
 
-void OutputChain::transfer(SmallVector<LLCL::AnyAsyncValueRef> &&argRefs) {
+void OutputChain::transfer(SmallVector<LLCL::AnyAsyncValueRef> argRefs) {
   for (auto &argRef : argRefs)
     refs.emplace_back(std::move(argRef));
+}
+
+void OutputChain::transfer(LLCL::GenericUniquePtr extra) {
+  extras.emplace_back(std::move(extra));
 }
 
 void OutputChain::trace(StringRef name, std::optional<StringRef> detail) {
@@ -89,9 +94,12 @@ void OutputChain::complete() {
   // be surprisingly expensive, and we don't want that to be included in
   // the kernel's time.
   std::move(profilerEntry).record();
-  // IMPORTANT: Clear the refs before marking the output chain as ready
-  // so that waiters won't see stray references.
+  // IMPORTANT: Clear the refs and extras before marking the output chain as
+  // ready so that waiters won't see stray references, and the dtors will
+  // be run before any side effects of the waiters are seen (such as
+  // deleting the MGP context).
   refs.clear();
+  extras.clear();
 }
 
 void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
