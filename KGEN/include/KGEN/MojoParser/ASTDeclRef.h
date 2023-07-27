@@ -56,8 +56,12 @@ public:
   /// identifier.
   llvm::SMLoc getLoc() const;
 
+  /// Get the parent MojoASTDeclRef of this decl.
+  MojoASTDeclRef getParentDecl() const;
+
   /// Get a DeclView that can be used for more easily inspecting the metadata of
-  /// this decl.
+  /// this decl. It supports aliases, modules, functions, structs, arguments,
+  /// struct fields and variables.
   std::unique_ptr<DeclView> getView() const;
 
   //===--------------------------------------------------------------------===//

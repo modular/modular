@@ -220,7 +220,7 @@ static llvm::json::Array toJSONArray(const JSONSerializableItems &items) {
 /// documentation.
 static void dumpMarkdownDocumentationHeader(llvm::raw_ostream &os,
                                             StringRef summary,
-                                            StringRef description) {
+                                            StringRef description = {}) {
   if (!summary.empty())
     os << summary << "\n";
 
@@ -376,10 +376,23 @@ llvm::json::Object ParameterDeclView::toJSON() const {
 std::string ArgumentDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
+
+  // We don't print the `borrowed` convention because that's the default for all
+  // args.
   if (inout)
     os << "inout ";
+  if (owned)
+    os << "owned ";
+
   dumpIdentifierWithType(os, getName(), type);
   return buff;
+}
+
+std::string ArgumentDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, description);
+  return markdown;
 }
 
 llvm::json::Object ArgumentDeclView::toJSON() const {
@@ -388,6 +401,7 @@ llvm::json::Object ArgumentDeclView::toJSON() const {
       {"inout", inout},
       {"kind", getKindAsString()},
       {"name", getName()},
+      {"owned", owned},
       {"type", type},
   };
 }
@@ -408,9 +422,7 @@ std::string AliasDeclView::getDeclarationSnippet() const {
 std::string AliasDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
-
   dumpMarkdownDocumentationHeader(os, summary, description);
-
   return markdown;
 }
 
@@ -574,7 +586,9 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
         /*inout=*/convention == ValueInputConvention::ByRef ||
-            convention == ValueInputConvention::InitSelf));
+            convention == ValueInputConvention::InitSelf,
+        /*owned=*/convention == ValueInputConvention::OwnedInMem ||
+            convention == ValueInputConvention::OwnedInReg));
 
   // Grab the types of the parameters to the function.
   for (ParamDeclAttr param : funcOp.getInputParams())
@@ -611,9 +625,7 @@ std::string StructFieldDeclView::getDeclarationSnippet() const {
 std::string StructFieldDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
-
   dumpMarkdownDocumentationHeader(os, summary, description);
-
   return markdown;
 }
 

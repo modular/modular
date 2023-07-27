@@ -108,8 +108,37 @@ struct Symbol {
 } // namespace
 
 std::string Symbol::getMarkdownDeclaration() const {
+  auto processView = [&](const DeclView &view) -> std::string {
+    std::string buff;
+    llvm::raw_string_ostream os(buff);
+    os << formatv("### {0} `{1}`\n", view.getKindAsString(), identifier);
+    if (auto docString = view.getMarkdownDocString(); !docString.empty()) {
+      os << llvm::formatv(R"(
+---
+
+###
+{0}
+)",
+                          docString);
+    }
+
+    os << llvm::formatv(R"(
+---
+
+###
+```mojo
+{0}
+```)",
+                        view.getDeclarationSnippet());
+    return buff;
+  };
+
   if (auto view = declRef.getView())
-    return view->getFullMarkdownString();
+    return processView(*view);
+  // If didn't get a view, we fall back to simply printing the name of the
+  // entity.
+  if (auto name = declRef.getName())
+    return formatv("### `{0}`", *name);
   return {};
 }
 
@@ -127,8 +156,8 @@ public:
   template <typename... Args>
   void registerSymbol(MojoASTDeclRef declRef, Args &&...args);
 
-  /// Store a new reference to a symbol in this index. No error is thrown if the
-  /// expected symbol doesn't exist in the index.
+  /// Store a new reference to a symbol in this index. No error is thrown if
+  /// the expected symbol doesn't exist in the index.
   void registerRef(MojoASTDeclRef declRef, const lsp::Range &refRange);
 
   /// Look for the symbol whose declaration or references contain the given
@@ -184,6 +213,9 @@ public:
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
 
   void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) override;
+
+  void onArgumentDecl(MojoASTDeclRef declRef,
+                      llvm::SMLoc identifierLoc) override;
 
   void onFunctionDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
@@ -692,6 +724,11 @@ void LSPParserListener::onDeclCommon(MojoASTDeclRef declRef,
 
 void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
                                     SMLoc identifierLoc) {
+  onDeclCommon(declRef, identifierLoc);
+}
+
+void LSPParserListener::onArgumentDecl(MojoASTDeclRef declRef,
+                                       SMLoc identifierLoc) {
   onDeclCommon(declRef, identifierLoc);
 }
 

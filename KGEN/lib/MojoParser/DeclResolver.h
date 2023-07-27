@@ -12,6 +12,7 @@
 #define DECLRESOLVER_H
 
 #include "IRValues.h"
+#include "Lexer.h"
 #include "SharedState.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -29,8 +30,6 @@ class AliasForwardDeclOp;
 class ASTDecl;
 class FileModuleOp;
 class FuncOp;
-class Lexer;
-class LexerCursor;
 class PackageOp;
 class ParserBase;
 class SharedState;
@@ -263,18 +262,19 @@ enum VarArgKind {
 ///
 /// argument_list      ::= argument ("," argument)*
 /// argument           ::= "/" | "*"
-/// argument           ::= [argument_ownership] [argument_variadic] identifier
-///                        [argument_reference] [argument_type] ["=" expression]
-/// argument_ownership ::= "owned" | "borrowed"
+/// argument           ::= [argument_convention] [argument_variadic] identifier
+///                        [argument_type] ["=" expression]
+/// argument_convention ::= "owned" | "borrowed" | "inout"
 /// argument_variadic  ::= "*" | "**"
-/// argument_reference ::= "&"
 /// argument_type      ::= ":" star_expression
 struct ParsedArgument {
   SMLoc loc;
+  SMLoc identifierLoc;
+  LexerCursor cursor;
   // Specify argument passing convention, e.g. owned/byref etc.
   enum {
     kConventionUnspec = 0,         // Nothing specified
-    kConventionInOut = 1,          // x&
+    kConventionInOut = 1,          // inout x
     kConventionOwned = 2,          // owned x
     kConventionBorrowed = 3,       // borrowed x
     kConventionInOutResult = 4,    // No syntax: result slot

@@ -971,6 +971,7 @@ Type ParserParamEvaluator::refineType(Type type) {
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
                                   bool omitName) {
   loc = p.getToken().getLoc();
+  cursor = p.getLexer().getCursor();
 
   // Any owned/borrowed/inout keyword sets convention.
   if (p.consumeIf(Token::kw_owned))
@@ -1006,7 +1007,6 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   }
 
   // When parsing a function type, the name is optional.
-  SMLoc identifierLoc;
   if (!omitName) {
     if (p.parseIdentifier(name, "expected parameter name", &identifierLoc)) {
       // TODO: Scan ahead for better recovery.
@@ -2332,8 +2332,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     // create the decls here in order to pass location information for each
     // argument over to body resolution.
     if (arg.kgenConvention != ValueInputConvention::ByRefResult)
-      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, LexerCursor(),
-              LexerCursor(), /*indent*/ 0);
+      addDecl(DeclIRValue(), arg.loc, arg.name, &decl, arg.cursor, arg.cursor,
+              /*indent*/ 0);
   }
 
   OpBuilder builder = decl.getDeclEndBuilder();
@@ -2618,7 +2618,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   for (auto [argName, bbArg, convention] :
        llvm::zip(funcOp.getValueParamNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getValueInputConventions())) {
-
     // Don't bind byref-result, it is handled specially by 'return'.
     if (convention == ValueInputConvention::ByRefResult)
       continue;
@@ -2631,7 +2630,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // This function sets the argument decl to be fully resolved with the
     // specified IR representation.
-    auto setDecl = [&](DeclIRValue value) {
+    auto setDecl = [&](DeclIRValue value) -> LogicalResult {
       argDecl.setIRValue(value);
       argDecl.resolvedness = DeclResolvedness::fully;
       if (auto rv = argDecl.getIfRValue()) {
@@ -2644,6 +2643,23 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       }
+      if (shared.parserListener) {
+        // FIXME(#18030): We should instead have a getIdentifierLoc() attached
+        // to the decl.
+
+        // We need to reparse the argument in order to get the location of its
+        // identifier, because `argDecl.getLoc()` returns the location of the
+        // convention instead of the identifier.
+        Lexer lex(shared, argDecl.getCursor());
+        ParserBase p(lex);
+        ParsedArgument arg;
+        ParsedArgument::KWArgMarkerInfo markerInfo;
+        if (arg.parse(p, markerInfo))
+          return failure();
+        shared.parserListener->onArgumentDecl(MojoASTDeclRef(&argDecl),
+                                              arg.identifierLoc);
+      }
+      return success();
     };
 
     shared.buildArgDebugInfo(builder, bbArg, argName);
@@ -2652,7 +2668,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // by-value right now.  TODO(literals): Project to a list like thing.
     if (funcSignature.isVararg(bbArg.getArgNumber()) ||
         isa<POP::PackType>(bbArg.getType())) {
-      setDecl(SRValue(bbArg));
+      if (failed(setDecl(SRValue(bbArg))))
+        return failure();
       continue;
     }
 
@@ -2712,7 +2729,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // Ok, now that we've figured out the IR representation of the ASTDecl,
     // install it.
-    setDecl(argIRValue);
+    if (failed(setDecl(argIRValue)))
+      return failure();
   }
 
   // With all the argument declarations set up, we can resolve the body of the
