@@ -482,12 +482,6 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     mlirValue = letDecl.getResult();
     value = SBValue(mlirValue);
 
-    if (emitter.shared.parserListener) {
-      // We notify the listener that a new reference has been resolved.
-      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
-                                           expr->getLoc());
-    }
-
     // Variable references resolve to an MBValue or LValue addressing the
     // memory.
   } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
@@ -495,12 +489,6 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     // diagnose any problems.  This allows us to handle late-initialized lets.
     mlirValue = var.getResult();
     value = LValue(mlirValue);
-
-    if (emitter.shared.parserListener) {
-      // We notify the listener that a new reference has been resolved.
-      emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
-                                           expr->getLoc());
-    }
 
     // RValue's and LValues always resolve to their known value.
   } else if (auto rvalue = decl.getIfRValue()) {
@@ -518,7 +506,6 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
   } else if (auto lvalue = decl.getIfLValue()) {
     mlirValue = lvalue;
     value = lvalue;
-
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     auto ref = emitter.builder->create<GlobalVarRefOp>(
         emitter.translateLocation(expr->getLoc()), globalOp);
@@ -531,6 +518,12 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     emitter.emitError(expr->getLoc(), "use of declaration \"")
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
     return {};
+  }
+
+  if (emitter.shared.parserListener) {
+    // We notify the listener that a new reference has been resolved.
+    emitter.shared.parserListener->onRef(MojoASTDeclRef(&decl), spelling,
+                                         expr->getLoc());
   }
 
   return value;

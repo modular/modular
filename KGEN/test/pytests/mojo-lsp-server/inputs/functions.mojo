@@ -36,6 +36,8 @@ struct SomeStruct[size: Int, other_param: Bool]:
             owned_input: An owned argument.
             init_kargs: Multiple arguments.
         """
+        _ = init_arg
+        _ = init_kargs
         pass
 
     @staticmethod
