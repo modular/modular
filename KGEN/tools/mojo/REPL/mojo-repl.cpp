@@ -65,8 +65,11 @@ static int repl(const State &state) {
     );
   }
 
+  // Empty attr list, for some reason without this we get linker errors...
+  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
+  auto telemetryCtx =
+      LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
   // Initialize telemetry.
-  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
   initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Find the path to the lldb executable and the MojoLLDB plugin library.

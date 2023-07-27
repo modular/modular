@@ -66,7 +66,10 @@ static int demangle(const State &state) {
   }
 
   // Initialize telemetry.
-  auto telemetryCtx = LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create();
+  // Empty attr list, for some reason without this we get linker errors...
+  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
+  auto telemetryCtx =
+      LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
   initializeTelemetry(telemetryCtx.copy(), state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.

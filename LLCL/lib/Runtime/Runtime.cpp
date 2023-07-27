@@ -48,10 +48,8 @@ Runtime::Runtime(std::unique_ptr<Allocator> allocator,
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename),
-      telemetryContext(RCRef<Telemetry::TelemetryContext>::create()),
       runtimeIndex(M::LLCL::Globals::addRuntime(this)),
       readyChain(createReadyChain(*this)) {
-
   // NOTE: Users can't pass in profileFilename AND activate the time profiler in
   // the caller.
   if (!profileFilename.empty())
@@ -77,7 +75,19 @@ Runtime::~Runtime() {
 }
 
 RCRef<Telemetry::TelemetryContext> Runtime::getTelemetryContext() {
-  return telemetryContext.copy();
+  // Create a static mutex for the telemetry context. Because we emplace one if
+  // it didn't exist previously, we can't rely on the context lock.
+  static std::mutex telemetryCtx;
+
+  std::lock_guard<std::mutex> lock(telemetryCtx);
+  auto *ctx = getContext<RCRef<Telemetry::TelemetryContext>>();
+  if (ctx)
+    return ctx->copy();
+
+  // If the user didn't emplace their own context, create one.
+  return emplaceContext<RCRef<Telemetry::TelemetryContext>>(
+             RCRef<Telemetry::TelemetryContext>::create())
+      .copy();
 }
 
 /// Cancel the current MEF Execution. This transitions this Runtime to the

@@ -257,11 +257,16 @@ static int run(const State &state) {
   LLCL::Runtime runtime(LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue());
 
+  // Empty attr list, for some reason without this we get linker errors...
+  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
+  auto telemetryCtx = RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
+
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   initializeTelemetry(
-      runtime.getTelemetryContext(), state, args,
+      telemetryCtx.copy(), state, args,
       /*privateArgs=*/{options::OPT_D, options::OPT_I, options::OPT_L});
+  runtime.emplaceContext<decltype(telemetryCtx)>(std::move(telemetryCtx));
 
   // Lower the input file to an MLIR module.
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
