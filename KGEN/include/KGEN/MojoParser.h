@@ -100,6 +100,14 @@ public:
   /// the parser.
   virtual void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
 
+  /// Notify the listener that a new `function argument` declaration has been
+  /// resolved by the parser.
+  ///
+  /// It is guaranteed that this listener has been notified of its parent
+  /// function decl before this call.
+  virtual void onArgumentDecl(MojoASTDeclRef declRef,
+                              llvm::SMLoc identifierLoc);
+
   /// Notify the listener that a new `def` or `fn` function declaration has been
   /// resolved by the parser. This includes struct methods and closures.
   virtual void onFunctionDecl(MojoASTDeclRef declRef,

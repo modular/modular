@@ -20,7 +20,22 @@ struct SomeStruct[size: Int, other_param: Bool]:
         other_param: Another param.
     """
 
-    fn __init__(inout self):
+    fn __init__(
+        inout self,
+        borrowed borrowed_input: Int,
+        init_arg: Int,
+        owned owned_input: Int,
+        /,
+        *init_kargs: Int,
+    ):
+        """Init documentation.
+
+        Args:
+            borrowed_input: A borrowed argument.
+            init_arg: An Int argument.
+            owned_input: An owned argument.
+            init_kargs: Multiple arguments.
+        """
         pass
 
     @staticmethod
@@ -40,7 +55,14 @@ struct SomeStruct[size: Int, other_param: Bool]:
         fn another_nested_function():
             pass
 
-    fn function_that_raises(inout self) raises -> String:
+    fn function_that_raises(
+        inout self, arg_in_function_that_raises: Int
+    ) raises -> String:
+        """A function that raises.
+
+        Args:
+            arg_in_function_that_raises: An arg in a function with by-ref result.
+        """
         return "foo"
 
 

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-from typing import List
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
@@ -104,8 +103,23 @@ async def test_hover_function_decls(client: LanguageClient):
 ---
 
 ###
+Init documentation.
+
+#### Args:
+&nbsp;&nbsp;borrowed_input: A borrowed argument.
+\\
+&nbsp;&nbsp;init_arg: An Int argument.
+\\
+&nbsp;&nbsp;owned_input: An owned argument.
+\\
+&nbsp;&nbsp;init_kargs: Multiple arguments.
+
+
+---
+
+###
 ```mojo
-fn __init__(inout self: Self)
+fn __init__(inout self: Self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
 ```""",
     )
 
@@ -176,8 +190,17 @@ fn another_nested_function()
 ---
 
 ###
+A function that raises.
+
+#### Args:
+&nbsp;&nbsp;arg_in_function_that_raises: An arg in a function with by-ref result.
+
+
+---
+
+###
 ```mojo
-fn function_that_raises(inout self: Self) raises -> String
+fn function_that_raises(inout self: Self, arg_in_function_that_raises: Int) raises -> String
 ```""",
     )
 
@@ -353,5 +376,105 @@ Summary of a_field.
 ###
 ```mojo
 var a_field: Int
+```""",
+    )
+
+
+async def test_hover_argument(client: LanguageClient):
+    doc = Document.from_file("functions.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_decl(func_name: str, contents: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert contents == result.contents.value
+
+    await assert_decl(
+        "self",
+        """### argument `self`
+
+---
+
+###
+```mojo
+inout self: Self
+```""",
+    )
+
+    await assert_decl(
+        "borrowed_input",
+        """### argument `borrowed_input`
+
+---
+
+###
+A borrowed argument.
+
+
+---
+
+###
+```mojo
+borrowed_input: Int
+```""",
+    )
+
+    await assert_decl(
+        "init_arg",
+        """### argument `init_arg`
+
+---
+
+###
+An Int argument.
+
+
+---
+
+###
+```mojo
+init_arg: Int
+```""",
+    )
+
+    await assert_decl(
+        "init_kargs",
+        """### argument `init_kargs`
+
+---
+
+###
+Multiple arguments.
+
+
+---
+
+###
+```mojo
+*init_kargs: Int
+```""",
+    )
+
+    # We currently can't recover an owned argument from its decl, so we just print its name.
+    await assert_decl("owned_input", "### `owned_input`")
+
+    await assert_decl(
+        "arg_in_function_that_raises",
+        """### argument `arg_in_function_that_raises`
+
+---
+
+###
+An arg in a function with by-ref result.
+
+
+---
+
+###
+```mojo
+arg_in_function_that_raises: Int
 ```""",
     )

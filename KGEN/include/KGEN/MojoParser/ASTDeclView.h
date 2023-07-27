@@ -110,6 +110,7 @@ private:
   std::string type;
   bool flagIsVar;
 };
+
 /// View for parameters of structs or functions.
 class ParameterDeclView : public DeclView {
 public:
@@ -148,8 +149,9 @@ private:
 /// View for function arguments, including varargs arguments.
 class ArgumentDeclView : public DeclView {
 public:
-  ArgumentDeclView(StringRef name, StringRef type, bool inout)
-      : DeclView(DK_ArgumentDeclView, name), type(type), inout(inout) {}
+  ArgumentDeclView(StringRef name, StringRef type, bool inout, bool owned)
+      : DeclView(DK_ArgumentDeclView, name), type(type), inout(inout),
+        owned(owned) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -157,7 +159,11 @@ public:
   /// empty.
   StringRef getDescription() const { return description; }
 
+  std::string getMarkdownDocString() const override;
+
   bool isInout() const { return inout; }
+
+  bool isOwned() const { return owned; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
@@ -176,6 +182,7 @@ public:
 private:
   std::string type;
   bool inout;
+  bool owned;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString

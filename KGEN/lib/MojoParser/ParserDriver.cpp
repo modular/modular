@@ -47,6 +47,8 @@ using llvm::SourceMgr;
 
 void MojoParserListener::onAliasDecl(MojoASTDeclRef declRef,
                                      llvm::SMLoc identifierLoc) {}
+void MojoParserListener::onArgumentDecl(MojoASTDeclRef declRef,
+                                        llvm::SMLoc identifierLoc) {}
 void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
                                         llvm::SMLoc identifierLoc) {}
 void MojoParserListener::onImport(llvm::SMLoc importLoc) {}
