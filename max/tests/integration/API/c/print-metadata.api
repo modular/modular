@@ -4,8 +4,8 @@
 
 // CHECK: Model Metadata:
 // CHECK: Inputs:
-// CHECK: - name: input_116
+// CHECK: - name: args_0
 // CHECK:   spec: -1x25x5xf32
 // CHECK: Outputs:
-// CHECK: - name: output_1
+// CHECK: - name: output_0
 // CHECK:   spec: -1x10xf32
