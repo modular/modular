@@ -4,5 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_driver_option_tablegen(Mojo BuildOptions.td mojo-build
+add_driver_option_tablegen(Mojo BuildOptions.td
+  MANUAL_NAME mojo-build
+  MARKDOWN_NAME build
   EXTRA_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/..")
