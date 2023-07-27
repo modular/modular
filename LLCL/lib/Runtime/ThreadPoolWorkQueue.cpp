@@ -203,26 +203,28 @@ struct WorkQueueThread {
   /// Overall state shared by all threads.
   SharedThreadState &sharedState;
 
-  /// 'Local' tasks which can be run on this thread as they become available.
-  /// No threading synchronization is required here since tasks are added to
-  /// and removed only by the unique thread (currently) tied to this object.
-  /// However, we do need to protect against runItems being called recursively.
+  /// 'Local' work items which can be run on this thread as they become
+  /// available. No threading synchronization is required here since work items
+  /// are added to and removed only by the unique thread (currently) tied to
+  /// this object. However, we do need to protect against runItems being called
+  /// recursively.
   ///
-  /// Tasks on this list always take precedence over those in taskList and
+  /// Work items on this list always take precedence over those in taskList and
   /// overflowTaskList.
-  SmallVector<TaskFunction, 6> localTaskList;
+  SmallVector<WorkItem, 6> localTaskList;
 
-  /// The lock-free queue of pending tasks available for any worker to
+  /// The lock-free queue of pending work items available for any worker to
   /// process.
   ///
-  /// Tasks on this list always take precedence over those in overflowTaskList.
-  LockFreeRingBuffer<TaskFunction> &taskList;
+  /// Work items on this list always take precedence over those in
+  /// overflowTaskList.
+  LockFreeRingBuffer<WorkItem> &taskList;
 
-  /// The mutex-protected queue of pending 'overflow' tasks available for any
-  /// worker to process. Since synchronization is expensive, should only be
+  /// The mutex-protected queue of pending 'overflow' work items available for
+  /// any worker to process. Since synchronization is expensive, should only be
   /// checked before the worker thread would otherwise sleep.
   std::mutex &overflowMutex; // Protects overflowTaskList
-  SmallVectorImpl<TaskFunction> &overflowTaskList;
+  SmallVectorImpl<WorkItem> &overflowTaskList;
 
   /// Unique index for this thread.
   size_t workerID;
@@ -244,14 +246,19 @@ struct WorkQueueThread {
   // the 'main' thread in mainWillDonate mode.
   std::optional<std::thread> thread;
 
+#if MODULAR_PARANOID
+  /// Lifetimes stack.
+  SmallVector<LifetimeRef> activeLifetimes;
+#endif
+
   /// Create a WorkQueueThread representing the worker with workerID. If
   /// necessary, the underlying worker thread will be created and it will
   /// enter its runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
-                  LockFreeRingBuffer<TaskFunction> &taskList,
+                  LockFreeRingBuffer<WorkItem> &taskList,
                   std::mutex &overflowMutex,
-                  SmallVectorImpl<TaskFunction> &overflowTaskList,
-                  size_t workerID, size_t cpuID)
+                  SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
+                  size_t cpuID)
       : sharedState(sharedState), taskList(taskList),
         overflowMutex(overflowMutex), overflowTaskList(overflowTaskList),
         workerID(workerID), cpuID(cpuID) {
@@ -267,19 +274,22 @@ struct WorkQueueThread {
     }
   }
 
-  ~WorkQueueThread() { assert(localTaskList.empty()); }
+  ~WorkQueueThread() {
+    assert(localTaskList.empty() &&
+           "destroying WorkQueueThread with pending local work items");
+  }
 
   /// Schedule this work item on the localTaskList to be executed on the next
   /// runItems loop.
-  void addLocalTask(TaskFunction &&work) {
-    localTaskList.emplace_back(std::move(work));
+  void addLocalTask(WorkItem &&workItem) {
+    localTaskList.emplace_back(std::move(workItem));
   }
 
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
   void join() {
     assert(sharedState.doneFlag.load() &&
-           "Must not destroy a WorkQueueThread object that is not pending "
+           "must not destroy a WorkQueueThread object that is not pending "
            "completion.");
     if (thread.has_value())
       thread->join();
@@ -288,20 +298,47 @@ struct WorkQueueThread {
   // Execute a single work item, which may have come from either addTask
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
-  void doWork(TaskFunction &&taskFunction) {
+  void doWork(WorkItem &&workItem) {
 #if MODULAR_PARANOID
     if (sharedState.paranoid)
       randomSleep();
+
+    activeLifetimes.emplace_back(std::move(workItem.lifetime));
+    if constexpr (IsWaiter) {
+      assert(!activeLifetimes.back() ||
+             activeLifetimes.back()->isActive() &&
+                 "a waiter closure is being started after its lifetime has "
+                 "ended");
+    } else {
+      assert(
+          !activeLifetimes.back() ||
+          activeLifetimes.back()->isActive() &&
+              "a task closure is being started after its lifetime has ended");
+    }
 #endif
 
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create(
           IsWaiter ? "llcl.waiter" : "llcl.doWork"));
       // Do the work.
-      taskFunction();
+      workItem.task();
     }
 
 #if MODULAR_PARANOID
+    assert(!activeLifetimes.empty() &&
+           "unbalanced pushes/pops to active lifetime stack");
+    if constexpr (IsWaiter) {
+      assert(!activeLifetimes.back() ||
+             activeLifetimes.back()->isActive() &&
+                 "a waiter closure's lifetime was ended while it was still "
+                 "in-flight");
+    } else {
+      assert(!activeLifetimes.back() ||
+             activeLifetimes.back()->isActive() &&
+                 "a task closure's lifetime was ended while it was still "
+                 "in-flight");
+    }
+    activeLifetimes.pop_back();
     if constexpr (IsWaiter) {
       assert(sharedState.state != kShutdown &&
              "ThreadPoolWorkQueue was shutdown while a waiter closure was "
@@ -320,23 +357,20 @@ struct WorkQueueThread {
   /// is executed, and the "late" one is called when waking up from a
   /// suspended state.
   ///
-  /// The loop will busy wait or sleep waiting for new tasks only if
+  /// The loop will busy wait or sleep waiting for new work items only if
   /// waitForTasks is true, otherwise the loop will exit once the work queue
   /// and local task list is empty.
   ///
   /// The given labels are used only for profiling entries when spinning or
-  /// sleeping. The current running profiling entry will be paused then
-  /// resumed while other tasks are executed.
-  ///
-  /// If the caller is a 'foreign' thread then only safe to call if
-  /// ensureOwningThread has returned true.
+  /// sleeping.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsOnOwningThread(EarlyStopPredicateFn earlyStopPredicate,
                               LateStopPredicateFn lateStopPredicate,
                               bool waitForTasks, StringRef spinningLabel,
                               StringRef sleepingLabel);
 
-  /// As above, but without tracking the running profiling entry.
+  /// As above, but without setting thread affinity for calls from the 'main'
+  /// thread.
   template <typename EarlyStopPredicateFn, typename LateStopPredicateFn>
   void runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
@@ -351,7 +385,7 @@ private:
 void WorkQueueThread::runOnThread() {
   assert(!sharedState.mainWillDonate ||
          workerID != 0 &&
-             "The WorkQueueThread for the main thread should not be run");
+             "the WorkQueueThread for the main thread should not be run");
 
   // Set the current workerID in thread local storage so we can find it later
   // when re-entering.
@@ -414,23 +448,22 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // runItems recursively.
     while (!localTaskList.empty()) {
 #if MODULAR_PARANOID
-      // Try to tickle bugs by working through tasks in random order.
+      // Try to tickle bugs by working through work items in random order.
       size_t i = rand() % localTaskList.size();
-      TaskFunction taskFunction = std::move(localTaskList[i]);
+      WorkItem workItem = std::move(localTaskList[i]);
       localTaskList.erase(localTaskList.begin() + i);
 #else
-      TaskFunction taskFunction = std::move(localTaskList.back());
-      localTaskList.pop_back();
+      WorkItem workItem = localTaskList.pop_back_val();
 #endif
-      doWork</*IsWaiter=*/true>(std::move(taskFunction));
+      doWork</*IsWaiter=*/true>(std::move(workItem));
     }
 
     if (earlyStopPredicate())
       return;
 
     // In the normal case we happily pick up and do work.
-    if (auto taskFunction = taskList.dequeue()) {
-      doWork</*IsWaiter=*/false>(std::move(taskFunction));
+    if (WorkItem workItem = taskList.dequeue()) {
+      doWork</*IsWaiter=*/false>(std::move(workItem));
       goto KeepRunning;
     }
 
@@ -453,9 +486,9 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       while (!spinWaiter.wait()) {
         // If we ever succeed in finding work to do, go back to running like
         // normal.
-        if (auto work = taskList.dequeue()) {
+        if (WorkItem workItem = taskList.dequeue()) {
           std::move(spinning).record();
-          doWork</*IsWaiter=*/false>(std::move(work));
+          doWork</*IsWaiter=*/false>(std::move(workItem));
           goto KeepRunning;
         }
 
@@ -479,11 +512,10 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       std::lock_guard<std::mutex> guard(overflowMutex);
       if (!overflowTaskList.empty()) {
         while (!overflowTaskList.empty()) {
-          TaskFunction taskFunction = std::move(overflowTaskList.back());
-          overflowTaskList.pop_back();
-          if (!taskList.enqueue(taskFunction)) {
+          WorkItem workItem = overflowTaskList.pop_back_val();
+          if (!taskList.enqueue(workItem)) {
             // Oops, went too far.
-            overflowTaskList.emplace_back(std::move(taskFunction));
+            overflowTaskList.emplace_back(std::move(workItem));
             break;
           }
         }
@@ -540,9 +572,9 @@ public:
 
   void shutdown() override;
 
-  void addTask(TaskFunction &&work) override;
+  void addTask(WorkItem &&workItem) override;
 
-  void addLocalTask(TaskFunction &&work) override;
+  void addLocalTask(WorkItem &&workItem) override;
 
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
@@ -555,6 +587,27 @@ public:
     // TODO(#1903): This is a poor heuristic for subdividing work.
     return numWorkers;
   }
+
+#if MODULAR_PARANOID
+  void pushDefaultLifetime(LifetimeRef lifetime) override {
+    assert(lifetime && "cannot push a null lifetime");
+    WorkQueueThread *callerWorker = getOwningWorkQueueThread();
+    assert(callerWorker && "cannot push a lifetime from a foreign thread");
+    callerWorker->activeLifetimes.emplace_back(std::move(lifetime));
+  }
+
+  void popDefaultLifetime(LifetimeRef lifetime) override {
+    assert(lifetime && "cannot pop a null lifetime");
+    WorkQueueThread *callerWorker = getOwningWorkQueueThread();
+    assert(callerWorker && "cannot pop a lifetime from a foreign thread");
+    assert(!callerWorker->activeLifetimes.empty() &&
+           "unbalanced pushes/pops on active lifetimes stack");
+    assert(callerWorker->activeLifetimes.back().getPointer() ==
+               lifetime.getPointer() &&
+           "lifetime does not match current stack top");
+    callerWorker->activeLifetimes.pop_back();
+  }
+#endif
 
 private:
   /// If the caller is a worker thread or the 'main' thread for this work queue
@@ -580,7 +633,7 @@ private:
 
   /// Returns the WorkQueueThread for workerID.
   WorkQueueThread *getWorkQueueThread(size_t workerID) const {
-    assert(workerID < numWorkers);
+    assert(workerID < numWorkers && "invalid worker id");
     return workers + workerID;
   }
 
@@ -596,11 +649,11 @@ private:
 
   /// The lock-free queue of pending tasks available for any worker.
   /// It may become full.
-  LockFreeRingBuffer<TaskFunction> taskList;
+  LockFreeRingBuffer<WorkItem> taskList;
   /// The mutex-protected queue of pending tasks available for any worker.
   /// Only used when the taskList is full.
   std::mutex overflowMutex; // protects overflowTaskList
-  SmallVector<TaskFunction> overflowTaskList;
+  SmallVector<WorkItem> overflowTaskList;
 };
 } // namespace
 
@@ -609,13 +662,13 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                                          bool mainWillDonate, bool paranoid)
     : numWorkers(cpuIDs.size()), sharedState(mainWillDonate, paranoid),
       taskList(taskListCapacity) {
-  assert(numWorkers <= kMaxWorkers && "Too many workers for bitvec width");
+  assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
   // Initialize each thread with its required state.
   // Note that we're constructing the array manually since WorkQueueThreads have
   // non-moveable atomics.
   workers = static_cast<WorkQueueThread *>(
       malloc(sizeof(WorkQueueThread) * numWorkers));
-  assert(workers);
+  assert(workers && "malloc of workers failed");
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
     new (workers + workerID)
         WorkQueueThread(sharedState, taskList, overflowMutex, overflowTaskList,
@@ -625,7 +678,8 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // Note we can't assert state == kShutdown since queue may be created
   // and destroyed without ever being included in a runtime.
-  assert(!taskList.dequeue());
+  assert(!taskList.dequeue() &&
+         "destroying ThreadPoolWorkQueue with pending work items");
 
   // Destroy all the threads datastructures.
   for (size_t i = 0; i < numWorkers; ++i)
@@ -636,7 +690,8 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 void ThreadPoolWorkQueue::shutdown() {
 #if MODULAR_PARANOID
   WorkQueueState expected = kReady;
-  assert(sharedState.state.compare_exchange_strong(expected, kShuttingDown));
+  assert(sharedState.state.compare_exchange_strong(expected, kShuttingDown) &&
+         "work pool is not ready");
 #endif
 
   TimeTraceScope scope(InternalProfilerEntry::create("llcl.shutdown"));
@@ -684,20 +739,29 @@ void ThreadPoolWorkQueue::shutdown() {
 
 #if MODULAR_PARANOID
   expected = kShuttingDown;
-  assert(sharedState.state.compare_exchange_strong(expected, kShutdown));
+  assert(sharedState.state.compare_exchange_strong(expected, kShutdown) &&
+         "work pool is not shutting down");
 #endif
 }
 
-void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
-  assert(work);
+void ThreadPoolWorkQueue::addTask(WorkItem &&workItem) {
+  assert(workItem);
 #if MODULAR_PARANOID
   // This is not a true interlock, but will at least catch obvious
   // use-after-shutdowns.
-  assert(sharedState.state != kShutdown);
+  assert(sharedState.state != kShutdown &&
+         "adding task to shutdown work queue");
+
+  WorkQueueThread *callerWorker = getOwningWorkQueueThread();
+  if (callerWorker && !workItem.lifetime &&
+      !callerWorker->activeLifetimes.empty()) {
+    // Propagate the current lifetime (if any) onto this work item.
+    workItem.lifetime = callerWorker->activeLifetimes.back().copy();
+  }
 #endif
 
   // Try to add this work to the lock-free queue.
-  if (taskList.enqueue(work)) {
+  if (taskList.enqueue(workItem)) {
     // If there are any suspended workers, kick one of them now to make sure
     // there's at least one worker still awake to pick up work.
     int workerIDToPoke = sharedState.takeAnySuspendedThread();
@@ -723,34 +787,42 @@ void ThreadPoolWorkQueue::addTask(TaskFunction &&work) {
   //    we obviously risk starving these tasks.
   // We go for the last option.
   std::lock_guard<std::mutex> guard(overflowMutex);
-  overflowTaskList.emplace_back(std::move(work));
+  overflowTaskList.emplace_back(std::move(workItem));
 }
 
-void ThreadPoolWorkQueue::addLocalTask(TaskFunction &&work) {
-  assert(work);
+void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
+  assert(workItem && "invalid work item");
 #if MODULAR_PARANOID
   // This is not a true interlock, but will at least catch obvious
   // use-after-shutdowns.
-  assert(sharedState.state != kShutdown);
+  assert(sharedState.state != kShutdown &&
+         "adding local task to shutdown work queue");
 #endif
+
   WorkQueueThread *callerWorker = getOwningWorkQueueThread();
   if (callerWorker == nullptr) {
     // Called from a foreign thread, so there's no local task list we can
     // enqueue to on this thread. Add as a task instead.
-    addTask(std::move(work));
+    addTask(std::move(workItem));
     return;
   }
 
-  // Called from either a worker thread or the 'main' therad. Safe to enqueue
+#if MODULAR_PARANOID
+  if (!workItem.lifetime && !callerWorker->activeLifetimes.empty())
+    workItem.lifetime = callerWorker->activeLifetimes.back().copy();
+#endif
+
+  // Called from either a worker thread or the 'main' thread. Safe to enqueue
   // directly.
-  callerWorker->addLocalTask(std::move(work));
+  callerWorker->addLocalTask(std::move(workItem));
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 #if MODULAR_PARANOID
   // This is not a true interlock, but will at least catch obvious
   // use-after-shutdowns.
-  assert(sharedState.state == kReady);
+  assert(sharedState.state == kReady &&
+         "awaiting work queue which is not ready");
 #endif
 
   // If all the values are ready, then we don't have to do anything.
@@ -844,10 +916,12 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     sema.wait();
   }
 
-  assert(numRemaining.load() == 0);
+  assert(numRemaining.load() == 0 &&
+         "exited await loop without all values being ready");
 #if MODULAR_PARANOID
   // Try to catch if the runtime was torn down while we were awaiting.
-  assert(sharedState.state == kReady);
+  assert(sharedState.state != kShutdown &&
+         "work queue was shutdown while waiting");
 #endif
 }
 
@@ -890,7 +964,7 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
   if (cpuIDOr.isError())
     llvm::report_fatal_error(cpuIDOr.getError());
   std::vector<size_t> cpuIDs = *cpuIDOr;
-  assert(!cpuIDs.empty());
+  assert(!cpuIDs.empty() && "no cpu ids");
   size_t numCores = std::thread::hardware_concurrency();
   if (cpuIDs.size() != numCores)
     LLVM_DEBUG(
