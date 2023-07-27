@@ -5,44 +5,59 @@
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
 
-// CHECK-DAG: #[[LOC_TRY_FILE:.*]] = loc("silly.mlir":17:3)
-#locTry = loc("silly.mlir":17:3)
-
-// CHECK-DAG: ![[PARAM_TYPE:.*]] = !debuginfo.unresolved<index>
 !unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
 
-// CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<() -> (index): DW_CC_normal>
-!subroutine = !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}} name = "takeFnContextualType", linkageName = "takeFnContextualType,ty=index,fn=sillyFn",
+#callerSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "takeFnContextualType",
+  linkageName = "takeFnContextualType",
+  file = #file,
+  line = 2,
+  scopeLine = 2,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}} name = "takeFnContextualType", linkageName = "takeFnContextualType,ty=index,fn=sillyFn", {{.*}}> : ![[SP_TYPE]]
+// CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0"
+#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 3, arg = 0, alignInBits = 0> : !unresolved
+
+// CHECK-DAG: #[[LOC_TRY_FILE:.*]] = loc("silly.mlir":17:3)
 // CHECK-DAG: #[[LOC_TRY:.*]] = loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "takeFnContextualType", linkageName = "takeFnContextualType", file = #file, line = 2, scopeLine = 2, subprogramFlags = "Definition|Optimized"> : !subroutine
-
-// CHECK: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], {{.*}}> : ![[PARAM_TYPE]]
-#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "0", file = #file, line = 3, arg = 0, alignInBits = 0> : !unresolved
+#locTry = loc("silly.mlir":17:3)
 
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index
-// CHECK:   %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
-// CHECK:   debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC:.*]])
-// CHECK:   kgen.param.constant = <17> loc(#[[FW_LOC:.*]])
-// CHECK:   lit.try {
-// CHECK:   } except (%arg0: index loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])) {
-// CHECK:     lit.try.yield loc(#[[LOC_TRY]])
-// CHECK:   kgen.return %[[RES]] : index loc(#[[RET_LOC:.*]])
-// CHECK: } loc(#[[SP_LOC:.*]])
 kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> {
+  // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
   %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
+  // CHECK: debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC:.*]])
   debuginfo.value #local_variable = %0 : !kgen.paramref<ty> loc(#loc11)
+  // CHECK: kgen.param.constant = <17> loc(#[[FW_LOC:.*]])
   %1 = kgen.param.constant = <17> loc(#locFwParam)
   kgen.param.declare a = <1> loc(#loc11)
+
+  // CHECK: lit.try {
+  // CHECK: } except (%arg0: index loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])) {
+  // CHECK:   lit.try.yield loc(#[[LOC_TRY]])
   lit.try {
     lit.try.yield loc(#loc11)
-  } except (%arg0: index loc(fused<#subprogram>[#locTry])) {
-    lit.try.yield loc(fused<#subprogram>[#locTry])
+  } except (%arg0: index loc(fused<#callerSp>[#locTry])) {
+    lit.try.yield loc(fused<#callerSp>[#locTry])
   } else {
     lit.try.yield loc(#loc11)
   } loc(#loc11)
-  kgen.return %0 : !kgen.paramref<ty> loc(#locRet)
+
+  // CHECK: %1 = kgen.stage_closure
+  // CHECK:   kgen.return loc(#[[LOC_CL:.*]])
+  // CHECK: } loc(#[[LOC_CL]])
+  kgen.param.declare.region SomeClosure = (%arg0: index) capturing {
+    kgen.return loc(#locClosure)
+  } loc(#locClosure)
+  %2 = kgen.create_closure [<>(index) capturing -> (): SomeClosure]() loc(fused<#callerSp>[])
+
+  // CHECK: kgen.return %[[RES]] : index loc(#[[SP_LOC:.*]])
+  kgen.return %0 : !kgen.paramref<ty> loc(#loc10)
+// CHECK: } loc(#[[SP_LOC:.*]])
 } loc(#loc10)
 
 kgen.generator @sillyFn() -> index {
@@ -65,11 +80,22 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 // CHECK-DAG: #[[PARAM_REF_LOC:.*]] = loc(fused<1 : index>[#[[FILE_LOC3]]])
 // CHECK-DAG: #[[FW_LOC]] = loc(fused<#[[SP]]>[#[[PARAM_REF_LOC]]])
 
-// CHECK-DAG: #[[FILE_LOC4:.*]] = loc("test.mlir":5:5)
-// CHECK-DAG: #[[RET_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC4]]])
-
-#loc10 = loc(fused<#subprogram>["test.mlir":2:3])
-#loc11 = loc(fused<#subprogram>["test.mlir":3:10])
+#loc10 = loc(fused<#callerSp>["test.mlir":2:3])
+#loc11 = loc(fused<#callerSp>["test.mlir":3:10])
 #paramRefLoc = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
-#locFwParam = loc(fused<#subprogram>[#paramRefLoc])
-#locRet = loc(fused<#subprogram>["test.mlir":5:5])
+#locFwParam = loc(fused<#callerSp>[#paramRefLoc])
+
+// CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<{{.*}} name = "SomeClosure", linkageName = "SomeClosure",
+#closureSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "SomeClosure",
+  linkageName = "SomeClosure",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (): DW_CC_normal>
+
+// CHECK-DAG: #[[LOC_CL]] = loc(fused<#[[CL_SP]]>
+#locClosure = loc(fused<#closureSp>["silly.mlir":10:1])

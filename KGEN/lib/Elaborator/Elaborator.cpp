@@ -519,10 +519,14 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
   if (isa<CallOp, CallParamOp>(&*call)) {
     // No scope.
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
-    scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+    // Nested function-like op should retain scoped location of the callee.
+    scope = b.create<LIT::AsyncExecuteOp>(callee->getParentOp()->getLoc(),
+                                          asyncCall.getType());
     b.createBlock(&scope->getRegions().front());
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
-    scope = b.create<StageClosureOp>(call.getLoc(), createClosure.getType());
+    // Nested function-like op should retain scoped location of the callee.
+    scope = b.create<StageClosureOp>(callee->getParentOp()->getLoc(),
+                                     createClosure.getType());
     b.createBlock(&scope->getRegions().front());
     for (BlockArgument arg :
          callee->getArguments().drop_front(createClosure.getCaptures().size()))
@@ -536,6 +540,8 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
        llvm::zip(call->getOperands(), callee->getArguments()))
     map.map(map.lookupOrDefault(genArg), callArg);
 
+  bool scopeIsNotSubprogram =
+      !llvm::isa_and_present<DebugInfo::SubprogramScoped>(scope);
   Operation *terminator = callee->front().getTerminator();
   // Handle debug info as we clone.
   for (Operation &op : callee->front()) {
@@ -552,11 +558,15 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
         return clonedOp->erase();
 
       // Update locations to be CallSiteLoc.
-      if (alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug)
+      if (alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug) {
         clonedOp->setLoc(call.getLoc());
-      else
+      } else if (scopeIsNotSubprogram &&
+                 !isa<DebugInfo::SubprogramScoped>(clonedOp)) {
+        // Nested functions have their own subprogram scope, so we do not update
+        // their locations, or the ops within their scopes.
         clonedOp->setLoc(
             mlir::CallSiteLoc::get(clonedOp->getLoc(), call.getLoc()));
+      }
     });
   }
 
@@ -564,7 +574,7 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
   // If the remapped return isn't parented under the call's region, then we know
   // it's inside another scope - so use the results of that scope.
   if (scope) {
-    if (auto asyncExec = dyn_cast<LIT::AsyncExecuteOp>(scope)) {
+    if (isa<LIT::AsyncExecuteOp>(scope)) {
       // Replace the returnOp with a LIT::AsyncReturnOp.
       returnOp->replaceAllUsesWith(b.create<LIT::AsyncReturnOp>(
           returnOp->getLoc(), returnOp->getOperands()));

@@ -952,9 +952,13 @@ static std::pair<Operation *, bool> inlineRegion(IRMapping &map,
     scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                    ValueRange(), label);
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
-    scope = b.create<LIT::AsyncExecuteOp>(call.getLoc(), asyncCall.getType());
+    // Nested function-like op should retain scoped location of the callee.
+    scope = b.create<LIT::AsyncExecuteOp>(region.getParentOp()->getLoc(),
+                                          asyncCall.getType());
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
-    scope = b.create<StageClosureOp>(call.getLoc(), createClosure.getType());
+    // Nested function-like op should retain scoped location of the callee.
+    scope = b.create<StageClosureOp>(region.getParentOp()->getLoc(),
+                                     createClosure.getType());
   } else {
     llvm::report_fatal_error("unknown call operation '" +
                              call->getName().getStringRef() +
@@ -1386,8 +1390,12 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
       return WalkResult::advance();
     });
   } else {
+    bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
     body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));
+      // Nested functions have their own subprogram scope, so we do not update
+      // their locations, or the ops within their scopes.
+      if (scopeIsNotSubprogram && !isa<DebugInfo::SubprogramScoped>(op))
+        op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callLoc));
 
       if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
         auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
