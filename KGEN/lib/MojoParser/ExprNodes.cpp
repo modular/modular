@@ -1053,6 +1053,12 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
 
+  if (emitter.shared.parserListener) {
+    // We notify the listener that a new reference has been resolved.
+    emitter.shared.parserListener->onRef(MojoASTDeclRef(&memberDecl),
+                                         attrSpelling, getLoc());
+  }
+
   // Parameters form a meta-value.
   if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
     PValue result = resolveAliasDeclareValue(

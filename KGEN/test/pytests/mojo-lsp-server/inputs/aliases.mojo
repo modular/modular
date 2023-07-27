@@ -19,3 +19,10 @@ fn function() -> Int:
 
 
 alias AliasToAlias = IntAlias
+
+
+struct StructWithAlias:
+    alias AliasInStruct = Int
+
+
+alias AliasInStructRef = StructWithAlias.AliasInStruct
