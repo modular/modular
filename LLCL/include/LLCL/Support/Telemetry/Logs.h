@@ -70,6 +70,13 @@ public:
 
     virtual ~LogStream() { logger->emitEvent(eventName, severity, body); }
 
+    /// Provide an explicit overload for strings that escapes special
+    /// characters.
+    friend LogStream &operator<<(LogStream &os, StringRef str) {
+      os.write_escaped(str);
+      return os;
+    }
+
   private:
     friend class Logger;
 
