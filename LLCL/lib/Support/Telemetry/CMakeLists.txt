@@ -18,6 +18,7 @@ if(MODULAR_ENABLE_TELEMETRY)
 
     LINK_LIBS PUBLIC
     LLCLSupport
+    MSupport
     opentelemetry_metrics
     opentelemetry_logs
 
@@ -31,6 +32,8 @@ if(MODULAR_ENABLE_TELEMETRY)
     opentelemetry_resources
     opentelemetry_exporter_ostream_metrics
     opentelemetry_exporter_ostream_logs
+
+    DEPENDS protobuf::protoc
     )
 
 else()
