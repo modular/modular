@@ -9,11 +9,11 @@
 #include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Host.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -32,6 +32,7 @@
 #include "opentelemetry/sdk/logs/simple_log_record_processor_factory.h"
 #include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
+#include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
 #define DEBUG_TYPE "telemetry-context"
@@ -40,8 +41,34 @@ using namespace M;
 using namespace LLCL;
 using namespace Telemetry;
 
-TelemetryContext::TelemetryContext() {
+TelemetryContext::TelemetryContext(
+    const llvm::StringMap<TelemetryContext::AttributeValue> &resources) {
 #ifdef MODULAR_ENABLE_TELEMETRY
+  using namespace opentelemetry::sdk::resource;
+
+  // -------- Resources --------
+  // Get the map of resources for the full host info.
+  ResourceAttributes attrs;
+  auto hostInfoOr = getHostMachineInfo();
+  assert(!hostInfoOr.isError() && "could not get the host machine info");
+  // Set the CPU and architecture.
+  attrs.SetAttribute("cpu", hostInfoOr->cpuModelName);
+  attrs.SetAttribute("arch", hostInfoOr->cpuArch);
+  // Set the CPU features.
+  std::vector<std::string_view> featuresView;
+  for (auto &f : hostInfoOr->cpuFeatures)
+    featuresView.emplace_back(f);
+  attrs.SetAttribute("features", featuresView);
+  // Set some of the other useful features, like number of cores and operating
+  // system.
+  attrs.SetAttribute("cores", hostInfoOr->numPhysicalCores);
+  attrs.SetAttribute("operating system", hostInfoOr->osName);
+
+  // Set the values of any resources we've been provided.
+  for (auto &resource : resources) {
+    std::visit([&](auto v) { attrs.SetAttribute(resource.first(), v); },
+               resource.second);
+  }
 
   // -------- Exporter options (export to file or to OTLP receiver) --------
   auto configOr = Config::open();
@@ -58,6 +85,13 @@ TelemetryContext::TelemetryContext() {
     if (filePath.empty())
       filePath = Config::getModularHomeDirPath() / "telemetry.log";
   }
+  // Get the user ID out of the config.
+  StringRef uuid = cfg.getValue("user.id");
+  if (!uuid.empty())
+    attrs.SetAttribute("userid", uuid);
+
+  // Get the resource object we can give to OTel.
+  auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
 
   // -------- Metrics --------
   // Create OpenTelemetry OTLP HTTP exporter.
@@ -77,8 +111,9 @@ TelemetryContext::TelemetryContext() {
   metricReader =
       std::make_shared<ManualExportingMetricReader>(std::move(metricExporter));
 
-  auto provider =
-      std::make_unique<opentelemetry::sdk::metrics::MeterProvider>();
+  auto provider = std::make_unique<opentelemetry::sdk::metrics::MeterProvider>(
+      std::make_unique<opentelemetry::sdk::metrics::ViewRegistry>(),
+      otelResources);
   provider->AddMetricReader(metricReader);
   metricsProvider = std::unique_ptr<opentelemetry::metrics::MeterProvider>(
       provider.release());
@@ -103,7 +138,7 @@ TelemetryContext::TelemetryContext() {
       opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
           std::move(logExporter));
   loggerProvider = opentelemetry::sdk::logs::LoggerProviderFactory::Create(
-      std::move(processor));
+      std::move(processor), otelResources);
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
 #endif // MODULAR_ENABLE_TELEMETRY
