@@ -81,6 +81,11 @@ fn use_before_def():
     let y = x
     let x = 10
 
+# Issue #18150: https://github.com/modularml/modular/issues/18150
+fn self_reference():
+    # This is invalid code that shouldn't crash, the error is caught by check
+    # lifetimes, not the parser.
+    let num: Int = num + 2
 
 ##===----------------------------------------------------------------------===##
 # Functions
