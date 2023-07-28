@@ -8,11 +8,9 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
-#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/IRMapping.h"
-#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace M;
@@ -171,7 +169,6 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
   mlir::IRRewriter rewriter{OpBuilder(loop)};
 
   int64_t lowerBound = loop.getLowerBoundAsInt().value();
-  int64_t upperBound = loop.getUpperBoundAsInt().value();
   int64_t step = loop.getStepAsInt().value();
   int64_t newStep = step * unrollFactorN;
 
@@ -199,7 +196,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // Example1: unroll the following ForOp (trip count 6) by 2
     // %idx5 = index.constant 7
     // %idx1 = index.constant 1
-    // %1 = hlcf.for [7 to 1 step 1] (%arg0, %arg1, %arg2) -> index {
+    // %1 = hlcf.for [7 to 1 step 1 sgtlhs sub] (%arg0, %arg1, %arg2) -> index {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
@@ -209,7 +206,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // Also change the result to include all iteration args except the induction
     // variable.
     //
-    // %0:2 = hlcf.for [7 to 1 step 2] (%arg0, %arg1, %arg2) -> index {
+    // %0:2 = hlcf.for [7 to 1 step 2 sgtlhs sub] (%arg0, %arg1, %arg2)->index {
     //   %1 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   %2 = index.sub %1, 1
@@ -221,7 +218,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // divisible  by 2.
     // %idx5 = index.constant 5
     // %idx1 = index.constant 1
-    // %1 = hlcf.for [5 to 1 step 1] (%arg0, %arg1, %arg2) -> index {
+    // %1 = hlcf.for [5 to 1 step 1 sgtlhs sub] (%arg0, %arg1, %arg2) -> index {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
@@ -233,7 +230,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // variable.
     // 2. Fully unroll the tail iterations.
     //
-    // %0:2 = hlcf.for [5 to 2 step 2] (%arg0, %arg1, %arg2) -> index {
+    // %0:2 = hlcf.for [5 to 2 step 2 sgtlhs sub] (%arg0, %arg1, %arg2)->index {
     //   %1 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   %2 = index.sub %1, 1
@@ -244,16 +241,15 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // kgen.call @foo(%0:0, %0:1) : (index) -> ()
 
     int64_t newTailLowerBound;
-    if (lowerBound < upperBound) {
-      // Ascending.
+    switch (loop.getIndVarComputeType()) {
+    case HLCF::ForLoopIndVarCompute::ADD:
       newTailLowerBound =
-          lowerBound +
-          std::abs((count.value() / unrollFactorN) * step * unrollFactorN);
-    } else {
-      // Descending.
+          lowerBound + (count.value() / unrollFactorN) * step * unrollFactorN;
+      break;
+    case HLCF::ForLoopIndVarCompute::SUB:
       newTailLowerBound =
-          lowerBound -
-          std::abs((count.value() / unrollFactorN) * step * unrollFactorN);
+          lowerBound - (count.value() / unrollFactorN) * step * unrollFactorN;
+      break;
     }
     int64_t newUnrollNUpperBound = newTailLowerBound;
 
@@ -275,7 +271,8 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
         loop.getLowerBound(), newUnrollNUpperBoundOp, newStepOp,
         loop.getIterArgs(),
         HLCF::LoopUnrollFullAttr::get(loop->getContext(),
-                                      HLCF::LoopUnrollFull::None));
+                                      HLCF::LoopUnrollFull::None),
+        loop.getCmpPredicateType(), loop.getIndVarComputeType());
 
     // Create the block for the new ForOp.
     Block *forBody = rewriter.createBlock(&forOp.getBody());

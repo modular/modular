@@ -95,40 +95,31 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                        Index:$upperBound,
                        Index:$step,
                        Variadic<AnyType>:$iterArgs,
-                       AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>:$unrollFactor);
+                       AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>:$unrollFactor,
+                       HLCF_ForLoopBoundCmpPredicateAttr:$cmpPredicateType,
+                       HLCF_ForLoopIndVarComputeAttr:$indVarComputeType);
 
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
     ` ``[` $lowerBound
-    ` ``to` $upperBound
-    ` ``step` $step `]`
+    `to` $upperBound
+    `step` $step
+    ``$cmpPredicateType
+    ``$indVarComputeType`]`
     custom<For>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 
   let builders =[
     OpBuilder<(ins "TypeRange":$results,
-                   "Value":$lowerBound,
-                   "Value":$upperBound,
-                   "Value":$step,
-                   "ValueRange":$iterArgs), [{
-      build($_builder, $_state, results, lowerBound, upperBound, step, iterArgs,
-        HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None));
-    }]>,
-    OpBuilder<(ins "TypeRange":$results,
                        "Value":$lowerBound,
                        "Value":$upperBound,
                        "Value":$step,
                        "ValueRange":$iterArgs,
-                       "std::optional<Attribute>":$unrollFactor), [{
-          if(!unrollFactor)
-            unrollFactor =
-              HLCF::LoopUnrollFullAttr::get($_state.getContext(), HLCF::LoopUnrollFull::None);
-
-          build($_builder, $_state, results, lowerBound, upperBound,
-            step, iterArgs, unrollFactor.value());
-    }]>
+                       "std::optional<Attribute>":$unrollFactor,
+                       "HLCF::ForLoopBoundCmpPredicate":$cmpPredicateType,
+                       "HLCF::ForLoopIndVarCompute":$indVarComputeType)>
   ];
 
   let extraClassDeclaration = [{
