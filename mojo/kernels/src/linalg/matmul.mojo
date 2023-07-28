@@ -50,11 +50,11 @@ from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
 from SIMD import SIMD
-from TargetInfo import has_neon, alignof, simdwidthof, has_avx512_vnni
+from TargetInfo import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
 from TypeUtilities import rebind
 from Intrinsics import PrefetchOptions, external_call
-from VNNI import vpdpbusd
+from VNNI import dot_i8_to_i32_x86
 from IO import print
 
 
@@ -601,7 +601,7 @@ struct MatmulInnerLoopBPacked[
     #  local tile, in (a_row_size, TileN).
     var c_bound: StaticIntTuple[2]
 
-    alias use_vnni = has_avx512_vnni() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
+    alias use_vnni = has_avx2() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
 
     fn __init__(
         inout self,
@@ -1028,7 +1028,7 @@ struct MatmulInnerLoopBPacked[
                 let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
                 ]().cast[c_type]()
-                c_val = vpdpbusd[simd_size](c_val, a_val, b_val)
+                c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
     @adaptive

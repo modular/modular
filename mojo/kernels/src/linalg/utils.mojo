@@ -12,7 +12,7 @@ from SIMD import SIMD, Float32
 from String import String
 from TargetInfo import (
     has_avx512f,
-    has_avx512_vnni,
+    has_avx2,
     has_neon,
     os_is_macos,
     simdwidthof,
@@ -670,7 +670,7 @@ fn get_matmul_config[
     #   inner micro kernel loop.
     alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
 
-    alias use_vnni = has_avx512_vnni() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
+    alias use_vnni = has_avx2() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
 
     return MatmulConfig {
         shape_a: DimList.create_unknown[2](),
