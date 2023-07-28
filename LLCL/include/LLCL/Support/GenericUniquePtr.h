@@ -8,6 +8,7 @@
 #define LLCL_SUPPORT_GENERICUNIQUEPTR_H
 
 #include "LLCL/Runtime/TypeID.h"
+#include "llvm/ADT/FunctionExtras.h"
 
 namespace M::LLCL {
 
@@ -26,14 +27,18 @@ public:
     assert(newPayload && "GenericUniquePtr new payload cannot be null");
     // Mimic std::unique_ptr in deleting existing payload only after fields
     // have been updated.
-    TypeID oldTypeId = typeId;
     void *oldPayload = payload;
+    llvm::unique_function<void(void *)> oldDeletor = std::move(deletor);
 
     typeId = LLCL::TypeID::get<T>();
+    deletor = [](void *ptr) {
+      typename std::unique_ptr<T>::deleter_type defaultDeletor;
+      defaultDeletor(static_cast<T *>(ptr));
+    };
     payload = newPayload.release();
 
     if (oldPayload)
-      oldTypeId.getValueDestructor()(oldPayload);
+      oldDeletor(oldPayload);
   }
 
   /// Destroys any payload.
@@ -91,6 +96,7 @@ public:
       T *result = static_cast<T *>(payload);
       payload = nullptr;
       typeId = TypeID();
+      deletor = nullptr;
       return result;
     } else {
       return nullptr;
@@ -101,21 +107,25 @@ private:
   static void swap(GenericUniquePtr &lhs, GenericUniquePtr &rhs) {
     std::swap(lhs.typeId, rhs.typeId);
     std::swap(lhs.payload, rhs.payload);
+    std::swap(lhs.deletor, rhs.deletor);
   }
 
   /// Delete any existing payload and reset pointer to the null state.
   void reset() {
     if (payload) {
-      typeId.getValueDestructor()(payload);
-      delete static_cast<char *>(payload);
+      deletor(payload);
       payload = nullptr;
       typeId = TypeID();
+      deletor = nullptr;
     }
   }
 
   /// The payload. We own this object. Is actually a T* where
   /// typeID == TypeID::get<T>().
   void *payload = nullptr;
+
+  /// The deletor for the above.
+  llvm::unique_function<void(void *)> deletor;
 
   /// Type id uniquely describing the type of payload.
   TypeID typeId;
