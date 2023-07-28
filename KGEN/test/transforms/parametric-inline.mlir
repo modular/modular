@@ -6,6 +6,9 @@ kgen.generator @parent() -> index {
     // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
     // CHECK: hlcf.if
       // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index
+    // CHECK: kgen.param.declare.region SomeClosure = () {
+      // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC:.*]])
+    // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC:.*]])
     // CHECK: hlcf.break "[[LABEL]]" %idx0 : index
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
@@ -23,6 +26,12 @@ kgen.generator @callee() -> index always_inline {
     kgen.return %0 : index
   } else {
     hlcf.yield
+  }
+  // CHECK: kgen.param.declare.region SomeClosure = () {
+    // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC]])
+  // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC]])
+  kgen.param.declare.region SomeClosure = () -> () {
+    kgen.return
   }
   kgen.return %0 : index
 }
