@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Assert import debug_assert
+from Buffer import NDBuffer
 from DType import DType
 from Functional import async_parallelize, vectorize_unroll
 from Image import ImageData, Image2DLayout, ImageShape
@@ -13,6 +15,7 @@ from List import DimList
 from Math import min, max, add, div_ceil
 from Limits import neginf
 from Range import range
+from ShapeFuncUtils import get_sliding_window_out_dim
 from SIMD import SIMD
 from TargetInfo import simdwidthof
 
@@ -297,3 +300,79 @@ fn avg_pool_update_fn[
 @always_inline
 fn avg_pool_reduce_fn[type: DType](a: SIMD[type, 1], s: Int) -> SIMD[type, 1]:
     return a / s
+
+
+@always_inline
+fn pool_shape[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    filter_buf: NDBuffer[1, DimList.create_unknown[1](), filter_type],
+    strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
+    dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+) -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a pooling operation, and assert the inputs are
+    compatible. Works for 2D pool operations only in the NHWC format.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        input_type: Type of the input tensor.
+        filter_type: Type of the filter tensor.
+        strides_type: Type of the strides tensor.
+        dilations_type: Type of the dilations tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input_buf: The input tensor.
+        filter_buf: The filter size buffer.
+        strides_buf: The strides size buffer.
+        dilations_buf: The dilations size buffer.
+
+    Returns:
+        The output shape.
+    """
+    # TODO(#17512)
+    debug_assert(input_rank == 4, "input rank must be 4")
+    debug_assert(
+        filter_buf.dim(0) == input_rank - 2
+        and strides_buf.dim(0) == input_rank - 2
+        and dilations_buf.dim(0) == input_rank - 2,
+        "strides and dilations size must be input rank - 2",
+    )
+
+    # Assume input has layout NHWC
+    let batch_size = input_buf.dim(0)
+    let input_channels = input_buf.dim(3)
+    let input_height = input_buf.dim(1)
+    let input_width = input_buf.dim(2)
+
+    let filter_height = filter_buf[0].to_int()
+    let filter_width = filter_buf[1].to_int()
+
+    let stride_height = strides_buf[0].to_int()
+    let stride_width = strides_buf[1].to_int()
+
+    let dilation_height = dilations_buf[0].to_int()
+    let dilation_width = dilations_buf[1].to_int()
+
+    var output_shape = StaticIntTuple[input_rank]()
+
+    output_shape[0] = batch_size
+    output_shape[3] = input_channels
+
+    output_shape[1] = get_sliding_window_out_dim(
+        input_height, filter_height, dilation_height, stride_height
+    )
+    output_shape[2] = get_sliding_window_out_dim(
+        input_width, filter_width, dilation_width, stride_width
+    )
+
+    return output_shape
