@@ -63,6 +63,23 @@ static void printFor(OpAsmPrinter &p, Operation *op, ValueRange iterArgs,
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
+void ForOp::build(OpBuilder &builder, OperationState &state, TypeRange results,
+                  Value lowerBound, Value upperBound, Value step,
+                  ValueRange iterArgs, std::optional<Attribute> unrollFactor,
+                  M::HLCF::ForLoopBoundCmpPredicate cmpPredicateType,
+                  M::HLCF::ForLoopIndVarCompute indVarComputeType) {
+  MLIRContext *context = state.getContext();
+
+  if (!unrollFactor)
+    unrollFactor =
+        HLCF::LoopUnrollFullAttr::get(context, HLCF::LoopUnrollFull::None);
+
+  build(builder, state, results, lowerBound, upperBound, step, iterArgs,
+        unrollFactor.value(),
+        HLCF::ForLoopBoundCmpPredicateAttr::get(context, cmpPredicateType),
+        HLCF::ForLoopIndVarComputeAttr::get(context, indVarComputeType));
+}
+
 LogicalResult ForOp::verify() {
   if (getIterArgs().size() != getBody().getNumArguments())
     return emitOpError("operand types do not match body region argument types");

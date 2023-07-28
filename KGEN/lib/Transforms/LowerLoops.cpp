@@ -49,7 +49,7 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   mlir::IRRewriter rewriter{OpBuilder(forLoop)};
 
   // Create HLCF::LoopOp.
-  LoopOp loop = rewriter.create<LoopOp>(
+  auto loop = rewriter.create<LoopOp>(
       forLoop->getLoc(), forLoop->getResultTypes(), forLoop.getIterArgs());
 
   // Create the block for the new LoopOp.
@@ -66,21 +66,31 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
 
   // Create check condition.
   Value inductionVar = body.getArgument(0);
-  std::optional<int64_t> upperBound = forLoop.getUpperBoundAsInt();
-  std::optional<int64_t> lowerBound = forLoop.getLowerBoundAsInt();
-  std::optional<int64_t> step = forLoop.getStepAsInt();
-  if (!upperBound || !lowerBound || !step)
-    return failure();
+  HLCF::ForLoopBoundCmpPredicate cmpPredicate = forLoop.getCmpPredicateType();
 
   mlir::index::CmpOp cmpOp;
-  if (upperBound.value() > lowerBound.value()) {
-    cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT, inductionVar,
-        forLoop.getUpperBound());
-  } else {
+  switch (cmpPredicate) {
+  case HLCF::ForLoopBoundCmpPredicate::SGTLHS:
     cmpOp = rewriter.create<mlir::index::CmpOp>(
         forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT, inductionVar,
         forLoop.getUpperBound());
+    break;
+
+  case HLCF::ForLoopBoundCmpPredicate::SLTLHS:
+    cmpOp = rewriter.create<mlir::index::CmpOp>(
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT, inductionVar,
+        forLoop.getUpperBound());
+    break;
+  case HLCF::ForLoopBoundCmpPredicate::SGTRHS:
+    cmpOp = rewriter.create<mlir::index::CmpOp>(
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT,
+        forLoop.getUpperBound(), inductionVar);
+    break;
+  case HLCF::ForLoopBoundCmpPredicate::SLTRHS:
+    cmpOp = rewriter.create<mlir::index::CmpOp>(
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT,
+        forLoop.getUpperBound(), inductionVar);
+    break;
   }
 
   // Create IfOp with ThenBlock yields and ElseBlock breaks.

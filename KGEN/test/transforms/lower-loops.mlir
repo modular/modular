@@ -17,11 +17,11 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
   // CHECK-NEXT:   hlcf.continue [[V1]] : index
   // CHECK-NEXT: }
 
-  %index2 = index.constant 2
+  %idx2 = index.constant 2
   %idx0 = index.constant 0
-  %index1 = index.constant 1
-  hlcf.for [%index2 to %idx0 step %index1] (%arg0 = %index2 : index) {
-    %0 = index.sub %arg0, %index1
+  %idx1 = index.constant 1
+  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg0 = %idx2 : index) {
+    %0 = index.sub %arg0, %idx1
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   } {unrollFactor = #hlcf<loop_unroll_full none>}
@@ -58,16 +58,16 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:   hlcf.continue [[V1]] : index
   // CHECK-NEXT: }
 
-  %index2 = index.constant 2
-  %index4 = index.constant 4
-  %index8 = index.constant 8
+  %idx2 = index.constant 2
+  %idx4 = index.constant 4
+  %idx8 = index.constant 8
   %idx0 = index.constant 0
-  %index1 = index.constant 1
-  hlcf.for [%index2 to %idx0 step %index1] (%arg0 = %index2 : index) {
-    %0 = index.sub %arg0, %index1
+  %idx1 = index.constant 1
+  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg0 = %idx2 : index) {
+    %0 = index.sub %arg0, %idx1
     kgen.call @foo(%0) : (index) -> ()
-    hlcf.for [%index4 to %index8 step %index2] (%arg1 = %index4 : index) {
-      %3 = index.add %arg1, %index2
+    hlcf.for [%idx4 to %idx8 step %idx2 sltlhs add] (%arg1 = %idx4 : index) {
+      %3 = index.add %arg1, %idx2
       kgen.call @foo(%3) : (index) -> ()
       hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full none>}
@@ -107,17 +107,17 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT:   hlcf.continue [[V2]], [[V3]], [[V2]] : index, index, index
   // CHECK-NEXT: }
 
-  %index1 = index.constant 1
-  %index9 = index.constant 9
-  %index2 = index.constant 2
-  %index4 = index.constant 4
-  %index8 = index.constant 8
-  %index0 = index.constant 0
-  %0:2 = hlcf.for [%index1 to %index9 step %index2] (%arg2 = %index1 : index, %arg0 = %index0 : index, %arg1 = %index0 : index) -> (index, index) {
-    %3 = index.add %arg2, %index2
+  %idx1 = index.constant 1
+  %idx9 = index.constant 9
+  %idx2 = index.constant 2
+  %idx4 = index.constant 4
+  %idx8 = index.constant 8
+  %idx0 = index.constant 0
+  %0:2 = hlcf.for [%idx1 to %idx9 step %idx2 sltlhs add] (%arg2 = %idx1 : index, %arg0 = %idx0 : index, %arg1 = %idx0 : index) -> (index, index) {
+    %3 = index.add %arg2, %idx2
     kgen.call @foo(%3, %arg0) : (index, index) -> ()
-    %6 = hlcf.for [%index4 to %index8 step %index2] (%arg4 = %index4 : index, %arg3 = %arg1 : index) -> index {
-      %7 = index.add %arg4, %index2
+    %6 = hlcf.for [%idx4 to %idx8 step %idx2 sltlhs add] (%arg4 = %idx4 : index, %arg3 = %arg1 : index) -> index {
+      %7 = index.add %arg4, %idx2
       kgen.call @foo(%7, %arg3) : (index, index) -> ()
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%7: index)] [iterargs ()]
     } {unrollFactor = #hlcf<loop_unroll_full none>}

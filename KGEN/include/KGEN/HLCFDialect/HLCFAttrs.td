@@ -35,4 +35,36 @@ def HLCF_LoopUnrollFull: HLCF_Enum<"LoopUnrollFull", "loop unroll full", [
 def HLCF_LoopUnrollFullAttr
   : EnumAttr<HLCFDialect, HLCF_LoopUnrollFull, "loop_unroll_full">;
 
+//===----------------------------------------------------------------------===//
+// ForLoopBoundCmpPredicate
+//===----------------------------------------------------------------------===//
+
+def HLCF_ForLoopBoundCmpPredicate:
+    HLCF_Enum<"ForLoopBoundCmpPredicate",
+              "loop unroll bound compare predicate type", [
+                           HLCF_EnumCase<"SGTRHS", 0, "sgtrhs">,
+                           HLCF_EnumCase<"SGTLHS", 1, "sgtlhs">,
+                           HLCF_EnumCase<"SLTRHS", 2, "sltrhs">,
+                           HLCF_EnumCase<"SLTLHS", 3, "sltlhs">]>;
+
+def HLCF_ForLoopBoundCmpPredicateAttr
+  : EnumAttr<HLCFDialect,
+             HLCF_ForLoopBoundCmpPredicate,
+             "for_loop_bound_cmp_predicate">;
+
+//===----------------------------------------------------------------------===//
+// ForLoopIndVarCompute
+//===----------------------------------------------------------------------===//
+
+def HLCF_ForLoopIndVarCompute:
+    HLCF_Enum<"ForLoopIndVarCompute",
+              "loop unroll induction variable compute type", [
+                           HLCF_EnumCase<"ADD", 0, "add">,
+                           HLCF_EnumCase<"SUB", 1, "sub">]>;
+
+def HLCF_ForLoopIndVarComputeAttr
+  : EnumAttr<HLCFDialect,
+             HLCF_ForLoopIndVarCompute,
+             "for_loop_ind_var_compute">;
+
 #endif // HLCFATTRS_TD

@@ -65,6 +65,8 @@ struct ForLoopBoundsAndSteps {
   Value step;
   // Position number in the BlockArgument list where the induction variable is.
   int64_t inductionVarArgNumber;
+  HLCF::ForLoopBoundCmpPredicate cmpPredicate;
+  HLCF::ForLoopIndVarCompute indVarCompute;
 };
 
 } // namespace
@@ -190,9 +192,16 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
 
   CmpOpMatcher matcher({mlir::index::IndexCmpPredicate::SLT,
                         mlir::index::IndexCmpPredicate::SGT});
+  HLCF::ForLoopBoundCmpPredicate cmpPredicate;
+  HLCF::ForLoopIndVarCompute indVarCompute;
 
   if (matcher.match(ifCond.getDefiningOp())) {
     mlir::index::CmpOp cmp = matcher.cmpOp;
+
+    cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
+                       ? HLCF::ForLoopBoundCmpPredicate::SLTLHS
+                       : HLCF::ForLoopBoundCmpPredicate::SGTLHS;
+
     // The operand who is a block argument is the induction variable, and its
     // initial value is the start value of the loop; the other operand (if a
     // constant) is the end of the loop.
@@ -202,6 +211,9 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     } else {
       end = start;
       start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
+      cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
+                         ? HLCF::ForLoopBoundCmpPredicate::SLTRHS
+                         : HLCF::ForLoopBoundCmpPredicate::SGTRHS;
     }
   }
 
@@ -216,16 +228,21 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   if (isa<mlir::index::AddOp, mlir::index::SubOp>(nextIterOp)) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
-    if (auto blockArg = dyn_cast<BlockArgument>(input0))
+    if (auto blockArg = dyn_cast<BlockArgument>(input0)) {
       stride = getValueIfConstInteger(input1, argNum);
+      indVarCompute = isa<mlir::index::AddOp>(nextIterOp)
+                          ? HLCF::ForLoopIndVarCompute::ADD
+                          : HLCF::ForLoopIndVarCompute::SUB;
+    }
   }
 
   // Bail if we can't match pattern to find the stride value.
   if (!stride)
     return {};
 
-  return ForLoopBoundsAndSteps{start, end, stride,
-                               inductionVarArgNumber.value()};
+  return ForLoopBoundsAndSteps{start,        end,
+                               stride,       inductionVarArgNumber.value(),
+                               cmpPredicate, indVarCompute};
 }
 
 // Reorder values in the following order:
@@ -389,10 +406,10 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                     loopInfo->inductionVarArgNumber);
 
   // Create the new ForOp with reordered operands.
-  ForOp forOp = rewriter.create<HLCF::ForOp>(
+  auto forOp = rewriter.create<HLCF::ForOp>(
       loop->getLoc(), loop->getResultTypes(), loopInfo->lowerBound,
-      loopInfo->upperBound, loopInfo->step, forOperands,
-      loop.getUnrollFactor());
+      loopInfo->upperBound, loopInfo->step, forOperands, loop.getUnrollFactor(),
+      loopInfo->cmpPredicate, loopInfo->indVarCompute);
 
   // Create the block for the new ForOp.
   Block *block = rewriter.createBlock(&forOp.getBody());
