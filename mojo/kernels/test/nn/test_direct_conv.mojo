@@ -162,16 +162,36 @@ fn test[
 
     @parameter
     if filter_packed:
-        ConvDirectNHWC[
-            5,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[5](),
-            DimList.create_unknown[4](),
-            type,
-            True,
-        ].run(
-            output, input, packed_filter, conv_shape, direct_conv_chain.borrow()
-        )
+        if conv_shape.pad_w == Index(0, 0) and conv_shape.pad_w == Index(0, 0):
+            ConvDirectNHWC[
+                5,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[5](),
+                DimList.create_unknown[4](),
+                type,
+                True,
+            ].run(
+                output,
+                input,
+                packed_filter,
+                conv_shape,
+                direct_conv_chain.borrow(),
+            )
+        else:
+            ConvDirectNHWC[
+                5,
+                DimList.create_unknown[4](),
+                DimList.create_unknown[5](),
+                DimList.create_unknown[4](),
+                type,
+                True,
+            ].run_with_padding(
+                output,
+                input,
+                packed_filter,
+                conv_shape,
+                direct_conv_chain.borrow(),
+            )
     else:
         ConvDirectNHWC[
             4,
@@ -598,5 +618,113 @@ fn main():
             Index(1, 1),  # dilation
             Index(0, 0),  # pad_h
             Index(0, 0),  # pad_w
+            rt,
+        )
+
+        # Test with padding
+        # This is a fallback implementation assuming all shapes are dynamic.
+
+        test[DType.float32, True](
+            1,  # N
+            224,  # H
+            224,  # W
+            3,  # C
+            7,  # R
+            7,  # S
+            64,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(3, 3),  # pad_h
+            Index(3, 3),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            56,  # H
+            56,  # W
+            64,  # C
+            3,  # R
+            3,  # S
+            64,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            56,  # H
+            56,  # W
+            128,  # C
+            3,  # R
+            3,  # S
+            128,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            28,  # H
+            28,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            256,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            14,  # H
+            14,  # W
+            256,  # C
+            3,  # R
+            3,  # S
+            256,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            14,  # H
+            14,  # W
+            3,  # C
+            3,  # R
+            3,  # S
+            16,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            7,  # W
+            512,  # C
+            3,  # R
+            3,  # S
+            512,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
             rt,
         )

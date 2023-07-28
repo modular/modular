@@ -2478,6 +2478,8 @@ struct ConvDirectNHWC[
         conv_shape: ConvShape,
         out_chain: OutputChainPtr,
     ):
+        """Run with no padding (valid padding in TF). The micro kernel can include
+        points from differeent rows or images."""
         let cf_tile_size = get_conv_tile_shape[
             type, get_direct_conv_micro_kernel_width()
         ](conv_shape)
@@ -2605,16 +2607,53 @@ struct ConvDirectNHWC[
         else:
             async_parallelize[task_func](out_chain, num_tasks)
 
-    fn direct_conv(self):
-        self._c_tile_loop(self.cf_tile_size[0])
+    @staticmethod
+    fn run_with_padding(
+        output: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[filter_rank, shape_filter, type],
+        conv_shape: ConvShape,
+        out_chain: OutputChainPtr,
+    ):
+        """Fuse padding into conv.  Each micro kernel only includes points on
+        the same row."""
+        let cf_tile_size = get_conv_tile_shape[
+            type, get_direct_conv_micro_kernel_width()
+        ](conv_shape)
 
-    fn _c_tile_loop(self, tile_size: Int):
+        @parameter
+        @always_inline
+        fn task_func(task_id: Int):
+            let instance = ConvDirectNHWC[
+                filter_rank,
+                shape_input,
+                shape_filter,
+                shape_output,
+                type,
+                filter_packed,
+            ](
+                output,
+                input,
+                filter,
+                conv_shape,
+                Index(0, 0, 0),
+                Index(conv_shape.out_h, conv_shape.c, conv_shape.f),
+                cf_tile_size,
+            )
+            instance._c_tile_loop[True](cf_tile_size[0])
+
+        async_parallelize[task_func](out_chain, 1)
+
+    fn direct_conv(self):
+        self._c_tile_loop[False](self.cf_tile_size[0])
+
+    fn _c_tile_loop[padded: Bool](self, tile_size: Int):
         """Loop over C tiles."""
 
         @always_inline
         @parameter
         fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
-            self._f_tile_loop(c_tile_offset, c_tile_size)
+            self._f_tile_loop[padded](c_tile_offset, c_tile_size)
 
         tile[c_tile_iteration](
             self.partition_offsets[1],
@@ -2622,20 +2661,26 @@ struct ConvDirectNHWC[
             tile_size,
         )
 
-    fn _f_tile_loop(self, c_tile_offset: Int, c_tile_size: Int):
+    fn _f_tile_loop[padded: Bool](self, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+        alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias simd_size = simdwidthof[type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
         @parameter
-        fn f_tile_iteration[
-            micro_kernel_f_size: Int
-        ](f_tile_offset: Int, f_tile_size: Int):
-            self._n_wo_ho_tile_loop[micro_kernel_f_size](
-                f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
-            )
+        fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
+            @parameter
+            if padded:
+                self._h_loop[micro_kernel_height, size // simd_size](
+                    f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
+                )
+
+            else:
+                self._n_wo_ho_tile_loop[size](
+                    f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
+                )
 
         # The first tile size is based on cache size. Within the tile
         # it's stepped by the micro kernel size in F. The rest is stepped
@@ -2938,13 +2983,12 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
-        # TODO: aligned simd load/store
         alias alignment = alignof[SIMD[type, simd_size]]()
 
         @parameter
         @always_inline
         fn body[idx0: Int, idx1: Int]():
-            # Broadcast an scalar from input to a simd vector.
+            # Broadcast a scalar from input to a simd vector.
             let input_val = self.input.data.offset(
                 input_base_offsets[idx0].value + input_offset
             ).simd_load[1]()
@@ -3007,6 +3051,327 @@ struct ConvDirectNHWC[
                 output_ptr = output_ptr.offset(self.conv_shape.f)
 
         unroll[micro_kernel_height, micro_kernel_width, body]()
+
+    @always_inline
+    fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+    ](
+        self,
+        c_tile_size: Int,
+        input_stride: Int,
+        input_base: DTypePointer[type],
+        filter_base: DTypePointer[type],
+        output_ptr: DTypePointer[type],
+    ):
+        # Short circuit when the micro tile is in padding.
+        @parameter
+        if micro_kernel_height == 0:
+            return
+
+        var filter_ptr = filter_base
+
+        for c in range(c_tile_size):
+
+            alias micro_kernel_f_size = micro_kernel_width * simd_size
+            alias prefetch_offset = 4 * micro_kernel_f_size
+
+            # prefetch
+            @unroll
+            for i in range(micro_kernel_width):
+                filter_base.offset(prefetch_offset + i * simd_size).prefetch[
+                    PrefetchOptions().for_read().high_locality().to_data_cache()
+                ]()
+
+            alias alignment = alignof[SIMD[type, simd_size]]()
+
+            @unroll
+            for i in range(micro_kernel_height):
+
+                @unroll
+                for j in range(micro_kernel_width):
+                    # Broadcast an scalar from input to a simd vector.
+                    let input_val = input_base.offset(
+                        c + i * input_stride
+                    ).load()
+                    let input_vec = SIMD[type, simd_size](input_val)
+                    # Load a simd vector from filter.
+                    let filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                        simd_size
+                    ]()
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    var output_vec = output_ptr.offset(
+                        i * micro_kernel_f_size + j * simd_size
+                    ).aligned_simd_load[simd_size, alignment]()
+                    output_vec = fma[type, simd_size](
+                        input_vec, filter_vec, output_vec
+                    )
+                    output_ptr.offset(
+                        i * micro_kernel_f_size + j * simd_size
+                    ).aligned_simd_store[simd_size, alignment](output_vec)
+
+            filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+
+    @always_inline
+    fn _h_loop[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+    ](
+        self,
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        c_tile_offset: Int,
+        c_tile_size: Int,
+    ):
+        """Loop over H dimension
+        Each row is divied into three parts: (1) effected by left padding, (2)
+        not effected by padding, (3) effected by right padding. Use pointwise
+        micro kernel 1 x micro_kernel_width for (1) and (3) and exploits the
+        default micro kernel for (2).
+        """
+        alias simd_size = simdwidthof[type]()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        # Divide each row into three part:
+        # [0, left_pad_impact_end)
+        # [left_pad_impact_end, right_pad_impact_start)
+        # [right_pad_impact_start, WO)
+        let left_pad_impact_end = div_ceil(
+            self.conv_shape.pad_w[0], self.conv_shape.stride[1]
+        )
+        let right_pad_impact_start = (
+            self.conv_shape.w
+            + self.conv_shape.pad_w[0]
+            - self.conv_shape.s * self.conv_shape.dilation[1]
+        ) // self.conv_shape.stride[1] + 1
+
+        # fmt: off
+        let filter_base = self.filter.data.offset(
+            f_tile_offset * self.conv_shape.c * self.conv_shape.r * self.conv_shape.s + c_tile_offset * micro_kernel_f_size
+        )
+        # fmt: on
+
+        for ho in range(
+            self.partition_offsets[0],
+            self.partition_offsets[0] + self.partition_sizes[0],
+        ):
+            let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+            # Point to (0, ho) mapped in input
+            var input_base = self.input.data.offset(
+                c_tile_offset
+                + self.conv_shape.c
+                * (-self.conv_shape.pad_w[0] + self.conv_shape.w * h)
+            )
+            # Point to (0, ho) mapped in input
+            var output_base = self.output.data.offset(
+                f_tile_offset + self.conv_shape.f * self.conv_shape.out_w * ho
+            )
+
+            # region effected by left padding, [0, left_pad_impact_end)
+            for wo in range(left_pad_impact_end):
+                self._inner_loops_padding[1, micro_kernel_width, True,](
+                    input_base,
+                    filter_base,
+                    output_base,
+                    f_tile_offset,
+                    f_tile_size,
+                    c_tile_offset,
+                    c_tile_size,
+                    ho,
+                    wo,
+                )
+                input_base = input_base.offset(
+                    self.conv_shape.stride[1] * self.conv_shape.c
+                )
+                output_base = output_base.offset(self.conv_shape.f)
+
+            # Region not effected by padding, [left_pad_impact_end, right_pad_impact_start)
+            # Tile the middle points with default micro kernel.
+            @always_inline
+            @parameter
+            fn update_middle[height: Int](wo: Int):
+                self._inner_loops_padding[height, micro_kernel_width, False,](
+                    input_base,
+                    filter_base,
+                    output_base,
+                    f_tile_offset,
+                    f_tile_size,
+                    c_tile_offset,
+                    c_tile_size,
+                    ho,
+                    wo,
+                )
+                input_base = input_base.offset(
+                    height * self.conv_shape.stride[1] * self.conv_shape.c,
+                )
+                output_base = output_base.offset(height * self.conv_shape.f)
+
+            tile[update_middle, VariadicList[Int](5, 4, 3, 2, 1)](
+                left_pad_impact_end, right_pad_impact_start
+            )
+
+            # region effected by right padding, [right_pad_impact_start, WO)
+            for wo in range(right_pad_impact_start, self.conv_shape.out_w):
+                self._inner_loops_padding[1, micro_kernel_width, True,](
+                    input_base,
+                    filter_base,
+                    output_base,
+                    f_tile_offset,
+                    f_tile_size,
+                    c_tile_offset,
+                    c_tile_size,
+                    ho,
+                    wo,
+                )
+                input_base = input_base.offset(
+                    self.conv_shape.stride[1] * self.conv_shape.c
+                )
+                output_base = output_base.offset(self.conv_shape.f)
+
+    @always_inline
+    fn _inner_loops_padding[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        w_padding_impact: Bool,
+    ](
+        self,
+        input_base: DTypePointer[type],  # points to (ho, wo) mapped in input
+        filter_base: DTypePointer[type],  # point to filter in cf tile
+        output_base: DTypePointer[type],  # point to (ho, wo) in output
+        f_tile_offset: Int,
+        f_tile_size: Int,
+        c_tile_offset: Int,
+        c_tile_size: Int,
+        ho: Int,  # index in output height
+        wo: Int,  # index in output width
+    ):
+        """Inner loop computation with padding
+        Given input (ho, wo), this kernel accumulates over the stencil RxS.
+        """
+
+        assert_param[
+            not w_padding_impact
+            or (w_padding_impact and micro_kernel_height == 1),
+            "USE 1 x width kernel on boundary",
+        ]()
+
+        alias simd_size = simdwidthof[type]()
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        # Shift in input when shifting 1 in filter S dimension.
+        let input_shift = self.conv_shape.dilation[1] * self.conv_shape.c
+        # WO dimension stride mapped in input.
+        let wo_stride_in_input = self.conv_shape.stride[1] * self.conv_shape.c
+        # Filter stride in S dimension in FRSCf
+        let filter_S_stride = self.conv_shape.c * micro_kernel_f_size
+        # Filter stride in F dimension in FRSCf
+        let filter_F_stride = self.conv_shape.r * self.conv_shape.s * filter_S_stride
+
+        # This will be all lifted to simd registers for FMA unless the micro
+        # kernel is too large that spills named registers.
+        alias alignment = alignof[SIMD[type, simd_size]]()
+        let output_micro_tile = NDBuffer[
+            2,
+            DimList(micro_kernel_height, micro_kernel_width * simd_size),
+            type,
+        ].aligned_stack_allocation[alignment]()
+
+        var filter_tile = filter_base
+        # TODO: #18141 Verify if using filter tile larger than micro_kernel_f_size
+        # improve performance or not.
+        for f in range(
+            f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
+        ):
+            # Initialize micro tile with 0 for its first use
+            if c_tile_offset == self.partition_offsets[1]:
+                self._init_output_micro_tile[
+                    micro_kernel_height, micro_kernel_width, simd_size
+                ](output_micro_tile)
+            # Load micro tile from output buffer.
+            else:
+                var output_ptr = output_base.offset(f - f_tile_offset)
+
+                @unroll
+                for i in range(micro_kernel_height):
+
+                    @unroll
+                    for j in range(micro_kernel_width):
+                        let output_vec = output_ptr.offset(
+                            j * simd_size
+                        ).simd_load[simd_size]()
+                        output_micro_tile.aligned_simd_store[
+                            simd_size, alignment
+                        ](Index(i, j * simd_size), output_vec)
+                    output_ptr = output_ptr.offset(self.conv_shape.f)
+
+            # Shift in input H when shifting 1 in filter stencil' R dimension.
+            var h_shift = 0
+            # h index in input image
+            let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
+            for r in range(self.conv_shape.r):
+                # Skip if row falls in padding.
+                if h + h_shift < 0 or h + h_shift >= self.conv_shape.h:
+                    h_shift += self.conv_shape.dilation[0]
+                    continue
+
+                var input_ptr = input_base.offset(
+                    h_shift * self.conv_shape.c * self.conv_shape.w
+                )
+                var filter_ptr = filter_tile.offset(
+                    r * self.conv_shape.s * filter_S_stride
+                )
+
+                var w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[
+                    0
+                ]
+                for s in range(self.conv_shape.s):
+                    # Skip neighbor points in padding, if current point is
+                    # effected by padding.
+                    @parameter
+                    if w_padding_impact:
+                        if w < 0 or w >= self.conv_shape.w:
+                            w += self.conv_shape.dilation[1]
+                            filter_ptr = filter_ptr.offset(filter_S_stride)
+                            input_ptr = input_ptr.offset(input_shift)
+                            continue
+
+                    self._accumulate[
+                        micro_kernel_height,
+                        micro_kernel_width,
+                        simd_size,
+                    ](
+                        c_tile_size,
+                        wo_stride_in_input,
+                        input_ptr,
+                        filter_ptr,
+                        output_micro_tile.data,
+                    )
+
+                    w += self.conv_shape.dilation[1]
+                    filter_ptr = filter_ptr.offset(filter_S_stride)
+                    input_ptr = input_ptr.offset(input_shift)
+
+                h_shift += self.conv_shape.dilation[0]
+
+            # Store the micro tile
+            var output_ptr = output_base.offset(f - f_tile_offset)
+            #
+            @unroll
+            for i in range(micro_kernel_height):
+
+                @unroll
+                for j in range(micro_kernel_width):
+                    let output_vec = output_micro_tile.aligned_simd_load[
+                        simd_size, alignment
+                    ](Index(i, j * simd_size))
+                    output_ptr.offset(j * simd_size).simd_store[simd_size](
+                        output_vec
+                    )
+                output_ptr = output_ptr.offset(self.conv_shape.f)
+
+            filter_tile = filter_tile.offset(filter_F_stride)
 
 
 # ===----------------------------------------------------------------------=== #
