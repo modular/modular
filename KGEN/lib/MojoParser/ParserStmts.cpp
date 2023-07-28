@@ -1765,9 +1765,9 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
       // NOTE: This is assuming type parameters are valid register types.  We
       // will need to build out better support when we have traits, but this is
       // important for kernels in practice today.
-      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared)) {
-    // There should be exactly one store to the original op, sanity check this.
-    assert(varOp->hasOneUse() && "Should have one store use");
+      inferredRValueType.isRegisterPassable(initExpr->getLoc(), shared) &&
+      // Variable could have multiple uses in invalid cases like "var x = x+1".
+      varOp->hasOneUse()) {
     auto theStore = cast<POP::StoreOp>(*varOp->user_begin());
 
     // Create new LetRegDeclOp and put it into the ASTDecl.
