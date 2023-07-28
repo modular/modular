@@ -1277,12 +1277,12 @@ var trivial_global_implicit = 1
 @register_passable
 struct RegType: pass
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType> isLet
+# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType> 
 # CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
 # CHECK-NEXT: pop.store %0, %1
 let reg_global: RegType = RegType()
-# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : {{.*}}@RegType
+# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : {{.*}}@RegType> isVar
 # CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref
 # CHECK-NEXT: pop.store %0, %1
@@ -1291,13 +1291,13 @@ var reg_global_implicit = RegType()
 @value
 struct MemType: pass
 
-# CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}} isLet
+# CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}} 
 # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: %0 = kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
 # CHECK-NEXT: %1 = lit.globalvar.ref
 # CHECK-NEXT: %2 = kgen.call {{.*}}__moveinit__{{.*}}(%1, %anonymous2A) :
 let mem_global: MemType = MemType()
-# CHECK-LABEL: lit.globalvar.decl @mem_global_implicit
+# CHECK-LABEL: lit.globalvar.decl @mem_global_implicit {{.*}} isVar
 # CHECK-NEXT: %0 = lit.globalvar.ref
 # CHECK-NEXT: %1 = kgen.call {{.*}}__init__{{.*}}(%0)
 var mem_global_implicit = MemType()

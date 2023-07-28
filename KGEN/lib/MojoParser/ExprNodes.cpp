@@ -510,10 +510,10 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     auto ref = emitter.builder->create<GlobalVarRefOp>(
         emitter.translateLocation(expr->getLoc()), globalOp);
     mlirValue = ref;
-    if (globalOp.getIsLet())
-      value = MBValue(mlirValue);
-    else
+    if (globalOp.getIsVar())
       value = SLValue(mlirValue);
+    else
+      value = MBValue(mlirValue);
   } else {
     emitter.emitError(expr->getLoc(), "use of declaration \"")
         << spelling << "\" as a value isn't supported yet" << expr->getRange();

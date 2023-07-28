@@ -777,7 +777,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
     Example:
 
     ```mlir
-    lit.globalvar.decl @global_var : !kgen.declref<@String> isLet {
+    lit.globalvar.decl @global_var : !kgen.declref<@String> isVar {
       %0 = lit.globalvar.ref @global_var : @String
       kgen.call @String::@__init__(%0)
     }, {
@@ -786,14 +786,14 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
     }
     ```
 
-    `isLet` should be set if the global was declared with a `let` declaration
-    and is immutable.
+    `isVar` should be set if the global was declared with a `var` declaration
+    and is mutable.
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     TypeAttr:$type,
-    UnitAttr:$isLet,
+    UnitAttr:$isVar,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_DecoratorsAttr:$decorators,
     OptionalAttr<StrAttr>:$linkageName,
@@ -804,7 +804,7 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name `:` $type
     attr-dict-with-keyword custom<OptionalDecorators>($decorators)
-    (`isLet` $isLet^)?  custom<NoArgRegion>($ctor) `,`
+    (`isVar` $isVar^)?  custom<NoArgRegion>($ctor) `,`
     custom<NoArgRegion>($dtor)
   }];
 
@@ -814,8 +814,8 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
   }];
 
   let builders = [
-    OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isLet), [{
-      build($_builder, $_state, sym_name, type, isLet, ExportKind::NotExported,
+    OpBuilder<(ins "StringRef":$sym_name, "Type":$type, "bool":$isVar), [{
+      build($_builder, $_state, sym_name, type, isVar, ExportKind::NotExported,
             DecoratorsAttr::get(type.getContext(), {}), {}, {});
     }]>
   ];
