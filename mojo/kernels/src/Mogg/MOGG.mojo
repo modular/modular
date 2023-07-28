@@ -107,6 +107,7 @@ fn MOGGExport():
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _to_shape = to_shape
+    alias _arg_max = argmax
     alias _abs = abs_wrapped
     alias _add = add
     alias _cast = cast
