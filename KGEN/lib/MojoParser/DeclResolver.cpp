@@ -1014,7 +1014,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   // When parsing a function type, the name is optional.
   if (!omitName) {
-    if (p.parseIdentifier(name, "expected parameter name", &identifierLoc)) {
+    // If the argument has an identifier, use its location for better
+    // diagnostics.
+    if (p.parseIdentifier(name, "expected parameter name", &loc)) {
       // TODO: Scan ahead for better recovery.
       return failure();
     }
@@ -1029,7 +1031,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
         InflightDiag diag = p.emitError(
             starLoc, "only variadic arguments' types can be unpacked");
         if (name) {
-          diag.attachNote(identifierLoc)
+          diag.attachNote(loc)
               << "'" << name.getValue() << "' is not a variadic argument";
         }
       }
@@ -2650,20 +2652,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
           argDecl.hasReferenceError = true;
       }
       if (shared.parserListener) {
-        // FIXME(#18030): We should instead have a getIdentifierLoc() attached
-        // to the decl.
-
-        // We need to reparse the argument in order to get the location of its
-        // identifier, because `argDecl.getLoc()` returns the location of the
-        // convention instead of the identifier.
-        Lexer lex(shared, argDecl.getCursor());
-        ParserBase p(lex);
-        ParsedArgument arg;
-        ParsedArgument::KWArgMarkerInfo markerInfo;
-        if (arg.parse(p, markerInfo))
-          return failure();
         shared.parserListener->onArgumentDecl(MojoASTDeclRef(&argDecl),
-                                              arg.identifierLoc);
+                                              argDecl.getLoc());
       }
       return success();
     };
