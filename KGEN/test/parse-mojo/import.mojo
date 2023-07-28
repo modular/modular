@@ -8,10 +8,10 @@
 
 # Test import of a module, and we properly allow import of an imported decl.
 
-# CHECK: lit.unresolved_wildcard_import from @imported_module
-
 from imported_module import *
 
+# CHECK-LABEL: lit.func @"import_of_import
+# CHECK-SAME: @"$SIMD"::@SIMD<
 fn import_of_import(arg: Float64):
   pass
 

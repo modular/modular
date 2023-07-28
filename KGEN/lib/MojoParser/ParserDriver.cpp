@@ -123,6 +123,86 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
 // Driver
 //===----------------------------------------------------------------------===//
 
+/// Erase all declarations unreachable from the main module. This is primarily
+/// useful when there are imported modules that were not lazily loaded from the
+/// cache. This function should run after textual modules are saved to the
+/// cache, reducing the amount of IR reaching the compiler. In addition, it
+/// provides the compiler a canonical form of IR coming out of the parser. This,
+/// for instance, ensures the cache key computed on parser output does not
+/// depend on whether the parser has cache hits for lazy loading.
+static void eraseUnreachableDecls(ASTDecl &decl) {
+  // Don't purge decls when parsing a package.
+  if (isa<PackageOp>(decl))
+    return;
+
+  TimeTraceScope traceScope("eraseUnreachableDecls");
+  // Start by erasing unresolved imports. This puts the module in a canonical
+  // form.
+  auto declModule = cast<FileModuleOp>(decl);
+  auto module = cast<ModuleOp>(declModule->getParentOp());
+  module.walk([](Operation *op) {
+    // Imports are not found underneath structs and functions.
+    if (isa<StructDeclOp, LIT::FuncOp>(op))
+      return WalkResult::skip();
+    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
+      op->erase();
+    return WalkResult::advance();
+  });
+
+  // The remaining skippable decls are all symbol operations. Run symbol DCE
+  // rooted at the main module.
+  mlir::SymbolTableCollection symtab;
+  DenseSet<Operation *> liveSymbols;
+  std::vector<Operation *> worklist;
+  declModule.walk([&](mlir::SymbolOpInterface symbol) {
+    liveSymbols.insert(symbol);
+    worklist.push_back(symbol);
+  });
+
+  // This walker will mark all referenced symbols as live.
+  mlir::AttrTypeWalker refCollector;
+  auto markLive = [&](Operation *op) {
+    if (liveSymbols.insert(op).second)
+      worklist.push_back(op);
+  };
+  refCollector.addWalk([&](SymbolRefAttr ref) {
+    // Mark all referenced symbols as live. Invalid symbol references will get
+    // caught by the verifier.
+    SmallVector<Operation *, 4> symbols;
+    (void)symtab.lookupSymbolIn(module, ref, symbols);
+    for (Operation *symbol : symbols)
+      markLive(symbol);
+  });
+
+  // Propagate liveness.
+  while (!worklist.empty()) {
+    Operation *cur = worklist.back();
+    worklist.pop_back();
+    // Collect symbol references between this symbol table and any child symbol
+    // tables. Nested `lit.func` operations are trickier, however.
+    cur->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      if (op != cur) {
+        // Mark nested functions as live, which also recurses on them.
+        if (auto func = dyn_cast<LIT::FuncOp>(op);
+            func && func.getParamDeclAttr())
+          markLive(func);
+        if (op->hasTrait<OpTrait::SymbolTable>())
+          return WalkResult::skip();
+      }
+      refCollector.walk(op->getAttrDictionary());
+      for (Type type : op->getResultTypes())
+        refCollector.walk(type);
+      return WalkResult::advance();
+    });
+  }
+
+  // Walk post-order to erase dead symbols.
+  module.walk([&](mlir::SymbolOpInterface symbol) {
+    if (!liveSymbols.contains(symbol))
+      symbol.erase();
+  });
+}
+
 /// Parse a mojo module or package into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
@@ -171,8 +251,10 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   // Now that resolution is finished, cache the state of modules we have parsed.
   // TODO: We should be able to cache even in the presence of warnings and
   // errors. We can store the diagnostics and replay on cache load.
-  if (!sharedState.diags.isDiagnosticEmitted())
+  if (!sharedState.diags.isDiagnosticEmitted()) {
     sharedState.cacheParsedModules();
+    eraseUnreachableDecls(moduleDecl);
+  }
 
   // Set the included files if requested.
   if (includedFiles)
