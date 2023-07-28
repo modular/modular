@@ -269,7 +269,6 @@ enum VarArgKind {
 /// argument_type      ::= ":" star_expression
 struct ParsedArgument {
   SMLoc loc;
-  SMLoc identifierLoc;
   LexerCursor cursor;
   // Specify argument passing convention, e.g. owned/byref etc.
   enum {
