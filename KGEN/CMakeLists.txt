@@ -207,6 +207,10 @@ function(add_mojo_package target)
   add_custom_target(${target} DEPENDS ${package_file_name})
   set_target_properties(${target} PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
 
+  install(FILES "${CMAKE_BINARY_DIR}/${package_file_name_rel}"
+          DESTINATION "lib/mojo"
+          COMPONENT mojo-sdk)
+
   # If this is a standard library package, then we need to add it to the
   # mojo-sdk target.
   if (KGEN_STDLIB)
