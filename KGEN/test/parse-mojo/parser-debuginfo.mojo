@@ -116,9 +116,6 @@ fn caller():
 struct MyValueStruct:
     var value: __mlir_type.index
 
-# COM: need this because otherwise FileCheck cannot separate the DAGs.
-# CHECK: #-}
-
 # // -----
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.

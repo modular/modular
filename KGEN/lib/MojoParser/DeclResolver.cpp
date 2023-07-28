@@ -31,6 +31,7 @@
 #include "SharedState.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
@@ -610,7 +611,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
         // Some decls always need to be resolved if their parents were resolved,
         // allowlist the decls that we can safely ignore when unparsed.
         if (isa<FuncOp, FileModuleOp, PackageOp, UnresolvedImportOp,
-                StructDeclOp, AliasForwardDeclOp>(decl)) {
+                UnresolvedWildcardImportOp, StructDeclOp>(decl)) {
           deferredDecls.insert(&decl);
           continue;
         }
