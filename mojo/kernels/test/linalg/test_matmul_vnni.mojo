@@ -11,13 +11,13 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Range import range
-
 from DType import DType
 from Buffer import Buffer
 from SIMD import SIMD, Int32
-from VNNI import dot_i8_to_i32_AVX2, dot_i8_to_i32_x86
+from VNNI import vpdpbusd_16
 from Memory import memcmp
 from IO import print, print_no_newline
+from TargetInfo import has_avx512_vnni
 
 
 fn gemm(
@@ -34,7 +34,7 @@ fn gemm(
                 )
 
 
-fn dot_i8_to_i32_emulate(
+fn vpdpbusd_emulate(
     src: SIMD[DType.int32, 16],
     a: SIMD[DType.int32, 16],
     b: SIMD[DType.int32, 16],
@@ -62,11 +62,10 @@ fn pack_vnni(b: Buffer[16 * 64, DType.int8], b2: Buffer[64 * 16, DType.int8]):
                 b2[64 * l + 4 * j + p] = b[64 * l + 16 * p + j]
 
 
-fn gemm_8_to_32(
+fn gemm_vnni(
     a: Buffer[16 * 64, DType.int8],
     b: Buffer[64 * 16, DType.int8],
     c: Buffer[16 * 16, DType.int32],
-    t: Int,
 ):
 
     let bp = Buffer[64 * 16, DType.int8].stack_allocation()
@@ -80,12 +79,10 @@ fn gemm_8_to_32(
             let bv = bp.data.offset(64 * l).bitcast[DType.int32]().simd_load[
                 16
             ]()
-            if t == 0:
-                cv = dot_i8_to_i32_x86[16](cv, av, bv)
-            elif t == 1:
-                cv = dot_i8_to_i32_AVX2[16](cv, av, bv)
+            if has_avx512_vnni():
+                cv = vpdpbusd_16(cv, av, bv)
             else:
-                cv = dot_i8_to_i32_emulate(cv, av, bv)
+                cv = vpdpbusd_emulate(cv, av, bv)
 
         c.data.offset(16 * i).simd_store[16](cv)
 
@@ -93,8 +90,6 @@ fn gemm_8_to_32(
 fn main():
     let a = Buffer[16 * 64, DType.int8].stack_allocation()
     let b = Buffer[64 * 16, DType.int8].stack_allocation()
-    let c = Buffer[16 * 16, DType.int32].stack_allocation()
-    let c0 = Buffer[16 * 16, DType.int32].stack_allocation()
     let c1 = Buffer[16 * 16, DType.int32].stack_allocation()
     let c2 = Buffer[16 * 16, DType.int32].stack_allocation()
 
@@ -103,20 +98,13 @@ fn main():
         b[i] = (16 * 64 - i - 1) & 127
 
     for i in range(16 * 16):
-        c[i] = i
-        c0[i] = c[i]
-        c1[i] = c[i]
-        c2[i] = c[i]
+        c1[i] = i
+        c2[i] = c1[i]
 
-    gemm(a, b, c)
-    gemm_8_to_32(a, b, c0, 0)
-    gemm_8_to_32(a, b, c1, 1)
-    gemm_8_to_32(a, b, c2, 2)
+    gemm(a, b, c1)
+    gemm_vnni(a, b, c2)
 
-    var errors: Int = 0
-    errors += memcmp(c.data, c0.data, 16 * 16)
-    errors += memcmp(c.data, c1.data, 16 * 16)
-    errors += memcmp(c.data, c2.data, 16 * 16)
+    let errors = memcmp(c1.data, c2.data, 16 * 16)
     # CHECK: 0
     print(errors)
     if errors != 0:
