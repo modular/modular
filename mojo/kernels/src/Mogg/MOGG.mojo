@@ -67,6 +67,7 @@ from MatmulUtils import (
 
 from Pad import pad as _pad, pad_shape
 from Pointer import Pointer, DTypePointer
+from Pool import pool_shape
 from Range import range
 from SIMD import SIMD
 from TargetInfo import simdwidthof
@@ -110,6 +111,7 @@ fn MOGGExport():
     alias _arg_max = argmax
     alias _abs = abs_wrapped
     alias _add = add
+    alias _avg_pool_shape = pool_shape
     alias _cast = cast
     alias _ceil = ceil
     alias _concat = concat
@@ -135,6 +137,7 @@ fn MOGGExport():
     alias _pack_b = pack_b_ndbuffer
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
+    alias _max_pool_shape = pool_shape
     alias _mean = mean
     alias _matrix_solve = matrix_solve
     alias _matmul = matmul
