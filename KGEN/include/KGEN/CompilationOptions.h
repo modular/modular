@@ -97,7 +97,8 @@ public:
 
   /// Print the compilation options to the given stream.
   void print(raw_ostream &os) const {
-    os << "CompilationOptions { optimizationLevel: " << optimizationLevel;
+    os << "CompilationOptions { enableSearch: " << enableSearch
+       << ", optimizationLevel: " << optimizationLevel;
     if (debugLevel != kNoDebug) {
       os << ", debugLevel: "
          << (debugLevel == kLineTablesOnly ? "line-tables" : "full");
