@@ -1677,7 +1677,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
                                           /*isSynth=*/false);
   } else {
     // Otherwise this is a global let/var declaration.
-    declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType, !isVar);
+    declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType, isVar);
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   }
 

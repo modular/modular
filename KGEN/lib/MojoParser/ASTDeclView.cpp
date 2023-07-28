@@ -360,7 +360,7 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
         type = declRef.getType().getAsString();
       })
       .Case([&](GlobalVarDeclOp op) {
-        flagIsVar = !op.getIsLet();
+        flagIsVar = op.getIsVar();
         type = declRef.getType().getAsString();
       });
 }

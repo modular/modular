@@ -2966,7 +2966,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   // emit directly into the LValue. Otherwise emit into the global to infer its
   // type.
   ValueDest dest;
-  ExprContext exprContext = op.getIsLet() ? EC_LetInit : EC_VarInit;
+  ExprContext exprContext = op.getIsVar() ? EC_VarInit : EC_LetInit;
   if (parsedType) {
     op.setType(parsedType);
     DLValue result(

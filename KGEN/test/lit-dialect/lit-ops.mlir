@@ -347,8 +347,8 @@ lit.globalvar.decl @global_var : !kgen.declref<@Error> {
 // CHECK-NEXT: }
 }
 
-// CHECK: lit.globalvar.decl @global_let : !kgen.declref<@Error> isLet
-lit.globalvar.decl @global_let : !kgen.declref<@Error> isLet {
+// CHECK: lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar
+lit.globalvar.decl @global_let : !kgen.declref<@Error> isVar {
 }, {
   %0 = lit.globalvar.ref @global_let : <@Error>
 }
