@@ -143,6 +143,7 @@ struct TypeAttrCache {
   Type i8Type;
   Type i32Type;
   Type i64Type;
+  Type indexType;
   Type ptrType;
   Type i8PtrType;
   Type tokenType;
@@ -211,8 +212,10 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
   auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
                                                         op.getCoroutine())
                  .getResult(0);
+  // TODO(#10083): Pass free function attributes.
   b.create<POP::ExternalCallOp>(
-      "free", b.create<BitcastOp>(cache.ptrType, hdl).getResult());
+      "KGEN_CompilerRT_AlignedFree",
+      b.create<BitcastOp>(cache.ptrType, hdl).getResult());
   op.erase();
 }
 
@@ -331,6 +334,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // function pointer as required by the LLVM async coroutine intrinsics. LLVM's
   // async lowering will update the field with the total size.
   int64_t contextBaseSize = b.getTypeAllocSize(contextType);
+  int64_t contextBaseAlign = b.getTypeABIAlign(contextType);
 
   // The async function implementation is always void(i8*). Create a new
   // function with that signature and make the current function the wrapper
@@ -395,8 +399,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
         cache.tokenType, "llvm.coro.id.async",
         ValueRange{
             b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseSize)),
-            // FIXME: `malloc` provides no alignment guarantees.
-            b.create<ConstantOp>(b.getI32IntegerAttr(8)),
+            b.create<ConstantOp>(b.getI32IntegerAttr(contextBaseAlign)),
             b.create<ConstantOp>(b.getI32IntegerAttr(0)),
             b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(afp))});
     hdl = b.create<CoroBeginOp>(
@@ -474,9 +477,12 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
                       b.create<BitcastOp>(LLVMPointerType::get(afp.getType()),
                                           prepare.getResult(0)),
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
+  // TODO(#10083): Pass alloc function attributes.
   auto allocCall = b.create<POP::ExternalCallOp>(
-      cache.ptrType, "malloc",
-      Value(b.create<ZExtOp>(cache.i64Type, contextSize)));
+      cache.ptrType, "KGEN_CompilerRT_AlignedAlloc",
+      ArrayRef<Value>{b.create<ConstantOp>(
+                          b.getIntegerAttr(cache.indexType, contextBaseAlign)),
+                      b.create<ZExtOp>(cache.indexType, contextSize)});
   Value contextValue =
       b.create<BitcastOp>(contextPtrType, allocCall.getResult(0));
 
@@ -678,6 +684,7 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
                          b.getI8Type(),
                          b.getI32Type(),
                          b.getI64Type(),
+                         b.getIntegerType(b.getIndexTypeBitwidth()),
                          b.getType<LLVMPointerType>(),
                          LLVMPointerType::get(b.getI8Type()),
                          b.getType<LLVMTokenType>(),
