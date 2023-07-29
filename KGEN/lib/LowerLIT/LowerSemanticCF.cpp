@@ -366,9 +366,12 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
     // Process a try op specially to identify dead code and warn.
     if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
-      bool tryBodyRaises = false, tryBodyFallsThrough = false;
+      bool tryBodyRaises = false, tryBodyBreaks = false,
+           tryBodyFallsThrough = false;
       lowerSemanticCFForBlock(tryOp.getTryRegion().front(), tryBodyRaises,
-                              doesBreak, tryBodyFallsThrough);
+                              tryBodyBreaks, tryBodyFallsThrough);
+      doesBreak |= tryBodyBreaks;
+
       // The try falls through if the except block is reachable and falls
       // through, or if the body falls through and so does the else.
       bool tryFallsThrough = false;
