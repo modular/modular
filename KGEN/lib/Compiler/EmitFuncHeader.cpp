@@ -34,6 +34,13 @@ generateHeaderContent(SymbolTable &symtab, const ExportMap &exportedSymbols,
 extern "C" {{
 #endif
 
+#if defined(_WIN64) || defined(_WIN32)
+#include <BaseTsd.h>
+using ssize_t = SSIZE_T;
+#else // defined(_WIN64) || defined(_WIN32)
+#include <sys/types.h>
+#endif // defined(_WIN64) || defined(_WIN32)
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
