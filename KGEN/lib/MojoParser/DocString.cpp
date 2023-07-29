@@ -229,19 +229,21 @@ public:
             // with a capital letter (or a punctuator such as '`'), and ends
             // with a period.
             StringRef summary = docStr->getSummary();
-            if (!isValidFirstCharacter(summary.front()))
-              sharedState.emitWarning(docStr->getLoc(),
-                                      "doc string summary should begin with "
-                                      "a capital letter or '`', but this "
-                                      "begins with '")
-                  << summary.front() << "'";
+            if (!summary.empty()) {
+              if (!isValidFirstCharacter(summary.front()))
+                sharedState.emitWarning(docStr->getLoc(),
+                                        "doc string summary should begin with "
+                                        "a capital letter or '`', but this "
+                                        "begins with '")
+                    << summary.front() << "'";
 
-            if (!summary.ends_with("."))
-              sharedState.emitWarning(
-                  docStr->getLoc(),
-                  "doc string summary should end with a period '.', but this "
-                  "ends with '")
-                  << summary.back() << "'";
+              if (!summary.ends_with("."))
+                sharedState.emitWarning(
+                    docStr->getLoc(),
+                    "doc string summary should end with a period '.', but this "
+                    "ends with '")
+                    << summary.back() << "'";
+            }
           }
 
           validateDecl(decl, op, validation);

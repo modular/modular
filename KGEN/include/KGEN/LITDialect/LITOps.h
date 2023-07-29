@@ -87,7 +87,8 @@ struct MangledSymbol {
 
   /// The format for a mangled name is roughly:
   ///  $<module name>::<struct name>[::<struct name>]
-  ///    ::<function name>(<comma-separated args>)<comma-separated results>
+  ///    ::<function name>[<comma separated params>]
+  ///      (<comma-separated args>)<comma-separated results>
 
   /// The fully mangled name.
   StringAttr mangled;
@@ -95,8 +96,10 @@ struct MangledSymbol {
   SmallVector<StringAttr, 1> moduleNames;
   /// We support nested structs, so there may be more than one struct name.
   SmallVector<StringAttr, 1> structNames;
-  /// The bare name of the symbol.
+  /// The bare name of the symbol, which may include parameters.
   StringAttr symName;
+  /// The bare name of the symbol without parameters.
+  StringAttr identifier;
   /// If the symbol has a signature mangled into the name, then it will be here.
   FunctionType signature;
 };

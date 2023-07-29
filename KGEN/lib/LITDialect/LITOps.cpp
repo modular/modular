@@ -101,6 +101,10 @@ LIT::MangledSymbol LIT::MangledSymbol::mangle(mlir::SymbolOpInterface op) {
   // Get the name of the func.
   out.symName =
       StringAttr::get(op.getContext(), op.getName().take_front(firstParen));
+  out.identifier = StringAttr::get(
+      op->getContext(),
+      op.getName().take_front(op.getName().find_first_of("[(")));
+
   auto signatureStr =
       StringAttr::get(op.getContext(), op.getName().drop_front(firstParen));
   // If the operation is function-like, we can get its signature. However, using
@@ -189,11 +193,11 @@ LIT::MangledSymbol::demangle(StringAttr mangled, bool parseSignature) {
   MangledSymbol out;
   out.mangled = mangled;
   StringRef m = mangled.getValue();
-  // Get the first separator.
+  // We'll first tokenize the owning module and structs.
   size_t separator = m.find("::");
-  size_t firstParen = m.find('(');
-  for (; separator != std::string::npos && separator < firstParen;
-       separator = m.find("::"), firstParen = m.find('(')) {
+  size_t firstOpen = m.find_first_of("([");
+  for (; separator != std::string::npos && separator < firstOpen;
+       separator = m.find("::"), firstOpen = m.find_first_of("([")) {
     StringRef current = m.take_front(separator);
     // Drop until the separator.
     m = m.drop_front(separator);
@@ -207,9 +211,15 @@ LIT::MangledSymbol::demangle(StringAttr mangled, bool parseSignature) {
       out.structNames.push_back(StringAttr::get(mangled.getContext(), current));
   }
   // Get the name of the func and the types of its arguments.
+  StringRef nameWithParameters = m.take_front(m.find('('));
+  StringRef nameWithoutParameters = m.take_front(firstOpen);
+
+  out.symName = StringAttr::get(mangled.getContext(), nameWithParameters);
+  out.identifier = StringAttr::get(mangled.getContext(), nameWithoutParameters);
+
+  size_t firstParen = m.find('(');
   if (firstParen == std::string::npos)
     firstParen = m.size();
-  out.symName = StringAttr::get(mangled.getContext(), m.take_front(firstParen));
 
   // If there's no parenthesis here, don't even parse out the signature.
   if (firstParen == m.size()) {
@@ -246,7 +256,9 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os,
   llvm::interleaveComma(ms.moduleNames, os);
   os << "], Structs: [";
   llvm::interleaveComma(ms.structNames, os);
-  os << "], Symbol: " << ms.symName << ", Signature: ";
+  os << "], Symbol: " << ms.symName;
+  os << ", Identifier: " << ms.identifier;
+  os << ", Signature: ";
   if (ms.signature)
     os << ms.signature;
   else

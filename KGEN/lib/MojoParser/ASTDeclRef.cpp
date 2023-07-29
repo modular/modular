@@ -95,13 +95,10 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
         .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
               VarLetDeclOp>([](auto op) { return op.getName(); })
         .Case([](FuncOp op) {
-          // FIXME(#18029): We should use MangledSymbol::demangle instead of
-          // doing this.
-
-          // We remove the parameter section and argument section from the
-          // symbol name to keep only the identifier.
-          StringRef mangled = op.getName();
-          return mangled.substr(0, mangled.find_first_of("(["));
+          // The demangler should not fail with FuncOp names.
+          return MangledSymbol::demangle(op.getNameAttr(),
+                                         /*parseSignature=*/false)
+              ->identifier;
         })
         .Case([](FileModuleOp op) {
           // We remove the leading $.

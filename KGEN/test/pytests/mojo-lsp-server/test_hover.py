@@ -205,6 +205,29 @@ fn function_that_raises(inout self: Self, arg_in_function_that_raises: Int) rais
     )
 
     await assert_decl(
+        "function_with_param",
+        """### function `function_with_param`
+
+---
+
+###
+A function with param.
+
+#### Parameters:
+&nbsp;&nbsp;Param: An Int param.
+\\
+&nbsp;&nbsp;Param2: Another Int param.
+
+
+---
+
+###
+```mojo
+fn function_with_param[Param: Int, Param2: Int](inout self: Self)
+```""",
+    )
+
+    await assert_decl(
         "exported_function",
         """### function `exported_function`
 
