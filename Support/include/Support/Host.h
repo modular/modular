@@ -15,6 +15,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/JSON.h"
 
 #include <string>
 
@@ -190,6 +191,9 @@ struct HostMachineInfo {
   /// The remainder are empty/zero.
   static ErrorOr<HostMachineInfo>
   deserializeTargetInfoFromJSON(StringRef serializedTargetInfo);
+
+  static ErrorOr<HostMachineInfo>
+  deserializeTargetInfoFromJSON(const llvm::json::Object *serializedTargetInfo);
 
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;

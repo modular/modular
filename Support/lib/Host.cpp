@@ -733,10 +733,6 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
 
 ErrorOr<HostMachineInfo>
 HostMachineInfo::deserializeTargetInfoFromJSON(StringRef serializedTargetInfo) {
-  // CAUTION:
-  // Keep in sync with serializeTargetInfoAttrToJSON in
-  // Support/lib/MDialect/MAttrs.cpp.
-
   llvm::Expected<llvm::json::Value> errOrValue =
       llvm::json::parse(serializedTargetInfo);
   if (llvm::Error err = errOrValue.takeError())
@@ -746,9 +742,19 @@ HostMachineInfo::deserializeTargetInfoFromJSON(StringRef serializedTargetInfo) {
   if (!object)
     return Error("ill-formed serialized target info: expecting json object");
 
-  std::optional<StringRef> optTriple = object->getString("triple");
-  std::optional<StringRef> optCpu = object->getString("cpu");
-  llvm::json::Array *array = object->getArray("features");
+  return deserializeTargetInfoFromJSON(object);
+}
+
+ErrorOr<HostMachineInfo> HostMachineInfo::deserializeTargetInfoFromJSON(
+    const llvm::json::Object *serializedTargetInfo) {
+  // CAUTION:
+  // Keep in sync with serializeTargetInfoAttrToJSON in
+  // Support/lib/MDialect/MAttrs.cpp.
+
+  std::optional<StringRef> optTriple =
+      serializedTargetInfo->getString("triple");
+  std::optional<StringRef> optCpu = serializedTargetInfo->getString("cpu");
+  const llvm::json::Array *array = serializedTargetInfo->getArray("features");
   if (!optTriple || !optCpu || !array)
     return Error("ill-formed serialized target info: missing attributes");
 
