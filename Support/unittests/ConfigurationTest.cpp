@@ -179,6 +179,26 @@ malformed line here
 )"));
 }
 
+TEST(Configuration, EmptyValue) {
+  Config cfg;
+  cfg.setValue("good", "something");
+  cfg.setValue("bad", "");
+  cfg.setValue("inner.good", "another_thing");
+  cfg.setValue("inner.bad", "");
+  cfg.setValue("empty_section.bad", "");
+
+  std::string cfgString;
+  llvm::raw_string_ostream os(cfgString);
+  cfg.flush(os);
+
+  StringRef cfgStringRef = cfgString;
+  EXPECT_TRUE(cfgStringRef.contains("good = something"));
+  EXPECT_TRUE(cfgStringRef.contains("good = another_thing"));
+  EXPECT_TRUE(cfgStringRef.contains("inner"));
+  EXPECT_FALSE(cfgStringRef.contains("bad"));
+  EXPECT_FALSE(cfgStringRef.contains("empty_section"));
+}
+
 #ifdef LLVM_ON_UNIX
 // Regression test for a bug in Configuration
 TEST(Configuration, PageBoundary) {

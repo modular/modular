@@ -195,6 +195,9 @@ void Config::flush(raw_ostream &os) {
     StringRef k = kV.first();
     std::string &v = kV.second;
 
+    if (v.empty())
+      continue;
+
     auto [section, prop] = k.rsplit('.');
     if (prop.empty())
       std::swap(section, prop);
