@@ -6,7 +6,7 @@
 
 # REQUIRES: python-lldb-integration
 # REQUIRES: darwin
-# RUN: %repl <%s 2>&1 | FileCheck %s
+# RUN: bash -c "source $MODULAR_DERIVED_PATH/autovenv/bin/activate && %repl <%s 2>&1" | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 

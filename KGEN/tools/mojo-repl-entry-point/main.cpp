@@ -24,10 +24,17 @@ lldb_evaluate_specializations(ssize_t (*evaluator)(void **, ssize_t),
   *best = evaluator(specializations, numSpecializations);
 }
 
-/// Ensure `lldb_evaluate_specializations` isn't DCE'd so we can find it from
-/// the REPL.
-static void forceLinkEvaluateSpecializations() {
-  llvm::nulls() << (void *)&lldb_evaluate_specializations;
+/// Entry point that LLDB should stop at before evaluating expressions. It's
+/// guaranteed that all required setup happens before this function is called.
+MODULAR_EXPORT LLVM_ATTRIBUTE_USED LLVM_ATTRIBUTE_NOINLINE int
+mojo_repl_main() {
+  return 0;
+}
+
+/// Ensure our exported functions aren't DCE'd so we can find it from the REPL.
+static void forceLinkExportedSymbols() {
+  llvm::nulls() << (void *)&lldb_evaluate_specializations
+                << (void *)&mojo_repl_main;
 }
 
 //===----------------------------------------------------------------------===//
@@ -50,7 +57,8 @@ static void forceLinkCompilerRT() {
 //===----------------------------------------------------------------------===//
 
 int main() {
-  forceLinkEvaluateSpecializations();
+  forceLinkExportedSymbols();
   forceLinkCompilerRT();
-  return 0;
+  KGEN_CompilerRT_Python_SetPythonPath();
+  return mojo_repl_main();
 }
