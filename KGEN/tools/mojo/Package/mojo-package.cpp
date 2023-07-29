@@ -504,7 +504,7 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
 
   // Lower the module up to the elaborator.
   mlir::PassManager preElaboratePM(theModule.getContext());
-  populateGenerateLibraryFilePasses(preElaboratePM, runtime);
+  populateGenerateLibraryFilePasses(preElaboratePM, runtime, options);
   if (auto err = runPipeline(preElaboratePM))
     return err.takeError();
   if (auto err = packageBuilder.attachPreElaboratorBytecode(theModule))

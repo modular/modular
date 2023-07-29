@@ -25,8 +25,9 @@
 using namespace M;
 using namespace KGEN;
 
-void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
-                                             LLCL::Runtime &runtime) {
+void KGEN::populateGenerateLibraryFilePasses(
+    mlir::PassManager &pm, LLCL::Runtime &runtime,
+    const CompilationOptions &options) {
   pm.addPass(createVerifyParameters());
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
@@ -55,22 +56,26 @@ void KGEN::populateGenerateLibraryFilePasses(mlir::PassManager &pm,
   // Too much inlining pre-elaboration increases pressure on the elaborator and
   // reduces cache granularity. By restricting inlining to `nodebug` functions,
   // we still maintain the zero-cost abstraction.
-  AlwaysInlineParametricOptions options;
-  options.nodebugOnly = true;
-  pm.addPass(createAlwaysInlineParametric(runtime, options));
-  pm.addPass(createVerifyParameters(
-      VerifyParametersOptions{/*simplifyParameters=*/true}));
+  AlwaysInlineParametricOptions inlinerOpts;
+  inlinerOpts.nodebugOnly = true;
+  pm.addPass(createAlwaysInlineParametric(runtime, inlinerOpts));
+  if (options.optimizationLevel >= 1) {
+    pm.addPass(createVerifyParameters(
+        VerifyParametersOptions{/*simplifyParameters=*/true}));
+  }
 
   // These passes don't influence parameters, so we don't need to verify them.
 
   // We use the canonicalizer, but disable region simplifications, since it is
   // very CFG centric and we have region trees with a single block per region.
-  mlir::GreedyRewriteConfig cannConfig;
-  cannConfig.enableRegionSimplification = false;
-  pm.addNestedPass<GeneratorOp>(createSROA());
-  pm.addNestedPass<GeneratorOp>(createMem2Reg());
-  pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
-  pm.addNestedPass<GeneratorOp>(createConstraintReduction());
+  if (options.optimizationLevel >= 1) {
+    mlir::GreedyRewriteConfig cannConfig;
+    cannConfig.enableRegionSimplification = false;
+    pm.addNestedPass<GeneratorOp>(createSROA());
+    pm.addNestedPass<GeneratorOp>(createMem2Reg());
+    pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
+    pm.addNestedPass<GeneratorOp>(createConstraintReduction());
+  }
 }
 
 /// A default specialization evaluator that JITs and invokes the specialized
@@ -209,21 +214,25 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createEliminateDeadSymbols());
 
   // Run the inliner with an inner function pass pipeline.
-  auto buildInlinerFuncPasses = [](mlir::OpPassManager &pm) {
+  auto buildInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
     pm.addPass(createCleanupCompilerGlobals());
-    pm.addPass(createSimplifyCF());
-    pm.addPass(createSROA());
-    pm.addPass(createMem2Reg());
-    pm.addPass(mlir::createCSEPass());
-    pm.addPass(createCanonicalizer());
-    pm.addPass(createSROA());
-    pm.addPass(createMem2Reg());
-    pm.addPass(createCanonicalizer());
+    if (options.optimizationLevel >= 1) {
+      pm.addPass(createSimplifyCF());
+      pm.addPass(createSROA());
+      pm.addPass(createMem2Reg());
+      pm.addPass(mlir::createCSEPass());
+    }
+    if (options.optimizationLevel >= 2) {
+      pm.addPass(createCanonicalizer());
+      pm.addPass(createSROA());
+      pm.addPass(createMem2Reg());
+      pm.addPass(createCanonicalizer());
+    }
   };
   pm.addPass(createForceInline(
       runtime,
       {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug},
-      buildInlinerFuncPasses));
+      std::move(buildInlinerFuncPasses)));
 
   // Process debuginfo based on the selected debugging level.
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
@@ -231,15 +240,18 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   else if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
+  if (options.optimizationLevel >= 1)
+    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   // Long-tail optimization passes.
   // FIXME: This section needs to be trimmed down.
-  pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
-  pm.addNestedPass<FuncOp>(createSROA());
-  pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(createCanonicalizer());
-  pm.addNestedPass<FuncOp>(createSROA());
-  pm.addNestedPass<FuncOp>(createMem2Reg());
-  pm.addNestedPass<FuncOp>(createCanonicalizer());
+  if (options.optimizationLevel >= 2) {
+    pm.addNestedPass<FuncOp>(createSROA());
+    pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
+    pm.addNestedPass<FuncOp>(createSROA());
+    pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
+  }
 
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
@@ -247,15 +259,20 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Run passes that require closures to be lifted.
   // FIXME: `hoist-trivial-invariants` and `stack-reuse` should be taught to run
   // earlier.
-  pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
-  pm.addNestedPass<FuncOp>(createStackReuse());
-  pm.addNestedPass<FuncOp>(mlir::createCSEPass());
-  pm.addNestedPass<FuncOp>(createCanonicalizer());
+  if (options.optimizationLevel >= 1) {
+    pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
+    pm.addNestedPass<FuncOp>(createStackReuse());
+    pm.addNestedPass<FuncOp>(mlir::createCSEPass());
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
+  }
 
   // Loop raising must happen after `hoist-trivial-invariants`.
   // FIXME: Move this earlier in the pipeline.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
-  pm.addNestedPass<FuncOp>(createLoopUnrolling());
+  // FIXME: Despite being a "must run" optimization, loop unrolling requires
+  // other optimization passes to run because it does not use SCEV.
+  if (options.optimizationLevel >= 1)
+    pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
   pm.addNestedPass<FuncOp>(createLowerLoops());
 
   // At the end of the pipeline, externalize any functions that have been
@@ -349,7 +366,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   setTargetInfo(theModule, target);
   setBuildInfo(theModule, build);
   // Populate the passes.
-  populateGenerateLibraryFilePasses(pm, runtime);
+  populateGenerateLibraryFilePasses(pm, runtime, options);
   populateElaborateModulePasses(pm, runtime, target, build, options);
 
   // Run the passes as a cached transform. Don't deflate the op as part of this

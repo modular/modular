@@ -134,8 +134,8 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);
   fullCompilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  populateGenerateLibraryFilePasses(*fullCompilationPM,
-                                    typeSystem->getRuntime());
+  populateGenerateLibraryFilePasses(
+      *fullCompilationPM, typeSystem->getRuntime(), *compilationOptions);
   populateElaborateModulePasses(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
       [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,

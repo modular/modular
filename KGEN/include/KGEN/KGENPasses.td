@@ -826,6 +826,11 @@ def LoopUnrolling : Pass<"loop-unrolling", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
+
+  let options = [
+    Option<"optimizationLevel", "opt-level", "unsigned", "3",
+           "The compilation optimization level.">
+  ];
 }
 
 //===----------------------------------------------------------------------===//

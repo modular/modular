@@ -324,7 +324,7 @@ void LoopUnrolling::runOnOperation() {
     std::optional<int64_t> tripCount = loop.getTripCount();
     if (!tripCount)
       continue;
-    if (loop.isFullUnroll() || (tripCount.value() <= 1)) {
+    if (loop.isFullUnroll() || (*tripCount <= 1 && optimizationLevel >= 1)) {
       // Fully unroll if loop is decorated or has single or zero iteration.
       if (succeeded(unrollForLoopN(loop, tripCount.value())))
         continue;
