@@ -996,11 +996,6 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 
 ErrorOr<std::string>
 M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
-  if (!targetInfoAttr.getDataLayout().toString().empty())
-    return Error("unable to represent data_layout");
-  if (targetInfoAttr.getSimdBitWidth() != 0)
-    return Error("unable to represent simd_bit_width");
-
   // CAUTION:
   // Keep in sync with HostMachineInfo::deserializeTargetInfoFromJSON in
   // Support/lib/Host.cpp.
