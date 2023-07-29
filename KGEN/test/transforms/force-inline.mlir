@@ -222,3 +222,17 @@ kgen.func @caller() {
   kgen.call @dontinlineme() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.func @noreturn() always_inline {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.func @invoke_noreturn
+kgen.func @invoke_noreturn() {
+  // CHECK-NEXT: hlcf.loop
+  // CHECK-NEXT: kgen.unreachable
+  kgen.call @noreturn() : () -> ()
+  kgen.return
+}
