@@ -162,6 +162,10 @@ StringRef Config::getValue(StringRef key) {
   return kv[key.lower()];
 }
 
+void Config::setValue(StringRef key, StringRef value) {
+  kv[key.lower()] = value;
+}
+
 void Config::getValuesInSection(
     StringRef section,
     SmallVectorImpl<std::pair<StringRef, StringRef>> &values) {
@@ -213,6 +217,10 @@ void Config::flush(raw_ostream &os) {
 
   // Sort the sections to make the output deterministic.
   llvm::stable_sort(sections, [](const auto &lhs, const auto &rhs) {
+    // Globals must always come first.
+    if (lhs.first == "globals")
+      return true;
+
     return lhs.first < rhs.first;
   });
   for (auto &sectionAndProps : sections)
