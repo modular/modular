@@ -67,6 +67,15 @@ struct SomeStruct[size: Int, other_param: Bool]:
         """
         return "foo"
 
+    fn function_with_param[Param: Int, Param2: Int](inout self):
+        """A function with param.
+
+        Parameters:
+          Param: An Int param.
+          Param2: Another Int param.
+        """
+        pass
+
 
 fn exported_function():
     "This is an exported function."
