@@ -94,7 +94,6 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
     return WalkResult::advance();
   });
   b.replaceOp(call, scope->getResults());
-  assert(numReturns > 0);
   return std::make_pair(scope, numReturns == 1 && returnAtEnd);
 }
 
