@@ -96,6 +96,9 @@ public:
   /// Returns if we should validate doc strings.
   bool shouldValidateDocStrings() const;
 
+  /// Returns if we should generate lifetimes using !lit.ref<>.
+  bool useExperimentalLifetimes() const;
+
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);
 

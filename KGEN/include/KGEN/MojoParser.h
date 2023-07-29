@@ -74,6 +74,9 @@ struct MojoParserConfig {
   /// If true, this will process and validate the doc strings in the file.
   bool validateDocStrings = false;
 
+  /// If true, use !lit.ref representation for full lifetimes support in Mojo.
+  bool experimentalLifetimes = false;
+
   /// The level of module caching enabled in the parser.
   CachingLevel moduleCachingLevel = kCacheAll;
 
