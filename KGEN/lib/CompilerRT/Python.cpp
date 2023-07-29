@@ -104,12 +104,12 @@ const char *KGEN_CompilerRT_Python_SetPythonPath() {
     return "could not read temporary file with 'python' output";
 
   // Set the `PYTHONPATH` environment variable to the site-package paths.
-  std::string buffer = bufferOrErr.get()->getBuffer().trim().str();
+  std::string pythonPath = bufferOrErr.get()->getBuffer().trim().str();
 #if defined(_WIN32)
-  int result = SetEnvironmentVariableA("PYTHONPATH", pythonPath);
+  int result = SetEnvironmentVariableA("PYTHONPATH", pythonPath.c_str());
   int failureCode = 0;
 #else
-  int result = setenv("PYTHONPATH", buffer.c_str(), /*overwrite=*/1);
+  int result = setenv("PYTHONPATH", pythonPath.c_str(), /*overwrite=*/1);
   int failureCode = -1;
 #endif
   if (result == failureCode)
