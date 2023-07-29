@@ -284,11 +284,10 @@ public:
 ///     `VARIABLE`
 /// This differs from UNWRAP_ERROR in that it moves the unwrapped value into an
 /// existing local variable instead creating a new one.
-///
-/// WARNING: This macro contains multiple statements, so it should not be used
-/// in the body of an if statement without braces.
 #define UNWRAP_ERROR_OR_SET(VARIABLE, EXPRESSION)                              \
-  _UNWRAP_ERROR_IMPL(VARIABLE, VARIABLE, EXPRESSION)
+  do {                                                                         \
+    _UNWRAP_ERROR_IMPL(VARIABLE, VARIABLE, EXPRESSION)                         \
+  } while (0)
 
 /// Given an expression that returns an `ErrorOr`:
 ///  1) evaluate the expression
