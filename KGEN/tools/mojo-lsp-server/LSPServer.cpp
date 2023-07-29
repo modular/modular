@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPServer.h"
+#include "LLCL/Runtime/WorkQueue.h"
 #include "MojoServer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
@@ -119,6 +120,7 @@ void LSPServer::onInitialize(const InitializeParams &params,
 }
 void LSPServer::onInitialized(const InitializedParams &) {}
 void LSPServer::onShutdown(const NoParams &, Callback<std::nullptr_t> reply) {
+  server.shutdown();
   shutdownRequestReceived = true;
   reply(nullptr);
 }
@@ -200,9 +202,13 @@ void LSPServer::onHover(const TextDocumentPositionParams &params,
 // Entry Point
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport) {
+mlir::LogicalResult
+M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
+                               std::unique_ptr<LLCL::WorkQueue> workQueue,
+                               bool waitOnShutdown) {
   MessageHandler messageHandler(transport);
   MojoServer server(
+      std::move(workQueue), waitOnShutdown,
       messageHandler.outgoingNotification<PublishDiagnosticsParams>(
           "textDocument/publishDiagnostics"));
   LSPServer lspServer(server, transport);

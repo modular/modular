@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LLCL/Runtime/Runtime.h"
 #include "LSPServer.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
@@ -17,8 +18,9 @@
 #include <windows.h>
 #endif
 
-using namespace mlir::lsp;
+using namespace M;
 using namespace M::KGEN::LIT;
+using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
   llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
@@ -74,6 +76,15 @@ int main(int argc, char **argv) {
     prettyPrint = true;
   }
 
+  // Create the work queue used for processing files. When testing, use a single
+  // thread to provide deterministic output.
+  std::unique_ptr<LLCL::WorkQueue> workQueue =
+      mojoTest ? LLCL::createSingleThreadWorkQueue()
+               : LLCL::createThreadPoolWorkQueue();
+
+  // Wait for the server to shutdown when testing.
+  bool waitOnShutdown = mojoTest;
+
   // Configure the logger.
   Logger::setLogLevel(logLevel);
 
@@ -96,5 +107,6 @@ int main(int argc, char **argv) {
   }
 
   // Start the server.
-  return failed(runMojoLSPServer(transport));
+  return failed(
+      runMojoLSPServer(transport, std::move(workQueue), waitOnShutdown));
 }

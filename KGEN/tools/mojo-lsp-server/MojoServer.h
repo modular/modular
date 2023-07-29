@@ -11,6 +11,10 @@
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "llvm/ADT/FunctionExtras.h"
 
+namespace M::LLCL {
+class WorkQueue;
+} // namespace M::LLCL
+
 namespace M::KGEN::LIT {
 using SendDiagnosticsFn =
     llvm::unique_function<void(const mlir::lsp::PublishDiagnosticsParams &)>;
@@ -22,8 +26,12 @@ using OnResultFn = llvm::unique_function<void(T)>;
 /// separate from the logic that involves LSP server/client communication.
 class MojoServer {
 public:
-  MojoServer(SendDiagnosticsFn sendDiagnosticsFn);
+  MojoServer(std::unique_ptr<LLCL::WorkQueue> workQueue, bool waitOnShutdown,
+             SendDiagnosticsFn sendDiagnosticsFn);
   ~MojoServer();
+
+  /// Begin the shutdown sequence for the server.
+  void shutdown();
 
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
