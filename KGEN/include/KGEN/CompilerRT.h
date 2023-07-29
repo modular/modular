@@ -81,6 +81,17 @@ void registerTracing(
 // Python.cpp
 //===----------------------------------------------------------------------===//
 
+/// If not already set, this sets the `PYTHONPATH` environment variable to point
+/// to the typical directories that contain Python modules. These directories
+/// are discovered by invoking `python` and querying it for the paths it has
+/// been configured to use.
+///
+/// If an error prevents `PYTHONPATH` from being set, this returns a pointer to
+/// a non-empty string literal with an error message. Otherwise, this returns a
+/// pointer to an empty string literal.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
+KGEN_CompilerRT_Python_SetPythonPath();
+
 namespace M::KGEN {
 /// Register the Python functions.
 void registerPython(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);

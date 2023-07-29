@@ -273,12 +273,13 @@ static llvm::Error createReplBreakpoint(Target &target) {
   // Create the breakpoint.
   lldb::BreakpointSP breakpoint = target.CreateBreakpoint(
       &containingModules, /*containingSourceFiles=*/nullptr,
-      /*func_name=*/"main", lldb::eFunctionNameTypeAuto,
+      /*func_name=*/"mojo_repl_main", lldb::eFunctionNameTypeAuto,
       lldb::eLanguageTypeUnknown, /*offset=*/0,
       /*skip_prologue=*/eLazyBoolCalculate, /*internal=*/true,
       /*request_hardware=*/false);
   if (breakpoint->GetNumLocations() == 0)
-    return createStringError("failed to resolve REPL breakpoint for 'main'");
+    return createStringError(
+        "failed to resolve REPL breakpoint for 'mojo_repl_main'");
 
   breakpoint->SetBreakpointKind("REPL");
   return llvm::Error::success();

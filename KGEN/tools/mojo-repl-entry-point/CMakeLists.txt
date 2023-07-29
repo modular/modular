@@ -23,3 +23,12 @@ endif()
 set_target_properties(mojo-repl-entry-point PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/"
 )
+
+# We need to prevent inline function expansion to guarentee our entry
+# point function is correctly invoked.
+if(MSVC)
+  target_compile_options(mojo-repl-entry-point PRIVATE /Od)
+else()
+  set_target_properties(mojo-repl-entry-point PROPERTIES
+      COMPILE_FLAGS "-g0 -O0")
+endif()
