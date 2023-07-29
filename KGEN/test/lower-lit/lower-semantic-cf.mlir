@@ -687,8 +687,37 @@ lit.func @nested_try_finally() {
   kgen.return
 }
 
-lit.func @throwing_func() throws->!pop.variant<@Error, !lit.none> {
+// CHECK-LABEL: lit.func @throwing_func
+lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
   %1 = lit.struct.create() : () -> !kgen.declref<@Error>
   // CHECK: lit.error_return %1 : <@Error, !lit.none>
-  lit.raise %1 : <@Error> lit.end_func
+  lit.raise %1 : <@Error>
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @try_in_loop
+lit.func @try_in_loop(%arg0: i1) {
+  hlcf.loop {
+    hlcf.if %arg0 {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    lit.try {
+      lit.try.yield
+    // CHECK: except
+    } except (%e: index) {
+      // CHECK-NEXT: kgen.unreachable
+      lit.try.yield
+    } else {
+      lit.try.yield
+    } finally {
+      lit.try.yield
+    } {"suppressWarnings" = true}
+    // CHECK: hlcf.continue
+    hlcf.continue
+  }
+  // CHECK: after.loop
+  "after.loop"() : () -> ()
+  kgen.return
 }
