@@ -12,8 +12,9 @@ add_modular_conversion_library(LowerLIT
   LowerClosures.cpp
   LowerLIT.cpp
   LowerPreElaboratedLIT.cpp
-  LowerStructs.cpp
   LowerSemanticCF.cpp
+  LowerStructs.cpp
+  StripParserMetadata.cpp
 
   DEPENDS
   MLIRKGENPasses

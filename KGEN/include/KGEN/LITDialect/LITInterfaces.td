@@ -32,9 +32,16 @@ def ASTDeclInterface : OpInterface<"ASTDeclInterface"> {
     }]>,
 
     InterfaceMethod<[{
-      Set the documentation string for this decl.
+      Set the documentation string for this decl. By default, this method is not
+      valid to call on an operation without a doc string.
     }], "void", "setDocStringAttr", (ins "DocStringAttr":$docString), [{}], [{
       llvm_unreachable("TODO: decl does not support a doc string");
+    }]>,
+
+    InterfaceMethod<[{
+      Clear the documentation string for this decl.
+    }], "Attribute", "removeDocStringAttr", (ins), [{}], [{ 
+      return Attribute();
     }]>,
   ];
 }
