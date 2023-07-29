@@ -154,8 +154,8 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
 
   // Ask Clang to create the target info for the architecture and CPU. This will
   // populate `opts` with the full target triple and feature set.
-  clang::TargetInfo *targetInfo =
-      clang::TargetInfo::CreateTargetInfo(diags, opts);
+  auto targetInfo = std::unique_ptr<clang::TargetInfo>(
+      clang::TargetInfo::CreateTargetInfo(diags, opts));
   if (!targetInfo)
     return Error("failed to create target info: " + interceptor.msg);
 

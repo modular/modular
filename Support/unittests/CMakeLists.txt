@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(ADT)
+add_subdirectory(MArchTarget)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
