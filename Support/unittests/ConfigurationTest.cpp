@@ -331,3 +331,30 @@ key5 = value5
   err = from.copyFrom(from);
   ASSERT_TRUE(err.getError());
 }
+
+/// This test checks that we can round-trip globals correctly. Currently, the
+/// implementation requires that they be placed at the beginning of the file,
+/// but in theory this could change under the hood and this test should still
+/// pass.
+TEST(Configuration, RoundTripGlobals) {
+  // Build the config:
+  // global = another_thing
+  // [a]
+  // value = something
+  Config cfg;
+  cfg.setValue("a.value", "something");
+  cfg.setValue("global", "another_thing");
+  ASSERT_EQ(cfg.getValue("global"), "another_thing") << cfg.getValue("global");
+
+  std::string cfgString;
+  llvm::raw_string_ostream os(cfgString);
+  cfg.flush(os);
+
+  ASSERT_TRUE(StringRef(cfgString).contains("global = another_thing"))
+      << cfgString;
+  Config newConfig;
+  auto err = newConfig.parseFrom(cfgString);
+  ASSERT_FALSE(err.isError()) << err.getError();
+  EXPECT_EQ(newConfig.getValue("global"), "another_thing")
+      << newConfig.getValue("global");
+}

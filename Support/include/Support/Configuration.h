@@ -72,7 +72,7 @@ public:
 
   /// Set a value - this will override anything that was already set for that
   /// key.
-  void setValue(StringRef key, StringRef value) { kv[key.lower()] = value; }
+  void setValue(StringRef key, StringRef value);
 
   /// Given a section name, get a list of all the values in that section. Global
   /// properties (properties without a section) can be listed by simply using an
