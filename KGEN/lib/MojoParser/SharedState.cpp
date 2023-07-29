@@ -1619,11 +1619,6 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
         decl->resolvedness != DeclResolvedness::unparsed)
       continue;
 
-    // TODO: FuncOp is currently not isolated from above and thus can't be
-    // lazy loaded, so we need to erase it directly when it's unused.
-    if (isa<FuncOp>(*decl))
-      decl->getIfOperation()->erase();
-
     // Clear out decls that weren't materialized to avoid dangling references
     // after they get deleted.
     decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
