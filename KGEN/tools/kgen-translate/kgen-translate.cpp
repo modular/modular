@@ -32,6 +32,11 @@ int main(int argc, char *argv[]) {
       cl::desc("Validate doc strings in the input Mojo file."),
       cl::init(false)};
 
+  cl::opt<bool> experimentalLifetimes{
+      "mojo-experimental-lifetimes",
+      cl::desc("Enable experimental new lifetimes generation."),
+      cl::init(false)};
+
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
@@ -44,6 +49,7 @@ int main(int argc, char *argv[]) {
         MojoParserConfig config(context, *runtime, options);
         config.useMLIRDiagnostics = true;
         config.validateDocStrings = validateDocStrings;
+        config.experimentalLifetimes = experimentalLifetimes;
         return importMojoFile(sourceMgr, config, ts);
       });
 

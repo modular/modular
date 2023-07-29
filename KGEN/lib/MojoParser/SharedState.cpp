@@ -158,6 +158,9 @@ struct SharedState::Impl {
   /// Flag indicating if we should validate doc strings while parsing.
   bool validateDocStrings = false;
 
+  /// If true, use !lit.ref representation for full lifetimes support in Mojo.
+  bool experimentalLifetimes = false;
+
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -186,6 +189,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
       impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
   getAutoImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
+  impl->experimentalLifetimes = config.experimentalLifetimes;
 
   DialectRegistry registry;
   registerAllKGENDialects(registry);
@@ -229,6 +233,10 @@ SharedState::~SharedState() { declResolver.reset(); }
 
 bool SharedState::shouldValidateDocStrings() const {
   return impl->validateDocStrings;
+}
+
+bool SharedState::useExperimentalLifetimes() const {
+  return impl->experimentalLifetimes;
 }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {

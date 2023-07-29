@@ -1,0 +1,25 @@
+# RUN: kgen-translate -import-mojo -mojo-experimental-lifetimes %s --mlir-print-debuginfo -o %t.mlir
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+
+# CHECK-LABEL: lit.struct.decl @MemExample
+struct MemExample:
+  var x : Int
+  fn __init__(inout self): self.x = 42; pass
+  fn noop(self): pass
+
+  fn __moveinit__(inout self, owned existing: Self):
+    self.x = existing.x
+
+  fn __copyinit__(inout self, existing: Self):
+    self.x = existing.x
+
+  # Destructor should not recurse.
+  # CHECK-LABEL: lit.func @"__del__
+  # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
+  # CHECK-NEXT:    %1 = kgen.param.constant{{.*}} <#lit.none>
+  # CHECK-NEXT:    lit.ownership.mark.destroyed %self
+  # CHECK-NEXT:    kgen.return %1 : !lit.none
+  fn __del__(owned self):
+    self.noop()
+
+fn consume(owned a: MemExample): pass
