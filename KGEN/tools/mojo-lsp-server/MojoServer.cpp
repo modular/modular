@@ -11,7 +11,10 @@
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "KGEN/MojoParser/CodeComplete.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
@@ -281,22 +284,27 @@ using SendDiagnosticsFnRef =
 namespace {
 /// This class represents all of the information pertaining to a specific Mojo
 /// document.
-struct MojoDocument {
+struct MojoDocument : public LLCL::ReferenceCounted<MojoDocument> {
 public:
   MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
                int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-               LLCL::Runtime &runtime);
+               LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
   MojoDocument(const MojoDocument &) = delete;
   MojoDocument &operator=(const MojoDocument &) = delete;
-
-  /// Initialize the document based on the current set of contents.
-  void initialize(const lsp::URIForFile &uri);
 
   /// Return the contents of this document.
   StringRef getContents() const { return contents; }
 
   /// Return the version of this document.
   int64_t getVersion() const { return version; }
+
+  /// Invalidate this document.
+  void invalidate() { isInvalidated = true; }
+
+  /// Return a chain that will be ready when the document is parsed.
+  AnyAsyncValueRef getDocumentReadyChain() const {
+    return isDocumentParsed.copy();
+  }
 
   //===--------------------------------------------------------------------===//
   // Asynchronous LSP Queries
@@ -312,18 +320,31 @@ public:
   //===--------------------------------------------------------------------===//
   // Language Features
 
-  void
-  onCodeCompletion(const lsp::Position &completePos,
-                   OnResultFn<mlir::lsp::CompletionList> onCompletionFn) const;
+  void onCodeCompletion(const lsp::Position &completePos,
+                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
 
-  void onDefinition(
-      const lsp::Position &pos,
-      OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) const;
+  void
+  onDefinition(const lsp::Position &pos,
+               OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn);
 
   void onHover(const lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) const;
+               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
 private:
+  /// Parse the document and populate the index based on the current contents.
+  void parseDocument();
+
+  /// Start a task that depends on the document being parsed.
+  template <typename FnT>
+  void startTaskAfterParsing(FnT &&fn) {
+    isDocumentParsed.andThenAsync([doc = LLCL::RCRef<MojoDocument>::copy(this),
+                                   fn = std::forward<FnT>(fn)]() mutable {
+      // If the document has been invalidated, there's nothing to do here.
+      if (!doc->isInvalidated)
+        fn(*doc);
+    });
+  }
+
   //===--------------------------------------------------------------------===//
   // Synchronous LSP Queries
   //===--------------------------------------------------------------------===//
@@ -412,11 +433,20 @@ private:
   /// The runtime used when parsing the file.
   LLCL::Runtime &runtime;
 
+  /// A flag indicating if this document version has been invalidated.
+  std::atomic<bool> isInvalidated = false;
+
   //===--------------------------------------------------------------------===//
   // Parsed Fields
 
+  /// The following fields are only available after the document has been
+  /// parsed, when `isDocumentParsed` is ready.
+
   /// Allow access to the parser fields.
   friend LSPParserListener;
+
+  /// An async value readied when the document is parsed.
+  AsyncValueRef<Chain> isDocumentParsed;
 
   /// An ordered set of fixits for diagnostics emitted for the current version
   /// of the file.
@@ -426,16 +456,29 @@ private:
   /// The overall parser context.
   std::unique_ptr<Context> context;
 };
+
+using MojoDocumentRef = LLCL::RCRef<MojoDocument>;
 } // namespace
 
 MojoDocument::MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           LLCL::Runtime &runtime)
+                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain)
     : uri(uri), contents(std::move(contents)), version(version),
-      sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime) {}
+      sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
+      isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
+  // Start a task to resolve the document.
+  chain.andThenAsync(
+      [doc = MojoDocumentRef::copy(this)] { doc->parseDocument(); });
+}
 
-void MojoDocument::initialize(const lsp::URIForFile &uri) {
+void MojoDocument::parseDocument() {
+  auto markDocumentParsed = [&] { isDocumentParsed.copy().emplace(); };
+
+  // If we've already been invalidated, bail out early.
+  if (isInvalidated)
+    return markDocumentParsed();
+
   // Reset the source manager and parse the file.
   context = std::make_unique<Context>(runtime, *this);
 
@@ -459,8 +502,11 @@ void MojoDocument::initialize(const lsp::URIForFile &uri) {
   };
   DiagHandlerContext handlerCtx;
   context->sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
-
   context->parserContext->parseFile(context->sourceMgr.getMainFileID());
+
+  // If we've already been invalidated, bail out early.
+  if (isInvalidated)
+    return markDocumentParsed();
 
   // Process the collected diagnostics.
   lsp::PublishDiagnosticsParams diagParams(uri, version);
@@ -470,6 +516,9 @@ void MojoDocument::initialize(const lsp::URIForFile &uri) {
       diagParams.diagnostics.push_back(*lspDiag);
   }
   sendDiagnosticsFn(diagParams);
+
+  // Mark the document as fully parsed now that we're done.
+  markDocumentParsed();
 }
 
 //===----------------------------------------------------------------------===//
@@ -610,7 +659,10 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 void MojoDocument::getCodeActions(
     const lsp::Range &pos, const lsp::CodeActionContext &context,
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions) {
-  onActions(getCodeActionsSync(pos, context));
+  startTaskAfterParsing([pos, context, onActions = std::move(onActions)](
+                            MojoDocument &doc) mutable {
+    onActions(doc.getCodeActionsSync(pos, context));
+  });
 }
 
 std::vector<lsp::CodeAction>
@@ -640,8 +692,12 @@ MojoDocument::getCodeActionsSync(const lsp::Range &pos,
 
 void MojoDocument::onCodeCompletion(
     const lsp::Position &completePos,
-    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) const {
-  onCompletionFn(onCodeCompletionSync(completePos));
+    OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
+  startTaskAfterParsing(
+      [completePos,
+       onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
+        onCompletionFn(doc.onCodeCompletionSync(completePos));
+      });
 }
 
 lsp::CompletionList
@@ -703,8 +759,11 @@ MojoDocument::onCodeCompletionSync(const lsp::Position &completePos) const {
 
 void MojoDocument::onDefinition(
     const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) const {
-  onDefinitionFn(onDefinitionSync(pos));
+    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
+  startTaskAfterParsing([pos, onDefinitionFn = std::move(onDefinitionFn)](
+                            MojoDocument &doc) mutable {
+    onDefinitionFn(doc.onDefinitionSync(pos));
+  });
 }
 
 std::optional<lsp::Location>
@@ -725,8 +784,11 @@ MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
 
 void MojoDocument::onHover(
     const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) const {
-  onHoverFn(onHoverSync(pos));
+    OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
+  startTaskAfterParsing(
+      [pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
+        onHoverFn(doc.onHoverSync(pos));
+      });
 }
 
 std::optional<lsp::Hover>
@@ -804,44 +866,86 @@ void LSPParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
-  Impl(SendDiagnosticsFn sendDiagnosticsFn)
-      : sendDiagnosticsFn(std::move(sendDiagnosticsFn)) {}
+  Impl(std::unique_ptr<LLCL::WorkQueue> workQueue, bool waitOnShutdown,
+       SendDiagnosticsFn sendDiagnosticsFn)
+      : runtime(std::make_unique<LLCL::Runtime>(LLCL::createMallocAllocator(),
+                                                std::move(workQueue))),
+        waitOnShutdown(waitOnShutdown),
+        sendDiagnosticsFn(std::move(sendDiagnosticsFn)) {}
+
+  /// Begin the shutdown process for the server.
+  void shutdown() {
+    if (isShuttingDown())
+      return;
+    // Invalidate all of the current documents if we aren't waiting for
+    // shutdown, otherwise wait for them to parse and resolve actions.
+    for (auto &it : files) {
+      if (waitOnShutdown)
+        LLCL::await(it.second->getDocumentReadyChain());
+      else
+        it.second->invalidate();
+    }
+    files.clear();
+    runtime.reset();
+  }
+
+  /// Return if the server is shutting down.
+  bool isShuttingDown() const { return !runtime; }
 
   /// Retrieve the document that matches completely the given filename. Return
   /// `nullptr` if no document is found.
-  MojoDocument *findDocument(StringRef filename) {
+  MojoDocumentRef findDocument(StringRef filename) {
     auto it = files.find(filename);
     if (it == files.end())
-      return nullptr;
-    return it->second.get();
+      return MojoDocumentRef();
+    return it->second.copy();
   }
+
+  /// The runtime used when processing files.
+  std::unique_ptr<LLCL::Runtime> runtime;
+
+  /// A flag indicating if the server should not invalidate requests on
+  /// shutdown, and instead wait for them to complete.
+  bool waitOnShutdown;
 
   /// The function used to send diagnostics to the client.
   SendDiagnosticsFn sendDiagnosticsFn;
 
-  /// The runtime used when processing files.
-  LLCL::Runtime runtime{LLCL::createMallocAllocator(),
-                        LLCL::createThreadPoolWorkQueue()};
-
   /// The files held by the server, mapped by their URI file name.
-  llvm::StringMap<std::unique_ptr<MojoDocument>> files;
+  llvm::StringMap<MojoDocumentRef> files;
 };
 
 //===----------------------------------------------------------------------===//
 // MojoServer
 //===----------------------------------------------------------------------===//
 
-MojoServer::MojoServer(SendDiagnosticsFn sendDiagnosticsFn)
-    : impl(std::make_unique<Impl>(std::move(sendDiagnosticsFn))) {}
-MojoServer::~MojoServer() = default;
+MojoServer::MojoServer(std::unique_ptr<LLCL::WorkQueue> workQueue,
+                       bool waitOnShutdown, SendDiagnosticsFn sendDiagnosticsFn)
+    : impl(std::make_unique<Impl>(std::move(workQueue), waitOnShutdown,
+                                  std::move(sendDiagnosticsFn))) {}
+MojoServer::~MojoServer() { shutdown(); }
+
+void MojoServer::shutdown() { impl->shutdown(); }
 
 void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
-  auto [it, _] = impl->files.try_emplace(uri.file(), nullptr);
-  it->second =
-      std::make_unique<MojoDocument>(uri, std::move(contents), version,
-                                     impl->sendDiagnosticsFn, impl->runtime);
-  it->second->initialize(uri);
+  if (impl->isShuttingDown())
+    return;
+  auto [it, _] = impl->files.try_emplace(uri.file(), MojoDocumentRef());
+
+  // If a document already exists, invalidate that version.
+  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(*impl->runtime);
+  if (it->second) {
+    it->second->invalidate();
+
+    // Chain the new document to the old one.
+    chain = it->second->getDocumentReadyChain();
+  }
+
+  // Create a new document.
+  it->second = MojoDocumentRef::create(uri, std::move(contents), version,
+                                       impl->sendDiagnosticsFn, *impl->runtime,
+                                       std::move(chain));
 }
 
 void MojoServer::updateDocument(
@@ -873,6 +977,7 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
   // "Problems" pane of VSCode).
   impl->sendDiagnosticsFn(
       lsp::PublishDiagnosticsParams(uri, it->second->getVersion()));
+  it->second->invalidate();
   impl->files.erase(it);
 }
 
@@ -880,27 +985,27 @@ void MojoServer::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn) {
-  if (MojoDocument *doc = impl->findDocument(uri.file()))
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->getCodeActions(pos, context, std::move(onActionsFn));
 }
 
 void MojoServer::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
     OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
-  if (MojoDocument *doc = impl->findDocument(uri.file()))
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onCodeCompletion(completePos, std::move(onCompletionFn));
 }
 
 void MojoServer::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
-  if (MojoDocument *doc = impl->findDocument(uri.file()))
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onDefinition(pos, std::move(onDefinitionFn));
 }
 
 void MojoServer::onHover(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
-  if (MojoDocument *doc = impl->findDocument(uri.file()))
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onHover(pos, std::move(onHoverFn));
 }
