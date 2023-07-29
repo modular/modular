@@ -25,7 +25,8 @@ namespace M::KGEN {
 /// distribution format of a KGEN library is essentially what comes just before
 /// elaboration because the parameter system allows significant extension.
 void populateGenerateLibraryFilePasses(mlir::PassManager &pm,
-                                       LLCL::Runtime &runtime);
+                                       LLCL::Runtime &runtime,
+                                       const CompilationOptions &options);
 
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that

@@ -1184,16 +1184,16 @@ namespace {
 struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
   explicit ForceInlinePass(
       const ForceInlineOptions &options = {}, LLCL::Runtime *runtime = nullptr,
-      function_ref<void(mlir::OpPassManager &)> buildFuncPasses = nullptr)
+      std::function<void(mlir::OpPassManager &)> buildFuncPasses = nullptr)
       : ForceInlineBase(options), runtime(runtime),
-        buildFuncPasses(buildFuncPasses) {}
+        buildFuncPasses(std::move(buildFuncPasses)) {}
 
   void runOnOperation() override;
 
   /// The LLCL runtime to use.
   LLCL::Runtime *runtime;
   /// The function pass pipeline builder.
-  function_ref<void(mlir::OpPassManager &)> buildFuncPasses;
+  std::function<void(mlir::OpPassManager &)> buildFuncPasses;
 };
 } // namespace
 
@@ -1259,6 +1259,7 @@ void ForceInlinePass::runOnOperation() {
 
 std::unique_ptr<mlir::Pass> KGEN::createForceInline(
     LLCL::Runtime &runtime, const ForceInlineOptions &options,
-    function_ref<void(mlir::OpPassManager &)> buildFuncPasses) {
-  return std::make_unique<ForceInlinePass>(options, &runtime, buildFuncPasses);
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses) {
+  return std::make_unique<ForceInlinePass>(options, &runtime,
+                                           std::move(buildFuncPasses));
 }
