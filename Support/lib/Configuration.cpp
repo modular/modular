@@ -6,6 +6,7 @@
 
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -187,8 +188,8 @@ void Config::getValuesInSection(
 }
 
 void Config::flush(raw_ostream &os) {
-  llvm::StringMap<std::vector<std::string>> map;
-
+  std::vector<std::pair<StringRef, std::vector<std::string>>> sections;
+  DenseMap<StringRef, unsigned> sectionNameToID;
   for (auto &kV : kv) {
     // Apparently MSVC can't handle structured bindings for some reason.
     StringRef k = kV.first();
@@ -197,20 +198,26 @@ void Config::flush(raw_ostream &os) {
     auto [section, prop] = k.rsplit('.');
     if (prop.empty())
       std::swap(section, prop);
+    if (section.empty())
+      section = "globals";
 
-    std::vector<std::string> *props = nullptr;
-    if (!section.empty())
-      props = &map[section];
-    if (!props)
-      props = &map["globals"];
+    auto it = sectionNameToID.try_emplace(section, sections.size());
+    if (it.second)
+      sections.push_back({section, {}});
 
-    assert(props && "every property must fit in at least one category");
-    props->push_back((prop + " = " + v).str());
+    sections[it.first->second].second.push_back((prop + " = " + v).str());
   }
 
-  for (auto &sectionAndProps : map) {
+  // Sort the sections to make the output deterministic.
+  llvm::stable_sort(sections, [](const auto &lhs, const auto &rhs) {
+    return lhs.first < rhs.first;
+  });
+  for (auto &sectionAndProps : sections)
+    llvm::stable_sort(sectionAndProps.second);
+
+  for (auto &sectionAndProps : sections) {
     // Apparently MSVC can't handle structured bindings for some reason.
-    StringRef section = sectionAndProps.first();
+    StringRef section = sectionAndProps.first;
     std::vector<std::string> &props = sectionAndProps.second;
 
     if (section != "globals")

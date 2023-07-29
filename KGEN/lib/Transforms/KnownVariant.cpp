@@ -47,10 +47,11 @@ struct VariantState : public Lattice<VariantTypes> {
   using Lattice::Lattice;
 };
 
-struct KnownVariantAnalysis : public SparseDataFlowAnalysis<VariantState> {
+struct KnownVariantAnalysis
+    : public SparseForwardDataFlowAnalysis<VariantState> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(KnownVariantAnalysis);
 
-  using SparseDataFlowAnalysis::SparseDataFlowAnalysis;
+  using SparseForwardDataFlowAnalysis::SparseForwardDataFlowAnalysis;
 
   void visitOperation(Operation *op, ArrayRef<const VariantState *> operands,
                       ArrayRef<VariantState *> results) override {

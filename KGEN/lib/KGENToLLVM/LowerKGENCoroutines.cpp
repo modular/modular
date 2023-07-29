@@ -509,7 +509,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   // Outline the body of the await into a function.
   llvm::SetVector<Value> uniqueCaptures;
   mlir::getUsedValuesDefinedAbove(op->getRegions(), uniqueCaptures);
-  std::vector<Value> captures = uniqueCaptures.takeVector();
+  SmallVector<Value, 0> captures = uniqueCaptures.takeVector();
 
   Block *awaitBody = &op.getBody().front();
   SmallVector<Type> captureTypes;
