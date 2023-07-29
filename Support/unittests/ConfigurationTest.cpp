@@ -271,3 +271,63 @@ key5 = value5
   EXPECT_EQ(withdot[0].first, "key5") << withdot[0].first;
   EXPECT_EQ(withdot[0].second, "value5") << withdot[0].second;
 }
+
+TEST(Configuration, GetAllValues) {
+  StringRef input = R"(
+key = value
+#maybe a comment in between these guys
+key4 = value4
+
+# this is a comment
+[section]
+key2 = value2 # with a comment
+; another comment
+key3 = value
+)";
+
+  Config cfg;
+  auto err = cfg.parseFrom(input);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  const llvm::StringMap<std::string> &allVals = cfg.getAllValues();
+  EXPECT_TRUE(allVals.contains("key"));
+  EXPECT_TRUE(allVals.contains("key4"));
+  EXPECT_EQ(allVals.at("key"), "value");
+  EXPECT_TRUE(allVals.contains("section.key2"));
+  EXPECT_EQ(allVals.at("section.key3"), "value");
+}
+
+TEST(Configuration, Merge) {
+  StringRef one = R"(
+key = value
+#maybe a comment in between these guys
+key4 = value4
+)";
+
+  StringRef two = R"(
+# this is a comment
+[section]
+key2 = value2 # with a comment
+; another comment
+key3 = value3
+
+[section.withdot]
+key5 = value5
+)";
+
+  Config from;
+  auto err = from.parseFrom(one);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  Config to;
+  err = to.parseFrom(two);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  err = to.copyFrom(from);
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  EXPECT_EQ(to.getValue("key"), "value");
+
+  err = from.copyFrom(from);
+  ASSERT_TRUE(err.getError());
+}

@@ -273,3 +273,14 @@ std::filesystem::path Config::getConfigFilePath() {
   constexpr llvm::StringLiteral kModularConfigFileName = "modular.cfg";
   return getModularHomeDirPath() / kModularConfigFileName.str();
 }
+
+ErrorOrSuccess Config::copyFrom(const Config &other) {
+  const llvm::StringMap<std::string> &otherContents = other.getAllValues();
+  for (const auto &mapEntry : otherContents) {
+    if (kv.contains(mapEntry.first()))
+      return Error(Twine("key ") + mapEntry.first() +
+                   " already exists in the map");
+    kv.insert({mapEntry.first(), mapEntry.second});
+  }
+  return success();
+}

@@ -63,6 +63,10 @@ public:
   /// Provides a simple ini-style parser.
   ErrorOrSuccess parseFrom(StringRef buffer, llvm::SourceMgr *mgr = nullptr);
 
+  /// Copy all the values from another config object into current object.
+  /// Error if any of the keys from incoming config already exist.
+  ErrorOrSuccess copyFrom(const Config &other);
+
   /// Get a value with a possible override from the environment.
   StringRef getValue(StringRef key);
 
@@ -76,6 +80,9 @@ public:
   void
   getValuesInSection(StringRef section,
                      SmallVectorImpl<std::pair<StringRef, StringRef>> &values);
+
+  /// Get all the values contained in the config.
+  const llvm::StringMap<std::string> &getAllValues() const { return kv; }
 
   /// Flush the configs to the provided stream.
   // TODO: Preserve user comments.
