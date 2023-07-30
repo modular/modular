@@ -9,6 +9,8 @@
 # UNSUPPORTED: asan,msan,tsan
 # TODO: Support windows when we build with sanitizers.
 # UNSUPPORTED: windows
+# TODO: Mac requires using a non-apple clang, as our sanitizers are different.
+# UNSUPPORTED: darwin
 
 # RUN: not mojo build %mojo_cpu_build_arch %s --sanitize unknown -o %t 2>&1 | FileCheck %s --check-prefix=ERROR
 
