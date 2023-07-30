@@ -59,16 +59,6 @@ struct MojoTypeSystem::Impl {
     runtime = std::make_unique<LLCL::Runtime>(
         LLCL::createMallocAllocator(), LLCL::createThreadPoolWorkQueue());
 
-    // Add the build folder as an include dir if we have the correct environment
-    // variable. This is for the python configuration, which we use CMake to
-    // find.
-    // TODO: This is kinda awful, and we should probably pull in the python
-    //       location directly if we can.
-    if (auto pathOr = llvm::sys::Process::GetEnv("MODULAR_PATH")) {
-      sourceMgr.setIncludeDirs({std::filesystem::path(*pathOr) / ".derived" /
-                                "build" / "Kernels" / "mojo" / "Python"});
-    }
-
     // Compute the target information for the expression.
     // TODO: Populate cpu information properly here.
     ArchSpec targetArch = target.GetArchitecture();

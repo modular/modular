@@ -42,30 +42,45 @@ ErrorOr<Config> Config::open() {
   // Set up variables we'll need to get this read.
   Config cfg;
   llvm::SourceMgr sourceMgr;
-  std::optional<Error> error = std::nullopt;
   unsigned bufferIdx = 0;
-  // Read the file atomically - we may have multiple processes writing.
-  ErrorOrSuccess err = readFileUnderLock(
-      configFilePath, [&](const std::filesystem::path &filePath) {
-        auto mBufOr =
-            llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
-        if (!mBufOr) {
-          error = Error(mBufOr.getError().message());
-          return;
-        }
 
-        bufferIdx =
-            sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
-      });
-  // Check for errors.
-  if (err.isError())
-    return err.takeError();
-  if (error.has_value())
-    return std::move(*error);
+  // Check the permissions for the home directory - if it's not writeable then
+  // we don't need a lock.
+  if (llvm::sys::fs::access(homeDirPath.string(),
+                            llvm::sys::fs::AccessMode::Write)) {
+    // We don't have write permission here, so we can just read it without a
+    // lock.
+    auto mBufOr =
+        llvm::MemoryBuffer::getFile(configFilePath.string(), /*IsText=*/true);
+    if (!mBufOr)
+      return Error(mBufOr.getError().message());
+
+    bufferIdx = sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
+  } else {
+    std::optional<Error> error = std::nullopt;
+    // Read the file atomically - we may have multiple processes writing.
+    ErrorOrSuccess err = readFileUnderLock(
+        configFilePath, [&](const std::filesystem::path &filePath) {
+          auto mBufOr =
+              llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
+          if (!mBufOr) {
+            error = Error(mBufOr.getError().message());
+            return;
+          }
+
+          bufferIdx =
+              sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
+        });
+    // Check for errors.
+    if (err.isError())
+      return err.takeError();
+    if (error.has_value())
+      return std::move(*error);
+  }
 
   // Grab the memory buffer and parse from it.
   const llvm::MemoryBuffer *mbuf = sourceMgr.getMemoryBuffer(bufferIdx);
-  if ((err = cfg.parseFrom(mbuf->getBuffer(), &sourceMgr)))
+  if (ErrorOrSuccess err = cfg.parseFrom(mbuf->getBuffer(), &sourceMgr))
     return err.takeError();
 
   // Return the initialized configuration.
