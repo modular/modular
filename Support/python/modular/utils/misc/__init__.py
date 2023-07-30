@@ -15,7 +15,7 @@ functionality here is expected to be tested, but also to potentially move (at
 which point compatibility concerns will be addressed).
 """
 
-from ._misc import create_dir_symlink, create_symlink, get_ordinal, set_env_var
+from ._misc import create_dir_symlink, get_ordinal, set_env_var
 
 # Remove from the namespace so that it's not visible to users.
 del _misc  # noqa: F821
