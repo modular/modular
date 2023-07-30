@@ -590,10 +590,11 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
     return name.generic_string();
 
   // Otherwise, check for a source module with this name.
-  if (std::filesystem::exists(name.replace_extension("mojopkg")) ||
-      std::filesystem::exists(name.replace_extension("📦")) ||
-      std::filesystem::exists(name.replace_extension("mojo")) ||
-      std::filesystem::exists(name.replace_extension("🔥")))
+  std::error_code ec;
+  if (std::filesystem::exists(name.replace_extension("mojopkg"), ec) ||
+      std::filesystem::exists(name.replace_extension("📦"), ec) ||
+      std::filesystem::exists(name.replace_extension("mojo"), ec) ||
+      std::filesystem::exists(name.replace_extension("🔥"), ec))
     return name.string();
   return std::nullopt;
 }

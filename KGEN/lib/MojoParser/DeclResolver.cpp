@@ -2826,16 +2826,16 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
   if (!directoryStr)
     return emitError(op.getLoc(), "unable to locate package directory");
 
-  std::error_code ec{};
+  std::error_code ec;
   std::filesystem::path directory(*directoryStr);
-  if (!std::filesystem::is_directory(directory, ec) && !ec)
+  if (!std::filesystem::is_directory(directory, ec) || ec)
     return emitError(op.getLoc(), "unable to locate package directory");
 
   // Iterate the directory and import nested modules.
   OpBuilder builder = decl.getDeclEndBuilder();
   SmallVector<std::string> nestedModules;
-  for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-    if (!SharedState::isModuleOrPackagePath(entry.path()))
+  for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
+    if (ec || !SharedState::isModuleOrPackagePath(entry.path()))
       continue;
     nestedModules.emplace_back(
         entry.path().filename().replace_extension().generic_string());
