@@ -59,6 +59,45 @@ def get_ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
+def create_symlink(
+    destination: Path, src: Path, target_is_directory: bool = False
+):
+    """Links the destination to the src.
+
+    Links the destination to the src. If the destination already exists, then we
+    remove or unlink it. If one cannot link due to permission issues, then the
+    src is copied.
+
+    Args:
+        destination (Path): the symlink to be created
+        src (Path): the source ("true") to link to
+    """
+    if destination.exists():
+        if destination.is_symlink():
+            destination.unlink()
+        else:
+            shutil.rmtree(destination, ignore_errors=True)
+    try:
+        destination.symlink_to(src, target_is_directory)
+    except OSError as e:
+        if e.args[0] in (22, 1314):
+            # 22 is the error code on Windows for required privileges exception
+            # is not held by a client.
+            # 1314 is the error code on Windows for failing to symlink due to
+            # missing admin privileges.
+            # If the link fails because of either of these errors, try copying
+            # the build directory instead. For more, see:
+            # https://docs.python.org/3/library/os.html#os.symlink
+            logging.warning(
+                f'Failed to link "{destination}" to "{src}"'
+                f" due to permission issues (code {e.args[0]})."
+                "Copying instead."
+            )
+            shutil.copytree(src, destination)
+        else:
+            raise
+
+
 def create_dir_symlink(destination_dir: Path, src_dir: Path):
     """Links the destination to the src directory.
 
@@ -71,27 +110,4 @@ def create_dir_symlink(destination_dir: Path, src_dir: Path):
         destination_dir (Path): the symlink directory to be created
         src_dir (Path): the source ("true") directory to link to
     """
-    if destination_dir.exists():
-        if destination_dir.is_symlink():
-            destination_dir.unlink()
-        else:
-            shutil.rmtree(destination_dir, ignore_errors=True)
-    try:
-        destination_dir.symlink_to(src_dir, target_is_directory=True)
-    except OSError as e:
-        if e.args[0] in (22, 1314):
-            # 22 is the error code on Windows for required privileges exception
-            # is not held by a client.
-            # 1314 is the error code on Windows for failing to symlink due to
-            # missing admin privileges.
-            # If the link fails because of either of these errors, try copying
-            # the build directory instead. For more, see:
-            # https://docs.python.org/3/library/os.html#os.symlink
-            logging.warning(
-                f'Failed to link directory "{destination_dir}" to "{src_dir}"'
-                f" due to permission issues (code {e.args[0]})."
-                "Copying the directories instead."
-            )
-            shutil.copytree(src_dir, destination_dir)
-        else:
-            raise
+    create_symlink(destination_dir, src_dir, target_is_directory=True)
