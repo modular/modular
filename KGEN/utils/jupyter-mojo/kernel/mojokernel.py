@@ -353,6 +353,9 @@ if __name__ == "__main__":
     args, jupyter_args = parser.parse_known_args()
 
     os.environ["MODULAR_PATH"] = args.modular_path
+    os.environ["MODULAR_DERIVED_PATH"] = str(
+        Path(args.modular_path) / ".derived"
+    )
 
     # We pass the kernel name as a command-line arg, since Jupyter gives those
     # highest priority (in particular overriding any system-wide config).

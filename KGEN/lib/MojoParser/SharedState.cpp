@@ -32,6 +32,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -48,6 +49,8 @@
 #include "llvm/Support/SourceMgr.h"
 #include <filesystem>
 
+#define DEBUG_TYPE "mojo-parser"
+
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
@@ -57,51 +60,23 @@ using llvm::SourceMgr;
 
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc);
 
-/// Return the path containing the standard library. Returns nullopt if the
-/// standard library cannot be found.
-static void getAutoImportPaths(SmallVector<std::string> &paths) {
-  // Check if we already have the path set.
-  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH"))
-    paths.push_back(
-        (std::filesystem::path(*envDir) / "build" / "Kernels" / "mojo")
-            .string());
-  if (auto envDir = llvm::sys::Process::GetEnv("MODULAR_PATH"))
-    paths.push_back(
-        (std::filesystem::path(*envDir) / "Kernels" / "mojo").string());
-
-  // If a path was specified via envvar, we're done here.
-  if (!paths.empty())
+/// Collect all of the default paths used for resolving imports.
+static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
+  ErrorOr<Config> cfg = Config::open();
+  if (failed(cfg)) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "failed to open config: " << cfg.getError() << "\n");
     return;
-
-  // Try to see if we can find a `lib/mojo` directory in MODULAR_HOME. If we
-  // have it, use it as an auto-import path.
-  if (auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME")) {
-    for (auto &dir :
-         std::filesystem::recursive_directory_iterator{*modularHome}) {
-      // If we found a `lib/` dir, try and find a `mojo` dir inside it.
-      if (dir.is_directory() && dir.path().filename().string() == "lib") {
-        // If we have a `mojo` dir inside `lib`, then we're all done.
-        // std::filesystem::is_directory returns false unless the path exists
-        // *and* is a directory.
-        std::error_code ec;
-        if (std::filesystem::is_directory(dir.path() / "mojo", ec) && !ec) {
-          paths.push_back((dir.path() / "mojo").string());
-          return;
-        }
-      }
-    }
   }
 
-  // Otherwise, try to find modular relative to the current directory.
-  std::filesystem::path path = std::filesystem::current_path();
-  while (path != path.root_path()) {
-    if (path.stem() == "modular") {
-      paths = {(path / ".derived" / "build" / "Kernels" / "mojo").string(),
-               (path / "Kernels" / "mojo").string()};
-      return;
-    }
-    path = path.parent_path();
-  }
+  // Add any paths specified in the config.
+  StringRef importPaths = cfg->getValue("mojo.import_path");
+  LLVM_DEBUG(llvm::dbgs() << "Using import paths: " << importPaths << "\n");
+
+  SmallVector<StringRef> splitPaths;
+  importPaths.split(splitPaths, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef path : splitPaths)
+    paths.push_back(path.str());
 }
 
 struct SharedState::Impl {
@@ -187,7 +162,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener), runtime(config.runtime),
       impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
-  getAutoImportPaths(impl->autoImportDirs);
+  collectDefaultImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
 
