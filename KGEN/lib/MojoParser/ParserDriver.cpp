@@ -378,8 +378,8 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
 }
 
 bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
-  if (std::filesystem::is_directory(path)) {
-    std::error_code ec;
+  std::error_code ec;
+  if (std::filesystem::is_directory(path, ec)) {
     return std::filesystem::exists(path / "__init__.mojo", ec) ||
            std::filesystem::exists(path / "__init__.🔥", ec);
   }
