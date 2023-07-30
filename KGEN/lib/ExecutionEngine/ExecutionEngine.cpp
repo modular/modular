@@ -325,38 +325,6 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   return std::move(*rtBuf);
 }
 
-/// Returns the path to a KGENCompilerRTShared dynamic library suitable for the
-/// target triple, or an error if none exists.
-static ErrorOr<std::filesystem::path>
-getKGENCompilerRTSharedPath(llvm::orc::ExecutionSession &session, Config &cfg) {
-  // First, attempt to get the direct path to the binary.
-  // TODO: This is a variable the package installer should set when installing
-  //       the SDK.
-  StringRef libPath = cfg.getValue("mojo.compilerrt.path");
-  std::filesystem::path path = libPath.str();
-  if (libPath.empty()) {
-    StringRef derivedPath = cfg.getValue("derived.path");
-    // If we don't have the derived path, then use the home dir as the path.
-    if (derivedPath.empty())
-      path = Config::getModularHomeDirPath();
-    else
-      path = std::filesystem::path(derivedPath.str()) / "build";
-
-    if (session.getTargetTriple().isOSBinFormatMachO()) {
-      path /= "lib";
-      path /= "libKGENCompilerRTShared.dylib";
-    } else if (session.getTargetTriple().isOSBinFormatELF()) {
-      path /= "lib";
-      path /= "libKGENCompilerRTShared.so";
-    } else if (session.getTargetTriple().isOSBinFormatCOFF()) {
-      path /= "bin";
-      path /= "KGENCompilerRTShared.dll";
-    }
-  }
-
-  return path;
-}
-
 /// Initialize the CompilerRT dylib.
 static ErrorOrSuccess initializeCompilerRT(llvm::orc::ExecutionSession &session,
                                            Config &cfg) {
@@ -372,11 +340,10 @@ static ErrorOrSuccess initializeCompilerRT(llvm::orc::ExecutionSession &session,
                                  compilerRTPath))
       return err.takeError();
   } else {
-    ErrorOr<std::filesystem::path> rtPath =
-        getKGENCompilerRTSharedPath(session, cfg);
-    if (failed(rtPath))
-      return rtPath.takeError();
-    compilerRTPath = rtPath->string();
+    std::error_code ec;
+    compilerRTPath = cfg.getValue("mojo.compilerrt_path").str();
+    if (!std::filesystem::exists(compilerRTPath, ec) || ec)
+      return Error("unable to locate compiler_rt");
   }
 
   auto generatorOr = llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
