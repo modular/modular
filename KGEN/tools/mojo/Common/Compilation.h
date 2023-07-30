@@ -46,7 +46,7 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
     llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier noOptimizationId,
-    llvm::opt::OptSpecifier debugLevelId);
+    llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module

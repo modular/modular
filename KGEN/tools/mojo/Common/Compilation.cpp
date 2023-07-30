@@ -34,7 +34,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
     llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier noOptimizationId,
-    llvm::opt::OptSpecifier debugLevelId) {
+    llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -59,6 +59,21 @@ ErrorOrSuccess M::parseCompilationOptions(
   StringRef mTune = args.getLastArgValue(mtuneId);
   if (args.hasMultipleArgs(mtuneId))
     return Error("too many specified tune cpus, expected exactly one");
+
+  // Process the sanitizers.
+  StringRef sanitizer = args.getLastArgValue(sanitizeId);
+  if (args.hasMultipleArgs(sanitizeId))
+    return Error("too many specified sanitizers, expected exactly one");
+  if (!sanitizer.empty()) {
+    if (!llvm::is_contained({"address", "thread"}, sanitizer)) {
+      return Error("invalid sanitizer '" + sanitizer +
+                   "', expected one of: `address` or `thread`");
+    }
+    if (sanitizer == "address")
+      compilationOptions.sanitizers.enable(Sanitizers::kAddress);
+    else if (sanitizer == "thread")
+      compilationOptions.sanitizers.enable(Sanitizers::kThread);
+  }
 
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
@@ -177,8 +192,9 @@ M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   if (tmOr.isError())
     return tmOr.takeError();
 
-  // Forward the sanitizers into the execution engine.
-  executionEngineOptions.sanitizers = compilationOptions.sanitizers;
+  // Forward the sanitizers into the execution engine if we are JITing.
+  if (isJIT)
+    executionEngineOptions.sanitizers = compilationOptions.sanitizers;
 
   auto engineOr = ExecutionEngine::createWithStandardLayers(
       std::move(executionEngineOptions), **tmOr);
