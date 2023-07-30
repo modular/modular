@@ -23,6 +23,9 @@ public:
     return sanitizerMask & (1 << sanitizer);
   }
 
+  /// Enable the given sanitizer.
+  void enable(SanitizerKind sanitizer) { sanitizerMask |= (1 << sanitizer); }
+
   /// Returns if any sanitizer is enabled.
   operator bool() const { return sanitizerMask != 0; }
 

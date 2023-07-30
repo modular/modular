@@ -75,6 +75,13 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
            "that, when queried with the `ParamEnv` module from within the Mojo "
            "program, would yield the value 42 at execution time.">;
 
+def sanitize : Separate<["--", "-"], "sanitize">, Group<CompilationOptionGroup>,
+  Index<10>, MetaVarName<"CHECK">,
+  HelpText<
+    "Turn on runtime checks for various forms of undefined or suspicious"
+    " behavior. The following checks are supported: `address`, `thread`."
+  >;
+
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//

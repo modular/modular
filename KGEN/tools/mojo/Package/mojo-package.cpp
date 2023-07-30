@@ -452,7 +452,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
       options::OPT_target_triple, options::OPT_target_cpu,
       options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
       options::OPT_mtune, options::OPT_no_optimization,
-      options::OPT_debug_level);
+      options::OPT_debug_level, options::OPT_sanitize);
 }
 
 //===----------------------------------------------------------------------===//

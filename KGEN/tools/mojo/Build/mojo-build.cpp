@@ -114,7 +114,8 @@ static std::optional<int> parseArgs(const State &state,
           options::OPT_I, options::OPT_L, options::OPT_target_triple,
           options::OPT_target_cpu, options::OPT_target_features,
           options::OPT_march, options::OPT_mcpu, options::OPT_mtune,
-          options::OPT_no_optimization, options::OPT_debug_level)) {
+          options::OPT_no_optimization, options::OPT_debug_level,
+          options::OPT_sanitize)) {
     return state.reportError(err.getError());
   }
   return {};
@@ -169,6 +170,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
 /// successfully, otherwise returns a failure code.
 static int linkExecutable(const State &state,
                           const llvm::opt::InputArgList &args,
+                          const CompilationOptions &options,
                           Cache::BufferRef &archive) {
   // For now we just use the system C++ compiler as the linker on non-windows,
   // which makes it a tad bit easier to link in the necessary system and runtime
@@ -243,12 +245,20 @@ static int linkExecutable(const State &state,
   linkerArgs.emplace_back(outputName);
 
   // Add the necessary sanitizer flags.
+  // First we have to match the sanitizer flags used when building
+  // KGENCompilerRT, if any.
 #if LLVM_ADDRESS_SANITIZER_BUILD
   linkerArgs.emplace_back("-fsanitize=address");
 #elif LLVM_MEMORY_SANITIZER_BUILD
   linkerArgs.emplace_back("-fsanitize=memory");
 #elif LLVM_THREAD_SANITIZER_BUILD
   linkerArgs.emplace_back("-fsanitize=thread");
+#else
+  // Otherwise, base this on the compilation options.
+  if (options.sanitizers.has(Sanitizers::kAddress))
+    linkerArgs.emplace_back("-fsanitize=address");
+  if (options.sanitizers.has(Sanitizers::kThread))
+    linkerArgs.emplace_back("-fsanitize=thread");
 #endif
 #endif
 
@@ -319,7 +329,7 @@ static int build(const State &state) {
     return *exitCode;
 
   // Link an executable from the archive.
-  return linkExecutable(state, args, archive);
+  return linkExecutable(state, args, options, archive);
 }
 
 void M::registerBuildSubcommand(SubcommandRegistry &registry) {
