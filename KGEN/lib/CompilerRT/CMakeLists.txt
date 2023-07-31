@@ -43,14 +43,30 @@ target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILE
 # The LLVM libraries generally aren't OBJECT libraries, but we need
 # KGENCompilerRT-static to be fully self contained, so we need to extract the
 # object files from the LLVM libraries and link them into KGENCompilerRT-static.
-get_property(LLVMSupportTargetFile TARGET LLVMSupport PROPERTY LOCATION)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${LLVMSupportTargetFile})
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport)
+function (add_static_dep_lib target)
+  get_property(target_file TARGET ${target} PROPERTY LOCATION)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${target_file})
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps)
+  execute_process(
+      COMMAND ${LLVM_BUILD_DIR}/bin/llvm-ar${CMAKE_EXECUTABLE_SUFFIX} -x ${target_file}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps
+  )
+endfunction()
+add_static_dep_lib(LLVMSupport)
+add_static_dep_lib(LLVMDemangle)
+file(GLOB StaticDepObjects ${CMAKE_CURRENT_BINARY_DIR}/static_deps/*)
+
+# Collect the various system libraries required by llvm support that we need to
+# link against. We can extract this using llvm-config.
 execute_process(
-    COMMAND ${LLVM_BUILD_DIR}/bin/llvm-ar${CMAKE_EXECUTABLE_SUFFIX} -x ${LLVMSupportTargetFile}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport
+  COMMAND ${LLVM_BUILD_DIR}/bin/llvm-config${CMAKE_EXECUTABLE_SUFFIX} --libs support --system-libs
+  OUTPUT_VARIABLE config_output
 )
-file(GLOB LLVMSupportObjs ${CMAKE_CURRENT_BINARY_DIR}/llvmsupport/*)
+# The system libs are on the second line of the output, so we need to split it
+# up. They are space separated, so we can just replace the spaces with commas.
+string(REGEX MATCHALL "[^\n]+" config_output "${config_output}")
+list(GET config_output 1 kgen_system_libs)
+string(REPLACE " " "," kgen_system_libs "${kgen_system_libs}")
 
 # A fully-staticized version of KGENCompilerRT that we can use for standalone
 # mojo executables.
@@ -61,9 +77,10 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
-  ${LLVMSupportObjs}
+  ${StaticDepObjects}
 )
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
+set_property(TARGET KGENCompilerRT-static PROPERTY KGEN_SYSTEM_LIBS "${kgen_system_libs}")
 
 # Copy to the binary directory so that `mojo` can find this easily at runtime.
 add_custom_command(TARGET KGENCompilerRT-static POST_BUILD

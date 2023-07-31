@@ -16,6 +16,7 @@
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
@@ -186,6 +187,13 @@ static int linkExecutable(const State &state,
   StringRef libExt = ".a";
   StringRef libPrefix = "lib";
 #endif
+  // Read the mojo configuration.
+  ErrorOr<Config> configOr = Config::open();
+  if (failed(configOr)) {
+    return state.reportError(Twine("failed to parse 'modular.cfg': ") +
+                             configOr.getError());
+  }
+  Config config = std::move(*configOr);
 
   // Resolve the path to the CompilerRT library.
   std::optional<std::string> compilerRTLib = llvm::sys::Process::FindInEnvPath(
@@ -261,6 +269,10 @@ static int linkExecutable(const State &state,
     linkerArgs.emplace_back("-fsanitize=thread");
 #endif
 #endif
+
+  // Add any necessary system libraries.
+  StringRef systemLibsArg = config.getValue("mojo.system_libs");
+  systemLibsArg.split(linkerArgs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
   std::string errorMsg;
   int linkExitCode = llvm::sys::ExecuteAndWait(
