@@ -21,6 +21,7 @@
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
