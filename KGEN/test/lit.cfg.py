@@ -16,7 +16,9 @@ from lit.llvm import llvm_config
 def configure_lldb_tests(config):
     lldb_env = ""
     if config.llvm_use_sanitizer:
-        lldb_env = "ASAN_OPTIONS=detect_leaks=0"
+        lldb_env = (
+            "ASAN_OPTIONS=detect_leaks=0,abort_on_error=1,disable_coredump=0"
+        )
         if platform.system() == "Darwin":
             lldb_env += " " + config.asan_lib_inject_env
 
