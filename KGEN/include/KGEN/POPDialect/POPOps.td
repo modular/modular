@@ -1471,6 +1471,54 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 }
 
 //===----------------------------------------------------------------------===//
+// AlignedAllocOp
+//===----------------------------------------------------------------------===//
+
+def POP_AlignedAllocOp : POPOp<"aligned_alloc"> {
+  let summary = "aligned heap allocation";
+  let description = [{
+    The `pop.aligned_alloc` operation performs an aligned allocation of memory
+    on the heap with a dynamic alignment. The resulting pointer is guaranteed to
+    have the specified alignment. A value of `-1` may be passed as alignment to
+    indicate system alignment.
+
+    Example:
+
+    ```mlir
+    %0 = pop.aligned_alloc %size, %align : <struct<f32, f64>>
+    ```
+  }];
+
+  let arguments = (ins Index:$size, Index:$align);
+  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$ptr);
+
+  let assemblyFormat = "$size `,` $align attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedFreeOp
+//===----------------------------------------------------------------------===//
+
+def POP_AlignedFreeOp : POPOp<"aligned_free"> {
+  let summary = "free aligned heap memory";
+  let description = [{
+    The `pop.aligned_free` operation frees heap memory allocated by
+    `pop.aligned_alloc`. Passing any other kind of pointer to the operation is
+    undefined behaviour.
+
+    Example:
+
+    ```mlir
+    pop.aligned_free %ptr : <struct<f32, i64>>
+    ```
+  }];
+
+  let arguments = (ins Arg<POP_PointerType, "", [MemFree]>:$ptr);
+  
+  let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
+}
+
+//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 
