@@ -88,16 +88,22 @@ std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
 }
 
 std::optional<StringRef> MojoASTDeclRef::getName() const {
-  auto getFromOp = [](Operation *op) -> std::optional<StringRef> {
+  ASTDecl &decl = *unwrapMojoASTDecl(impl);
+
+  auto getFromOp = [&](Operation *op) -> std::optional<StringRef> {
     if (!op)
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
               VarLetDeclOp>([](auto op) { return op.getName(); })
-        .Case([](FuncOp op) {
+        .Case([&](FuncOp op) -> std::optional<StringRef> {
+          // If not fully resolved, the function may not have a name set yet.
+          StringAttr name =
+              op->getAttrOfType<StringAttr>(op.getSymNameAttrName());
+          if (!name)
+            return std::nullopt;
           // The demangler should not fail with FuncOp names.
-          return MangledSymbol::demangle(op.getNameAttr(),
-                                         /*parseSignature=*/false)
+          return MangledSymbol::demangle(name, /*parseSignature=*/false)
               ->identifier;
         })
         .Case([](FileModuleOp op) {
@@ -117,8 +123,6 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
   // We first try to get the name from the operation. Then we try to match the
   // decl with a function argument. Finally, as a last resort, we extract the
   // defining Op from the IR to fetch the name.
-  ASTDecl &decl = *unwrapMojoASTDecl(impl);
-
   if (auto name = getFromOp(decl.getIfOperation()))
     return name;
 

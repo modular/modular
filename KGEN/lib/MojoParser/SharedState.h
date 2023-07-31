@@ -248,6 +248,11 @@ public:
   /// Notify the parser listener, if present, that a member within the given
   /// decl is being looked up.
   void notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc);
+  /// Notify the parser listener, if present, that a member within the given
+  /// decl is being looked up. `getDeclFn` is a function called to get the decl
+  /// if the listener needs it.
+  void notifyListenerOnMemberLookup(SMLoc lookupLoc,
+                                    function_ref<ASTDecl &()> getDeclFn);
 
   /// Notify the parser listener, if present, that a new `module` decl has been
   /// created by the parser.

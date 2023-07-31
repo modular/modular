@@ -1766,19 +1766,20 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
 /// member lookup.
 static void resolveDeclForListenerLookup(DeclResolver &declResolver,
                                          ASTDecl &decl, SMLoc loc) {
-  // Before passing off to the listener, resolve the signature of nested decls.
-  // This lets the listener see the full set of declarations in the module, as
-  // unresolved imports are generally lazily resolved.
+  // Before passing off to the listener, resolve nested decls. This lets the
+  // listener see the full set of declarations, as unresolved imports are
+  // generally lazily resolved, and also ensures the availability of things like
+  // documentation.
   if (failed(declResolver.resolveFully(decl, loc)))
     return;
   const llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> &decls =
       decl.getDeclsInScope();
   for (int i = 0, e = decls.size(); i < e; ++i) {
     // Resolution may invalidate the decls vector, so we can't rely on
-    // iterators here.
+    // iterators here. We also don't fail, because the listener should be
+    // tolerant to errors.
     auto &[name, children] = *std::next(decls.begin(), i);
-    if (failed(declResolver.resolveSignature(*children.front(), loc)))
-      return;
+    (void)declResolver.resolveFully(*children.front(), loc);
   }
 }
 
@@ -1823,6 +1824,12 @@ void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
     return;
   resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
   parserListener->onMemberLookup(&decl, lookupLoc);
+}
+
+void SharedState::notifyListenerOnMemberLookup(
+    SMLoc lookupLoc, function_ref<ASTDecl &()> getDeclFn) {
+  if (isListenerInterestedInLoc(parserListener, lookupLoc))
+    notifyListenerOnMemberLookup(getDeclFn(), lookupLoc);
 }
 
 void SharedState::notifyListenerOnModule(ASTDecl &decl, SMLoc identifierLoc) {
