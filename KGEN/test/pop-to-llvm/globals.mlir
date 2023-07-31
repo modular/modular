@@ -131,3 +131,29 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-NEXT: llvm.return [[UNDEF]]
   kgen.global export @exported : f32 (0, @noop, @noop)
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: llvm.func @alloc_free
+  llvm.func @alloc_free() {
+    %size = index.constant 1
+    %align = index.constant 8
+    // CHECK: [[RAW_PTR:%.*]] = llvm.call @kgenAlignedAlloc
+    // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr<i64>
+    %0 = pop.aligned_alloc %size, %align : <index>
+    // CHECK: [[RAW_PTR:%.*]] = llvm.bitcast [[PTR]] : !llvm.ptr<i64> to !llvm.ptr
+    // CHECK-NEXT: llvm.call @kgenAlignedFree([[RAW_PTR]])
+    pop.aligned_free %0 : <index>
+    llvm.return
+  }
+
+  // CHECK: llvm.func @kgenAlignedAlloc(i64, i64 {llvm.allocalign}) -> (!llvm.ptr {llvm.noalias})
+  // CHECK-DAG: ["allockind", "41"]
+  // CHECK-DAG: ["allocsize", "4294967295"]
+  // CHECK-DAG: ["alloc-family", "kgen_aligned_allocator"]
+
+  // CHECK: llvm.func @kgenAlignedFree(!llvm.ptr {llvm.allocptr})
+  // CHECK-DAG: ["allockind", "4"]
+  // CHECK-DAG: ["alloc-family", "kgen_aligned_allocator"]
+}

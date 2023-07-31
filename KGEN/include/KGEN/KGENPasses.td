@@ -312,13 +312,28 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
     This module pass lowers `pop` operations that have global implications,
     and thus their lowering pass needs to run on the whole module. These are
     external calls and glboal constant operations.
+
+    The pass converts `pop.aligned_alloc` and `pop.aligned_free` operations to
+    calls to allocate and free functions according to the names supplied to
+    `alloc-fn-name` and `free-fn-name`. The pass will use functions present in 
+    the current module if possible, otherwise it will create declarations for
+    external functions. The signatures must be:
+
+    ```
+    void *kgenAlignedAlloc(size: ssize_t, align: ssize_t);
+    void kgenAlignedFree(void *ptr);
+    ```
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
   // FIXME(#16605): Global destructors don't work in JIT mode.
   let options = [
     Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
-           "If true, global destructors are not generated.">
+           "If true, global destructors are not generated.">,
+    Option<"allocFnName", "alloc-fn-name", "std::string", 
+           "\"kgenAlignedAlloc\"", "The aligned allocate function name.">,
+    Option<"freeFnName", "free-fn-name", "std::string", 
+           "\"kgenAlignedFree\"", "The aligned free function name.">
   ];
 }
 
