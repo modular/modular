@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from Arange import arange, arange_shape
 from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
@@ -157,6 +158,8 @@ fn MOGGExport():
     alias _sqrt = sqrt
     alias _sub = sub
     alias _tanh = tanh
+    alias _arange = arange
+    alias _arange_shape = arange_shape
     alias _relu = relu
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
