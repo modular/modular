@@ -167,6 +167,12 @@ struct OutputChain {
   /// pointed to by resume.
   void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId);
 
+  /// Indicates the current task is done for the purposes of task overhang
+  /// detections. Only needed for tasks which do not otherwise call markReady()
+  /// or markError() to signal their completion. Only significant if build
+  /// has enabled task overhang detection.
+  void taskIsDone();
+
 private:
   void complete();
 };

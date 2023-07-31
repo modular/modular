@@ -238,6 +238,15 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask(LLCLOutputChainRef outChain,
   unwrap(outChain).executeAsTask(resume, hdl, taskId);
 }
 
+/// Indicates the caller's task is done for the purposes of task overhang
+/// detection.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone(LLCLOutputChainRef outChain) {
+#if MODULAR_PARANOID
+  unwrap(outChain).taskIsDone();
+#endif
+}
+
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -284,4 +293,6 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_Trace});
   funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask",
                    (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone",
+                   (void *)&KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone});
 }
