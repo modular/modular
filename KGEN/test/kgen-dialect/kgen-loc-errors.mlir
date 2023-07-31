@@ -220,3 +220,60 @@ kgen.func @foo() {
   kgen.call_signature %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)
+
+// -----
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+
+kgen.func @foo() {
+  kgen.return
+// CHECK: foo.mlir:44:1: error: 'kgen.func' op without debuginfo scope must contain only file/line/col location
+} loc(callsite(#loc1 at #loc2))
+
+// -----
+
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 44,
+  scopeLine = 44,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+
+kgen.func @foo() {
+  kgen.return
+// CHECK: foo.mlir:44:1: error: 'kgen.func' op must contain exactly one location
+} loc(fused<#subprogram>[#loc1, #loc2])
+
+// -----
+
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "foo",
+  linkageName = "foo",
+  file = #file,
+  line = 44,
+  scopeLine = 44,
+  subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+
+#loc1 = loc("foo.mlir":44:1)
+#loc2 = loc("foo.mlir":325:11)
+#loc3 = loc(callsite(#loc1 at #loc2))
+
+kgen.func @foo() {
+  kgen.return
+// CHECK: foo.mlir:44:1: error: 'kgen.func' op must contain only file/line/col location
+} loc(fused<#subprogram>[#loc3])

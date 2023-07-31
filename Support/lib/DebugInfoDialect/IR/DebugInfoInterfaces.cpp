@@ -48,10 +48,24 @@ static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
 }
 
 LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
-  // If the function doesn't contain a location scope, we don't verify anything.
-  auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(op->getLoc());
-  if (!fusedLoc)
-    return success();
+  Location funcLoc = op->getLoc();
+  auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(funcLoc);
+  if (!fusedLoc) {
+    // If the function doesn't contain a debuginfo scope, we don't need to
+    // verify anything. Named locations indicate that we are dealing with some
+    // external location, which may not comply with our rules.
+    if (isa<FileLineColLoc, mlir::NameLoc>(funcLoc))
+      return success();
+    return op.emitOpError(
+        "without debuginfo scope must contain only file/line/col location");
+  }
+
+  ArrayRef<Location> locs = fusedLoc.getLocations();
+  if (locs.size() != 1)
+    return op.emitOpError("must contain exactly one location");
+
+  if (!isa<FileLineColLoc>(locs[0]))
+    return op.emitOpError("must contain only file/line/col location");
 
   DIScopeAttr scope = fusedLoc.getMetadata();
   auto funcScope = dyn_cast<DISubprogramAttr>(scope);
