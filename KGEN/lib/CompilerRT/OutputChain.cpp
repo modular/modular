@@ -100,6 +100,8 @@ void OutputChain::complete() {
   // deleting the MGP context).
   refs.clear();
   extras.clear();
+  // Record the task is done for the purposes of resource checking.
+  taskIsDone();
 }
 
 void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
@@ -114,5 +116,19 @@ void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
         taskProfilerEntry.restart();
         resume(hdl);
         std::move(taskProfilerEntry).record();
+#if MODULAR_PARANOID
+        // Sleeping here gives any await loop the chance to exit and
+        // proceed while this task is still 'active'. This can trigger
+        // bugs since the common case is for the task to have returned
+        // all the way up to the LLCL run items loop before any emplace
+        // in the task body has been acted on.
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
       });
+}
+
+void OutputChain::taskIsDone() {
+#if MODULAR_PARANOID
+  chain.getRuntime()->getWorkQueue()->taskIsDone();
+#endif
 }

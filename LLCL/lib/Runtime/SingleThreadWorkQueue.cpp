@@ -6,7 +6,7 @@
 
 #include "LLCL/Runtime/WorkQueue.h"
 
-#include "LLCL/Runtime/AnyAsyncValueRef.h"
+#include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Support/ConcurrentQueue.h"
 #include "LLCL/Support/ThreadAffinity.h"
 #include "Support/LLVMForwardDecls.h"
@@ -19,21 +19,27 @@ using namespace LLCL;
 
 namespace {
 
-/// This class implements a work queue that uses the client thread to execute
-/// all work. It spawns no additional threads and has no internal
-/// synchronization.  The only thread used is the client thread when it gets
-/// donated.
+/// This class implements a work queue that uses only the caller's thread to
+/// execute work. It spawns no additional threads. However, the work queue
+/// itself is thread safe, and addTask and await may be called from any
+/// threads.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
   SingleThreadWorkQueue(size_t cpuID) : cpuID(cpuID) {}
 
   void shutdown() override {
+#if MODULAR_PARANOID
     WorkQueueState expected = kReady;
     assert(state.compare_exchange_strong(expected, kShuttingDown));
+#endif
+
     // Complete any work that's still in-flight.
     runUntil([]() -> bool { return false; });
+
+#if MODULAR_PARANOID
     expected = kShuttingDown;
     assert(state.compare_exchange_strong(expected, kShutdown));
+#endif
   }
 
   ~SingleThreadWorkQueue() override {
@@ -42,23 +48,54 @@ public:
     assert(!workItems.dequeue());
   }
 
-  void addTask(TaskFunction &&work) override {
-    assert(work);
+  void addTask(WorkItem &&workItem) override {
+    assert(workItem);
+#if MODULAR_PARANOID
     assert(state != kShutdown);
-    workItems.enqueue(std::move(work));
+    {
+      std::lock_guard<std::mutex> guard(mu);
+      if (!workItem.use && !useStack.empty()) {
+        // Propagate the current use into this work item.
+        workItem.use = useStack.back().copy();
+      }
+    }
+#endif
+    workItems.enqueue(std::move(workItem));
   }
 
-  void addLocalTask(TaskFunction &&work) override { addTask(std::move(work)); }
+  void addLocalTask(WorkItem &&workItem) override {
+    addTask(std::move(workItem));
+  }
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
 
   bool callerIsForeign() const override { return false; }
 
+#if MODULAR_PARANOID
+  void pushDefaultUse(ResourceUse use) override {
+    assert(use);
+    std::lock_guard<std::mutex> guard(mu);
+    useStack.emplace_back(std::move(use));
+  }
+
+  void popDefaultUse() override {
+    std::lock_guard<std::mutex> guard(mu);
+    assert(!useStack.empty());
+    useStack.pop_back();
+  }
+
+  void taskIsDone() override {
+    std::lock_guard<std::mutex> guard(mu);
+    if (!useStack.empty())
+      useStack.back().reset();
+  }
+#endif
+
   size_t getParallelismLevel() const override { return 1; }
 
 private:
   /// Execute blocks of work until stopPredicate is true, setting thread
-  /// affinity if reqested.
+  /// affinity if requested.
   template <typename StopPredicateFn>
   void runUntil(StopPredicateFn stopPredicate);
 
@@ -67,29 +104,61 @@ private:
   void runUntilImpl(StopPredicateFn stopPredicate);
 
   // Execute a single profiled work item.
-  void doWork(TaskFunction &&taskFunction) {
-    TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.doWork"));
+  void doWork(WorkItem &&workItem) {
+#if MODULAR_PARANOID
+    {
+      // Propagate use
+      std::lock_guard<std::mutex> guard(mu);
+      useStack.emplace_back(std::move(workItem.use));
+    }
+#endif
+
     // Do the work.
-    taskFunction();
+    {
+      TimeTraceScope scope(AllWorkItemsProfilerEntry::create("llcl.doWork"));
+      workItem.task();
+    }
+
+#if MODULAR_PARANOID
+    {
+      // Pop current use. It may already have been reset.
+      std::lock_guard<std::mutex> guard(mu);
+      assert(!useStack.empty());
+      useStack.pop_back();
+    }
+#endif
   }
 
+  /// CPU ID to set affinity to when running the runUntil loop.
+  size_t cpuID;
+
+#if MODULAR_PARANOID
   enum WorkQueueState : uint8_t {
     kReady = 0,
     kShuttingDown = 1,
     kShutdown = 2
   };
 
-  /// CPU ID to set affinity to when running the runUntil loop.
-  size_t cpuID;
-  /// True when work queue has been shutdown.
+  /// Tracks the state of the queue during shutdown.
   std::atomic<WorkQueueState> state = kReady;
+#endif
+
   /// Pending work items.
-  ConcurrentQueue<TaskFunction> workItems;
+  ConcurrentQueue<WorkItem> workItems;
+
+#if MODULAR_PARANOID
+  /// Protects useStack
+  std::mutex mu;
+  /// Use stack.
+  SmallVector<ResourceUse> useStack;
+#endif
 };
 } // namespace
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
+#if MODULAR_PARANOID
   assert(state == kReady);
+#endif
 
   // We are done when values_remaining drops to zero.
   size_t numRemaining = values.size();
@@ -107,7 +176,9 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   assert(numRemaining == 0 &&
          "Some AsyncValues are not ready yet no further "
          "tasks are available to run. Are all input AsyncValues ready?");
-  assert(state == kReady);
+#if MODULAR_PARANOID
+  assert(state != kShutdown);
+#endif
 }
 
 template <typename StopPredicateFn>
@@ -117,8 +188,8 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
 
 template <typename StopPredicateFn>
 void SingleThreadWorkQueue::runUntilImpl(StopPredicateFn stopPredicate) {
-  while (auto profiledTask = workItems.dequeue()) {
-    doWork(std::move(profiledTask));
+  while (auto workItem = workItems.dequeue()) {
+    doWork(std::move(workItem));
     if (stopPredicate())
       break;
   }

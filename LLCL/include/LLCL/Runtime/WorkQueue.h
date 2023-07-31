@@ -15,6 +15,7 @@
 #include "LLCL/ForwardDecls.h"
 #include "LLCL/Support/Atomics.h"
 #include "LLCL/Support/Profiling.h"
+#include "LLCL/Support/Resource.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -24,7 +25,30 @@
 
 namespace M::LLCL {
 
-/// Work functions to execute for a 'task'.
+//===----------------------------------------------------------------------===//
+// Internal helpers
+//===----------------------------------------------------------------------===//
+
+namespace Detail {
+// Extract the result type of a function passed to addTask(Runtime, fn).
+template <typename T>
+struct UnwrapErrorOr {
+  using type = T;
+};
+template <typename T>
+struct UnwrapErrorOr<ErrorOr<T>> {
+  using type = T;
+};
+
+template <typename F>
+using ResultType = typename UnwrapErrorOr<std::invoke_result_t<F>>::type;
+} // namespace Detail
+
+//===----------------------------------------------------------------------===//
+// Common types
+//===----------------------------------------------------------------------===//
+
+/// Functions to execute for a 'task'.
 using TaskFunction = llvm::unique_function<void()>;
 
 /// Time profiling entries for internal primitives.
@@ -44,6 +68,48 @@ using InternalProfilerEntry =
 using AllWorkItemsProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;
 
+/// A work item to be added, or held, by a work queue. Contains the 'task'
+/// function. Depending on build type may contain extra bookkeeping data.
+struct WorkItem {
+  TaskFunction task;
+#if MODULAR_PARANOID
+  /// If non-null, a representation of the implied 'use' this work item has
+  /// of the resources it depends on. It is valid for the same work queue to be
+  /// shared between, say, execution of many different models. This use can
+  /// help detect when a work item has not been correctly threaded into the
+  /// AsyncValue dependencies for such execution, which can cause the work
+  /// item to 'overhang' destruction of the model's resources.
+  ResourceUse use;
+#endif
+
+  WorkItem() = default;
+
+  WorkItem(const WorkItem &) = delete;
+  WorkItem &operator=(const WorkItem &) = delete;
+
+  WorkItem(WorkItem &&) = default;
+  WorkItem &operator=(WorkItem &&) = default;
+
+  /// NOTE: Intentionally not marking explicit to promote from nullptr.
+  WorkItem(std::nullptr_t null) {}
+
+  /// NOTE: Intentionally not marking explicit to promote from function.
+  template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
+            std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
+  WorkItem(FnTy f) : task(std::forward<FnTy>(f)) {}
+
+#if MODULAR_PARANOID
+  WorkItem(TaskFunction &&task, ResourceUse use)
+      : task(std::move(task)), use(std::move(use)) {}
+#endif
+
+  explicit operator bool() { return (bool)task; }
+};
+
+//===----------------------------------------------------------------------===//
+// WorkQueue
+//===----------------------------------------------------------------------===//
+
 /// This is an interface to various implementations of work queues:
 /// different execution methods which are often current. These
 /// implementations may be very domain or host system specific, but the
@@ -62,7 +128,7 @@ public:
   /// Thread-safe. The work item will NEVER be run immediately. There is no
   /// intrinsic guarantee of fairness, and the caller is responsible for
   /// using AsyncValues or other mechanisms to prevent task starvation.
-  virtual void addTask(TaskFunction &&work) = 0;
+  virtual void addTask(WorkItem &&workItem) = 0;
 
   /// Enqueue a work item for later execution, but on the current thread where
   /// possible. The work item will NEVER be run immediately.
@@ -72,7 +138,7 @@ public:
   /// simply executing the block of work. For example, the AsyncValue machinery
   /// uses this method to ensure waiters are executed promptly, but off of
   /// the callers stack.
-  virtual void addLocalTask(TaskFunction &&work) = 0;
+  virtual void addLocalTask(WorkItem &&workItem) = 0;
 
   /// Returns when the given values are ready, either as emplaced values or
   /// as errors. Depending on the WorkQueue implementation and the caller's
@@ -115,6 +181,31 @@ public:
   /// to be called from the same thread which created the WorkQueue.
   virtual void shutdown() = 0;
 
+#if MODULAR_PARANOID
+  /// Pushes use onto this thread's internal 'use stack'. When a task or local
+  /// task is added with a null use in its WorkItem (the default),
+  /// the current stack top of the calling thread is taken to be its implicit
+  /// use. While a work item is executing its use is similarly pushed onto the
+  /// stack of its executing thread. In this way pushing a single use from the
+  /// 'main' thread will cause it to be implicitly captured by the whole 'tree'
+  /// of tasks it launches, over all threads.
+  ///
+  /// Cannot be called from a foreign thread.
+  virtual void pushDefaultUse(ResourceUse use) = 0;
+
+  /// Pop a use from this thread's internal 'use stack'. Will assert fail if
+  /// use stack is empty.
+  ///
+  /// Cannot be called from a foreign thread.
+  virtual void popDefaultUse() = 0;
+
+  /// Indicates the caller's task is done for the purposes of detecting task
+  /// overhangs at runtime. May be called any number of times. Should be called
+  /// before an emplace() or setToError() which may cause the resource being
+  /// tracked to be marked as 'free'.
+  virtual void taskIsDone() = 0;
+#endif
+
 protected:
   WorkQueue() = default;
   virtual void vtableAnchor();
@@ -133,17 +224,17 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 /// the first socket in the system. Generally this will ignore hyperthreading
 /// to minimize cache contention, and will avoid cross-NUMA memory traffic.
 ///
-/// If mainWillDonate is false (the default) then numThreads worker threads will
+/// If mainWillDonate is false then numThreads worker threads will
 /// be created. Arbitrary threads may then addTasks and call await, but will not
 /// themselves contribute to processing work items. This is most appropriate for
 /// multi-threaded servers which wish to share the same work queue across
 /// multiple request threads.
 ///
-/// If mainWillDonate is true then only numThreads - 1 worker threads will be
-/// created, on the assumption the calling thread will eventually call await
-/// and 'donate' itself to processing work items alongside the worker threads.
-/// This is most appropriate for systems driven my a single, distinguished main
-/// thread, such as a REPL or execution tool.
+/// If mainWillDonate is true (currently the default) then only numThreads - 1
+/// worker threads will be created, on the assumption the calling thread will
+/// eventually call await and 'donate' itself to processing work items alongside
+/// the worker threads. This is most appropriate for systems driven my a single,
+/// distinguished main thread, such as a REPL or execution tool.
 ///
 /// The work queue must be shutdown before being destroyed. Until shutdown has
 /// returned any number of work items may be executing, so no resources they
