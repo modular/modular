@@ -18,6 +18,7 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   case kTFLiteModel:
   case kONNXModel:
   case kPyTorchModel:
+  case kModularModel:
     return "mgp.model";
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
@@ -41,6 +42,8 @@ const char *CompiledFrameworkLabel::getAsFrameworkNameOrNull() const {
     return "onnx";
   case kPyTorchModel:
     return "pytorch";
+  case kModularModel:
+    return "mof";
   }
   llvm::report_fatal_error("missing case");
 }
@@ -55,7 +58,7 @@ bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
   return frameworkName == "tfl" || frameworkName == "tf" ||
          // TODO(#6190): "mgp" isn't really a framework, replace with faux.
          frameworkName == "mgp" || frameworkName == "onnx" ||
-         frameworkName == "pytorch";
+         frameworkName == "pytorch" || frameworkName == "mof";
 }
 
 CompiledFrameworkLabel
@@ -73,6 +76,8 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
       return CompiledFrameworkLabel{kONNXModel};
     else if (frameworkName == "pytorch")
       return CompiledFrameworkLabel{kPyTorchModel};
+    else if (frameworkName == "mof")
+      return CompiledFrameworkLabel{kModularModel};
   }
   llvm::errs() << opName << " & " << frameworkName << "\n";
   return CompiledFrameworkLabel{kUnknown};
@@ -92,6 +97,8 @@ const char *CompiledFrameworkLabel::getAsString() const {
     return "compiled ONNX model";
   case kPyTorchModel:
     return "compiled PyTorch model";
+  case kModularModel:
+    return "compiled Modular model";
   }
   llvm::report_fatal_error("missing case");
 };
