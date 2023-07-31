@@ -1092,3 +1092,12 @@ kgen.func @global_address() -> !pop.pointer<i32> {
   %0 = pop.global.address @global_var : <i32>
   kgen.return %0 : !pop.pointer<i32>
 }
+
+// CHECK-LABEL: @aligned_alloc
+kgen.func @aligned_alloc(%arg0: index, %arg1: index) {
+  // CHECK-NEXT: %0 = pop.aligned_alloc %arg0, %arg1 : <index>
+  %0 = pop.aligned_alloc %arg0, %arg1 : <index>
+  // CHECK-NEXT: pop.aligned_free %0 : <index>
+  pop.aligned_free %0 : <index>
+  kgen.return 
+}
