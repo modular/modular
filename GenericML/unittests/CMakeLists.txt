@@ -25,6 +25,7 @@ add_modular_unittest(
   BufferRefTest.cpp
   ContextTest.cpp
   TensorTest.cpp
+  ModelCollectionTest.cpp
 
   LINK_LIBS PRIVATE
   GenericMLSupport
