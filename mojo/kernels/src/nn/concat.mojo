@@ -5,65 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, DynamicRankBuffer, NDBuffer
+from Buffer import Buffer, NDBuffer
 from BuildInfo import is_kernels_debug_build
 from DType import DType
-from Functional import sync_parallelize
+from Functional import sync_parallelize, _elementwise_impl
 from Index import product, StaticIntTuple
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
 from LLCL import OutputChainPtr
 from Math import align_down, align_up, div_ceil, max, min
+from MOGG import simd_load, simd_store
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import sizeof
-from Vector import InlinedFixedVector
+from TargetInfo import sizeof, simdwidthof
+from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
 # concat
 # ===----------------------------------------------------------------------===#
-
-
-struct _NDBufferVector[rank: Int, type: DType]:
-    """Utility to store a VariadicList of NDBuffers. Required because there is not
-    a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
-    of NDBuffers."""
-
-    alias stack_capacity = 20
-    alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
-    alias StorageType = InlinedFixedVector[Self.stack_capacity, Self.BufferType]
-    var storage: Self.StorageType
-
-    fn __init__(inout self, num_inputs: Int):
-        self.storage = Self.StorageType(num_inputs)
-
-    fn __init__(inout self, *inputs: DynamicRankBuffer):
-        self.__init__(VariadicList[DynamicRankBuffer](inputs))
-
-    fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
-        self.storage = Self.StorageType(input_list.__len__())
-        for i in range(input_list.__len__()):
-            self.storage.append(input_list[i].to_ndbuffer[rank, type]())
-
-    fn __init__(inout self, *inputs: Self.BufferType):
-        self.__init__(VariadicList[Self.BufferType](inputs))
-
-    fn __init__(inout self, input_list: VariadicList[Self.BufferType]):
-        self.storage = Self.StorageType(input_list.__len__())
-        for i in range(input_list.__len__()):
-            self.storage.append(input_list[i])
-
-    fn __getitem__(
-        self, idx: Int
-    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-        return self.storage[idx]
-
-    fn __len__(self) -> Int:
-        return self.storage.__len__()
-
-    fn __del__(owned self):
-        return self.storage._del_old()
 
 
 @value
@@ -110,7 +70,7 @@ fn _canonical_reshape_output[
 ](
     out_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
 ) -> _CanonicallyReshapedBuffer:
     let input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -129,7 +89,7 @@ fn _concat_parallel[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
     out_chain: OutputChainPtr,
 ):
     let output_canon = _canonical_reshape_output(output, axis, inputs)
@@ -249,7 +209,7 @@ fn _concat[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
 ):
     """Concatenate inputs along axis and store in output.
 
@@ -296,7 +256,7 @@ fn _concat_inner[
     rank: Int, type: DType, axis: Int
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
 ):
     assert_param[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
@@ -311,7 +271,10 @@ fn _concat_inner[
 @always_inline
 fn _check_input_consistency[
     rank: Int, type: DType
-](axis: Int, inputs: _NDBufferVector[rank, type],):
+](
+    axis: Int,
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+):
     @parameter
     if not is_kernels_debug_build():
         return
@@ -337,9 +300,9 @@ fn _concat_serial[
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
 ):
-    _check_input_consistency(axis, inputs)
+    _check_input_consistency[rank, type](axis, inputs)
 
     if axis == 0:
         _concat_inner[rank, type, 0](output, inputs)
@@ -349,16 +312,93 @@ fn _concat_serial[
 
 
 @always_inline
-fn concat[
+fn _concat_small[
     rank: Int,
     type: DType,
 ](
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     axis: Int,
-    borrowed inputs: _NDBufferVector[rank, type],
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
     out_chain: OutputChainPtr,
 ):
-    _check_input_consistency(axis, inputs)
+    alias single_thread_blocking_override = True
+    alias simd_width = simdwidthof[type]()
+
+    @parameter
+    @always_inline
+    fn concat_lambda[
+        simd_width: Int, rank: Int
+    ](out_index: StaticIntTuple[rank]):
+        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
+        # [:, 60, :] so when the target dim is:
+        #   0 >= target_dim < 10: We are loading from first input.
+        #   10 >= target_dim < 20: We are loading from second input.
+        #   20 >= target_dim < 30: We are loading from third input.
+        # The output will always be storing to the full index but we load from
+        # an offset.
+
+        var target_dim = out_index[axis]
+
+        # Iterate through the inputs to find the one we should be storing to.
+        for i in range(inputs.__len__()):
+            let input = inputs[i]
+
+            # This is the input we should be loading/storing.
+            if target_dim < input.dynamic_shape[axis]:
+                var in_index = out_index
+                in_index[axis] = target_dim
+                let load = simd_load[type, simd_width, rank](
+                    rebind[
+                        NDBuffer[rank, DimList.create_unknown[rank](), type]
+                    ](input),
+                    in_index,
+                )
+                simd_store[type, simd_width, rank](
+                    rebind[
+                        NDBuffer[rank, DimList.create_unknown[rank](), type]
+                    ](output),
+                    out_index,
+                    load,
+                )
+                return
+            else:
+                # Keep looking...
+                target_dim -= input.dynamic_shape[axis]
+
+    # We need to check it's safe to simd_load from each input.
+    var inputs_simd_aligned = True
+    for i in range(inputs.__len__()):
+        if inputs[i].dynamic_shape[rank - 1] % simd_width != 0:
+            inputs_simd_aligned = False
+
+    # If we are concat'ing along the last dimension we can do a simd load.
+    if axis == rank - 1 and inputs_simd_aligned:
+        _elementwise_impl[
+            rank, simd_width, single_thread_blocking_override, concat_lambda
+        ](output.dynamic_shape, out_chain)
+    else:
+        # Otherwise we must run scalar.
+        _elementwise_impl[
+            rank, 1, single_thread_blocking_override, concat_lambda
+        ](output.dynamic_shape, out_chain)
+
+
+@always_inline
+fn concat[
+    rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis: Int,
+    inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
+    out_chain: OutputChainPtr,
+):
+    @parameter
+    if single_thread_blocking_override:
+        return _concat_small[rank, type](output, axis, inputs, out_chain)
+
+    _check_input_consistency[rank, type](axis, inputs)
 
     @always_inline
     @parameter

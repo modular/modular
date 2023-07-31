@@ -56,7 +56,7 @@ fn test_concat():
 
     with Runtime(4) as rt:
         let out_chain = OwningOutputChainPtr(rt)
-        concat[rank, type](
+        concat[rank, type, False](
             output_dyn, concat_axis, input_list, out_chain.borrow()
         )
         out_chain.wait()

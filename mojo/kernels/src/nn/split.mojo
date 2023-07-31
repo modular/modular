@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, NDBuffer
-from Concat import _NDBufferVector
+from Buffer import Buffer, NDBuffer, DynamicRankBuffer
 from DType import DType
 from Index import product
 from Intrinsics import external_call
@@ -15,6 +14,55 @@ from Memory import memcpy
 from Range import range
 from LLCL import OutputChainPtr
 from Functional import sync_parallelize
+from Vector import InlinedFixedVector
+
+
+struct _NDBufferVector[rank: Int, type: DType]:
+    """Utility to store a VariadicList of NDBuffers. Required because there is not
+    a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
+    of NDBuffers."""
+
+    alias stack_capacity = 20
+    alias BufferType = NDBuffer[rank, DimList.create_unknown[rank](), type]
+    alias StorageType = InlinedFixedVector[Self.stack_capacity, Self.BufferType]
+    var storage: Self.StorageType
+
+    @always_inline
+    fn __init__(inout self, num_inputs: Int):
+        self.storage = Self.StorageType(num_inputs)
+
+    @always_inline
+    fn __init__(inout self, *inputs: DynamicRankBuffer):
+        self.__init__(VariadicList[DynamicRankBuffer](inputs))
+
+    fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
+        self.storage = Self.StorageType(input_list.__len__())
+        for i in range(input_list.__len__()):
+            self.storage.append(input_list[i].to_ndbuffer[rank, type]())
+
+    @always_inline
+    fn __init__(inout self, *inputs: Self.BufferType):
+        self.__init__(VariadicList[Self.BufferType](inputs))
+
+    fn __init__(inout self, input_list: VariadicList[Self.BufferType]):
+        self.storage = Self.StorageType(input_list.__len__())
+        for i in range(input_list.__len__()):
+            self.storage.append(input_list[i])
+
+    @always_inline
+    fn __getitem__(
+        self, idx: Int
+    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+        return self.storage[idx]
+
+    @always_inline
+    fn __len__(self) -> Int:
+        return self.storage.__len__()
+
+    @always_inline
+    fn __del__(owned self):
+        return self.storage._del_old()
+
 
 # ===----------------------------------------------------------------------===#
 # split
