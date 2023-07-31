@@ -441,10 +441,7 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
                                          StringAttr importName, SMLoc loc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
 
-  if (shared.parserListener)
-    shared.parserListener->onModuleImport(MojoASTDeclRef(&module), moduleName,
-                                          loc);
-
+  shared.notifyListenerOnModuleImport(module, moduleName, loc);
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
                           /*declName=*/StringAttr(), moduleName, loc, dest);
 }
@@ -2467,9 +2464,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     }
   }
 
-  if (shared.parserListener)
-    shared.parserListener->onFunctionDecl(MojoASTDeclRef(&decl), identifierLoc);
-
+  shared.notifyListenerOnFunction(decl, identifierLoc);
   return success();
 }
 
@@ -2651,10 +2646,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       }
-      if (shared.parserListener) {
-        shared.parserListener->onArgumentDecl(MojoASTDeclRef(&argDecl),
-                                              argDecl.getLoc());
-      }
+      shared.notifyListenerOnArgument(argDecl, argDecl.getLoc());
       return success();
     };
 
@@ -3014,9 +3006,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, processDecorator);
 
-  if (shared.parserListener)
-    shared.parserListener->onVariableDecl(MojoASTDeclRef(&decl), identifierLoc);
-
+  shared.notifyListenerOnVariable(decl, identifierLoc);
   return success();
 }
 
@@ -3089,9 +3079,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     // Process the doc string of the alias.
     p.parseDocString(decl);
 
-    if (shared.parserListener)
-      shared.parserListener->onAliasDecl(MojoASTDeclRef(&decl), identifierLoc);
-
+    shared.notifyListenerOnAlias(decl, identifierLoc);
     return success();
   }
 
@@ -3125,9 +3113,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   // Process the doc string of the alias.
   p.parseDocString(decl);
 
-  if (shared.parserListener)
-    shared.parserListener->onAliasDecl(MojoASTDeclRef(&decl), identifierLoc);
-
+  shared.notifyListenerOnAlias(decl, identifierLoc);
   return success();
 }
 
@@ -3223,9 +3209,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
         return processStructSignatureDecorator(decorator, structOp);
       });
 
-  if (shared.parserListener)
-    shared.parserListener->onStructDecl(MojoASTDeclRef(&decl), identifierLoc);
-
+  shared.notifyListenerOnStruct(decl, identifierLoc);
   return success();
 }
 
@@ -3908,9 +3892,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);
-  if (shared.parserListener)
-    shared.parserListener->onStructFieldDecl(MojoASTDeclRef(&decl),
-                                             identifierLoc);
+  shared.notifyListenerOnStructField(decl, identifierLoc);
   return success();
 }
 

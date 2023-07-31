@@ -227,13 +227,54 @@ public:
   //===--------------------------------------------------------------------===//
   // Listener Interface
 
+  /// Notify the parser listener, if present, of a parsed alias decl.
+  void notifyListenerOnAlias(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, of a parsed alias decl.
+  void notifyListenerOnArgument(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, of a parsed function.
+  void notifyListenerOnFunction(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener that an import is currently being resolved.
+  void notifyListenerOnImport(SMLoc importLoc);
+
   /// Notify the parser listener, if present, that an import of a module within
-  /// the given package is currently being resolved.
-  void notifyListenerOnImport(ASTDecl &packageDecl, SMLoc importLoc);
+  /// the given package is currently being resolved. `getPackageDecl` is a
+  /// function called to get the package decl if the listener needs it.
+  void notifyListenerOnImport(SMLoc importLoc,
+                              function_ref<ASTDecl &()> getPackageDecl);
 
   /// Notify the parser listener, if present, that a member within the given
   /// decl is being looked up.
   void notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc);
+
+  /// Notify the parser listener, if present, that a new `module` decl has been
+  /// created by the parser.
+  void notifyListenerOnModule(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, that a new import of the form
+  /// `from Module [as Alias]` has been resolved by the parser. The provided
+  /// location and spelling correspond to the module name and not to its
+  /// optional alias.
+  void notifyListenerOnModuleImport(ASTDecl &decl, StringRef spelling,
+                                    SMLoc loc);
+
+  /// Notify the parser listener, if present, that a new `struct` declaration
+  /// has been resolved by the parser.
+  void notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, that a new `struct field`
+  /// declaration has been resolved by the parser.
+  void notifyListenerOnStructField(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, that a new `let` or `var`
+  /// declaration has been resolved by the parser.
+  void notifyListenerOnVariable(ASTDecl &decl, SMLoc identifierLoc);
+
+  /// Notify the parser listener, if present, that a new reference has been
+  /// resolved by the parser, i.e. its declaration is known.
+  void notifyListenerOnRef(ASTDecl &decl, StringRef spelling, SMLoc loc);
 
   //===--------------------------------------------------------------------===//
   // Builtin Module

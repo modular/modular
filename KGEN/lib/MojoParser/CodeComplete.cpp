@@ -47,11 +47,12 @@ struct CodeCompletionListener : public MojoParserListener {
       : results(results), loc(loc), sourceMgr(sourceMgr) {}
   ~CodeCompletionListener() override = default;
 
+  /// Returns true if the listener is interested in being notified for the given
+  /// location.
+  bool isInterestedInLoc(SMLoc parserLoc) override { return parserLoc == loc; }
+
   /// Notify the listener that an import is currently being resolved.
   void onImport(SMLoc importLoc) override {
-    if (loc != importLoc)
-      return;
-
     // Simple helper for adding completion results and dropping duplicates.
     StringSet<> addedImports;
     auto addImportCompletion = [&](StringRef name, bool isPackage) {
@@ -80,8 +81,6 @@ struct CodeCompletionListener : public MojoParserListener {
   /// Notify the listener that an import of a module within the given package is
   /// currently being resolved.
   void onImport(MojoASTDeclRef packageDecl, SMLoc importLoc) override {
-    if (loc != importLoc)
-      return;
     for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
       StringRef name = child.getName();
       if (!showDeclDuringLookup(packageDecl, name, /*isModuleLookup=*/true))
@@ -96,8 +95,6 @@ struct CodeCompletionListener : public MojoParserListener {
   /// Notify the listener that a member within the given decl is being looked
   /// up.
   void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc) override {
-    if (loc != lookupLoc)
-      return;
     for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
       StringRef name = child.getName();
       if (!showDeclDuringLookup(decl, name))

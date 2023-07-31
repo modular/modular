@@ -1529,10 +1529,7 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
   SmallVector<StringRef> moduleNames;
 
   // A functor used to signal to any parser listener that we're importing a
-  // module. If we do emit any notifications, keep track of the currently
-  // resolved module/package so that the listener can have context for the
-  // import.
-  ASTDecl *currentResolvedModule = nullptr;
+  // module.
   auto notifyListenerOfImport = [&]() {
     if (!shared.parserListener)
       return;
@@ -1540,26 +1537,14 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
 
     // If there isn't a module name, this is a top-level import.
     if (moduleNames.empty())
-      return shared.parserListener->onImport(loc);
+      return shared.notifyListenerOnImport(loc);
 
-    // Otherwise, this is importing from within a package. Grab the parent
-    // package by resolving into the previously resolved module using whatever
-    // name was last parsed.
-    if (!currentResolvedModule) {
-      currentResolvedModule = &shared.importModule(
+    // Otherwise, this is importing from within a package.
+    shared.notifyListenerOnImport(loc, [&]() -> ASTDecl & {
+      return shared.importModule(
           llvm::join(moduleNames, "."),
           curDeclScope->getIfOperation()->getParentOfType<PackageOp>(), loc);
-      if (!isa<PackageOp>(*currentResolvedModule))
-        return;
-    } else if (auto curPackage = dyn_cast<PackageOp>(*currentResolvedModule)) {
-      currentResolvedModule =
-          &shared.importModule(moduleNames.back(), curPackage, loc);
-    } else {
-      // The current thing isn't a package, so just bail (we'll error out later
-      // anyways, no need to notify the listener).
-      return;
-    }
-    shared.notifyListenerOnImport(*currentResolvedModule, loc);
+    });
   };
 
   // Parse the relative '.' indicators that resolve to a parent package. These
@@ -1783,11 +1768,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // Now mark the decl as fully resolved.
   decl.resolvedness = DeclResolvedness::fully;
 
-  if (shared.parserListener) {
-    // We notify the listener that a new let/var declaration has been
-    // resolved.
-    shared.parserListener->onVariableDecl(MojoASTDeclRef(&decl), identifierLoc);
-  }
+  shared.notifyListenerOnVariable(decl, identifierLoc);
   return success();
 }
 
