@@ -21,9 +21,10 @@ ErrorOr<Config> Config::open() {
   std::filesystem::path homeDirPath = getModularHomeDirPath();
 
   std::error_code ec;
-  // If the modular home directory doesn't even exist, try to create it first.
+  // If the modular home directory doesn't even exist, return early. We don't
+  // error out here, just return an empty config.
   if (!std::filesystem::exists(homeDirPath, ec) && !ec)
-    std::filesystem::create_directories(homeDirPath, ec);
+    return Config();
   if (ec)
     return Error(ec.message());
 
