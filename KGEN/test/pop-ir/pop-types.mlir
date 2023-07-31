@@ -1,5 +1,23 @@
 // RUN: kgen-opt %s | kgen-opt | FileCheck %s
 
+// CHECK-LABEL: @pointer
+kgen.generator @pointer<type: type, address_space>(
+  // CHECK-SAME: !pop.pointer<scalar<f32>>
+  %arg0: !pop.pointer<scalar<f32>>,
+  // CHECK-SAME: !pop.pointer<scalar<f32>, 5>
+  %arg1: !pop.pointer<scalar<f32>, 5>,
+  // CHECK-SAME: !pop.pointer<type>
+  %arg2: !pop.pointer<type>,
+  // CHECK-SAME: !pop.pointer<type, 7>
+  %arg3: !pop.pointer<type, 7>,
+  // CHECK-SAME: !pop.pointer<scalar<f32>, address_space>
+  %arg4: !pop.pointer<scalar<f32>, address_space>,
+  // CHECK-SAME: !pop.pointer<type, address_space>
+  %arg5: !pop.pointer<type, address_space>
+) {
+  kgen.return
+}
+
 // CHECK-LABEL: @array
 kgen.generator @array<size, type: type>(
   // CHECK-SAME: !pop.array<4, scalar<f32>>

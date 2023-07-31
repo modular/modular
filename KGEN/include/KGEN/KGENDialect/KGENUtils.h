@@ -215,6 +215,13 @@ ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
 void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                       TypedAttr alignment);
 
+/// Parse an address space parameter if present.
+ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,
+                                                TypedAttr &result);
+void printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
+                                         TypedAttr addressSpace);
+
+/// Parse and print a comma separated sequence of elements.
 template <typename SequenceType>
 ParseResult parseSequenceElements(AsmParser &p, SmallVector<TypedAttr> &values,
                                   SequenceType type) {

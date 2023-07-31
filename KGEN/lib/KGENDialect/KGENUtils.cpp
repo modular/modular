@@ -1667,6 +1667,7 @@ void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
                                             TypedAttr alignment) {
   if (!alignment)
     return;
+
   p << " align ";
   printParamValue(p, alignment);
   p << " ";
@@ -1677,6 +1678,35 @@ ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
                                                    TypedAttr &result) {
   if (p.parseOptionalKeyword("align")) {
     result = TypedAttr();
+    return success();
+  }
+
+  return parseIndexParamValue(p, result);
+}
+
+/// Parse an address space parameter if present.
+void KGEN::printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
+                                               TypedAttr addressSpace) {
+  if (!addressSpace)
+    return;
+
+  // If the address space is an integer and zero, then we can skip since that's
+  // the default address space.
+  if (auto addressSpaceInt = dyn_cast<IntegerAttr>(addressSpace);
+      addressSpaceInt && addressSpaceInt.getValue().isZero())
+    return;
+
+  p << " address_space ";
+  printParamValue(p, addressSpace);
+  p << " ";
+}
+
+/// Parse a parameter value that is known to be an address space type.
+ParseResult KGEN::parseOptionalAddressSpaceParamValue(AsmParser &p,
+                                                      TypedAttr &result) {
+  if (p.parseOptionalKeyword("address_space")) {
+    // The default address space is 0.
+    result = p.getBuilder().getIndexAttr(0);
     return success();
   }
 

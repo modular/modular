@@ -170,9 +170,11 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](POP::PointerType pointer) -> std::optional<Type> {
+    unsigned addressSpace =
+        cast<IntegerAttr>(pointer.getAddressSpace()).getInt();
     if (Type elementType = convertType(pointer.getElementAsType()))
-      return LLVM::LLVMPointerType::get(elementType);
-    return LLVM::LLVMPointerType::get(pointer.getContext());
+      return LLVM::LLVMPointerType::get(elementType, addressSpace);
+    return LLVM::LLVMPointerType::get(pointer.getContext(), addressSpace);
   });
 
   // Convert array types to LLVM array types.

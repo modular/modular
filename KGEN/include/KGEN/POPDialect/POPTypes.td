@@ -88,7 +88,8 @@ def POP_PointerType : POPType<"Pointer", "pointer",
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
-    `!kgen.mlirtype` type.
+    `!kgen.mlirtype` type. An optional `addressSpace` argument can be specified
+    (default to 0).
 
     Example:
 
@@ -104,18 +105,33 @@ def POP_PointerType : POPType<"Pointer", "pointer",
 
     // A completely parameterized pointer.
     !pop.pointer<elementType>
+
+    // The address space parameter is optional, but can be specified.
+    !pop.pointer<scalar<si32>, 2>
+
+    // The address space also works on parametrized pointers.
+    !pop.pointer<elementType, 5>
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$elementType);
+  let parameters = (ins "TypedAttr":$elementType,
+                        DefaultValuedParameter<"TypedAttr",
+                          "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
-    `<` custom<PrettyType>($elementType) `>`
+    `<` custom<PrettyType>($elementType) ``
+    (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
+                                        "TypedAttr":$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        "TypedAttr":$addressSpace)>,
   ];
 
   let extraClassDeclaration = [{
