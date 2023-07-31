@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
 # RUN: mojo build %mojo_cpu_build_arch %s -o %t
 # RUN: %t --arg1 | FileCheck %s
 
