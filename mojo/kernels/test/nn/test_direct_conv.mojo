@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s -debug-level=full | FileCheck %s
 
 from Buffer import NDBuffer
 from ConvUtils import (
