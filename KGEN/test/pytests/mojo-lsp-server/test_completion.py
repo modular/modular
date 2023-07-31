@@ -9,12 +9,7 @@ from typing import List
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
-from lsprotocol.types import (
-    CompletionItemKind,
-    CompletionList,
-    CompletionParams,
-    Position,
-)
+from lsprotocol.types import CompletionItemKind, Position
 from pytest_lsp import ClientServerConfig, LanguageClient
 
 
@@ -41,18 +36,9 @@ import B
     requests = Requests(client)
     requests.open_document(doc)
 
-    results = fail_if_none(
-        await client.text_document_completion_async(
-            params=CompletionParams(
-                position=Position(line=1, character=8),
-                text_document=doc.identifier,
-            )
-        )
+    items = fail_if_none(
+        await requests.completion(doc, Position(line=1, character=8))
     )
-    if isinstance(results, CompletionList):
-        items = results.items
-    else:
-        items = results
 
     assert any(
         item.label == "Builtin" and item.kind == CompletionItemKind.Folder
@@ -70,18 +56,9 @@ import Builtin.
     requests = Requests(client)
     requests.open_document(doc)
 
-    results = fail_if_none(
-        await client.text_document_completion_async(
-            params=CompletionParams(
-                position=Position(line=1, character=15),
-                text_document=doc.identifier,
-            )
-        )
+    items = fail_if_none(
+        await requests.completion(doc, Position(line=1, character=15))
     )
-    if isinstance(results, CompletionList):
-        items = results.items
-    else:
-        items = results
 
     assert any(
         item.label == "Bool" and item.kind == CompletionItemKind.Module
@@ -99,18 +76,9 @@ from Pointer import P
     requests = Requests(client)
     requests.open_document(doc)
 
-    results = fail_if_none(
-        await client.text_document_completion_async(
-            params=CompletionParams(
-                position=Position(line=1, character=21),
-                text_document=doc.identifier,
-            )
-        )
+    items = fail_if_none(
+        await requests.completion(doc, Position(line=1, character=21))
     )
-    if isinstance(results, CompletionList):
-        items = results.items
-    else:
-        items = results
 
     assert any(
         item.label == "Pointer" and item.kind == CompletionItemKind.Struct
@@ -129,18 +97,9 @@ fn function(arg: Int):
     requests = Requests(client)
     requests.open_document(doc)
 
-    results = fail_if_none(
-        await client.text_document_completion_async(
-            params=CompletionParams(
-                position=Position(line=2, character=8),
-                text_document=doc.identifier,
-            )
-        )
+    items = fail_if_none(
+        await requests.completion(doc, Position(line=2, character=8))
     )
-    if isinstance(results, CompletionList):
-        items = results.items
-    else:
-        items = results
 
     assert any(
         item.label == "__add__" and item.kind == CompletionItemKind.Function

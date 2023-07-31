@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Optional, TypeVar
 
 from lsprotocol.types import (
+    CompletionList,
+    CompletionParams,
     DefinitionParams,
     DidOpenTextDocumentParams,
     HoverParams,
@@ -113,3 +115,11 @@ class Requests:
         return await self.client.text_document_definition_async(
             params=DefinitionParams(position=pos, text_document=doc.identifier)
         )
+
+    async def completion(self, doc: Document, pos: Position):
+        results = await self.client.text_document_completion_async(
+            params=CompletionParams(position=pos, text_document=doc.identifier)
+        )
+        if results is None:
+            return None
+        return results.items if isinstance(results, CompletionList) else results
