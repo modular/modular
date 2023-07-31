@@ -304,7 +304,13 @@ public:
   int64_t getVersion() const { return version; }
 
   /// Invalidate this document.
-  void invalidate() { isInvalidated = true; }
+  void invalidate() {
+    isInvalidated = true;
+
+    // Mark the document as parsed to unblock chained events, and let them
+    // invalidate themselves.
+    markDocumentParsed();
+  }
 
   /// Return a chain that will be ready when the document is parsed.
   AnyAsyncValueRef getDocumentReadyChain() const {
@@ -338,6 +344,13 @@ public:
 private:
   /// Parse the document and populate the index based on the current contents.
   void parseDocument();
+
+  /// Mark the current document as being finished parsing.
+  void markDocumentParsed() {
+    std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
+    if (!isDocumentParsed.isReady())
+      isDocumentParsed.copy().emplace();
+  }
 
   /// Start a task that depends on the document being parsed.
   template <typename FnT>
@@ -452,6 +465,7 @@ private:
 
   /// An async value readied when the document is parsed.
   AsyncValueRef<Chain> isDocumentParsed;
+  std::mutex isDocumentParsedMutex;
 
   /// An ordered set of fixits for diagnostics emitted for the current version
   /// of the file.
@@ -478,8 +492,6 @@ MojoDocument::MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
 }
 
 void MojoDocument::parseDocument() {
-  auto markDocumentParsed = [&] { isDocumentParsed.copy().emplace(); };
-
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
     return markDocumentParsed();
