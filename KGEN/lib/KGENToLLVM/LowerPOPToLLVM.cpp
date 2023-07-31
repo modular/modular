@@ -21,6 +21,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/IR/Attributes.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1472,6 +1473,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<GlobalConstantOp>();
   target.addLegalOp<GlobalAddressOp>();
   target.addLegalOp<ExternalCallOp>();
+  target.addLegalOp<AlignedAllocOp>();
+  target.addLegalOp<AlignedFreeOp>();
   target.addLegalOp<CoroutineHandleOp>();
   target.addLegalOp<CoroutineOpaqueHandleOp>();
   target.addLegalOp<CoroutineAwaitOp>();
@@ -1639,6 +1642,167 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPAlignedAlloc
+//===----------------------------------------------------------------------===//
+
+static constexpr llvm::StringLiteral kAllocFamilyName =
+    "kgen_aligned_allocator";
+
+/// This pattern will generate the aligned alloc function with the appropriate
+/// attributes to teach LLVM about the allocator. This would enable LLVM, for
+/// example, to promote heap-to-stack among other optimizations. This enables
+/// the aligned alloc function to receive similar treatment to `malloc`.
+class ConvertPOPAlignedAlloc : public ConvertPOPToLLVMPattern<AlignedAllocOp> {
+public:
+  ConvertPOPAlignedAlloc(SymbolTable &symtab, StringRef allocFnName,
+                         mlir::LLVMTypeConverter &typeConverter)
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
+        allocFnName(allocFnName),
+        allocFnSig(LLVM::LLVMFunctionType::get(
+            LLVM::LLVMPointerType::get(&typeConverter.getContext()),
+            {typeConverter.getIndexType(), typeConverter.getIndexType()})) {}
+
+  LogicalResult matchAndRewrite(AlignedAllocOp op,
+                                AlignedAllocOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    // Try to find an existing function
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(allocFnName);
+    if (func && func.getFunctionType() != allocFnSig) {
+      // Fail if the signature does not match the expected signature.
+      return mlir::emitError(op.getLoc(), "allocator function '")
+             << allocFnName << "' signature " << func.getFunctionType()
+             << " does not match expected signature " << allocFnSig;
+    }
+    if (!func) {
+      // No function found. Create one with the appropriate attributes.
+      OpBuilder::InsertionGuard guard(b);
+      b.clearInsertionPoint();
+      SmallVector<Attribute> passthrough;
+      func = b.create<LLVM::LLVMFuncOp>(op.getLoc(), allocFnName, allocFnSig);
+
+      // `noalias` result.
+      func.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(),
+                         b.getUnitAttr());
+      // `allocalign` on second argument.
+      func.setArgAttr(1, LLVM::LLVMDialect::getAllocAlignAttrName(),
+                      b.getUnitAttr());
+
+      // `allockind("alloc,aligned,uninitialized")` enum encoding.
+      // FIXME: The encoding of integer attributes is a string?!
+      passthrough.push_back(b.getArrayAttr(
+          {b.getStringAttr("allockind"),
+           b.getStringAttr(Twine(static_cast<int64_t>(
+               llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Aligned |
+               llvm::AllocFnKind::Uninitialized)))}));
+
+      // `allocsize(0)` with `-1` in lower 32 bits.
+      // FIXME: The encoding of integer attributes is a string?!
+      // FIXME: `packAllocSizeArgs` is not an exposed function.
+      passthrough.push_back(
+          b.getArrayAttr({b.getStringAttr("allocsize"),
+                          b.getStringAttr(Twine(uint32_t(-1)))}));
+      // `"alloc-family"="kgen_alloc"`.
+      passthrough.push_back(
+          b.getArrayAttr({b.getStringAttr("alloc-family"),
+                          b.getStringAttr(kAllocFamilyName)}));
+
+      func.setPassthroughAttr(attachTargetPassthroughAttrs(
+          b, getTypeConverter()->getTarget(), b.getArrayAttr(passthrough)));
+      symtab.insert(func);
+    }
+
+    LLVM::CallOp call =
+        createLLVMCall(b, op.getLoc(), func, adaptor.getOperands());
+    b.replaceOpWithNewOp<LLVM::BitcastOp>(op, convertType(op.getType()),
+                                          call.getResult());
+    return success();
+  }
+
+private:
+  /// The symbol table.
+  SymbolTable &symtab;
+  /// The alloc function name.
+  StringRef allocFnName;
+  /// The expected function signature, saved in the pattern to reduce match
+  /// overhead.
+  LLVM::LLVMFunctionType allocFnSig;
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPAlignedFree
+//===----------------------------------------------------------------------===//
+
+/// This pattern will generate the aligned free function with the appropriate
+/// attributes to teach LLVM about the allocator. This would enable LLVM, for
+/// example, to promote heap-to-stack among other optimizations. This enables
+/// the aligned free function to receive similar treatment to `free`.
+class ConvertPOPAlignedFree : public ConvertPOPToLLVMPattern<AlignedFreeOp> {
+public:
+  ConvertPOPAlignedFree(SymbolTable &symtab, StringRef freeFnName,
+                        mlir::LLVMTypeConverter &typeConverter)
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
+        freeFnName(freeFnName),
+        freeFnSig(LLVM::LLVMFunctionType::get(
+            LLVM::LLVMVoidType::get(&typeConverter.getContext()),
+            LLVM::LLVMPointerType::get(&typeConverter.getContext()))) {}
+
+  LogicalResult matchAndRewrite(AlignedFreeOp op, AlignedFreeOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    // Try to find an existing function
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(freeFnName);
+    if (func && func.getFunctionType() != freeFnSig) {
+      // Fail if the signature does not match the expected signature.
+      return mlir::emitError(op.getLoc(), "free function '")
+             << freeFnName << "' signature " << func.getFunctionType()
+             << " does not match expected signature " << freeFnSig;
+    }
+    if (!func) {
+      // No function found. Create one with the appropriate attributes.
+      OpBuilder::InsertionGuard guard(b);
+      b.clearInsertionPoint();
+      SmallVector<Attribute> passthrough;
+      func = b.create<LLVM::LLVMFuncOp>(op.getLoc(), freeFnName, freeFnSig);
+
+      // `allocptr` on first argument.
+      func.setArgAttr(0, LLVM::LLVMDialect::getAllocatedPointerAttrName(),
+                      b.getUnitAttr());
+
+      // `allockind("alloc,aligned,uninitialized")` enum encoding.
+      // FIXME: The encoding of integer attributes is a string?!
+      passthrough.push_back(b.getArrayAttr(
+          {b.getStringAttr("allockind"),
+           b.getStringAttr(
+               Twine(static_cast<uint64_t>(llvm::AllocFnKind::Free)))}));
+
+      // `"alloc-family"="kgen_alloc"`.
+      passthrough.push_back(
+          b.getArrayAttr({b.getStringAttr("alloc-family"),
+                          b.getStringAttr(kAllocFamilyName)}));
+
+      func.setPassthroughAttr(attachTargetPassthroughAttrs(
+          b, getTypeConverter()->getTarget(), b.getArrayAttr(passthrough)));
+      symtab.insert(func);
+    }
+
+    Value ptr = b.create<LLVM::BitcastOp>(
+        op.getLoc(), LLVM::LLVMPointerType::get(getContext()),
+        adaptor.getPtr());
+    LLVM::CallOp call = createLLVMCall(b, op.getLoc(), func, ptr);
+    b.replaceOp(op, call);
+    return success();
+  }
+
+private:
+  /// The symbol table.
+  SymbolTable &symtab;
+  /// The free function name.
+  StringRef freeFnName;
+  /// The expected function signature, saved in the pattern to reduce match
+  /// overhead.
+  LLVM::LLVMFunctionType freeFnSig;
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPGlobalConstant
 //===----------------------------------------------------------------------===//
 
@@ -1761,6 +1925,8 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // Convert external calls.
   target.addIllegalOp<ExternalCallOp>();
   patterns.insert<ConvertPOPExternalCall>(symtab, typeConverter);
+  patterns.insert<ConvertPOPAlignedAlloc>(symtab, allocFnName, typeConverter);
+  patterns.insert<ConvertPOPAlignedFree>(symtab, freeFnName, typeConverter);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
