@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s -debug-level=full | FileCheck %s
 
 from Buffer import NDBuffer, Buffer, _raw_stack_allocation
 from Range import range
