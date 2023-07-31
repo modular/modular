@@ -315,7 +315,7 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
 
     The pass converts `pop.aligned_alloc` and `pop.aligned_free` operations to
     calls to allocate and free functions according to the names supplied to
-    `alloc-fn-name` and `free-fn-name`. The pass will use functions present in 
+    `alloc-fn-name` and `free-fn-name`. The pass will use functions present in
     the current module if possible, otherwise it will create declarations for
     external functions. The signatures must be:
 
@@ -330,9 +330,9 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
   let options = [
     Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
            "If true, global destructors are not generated.">,
-    Option<"allocFnName", "alloc-fn-name", "std::string", 
+    Option<"allocFnName", "alloc-fn-name", "std::string",
            "\"kgenAlignedAlloc\"", "The aligned allocate function name.">,
-    Option<"freeFnName", "free-fn-name", "std::string", 
+    Option<"freeFnName", "free-fn-name", "std::string",
            "\"kgenAlignedFree\"", "The aligned free function name.">
   ];
 }
@@ -768,7 +768,7 @@ def StripParserMetadata : Pass<"strip-parser-metadata"> {
 
     - Doc strings.
     - Precompiled packages.
-  }]; 
+  }];
 }
 
 //===----------------------------------------------------------------------===//

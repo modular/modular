@@ -165,10 +165,7 @@ static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
-  Value hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
-                                                         op.getCoroutine())
-                  .getResult(0);
-
+  Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   Type ptrType = b.convertType(op.getType());
   if (!ptrType)
     return op.emitError("failed to convert coroutine type");
@@ -191,9 +188,7 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   // The resume function is the second element of the context.
-  auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
-                                                        op.getCoroutine())
-                 .getResult(0);
+  Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   // Bitcast `i8*` to `void(i8*)**`.
   b.create<CallOp>(
       TypeRange(),
@@ -209,13 +204,9 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
   b.setInsertionPoint(op);
 
   // Just free the coroutine context.
-  auto hdl = b.create<mlir::UnrealizedConversionCastOp>(cache.i8PtrType,
-                                                        op.getCoroutine())
-                 .getResult(0);
-  // TODO(#10083): Pass free function attributes.
-  b.create<POP::ExternalCallOp>(
-      "KGEN_CompilerRT_AlignedFree",
-      b.create<BitcastOp>(cache.ptrType, hdl).getResult());
+  Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
+  b.create<POP::AlignedFreeOp>(
+      b.createConversion(POP::PointerType::get(cache.i8Type), hdl));
   op.erase();
 }
 
@@ -477,14 +468,16 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
                       b.create<BitcastOp>(LLVMPointerType::get(afp.getType()),
                                           prepare.getResult(0)),
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
-  // TODO(#10083): Pass alloc function attributes.
-  auto allocCall = b.create<POP::ExternalCallOp>(
-      cache.ptrType, "KGEN_CompilerRT_AlignedAlloc",
-      ArrayRef<Value>{b.create<ConstantOp>(
-                          b.getIntegerAttr(cache.indexType, contextBaseAlign)),
-                      b.create<ZExtOp>(cache.indexType, contextSize)});
-  Value contextValue =
-      b.create<BitcastOp>(contextPtrType, allocCall.getResult(0));
+  Value allocCall = b.create<POP::AlignedAllocOp>(
+      POP::PointerType::get(cache.i8Type),
+      ArrayRef<Value>{
+          b.createConversion(
+              b.getType<IndexType>(),
+              b.create<ConstantOp>(cache.indexType, contextBaseAlign)),
+          b.createConversion(b.getType<IndexType>(),
+                             b.create<ZExtOp>(cache.indexType, contextSize))});
+  Value contextValue = b.create<BitcastOp>(
+      contextPtrType, b.createConversion(cache.i8PtrType, allocCall));
 
   b.create<StoreOp>(b.create<AddressOfOp>(asyncFn),
                     b.create<GEPOp>(LLVMPointerType::get(cache.asyncFnType),
@@ -526,11 +519,9 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       // Materialize source and destination conversions.
       Type srcType = arg.getType();
       arg.setType(captureType);
-      arg =
-          b.create<mlir::UnrealizedConversionCastOp>(srcType, arg).getResult(0);
+      arg = b.createConversion(srcType, arg);
       b.setInsertionPoint(op);
-      capture = b.create<mlir::UnrealizedConversionCastOp>(captureType, capture)
-                    .getResult(0);
+      capture = b.createConversion(captureType, capture);
     }
     mlir::replaceAllUsesInRegionWith(valueInBody, arg, op.getRegion());
   }

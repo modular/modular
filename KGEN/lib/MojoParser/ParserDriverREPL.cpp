@@ -402,13 +402,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     Value alignOf = builder.create<KGEN::ParamConstantOp>(
         indexType, cast<TypedAttr>(alignOfAttr));
     // Allocate an aligned blob for the variable.
-    auto mallocCall = builder.create<POP::ExternalCallOp>(
-        POP::PointerType::get(POP::SIMDType::get(
-            1, builder.getAttr<KGEN::DTypeConstantAttr>(KGENDType::invalid))),
-        "KGEN_CompilerRT_AlignedAlloc", ArrayRef<Value>{alignOf, sizeOf});
-    Value mallocResult = mallocCall.getResult(0);
-    Value mallocCast =
-        builder.create<POP::PointerBitcastOp>(type, mallocResult);
+    Value mallocCast = builder.create<POP::AlignedAllocOp>(
+        type, ArrayRef<Value>{alignOf, sizeOf});
     builder.create<POP::StoreOp>(mallocCast, fieldLoad);
 
     // Return a pointer to the new address of the variable.

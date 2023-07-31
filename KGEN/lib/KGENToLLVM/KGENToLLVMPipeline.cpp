@@ -27,8 +27,9 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
   pm.addPass(createLowerKGENCoroutinesAsync());
-  pm.addPass(createLowerGlobalPOPToLLVM(
-      LowerGlobalPOPToLLVMOptions{/*disableGlobalDtors=*/options.isJIT}));
+  pm.addPass(createLowerGlobalPOPToLLVM(LowerGlobalPOPToLLVMOptions{
+      /*disableGlobalDtors=*/options.isJIT, options.alignedAllocFnName,
+      options.alignedFreeFnName}));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
 
   // And finally canonicalize again.
