@@ -1683,8 +1683,8 @@ public:
       // `noalias` result.
       func.setResultAttr(0, LLVM::LLVMDialect::getNoAliasAttrName(),
                          b.getUnitAttr());
-      // `allocalign` on second argument.
-      func.setArgAttr(1, LLVM::LLVMDialect::getAllocAlignAttrName(),
+      // `allocalign` on the first argument.
+      func.setArgAttr(0, LLVM::LLVMDialect::getAllocAlignAttrName(),
                       b.getUnitAttr());
 
       // `allockind("alloc,aligned,uninitialized")` enum encoding.
@@ -1695,12 +1695,12 @@ public:
                llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Aligned |
                llvm::AllocFnKind::Uninitialized)))}));
 
-      // `allocsize(0)` with `-1` in lower 32 bits.
+      // `allocsize(1)` with `-1` in lower 32 bits.
       // FIXME: The encoding of integer attributes is a string?!
       // FIXME: `packAllocSizeArgs` is not an exposed function.
-      passthrough.push_back(
-          b.getArrayAttr({b.getStringAttr("allocsize"),
-                          b.getStringAttr(Twine(uint32_t(-1)))}));
+      passthrough.push_back(b.getArrayAttr(
+          {b.getStringAttr("allocsize"),
+           b.getStringAttr(Twine(uint32_t(-1) | (uint64_t(1) << 32)))}));
       // `"alloc-family"="kgen_alloc"`.
       passthrough.push_back(
           b.getArrayAttr({b.getStringAttr("alloc-family"),

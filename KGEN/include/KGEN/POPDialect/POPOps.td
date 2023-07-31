@@ -1485,14 +1485,14 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc"> {
     Example:
 
     ```mlir
-    %0 = pop.aligned_alloc %size, %align : <struct<f32, f64>>
+    %0 = pop.aligned_alloc %align, %size : <struct<f32, f64>>
     ```
   }];
 
-  let arguments = (ins Index:$size, Index:$align);
+  let arguments = (ins Index:$align, Index:$size);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$ptr);
 
-  let assemblyFormat = "$size `,` $align attr-dict `:` type($ptr)";
+  let assemblyFormat = "$align `,` $size attr-dict `:` type($ptr)";
 }
 
 //===----------------------------------------------------------------------===//

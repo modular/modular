@@ -141,16 +141,16 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     %align = index.constant 8
     // CHECK: [[RAW_PTR:%.*]] = llvm.call @kgenAlignedAlloc
     // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr<i64>
-    %0 = pop.aligned_alloc %size, %align : <index>
+    %0 = pop.aligned_alloc %align, %size : <index>
     // CHECK: [[RAW_PTR:%.*]] = llvm.bitcast [[PTR]] : !llvm.ptr<i64> to !llvm.ptr
     // CHECK-NEXT: llvm.call @kgenAlignedFree([[RAW_PTR]])
     pop.aligned_free %0 : <index>
     llvm.return
   }
 
-  // CHECK: llvm.func @kgenAlignedAlloc(i64, i64 {llvm.allocalign}) -> (!llvm.ptr {llvm.noalias})
+  // CHECK: llvm.func @kgenAlignedAlloc(i64 {llvm.allocalign}, i64) -> (!llvm.ptr {llvm.noalias})
   // CHECK-DAG: ["allockind", "41"]
-  // CHECK-DAG: ["allocsize", "4294967295"]
+  // CHECK-DAG: ["allocsize", "8589934591"]
   // CHECK-DAG: ["alloc-family", "kgen_aligned_allocator"]
 
   // CHECK: llvm.func @kgenAlignedFree(!llvm.ptr {llvm.allocptr})

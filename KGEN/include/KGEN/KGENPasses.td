@@ -320,7 +320,7 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
     external functions. The signatures must be:
 
     ```
-    void *kgenAlignedAlloc(size: ssize_t, align: ssize_t);
+    void *kgenAlignedAlloc(ssize_t align, ssize_t size);
     void kgenAlignedFree(void *ptr);
     ```
   }];
