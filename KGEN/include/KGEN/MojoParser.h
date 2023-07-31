@@ -99,6 +99,10 @@ class MojoParserListener {
 public:
   virtual ~MojoParserListener() = default;
 
+  /// Returns true if the listener is interested in being notified for the given
+  /// location.
+  virtual bool isInterestedInLoc(llvm::SMLoc parserLoc);
+
   /// Notify the listener that a new `alias` declaration has been resolved by
   /// the parser.
   virtual void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);

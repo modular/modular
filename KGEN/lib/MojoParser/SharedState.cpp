@@ -1057,10 +1057,7 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
     loadModulesFromCache(modulesToLoad);
   }
 
-  if (parserListener)
-    parserListener->onModuleDecl(MojoASTDeclRef(&moduleDecl),
-                                 moduleDecl.getLoc());
-
+  notifyListenerOnModule(moduleDecl, moduleDecl.getLoc());
   return moduleState;
 }
 
@@ -1785,17 +1782,81 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
   }
 }
 
-void SharedState::notifyListenerOnImport(ASTDecl &packageDecl,
-                                         SMLoc importLoc) {
-  if (!parserListener)
+/// Return if the given parser listner is interested in the given location.
+static bool isListenerInterestedInLoc(MojoParserListener *listener, SMLoc loc) {
+  return listener && listener->isInterestedInLoc(loc);
+}
+
+void SharedState::notifyListenerOnAlias(ASTDecl &decl, SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onAliasDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnArgument(ASTDecl &decl, SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onArgumentDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnFunction(ASTDecl &decl, SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onFunctionDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnImport(SMLoc importLoc) {
+  if (isListenerInterestedInLoc(parserListener, importLoc))
+    parserListener->onImport(importLoc);
+}
+
+void SharedState::notifyListenerOnImport(
+    SMLoc importLoc, function_ref<ASTDecl &()> getPackageDecl) {
+  if (!isListenerInterestedInLoc(parserListener, importLoc))
+    return;
+  ASTDecl &packageDecl = getPackageDecl();
+  if (packageDecl.hasReferenceError)
     return;
   resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
   parserListener->onImport(&packageDecl, importLoc);
 }
 
 void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
-  if (!parserListener)
+  if (!isListenerInterestedInLoc(parserListener, lookupLoc))
     return;
   resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
   parserListener->onMemberLookup(&decl, lookupLoc);
+}
+
+void SharedState::notifyListenerOnModule(ASTDecl &decl, SMLoc identifierLoc) {
+  // TODO: This hook should likely be removed in favor of just `onRef`. It's
+  // used to index other modules for the sake of references, but we should just
+  // handle this when we see the reference.
+  if (parserListener)
+    parserListener->onModuleDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
+                                               StringRef spelling, SMLoc loc) {
+  if (isListenerInterestedInLoc(parserListener, loc))
+    parserListener->onModuleImport(&decl, spelling, loc);
+}
+
+void SharedState::notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onStructDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnStructField(ASTDecl &decl,
+                                              SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onStructFieldDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnVariable(ASTDecl &decl, SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onVariableDecl(&decl, identifierLoc);
+}
+
+void SharedState::notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
+                                      SMLoc loc) {
+  if (isListenerInterestedInLoc(parserListener, loc))
+    parserListener->onRef(&decl, spelling, loc);
 }

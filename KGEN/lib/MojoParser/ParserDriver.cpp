@@ -46,29 +46,29 @@ using llvm::SourceMgr;
 // MojoParserListener
 //===----------------------------------------------------------------------===//
 
+bool MojoParserListener::isInterestedInLoc(SMLoc parserLoc) { return true; }
 void MojoParserListener::onAliasDecl(MojoASTDeclRef declRef,
-                                     llvm::SMLoc identifierLoc) {}
+                                     SMLoc identifierLoc) {}
 void MojoParserListener::onArgumentDecl(MojoASTDeclRef declRef,
-                                        llvm::SMLoc identifierLoc) {}
+                                        SMLoc identifierLoc) {}
 void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
-                                        llvm::SMLoc identifierLoc) {}
-void MojoParserListener::onImport(llvm::SMLoc importLoc) {}
-void MojoParserListener::onImport(MojoASTDeclRef packageDecl,
-                                  llvm::SMLoc importLoc) {}
-void MojoParserListener::onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc loc) {}
+                                        SMLoc identifierLoc) {}
+void MojoParserListener::onImport(SMLoc importLoc) {}
+void MojoParserListener::onImport(MojoASTDeclRef packageDecl, SMLoc importLoc) {
+}
+void MojoParserListener::onMemberLookup(MojoASTDeclRef decl, SMLoc loc) {}
 void MojoParserListener::onModuleImport(MojoASTDeclRef declRef,
-                                        StringRef spelling,
-                                        llvm::SMLoc importLoc) {}
+                                        StringRef spelling, SMLoc importLoc) {}
 void MojoParserListener::onModuleDecl(MojoASTDeclRef declRef,
-                                      llvm::SMLoc identifierLoc) {}
+                                      SMLoc identifierLoc) {}
 void MojoParserListener::onStructDecl(MojoASTDeclRef declRef,
-                                      llvm::SMLoc identifierLoc) {}
+                                      SMLoc identifierLoc) {}
 void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
-                                           llvm::SMLoc identifierLoc) {}
+                                           SMLoc identifierLoc) {}
 void MojoParserListener::onVariableDecl(MojoASTDeclRef declRef,
-                                        llvm::SMLoc identifierLoc) {}
+                                        SMLoc identifierLoc) {}
 void MojoParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
-                               llvm::SMLoc loc) {}
+                               SMLoc loc) {}
 
 //===----------------------------------------------------------------------===//
 // MojoParserContext::Impl

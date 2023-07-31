@@ -247,6 +247,11 @@ public:
   LSPParserListener(MojoDocument &mainDoc, const llvm::SourceMgr &sourceMgr)
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
 
+  bool isInterestedInLoc(llvm::SMLoc parserLoc) override {
+    // We're only interested in locations in the main file.
+    return isMainFileLoc(sourceMgr, parserLoc);
+  }
+
   void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) override;
 
   void onArgumentDecl(MojoASTDeclRef declRef,
