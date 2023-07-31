@@ -515,6 +515,7 @@ struct OwningOutputChainPtr:
         """Returns non-owning pointer to same LLCL::OutputChain."""
         return OutputChainPtr(self.ptr)
 
+    @always_inline
     fn wait(self):
         """Returns only when the underlying LLCL::OutputChain is emplaced
         or set to an error. May execute arbitrary tasks while waiting.
@@ -523,6 +524,18 @@ struct OwningOutputChainPtr:
             self.ptr
         )
 
+    @always_inline
+    fn task_is_done(self):
+        """Indicates the caller's task is done for the purposes of task overhang
+        detection. Only needed for tasks which signal their completion by some
+        mechanism other than mark_ready() or mark_error(). Is a no-op unless
+        task overhang detection is enabled in the build.
+        """
+        external_call[
+            "KGEN_CompilerRT_LLCL_OutputChainPtr_TaskIsDone", NoneType
+        ](self.ptr)
+
+    @always_inline
     fn assert_ready(self):
         """Asserts that the underlying LLCL::OutputChain is ready.
 
@@ -613,6 +626,10 @@ struct AsyncTaskGroup:
         return prev - 1
 
     fn _task_complete(inout self):
+        # Indicate the current task is done for the purpose of task overhang
+        # detection. Is a no-op unless task overhang detection is enabled in
+        # the build.
+        self.out_chain.task_is_done()
         if self._counter_decr() == 0:
             self.out_chain.borrow().mark_ready()
             self.destroy()
