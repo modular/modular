@@ -639,7 +639,7 @@ kgen.generator @parametricAdd<size, dt: dtype>
 }
 
 // CHECK-LABEL: @stack_allocation
-kgen.generator @stack_allocation<size, type: type>() {
+kgen.generator @stack_allocation<size, type: type, address_space_val>() {
   // CHECK: pop.stack_allocation size x type
   %0 = pop.stack_allocation size x type
   // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32>
@@ -648,6 +648,12 @@ kgen.generator @stack_allocation<size, type: type>() {
   %2 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8
   // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align size
   %3 = pop.stack_allocation 16 x !pop.simd<4, f32> align size
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5
+  %4 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align 8 address_space 5
+  %5 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8 address_space 5
+  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> address_space address_space_val
+  %6 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space address_space_val
   kgen.return
 }
 

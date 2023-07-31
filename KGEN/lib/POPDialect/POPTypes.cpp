@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "mlir/IR/Builders.h"
@@ -19,6 +20,39 @@
 using namespace M;
 using namespace KGEN;
 using namespace POP;
+
+//===----------------------------------------------------------------------===//
+// Pretty Type Parsing and Printing utilities
+//===----------------------------------------------------------------------===//
+
+template <typename TypeT>
+static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
+  Type type = TypeT::parse(p);
+  if (!type)
+    return failure();
+  typeExpr = TypeConstantAttr::get(type);
+  return success();
+}
+
+static Type parseScalarType(AsmParser &p) {
+  TypedAttr resultDType;
+
+  // Parse literal '<' + dtype + literal '>'
+  if (p.parseLess() || failed(parseDTypeParamValue(p, resultDType)) ||
+      p.parseGreater())
+    return {};
+
+  return SIMDType::get(1, resultDType);
+}
+
+static ParseResult parsePrettyScalarType(AsmParser &p, TypedAttr &typeExpr) {
+  Type t = parseScalarType(p);
+  if (isa_and_nonnull<SIMDType>(t)) {
+    typeExpr = TypeConstantAttr::get(t);
+    return success();
+  }
+  return failure();
+}
 
 //===----------------------------------------------------------------------===//
 // ArrayType
@@ -133,27 +167,40 @@ ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr type) {
-  if (type && !type.getType().isa<MLIRTypeType>())
+                                  TypedAttr type, TypedAttr addressSpace) {
+  if (type && !::isa<MLIRTypeType>(type.getType()))
     return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
+  if (addressSpace && !addressSpace.getType().isIndex())
+    return emitError() << "address space parameter `" << addressSpace
+                       << "` must be an index type";
   return success();
 }
 
 Type PointerType::getElementAsType() const {
   TypedAttr elemType = getElementType();
-  if (auto typeCst = llvm::dyn_cast<TypeConstantAttr>(elemType))
+  if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
     return typeCst.getValue();
   assert(::isa<MLIRTypeType>(elemType.getType()) &&
          "parameter expr must have metatype type");
   return ParamRefType::get(elemType);
 }
 
-PointerType PointerType::get(TypedAttr elementType) {
-  return PointerType::get(elementType.getContext(), elementType);
+PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
+  MLIRContext *ctx = elementType.getContext();
+  return PointerType::get(ctx, elementType,
+                          IntegerAttr::get(IndexType::get(ctx), addressSpace));
 }
 
-PointerType PointerType::get(Type elementType) {
-  return PointerType::get(TypeConstantAttr::get(elementType));
+PointerType PointerType::get(Type elementType, unsigned addressSpace) {
+  return get(TypeConstantAttr::get(elementType), addressSpace);
+}
+
+PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
+  return get(addressSpace.getContext(), elementType, addressSpace);
+}
+
+PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
+  return get(TypeConstantAttr::get(elementType), addressSpace);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
@@ -477,8 +524,8 @@ POP::PackType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 std::optional<int64_t> POP::PackType::getTypeSize(TargetInfoAttr target) const {
-  // A pack backed by an attribute has a size equivalent to a struct composed of
-  // the elements in the sequence.
+  // A pack backed by an attribute has a size equivalent to a struct composed
+  // of the elements in the sequence.
   if (auto attr = getVariadicAttr())
     return getPackedElementsTypeSize(attr.getValues(), target);
 
@@ -490,8 +537,8 @@ std::optional<int64_t> POP::PackType::getTypeSize(TargetInfoAttr target) const {
 std::optional<int64_t>
 POP::PackType::getTypeAlign(TargetInfoAttr target) const {
   TypedAttr variadic = getVariadic();
-  // A pack backed by an attribute has alignment equivalent to a struct composed
-  // of the elements in the sequence.
+  // A pack backed by an attribute has alignment equivalent to a struct
+  // composed of the elements in the sequence.
   if (auto attr = ::dyn_cast<VariadicAttr>(variadic))
     return getPackedElementsTypeAlign(attr.getValues(), target);
   // A pack backed by an expression has alignment equivalent to the variadic
@@ -563,8 +610,8 @@ Type VariantType::getType(unsigned index) {
 }
 
 /// Compute the size in bytes of just the content section of a variant. The
-/// content field is the biggest element size rounded up to the nearest multiple
-/// of the content element type size, which is i64.
+/// content field is the biggest element size rounded up to the nearest
+/// multiple of the content element type size, which is i64.
 static std::optional<int64_t> computeVariantContentSize(VariantType type,
                                                         TargetInfoAttr target) {
   int64_t maxSize = 0;
@@ -698,35 +745,6 @@ CoroutineType CoroutineType::get(SignatureType sig) {
 // Pretty Type Parsing and Printing
 //===----------------------------------------------------------------------===//
 
-template <typename TypeT>
-static ParseResult parsePrettyTypeImpl(AsmParser &p, TypedAttr &typeExpr) {
-  Type type = TypeT::parse(p);
-  if (!type)
-    return failure();
-  typeExpr = TypeConstantAttr::get(type);
-  return success();
-}
-
-static Type parseScalarType(AsmParser &p) {
-  TypedAttr resultDType;
-
-  // Parse literal '<' + dtype + literal '>'
-  if (p.parseLess() || failed(parseDTypeParamValue(p, resultDType)) ||
-      p.parseGreater())
-    return {};
-
-  return SIMDType::get(1, resultDType);
-}
-
-static ParseResult parsePrettyScalarType(AsmParser &p, TypedAttr &typeExpr) {
-  Type t = parseScalarType(p);
-  if (isa_and_nonnull<SIMDType>(t)) {
-    typeExpr = TypeConstantAttr::get(t);
-    return success();
-  }
-  return failure();
-}
-
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix or a symbol reference.
 ParseResult POP::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
@@ -749,7 +767,8 @@ ParseResult POP::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
 
   StringRef typeName;
   // Try to parse a keyword for a known POP type. Allow `dtype` for
-  // `!kgen.dtype` as well. If this fails, defer to the parameter value parser.
+  // `!kgen.dtype` as well. If this fails, defer to the parameter value
+  // parser.
   if (p.parseOptionalKeyword(
           &typeName,
           {ArrayType::getMnemonic(), PointerType::getMnemonic(),

@@ -552,28 +552,37 @@ LogicalResult VariantGetOp::verify() {
 //===----------------------------------------------------------------------===//
 
 /// Parse the element type of the allocated pointer type.
-static ParseResult parsePointerOf(AsmParser &p, Type &result) {
+static ParseResult parsePointerOf(AsmParser &p, Type &result,
+                                  TypedAttr &alignment,
+                                  TypedAttr &addressSpace) {
   TypedAttr elementType;
-  if (parseTypeParamValue(p, elementType))
+  if (parseTypeParamValue(p, elementType) ||
+      KGEN::parseOptionalAlignmentParamValue(p, alignment) ||
+      KGEN::parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
-  result = PointerType::get(elementType);
+
+  result = PointerType::get(elementType, addressSpace);
   return success();
 }
 
 /// Print the element type of the allocated pointer type.
-static void printPointerOf(AsmPrinter &p, Operation *op, Type result) {
-  printTypeParamValue(p, result.cast<PointerType>().getElementType());
+static void printPointerOf(AsmPrinter &p, Operation *op, Type result,
+                           TypedAttr alignment, TypedAttr addressSpace) {
+  printTypeParamValue(p, cast<PointerType>(result).getElementType());
+  KGEN::printOptionalAlignmentParamValue(p, op, alignment);
+  KGEN::printOptionalAddressSpaceParamValue(p, op, addressSpace);
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
-                              TypedAttr count) {
-  build(b, state, result, count, TypedAttr());
+                              TypedAttr count, TypedAttr alignment,
+                              unsigned addressSpace) {
+  build(b, state, result, count, alignment, b.getIndexAttr(addressSpace));
 }
 
 void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
-                              int64_t count) {
-  auto countAttr = b.getIndexAttr(count);
-  build(b, state, result, countAttr);
+                              int64_t count, TypedAttr alignment,
+                              unsigned addressSpace) {
+  build(b, state, result, b.getIndexAttr(count), alignment, addressSpace);
 }
 
 //===----------------------------------------------------------------------===//

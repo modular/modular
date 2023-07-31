@@ -705,8 +705,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the same dtype. The
-    pointer cannot have a `?` element type. An optional `align` attribute can be
-    provided to specify the alignment of the load.
+    pointer cannot have a `?` element type.
 
     Example:
 
@@ -1383,15 +1382,19 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
   let description = [{
     The `pop.stack_allocation` operation allocates statically-sized scoped
     memory on the stack. The operation returns a pointer to the allocated memory
-    of count elements aligned to the element type. An optional `align` attribute
-    can be provided to specify the alignment of the allocation.
+    of count elements aligned to the element type.
+
+    The user can specifiy the alignment of the allocation via the optional
+    `align` attribute. Similarly, the user can provide the address space
+    of the allocation via the `address_space` parameter.
 
     Example:
 
     ```mlir
     %0 = pop.stack_allocation count x !pop.simd<4, f32>
     %1 = pop.stack_allocation count x !pop.scalar<ui64>
-    %1 = pop.stack_allocation count x !pop.scalar<ui64> align 8
+    %2 = pop.stack_allocation count x !pop.scalar<ui64> align 8
+    %3 = pop.stack_allocation count x !pop.scalar<ui64> align 8 address_space 5
     ```
 
     The allocated memory is automatically released when control tranfers back
@@ -1445,18 +1448,25 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
   }];
 
   let arguments = (ins AttrOfType<Index>:$count,
-                       OptionalAttr<AttrOfType<Index>>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       OptionalAttr<AttrOfType<Index>>:$addressSpace);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
-    custom<OptionalAlignmentParamValue>($alignment) attr-dict
+    custom<IndexParamValue>($count) `x`
+    custom<PointerOf>(type($result), $alignment, $addressSpace) `` attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins "Type":$result, "TypedAttr":$count)>,
-    OpBuilder<(ins "Type":$result, "int64_t":$count)>
+    OpBuilder<(ins "Type":$result,
+                   "int64_t":$count,
+                   CArg<"TypedAttr", "TypedAttr()">:$alignment,
+                   CArg<"unsigned", "0">:$addressSpace)>,
+    OpBuilder<(ins "Type":$result,
+                   "TypedAttr":$count,
+                   CArg<"TypedAttr", "TypedAttr()">:$alignment,
+                   CArg<"unsigned", "0">:$addressSpace)>
   ];
 }
 
@@ -1569,7 +1579,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$value, 
+  let arguments = (ins TypedAttrInterface:$value,
                         OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs POP_PointerType:$result);
 
