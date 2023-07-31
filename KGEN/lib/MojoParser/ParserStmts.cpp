@@ -1444,13 +1444,38 @@ ParseResult StmtParser::parseFromImportStmt() {
     return success();
   }
 
+  // A functor used to signal to any parser listener that we're importing a decl
+  // from the module. If we do emit any notifications, keep track of the
+  // currently resolved parent module/package so that the listener can have
+  // context for the import.
+  ASTDecl *currentResolvedModule = nullptr;
+  auto notifyListenerOfImport = [&]() {
+    if (!shared.parserListener)
+      return;
+    SMLoc loc = getToken().getLoc();
+    shared.notifyListenerOnMemberLookup(loc, [&]() -> ASTDecl & {
+      // Resolve the module if we haven't yet.
+      if (!currentResolvedModule) {
+        currentResolvedModule = &shared.importModule(
+            moduleAttr,
+            curDeclScope->getIfOperation()->getParentOfType<PackageOp>(), loc);
+      }
+      return *currentResolvedModule;
+    });
+  };
+
   // Parse the set of constructs to import.
   bool isTupleImport = consumeIf(Token::l_paren);
   do {
     // Parse the next construct to import.
     SMLoc importSourceNameLoc = getToken().getLoc();
     StringRef importSourceName = getTokenSpelling();
-    if (parseToken(Token::identifier, "expected construct name to import"))
+    bool missingIdentifier = failed(
+        parseToken(Token::identifier, "expected construct name to import"));
+    notifyListenerOfImport();
+
+    // If there was no identifier, then we're done.
+    if (missingIdentifier)
       return failure();
     StringRef importDestName = importSourceName;
     if (consumeIf(Token::kw_as)) {
@@ -1561,10 +1586,15 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
   }
 
   // Parse the first module name.
+  StringRef rootModuleName = getTokenSpelling();
+  bool missingIdentifier =
+      failed(parseToken(Token::identifier, "expected module name"));
   notifyListenerOfImport();
-  moduleNames.push_back(getTokenSpelling());
-  if (parseToken(Token::identifier, "expected module name"))
+
+  // If there was no identifier, then we're done.
+  if (missingIdentifier)
     return failure();
+  moduleNames.push_back(rootModuleName);
 
   // Parse nested module names.
   while (consumeIf(Token::dot)) {

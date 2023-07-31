@@ -35,7 +35,7 @@ async def test_completion_import(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-import IO
+import B
 """,
     )
     requests = Requests(client)
@@ -44,7 +44,7 @@ import IO
     results = fail_if_none(
         await client.text_document_completion_async(
             params=CompletionParams(
-                position=Position(line=1, character=6),
+                position=Position(line=1, character=8),
                 text_document=doc.identifier,
             )
         )
@@ -85,6 +85,35 @@ import Builtin.
 
     assert any(
         item.label == "Bool" and item.kind == CompletionItemKind.Module
+        for item in items
+    )
+
+
+async def test_completion_import_member(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+from Pointer import P
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    results = fail_if_none(
+        await client.text_document_completion_async(
+            params=CompletionParams(
+                position=Position(line=1, character=21),
+                text_document=doc.identifier,
+            )
+        )
+    )
+    if isinstance(results, CompletionList):
+        items = results.items
+    else:
+        items = results
+
+    assert any(
+        item.label == "Pointer" and item.kind == CompletionItemKind.Struct
         for item in items
     )
 
