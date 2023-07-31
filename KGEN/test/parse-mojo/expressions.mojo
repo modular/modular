@@ -1245,7 +1245,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: pop.variadic.get %{{.*}}[%idx3]
     let v1 = a[3]
     # CHECK: %[[IDX:.*]] = kgen.call {{.*}}__index__
-    # CHECK-NEXT: %[[MLIR_IDX:.*]] = kgen.call {{.*}}__as_mlir_index{{.*}}%[[IDX]]
+    # CHECK-NEXT: %[[MLIR_IDX:.*]] = kgen.call {{.*}}__mlir_index__{{.*}}%[[IDX]]
     # CHECK-NEXT: pop.variadic.get %b[%[[MLIR_IDX]]]
     let v2 = b[idx]
 

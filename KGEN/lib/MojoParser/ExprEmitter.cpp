@@ -1440,7 +1440,7 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
   assert(numberValue.getType().isa<KGEN::DeclRefType>() &&
          "number value must be a struct");
   AnyValue index = emitNamedMethodCall(
-      "__as_mlir_index", {{SRValue(numberValue), source}}, ValueDest::none(),
+      "__mlir_index__", {{SRValue(numberValue), source}}, ValueDest::none(),
       CallSyntax::kImplicitConvert, source);
   if (!index)
     return {};

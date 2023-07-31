@@ -1600,7 +1600,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Convert the index value to an MLIR index type.
     indexDest = {EC_Subscript};
     CValue mlirIndex = emitter.emitNamedMethodCall(
-        "__as_mlir_index", {{index, indexExpr}}, indexDest,
+        "__mlir_index__", {{index, indexExpr}}, indexDest,
         CallSyntax::kMethodCall, indexExpr);
     if (!mlirIndex)
       return {};
