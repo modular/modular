@@ -83,6 +83,16 @@ struct LowerToLLVMOptions
                                   "llvm",
                                   "Generate debug info for the LLVM level."))};
 
+  Option<std::string> alignedAllocFnName{
+      *this, "aligned-alloc-fn-name",
+      llvm::cl::desc("The name of the aligned allocator function"),
+      llvm::cl::init("kgenAlignedAlloc")};
+
+  Option<std::string> alignedFreeFnName{
+      *this, "aligned-free-fn-name",
+      llvm::cl::desc("The name of the aligned free function"),
+      llvm::cl::init("kgenAlignedFree")};
+
   Option<bool> isJIT{
       *this, "is-jit",
       llvm::cl::desc("True if the module is being compiled for JIT mode.")};

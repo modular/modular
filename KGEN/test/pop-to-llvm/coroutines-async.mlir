@@ -25,8 +25,7 @@ llvm.func @coro_resume() {
 // CHECK-LABEL: llvm.func @coro_destroy
 llvm.func @coro_destroy() {
   %0 = "make_handle"() : () -> !pop.coroutine<() -> (i32, i64)>
-  // CHECK: %2 = llvm.bitcast %1
-  // CHECK-NEXT: external_call @KGEN_CompilerRT_AlignedFree(%2)
+  // CHECK: pop.aligned_free {{.*}} : <i8>
   pop.coroutine.destroy %0 : !pop.coroutine<() -> (i32, i64)>
   llvm.return
 }
@@ -103,8 +102,11 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[CTXT_SZ_PTR:.*]] = llvm.getelementptr inbounds %[[AFP_CASTED]][0, 1]
 // CHECK-NEXT: %[[CTXT_SZ_i32:.*]] = llvm.load %[[CTXT_SZ_PTR]]
 // CHECK-NEXT: %[[CTXT_ALIGN:.*]] = llvm.mlir.constant(8 : i64) : i64
+// CHECK-NEXT: %[[CTXT_ALIGN_INDEX:.*]] = builtin.unrealized_conversion_cast %[[CTXT_ALIGN]] : i64 to index
 // CHECK-NEXT: %[[CTXT_SZ:.*]] = llvm.zext %[[CTXT_SZ_i32]] : i32 to i64
-// CHECK-NEXT: %[[MEM:.*]] = pop.external_call @KGEN_CompilerRT_AlignedAlloc(%[[CTXT_ALIGN]], %[[CTXT_SZ]])
+// CHECK-NEXT: %[[CTXT_SZ_INDEX:.*]] = builtin.unrealized_conversion_cast %[[CTXT_SZ]] : i64 to index
+// CHECK-NEXT: %[[MEM_I8:.*]] = pop.aligned_alloc %[[CTXT_ALIGN_INDEX]], %[[CTXT_SZ_INDEX]] : <i8>
+// CHECK-NEXT: %[[MEM:.*]] = builtin.unrealized_conversion_cast %[[MEM_I8]]
 // CHECK-NEXT: %[[FRAME:.*]] = llvm.bitcast %[[MEM]]
 // CHECK-DAG: %[[AF:.*]] = llvm.mlir.addressof @async_fn_af
 // CHECK-DAG: %[[RESUME_FN_PTR:.*]] = llvm.getelementptr inbounds %[[FRAME]][0, 0]

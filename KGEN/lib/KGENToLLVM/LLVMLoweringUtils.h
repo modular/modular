@@ -132,6 +132,11 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
     return createLLVMFunc(*this, getTarget(), getLoc(),
                           std::forward<Args>(args)...);
   }
+
+  /// Create an `unrealized_conversion_cast` operation.
+  Value createConversion(Type type, Value src) {
+    return create<mlir::UnrealizedConversionCastOp>(type, src).getResult(0);
+  }
 };
 
 //===----------------------------------------------------------------------===//

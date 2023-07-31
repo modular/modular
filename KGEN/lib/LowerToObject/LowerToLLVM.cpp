@@ -75,6 +75,9 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);
   llvmOptions.isJIT = isJIT;
+  // Use KGENCompilerRT allocators.
+  llvmOptions.alignedAllocFnName = "KGEN_CompilerRT_AlignedAlloc";
+  llvmOptions.alignedFreeFnName = "KGEN_CompilerRT_AlignedFree";
   buildLowerToLLVMPipeline(*mgr, llvmOptions);
   if (failed(mgr->run(module)))
     return nullptr;
