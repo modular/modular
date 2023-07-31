@@ -14,9 +14,10 @@ add_modular_unittest(
   AsyncValueTest.cpp
   DebuggingAllocatorsTest.cpp
   GenericUniquePtrTest.cpp
+  ResourceTest.cpp
+  RuntimeTest.cpp
   TelemetryTest.cpp
   TypeIDTest.cpp
-  RuntimeTest.cpp
 
   LINK_LIBS PRIVATE
   LLCLRuntime

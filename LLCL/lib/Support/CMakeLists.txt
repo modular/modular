@@ -26,6 +26,7 @@ add_modular_library(LLCLSupport
   FileLocationDecoder.cpp
   Location.cpp
   ReferenceCounted.cpp
+  Resource.cpp
   Semaphore.cpp
   SpinWaiter.cpp
   ThreadAffinity.cpp
