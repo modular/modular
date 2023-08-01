@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
+
 from Buffer import Buffer
 from DType import DType
 from Functional import async_parallelize, sync_parallelize, parallelize, map
