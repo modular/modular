@@ -120,14 +120,6 @@ macro(_setup_arch)
   endif()
 endmacro()
 
-# This function reads the cmake configuration and constructs the `-D` flags it
-# needs to pass in to Mojo and KGEN.
-macro(_setup_defines)
-  if (MODULAR_PARANOID)
-    set(MOJO_DEFINES "-DMODULAR_PARANOID")
-  endif()
-endmacro()
-
 # This target represents the full mojo-sdk, and builds both `mojo` and all of
 # the necessary standard library packages.
 add_custom_target(mojo-sdk DEPENDS mojo)
@@ -154,7 +146,6 @@ function(add_mojo_package target)
 
   _setup_libs()
   _setup_arch()
-  _setup_defines()
   _setup_debug_flags()
 
   if (NOT KGEN_PACKAGE_DIR)
@@ -205,7 +196,6 @@ function(add_mojo_package target)
 
     COMMAND $<TARGET_FILE:mojo> package
     ${MOJO_ARCH_FLAGS}
-    ${MOJO_DEFINES}
     ${KGEN_PACKAGE_DIR} --name ${KGEN_OUTPUT_NAME}
     -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
@@ -247,7 +237,6 @@ function(add_kgen_library target)
 
   _setup_libs()
   _setup_arch()
-  _setup_defines()
   _setup_debug_flags()
 
   if (NOT KGEN_OUTPUT)
@@ -258,7 +247,6 @@ function(add_kgen_library target)
     OUTPUT ${KGEN_OUTPUT}
     COMMAND $<TARGET_FILE:kgen>
       ${MOJO_ARCH_FLAGS}
-      ${MOJO_DEFINES}
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
       -O${KGEN_OPTIMIZATION_LEVEL}
@@ -296,7 +284,6 @@ function(add_kgen_kernel target)
 
   _setup_libs()
   _setup_arch()
-  _setup_defines()
   _setup_debug_flags()
 
   if (MODULAR_KERNELS_USE_SANITIZER)
@@ -321,7 +308,6 @@ function(add_kgen_kernel target)
 
     COMMAND $<TARGET_FILE:kgen> -emit-header
     ${MOJO_ARCH_FLAGS}
-    ${MOJO_DEFINES}
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${header_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
     -d ${header_file_name_rel}.d
@@ -351,7 +337,6 @@ function(add_kgen_kernel target)
 
     COMMAND $<TARGET_FILE:kgen> -emit
     ${MOJO_ARCH_FLAGS}
-    ${MOJO_DEFINES}
     $<$<BOOL:${KGEN_SFF_DEBUG}>:-debug-only="select-fastest-function">
     $<$<BOOL:${KGEN_ENABLE_SEARCH}>:-enable-search>
     -o ${archive_file_name_rel} ${KGEN_INCLUDE_FLAGS} ${KGEN_SOURCE}
