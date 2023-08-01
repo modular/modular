@@ -30,6 +30,19 @@ HTTPContext::~HTTPContext() {
   curl_global_cleanup();
 }
 
+ErrorOrSuccess HTTPResponse::asError() {
+  switch (kind) {
+  case Success:
+    return success();
+  case TransportError:
+    assert(transportErrorMessage && "current error is not set");
+    return Error(llvm::formatv("http error: {0}", transportErrorMessage));
+  case HTTPResponseError:
+    assert(responseCode && "responseCode is not set");
+    return Error(llvm::formatv("http error: response code {0}", responseCode));
+  }
+}
+
 HTTPClient::HTTPClient(HTTPContextRef ctx) : context(std::move(ctx)) {
   curl = curl_easy_init();
   assert(curl && "libcurl could not be initialized");
@@ -58,10 +71,10 @@ static size_t streamWriter(char *contents, size_t size, size_t members,
   return len;
 }
 
-ErrorOrSuccess HTTPClient::executeRequest(const HTTPRequest &request,
-                                          raw_ostream &os,
-                                          std::chrono::milliseconds timeout,
-                                          size_t maxLength) {
+HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
+                                        raw_ostream &os,
+                                        std::chrono::milliseconds timeout,
+                                        size_t maxLength) {
 
   RequestStreamReturn ret;
   ret.os = &os;
@@ -81,15 +94,32 @@ ErrorOrSuccess HTTPClient::executeRequest(const HTTPRequest &request,
   // Set our user data object for our callback.
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
   // Verify SSL certificate against peers
-  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
-                   request.verify_tls_peer ? 1 : 0);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, request.verifyTLSPeer ? 1 : 0);
+  // Let the server know who we are.
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, "modular-installer/0.1");
 
   // Execute our reqeust.
   CURLcode res = curl_easy_perform(curl);
 
+  HTTPResponse response;
+
   if (res != CURLE_OK) {
-    return Error(llvm::formatv("failed to reach URL {0} with cURL error {1}",
-                               request.URL, curl_easy_strerror(res)));
+    response.kind = HTTPResponse::Kind::TransportError;
+    response.transportErrorMessage =
+        llvm::formatv("http error: failed to reach URL {0} with cURL error {1}",
+                      request.URL, curl_easy_strerror(res));
+  } else {
+    // Check our response code.
+    long responseCode;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
+
+    response.responseCode = responseCode;
+
+    if (responseCode >= 400 && responseCode <= 599)
+      response.kind = HTTPResponse::Kind::HTTPResponseError;
+    else
+      response.kind = HTTPResponse::Kind::Success;
   }
-  return success();
+
+  return response;
 }
