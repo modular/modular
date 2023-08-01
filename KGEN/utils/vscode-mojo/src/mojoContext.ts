@@ -264,7 +264,11 @@ export class MOJOContext implements vscode.Disposable {
   dispose() {
     this.subscriptions.forEach((d) => { d.dispose(); });
     this.subscriptions = [];
-    this.workspaceClients.forEach((client) => { client.stop(); });
+    this.workspaceClients.forEach((client) => {
+      if (client) {
+        client.stop();
+      }
+    });
     this.workspaceClients.clear();
   }
 }
