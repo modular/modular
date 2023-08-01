@@ -33,6 +33,13 @@ def main():
         )
     )
 
+    # Grab the value of MODULAR_HOME from the environment.
+    modular_home = os.environ.get("MODULAR_HOME")
+    if not modular_home:
+        modular_home = os.environ.get("MODULAR_DERIVED_PATH")
+    if not modular_home:
+        raise RuntimeError("unable to resolve MODULAR_HOME path")
+
     # Generate the kernel.json file.
     kernel_json = {
         "display_name": "Mojo",
@@ -41,8 +48,8 @@ def main():
             str(kernel_install_dir / "mojokernel.py"),
             "-f",
             "{connection_file}",
-            "--modular-path",
-            str(os.environ["MODULAR_PATH"]),
+            "--modular-home",
+            str(modular_home),
         ],
         "language": "mojo",
         "codemirror_mode": "mojo",
