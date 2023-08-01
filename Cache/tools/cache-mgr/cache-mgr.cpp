@@ -58,8 +58,7 @@ public:
   /// Specify the target path for the CAS backend.
   cl::opt<std::string> fsPath{
       "base-dir",
-      cl::desc("Filesystem path for the CAS local storage. Defaults to a "
-               "temporary directory."),
+      cl::desc("URI for the CAS storage. Defaults to a temporary directory."),
       llvm::cl::init("")};
 
   cl::opt<std::string> outFile{
@@ -74,8 +73,8 @@ public:
       cl::desc("write the output hash in hex, rather than base64"),
       cl::init(false)};
 
-  /// Get the filesystem path for the CAS. Defaults to a temporary directory.
-  std::filesystem::path getFsPath() const;
+  /// Get the backend path for the CAS. Defaults to a temporary directory.
+  ErrorOr<URI> getBackendPath() const;
 };
 } // namespace
 
@@ -134,9 +133,17 @@ static std::string wrapKey(BinaryBlobCacheKey::KeyTy key,
 // CLOptions::getFsPath
 //===----------------------------------------------------------------------===//
 
-std::filesystem::path CLOptions::getFsPath() const {
+ErrorOr<URI> CLOptions::getBackendPath() const {
+  auto uriOr = URI::parse(fsPath.getValue());
+  if (uriOr.isError())
+    return uriOr.takeError();
+
+  // If the URI isn't a file:// URI, then just return it directly.
+  if (uriOr->getScheme() != "file")
+    return std::move(*uriOr);
+
   // Get the path provided to the command line if it exists.
-  std::filesystem::path out(fsPath.getValue());
+  std::filesystem::path out(uriOr->getPath().str());
   std::error_code ec;
   if (!out.empty()) {
     out = std::filesystem::absolute(out, ec);
@@ -191,8 +198,12 @@ int main(int argc, char **argv) {
   Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                   createThreadPoolWorkQueue());
 
-  auto backendChainOr = getLocalDefaultBackendChain(
-      runtime, clOptions.getFsPath(), clOptions.backendVersion);
+  auto backendPathOr = clOptions.getBackendPath();
+  if (backendPathOr.isError())
+    return clOptions.reportError(backendPathOr.getError());
+
+  auto backendChainOr =
+      getDefaultBackendChain(runtime, *backendPathOr, clOptions.backendVersion);
   if (backendChainOr.isError())
     return clOptions.reportError(backendChainOr.getError());
 
