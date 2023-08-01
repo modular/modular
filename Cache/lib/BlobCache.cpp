@@ -9,6 +9,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
@@ -587,6 +588,8 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
+    std::filesystem::path homePath = Config::getModularHomeDirPath();
+
     // Default to the .derived directory.
     if (auto path = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH")) {
       base = std::filesystem::absolute(*path, ec) / cacheDir;
@@ -597,6 +600,11 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
       base = std::filesystem::absolute(*path, ec) / cacheDir;
       if (ec)
         return Error("failed to get absolute path to installed dir: " +
+                     ec.message());
+    } else if (std::filesystem::exists(homePath, ec) && !ec) {
+      base = std::filesystem::absolute(homePath, ec) / cacheDir;
+      if (ec)
+        return Error("failed to get absolute path to modular home dir: " +
                      ec.message());
 #ifdef _WIN32
     } else if (auto path = findDirInEnvPath(cacheDir.string(), "PATH", ';')) {
