@@ -39,8 +39,10 @@ export function registerFormatter(outputChannel: vscode.OutputChannel,
           }
 
           // Formatter returned nothing, don't try to apply any edits.
-          if (originalDocumentText.length > 0 && stdout.length === 0)
+          if (originalDocumentText.length > 0 && stdout.length === 0) {
+            resolve([]);
             return;
+          }
 
           // Otherwise, the formatter returned the formatted text. Update the
           // document.
