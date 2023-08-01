@@ -8,10 +8,9 @@
 from Atomic import Atomic
 from Builtin.Coroutine import _coro_resume_fn
 from DType import DType
-from Intrinsics import external_call
-from ParamEnv import is_defined
 from Pointer import Pointer, DTypePointer
 from Range import range
+from Intrinsics import external_call
 from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
 
@@ -128,7 +127,6 @@ fn _async_complete(chain: Pointer[Chain]):
 # ===----------------------------------------------------------------------===#
 # Runtime
 # ===----------------------------------------------------------------------===#
-
 
 # FIXME(traits): This shouldn't be a register_passable type but we need this
 # until we have traits for proper parametric types.
@@ -631,9 +629,7 @@ struct AsyncTaskGroup:
         # Indicate the current task is done for the purpose of task overhang
         # detection. Is a no-op unless task overhang detection is enabled in
         # the build.
-        @parameter
-        if is_defined["MODULAR_PARANOID"]():
-            self.out_chain.task_is_done()
+        self.out_chain.task_is_done()
         if self._counter_decr() == 0:
             self.out_chain.borrow().mark_ready()
             self.destroy()
