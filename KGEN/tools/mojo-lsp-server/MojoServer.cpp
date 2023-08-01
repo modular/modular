@@ -162,10 +162,12 @@ public:
   SymbolIndex(const llvm::SourceMgr &sourceMgr)
       : sourceMgr(sourceMgr), rangeToSymbol(allocator) {}
 
-  /// Store a new symbol in this index.
-  template <typename... Args>
-  void registerSymbol(MojoASTDeclRef declRef,
-                      std::optional<StringRef> identifier, Args &&...args);
+  /// Store a new symbol in this index, unless its name is empty.
+  /// If the symbol is effectively stored, a pointer to it is returned,
+  /// otherwise nullptr is returned.
+  Symbol *registerSymbol(MojoASTDeclRef declRef,
+                         std::optional<StringRef> identifier,
+                         SMLoc identifierLoc);
 
   /// Store a new reference to a symbol. No error is thrown if the expected
   /// symbol doesn't exist in the index.
@@ -175,12 +177,14 @@ public:
   /// position in the document.
   Symbol *getSymbolAt(const lsp::Position &position) const;
 
+  /// Look for the symbol corresponding to the given decl in the symbol table.
+  /// Return nullptr if not found.
+  Symbol *findSymbol(MojoASTDeclRef declRef);
+
 private:
   /// Store the range corresponding to the reference or the declaration of a
   /// symbol in the main doc.
-  void insertRangeInMainDoc(const lsp::Range &range, Symbol &symbol) {
-    rangeToSymbol.insert(range.start, range.end, &symbol);
-  }
+  void insertRangeInMainDoc(const lsp::Range &range, Symbol &symbol);
 
   using MapT = llvm::IntervalMap<
       lsp::Position, Symbol *,
@@ -195,22 +199,35 @@ private:
 };
 } // namespace
 
-template <typename... Args>
-void SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
-                                 std::optional<StringRef> identifier,
-                                 Args &&...args) {
+Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
+  if (auto it = symbolTable.find(declRef.getAsVoidPointer());
+      it != symbolTable.end())
+    return it->getSecond().get();
+  return nullptr;
+}
+
+void SymbolIndex::insertRangeInMainDoc(const lsp::Range &range,
+                                       Symbol &symbol) {
+  if (!rangeToSymbol.overlaps(range.start, range.end))
+    rangeToSymbol.insert(range.start, range.end, &symbol);
+}
+
+Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
+                                    std::optional<StringRef> identifier,
+                                    SMLoc identifierLoc) {
   // We don't index symbols without a proper name.
   if (!identifier.has_value() || identifier->empty())
-    return;
+    return nullptr;
 
   auto [it, _] = symbolTable.try_emplace(
       declRef.getAsVoidPointer(),
-      std::make_unique<Symbol>(declRef, *identifier, args...));
+      std::make_unique<Symbol>(declRef, *identifier, identifierLoc));
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
   if (isMainFileLoc(sourceMgr, symbol.identifierLoc))
     insertRangeInMainDoc(symbol.getIdentifierRange(sourceMgr), symbol);
+  return &symbol;
 }
 
 void SymbolIndex::registerRef(MojoASTDeclRef declRef, SMLoc loc,
@@ -220,13 +237,15 @@ void SymbolIndex::registerRef(MojoASTDeclRef declRef, SMLoc loc,
   if (spelling.empty() || !isMainFileLoc(sourceMgr, loc))
     return;
 
-  auto it = symbolTable.find(declRef.getAsVoidPointer());
-  // If haven't indexed the decl, we do nothing.
-  if (it == symbolTable.end())
-    return;
+  Symbol *symbol = findSymbol(declRef);
 
-  insertRangeInMainDoc(getRangeForText(sourceMgr, loc, spelling),
-                       *it->getSecond());
+  // If we don't have the symbol in the symbol table, we try to register it,
+  // as it might come from a non-main doc.
+  if (!symbol)
+    symbol = registerSymbol(declRef, declRef.getName(), declRef.getLoc());
+
+  if (symbol)
+    insertRangeInMainDoc(getRangeForText(sourceMgr, loc, spelling), *symbol);
 }
 
 Symbol *SymbolIndex::getSymbolAt(const lsp::Position &position) const {

@@ -587,3 +587,40 @@ Implements SIMD struct.
 
 """,
     )
+
+
+async def test_hover_external_symbol(client: LanguageClient):
+    doc = Document.from_file("aliases.mojo")
+
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_hover(func_name: str, expected: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert result.contents.value == expected
+
+    await assert_hover(
+        "IDENTITY",
+        """### alias `IDENTITY`
+
+---
+
+###
+```mojo
+alias IDENTITY = 0
+```""",
+    )
+
+    await assert_hover(
+        "ExternalAlias",
+        """### alias `ExternalAlias`
+
+---
+
+###
+```mojo
+alias ExternalAlias = 0
+```""",
+    )
