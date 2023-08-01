@@ -7,23 +7,6 @@
 include(AddPython)
 modular_find_python3_development()
 
-# `mojo repl` calls out to `lldb` in a subprocess (for now). As such, it needs
-# to locate the `lldb` executable to use, and currently this is done by invoking
-# an `lldb` that resides in the same directory as `mojo`. `lldb` itself locates
-# the dynamic libraries it relies upon by searching paths relative to itself.
-# LLVM's build places these libraries at the correct paths, so, rather than
-# copying `lldb` to a location alongside `mojo` (and thus breaking the relative
-# paths), create a symlink to its location in the LLVM build tree.
-if(LLDB_FOUND)
-  find_program(lldb_path "lldb"
-    PATHS "${LLVM_BUILD_DIR}/bin"
-    NO_DEFAULT_PATH NO_CACHE REQUIRED)
-  add_custom_target(mojo-lldb
-    COMMAND ${CMAKE_COMMAND} -E create_symlink
-            ${lldb_path} ${MODULAR_TOOLS_DIR}/lldb
-    DEPENDS ${lldb_path})
-endif()
-
 add_modular_tool(mojo
   mojo.cpp
   Build/mojo-build.cpp
@@ -38,7 +21,6 @@ add_modular_tool(mojo
 
   DEPENDS
   orc-rt-cas
-  mojo-lldb
   compiler-rt-cas
   KGENCompilerRT-static
 
@@ -67,6 +49,24 @@ add_modular_tool(mojo
 
   LLVMOption
   )
+
+# `mojo repl` calls out to `lldb` in a subprocess (for now). As such, it needs
+# to locate the `lldb` executable to use, and currently this is done by invoking
+# an `lldb` that resides in the same directory as `mojo`. `lldb` itself locates
+# the dynamic libraries it relies upon by searching paths relative to itself.
+# LLVM's build places these libraries at the correct paths, so, rather than
+# copying `lldb` to a location alongside `mojo` (and thus breaking the relative
+# paths), create a symlink to its location in the LLVM build tree.
+if(LLDB_FOUND)
+  find_program(lldb_path "lldb"
+    PATHS "${LLVM_BUILD_DIR}/bin"
+    NO_DEFAULT_PATH NO_CACHE REQUIRED)
+  add_custom_target(mojo-lldb
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+            ${lldb_path} ${MODULAR_TOOLS_DIR}/lldb
+    DEPENDS ${lldb_path})
+  add_dependencies(mojo mojo-lldb)
+endif()
 
 # An umbrella target for all driver TableGen targets.
 add_custom_target(MojoDriverOptions)
