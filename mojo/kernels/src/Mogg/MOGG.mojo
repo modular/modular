@@ -839,9 +839,6 @@ fn mean[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
@@ -855,7 +852,7 @@ fn mean[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+    let reduce_dim = axis_buffer[0].to_int()
 
     # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
     # can be fused
@@ -896,7 +893,7 @@ fn mean[
             input_0_fn,
             wrapped_output_mul,
             reduce_impl,
-        ](input_buffer, 0, reduce_dim, out_chain)
+        ](input_buffer.dynamic_shape, 0, reduce_dim, out_chain)
 
     else:
         # For ints just a normal divide.
@@ -918,7 +915,7 @@ fn mean[
             input_0_fn,
             wrapped_output_div,
             reduce_impl,
-        ](input_buffer, 0, reduce_dim, out_chain)
+        ](input_buffer.dynamic_shape, 0, reduce_dim, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -966,15 +963,12 @@ fn reduce_add[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    input_shape: StaticIntTuple[rank],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -982,7 +976,7 @@ fn reduce_add[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn reduce_impl[
@@ -998,7 +992,7 @@ fn reduce_add[
         input_0_fn,
         output_0_fn,
         reduce_impl,
-    ](input_buffer, 0, reduce_dim, out_chain)
+    ](input_shape, 0, reduce_dim, out_chain)
 
 
 @always_inline
@@ -1011,15 +1005,12 @@ fn reduce_max[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    input_shape: StaticIntTuple[rank],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -1027,7 +1018,7 @@ fn reduce_max[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn reduce_impl[
@@ -1043,7 +1034,7 @@ fn reduce_max[
         input_0_fn,
         output_0_fn,
         reduce_impl,
-    ](input_buffer, min_or_neginf[type](), reduce_dim, out_chain)
+    ](input_shape, min_or_neginf[type](), reduce_dim, out_chain)
 
 
 @always_inline
@@ -1056,15 +1047,12 @@ fn reduce_min[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    input_shape: StaticIntTuple[rank],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[rank](), index_type],
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -1072,7 +1060,7 @@ fn reduce_min[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+    let reduce_dim = axis_buffer[0].to_int()
 
     @always_inline
     fn reduce_impl[
@@ -1088,7 +1076,7 @@ fn reduce_min[
         input_0_fn,
         output_0_fn,
         reduce_impl,
-    ](input_buffer, max_or_inf[type](), reduce_dim, out_chain)
+    ](input_shape, max_or_inf[type](), reduce_dim, out_chain)
 
 
 @always_inline
@@ -1101,15 +1089,12 @@ fn reduce_mul[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
+    input_shape: StaticIntTuple[rank],
+    axis: NDBuffer[1, DimList.create_unknown[rank](), index_type],
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -1117,7 +1102,7 @@ fn reduce_mul[
 
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
-    let reduce_dim = input_1_fn[index_type, 1, 1](0).to_int()
+    let reduce_dim = axis[0].to_int()
 
     @always_inline
     fn reduce_impl[
@@ -1133,7 +1118,7 @@ fn reduce_mul[
         input_0_fn,
         output_0_fn,
         reduce_impl,
-    ](input_buffer, 1, reduce_dim, out_chain)
+    ](input_shape, 1, reduce_dim, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1360,27 +1345,21 @@ fn gather[
     input_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, width],
-    input_1_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    input_2_fn: fn[type: DType, width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[in_rank, DimList.create_unknown[in_rank](), type],
+    input_shape: StaticIntTuple[in_rank],
     indices: NDBuffer[
         indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
-    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buffer: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
     out_chain: OutputChainPtr,
 ):
     # Look through the lambda to pull the index out.
     alias axis_static = Dim()
-    let axis = input_2_fn[axis_type, 1, 1](0).to_int()
+    let axis = axis_buffer[0].to_int()
 
     let axis_normalized = OptionalParamInt[axis_static](
         axis + in_rank if axis < 0 else axis
@@ -1396,6 +1375,19 @@ fn gather[
     ):
         pass
 
+    # TODO: This is disabled as if we make this a shape without a spec we have
+    # nothing to deduce `indices_type` from.
+    @parameter
+    @always_inline
+    fn load_indices[
+        _type: DType, width: Int, _rank: Int
+    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](
+            indices.simd_load[width](
+                rebind[StaticIntTuple[indices_rank]](coords)
+            )
+        )
+
     _gather[
         type,
         in_rank,
@@ -1405,11 +1397,11 @@ fn gather[
         simd_width,
         single_thread_blocking_override,
         input_0_fn,
-        input_1_fn,
+        load_indices,
         output_0_fn,
         no_prefetch,
         axis_static,
-    ](axis_normalized, input, indices, output, out_chain)
+    ](axis_normalized, input_shape, indices.dynamic_shape, output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
