@@ -376,7 +376,7 @@ struct SharedState::ModuleState {
   ASTDecl *decl = nullptr;
   /// An optional bytecode reader, in the case where this decl was loaded from
   /// bytecode as opposed to source.
-  std::optional<mlir::BytecodeReader> bytecodeReader;
+  std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   /// The optional source path of this module if it was loaded from source.
   std::optional<std::string> sourcePath;
 
@@ -916,9 +916,10 @@ void SharedState::loadModulesFromCache(
                                           SMLoc());
             const llvm::MemoryBuffer *memoryBuf =
                 sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
-            moduleState->bytecodeReader.emplace(memoryBuf->getMemBufferRef(),
-                                                impl->bytecodeParserContext,
-                                                /*lazyLoad=*/true, sourceMgr);
+            moduleState->bytecodeReader =
+                std::make_unique<mlir::BytecodeReader>(
+                    memoryBuf->getMemBufferRef(), impl->bytecodeParserContext,
+                    /*lazyLoad=*/true, sourceMgr);
 
             // Read in the cached bytecode. If we fail, bail and try processing
             // the IR as normal.
@@ -1093,52 +1094,51 @@ SharedState::ModuleState &SharedState::createBinaryPackageState(
                                   "unable to open package file '" +
                                       packagePath + "'");
   }
-
-  // Insert a new module decl.
-  ASTDecl &decl = declResolver->addDecl(
-      PValue(BoolAttr::get(getContext(), false)), SMLoc(), declName,
-      parentState.decl, parentState.decl->getCursor(),
-      parentState.decl->getCursor(), /*indentation=*/-1);
-  auto it = parentState.nestedModules.insert(
-      {mangledName, std::make_unique<ModuleState>(&decl)});
-  ModuleState &moduleState = *it.first->second;
-  impl->moduleStates[&decl] = &moduleState;
-
-  // Set the content hash of the package to the parsed buffer.
-  llvm::BLAKE3 contentHash;
-  contentHash.update((*packageBuffer)->getBuffer());
-  moduleState.contentHash = contentHash.final();
+  StringRef packageBufferRef = (*packageBuffer)->getBuffer();
 
   // Read the cached package.
   Block *block = parentState.decl->getDeclEndBuilder().getBlock();
+  std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   {
     TimeTraceScope<> timeScope("readBytecodeFile");
     auto sourceMgr = std::make_shared<llvm::SourceMgr>();
     sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
-    moduleState.bytecodeReader.emplace(memoryBuf->getMemBufferRef(),
-                                       impl->bytecodeParserContext,
-                                       /*lazyLoad=*/true, sourceMgr);
+    bytecodeReader = std::make_unique<mlir::BytecodeReader>(
+        memoryBuf->getMemBufferRef(), impl->bytecodeParserContext,
+        /*lazyLoad=*/true, sourceMgr);
 
     // Read in the cached bytecode.
-    if (failed(moduleState.bytecodeReader->readTopLevel(block))) {
-      emitError(loc) << "unable to load package '" << packagePath << "'";
-      decl.hasReferenceError = true;
-      return moduleState;
+    if (failed(bytecodeReader->readTopLevel(block))) {
+      return createErrorModuleState(loc, mangledName, *parentState.decl,
+                                    "unable to load package '" + packagePath +
+                                        "'");
     }
 
     // Add the package path to the set of included files.
     impl->includedFiles.emplace_back(packagePath.str());
   }
 
-  // Initialize the decl with the bytecode IR. The loaded package is the last
-  // operation in the block.
-  decl.setIRValue(&block->back());
+  // Insert a new module decl.
+  ASTDecl &decl =
+      declResolver->addDecl(&block->back(), SMLoc(), declName, parentState.decl,
+                            parentState.decl->getCursor(),
+                            parentState.decl->getCursor(), /*indentation=*/-1);
   decl.loadedFromBytecode = true;
   decl.resolvedness = DeclResolvedness::signature;
+
+  // Initialize the module state.
+  auto it = parentState.nestedModules.insert(
+      {mangledName, std::make_unique<ModuleState>(&decl)});
+  ModuleState &moduleState = *it.first->second;
+  impl->moduleStates[&decl] = &moduleState;
+  moduleState.bytecodeReader = std::move(bytecodeReader);
   impl->packageStates[cast<PackageOp>(decl)] = &moduleState;
 
+  // Set the content hash of the package to the parsed buffer.
+  moduleState.contentHash = llvm::BLAKE3::hash(ArrayRef<uint8_t>(
+      (const uint8_t *)packageBufferRef.data(), packageBufferRef.size()));
   return moduleState;
 }
 
