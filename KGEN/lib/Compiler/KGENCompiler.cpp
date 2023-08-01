@@ -372,11 +372,11 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.
   {
+    [[maybe_unused]] auto flushTelemetry =
+        runtime.getTelemetryContext()->autoFlush();
     [[maybe_unused]] auto timeScope =
         runtime.getTelemetryContext()->createUInt64Timer(
             "mojo.kgen.compile.time");
-    [[maybe_unused]] auto flushTelemetry =
-        runtime.getTelemetryContext()->autoFlush();
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, regionCache.copy(), transformCache.copy(),
