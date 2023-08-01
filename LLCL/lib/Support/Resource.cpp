@@ -17,11 +17,6 @@ using namespace M::LLCL;
 // Private utils
 //===----------------------------------------------------------------------===//
 
-static bool isAllSection(const ResourceSection &section) {
-  return section.start() == kMinResourceOffset &&
-         section.end() == kMaxResourceOffset;
-}
-
 static bool isReferencing(ResourceUseType type) {
   return type == kReferencingResourceUse;
 }
@@ -66,7 +61,7 @@ hasOverlappingKey(const llvm::DenseMap<ResourceSection, size_t> &map,
 
 void M::LLCL::printResourceSection(llvm::raw_ostream &os,
                                    const ResourceSection &section) {
-  if (isAllSection(section)) {
+  if (isAllResourceSection(section)) {
     os << "all";
   } else {
     os << "[";

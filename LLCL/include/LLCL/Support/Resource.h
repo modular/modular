@@ -49,6 +49,12 @@ inline ResourceSection allResourceSection() {
   return ResourceSection(kMinResourceOffset, kMaxResourceOffset);
 }
 
+/// Returns true if section is the 'all' section.
+inline bool isAllResourceSection(const ResourceSection &section) {
+  return section.start() == kMinResourceOffset &&
+         section.end() == kMaxResourceOffset;
+}
+
 void printResourceSection(llvm::raw_ostream &os,
                           const ResourceSection &section);
 
@@ -216,7 +222,7 @@ public:
   Resource &operator=(const Resource &) = delete;
 
   /// Creates a resource.
-  static RCRef<Resource> allocate(std::string name, bool isInitialized = false);
+  static RCRef<Resource> allocate(std::string name, bool isInitialized = true);
 
   StringRef getName() const { return name; }
 
