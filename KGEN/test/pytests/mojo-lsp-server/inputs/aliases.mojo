@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from String import String
+from Activations import ActivationType
 
 alias IntAlias = 12
 """Int alias summary
@@ -26,3 +27,5 @@ struct StructWithAlias:
 
 
 alias AliasInStructRef = StructWithAlias.AliasInStruct
+
+alias ExternalAlias = ActivationType.IDENTITY
