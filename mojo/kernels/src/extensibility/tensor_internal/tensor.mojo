@@ -16,6 +16,9 @@ from Memory import memcpy
 from IO import print
 from Range import range
 
+# These representation must be kept in sync with the TensorShape file in
+# Support/include/Support/ML/TensorShape.h
+
 # This supports two inline representations and an out-of-line one:
 #  1) k16 can hold up to 6 dimensions when they fit into 16-bits.
 #  2) k32 can hold up to 4 dimension where the first three fits in
@@ -32,11 +35,21 @@ from Range import range
 # memset/memcpy operations.
 
 
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
 @register_passable("trivial")
 struct _RepKind:
     alias KIND_16 = _RepKind(0)
+    """A representation which can hold up to 6 dimensions with each dim
+    occupying at most 16-bits."""
     alias KIND_32 = _RepKind(1)
+    """A representation which can hold up to 4 dimensions with the first three
+    occupying at most 32-bits and the last occupying at most 8 bits."""
     alias KIND_OUT_OF_LINE = _RepKind(2)
+    """A general storage kind which stores the dimensions on the heap."""
 
     var kind: UInt8
 
@@ -49,15 +62,24 @@ struct _RepKind:
 
 @register_passable("trivial")
 struct _Rep16:
-    var dims: StaticTuple[5, Int16]
+    """A representation which can hold up to 6 dimensions with each dim
+    occupying at most 16-bits."""
+
+    var dims: StaticTuple[6, Int16]
+    """The dimensions."""
     var _unused: UInt8
+    """Unused block."""
     var rep_kind: _RepKind
+    """The representation kind."""
     var rank: UInt8
+    """The rank of the shape."""
     var auxillary: UInt8
+    """Auxillary information about the shape."""
 
     fn __init__() -> Self:
+        """Default initializes the _Rep16 type."""
         return Self {
-            dims: StaticTuple[5, Int16](),
+            dims: StaticTuple[6, Int16](),
             _unused: 0,
             rep_kind: _RepKind.KIND_16,
             rank: 0,
@@ -65,9 +87,19 @@ struct _Rep16:
         }
 
     fn get_rank(self) -> Int:
+        """Gets the rank of the representation.
+
+        Returns:
+          The rank of the representation.
+        """
         return self.rank.to_int()
 
     fn get_num_elements(self) -> Int:
+        """Gets the number of elements of the representation.
+
+        Returns:
+          The number of elements in the representation.
+        """
         let rank = self.get_rank()
         var product: Int = 1
         for i in range(rank):
@@ -75,18 +107,35 @@ struct _Rep16:
         return product
 
     fn __getitem__(self, index: Int) -> Int:
+        """Gets dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+
+        Returns:
+          The value at the specified dimension.
+        """
         return self.dims[index].to_int()
 
 
 @register_passable("trivial")
 struct _Rep32:
+    """A representation which can hold up to 4 dimensions with the first three
+    occupying at most 32-bits and the last occupying at most 8 bits."""
+
     var dims012: StaticTuple[3, Int32]  # dim0, dim1, dim2
+    """The 3 leading dimensions."""
     var dim3: Int8
+    """The trailing dimension."""
     var rep_kind: _RepKind
+    """The representation kind."""
     var rank: UInt8
+    """The rank of the shape."""
     var auxillary: UInt8
+    """Auxillary information about the shape."""
 
     fn __init__() -> Self:
+        """Default initializes the _Rep32 type."""
         return Self {
             dims012: StaticTuple[3, Int32](),
             dim3: 0,
@@ -96,9 +145,19 @@ struct _Rep32:
         }
 
     fn get_rank(self) -> Int:
+        """Gets the rank of the representation.
+
+        Returns:
+          The rank of the representation.
+        """
         return self.rank.to_int()
 
     fn get_num_elements(self) -> Int:
+        """Gets the number of elements of the representation.
+
+        Returns:
+          The number of elements in the representation.
+        """
         var rank = self.get_rank()
         var product: Int = 1
         if rank == 3:
@@ -109,6 +168,14 @@ struct _Rep32:
         return product
 
     fn __getitem__(self, index: Int) -> Int:
+        """Gets dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+
+        Returns:
+          The value at the specified dimension.
+        """
         debug_assert(index <= 3, "index out of range")
         if index == 3:
             return self.dim3.to_int()
@@ -118,27 +185,26 @@ struct _Rep32:
 
 @register_passable("trivial")
 struct _RepOutOfLine:
+    """A general storage kind which stores the dimensions on the heap."""
+
     alias _padding_size = (
         13 - sizeof[DTypePointer[DType.invalid].pointer_type]()
     )
     var dims: DTypePointer[DType.index]
+    """The heap allocated dimensions."""
     # FIXME: This isn't correct for big endian systems, but we check with
     # static_assert below.
-    var padding: StaticTuple[Self._padding_size, UInt8]
+    var _padding: StaticTuple[Self._padding_size, UInt8]
+    """Unused padding value."""
     var rep_kind: _RepKind
+    """The representation kind."""
     var rank: UInt8
+    """The rank of the shape."""
     var auxillary: UInt8
+    """Auxillary information about the shape."""
 
     fn __init__() -> Self:
-        return Self {
-            dims: DTypePointer[DType.index](),
-            padding: StaticTuple[Self._padding_size, UInt8](),
-            rep_kind: _RepKind.KIND_OUT_OF_LINE,
-            rank: 0,
-            auxillary: 0,
-        }
-
-    fn get_rank(self) -> Int:
+        """Default initializes the _RepOutOfLine type."""
         assert_param[
             is_little_endian(),
             (
@@ -146,24 +212,57 @@ struct _RepOutOfLine:
                 " endian systems"
             ),
         ]()
+        return Self {
+            dims: DTypePointer[DType.index](),
+            _padding: StaticTuple[Self._padding_size, UInt8](),
+            rep_kind: _RepKind.KIND_OUT_OF_LINE,
+            rank: 0,
+            auxillary: 0,
+        }
+
+    fn get_rank(self) -> Int:
+        """Gets the rank of the representation.
+
+        Returns:
+          The rank of the representation.
+        """
         return self.rank.to_int()
 
     fn __getitem__(self, index: Int) -> Int:
+        """Gets dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+
+        Returns:
+          The value at the specified dimension.
+        """
         return self.dims.load(index).to_int()
 
     fn get_num_elements(self) -> Int:
+        """Gets the number of elements of the representation.
+
+        Returns:
+          The number of elements in the representation.
+        """
         var prod: Int = 1
         for i in range(self.get_rank()):
-            prod *= self.dims.load(i).to_int()
+            prod *= self[i]
         return prod
 
     fn copy(self) -> Self:
+        """Creates a new copy of the object. Note that this will cause a heap
+        allocation.
+
+        Returns:
+          A new copy of the representation.
+        """
         let dims_copy = DTypePointer[DType.index].alloc(self.get_rank())
         memcpy(dims_copy, self.dims, self.get_rank())
 
         return Self {
             dims: dims_copy,
-            padding: self.padding,
+            _padding: self._padding,
             rep_kind: self.rep_kind,
             rank: self.rank,
             auxillary: self.auxillary,
@@ -172,25 +271,55 @@ struct _RepOutOfLine:
 
 @register_passable("trivial")
 struct _TensorShapeStorage:
+    """The storage type for the tensor shape. This acts as a union type between
+    all the representations."""
+
     var ptr: DTypePointer[DType.invalid]
     var idx: Int64
 
     fn __init__() -> Self:
-        var rep = _Rep16()
+        """Default initializes the _TensorShapeStorage type."""
+        var rep = _Rep32()
         let rep_ptr = Pointer.address_of(rep)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     fn __init__(rep: _Rep16) -> Self:
+        """Initializes the _TensorShapeStorage from a _Rep16.
+
+        Args:
+          rep: A shape representation.
+
+        Returns:
+          The _TensorShapeStorage.
+        """
         var rep_copy = rep
         let rep_ptr = Pointer.address_of(rep_copy)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     fn __init__(rep: _Rep32) -> Self:
+        """Initializes the _TensorShapeStorage from a _Rep32.
+
+        Args:
+          rep: A shape representation.
+
+        Returns:
+          The _TensorShapeStorage.
+        """
         var rep_copy = rep
         let rep_ptr = Pointer.address_of(rep_copy)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     fn __init__(rep: _RepOutOfLine) -> Self:
+        """Initializes the _TensorShapeStorage from a _Rep32.
+
+        Note that this will not copy the underlying data.
+
+        Args:
+          rep: A shape representation.
+
+        Returns:
+          The _TensorShapeStorage.
+        """
         var rep_copy = rep
         let rep_ptr = Pointer.address_of(rep_copy)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
@@ -198,72 +327,159 @@ struct _TensorShapeStorage:
 
 @always_inline
 fn _as_rep16(rep0: _TensorShapeStorage) -> _Rep16:
+    """Constructs a _Rep16 representation from a _TensorShapeStorage.
+
+    Args:
+      rep0: The _TensorShapeStorage representation.
+
+    Returns:
+      The _Rep16 representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_Rep16]().load()
 
 
 @always_inline
 fn _as_rep16(rep0: _Rep16) -> _Rep16:
+    """Constructs a _Rep16 representation from a _Rep16 representation.
+
+    Args:
+      rep0: The _Rep16 representation.
+
+    Returns:
+      The _Rep16 representation.
+    """
     let rep = rep0
     return rep
 
 
 @always_inline
 fn _as_rep16(rep0: _Rep32) -> _Rep16:
+    """Constructs a _Rep16 representation from a _Rep32 representation.
+
+    Args:
+      rep0: The _Rep32 representation.
+
+    Returns:
+      The _Rep16 representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_Rep32].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_Rep16]().load()
 
 
 @always_inline
 fn _as_rep32(rep0: _TensorShapeStorage) -> _Rep32:
+    """Constructs a _Rep32 representation from a _TensorShapeStorage.
+
+    Args:
+      rep0: The _TensorShapeStorage representation.
+
+    Returns:
+      The _Rep32 representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_Rep32]().load()
 
 
 @always_inline
 fn _as_rep32(rep0: _Rep16) -> _Rep32:
+    """Constructs a _Rep32 representation from a _Rep16 representation.
+
+    Args:
+      rep0: The _Rep16 representation.
+
+    Returns:
+      The _Rep32 representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_Rep16].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_Rep32]().load()
 
 
 @always_inline
 fn _as_rep32(rep0: _Rep32) -> _Rep32:
+    """Constructs a _Rep32 representation from a _Rep32 representation.
+
+    Args:
+      rep0: The _Rep32 representation.
+
+    Returns:
+      The _Rep32 representation.
+    """
     let rep = rep0
     return rep
 
 
 @always_inline
 fn _as_rep_out_of_line(rep0: _TensorShapeStorage) -> _RepOutOfLine:
+    """Constructs a _RepOutOfLine representation from a _TensorShapeStorage.
+
+    Args:
+      rep0: The _TensorShapeStorage representation.
+
+    Returns:
+      The _RepOutOfLine representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_RepOutOfLine]().load()
 
 
 @always_inline
 fn _as_rep_out_of_line(rep0: _Rep16) -> _RepOutOfLine:
+    """Constructs a _RepOutOfLine representation from a _Rep16 representation.
+
+    Args:
+      rep0: The _Rep16 representation.
+
+    Returns:
+      The _RepOutOfLine representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_Rep16].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_RepOutOfLine]().load()
 
 
 @always_inline
 fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
+    """Constructs a _RepOutOfLine representation from a _Rep32 representation.
+
+    Args:
+      rep0: The _Rep32 representation.
+
+    Returns:
+      The _RepOutOfLine representation.
+    """
     var rep = rep0
-    let rep_ptr = Pointer[_Rep32].address_of(rep)
+    let rep_ptr = Pointer.address_of(rep)
     return rep_ptr.bitcast[_RepOutOfLine]().load()
 
 
+# ===----------------------------------------------------------------------===#
+# TensorShape
+# ===----------------------------------------------------------------------===#
+
+
 struct TensorShape:
+    """A space efficient representation of a tensor shape. This struct
+    implements value semantics and owns its underlying data."""
+
     var _rep: _TensorShapeStorage
+    """The underlying _TensorShapeStorage backing."""
 
     fn __init__(inout self):
+        """Default initializer for TensorShape."""
         self._rep = _TensorShapeStorage()
 
     fn __copyinit__(inout self, other: Self):
+        """Creates a deep copy of an existing shape.
+
+        Args:
+            other: The shape to copy.
+        """
         if other._is_out_of_line():
             # TODO: memcpy the pointer
             self._rep = _TensorShapeStorage(
@@ -273,19 +489,38 @@ struct TensorShape:
             self._rep = _TensorShapeStorage(_as_rep16(other._rep))
 
     fn __moveinit__(inout self, owned existing: Self):
+        """Move the value of the shape.
+
+        Args:
+            existing: The shape to move.
+        """
         self._rep = existing._rep
         existing._rep = _TensorShapeStorage()
 
     fn __del__(owned self):
+        """Delete the shape and release any owned memory."""
         let rep_kind = self._get_rep_kind()
         if self._is_out_of_line():
             let out_of_line = _as_rep_out_of_line(self._rep)
             out_of_line.dims.free()
 
     fn _get_rep_kind(self) -> _RepKind:
+        """Gets the underlying representation kind.
+
+        Returns:
+          The underlying representation kind.
+        """
         return _as_rep32(self._rep).rep_kind
 
     fn __getitem__(self, index: Int) -> Int:
+        """Gets the dimension at the specified index.
+
+        Args:
+          index: The dimension index.
+
+        Returns:
+          The dimension at the specified index.
+        """
         let rep_kind = self._get_rep_kind()
         if rep_kind == _RepKind.KIND_16:
             return _as_rep16(self._rep)[index]
@@ -296,12 +531,27 @@ struct TensorShape:
         return -1
 
     fn _is_out_of_line(self) -> Bool:
+        """Checks if the representation is out of line.
+
+        Returns:
+          True if the representation is out of line and False otherwise.
+        """
         return self._get_rep_kind() == _RepKind.KIND_OUT_OF_LINE
 
-    fn get_rank(self) -> Int:
+    fn rank(self) -> Int:
+        """Gets the rank of the shape.
+
+        Returns:
+          The rank of the shape.
+        """
         return _as_rep32(self._rep).get_rank()
 
-    fn get_num_elements(self) -> Int:
+    fn num_elements(self) -> Int:
+        """Gets the total number of elements in the shape.
+
+        Returns:
+          The total number of elements in the shape.
+        """
         let rep_kind = self._get_rep_kind()
         if rep_kind == _RepKind.KIND_16:
             return _as_rep16(self._rep).get_num_elements()
@@ -312,14 +562,62 @@ struct TensorShape:
         return -1
 
 
+# ===----------------------------------------------------------------------===#
+# TensorSpec
+# ===----------------------------------------------------------------------===#
+
+
 struct TensorSpec:
+    """A space efficient representation of a tensor shape and dtype. This struct
+    implements value semantics and owns its underlying data."""
+
     var shape: TensorShape
+    """The underlying shape of the specification."""
 
-    fn get_rank(self) -> Int:
-        return self.shape.get_rank()
+    fn __init__(inout self):
+        """Default initializer for TensorShape."""
+        self.shape = TensorShape()
 
-    fn get_dtype(self) -> DType:
+    fn __copyinit__(inout self, other: Self):
+        """Creates a deep copy of an existing spec.
+
+        Args:
+            other: The spec to copy.
+        """
+        self.shape = other.shape
+
+    fn __moveinit__(inout self, owned existing: Self):
+        """Move the value of the spec.
+
+        Args:
+            existing: The spec to move.
+        """
+        self.shape = existing.shape ^
+
+    fn __del__(owned self):
+        """Delete the spec and release any owned memory."""
+        self.shape.__del__()
+
+    fn rank(self) -> Int:
+        """Gets the rank of the spec.
+
+        Returns:
+          The rank of the spec.
+        """
+        return self.shape.rank()
+
+    fn dtype(self) -> DType:
+        """Gets the rank of the DType of the spec.
+
+        Returns:
+          The DType of the spec.
+        """
         return DType._from_ui8(_as_rep16(self.shape._rep).auxillary.value)
 
-    fn get_num_elements(self) -> Int:
-        return self.shape.get_num_elements()
+    fn num_elements(self) -> Int:
+        """Gets the total number of elements in the spec.
+
+        Returns:
+          The total number of elements in the spec.
+        """
+        return self.shape.num_elements()
