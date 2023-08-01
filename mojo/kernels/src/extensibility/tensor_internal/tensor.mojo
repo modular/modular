@@ -8,13 +8,17 @@
 
 from Assert import assert_param, debug_assert
 from DType import DType
-from Pointer import Pointer, DTypePointer
-from SIMD import SIMD, UInt8, Int32, Int16, Int32, Int8, Int64
-from TargetInfo import sizeof, is_little_endian
-from StaticTuple import StaticTuple
-from Memory import memcpy
 from IO import print
+from List import VariadicList
+from Memory import memcpy
+from Pointer import Pointer, DTypePointer
 from Range import range
+from SIMD import SIMD, UInt8, Int32, Int16, Int32, Int8, Int64
+from StaticTuple import StaticTuple
+from TargetInfo import sizeof, is_little_endian
+
+# These representation must be kept in sync with the TensorShape file in
+# Support/include/Support/ML/TensorShape.h
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
@@ -92,6 +96,7 @@ struct _Rep16:
         Returns:
           The rank of the representation.
         """
+        debug_assert(self.rank.to_int() < 4, "index out of range")
         return self.rank.to_int()
 
     fn get_num_elements(self) -> Int:
@@ -116,6 +121,16 @@ struct _Rep16:
           The value at the specified dimension.
         """
         return self.dims[index].to_int()
+
+    fn __setitem__(inout self, index: Int, val: Int):
+        """Sets the dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+          val: the value to set.
+        """
+        debug_assert(index < self.get_rank(), "index out of range")
+        self.dims[index] = val
 
 
 @register_passable("trivial")
@@ -150,6 +165,7 @@ struct _Rep32:
         Returns:
           The rank of the representation.
         """
+        debug_assert(self.rank.to_int() < 4, "index out of range")
         return self.rank.to_int()
 
     fn get_num_elements(self) -> Int:
@@ -181,6 +197,19 @@ struct _Rep32:
             return self.dim3.to_int()
         else:
             return self.dims012[index].to_int()
+
+    fn __setitem__(inout self, index: Int, val: Int):
+        """Sets the dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+          val: the value to set.
+        """
+        debug_assert(index < self.get_rank(), "index out of range")
+        if index == 3:
+            self.dim3 = val
+        else:
+            self.dims012[index] = val
 
 
 @register_passable("trivial")
@@ -238,6 +267,16 @@ struct _RepOutOfLine:
           The value at the specified dimension.
         """
         return self.dims.load(index).to_int()
+
+    fn __setitem__(inout self, index: Int, val: Int):
+        """Sets the dimension at the specified index.
+
+        Args:
+          index: the dimension index.
+          val: the value to set.
+        """
+        debug_assert(index < self.get_rank(), "index out of range")
+        self.dims.store(index, val)
 
     fn get_num_elements(self) -> Int:
         """Gets the number of elements of the representation.
@@ -474,6 +513,61 @@ struct TensorShape:
         """Default initializer for TensorShape."""
         self._rep = _TensorShapeStorage()
 
+    fn __init__(inout self, *shapes: Int):
+        """Initializes a TensorShape from the values provided.
+
+        Args:
+          shapes: The shapes to initialize the shape with.
+        """
+        self = TensorShape(VariadicList[Int](shapes))
+
+    fn __init__(inout self, shapes: VariadicList[Int]):
+        """Initializes a TensorShape from the values provided.
+
+        Args:
+          shapes: The shapes to initialize the shape with.
+        """
+        let rank = shapes.__len__()
+
+        # Decide which representation we can use and initialize the elements.
+        # The most common case should fit into 4 dimensions.
+        if rank <= 4:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep32()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise we fall through to try the next representation.
+        # Virtually everything else will fit into 6 dimensions.
+        if rank <= 6:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep16()
+            rep.rank = rank
+            for i in range(rank):
+                rep[i] = shapes[i]
+                if rep[i] != shapes[i]:
+                    ok = False
+                    break
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise, we will store out of line.
+        var rep = _RepOutOfLine()
+        rep.rank = rank
+        rep.dims = DTypePointer[DType.index].alloc(rank)
+        for i in range(rank):
+            rep[i] = shapes[i]
+
+        self._rep = rep
+
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing shape.
 
@@ -577,6 +671,28 @@ struct TensorSpec:
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self.shape = TensorShape()
+
+    fn __init__(inout self, type: DType, *shapes: Int):
+        """Initializes a Tensorspec from the dtype and shapes provided.
+
+        Args:
+          type: The dtype of the specification.
+          shapes: The shapes to initialize the shape with.
+        """
+        self = TensorSpec(type, VariadicList[Int](shapes))
+
+    fn __init__(inout self, type: DType, shapes: VariadicList[Int]):
+        """Initializes a Tensorspec from the dtype and shapes provided.
+
+        Args:
+          type: The dtype of the specification.
+          shapes: The shapes to initialize the shape with.
+        """
+        var shape = TensorShape(shapes)
+        var rep = _as_rep16(shape._rep)
+        rep.auxillary = type._as_i8()
+
+        self.shape._rep = rep
 
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing spec.
