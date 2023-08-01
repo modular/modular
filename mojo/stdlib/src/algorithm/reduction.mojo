@@ -441,7 +441,7 @@ fn _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     init_value: SIMD[type, 1],
     reduce_dim_maybe_neg: Int,
     out_chain: OutputChainPtr,
@@ -459,14 +459,13 @@ fn _reduce_generator[
         reduce_function: The lambda implementing the reduction.
 
     Args:
-        input: The tensor we are reducing.
+        shape: The shape of the tensor we are reducing.
         init_value: The value to start the reduction from.
         reduce_dim_maybe_neg: The dimension we are reducing.
         out_chain: The our chain to attach results to.
     """
     assert_param[rank == 1, "Specialization for 1D"]()
 
-    let shape = input.dynamic_shape
     let total_size: Int = shape[0]
     let simd_compatible_size = (total_size // simd_width) * simd_width
 
@@ -528,7 +527,7 @@ fn _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     init_value: SIMD[type, 1],
     reduce_dim: Int,
     out_chain: OutputChainPtr,
@@ -546,7 +545,7 @@ fn _reduce_generator[
         reduce_function: The lambda implementing the reduction.
 
     Args:
-        input: The tensor we are reducing.
+        shape: The shape of the tensor we are reducing.
         init_value: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
         out_chain: The our chain to attach results to.
@@ -557,10 +556,9 @@ fn _reduce_generator[
         rank + reduce_dim
     ) if reduce_dim < 0 else reduce_dim
 
-    # If the input is strided along the input dimension then we can simd
-    # reduce over it directly.
+    # We can only reduce using SIMD if we are reducing along last dimension.
     # TODO: Support more optimal case for reduce over non-strided.
-    if input.stride(reduce_dim_normalized) == 1:
+    if rank - 1 == reduce_dim_normalized:
         alias unroll_factor = simd_width * 8
         _reduce_along_dimension[
             type,
@@ -571,7 +569,7 @@ fn _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](input, init_value, reduce_dim_normalized, out_chain)
+        ](shape, init_value, reduce_dim_normalized, out_chain)
     else:
         # Scalar fallback.
         _reduce_along_dimension[
@@ -583,7 +581,7 @@ fn _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](input, init_value, reduce_dim_normalized, out_chain)
+        ](shape, init_value, reduce_dim_normalized, out_chain)
 
 
 @always_inline
@@ -603,7 +601,7 @@ fn _reduce_along_dimension[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing -> SIMD[ty, width],
 ](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    shape: StaticIntTuple[rank],
     init_value: SIMD[type, 1],
     reduce_dim: Int,
     out_chain: OutputChainPtr,
@@ -621,13 +619,11 @@ fn _reduce_along_dimension[
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
     Args:
-        input: The tensor we are reducing
+        shape: The shape of the tensor we are reducing
         init_value: The value to start the reduction from.
         reduce_dim: The dimension we are reducing.
         out_chain: The chain to attach results to.
     """
-    let shape = input.dynamic_shape
-
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
     let total_size: Int = shape.flattened_length()
