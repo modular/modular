@@ -366,6 +366,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
 
   // FIXME(#15949): Should not require all these dialects to be loaded.
   let dependentDialects = [
+    "KGENDialect",
     "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
