@@ -272,7 +272,14 @@ ErrorOrSuccess Config::flush() {
 }
 
 std::filesystem::path Config::getModularHomeDirPath() {
+  // If MODULAR_HOME is defined then pick it.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
+
+  // If we cannot find the MODULAR_HOME then use the MODULAR_DERIVED_PATH as
+  // MODULAR_HOME.
+  if (!modularHome)
+    modularHome = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+
   // No env variable, find it in PATH.
   if (!modularHome) {
 #ifdef _WIN32
@@ -281,10 +288,6 @@ std::filesystem::path Config::getModularHomeDirPath() {
     modularHome = findDirInEnvPath(".modular");
 #endif
   }
-
-  // If we have MODULAR_DERIVED_PATH, treat that as MODULAR_HOME.
-  if (!modularHome)
-    modularHome = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
 
   // Default to CWD - no env variable and nothing in PATH, so just use CWD.
   if (!modularHome)
