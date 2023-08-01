@@ -203,6 +203,8 @@ public:
                   sizeof(representation) - 1) == 0;
   }
 
+  RepKind getKind() const { return representation.rep16.kind; }
+
 private:
   bool equalsIncludingAuxOOL(const TensorShapeStorage &rhs) const;
   bool equalsExcludingAuxOOL(const TensorShapeStorage &rhs) const;
@@ -288,6 +290,9 @@ public:
 
   /// Return the number of dimensions in this shape.
   size_t getRank() const { return storage.getRank(); }
+
+  /// Return the underlying kind of the spec.
+  uint8_t getKind() const { return (uint8_t)storage.getKind(); }
 
   /// Return the total number of elements in this tensor, which is the product
   /// of all the dimension sizes.
