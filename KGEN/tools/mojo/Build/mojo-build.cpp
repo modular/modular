@@ -180,12 +180,10 @@ static int linkExecutable(const State &state,
   StringRef linkerFilename = "link.exe";
   StringRef binaryExt = ".exe";
   StringRef libExt = ".lib";
-  StringRef libPrefix = "";
 #else
   StringRef linkerFilename = "c++";
   StringRef binaryExt = "";
   StringRef libExt = ".a";
-  StringRef libPrefix = "lib";
 #endif
   // Read the mojo configuration.
   ErrorOr<Config> configOr = Config::open();
@@ -196,9 +194,9 @@ static int linkExecutable(const State &state,
   Config config = std::move(*configOr);
 
   // Resolve the path to the CompilerRT library.
-  std::optional<std::string> compilerRTLib = llvm::sys::Process::FindInEnvPath(
-      "PATH", (libPrefix + "KGENCompilerRT-static" + libExt).str());
-  if (!compilerRTLib)
+  std::error_code ec;
+  StringRef compilerRTPath = config.getValue("mojo.compilerrt_static_path");
+  if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
     return state.reportError("unable to locate Mojo CompilerRT library");
 
   // Build a default output name based on the input file.
@@ -228,7 +226,7 @@ static int linkExecutable(const State &state,
   }
 
   // Invoke the linker command.
-  SmallVector<StringRef> linkerArgs = {*linker, archivePath, *compilerRTLib};
+  SmallVector<StringRef> linkerArgs = {*linker, archivePath, compilerRTPath};
 
 #ifdef _WIN32
   std::string outputArg = ("/out:" + outputName).str();
@@ -286,7 +284,6 @@ static int linkExecutable(const State &state,
 
   // Drop the temporary archive file now that we're done with it. We don't
   // really care if this fails, since it's just a temporary file.
-  std::error_code ec;
   std::filesystem::remove(archivePath, ec);
   return EXIT_SUCCESS;
 }
