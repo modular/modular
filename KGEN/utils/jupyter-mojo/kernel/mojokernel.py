@@ -18,6 +18,7 @@ import os
 import shutil
 import time
 import traceback
+from configparser import ConfigParser
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -231,37 +232,34 @@ class MojoKernel(Kernel):
     def load_mojo_lib(self) -> ctypes.CDLL:
         """Load the libMojoJupyter library.
 
-        The location of the library is determined by the location of the
-        `mojo-repl-entry-point` executable. The library should either be
-        adjacent, or within a relative `../lib/` directory.
+        The location of the library is adjacent to the `mojo-repl-entry-point`
+        executable.
 
         On success, this initializes `mojoReplExe` returns the loaded library.
         """
-        # Look for the mojo repl executable. This will have the various
-        # necessary libraries adjacent to it.
-        mojo_repl_exe_path = (
-            Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
-        )
-        os.environ["PATH"] += os.pathsep + str(mojo_repl_exe_path)
-        self.mojoReplExe: Optional[str] = shutil.which("mojo-repl-entry-point")
-        if not self.mojoReplExe:
-            from distutils.spawn import find_executable
 
-            self.mojoReplExe = find_executable("mojo-repl-entry-point")
-            if not self.mojoReplExe:
-                raise RuntimeError(
-                    "Unable to locate `mojo-repl-entry-point` executable."
-                )
+        # Grab the mojo repl executable from the config.
+        config = ConfigParser()
+        config.read(Path(os.environ["MODULAR_HOME"]) / "modular.cfg")
+        mojoReplExePath = Path(
+            config.get("mojo", "repl_entry_point").rstrip(";")
+        )
+        if not mojoReplExePath.exists():
+            raise RuntimeError(
+                "Unable to locate `mojo-repl-entry-point` executable."
+            )
+        self.mojoReplExe = str(mojoReplExePath)
+
+        # Make sure the lib directory is in the path.
+        libDir = mojoReplExePath.parent
+        os.environ["PATH"] += os.pathsep + str(libDir)
 
         # Load the MojoJupyter library. This library provides the internal
-        # implementation, and is located adjacent to the mojo repl executable or
-        # within a relative ../lib/ directory.
-        mojoReplDir = Path(self.mojoReplExe).parent
-        for libDir in [mojoReplDir, mojoReplDir.parent / "lib"]:
-            for ext in ["so", "dylib", "dll"]:
-                libFilename = libDir / ("libMojoJupyter." + ext)
-                if os.path.isfile(libFilename):
-                    return ctypes.cdll.LoadLibrary(libFilename)
+        # implementation, and is located adjacent to the mojo repl executable.
+        for ext in ["so", "dylib", "dll"]:
+            libFilename = libDir / ("libMojoJupyter." + ext)
+            if os.path.isfile(libFilename):
+                return ctypes.cdll.LoadLibrary(libFilename)
 
         raise RuntimeError("Unable to load `libMojoJupyter` library.")
 
@@ -346,16 +344,13 @@ class MojoKernel(Kernel):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
-        "--modular-path",
+        "--modular-home",
         required=True,
-        help="The value of the env var MODULAR_PATH.",
+        help="The value of the env var MODULAR_HOME.",
     )
     args, jupyter_args = parser.parse_known_args()
 
-    os.environ["MODULAR_PATH"] = args.modular_path
-    os.environ["MODULAR_DERIVED_PATH"] = str(
-        Path(args.modular_path) / ".derived"
-    )
+    os.environ["MODULAR_HOME"] = args.modular_home
 
     # We pass the kernel name as a command-line arg, since Jupyter gives those
     # highest priority (in particular overriding any system-wide config).

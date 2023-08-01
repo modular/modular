@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT.h"
+#include "Support/Configuration.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CommandLine.h"
@@ -241,18 +242,20 @@ int main(int argc, char *argv[]) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Determine the path of the repl entry point.
-  std::optional<std::string> pathOr =
-      llvm::sys::Process::GetEnv("MODULAR_PATH");
-  std::filesystem::path exePath = std::filesystem::path(pathOr.value_or(".")) /
-                                  ".derived" / "build" / "lib" /
-                                  "mojo-repl-entry-point";
+  ErrorOr<Config> config = Config::open();
+  if (failed(config)) {
+    llvm::errs() << "failed to parse 'modular.cfg': " << config.getError()
+                 << "\n";
+    return 1;
+  }
+  StringRef exePath = config->getValue("mojo.repl_entry_point");
 
   // Initialize the kernel.
   MojoKernel kernel(
       [](const char *kind, const char *msg) {
         llvm::outs() << "[" << kind << "] " << msg << "\n";
       },
-      exePath.c_str(), !lldbInitFile.empty() ? lldbInitFile.c_str() : nullptr);
+      exePath.data(), !lldbInitFile.empty() ? lldbInitFile.c_str() : nullptr);
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.
   if (notebookPath.getNumOccurrences()) {
