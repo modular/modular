@@ -266,7 +266,13 @@ fn gather[
         output_fn,
         prefetch_fn,
         Dim(axis),
-    ](OptionalParamInt[axis](axis), input, indices, output, out_chain)
+    ](
+        OptionalParamInt[axis](axis),
+        input.dynamic_shape,
+        indices.dynamic_shape,
+        output,
+        out_chain,
+    )
 
 
 @always_inline
@@ -293,10 +299,8 @@ fn gather[
     axis_static: Dim,
 ](
     axis: OptionalParamInt[axis_static],
-    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
-    indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), indices_type
-    ],
+    input_shape: StaticIntTuple[input_rank],
+    indices_shape: StaticIntTuple[indices_rank],
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
     out_chain: OutputChainPtr,
 ):
@@ -314,19 +318,19 @@ fn gather[
     # The output shape has the same shape as the input, with the indexed-axis
     # replaced by the shape of the indices
     for i in range(axis.get()):
-        if output.dim(i) != input.dim(i):
+        if output.dim(i) != input_shape[i]:
             return out_chain.mark_error(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
     for i in range(axis.get(), axis.get() + indices_rank):
-        if output.dim(i) != indices.dim(i - axis.get()):
+        if output.dim(i) != indices_shape[i - axis.get()]:
             return out_chain.mark_error(
                 "gather: output_shape[axis:axis+indices_rank] does not match"
                 " indices_shape"
             )
     for i in range(axis.get() + indices_rank, output_rank):
-        if output.dim(i) != input.dim(i - indices_rank + 1):
+        if output.dim(i) != input_shape[i - indices_rank + 1]:
             return out_chain.mark_error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
@@ -338,8 +342,8 @@ fn gather[
     out_chain.trace[TraceLevel.OP]("mojo.gather")
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
-    let indices_len = indices.size()
-    if input.size() == 0 or indices_len == 0:
+    let indices_len = indices_shape.flattened_length()
+    if input_shape.flattened_length() == 0 or indices_len == 0:
         # No-op
         out_chain.mark_ready()
         return
