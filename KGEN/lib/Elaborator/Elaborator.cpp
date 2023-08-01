@@ -2757,12 +2757,18 @@ public:
     // specification.
     if (TargetInfoAttr tgt = getTargetInfo(theModule)) {
       if (tgt != target) {
-        theModule->emitError("target did not match, expected ")
+        mlir::emitError(theModule->getLoc(), "target did not match, expected ")
             << target << " but got " << tgt;
         return signalPassFailure();
       }
     } else {
       setTargetInfo(theModule, target);
+    }
+
+    // If the module is missing an environment attribute, set an empty one.
+    if (!theModule->hasAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())) {
+      theModule->setAttr(EnvAttr::getEnvAttrName(),
+                         EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
     // Same for the target info, the build info is concretized in the IR.

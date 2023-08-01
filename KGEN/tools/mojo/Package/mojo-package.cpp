@@ -414,6 +414,7 @@ struct PackageArgs {
   CompilationOptions compileOptions;
   mlir::MLIRContext ctx;
   TargetInfoAttr target;
+  EnvAttr env;
 };
 } // namespace
 
@@ -431,6 +432,13 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
     return Error("must provide a package name");
   if (args.hasMultipleArgs(options::OPT_name))
     return Error("too many package names, expected exactly one");
+
+  pkgArgs.ctx.loadDialect<KGENDialect>();
+  ErrorOr<EnvAttr> envOrErr =
+      EnvAttr::parseDefines(&pkgArgs.ctx, args.getAllArgValues(options::OPT_D));
+  if (failed(envOrErr))
+    return envOrErr.takeError();
+  pkgArgs.env = envOrErr.takeValue();
 
   pkgArgs.name = args.getLastArgValue(options::OPT_name);
 
@@ -464,8 +472,9 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 static ErrorOr<std::pair<SymbolTable, ExportMap>>
 elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
                  const CompilationOptions &options, LLCL::Runtime &runtime,
-                 BuildInfoAttr build, TargetInfoAttr target) {
+                 BuildInfoAttr build, TargetInfoAttr target, EnvAttr env) {
   // Set the target and build info now, so it's included in the cache key.
+  theModule->setAttr(EnvAttr::getEnvAttrName(), env);
   setTargetInfo(theModule, target);
   setBuildInfo(theModule, build);
 
@@ -548,9 +557,10 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
   });
 
   // Elaborate the package, attaching the generated IR along the way.
-  auto symTabAndExportedSymbolsOr = elaboratePackage(
-      theModule, packageBuilder, compilationOptions, runtime,
-      BuildInfoAttr::getForCurrentBuild(ctx), packageArgs.target);
+  auto symTabAndExportedSymbolsOr =
+      elaboratePackage(theModule, packageBuilder, compilationOptions, runtime,
+                       BuildInfoAttr::getForCurrentBuild(ctx),
+                       packageArgs.target, packageArgs.env);
   if (failed(symTabAndExportedSymbolsOr)) {
     return Error(llvm::formatv("compilation failed: {0}",
                                symTabAndExportedSymbolsOr.getError()));

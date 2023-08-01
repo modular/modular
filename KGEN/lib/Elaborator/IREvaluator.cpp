@@ -134,10 +134,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // that is not modified during elaboration, so no synchronization is needed.
   auto module = cast<ModuleOp>(elaborator->getSymbolTable().get().getOp());
   auto env = module->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName());
-  if (!env) {
-    emitError({*errorLoc, "module does not have an environment attached"});
-    return failure();
-  }
+  assert(env && "expected an environment attribute on the module");
 
   auto name = dyn_cast<StringAttr>(op.getOperands().front());
   if (!name) {
