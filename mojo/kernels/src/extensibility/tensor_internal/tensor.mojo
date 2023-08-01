@@ -1,0 +1,325 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Implements the TensorSpec and TensorShape type."""
+
+
+from Assert import assert_param, debug_assert
+from DType import DType
+from Pointer import Pointer, DTypePointer
+from SIMD import SIMD, UInt8, Int32, Int16, Int32, Int8, Int64
+from TargetInfo import sizeof, is_little_endian
+from StaticTuple import StaticTuple
+from Memory import memcpy
+from IO import print
+from Range import range
+
+# This supports two inline representations and an out-of-line one:
+#  1) k16 can hold up to 6 dimensions when they fit into 16-bits.
+#  2) k32 can hold up to 4 dimension where the first three fits in
+#     32-bits and the last fits in 8 bits (typically channels or batch
+#     size).
+#  3) kOutOfLine is used for the general case.
+#
+# Important: Identical shapes have the same representation kind to allow
+# efficient shape comparison with memcmp for k16 and k32.
+#
+# Each representation has an additional 8 bits of unused "auxillary"
+# storage.  This is used to hold a DType for TensorSpec.  We keep
+# this at the end of the storage so we can efficiently omit it from
+# memset/memcpy operations.
+
+
+@register_passable("trivial")
+struct _RepKind:
+    alias KIND_16 = _RepKind(0)
+    alias KIND_32 = _RepKind(1)
+    alias KIND_OUT_OF_LINE = _RepKind(2)
+
+    var kind: UInt8
+
+    fn __init__(value: Int) -> _RepKind:
+        return Self {kind: value}
+
+    fn __eq__(self, rhs: _RepKind) -> Bool:
+        return (self.kind == rhs.kind).__bool__()
+
+
+@register_passable("trivial")
+struct _Rep16:
+    var dims: StaticTuple[5, Int16]
+    var _unused: UInt8
+    var rep_kind: _RepKind
+    var rank: UInt8
+    var auxillary: UInt8
+
+    fn __init__() -> Self:
+        return Self {
+            dims: StaticTuple[5, Int16](),
+            _unused: 0,
+            rep_kind: _RepKind.KIND_16,
+            rank: 0,
+            auxillary: 0,
+        }
+
+    fn get_rank(self) -> Int:
+        return self.rank.to_int()
+
+    fn get_num_elements(self) -> Int:
+        let rank = self.get_rank()
+        var product: Int = 1
+        for i in range(rank):
+            product *= self.dims[i].to_int()
+        return product
+
+    fn __getitem__(self, index: Int) -> Int:
+        return self.dims[index].to_int()
+
+
+@register_passable("trivial")
+struct _Rep32:
+    var dims012: StaticTuple[3, Int32]  # dim0, dim1, dim2
+    var dim3: Int8
+    var rep_kind: _RepKind
+    var rank: UInt8
+    var auxillary: UInt8
+
+    fn __init__() -> Self:
+        return Self {
+            dims012: StaticTuple[3, Int32](),
+            dim3: 0,
+            rep_kind: _RepKind.KIND_32,
+            rank: 0,
+            auxillary: 0,
+        }
+
+    fn get_rank(self) -> Int:
+        return self.rank.to_int()
+
+    fn get_num_elements(self) -> Int:
+        var rank = self.get_rank()
+        var product: Int = 1
+        if rank == 3:
+            product = self.dim3.to_int()
+            rank -= 1
+        for i in range(rank):
+            product *= self.dims012[i].to_int()
+        return product
+
+    fn __getitem__(self, index: Int) -> Int:
+        debug_assert(index <= 3, "index out of range")
+        if index == 3:
+            return self.dim3.to_int()
+        else:
+            return self.dims012[index].to_int()
+
+
+@register_passable("trivial")
+struct _RepOutOfLine:
+    alias _padding_size = (
+        13 - sizeof[DTypePointer[DType.invalid].pointer_type]()
+    )
+    var dims: DTypePointer[DType.index]
+    # FIXME: This isn't correct for big endian systems, but we check with
+    # static_assert below.
+    var padding: StaticTuple[Self._padding_size, UInt8]
+    var rep_kind: _RepKind
+    var rank: UInt8
+    var auxillary: UInt8
+
+    fn __init__() -> Self:
+        return Self {
+            dims: DTypePointer[DType.index](),
+            padding: StaticTuple[Self._padding_size, UInt8](),
+            rep_kind: _RepKind.KIND_OUT_OF_LINE,
+            rank: 0,
+            auxillary: 0,
+        }
+
+    fn get_rank(self) -> Int:
+        assert_param[
+            is_little_endian(),
+            (
+                "the out of line representation is only implemetned on little"
+                " endian systems"
+            ),
+        ]()
+        return self.rank.to_int()
+
+    fn __getitem__(self, index: Int) -> Int:
+        return self.dims.load(index).to_int()
+
+    fn get_num_elements(self) -> Int:
+        var prod: Int = 1
+        for i in range(self.get_rank()):
+            prod *= self.dims.load(i).to_int()
+        return prod
+
+    fn copy(self) -> Self:
+        let dims_copy = DTypePointer[DType.index].alloc(self.get_rank())
+        memcpy(dims_copy, self.dims, self.get_rank())
+
+        return Self {
+            dims: dims_copy,
+            padding: self.padding,
+            rep_kind: self.rep_kind,
+            rank: self.rank,
+            auxillary: self.auxillary,
+        }
+
+
+@register_passable("trivial")
+struct _TensorShapeStorage:
+    var ptr: DTypePointer[DType.invalid]
+    var idx: Int64
+
+    fn __init__() -> Self:
+        var rep = _Rep16()
+        let rep_ptr = Pointer.address_of(rep)
+        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+
+    fn __init__(rep: _Rep16) -> Self:
+        var rep_copy = rep
+        let rep_ptr = Pointer.address_of(rep_copy)
+        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+
+    fn __init__(rep: _Rep32) -> Self:
+        var rep_copy = rep
+        let rep_ptr = Pointer.address_of(rep_copy)
+        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+
+    fn __init__(rep: _RepOutOfLine) -> Self:
+        var rep_copy = rep
+        let rep_ptr = Pointer.address_of(rep_copy)
+        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+
+
+@always_inline
+fn _as_rep16(rep0: _TensorShapeStorage) -> _Rep16:
+    var rep = rep0
+    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    return rep_ptr.bitcast[_Rep16]().load()
+
+
+@always_inline
+fn _as_rep16(rep0: _Rep16) -> _Rep16:
+    let rep = rep0
+    return rep
+
+
+@always_inline
+fn _as_rep16(rep0: _Rep32) -> _Rep16:
+    var rep = rep0
+    let rep_ptr = Pointer[_Rep32].address_of(rep)
+    return rep_ptr.bitcast[_Rep16]().load()
+
+
+@always_inline
+fn _as_rep32(rep0: _TensorShapeStorage) -> _Rep32:
+    var rep = rep0
+    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    return rep_ptr.bitcast[_Rep32]().load()
+
+
+@always_inline
+fn _as_rep32(rep0: _Rep16) -> _Rep32:
+    var rep = rep0
+    let rep_ptr = Pointer[_Rep16].address_of(rep)
+    return rep_ptr.bitcast[_Rep32]().load()
+
+
+@always_inline
+fn _as_rep32(rep0: _Rep32) -> _Rep32:
+    let rep = rep0
+    return rep
+
+
+@always_inline
+fn _as_rep_out_of_line(rep0: _TensorShapeStorage) -> _RepOutOfLine:
+    var rep = rep0
+    let rep_ptr = Pointer[_TensorShapeStorage].address_of(rep)
+    return rep_ptr.bitcast[_RepOutOfLine]().load()
+
+
+@always_inline
+fn _as_rep_out_of_line(rep0: _Rep16) -> _RepOutOfLine:
+    var rep = rep0
+    let rep_ptr = Pointer[_Rep16].address_of(rep)
+    return rep_ptr.bitcast[_RepOutOfLine]().load()
+
+
+@always_inline
+fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
+    var rep = rep0
+    let rep_ptr = Pointer[_Rep32].address_of(rep)
+    return rep_ptr.bitcast[_RepOutOfLine]().load()
+
+
+struct TensorShape:
+    var _rep: _TensorShapeStorage
+
+    fn __init__(inout self):
+        self._rep = _TensorShapeStorage()
+
+    fn __copyinit__(inout self, other: Self):
+        if other._is_out_of_line():
+            # TODO: memcpy the pointer
+            self._rep = _TensorShapeStorage(
+                _as_rep_out_of_line(other._rep).copy()
+            )
+        else:
+            self._rep = _TensorShapeStorage(_as_rep16(other._rep))
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._rep = existing._rep
+        existing._rep = _TensorShapeStorage()
+
+    fn __del__(owned self):
+        let rep_kind = self._get_rep_kind()
+        if self._is_out_of_line():
+            let out_of_line = _as_rep_out_of_line(self._rep)
+            out_of_line.dims.free()
+
+    fn _get_rep_kind(self) -> _RepKind:
+        return _as_rep32(self._rep).rep_kind
+
+    fn __getitem__(self, index: Int) -> Int:
+        let rep_kind = self._get_rep_kind()
+        if rep_kind == _RepKind.KIND_16:
+            return _as_rep16(self._rep)[index]
+        if rep_kind == _RepKind.KIND_32:
+            return _as_rep32(self._rep)[index]
+        if rep_kind == _RepKind.KIND_OUT_OF_LINE:
+            return _as_rep_out_of_line(self._rep)[index]
+        return -1
+
+    fn _is_out_of_line(self) -> Bool:
+        return self._get_rep_kind() == _RepKind.KIND_OUT_OF_LINE
+
+    fn get_rank(self) -> Int:
+        return _as_rep32(self._rep).get_rank()
+
+    fn get_num_elements(self) -> Int:
+        let rep_kind = self._get_rep_kind()
+        if rep_kind == _RepKind.KIND_16:
+            return _as_rep16(self._rep).get_num_elements()
+        if rep_kind == _RepKind.KIND_32:
+            return _as_rep32(self._rep).get_num_elements()
+        if rep_kind == _RepKind.KIND_OUT_OF_LINE:
+            return _as_rep_out_of_line(self._rep).get_num_elements()
+        return -1
+
+
+struct TensorSpec:
+    var shape: TensorShape
+
+    fn get_rank(self) -> Int:
+        return self.shape.get_rank()
+
+    fn get_dtype(self) -> DType:
+        return DType._from_ui8(_as_rep16(self.shape._rep).auxillary.value)
+
+    fn get_num_elements(self) -> Int:
+        return self.shape.get_num_elements()
