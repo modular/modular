@@ -10,6 +10,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrInterfaces.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
@@ -123,6 +124,15 @@ private:
   Type elementType;
 };
 } // namespace detail
+
+//===----------------------------------------------------------------------===//
+// MemRefAttr
+//===----------------------------------------------------------------------===//
+
+using MemoryHandle = mlir::DialectResourceBlobHandle<MDialect>;
+
+enum class MemoryKind { Stack, Heap, ConstGlobal, Global };
+
 } // namespace M
 
 //===----------------------------------------------------------------------===//

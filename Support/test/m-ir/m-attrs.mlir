@@ -35,3 +35,15 @@
 
 // CHECK: #M<multiline["a", "b", "c"]>
 "M"() {a = #M<multiline["a", "b", "c"]>} : () -> ()
+
+// CHECK: #M.memref<my_blob, 24, heap> : memref<2xi32>
+"M"() {a = #M.memref<my_blob, 24, heap> : memref<2xi32>} : () -> ()
+
+{-#
+  dialect_resources: {
+    M: {
+      // CHECK: my_blob: "0x80
+      my_blob: "0x80000000FFFEFDFC"
+    }
+  }
+#-}
