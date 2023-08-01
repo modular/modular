@@ -104,7 +104,7 @@ fn batched_matmul_parallel_sync[
                     input_fn,
                     output_fn,
                     reduce_impl,
-                ](a_view, 0, 0, out_chain)
+                ](a_view.dynamic_shape, 0, 0, out_chain)
 
         else:
             for batch in range(B):
