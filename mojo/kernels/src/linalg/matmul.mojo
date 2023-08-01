@@ -45,6 +45,7 @@ from MatmulUtils import (
     elementwise_lambda_fn_sig_type,
     dispatch_is_critical_stride,
     is_critical_stride,
+    use_vnni_fn,
 )
 from Matrix import Matrix
 from Pointer import DTypePointer
@@ -601,7 +602,7 @@ struct MatmulInnerLoopBPacked[
     #  local tile, in (a_row_size, TileN).
     var c_bound: StaticIntTuple[2]
 
-    alias use_vnni = has_avx2() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
 
     fn __init__(
         inout self,
@@ -1493,6 +1494,9 @@ fn pack_b[
     let dst_flat = dst.flatten()
     var dst_offset: Int = 0
 
+    # a_type and ctype are not provided yet so for now we only use the b_type
+    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+
     @parameter
     if not transpose_b:
         let k_in = src.dim[0]()
@@ -1508,14 +1512,18 @@ fn pack_b[
             n_out % tile_n == 0,
             "N dimension of output must be padded to tile_n",
         )
-
         for idx_k in range(0, k_out, tile_k):
             for idx_n in range(0, n_out, tile_n):
+                let vnni_factor = 4 if use_vnni else 1
                 let packed_dst_view = NDBuffer[
                     3, DimList.create_unknown[3](), type
                 ](
                     dst_flat.data.offset(dst_offset),
-                    DimList(tile_n // inner_size, tile_k, inner_size),
+                    DimList(
+                        tile_n // inner_size,
+                        tile_k // vnni_factor,
+                        inner_size * vnni_factor,
+                    ),
                     type,
                 )
                 let valid_k = min(tile_k, k_in - idx_k)
@@ -1526,7 +1534,7 @@ fn pack_b[
                     type,
                     simd_size,
                     inner_size,
-                    False,
+                    use_vnni,
                 ].run(
                     packed_dst_view,
                     src,
@@ -1763,8 +1771,11 @@ struct BTileGenerator[
             # When packing is done online, tile_dim_nk can vary in each call to
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
+            let vnni_factor = 4 if config.use_vnni else 1
             let tile_shape_pack = DimList(
-                self.tile_n_k[0] // inner_size, self.tile_n_k[1], inner_size
+                self.tile_n_k[0] // inner_size,
+                self.tile_n_k[1] // vnni_factor,
+                inner_size * vnni_factor,
             )
             let tile_k_idx = global_offset.K // self.tile_n_k[1]
             let b_flat = self.b.flatten()

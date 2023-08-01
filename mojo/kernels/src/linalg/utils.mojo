@@ -647,6 +647,16 @@ fn search_mm_config[
 
 
 @always_inline
+fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
+    return (
+        has_avx2()
+        and a_type == DType.uint8
+        and b_type == DType.int8
+        and c_type == DType.int32
+    )
+
+
+@always_inline
 fn search_mm_config[
     type: DType, b_packed: Bool, critical_stride: Bool
 ]() -> MatmulConfig:
@@ -670,8 +680,6 @@ fn get_matmul_config[
     #   inner micro kernel loop.
     alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
 
-    alias use_vnni = has_avx2() and a_type == DType.uint8 and b_type == DType.int8 and c_type == DType.int32
-
     return MatmulConfig {
         shape_a: DimList.create_unknown[2](),
         shape_b: DimList.create_unknown[2](),
@@ -683,7 +691,7 @@ fn get_matmul_config[
         pack_inner_size: pack_inner_size * simd_size,
         pack_data_size: get_pack_data_size[b_type](),
         prefetch_b_distance_k: prefetch_b_distance_k,
-        use_vnni: use_vnni,
+        use_vnni: use_vnni_fn[a_type, b_type, c_type](),
     }
 
 
