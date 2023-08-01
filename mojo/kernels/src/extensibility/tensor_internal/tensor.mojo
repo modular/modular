@@ -8,13 +8,13 @@
 
 from Assert import assert_param, debug_assert
 from DType import DType
-from IO import print
 from List import VariadicList
 from Memory import memcpy
 from Pointer import Pointer, DTypePointer
 from Range import range
 from SIMD import SIMD, UInt8, Int32, Int16, Int32, Int8, Int64
 from StaticTuple import StaticTuple
+from String import String
 from TargetInfo import sizeof, is_little_endian
 
 # These representation must be kept in sync with the TensorShape file in
@@ -132,6 +132,27 @@ struct _Rep16:
         debug_assert(index < self.get_rank(), "index out of range")
         self.dims[index] = val
 
+    fn __repr__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        var buf = String("")
+        for i in range(self.get_rank()):
+            if i != 0:
+                buf += "x"
+            buf += String(self[i])
+        return buf
+
 
 @register_passable("trivial")
 struct _Rep32:
@@ -210,6 +231,27 @@ struct _Rep32:
             self.dim3 = val
         else:
             self.dims012[index] = val
+
+    fn __repr__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        var buf = String("")
+        for i in range(self.get_rank()):
+            if i != 0:
+                buf += "x"
+            buf += String(self[i])
+        return buf
 
 
 @register_passable("trivial")
@@ -306,6 +348,27 @@ struct _RepOutOfLine:
             rank: self.rank,
             auxillary: self.auxillary,
         }
+
+    fn __repr__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        var buf = String("")
+        for i in range(self.get_rank()):
+            if i != 0:
+                buf += "x"
+            buf += String(self[i])
+        return buf
 
 
 @register_passable("trivial")
@@ -655,6 +718,29 @@ struct TensorShape:
             return _as_rep_out_of_line(self._rep).get_num_elements()
         return -1
 
+    fn __repr__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the shape.
+
+        Returns:
+          The string representation of the shape.
+        """
+        let rep_kind = self._get_rep_kind()
+        if rep_kind == _RepKind.KIND_16:
+            return _as_rep16(self._rep).__str__()
+        if rep_kind == _RepKind.KIND_32:
+            return _as_rep32(self._rep).__str__()
+        if rep_kind == _RepKind.KIND_OUT_OF_LINE:
+            return _as_rep_out_of_line(self._rep).__str__()
+        return "<unknown representation>"
+
 
 # ===----------------------------------------------------------------------===#
 # TensorSpec
@@ -688,10 +774,11 @@ struct TensorSpec:
           type: The dtype of the specification.
           shapes: The shapes to initialize the shape with.
         """
-        var shape = TensorShape(shapes)
+        let shape = TensorShape(shapes)
         var rep = _as_rep16(shape._rep)
         rep.auxillary = type._as_i8()
 
+        self.shape = TensorShape()
         self.shape._rep = rep
 
     fn __copyinit__(inout self, other: Self):
@@ -737,3 +824,19 @@ struct TensorSpec:
           The total number of elements in the spec.
         """
         return self.shape.num_elements()
+
+    fn __repr__(self) -> String:
+        """Returns the string representation of the spec.
+
+        Returns:
+          The string representation of the spec.
+        """
+        return self.__str__()
+
+    fn __str__(self) -> String:
+        """Returns the string representation of the spec.
+
+        Returns:
+          The string representation of the spec.
+        """
+        return self.shape.__str__() + "x" + self.dtype().__str__()
