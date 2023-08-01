@@ -69,7 +69,6 @@ fn gemm_8_to_32(
     c: Buffer[16 * 16, DType.int32],
     t: Int,
 ):
-
     let bp = Buffer[64 * 16, DType.int8].stack_allocation()
     pack_vnni(b, bp)
     for i in range(16):
