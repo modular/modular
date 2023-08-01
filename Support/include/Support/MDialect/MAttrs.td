@@ -262,6 +262,36 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
+// MemRefAttr
+//===----------------------------------------------------------------------===//
+
+def MemRefAttr : MAttr<"MemRef", "memref", [TypedAttrInterface]> {
+  let summary = "a reference to a block of memory";
+  let description = [{
+    The `#M.memref` attribute represents a reference to a block of memory. The
+    block of memory lives in a dialect resource and describes the contents of
+    the memory, and this attribute describes an offset into the block, which
+    may be out-of-bounds, and how to interpret the memory.
+
+    TODO: Add address space and write protection.
+
+    Example:
+
+    ```mlir
+    #M.memref<my_blob, 24> : !M.pointer<index>
+    ```
+  }];
+
+  let parameters = (ins "MemoryHandle":$memory, "int64_t":$offset,
+                        "MemoryKind":$kind,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let assemblyFormat = [{
+    `<` $memory `,` $offset `,` custom<MemoryKind>($kind) `>`
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 

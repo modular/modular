@@ -1069,6 +1069,55 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//
+// MemRefAttr
+//===----------------------------------------------------------------------===//
+
+namespace mlir {
+/// Allow memory handles to be parsed.
+template <>
+struct FieldParser<M::MemoryHandle> {
+  static FailureOr<M::MemoryHandle> parse(AsmParser &p) {
+    return p.parseResourceHandle<M::MemoryHandle>();
+  }
+};
+
+/// Allow memory handles to be printed.
+static AsmPrinter &operator<<(AsmPrinter &p, M::MemoryHandle hdl) {
+  p.printResourceHandle(hdl);
+  return p;
+}
+} // namespace mlir
+
+static ParseResult parseMemoryKind(AsmParser &p, MemoryKind &kind) {
+  StringRef kw;
+  if (p.parseKeyword(&kw))
+    return failure();
+  kind = llvm::StringSwitch<MemoryKind>(kw)
+             .Case("stack", MemoryKind::Stack)
+             .Case("heap", MemoryKind::Heap)
+             .Case("const_global", MemoryKind::ConstGlobal)
+             .Case("global", MemoryKind::Global);
+  return success();
+}
+
+static void printMemoryKind(AsmPrinter &p, MemoryKind kind) {
+  switch (kind) {
+  case MemoryKind::Stack:
+    p << "stack";
+    break;
+  case MemoryKind::Heap:
+    p << "heap";
+    break;
+  case MemoryKind::ConstGlobal:
+    p << "const_global";
+    break;
+  case MemoryKind::Global:
+    p << "global";
+    break;
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // BuildInfoAttr
 //===----------------------------------------------------------------------===//
 
