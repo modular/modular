@@ -274,26 +274,52 @@ ErrorOrSuccess Config::flush() {
 std::filesystem::path Config::getModularHomeDirPath() {
   // If MODULAR_HOME is defined then pick it.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
+  if (modularHome)
+    return *modularHome;
 
   // If we cannot find the MODULAR_HOME then use the MODULAR_DERIVED_PATH as
   // MODULAR_HOME.
-  if (!modularHome)
-    modularHome = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+  modularHome = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+  if (modularHome)
+    return *modularHome;
 
-  // No env variable, find it in PATH.
-  if (!modularHome) {
 #ifdef _WIN32
-    modularHome = findDirInEnvPath(".modular", "PATH", ';');
+  // On Windows we use the non-roaming AppData directory. The APPDATA env
+  // variable must always exist.
+  //
+  // For example: C:\path\to\AppData\Local\Modular
+  auto defaultRoot = llvm::sys::Process::GetEnv("APPDATA");
+  assert(defaultRoot.has_value() && "Must have APPDATA");
+  return std::filesystem::path(*defaultRoot) / "Local" / "Modular";
 #else
-    modularHome = findDirInEnvPath(".modular");
-#endif
+  auto homeDir = llvm::sys::Process::GetEnv("HOME");
+  std::filesystem::path defaultRoot;
+  std::error_code ec;
+  // If HOME is set up, but nothing is there, then try to use /etc/modular.
+  if (homeDir) {
+    defaultRoot = *homeDir;
+    defaultRoot /= ".modular";
+    if (std::filesystem::exists(defaultRoot, ec) && !ec)
+      return defaultRoot;
   }
 
-  // Default to CWD - no env variable and nothing in PATH, so just use CWD.
-  if (!modularHome)
-    return ".modular";
+  // OK - the home root didn't exist or there was nothing there, check
+  // /etc/modular.
+  defaultRoot = "/etc/modular";
+  if (std::filesystem::exists(defaultRoot, ec) && !ec)
+    return defaultRoot;
 
-  return *modularHome;
+  // /etc/modular did not exist, switch back to using home if it exists.
+  // This will be an empty dir.
+  if (homeDir) {
+    defaultRoot = *homeDir;
+    defaultRoot /= ".modular";
+    return defaultRoot;
+  }
+
+  // HOME was undefined, finally we can use /etc/modular.
+  return std::filesystem::path("/etc/modular");
+#endif
 }
 
 std::filesystem::path Config::getConfigFilePath() {
