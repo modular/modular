@@ -18,6 +18,9 @@ OutputChain OutputChain::fork() {
   result.prototypeProfilerEntry = std::move(prototypeProfilerEntry);
   result.refs = std::move(refs);
   result.extras = std::move(extras);
+#if MODULAR_PARANOID
+  result.uses = std::move(uses);
+#endif
   // The actual profiler entry is left alone.
   return result;
 }
@@ -94,6 +97,11 @@ void OutputChain::complete() {
   // be surprisingly expensive, and we don't want that to be included in
   // the kernel's time.
   std::move(profilerEntry).record();
+#if MODULAR_PARANOID
+  // IMPORTANT: Release uses before the refs are cleared since those refs
+  // may trigger frees.
+  uses.clear();
+#endif
   // IMPORTANT: Clear the refs and extras before marking the output chain as
   // ready so that waiters won't see stray references, and the dtors will
   // be run before any side effects of the waiters are seen (such as

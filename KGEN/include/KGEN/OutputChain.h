@@ -64,6 +64,16 @@ struct OutputChain {
   /// and some task id details to the profile details. This entry, however,
   /// is never recorded.
   MojoProfilerEntry prototypeProfilerEntry;
+
+#if MODULAR_PARANOID
+  /// All 'uses' of 'resources' needed by this call which should be considered
+  /// active while the call is in flight. This can be used to capture which
+  /// of the refs below are for BufferRefs which are being read, written or
+  /// modified while the call is active, and thus detect use-after-free and
+  /// data races over BufferRefs.
+  SmallVector<LLCL::ResourceUse> uses;
+#endif
+
   /// AsyncValue references to hold alive until markReady() or markError()
   /// is called.
   SmallVector<LLCL::AnyAsyncValueRef> refs;
@@ -174,6 +184,8 @@ struct OutputChain {
   void taskIsDone();
 
 private:
+  /// Cleanup all resource held by the OutputChain in preparation for emplacing
+  /// or setting to error the out chain.
   void complete();
 };
 

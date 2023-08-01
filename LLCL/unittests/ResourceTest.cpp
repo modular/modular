@@ -40,7 +40,7 @@ TEST(Resource, UseAfterFreeNew_ExpectDeath) {
 }
 
 TEST(Resource, Uninitialized_ExpectDeath) {
-  auto resource = Resource::allocate("test");
+  auto resource = Resource::allocate("test", /*isInitialized=*/false);
   EXPECT_DEATH_IF_SUPPORTED(
       resource->beginUse("use1", kReadingResourceUse),
       "attempting to read from uninitialized \\(section of\\) resource");
