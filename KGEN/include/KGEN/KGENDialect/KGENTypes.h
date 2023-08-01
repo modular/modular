@@ -51,7 +51,7 @@ public:
   static SignatureType
   remapToSignature(ArrayRef<ParamDeclAttr> inputParams,
                    ArrayRef<ParamDeclAttr> resultParams,
-                   FunctionType functionType, MetadataAttr metadata = {},
+                   FunctionType functionType, FnMetadataAttr metadata = {},
                    function_ref<InFlightDiagnostic()> emitError = {});
 
   /// Reconstruct the signature using a list of named input parameters. These

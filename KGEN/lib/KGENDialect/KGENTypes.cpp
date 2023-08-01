@@ -135,7 +135,8 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
                                  TypeArrayAttr &resultParamTypes,
-                                 FunctionType values, MetadataAttr &metadata) {
+                                 FunctionType values,
+                                 FnMetadataAttr &metadata) {
   MLIRContext *ctx = values.getContext();
   if (!inputParamTypes)
     inputParamTypes = TypeArrayAttr::get(ctx, {});
@@ -143,13 +144,13 @@ static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
     resultParamTypes = TypeArrayAttr::get(ctx, {});
   if (!metadata) {
     // Default value input conventions to take each argument by-value.
-    metadata = MetadataAttr::get(ctx, values.getNumInputs());
+    metadata = FnMetadataAttr::get(ctx, values.getNumInputs());
   }
 }
 
 SignatureType SignatureType::get(TypeArrayAttr inputParamTypes,
                                  TypeArrayAttr resultParamTypes,
-                                 FunctionType values, MetadataAttr metadata) {
+                                 FunctionType values, FnMetadataAttr metadata) {
   getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
   return get(values.getContext(), inputParamTypes, resultParamTypes, values,
              metadata);
@@ -159,7 +160,7 @@ SignatureType
 SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                           TypeArrayAttr inputParamTypes,
                           TypeArrayAttr resultParamTypes, FunctionType values,
-                          MetadataAttr metadata) {
+                          FnMetadataAttr metadata) {
   getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
   return getChecked(emitError, values.getContext(), inputParamTypes,
                     resultParamTypes, values, metadata);
@@ -233,7 +234,7 @@ SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, MetadataAttr metadata) {
+    FunctionType values, FnMetadataAttr metadata) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
@@ -360,7 +361,7 @@ void SignatureType::print(AsmPrinter &p) const {
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypeArrayAttr inputParams, TypeArrayAttr resultParams,
-                      FunctionType values, MetadataAttr metadata) {
+                      FunctionType values, FnMetadataAttr metadata) {
   return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
@@ -449,7 +450,7 @@ Type IndexRefRemapper::remapTypeImpl(Type type) {
 
 SignatureType IndexRefRemapper::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
-    FunctionType functionType, MetadataAttr metadata,
+    FunctionType functionType, FnMetadataAttr metadata,
     function_ref<InFlightDiagnostic()> emitError) {
   IndexRefRemapper remapper(inputParams, resultParams);
   SmallVector<Type> inputParamTypes, resultParamTypes;

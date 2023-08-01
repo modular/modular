@@ -203,13 +203,13 @@ def ConstraintArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
-// MetadataAttr
+// FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
+def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
   let summary = "Function metadata.";
   let description = [{
-    The `#kgen.metadata` attribute contains additional information about a
+    The `#kgen.fn_metadata` attribute contains additional information about a
     function, such as its argument calling conventions (pass-by-value or
     pass-by-reference), any default argument values, and the effects of the
     function itself: none or throws.
@@ -220,11 +220,11 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
     // Metadata specifying input argument #0 is taken by reference,
     // argument #1 is taken by value and has a default value of `4.2`,
     // and the function has a "throws" function effect.
-    #kgen.metadata<[byref, owned], [<1 : i64 = 4.2 : f32>], throws>
+    #kgen.fn_metadata<[byref, owned], [<1 : i64 = 4.2 : f32>], throws>
 
     // Metadata specifying the default input value conventions, no default
     // arguments, and a "throws" function effect.
-    #kgen.metadata<[], [], throws>
+    #kgen.fn_metadata<[], [], throws>
     ```
   }];
 
@@ -258,7 +258,7 @@ def KGEN_MetadataAttr : KGENAttr<"Metadata", "metadata"> {
                                   FunctionType values);
 
     /// Get this metadata attr with the effects swapped out.
-    MetadataAttr getWithFnEffects(FnEffects effects);
+    FnMetadataAttr getWithFnEffects(FnEffects effects);
   }];
 
   let genVerifyDecl = 1;

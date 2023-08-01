@@ -40,8 +40,8 @@ static LIT::FuncOp addVoidMethod(StructDeclOp selfStruct, StringRef prefix,
                                  ClosureEmitter &emitter) {
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       selfStruct.getLoc(), &selfStruct.getFields().front());
-  auto metadata = b.getAttr<MetadataAttr>(argConventions, ArrayRef<TypedAttr>(),
-                                          FnEffects());
+  auto metadata = b.getAttr<FnMetadataAttr>(argConventions,
+                                            ArrayRef<TypedAttr>(), FnEffects());
   auto funcType = FunctionType::get(selfStruct->getContext(), argTypes,
                                     emitter.getNoneType());
   SignatureType signature = SignatureType::get({}, {}, funcType, metadata);
@@ -158,8 +158,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     SignatureType cpySignatureType = SignatureType::get(
         {}, {},
         FunctionType::get(signatureType.getContext(), inputTypes, noneType),
-        b.getAttr<MetadataAttr>(inputConventions, ArrayRef<TypedAttr>(),
-                                FnEffects()));
+        b.getAttr<FnMetadataAttr>(inputConventions, ArrayRef<TypedAttr>(),
+                                  FnEffects()));
     return b.create<StructFieldOp>(location,
                                    StringAttr::get(b.getContext(), name),
                                    cpySignatureType, nullptr);

@@ -2151,13 +2151,13 @@ static void emitClosureInstance(SignatureType closureSignature,
   llvm::append_range(inputTypes, closureSignature.getValueInputs());
   llvm::append_range(conventions,
                      closureSignature.getMetadata().getInputConventions());
-  SignatureType closureImplSignature =
-      SignatureType::get(closureSignature.getInputParamTypes(),
-                         closureSignature.getResultParamTypes(),
-                         FunctionType::get(shared.getContext(), inputTypes,
-                                           closureSignature.getValueResults()),
-                         MetadataAttr::get(shared.getContext(), conventions, {},
-                                           closureSignature.getFnEffects()));
+  SignatureType closureImplSignature = SignatureType::get(
+      closureSignature.getInputParamTypes(),
+      closureSignature.getResultParamTypes(),
+      FunctionType::get(shared.getContext(), inputTypes,
+                        closureSignature.getValueResults()),
+      FnMetadataAttr::get(shared.getContext(), conventions, {},
+                          closureSignature.getFnEffects()));
   shared.getOrGenerateClosureImplStruct(
       location, closureImplSignature, captures.size(),
       nestedFunction->getParentOfType<FileModuleOp>());
@@ -2356,7 +2356,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType,
-      builder.getAttr<MetadataAttr>(inputConventions, defaults, effects),
+      builder.getAttr<FnMetadataAttr>(inputConventions, defaults, effects),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -3234,7 +3234,7 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
     fnEffects = fnEffects | FnEffects::OwnedResult;
 
   // TODO: Should raise if anything we invoke raises.
-  auto metadata = builder.getAttr<MetadataAttr>(
+  auto metadata = builder.getAttr<FnMetadataAttr>(
       argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
   auto signature = SignatureType::get({}, {}, fnType, metadata);
 

@@ -1014,7 +1014,7 @@ template <bool optionalResultList>
 static OptionalParseResult
 parseOptionalSignatureValues(AsmParser &p,
                              function_ref<FailureOr<Type>()> parseElt,
-                             FunctionType &values, MetadataAttr &metadata) {
+                             FunctionType &values, FnMetadataAttr &metadata) {
   SmallVector<ValueInputConvention> inputConventions;
   SmallVector<TypedAttr> defaults;
   SmallVector<Type> argTypes, resTypes;
@@ -1079,10 +1079,10 @@ parseOptionalSignatureValues(AsmParser &p,
 
   // FIXME: Force C++ to select the derived class getter, not the storage
   // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
-  using GetCheckedT = MetadataAttr (*)(
+  using GetCheckedT = FnMetadataAttr (*)(
       function_ref<InFlightDiagnostic()>, MLIRContext *,
       ArrayRef<ValueInputConvention>, ArrayRef<TypedAttr>, FnEffects);
-  metadata = ((GetCheckedT)&MetadataAttr::getChecked)(
+  metadata = ((GetCheckedT)&FnMetadataAttr::getChecked)(
       emitError, p.getContext(), inputConventions, defaults, effect);
   if (!metadata)
     return failure();
@@ -1093,7 +1093,7 @@ parseOptionalSignatureValues(AsmParser &p,
 template <bool optionalResultList>
 static ParseResult
 parseSignatureValuesElt(AsmParser &p, function_ref<FailureOr<Type>()> parseElt,
-                        FunctionType &values, MetadataAttr &metadata) {
+                        FunctionType &values, FnMetadataAttr &metadata) {
   OptionalParseResult result = parseOptionalSignatureValues<optionalResultList>(
       p, parseElt, values, metadata);
   if (result.has_value())
@@ -1107,7 +1107,7 @@ static void
 printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                         FunctionType functionType, SignatureType signature) {
   p << '(';
-  MetadataAttr metadata = signature.getMetadata();
+  FnMetadataAttr metadata = signature.getMetadata();
   ArrayRef<TypedAttr> defaults = metadata.getDefaultArguments();
   llvm::interleaveComma(
       llvm::seq<unsigned>(0, metadata.getInputConventions().size()), p,
@@ -1159,7 +1159,7 @@ ParseResult KGEN::parseFunctionSignature(
     return args.back().type;
   };
 
-  MetadataAttr metadata;
+  FnMetadataAttr metadata;
   if (failed(parseSignatureValuesElt</*optionalResultList=*/true>(
           p, parseArg, functionType, metadata)))
     return failure();
@@ -1221,7 +1221,7 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
     return type;
   };
   FunctionType functionType;
-  MetadataAttr metadata;
+  FnMetadataAttr metadata;
   OptionalParseResult result =
       parseOptionalSignatureValues</*optionalResultList=*/false>(
           p, parseElt, functionType, metadata);
@@ -1277,7 +1277,7 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
     return type;
   };
   FunctionType functionType;
-  MetadataAttr metadata;
+  FnMetadataAttr metadata;
   if (parseSignatureValuesElt</*optionalResultList=*/false>(
           p, parseElt, functionType, metadata))
     return failure();

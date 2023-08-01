@@ -2725,7 +2725,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType,
-      b.getAttr<MetadataAttr>(inputConventions, defaults, effects),
+      b.getAttr<FnMetadataAttr>(inputConventions, defaults, effects),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
