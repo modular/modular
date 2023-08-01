@@ -7,6 +7,7 @@
 #include "mojo-format.h"
 
 #include "../Common/Telemetry.h"
+#include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 
 #include "llvm/Option/ArgList.h"
@@ -107,13 +108,23 @@ static int format(const State &state) {
     }
   }
 
-  llvm::ErrorOr<std::string> mblack = llvm::sys::findProgramByName("mblack");
-  if (!mblack) {
+  // Read the mojo configuration.
+  ErrorOr<Config> configOr = Config::open();
+  if (failed(configOr)) {
+    return state.reportError(Twine("failed to parse 'modular.cfg': ") +
+                             configOr.getError());
+  }
+  Config config = std::move(*configOr);
+
+  // Resolve the path to mblack.
+  StringRef mblack = config.getValue("mojo.mblack_path");
+  if (!std::filesystem::exists(mblack.str(), ec) || ec ||
+      !llvm::sys::fs::can_execute(mblack)) {
     return state.reportError("unable to resolved Mojo formatter in PATH");
   }
 
   // Forward the curated options to mblack.
-  SmallVector<StringRef> mblackArgs = {*mblack, "--fast", "--preview"};
+  SmallVector<StringRef> mblackArgs = {mblack, "--fast", "--preview"};
   if (!lineLengthArg.empty()) {
     mblackArgs.push_back("--line-length");
     mblackArgs.push_back(lineLengthArg);
@@ -124,7 +135,7 @@ static int format(const State &state) {
   if (args.hasArg(options::OPT_quiet))
     mblackArgs.push_back("-q");
   llvm::append_range(mblackArgs, inputs);
-  return llvm::sys::ExecuteAndWait(mblack.get(), mblackArgs);
+  return llvm::sys::ExecuteAndWait(mblack, mblackArgs);
 }
 
 void M::registerFormatSubcommand(SubcommandRegistry &registry) {
