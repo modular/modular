@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
+
 from Buffer import NDBuffer, Buffer, _raw_stack_allocation
 from DType import DType
 from Range import range
