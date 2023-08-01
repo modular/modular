@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # FIXME(#18380): Renable this test.
-# UNSUPPORTED: *
+# REQUIRES: DISABLED
 
 # Note: Don't run with pre-existing sanitizers to ensure sanitizers work in a
 #       clean environment.
