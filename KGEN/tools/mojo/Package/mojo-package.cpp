@@ -495,11 +495,11 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
       LLCL::RCRef<Cache::RegionCache>::create(std::move(*regionCacheBackend));
 
   // Time the compilation.
+  [[maybe_unused]] auto flushTelemetry =
+      runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
       runtime.getTelemetryContext()->createUInt64Timer(
           "mojo.kgen.compile.time");
-  [[maybe_unused]] auto flushTelemetry =
-      runtime.getTelemetryContext()->autoFlush();
 
   auto runPipeline = [&](mlir::PassManager &pm) -> ErrorOrSuccess {
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(

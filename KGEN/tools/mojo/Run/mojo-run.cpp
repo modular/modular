@@ -174,10 +174,10 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
                                   ArrayRef<const char *> arguments) {
   if (!moduleExportsMain(moduleOp, symtab))
     return Error("could not find a 'main' function to execute");
-  [[maybe_unused]] auto timeScope =
-      runtime.getTelemetryContext()->createUInt64Timer("mojo.run.time");
   [[maybe_unused]] auto flushTelemetry =
       runtime.getTelemetryContext()->autoFlush();
+  [[maybe_unused]] auto timeScope =
+      runtime.getTelemetryContext()->createUInt64Timer("mojo.run.time");
 
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
