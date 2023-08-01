@@ -298,10 +298,10 @@ static void lowerAttributesAndTypes(
   });
 
   // Remove all input conventions.
-  replacer.addReplacement([](MetadataAttr metadata) {
-    return MetadataAttr::get(metadata.getContext(),
-                             metadata.getInputConventions().size(),
-                             metadata.getFnEffects());
+  replacer.addReplacement([](FnMetadataAttr metadata) {
+    return FnMetadataAttr::get(metadata.getContext(),
+                               metadata.getInputConventions().size(),
+                               metadata.getFnEffects());
   });
 
   replacer.recursivelyReplaceElementsIn(

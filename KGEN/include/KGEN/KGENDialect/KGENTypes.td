@@ -111,23 +111,23 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     can have input/output parameters as well as input/output value arguments
     and results.
 
-    The metadata attribute is dialect-specific and can be used to store
-    additional information about a function, such as its argument calling
-    conventions and the effects of the function itself. When the metadata only
-    contains default values, it isn't printed in the textual MLIR format.
+    The metadata attribute is used to store additional information about a
+    function, such as its argument calling conventions and the effects of the
+    function itself. When the metadata only contains default values, it isn't
+    printed in the textual MLIR format.
   }];
 
   let parameters = (ins "TypeArrayAttr":$inputParamTypes,
                         "TypeArrayAttr":$resultParamTypes,
                         "FunctionType":$values,
-                        "MetadataAttr":$metadata);
+                        "FnMetadataAttr":$metadata);
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
       "TypeArrayAttr":$inputParamTypes, "TypeArrayAttr":$resultParamTypes,
-      "FunctionType":$values, "MetadataAttr":$metadata)>,
+      "FunctionType":$values, "FnMetadataAttr":$metadata)>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
     TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
   ];
@@ -217,7 +217,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn,
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-      FunctionType values, MetadataAttr metadata);
+      FunctionType values, FnMetadataAttr metadata);
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);

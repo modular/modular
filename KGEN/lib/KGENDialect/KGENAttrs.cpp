@@ -84,25 +84,25 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// MetadataAttr
+// FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
   return get(ctx, numInputs, FnEffects::None);
 }
 
-MetadataAttr MetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
-                               FnEffects effects) {
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
+                                   FnEffects effects) {
   return get(ctx, SmallVector<ValueInputConvention>(numInputs), {}, effects);
 }
 
 /// Get this metadata attr with the effects swapped out.
-MetadataAttr MetadataAttr::getWithFnEffects(FnEffects effects) {
-  return MetadataAttr::get(getContext(), getInputConventions(),
-                           getDefaultArguments(), effects);
+FnMetadataAttr FnMetadataAttr::getWithFnEffects(FnEffects effects) {
+  return FnMetadataAttr::get(getContext(), getInputConventions(),
+                             getDefaultArguments(), effects);
 }
 
-bool MetadataAttr::isDefault() {
+bool FnMetadataAttr::isDefault() {
   return getFnEffects() == FnEffects::None &&
          llvm::all_of(getInputConventions(),
                       [](ValueInputConvention inputConv) {
@@ -111,9 +111,10 @@ bool MetadataAttr::isDefault() {
 }
 
 LogicalResult
-MetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                     ArrayRef<ValueInputConvention> inputConventions,
-                     ArrayRef<TypedAttr> defaultArguments, FnEffects effects) {
+FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       ArrayRef<ValueInputConvention> inputConventions,
+                       ArrayRef<TypedAttr> defaultArguments,
+                       FnEffects effects) {
   if (defaultArguments.size() > inputConventions.size()) {
     return emitError()
            << "there are more default arguments than value input conventions: "
@@ -123,10 +124,10 @@ MetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 LogicalResult
-MetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
-                              ArrayRef<Type> inputParamTypes,
-                              ArrayRef<Type> resultParamTypes,
-                              FunctionType values) {
+FnMetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<Type> inputParamTypes,
+                                ArrayRef<Type> resultParamTypes,
+                                FunctionType values) {
   // Check we have the right number of conventions.
   if (getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";

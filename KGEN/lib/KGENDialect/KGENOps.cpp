@@ -1036,7 +1036,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   results.push_back(SignatureType::get(
       sig.getInputParamTypes(), sig.getResultParamTypes(),
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
-      MetadataAttr::get(ctx, newInputConvs, newDefaultArgs, effects)));
+      FnMetadataAttr::get(ctx, newInputConvs, newDefaultArgs, effects)));
   return mlir::success();
 }
 

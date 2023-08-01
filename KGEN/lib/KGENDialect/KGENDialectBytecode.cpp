@@ -80,12 +80,12 @@ enum AttributeCode {
   ///   }
   kConstraintArrayAttr = 8,
   ///
-  ///   MetadataAttr {
+  ///   FnMetadataAttr {
   ///     inputConventions: varint[]
   ///     defaultArguments: TypedAttr[]
   ///     fnEffects: varint
   ///   }
-  kMetadataAttr = 9,
+  kFnMetadataAttr = 9,
   ///
   ///   VariadicAttr {
   ///     values: TypedAttr[]
@@ -191,7 +191,7 @@ enum TypeCode {
   ///     inputParams: ParamDeclArrayAttr
   ///     resultParams: ParamDeclArrayAttr
   ///     values: FunctionType
-  ///     metadata: MetadataAttr
+  ///     metadata: FnMetadataAttr
   ///   }
   kSignatureType = 4,
   ///
@@ -240,7 +240,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Attribute readConcreteTypeConstantAttr(BytecodeReader &reader) const;
   ConstraintAttr readConstraintAttr(BytecodeReader &reader) const;
   DTypeConstantAttr readDTypeConstantAttr(BytecodeReader &reader) const;
-  MetadataAttr readMetadataAttr(BytecodeReader &reader) const;
+  FnMetadataAttr readFnMetadataAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
@@ -266,7 +266,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(ConcreteTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(ConstraintAttr attr, BytecodeWriter &writer) const;
   void write(DTypeConstantAttr attr, BytecodeWriter &writer) const;
-  void write(MetadataAttr attr, BytecodeWriter &writer) const;
+  void write(FnMetadataAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
@@ -328,8 +328,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readConstraintAttr(reader);
   case Encoding::kConstraintArrayAttr:
     return readArrayOfAttrs<ConstraintArrayAttr>(reader);
-  case Encoding::kMetadataAttr:
-    return readMetadataAttr(reader);
+  case Encoding::kFnMetadataAttr:
+    return readFnMetadataAttr(reader);
   case Encoding::kUnknownAttr:
     return readUnknownAttr(reader);
   case Encoding::kUnboundAttr:
@@ -383,7 +383,7 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
                                       BytecodeWriter &writer) const {
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
-            DTypeConstantAttr, MetadataAttr, MLIROpAttr, ParamBindAttr,
+            DTypeConstantAttr, FnMetadataAttr, MLIROpAttr, ParamBindAttr,
             ParamDeclAttr, ParamDeclRefAttr, ParamIndexRefAttr,
             ParamOperatorAttr, ParameterizedTypeConstantAttr,
             SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
@@ -506,10 +506,11 @@ void KGENBytecodeInterface::write(DTypeConstantAttr attr,
 }
 
 //===----------------------------------------------------------------------===//
-// MetadataAttr
+// FnMetadataAttr
+//===----------------------------------------------------------------------===//
 
-MetadataAttr
-KGENBytecodeInterface::readMetadataAttr(BytecodeReader &reader) const {
+FnMetadataAttr
+KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
   SmallVector<ValueInputConvention> inputConventions;
   auto parseConvention = [&](ValueInputConvention &convention) {
     uint64_t value;
@@ -519,23 +520,23 @@ KGENBytecodeInterface::readMetadataAttr(BytecodeReader &reader) const {
     return mlir::success();
   };
   if (failed(reader.readList(inputConventions, parseConvention)))
-    return MetadataAttr();
+    return FnMetadataAttr();
 
   SmallVector<TypedAttr> defaultArguments;
   if (failed(reader.readAttributes(defaultArguments)))
-    return MetadataAttr();
+    return FnMetadataAttr();
 
   uint64_t fnEffects;
   if (failed(reader.readVarInt(fnEffects)))
-    return MetadataAttr();
+    return FnMetadataAttr();
 
-  return MetadataAttr::get(getContext(), inputConventions, defaultArguments,
-                           static_cast<FnEffects>(fnEffects));
+  return FnMetadataAttr::get(getContext(), inputConventions, defaultArguments,
+                             static_cast<FnEffects>(fnEffects));
 }
 
-void KGENBytecodeInterface::write(MetadataAttr attr,
+void KGENBytecodeInterface::write(FnMetadataAttr attr,
                                   BytecodeWriter &writer) const {
-  writer.writeVarInt(Encoding::kMetadataAttr);
+  writer.writeVarInt(Encoding::kFnMetadataAttr);
   writer.writeList(attr.getInputConventions(), [&](ValueInputConvention value) {
     writer.writeVarInt(static_cast<uint64_t>(value));
   });
@@ -883,7 +884,7 @@ void KGENBytecodeInterface::write(ParamRefType type,
 Type KGENBytecodeInterface::readSignatureType(BytecodeReader &reader) const {
   TypeArrayAttr inputParamTypes, resultParamTypes;
   FunctionType values;
-  MetadataAttr metadata;
+  FnMetadataAttr metadata;
   if (failed(reader.readAttribute(inputParamTypes)) ||
       failed(reader.readAttribute(resultParamTypes)) ||
       failed(reader.readType(values)) || failed(reader.readAttribute(metadata)))

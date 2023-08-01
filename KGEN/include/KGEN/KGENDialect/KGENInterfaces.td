@@ -113,9 +113,7 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     operations that implement `FuncInterface` must also implement
     `DeclInterface`.
 
-    KGEN signature types also store metadata for dialect-specific information,
-    such as input argument calling conventions. This interface also provides
-    methods for accessing that metadata.
+    This interface also provides methods for accessing the signature metadata.
   }];
   let cppNamespace = "::M::KGEN";
 
@@ -139,7 +137,7 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
     /// Returns the metadata associated with the function, such as function
     /// effects and value argument conventions.
-    MetadataAttr getMetadata() {
+    FnMetadataAttr getMetadata() {
       return $_op.getSignature().getMetadata();
     }
 
