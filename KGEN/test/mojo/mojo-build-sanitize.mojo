@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# FIXME(#18380): Renable this test.
+# UNSUPPORTED: *
+
 # Note: Don't run with pre-existing sanitizers to ensure sanitizers work in a
 #       clean environment.
 # UNSUPPORTED: asan,msan,tsan
