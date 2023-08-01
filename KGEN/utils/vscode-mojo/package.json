@@ -82,7 +82,7 @@
       "type": "object",
       "title": "Mojo",
       "properties": {
-        "mojo.server_path": {
+        "mojo.serverPath": {
           "scope": "resource",
           "type": "string",
           "description": "The file path of the mojo-lsp-server executable."

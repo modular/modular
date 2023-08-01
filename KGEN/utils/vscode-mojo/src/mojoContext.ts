@@ -100,7 +100,7 @@ export class MOJOContext implements vscode.Disposable {
         await this.startLanguageClient(workspaceFolder, outputChannel);
 
     // Watch for configuration changes on this folder.
-    await configWatcher.activate(this, workspaceFolder, [ 'server_path' ],
+    await configWatcher.activate(this, workspaceFolder, [ 'serverPath' ],
                                  [ serverPath ]);
     return server;
   }
@@ -118,7 +118,7 @@ export class MOJOContext implements vscode.Disposable {
     // Get the path of the lsp-server that is used to provide language
     // functionality.
     var serverPath =
-        await this.resolveServerPath('server_path', workspaceFolder);
+        await this.resolveServerPath('serverPath', workspaceFolder);
 
     // If the server path is empty, bail. We don't emit errors if the user
     // hasn't explicitly configured the server.
@@ -130,13 +130,13 @@ export class MOJOContext implements vscode.Disposable {
     if (!fs.existsSync(serverPath)) {
       vscode.window
           .showErrorMessage(
-              `${clientTitle}: Unable to resolve path for 'server_path', please ensure the path is correct`,
+              `${clientTitle}: Unable to resolve path for 'serverPath', please ensure the path is correct`,
               "Open Setting")
           .then((value) => {
             if (value === "Open Setting") {
               vscode.commands.executeCommand(
                   'workbench.action.openWorkspaceSettings',
-                  {openToSide : false, query : `mojo.server_path`});
+                  {openToSide : false, query : `mojo.serverPath`});
             }
           });
       return [ null, serverPath ];
