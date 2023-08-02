@@ -28,33 +28,21 @@ fn test_elementwise[
         outer_rank,
         rebind[DimList](static_shape),
         DType.float32,
-    ](
-        memory1.address,
-        dims,
-        DType.float32,
-    )
+    ](memory1.address, dims)
 
     var memory2 = stack_allocation[numelems, DType.float32, 1]()
     var buffer2 = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
         DType.float32,
-    ](
-        memory2.address,
-        dims,
-        DType.float32,
-    )
+    ](memory2.address, dims)
 
     var memory3 = stack_allocation[numelems, DType.float32, 1]()
     var out_buffer = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
         DType.float32,
-    ](
-        memory3.address,
-        dims,
-        DType.float32,
-    )
+    ](memory3.address, dims)
 
     var x: Float32 = 1.0
     for i in range(numelems):

@@ -400,10 +400,10 @@ fn reduce[
     alias output_3d_shape = DimList(h_static, c_static)
 
     let input_3d = NDBuffer[3, input_3d_shape, type](
-        src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic), type
+        src.data, StaticIntTuple[3](h_dynamic, w_dynamic, c_dynamic)
     )
     let output_3d = NDBuffer[2, output_3d_shape, acc_type](
-        dst.data, StaticIntTuple[2](h_dynamic, c_dynamic), acc_type
+        dst.data, StaticIntTuple[2](h_dynamic, c_dynamic)
     )
 
     _reduce_3D[
