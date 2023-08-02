@@ -1,0 +1,71 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H
+#define SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+#include "opentelemetry/exporters/ostream/metric_exporter.h"
+#include <filesystem>
+#endif // MODULAR_ENABLE_TELEMETRY
+
+namespace M::LLCL::Telemetry::Exporter {
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+
+/// The FileMetricExporter exports metric data to a file, leveraging
+/// OTel's OStreamMetricExporter.
+class FileMetricExporter
+    : public opentelemetry::sdk::metrics::PushMetricExporter {
+public:
+  explicit FileMetricExporter(
+      std::filesystem::path filePath,
+      opentelemetry::sdk::metrics::AggregationTemporality
+          aggregation_temporality =
+              opentelemetry::sdk::metrics::AggregationTemporality::kCumulative)
+      : filePath(std::move(filePath)), ostreamExporter(outputStream) {}
+
+  virtual ~FileMetricExporter() = default;
+
+  /// Export metrics data.
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::sdk::metrics::ResourceMetrics &data) noexcept
+      override;
+
+  /// Get the AggregationTemporality for the exporter.
+  opentelemetry::sdk::metrics::AggregationTemporality GetAggregationTemporality(
+      opentelemetry::sdk::metrics::InstrumentType instrument_type)
+      const noexcept override {
+    return ostreamExporter.GetAggregationTemporality(instrument_type);
+  }
+
+  /// Force flush the exporter.
+  bool ForceFlush(std::chrono::microseconds timeout =
+                      (std::chrono::microseconds::max)()) noexcept override {
+    return ostreamExporter.ForceFlush(timeout);
+  }
+
+  /// Shut down the exporter, with optional timeout.
+  bool Shutdown(std::chrono::microseconds timeout =
+                    (std::chrono::microseconds::max)()) noexcept override {
+    return ostreamExporter.Shutdown(timeout);
+  }
+
+private:
+  /// Metrics are exported to this file.
+  std::filesystem::path filePath;
+  /// Buffer OTel's outputs in a string and flush it atomically to a file every
+  /// time we export.
+  std::stringstream outputStream;
+  /// Delegate printing of telemetry data to OTel's OStreamMetricExporter.
+  opentelemetry::exporter::metrics::OStreamMetricExporter ostreamExporter;
+};
+
+#endif // MODULAR_ENABLE_TELEMETRY
+
+} // namespace M::LLCL::Telemetry::Exporter
+
+#endif // SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H
