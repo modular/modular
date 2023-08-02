@@ -764,10 +764,12 @@ fn split[
     type: DType,
     rank: Int,
     simd_width: Int,
-    single_thread_blocking_override: Bool,
     axis_type: DType,
+    split_sizes_type: DType,
+    single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    split_sizes: NDBuffer[1, DimList.create_unknown[1](), split_sizes_type],
     axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     out_chain: OutputChainPtr,
     *variadic_outs: NDBuffer[rank, DimList.create_unknown[rank](), type],
