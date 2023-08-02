@@ -7,6 +7,13 @@
 add_modular_tool(system-info
   system-info.cpp
 
+  LINK_COMPONENTS
+  AllTargetsAsmParsers
+  AllTargetsCodeGens
+  AllTargetsDescs
+  AllTargetsInfos
+
   LINK_LIBS PRIVATE
   MSupport
+  MArchTarget
 )

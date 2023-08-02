@@ -6,12 +6,16 @@
 
 #include "Support/CommandLine.h"
 #include "Support/Host.h"
+#include "Support/MArchTarget/MArchTarget.h"
+#include "Support/MDialect/MAttrs.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/ToolOutputFile.h>
+
+#include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 using namespace llvm;
@@ -25,6 +29,13 @@ struct SystemInfoCLIOptions {
   llvm::cl::opt<std::string> outputFilename{
       "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
       llvm::cl::init("-")};
+
+  llvm::cl::opt<std::string> arch{
+      "march", llvm::cl::desc("Architecture to show info for."),
+      llvm::cl::init("")};
+
+  llvm::cl::opt<std::string> cpu{
+      "mcpu", llvm::cl::desc("CPU to show info for."), llvm::cl::init("")};
 
   llvm::cl::opt<OutputFormat> format{
       "format", llvm::cl::desc("Format. Defaults to yaml"),
@@ -94,11 +105,38 @@ int main(int argc, char **argv) {
     exit(reportError("Cannot open output file: '" + outFilePathStr +
                      "': " + error.message()));
 
-  auto hostMachineOr = getHostMachineInfo();
-  if (hostMachineOr.isError())
-    return reportError(hostMachineOr.getError());
+  HostMachineInfo hostInfo;
 
-  HostMachineInfo hostInfo = hostMachineOr.takeValue();
+  // If arch/cpu is specified generate hostInfo from that.
+  if (!cli.arch.empty()) {
+    // Initialize the LLVM targets so we can look up the current target machine.
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+
+    MLIRContext ctx;
+    ctx.loadDialect<MDialect>();
+    std::string cpu = cli.cpu;
+    if (cpu.empty())
+      cpu = "generic";
+    auto targetInfoAttrOr = M::getMArchFeatures(&ctx, cli.arch, cpu, "");
+    if (targetInfoAttrOr.isError())
+      return reportError(targetInfoAttrOr.getError());
+    auto jsonOr = serializeTargetInfoAttrToJSON(targetInfoAttrOr.takeValue());
+    if (jsonOr.isError())
+      return reportError(jsonOr.getError());
+    auto hostInfoOr =
+        HostMachineInfo::deserializeTargetInfoFromJSON(jsonOr.takeValue());
+    hostInfo = hostInfoOr.takeValue();
+  } else {
+    // Get info from host machine.
+    auto hostMachineOr = getHostMachineInfo();
+    if (hostMachineOr.isError())
+      return reportError(hostMachineOr.getError());
+
+    hostInfo = hostMachineOr.takeValue();
+  }
 
   if (format == OutputFormat::YAML) {
     auto &os = outputFile ? outputFile->os() : llvm::outs();
