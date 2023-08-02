@@ -7,7 +7,7 @@
 # This demonstrates incremental improvements to a naive matmul.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s -execute | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
 from DType import DType
