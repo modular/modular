@@ -78,7 +78,7 @@ from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from Split import split as _split
 from String import String
 from Slice import slice_as_view, slice_shape
-from MatrixSolve import matrix_solve as _matrix_solve
+from MatrixSolve import matrix_solve as _matrix_solve, matrix_band_part
 from MOGGTests import (
     _test_many_ranks_and_types,
     _test_one_rank_many_tensor,
@@ -148,6 +148,7 @@ fn MOGGExport():
     alias _max_pool = max_pool
     alias _mean = mean
     alias _matrix_solve = matrix_solve
+    alias _matrix_band_part = matrix_band_part
     alias _matmul = matmul
     alias _batched_matmul = batched_matmul
     alias _mogg_max = mogg_max
