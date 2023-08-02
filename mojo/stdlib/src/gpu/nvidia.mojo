@@ -71,11 +71,6 @@ fn stack_allocation[
 # ===----------------------------------------------------------------------===#
 
 
-# ===----------------------------------------------------------------------===#
-# ThreadIdx
-# ===----------------------------------------------------------------------===#
-
-
 struct ThreadIdx:
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
