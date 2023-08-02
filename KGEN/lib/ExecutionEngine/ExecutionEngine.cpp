@@ -276,8 +276,8 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
   if (tt.isOSBinFormatELF())
     return success();
 
-  auto orcRTMemBuf = llvm::MemoryBuffer::getMemBuffer(
-      (*orcRTBuf)->getMemBufferRef(), /*RequiresNullTerminator=*/false);
+  auto orcRTMemBuf =
+      llvm::MemoryBuffer::getMemBufferCopy((*orcRTBuf)->getBuffer());
   if (tt.isOSBinFormatMachO()) {
     if (auto error = setUnixPlatform<llvm::orc::MachOPlatform>(
             platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
