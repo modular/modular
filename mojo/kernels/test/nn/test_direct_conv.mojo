@@ -162,36 +162,20 @@ fn test[
 
     @parameter
     if filter_packed:
-        if conv_shape.pad_w == Index(0, 0) and conv_shape.pad_w == Index(0, 0):
-            ConvDirectNHWC[
-                5,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[5](),
-                DimList.create_unknown[4](),
-                type,
-                True,
-            ].run(
-                output,
-                input,
-                packed_filter,
-                conv_shape,
-                direct_conv_chain.borrow(),
-            )
-        else:
-            ConvDirectNHWC[
-                5,
-                DimList.create_unknown[4](),
-                DimList.create_unknown[5](),
-                DimList.create_unknown[4](),
-                type,
-                True,
-            ].run_with_padding(
-                output,
-                input,
-                packed_filter,
-                conv_shape,
-                direct_conv_chain.borrow(),
-            )
+        ConvDirectNHWC[
+            5,
+            DimList.create_unknown[4](),
+            DimList.create_unknown[5](),
+            DimList.create_unknown[4](),
+            type,
+            True,
+        ].run(
+            output,
+            input,
+            packed_filter,
+            conv_shape,
+            direct_conv_chain.borrow(),
+        )
     else:
         ConvDirectNHWC[
             4,
@@ -723,6 +707,36 @@ fn main():
             3,  # S
             512,  # F
             Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            19,  # N
+            7,  # H
+            7,  # W
+            1,  # C
+            3,  # R
+            3,  # S
+            16,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            13,  # N
+            14,  # H
+            14,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            32,  # F
+            Index(2, 2),  # stride
             Index(1, 1),  # dilation
             Index(1, 1),  # pad_h
             Index(1, 1),  # pad_w
