@@ -1018,6 +1018,14 @@ struct Tensor[dtype: DType]:
         """
         return self._spec.shape
 
+    fn dim(self, idx: Int) -> Int:
+        """Gets the dimension at the specified index.
+
+        Returns:
+          The dimension at the specified index.
+        """
+        return self.spec()[idx]
+
     fn __getitem__(self, *indices: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
@@ -1091,16 +1099,11 @@ struct Tensor[dtype: DType]:
         Returns:
           The linearized index into the tensor data.
         """
-
-        @parameter
-        if rank == 1:
-            return indices[0]
-
         var result = indices[0]
 
         @unroll
         for i in range(rank - 1):
-            result = self._spec[i + 1] * result + indices[i + 1]
+            result = self.dim(i + 1) * result + indices[i + 1]
         return result
 
     fn _compute_linear_offset(self, *indices: Int) -> Int:
@@ -1126,5 +1129,5 @@ struct Tensor[dtype: DType]:
         let rank = indices.__len__()
         var result = indices[0]
         for i in range(rank - 1):
-            result = self._spec[i + 1] * result + indices[i + 1]
+            result = self.dim(i + 1) * result + indices[i + 1]
         return result
