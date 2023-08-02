@@ -1029,6 +1029,18 @@ struct Tensor[dtype: DType]:
         """
         return self.spec()[idx]
 
+    fn __getitem__(self, index: Int) -> SIMD[dtype, 1]:
+        """Gets the value at the specified index.
+
+        Args:
+          index: The index of the value to retrieve.
+
+        Returns:
+          The value at the specified indices.
+        """
+        debug_assert(self.rank() == 1, "rank must be 1")
+        return self._ptr.load(index)
+
     fn __getitem__(self, *indices: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
@@ -1065,6 +1077,16 @@ struct Tensor[dtype: DType]:
         """
         debug_assert(rank == self.rank(), "invalid rank value")
         return self._ptr.load(self._compute_linear_offset(indices))
+
+    fn __setitem__(inout self, index: Int, val: SIMD[dtype, 1]):
+        """Sets the value at the specified index.
+
+        Args:
+          index: The index of the value to set.
+          val: The value to store.
+        """
+        debug_assert(self.rank() == 1, "rank must be 1")
+        return self._ptr.store(index, val)
 
     fn __setitem__(inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
