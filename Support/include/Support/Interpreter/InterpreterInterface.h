@@ -21,7 +21,9 @@
 namespace M {
 class InterpreterState {
 public:
-  InterpreterState(TargetInfoAttr target) : target(target) {}
+  InterpreterState(MLIRContext *ctx, TargetInfoAttr target = nullptr);
+  InterpreterState(TargetInfoAttr target);
+
   InterpreterState(const InterpreterState &other) = delete;
   InterpreterState(InterpreterState &&other) = default;
 
@@ -158,6 +160,14 @@ private:
     std::unique_ptr<void, void (*)(void *)> memory;
   };
 
+  /// Get the memory blob corresponding to the address.
+  ErrorOr<MemoryBlob &> getBlob(int64_t addr);
+
+  /// Exchange raw pointers to interpreter memory to dialect resource references
+  /// upon exit from the interpreter.
+  ErrorOrSuccess exchangeInterpreterMemory(Region &entry,
+                                           MutableArrayRef<Attribute> results);
+
   /// An internal memory table.
   /// TODO: Support different address spaces.
   std::vector<MemoryBlob> memory;
@@ -173,6 +183,10 @@ private:
 
   /// An optional list of return values.
   std::optional<SmallVector<Attribute>> returnValues;
+
+  /// The blob manager to materializing interpreter memory into the IR. Access
+  /// to the blob manager is thread-safe.
+  MBlobManagerInterface &blobMgr;
 };
 } // namespace M
 

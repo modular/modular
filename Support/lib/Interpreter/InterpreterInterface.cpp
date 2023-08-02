@@ -7,6 +7,7 @@
 #include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -16,6 +17,14 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 // InterpreterState
 //===----------------------------------------------------------------------===//
+
+InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
+    : target(target),
+      blobMgr(*ctx->getOrLoadDialect<MDialect>()
+                   ->getRegisteredInterface<MBlobManagerInterface>()) {}
+
+InterpreterState::InterpreterState(TargetInfoAttr target)
+    : InterpreterState(target.getContext(), target) {}
 
 /// Provide a virtual "invalid space" for the interpreter's memory. This is so
 /// that an address of 0 can actually be considered a null pointer.
@@ -40,7 +49,8 @@ int64_t InterpreterState::allocateMemory(size_t size, size_t align,
   return baseAddr;
 }
 
-ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
+ErrorOr<InterpreterState::MemoryBlob &>
+InterpreterState::getBlob(int64_t addr) {
   // Check for a null pointer access.
   if (!addr)
     return Error("null address");
@@ -55,19 +65,26 @@ ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
       });
   if (it == memory.end())
     return Error("address is out-of-bounds: " + Twine(addr));
-  int64_t offset = addr - it->baseAddr;
+  return *it;
+}
+
+ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
+  ErrorOr<MemoryBlob &> blob = getBlob(addr);
+  if (blob.isError())
+    return blob.takeError();
+  int64_t offset = addr - blob->baseAddr;
 
   // Accessing memory at the end iterator is okay if the access size is zero.
   // For example, if the memory size is 2, a memory access at index 2 is only
   // valid if the access size is 0. This is because the index points to the
   // beginning of the byte in memory. Check if the address exceeds the size of
   // allocated memory.
-  if (static_cast<size_t>(offset) > it->size)
+  if (static_cast<size_t>(offset) > blob->size)
     return Error("address is out-of-bounds: " + Twine(addr));
   // Now check if the access size will still be in-bounds.
-  if (offset + size > it->size)
+  if (offset + size > blob->size)
     return Error("memory access size " + Twine(size) + " is out-of-bounds");
-  return (uint8_t *)it->memory.get() + offset;
+  return (uint8_t *)blob->memory.get() + offset;
 }
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
@@ -128,6 +145,60 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
 
   return Error(mlir::debugString(type) +
                " does not implement MemoryableTypeInterface");
+}
+
+ErrorOrSuccess InterpreterState::exchangeInterpreterMemory(
+    Region &entry, MutableArrayRef<Attribute> results) {
+  // Use the parent function name as the base name for materialized resources.
+  auto symbol = cast<mlir::SymbolOpInterface>(entry.getParentOp());
+  std::string baseName = (symbol.getName() + "_mem").str();
+
+  // Deduplicate references to the same allocation blob.
+  DenseMap<MemoryBlob *, MemoryHandle> blobs;
+  auto getOrMaterialize = [&](MemoryBlob &blob) {
+    if (auto it = blobs.find(&blob); it != blobs.end())
+      return it->second;
+    MemoryHandle hdl = blobMgr.insert(
+        baseName,
+        mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+            ArrayRef<char>((char *)blob.memory.get(), blob.size), blob.align));
+    blobs.try_emplace(&blob, hdl);
+    return hdl;
+  };
+
+  // Replace raw pointers in the results except for null pointers. Error if a
+  // reference to invalid memory is returned from the function.
+  mlir::AttrTypeReplacer replacer;
+  std::optional<Error> err;
+  replacer.addReplacement(
+      [&](PointerAttr ptr) -> std::pair<Attribute, WalkResult> {
+        // Allow null pointers to persist.
+        if (ptr.getAddr() == 0)
+          return {ptr, WalkResult::advance()};
+        // Find the memory point this address points to.
+        ErrorOr<MemoryBlob &> blob = getBlob(ptr.getAddr());
+        if (blob.isError()) {
+          err = blob.takeError();
+          return {ptr, WalkResult::interrupt()};
+        }
+        // Returning stack memory invalid.
+        if (blob->kind == MemoryKind::Stack) {
+          err = Error("returning reference to stack memory");
+          return {ptr, WalkResult::interrupt()};
+        }
+        // Materialize the blob.
+        MemoryHandle hdl = getOrMaterialize(*blob);
+        return {MemRefAttr::get(hdl, ptr.getAddr() - blob->baseAddr, blob->kind,
+                                ptr.getType()),
+                WalkResult::advance()};
+      });
+
+  for (Attribute &result : results) {
+    result = replacer.replace(result);
+    if (err)
+      return std::move(*err);
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -205,12 +276,17 @@ InterpreterState::startInterpreterAt(Region &region,
   });
 
   // Run the interpreter.
-  ErrorTreeOr<SmallVector<Attribute>> results = runInterpreter();
-  if (results)
-    return results.takeValue();
+  ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
+  if (result) {
+    SmallVector<Attribute> results = result.takeValue();
+    if (ErrorOrSuccess err = exchangeInterpreterMemory(region, results);
+        err.isError())
+      return ErrorTree(region.getLoc(), err.takeError());
+    return results;
+  }
 
   // The interpreter ran into an error. Report an error using a stacktrace.
-  ErrorTree error = results.takeError();
+  ErrorTree error = result.takeError();
   for (const StackFrame &frame : llvm::reverse(stack)) {
     StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
     error = ErrorTree(frame.func->getLoc(),

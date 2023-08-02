@@ -130,6 +130,8 @@ private:
 //===----------------------------------------------------------------------===//
 
 using MemoryHandle = mlir::DialectResourceBlobHandle<MDialect>;
+using MBlobManagerInterface =
+    mlir::ResourceBlobManagerDialectInterfaceBase<MemoryHandle>;
 
 enum class MemoryKind { Stack, Heap, ConstGlobal, Global };
 

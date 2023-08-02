@@ -884,7 +884,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
 ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
                                            ArrayRef<ParamBindAttr> paramValues)
-    : ParameterEvaluator(paramValues), InterpreterState(/*target=*/nullptr),
+    : ParameterEvaluator(paramValues), InterpreterState(resolver.getContext()),
       resolver(resolver) {}
 
 FailureOr<TypedAttr>
