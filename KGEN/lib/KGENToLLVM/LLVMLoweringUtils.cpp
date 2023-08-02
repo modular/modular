@@ -970,7 +970,7 @@ buildDebugTypeFromFunctionType(MLIRContext *ctx, FunctionType type,
   for (Type result : type.getResults()) {
     DebugInfo::DIType resultDIType =
         buildDebugTypeFromPOPType(ctx, result, converter, target);
-    argTypes.push_back(resultDIType);
+    resultTypes.push_back(resultDIType);
   }
   return DebugInfo::DISubroutineType::get(ctx, argTypes, resultTypes);
 }

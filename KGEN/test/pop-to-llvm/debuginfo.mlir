@@ -71,7 +71,7 @@
 // CHECK-DAG: !ptr = !debuginfo.ptr<!basic {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: !ptr1 = !debuginfo.ptr<!unspecified {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: !subroutine = !debuginfo.subroutine<(!basic1, !basic2) -> (): DW_CC_normal>
-// CHECK-DAG: !subroutine1 = !debuginfo.subroutine<(!basic3, !basic4) -> (): DW_CC_normal>
+// CHECK-DAG: !subroutine1 = !debuginfo.subroutine<() -> (!basic3, !basic4): DW_CC_normal>
 // CHECK-DAG: !vector = !debuginfo.vector<8 x !basic>
 // CHECK-DAG: !vector1 = !debuginfo.vector<8 x !basic23>
 // CHECK-DAG: !vector2 = !debuginfo.vector<8 x !basic24>
