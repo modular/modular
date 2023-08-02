@@ -220,28 +220,6 @@ static constexpr StringLiteral compilerRTlibName = "$compilerrt-lib";
 
 using Keys::ReadOnlyKey;
 
-/// Create a unix-like system platform of the given type, and set that as the
-/// platform of the given session.
-template <typename T>
-static ErrorOrSuccess
-setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
-                llvm::orc::ExecutionSession &session,
-                llvm::orc::ObjectLinkingLayer &objLinkingLayer,
-                std::unique_ptr<llvm::MemoryBuffer> orcRTBuf) {
-  // Create a generator for the ORC runtime archive.
-  auto orcRuntimeArchiveGenerator =
-      llvm::orc::StaticLibraryDefinitionGenerator::Create(objLinkingLayer,
-                                                          std::move(orcRTBuf));
-  if (!orcRuntimeArchiveGenerator)
-    return Error(llvm::toString(orcRuntimeArchiveGenerator.takeError()));
-
-  if (auto platform = T::Create(
-          session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-          platformStdlib, std::move(*orcRuntimeArchiveGenerator)))
-    session.setPlatform(std::move(*platform));
-  return success();
-}
-
 /// Set up the ORC platform for the various different binary formats/platforms
 /// we support. This requires that we have an ExecutionSession *and* an
 /// ObjectLinkingLayer.
@@ -249,8 +227,7 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
 /// The main reason to use the platform like this is that it automatically sets
 /// up the various symbols that complex code will need to execute on a target.
 static ErrorOrSuccess
-setupPlatform(const std::optional<BufferRef> &orcRTBuf,
-              const llvm::DataLayout &dataLayout,
+setupPlatform(StringRef orcRTPath, const llvm::DataLayout &dataLayout,
               llvm::orc::JITDylib &platformStdlib,
               llvm::orc::ExecutionSession &session,
               llvm::orc::ObjectLinkingLayer &objLinkingLayer) {
@@ -268,24 +245,28 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
       return Error(toString(generator.takeError()));
   }
 
-  // No orc runtime, exit early.
-  if (!orcRTBuf)
+  // No path to the orc runtime, exit early.
+  if (orcRTPath.empty())
     return success();
 
   // The ELFNixPlatform has memory leaks, don't set it up.
   if (tt.isOSBinFormatELF())
     return success();
 
-  auto orcRTMemBuf =
-      llvm::MemoryBuffer::getMemBuffer((*orcRTBuf)->getMemBufferRef());
   if (tt.isOSBinFormatMachO()) {
-    if (auto error = setUnixPlatform<llvm::orc::MachOPlatform>(
-            platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
-      return error;
+    if (auto platform = llvm::orc::MachOPlatform::Create(
+            session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+            platformStdlib, orcRTPath.data()))
+      session.setPlatform(std::move(*platform));
+    else
+      return Error(toString(platform.takeError()));
   } else if (tt.isOSBinFormatELF()) {
-    if (auto error = setUnixPlatform<llvm::orc::ELFNixPlatform>(
-            platformStdlib, session, objLinkingLayer, std::move(orcRTMemBuf)))
-      return error;
+    if (auto platform = llvm::orc::ELFNixPlatform::Create(
+            session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+            platformStdlib, orcRTPath.data()))
+      session.setPlatform(std::move(*platform));
+    else
+      return Error(toString(platform.takeError()));
   } else if (tt.isOSBinFormatCOFF()) {
     // Windows needs some help to load dylibs, apparently.
     auto loadDynamicLibrary = [&session](llvm::orc::JITDylib &jd,
@@ -310,8 +291,7 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
 
     if (auto platform = llvm::orc::COFFPlatform::Create(
             session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-            platformStdlib, std::move(orcRTMemBuf),
-            std::move(loadDynamicLibrary)))
+            platformStdlib, orcRTPath.data(), std::move(loadDynamicLibrary)))
       session.setPlatform(std::move(*platform));
     else
       return Error(toString(platform.takeError()));
@@ -373,23 +353,6 @@ static ErrorOrSuccess initializeCompilerRT(llvm::orc::ExecutionSession &session,
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
   libJD->addGenerator(std::move(*generatorOr));
   return success();
-}
-
-/// Grab a memory buffer for the Orc runtime.
-static ErrorOr<std::optional<BufferRef>> initializeOrcRT(Config &cfg) {
-  // Try to grab the runtime from the cache.
-  auto orcRTBuf = extractRTFromCache(M::CASID::kOrcRT);
-  if (orcRTBuf.isError())
-    return orcRTBuf.takeError();
-  if ((*orcRTBuf).has_value())
-    return std::move(*orcRTBuf);
-
-  // Otherwise, read it from the config.
-  std::error_code ec;
-  std::string orcRTPath = cfg.getValue("mojo.orcrt_path").str();
-  if (!std::filesystem::exists(orcRTPath, ec) || ec)
-    return Error("unable to locate orc_rt");
-  return Buffer::getFile(orcRTPath);
 }
 
 /// Search for the specified sanitizer library path. This currently only allows
@@ -510,22 +473,25 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   auto ee = std::unique_ptr<ExecutionEngine>(
       new ExecutionEngine(std::move(sessionPtr), layout));
 
-  // Open the config object so we can use it.
-  auto cfgOr = Config::open();
-  if (cfgOr.isError())
-    return cfgOr.takeError();
-  Config cfg = std::move(*cfgOr);
-
   // Get the ORC runtime binary.
-  auto orcRTBuf = initializeOrcRT(cfg);
+  auto orcRTBuf = extractRTFromCache(M::CASID::kOrcRT);
   if (orcRTBuf.isError())
     return orcRTBuf.takeError();
+
   std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
   bool haveOrcRT = rtBuf.has_value();
+  std::string orcRTPath;
+
+  // TODO(#10097): Orc now supports passing in an archive, remove the usage of
+  // files for the orcrt.
+  if (haveOrcRT)
+    if (auto err = writeTempFile("liborc_rt-%%%%%%%.a", (*rtBuf)->getBuffer(),
+                                 orcRTPath))
+      return err.takeError();
 
   // Windows *requires* the orc runtime.
   if (!haveOrcRT && tt.isOSBinFormatCOFF())
-    return Error("unable to locate orc_rt");
+    return Error("could not find orc_rt in the cache");
 
   // Construct the object linking layer.
   ee->objectLayer =
@@ -537,9 +503,15 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       ee->executionSession->createBareJITDylib(platformStdlibName.str());
 
   // If we have the platform support library, use it.
-  if (auto err = setupPlatform(rtBuf, ee->dataLayout, platformStdlib,
+  if (auto err = setupPlatform(orcRTPath, ee->dataLayout, platformStdlib,
                                *ee->executionSession, *ee->objectLayer))
     return err.takeError();
+
+  // Open the config object so we can use it.
+  auto cfgOr = Config::open();
+  if (cfgOr.isError())
+    return cfgOr.takeError();
+  Config cfg = std::move(*cfgOr);
 
   // Find the path to the sanitizer library.
   auto pathOr =
