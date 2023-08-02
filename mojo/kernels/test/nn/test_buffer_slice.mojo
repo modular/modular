@@ -65,11 +65,11 @@ fn test_slice[
     let output_mem = stack_allocation[numelems, dtype, 1]()
 
     let memory1 = stack_allocation[numelems, dtype, 1]()
-    let in_tensor = NDBuffer[outer_rank, rebind[DimList](static_shape), dtype,](
-        memory1,
-        dims,
+    let in_tensor = NDBuffer[
+        outer_rank,
+        rebind[DimList](static_shape),
         dtype,
-    )
+    ](memory1, dims)
 
     print("In shape:", in_tensor.dynamic_shape)
     print("In strides:", in_tensor.dynamic_stride)
@@ -79,21 +79,21 @@ fn test_slice[
         1,
         DimList.create_unknown[1](),
         DType.index,
-    ](start_tensor_mem.address, StaticIntTuple[1](outer_rank), DType.index)
+    ](start_tensor_mem.address, StaticIntTuple[1](outer_rank))
 
     let end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
-    let end_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
-        end_tensor_mem.address,
-        StaticIntTuple[1](outer_rank),
+    let end_tensor = NDBuffer[
+        1,
+        DimList.create_unknown[1](),
         DType.index,
-    )
+    ](end_tensor_mem.address, StaticIntTuple[1](outer_rank))
 
     let step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
-    let step_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
-        step_tensor_mem.address,
-        StaticIntTuple[1](outer_rank),
+    let step_tensor = NDBuffer[
+        1,
+        DimList.create_unknown[1](),
         DType.index,
-    )
+    ](step_tensor_mem.address, StaticIntTuple[1](outer_rank))
 
     for dim in range(outer_rank):
         let start_val = SIMD[DType.index, 1](starts[dim])
@@ -132,7 +132,6 @@ fn test_slice[
         ](
             output_mem.address,
             rebind[StaticIntTuple[outer_rank]](sliced.dynamic_shape),
-            dtype,
         )
 
         with Runtime(1) as runtime:

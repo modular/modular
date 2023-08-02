@@ -54,25 +54,19 @@ fn test_arange[
 
     let memory1 = stack_allocation[1, dtype, 1]()
     let start_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
-        memory1,
-        StaticIntTuple[1](1),
-        dtype,
+        memory1, StaticIntTuple[1](1)
     )
     start_tensor[0] = start
 
     let memory2 = stack_allocation[1, dtype, 1]()
     let stop_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
-        memory2,
-        StaticIntTuple[1](1),
-        dtype,
+        memory2, StaticIntTuple[1](1)
     )
     stop_tensor[0] = stop
 
     let memory3 = stack_allocation[1, dtype, 1]()
     let step_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
-        memory3,
-        StaticIntTuple[1](1),
-        dtype,
+        memory3, StaticIntTuple[1](1)
     )
     step_tensor[0] = step
 
@@ -90,9 +84,7 @@ fn test_arange[
 
     let memory4 = stack_allocation[max_output_size, dtype, 1]()
     let out_tensor = NDBuffer[1, DimList.create_unknown[1](), dtype](
-        memory4,
-        outshape,
-        dtype,
+        memory4, outshape
     )
 
     with Runtime(1) as runtime:

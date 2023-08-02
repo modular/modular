@@ -100,10 +100,10 @@ fn test[
     let packed_filter_ptr = DTypePointer[type].alloc(R * S * C * rounded_F)
 
     let input = NDBuffer[4, DimList.create_unknown[4](), type](
-        input_ptr, Index(N, H, W, C), type
+        input_ptr, Index(N, H, W, C)
     )
     let filter = NDBuffer[4, DimList.create_unknown[4](), type](
-        filter_ptr, Index(R, S, C, F), type
+        filter_ptr, Index(R, S, C, F)
     )
     let packed_filter = NDBuffer[5, DimList.create_unknown[5](), type](
         packed_filter_ptr,
@@ -114,13 +114,12 @@ fn test[
             C,
             micro_kernel_width * simd_size,
         ),
-        type,
     )
     let output = NDBuffer[4, DimList.create_unknown[4](), type](
-        output_ptr, Index(N, HO, WO, F), type
+        output_ptr, Index(N, HO, WO, F)
     )
     let output_ref = NDBuffer[4, DimList.create_unknown[4](), type](
-        output_ref_ptr, Index(N, HO, WO, F), type
+        output_ref_ptr, Index(N, HO, WO, F)
     )
 
     @parameter

@@ -1228,7 +1228,6 @@ struct ConvIm2ColNCHW[
                 self.conv_shape.f,
                 self.conv_shape.out_h * self.conv_shape.out_w,
             ),
-            type,
         )
 
         # Create 2D view for filter.
@@ -1238,7 +1237,6 @@ struct ConvIm2ColNCHW[
                 self.gemm_shape.M,
                 self.gemm_shape.K,
             ),
-            type,
         )
 
     # Utility to reshape the dynamic buffer:
@@ -1267,7 +1265,6 @@ struct ConvIm2ColNCHW[
                 tile_k,
                 n_inner_size,
             ),
-            type,
         )
 
 
@@ -1946,7 +1943,6 @@ struct ConvIm2ColNHWC[
                 gemm_shape.M,
                 gemm_shape.N,
             ),
-            type,
         )
 
         # Create 2D view for input.
@@ -1956,7 +1952,6 @@ struct ConvIm2ColNHWC[
                 gemm_shape.M,
                 gemm_shape.K,
             ),
-            type,
         )
 
         var b = NDBuffer[2, DimList.create_unknown[2](), type]()
@@ -1968,7 +1963,6 @@ struct ConvIm2ColNHWC[
                     gemm_shape.N,
                     gemm_shape.K,
                 ),
-                type,
             )
         elif filter_layout == Image2DLayout.RSCF:  # RSCF layout
             b = NDBuffer[2, DimList.create_unknown[2](), type](
@@ -1977,7 +1971,6 @@ struct ConvIm2ColNHWC[
                     gemm_shape.K,
                     gemm_shape.N,
                 ),
-                type,
             )
 
         let sub_matmul_config = get_partitioned_matmul[
@@ -2428,7 +2421,6 @@ struct ConvIm2ColNHWC[
                 tile_k,
                 n_inner_size,
             ),
-            type,
         )
 
 
@@ -2536,7 +2528,6 @@ struct ConvDirectNHWC[
                     conv_shape.out_w,
                     conv_shape.f,
                 ),
-                type,
             )
 
             # Indicate if the kernel adds padding.

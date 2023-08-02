@@ -34,20 +34,16 @@ from SIMD import SIMD
 from LLCL import Runtime, OwningOutputChainPtr
 
 
-fn fill_buffer[
-    shape: DimList
-](buf: NDBuffer[4, shape, DType.float32.value,]):
+fn fill_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
 
     for j in range(s):
-        buf.flatten()[j] = SIMD[DType.float32.value, 1](j)
+        buf.flatten()[j] = SIMD[DType.float32, 1](j)
 
 
-fn print_buffer[
-    shape: DimList
-](buf: NDBuffer[4, shape, DType.float32,]):
+fn print_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -66,23 +62,19 @@ fn pool(pool_method: Int):
     alias out_shape = DimList(2, 2, 2, 2)
 
     # Create an input buffer.
-    let input_buffer = NDBuffer[
-        4, in_shape, DType.float32.value
-    ].stack_allocation()
+    let input_buffer = NDBuffer[4, in_shape, DType.float32].stack_allocation()
 
     fill_buffer[in_shape](input_buffer)
 
-    let input = ImageData[in_shape, DType.float32.value, Image2DLayout.NCHW](
+    let input = ImageData[in_shape, DType.float32, Image2DLayout.NCHW](
         input_buffer
     )
 
     # Create an output buffer.
-    let output_buffer = NDBuffer[
-        4, out_shape, DType.float32.value
-    ].stack_allocation()
+    let output_buffer = NDBuffer[4, out_shape, DType.float32].stack_allocation()
     output_buffer.fill(0)
 
-    let output = ImageData[out_shape, DType.float32.value, Image2DLayout.NCHW](
+    let output = ImageData[out_shape, DType.float32, Image2DLayout.NCHW](
         output_buffer
     )
 
@@ -117,7 +109,7 @@ fn pool(pool_method: Int):
             Pool2d[
                 out_shape,
                 in_shape,
-                DType.float32.value,
+                DType.float32,
                 Image2DLayout.NCHW,
                 avg_pool_init_fn[DType.float32],
                 avg_pool_update_fn[DType.float32],

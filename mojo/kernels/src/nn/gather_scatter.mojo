@@ -97,7 +97,7 @@ fn gather_reduce[
         output_2d_dims[1] = output.dim[2]()
 
     let output_bind = NDBuffer[2, DimList.create_unknown[2](), type](
-        output.data, output_2d_dims, type
+        output.data, output_2d_dims
     )
     let input_bind = rebind[NDBuffer[2, DimList.create_unknown[2](), type]](
         input

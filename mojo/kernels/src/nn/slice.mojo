@@ -78,7 +78,7 @@ fn slice_as_view[
 
     # Create the new view
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
-        new_data, new_shape, tensor.dynamic_dtype, new_stride
+        new_data, new_shape, new_stride
     )
 
 

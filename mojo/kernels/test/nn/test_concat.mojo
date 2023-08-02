@@ -19,7 +19,7 @@ from LLCL import Runtime, OwningOutputChainPtr
 fn test_concat():
     print("== test_concat")
 
-    alias type = DType.float32.value
+    alias type = DType.float32
     alias rank = 4
     alias concat_axis = 2
 
@@ -34,20 +34,20 @@ fn test_concat():
     x2.fill(1)
     x3.fill(2)
     let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x1.data, s1, type
+        x1.data, s1
     )
     let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x2.data, s2, type
+        x2.data, s2
     )
     let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x3.data, s3, type
+        x3.data, s3
     )
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
     let output = NDBuffer[rank, out_shape, type].stack_allocation()
     output.fill(-1)
     let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        output.data, out_shape, type
+        output.data, out_shape
     )
 
     let input_list = VariadicList[
@@ -78,7 +78,7 @@ fn test_concat():
 fn test_concat_parallel():
     print("== test_concat_parallel")
 
-    alias type = DType.float32.value
+    alias type = DType.float32
     alias rank = 4
     alias concat_axis = 2
 
@@ -93,20 +93,20 @@ fn test_concat_parallel():
     x2.fill(1)
     x3.fill(2)
     let x1_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x1.data, s1, type
+        x1.data, s1
     )
     let x2_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x2.data, s2, type
+        x2.data, s2
     )
     let x3_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        x3.data, s3, type
+        x3.data, s3
     )
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
     let output = NDBuffer[rank, out_shape, type]().stack_allocation()
     output.fill(-1)
     let output_dyn = NDBuffer[rank, DimList.create_unknown[rank](), type](
-        output.data, out_shape, type
+        output.data, out_shape
     )
 
     let input_list = VariadicList[
