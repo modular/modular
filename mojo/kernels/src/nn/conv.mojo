@@ -2690,18 +2690,23 @@ struct ConvDirectNHWC[
         fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             @parameter
             if padded:
-                self._h_loop[micro_kernel_height, size // simd_size](
+                self._h_loop[micro_kernel_height, size // simd_size, False](
                     n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
                 )
 
             else:
-                self._n_wo_ho_tile_loop[size](
+                self._n_wo_ho_tile_loop[size, False](
                     f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
                 )
 
+        let f_round_by_simd = (
+            (self.partition_offsets[2] + self.partition_sizes[2]) // simd_size
+        ) * simd_size
+
         # The first tile size is based on cache size. Within the tile
         # it's stepped by the micro kernel size in F. The rest is stepped
-        # by simd_size. This assumes F is multiple of simd_size.
+        # by simd_size. If F is not multiple of simd_size, the residual
+        # is padded with 0 to fit a simd vector in the packed filter.
         tile[
             VariadicList[Int](
                 micro_kernel_f_size, micro_kernel_f_size, simd_size
@@ -2710,12 +2715,27 @@ struct ConvDirectNHWC[
             f_tile_iteration,
         ](
             self.partition_offsets[2],
-            self.partition_offsets[2] + self.partition_sizes[2],
+            # self.partition_offsets[2] + self.partition_sizes[2],
+            f_round_by_simd,
             VariadicList[Int](
                 self.cf_tile_size[1], micro_kernel_f_size, simd_size
             ),
             simd_size,
         )
+
+        # If this is the last partition in F is not multiple of simd_size
+        let residual = self.conv_shape.f - f_round_by_simd
+        if 0 < residual < simd_size:
+
+            @parameter
+            if padded:
+                self._h_loop[micro_kernel_height, 1, True](
+                    n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size
+                )
+            else:
+                self._n_wo_ho_tile_loop[simd_size, True](
+                    f_round_by_simd, simd_size, c_tile_offset, c_tile_size
+                )
 
     fn _n_loop(self):
         """Loop over the batch size.
@@ -2727,7 +2747,7 @@ struct ConvDirectNHWC[
             self._c_tile_loop[True](n, self.cf_tile_size[0])
 
     fn _n_wo_ho_tile_loop[
-        micro_kernel_f_size: Int
+        micro_kernel_f_size: Int, has_residual: Bool
     ](
         self,
         f_tile_offset: Int,
@@ -2749,7 +2769,10 @@ struct ConvDirectNHWC[
             @parameter
             fn body[c_fully_cached: Bool]():
                 self._inner_loops[
-                    n_ho_wo_tile_size, micro_kernel_width, c_fully_cached
+                    n_ho_wo_tile_size,
+                    micro_kernel_width,
+                    c_fully_cached,
+                    has_residual,
                 ](
                     f_tile_offset,
                     f_tile_size,
@@ -2777,6 +2800,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         c_fully_cached: Bool,
+        has_residual: Bool,
     ](
         self,
         f_tile_offset: Int,
@@ -2785,6 +2809,11 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         n_ho_wo: Int,
     ):
+        assert_param[
+            not has_residual or (has_residual and micro_kernel_width == 1),
+            "Use Height x 1 kernel for residual in F.",
+        ]()
+
         alias simd_size = simdwidthof[type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
         # Base input offsets.
@@ -2830,8 +2859,14 @@ struct ConvDirectNHWC[
                 ](output_micro_tile)
             else:
                 self._load_output_micro_tile[
-                    micro_kernel_height, micro_kernel_width, simd_size
-                ](n_ho_wo, f, output_micro_tile)
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    simd_size,
+                    has_residual,
+                ](
+                    self.output.data.offset(n_ho_wo * self.conv_shape.f + f),
+                    output_micro_tile,
+                )
 
             var filter_ptr: DTypePointer[type] = self.filter.data
 
@@ -2926,8 +2961,14 @@ struct ConvDirectNHWC[
                         )
 
             self._store_output_micro_tile[
-                micro_kernel_height, micro_kernel_width, simd_size
-            ](n_ho_wo, f, output_micro_tile)
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                has_residual,
+            ](
+                output_micro_tile,
+                self.output.data.offset(n_ho_wo * self.conv_shape.f + f),
+            )
 
     @always_inline
     fn _init_output_micro_tile[
@@ -2963,10 +3004,10 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        has_residual: Bool,
     ](
         self,
-        n_ho_wo: Int,
-        f: Int,
+        output_base: DTypePointer[type],
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
@@ -2974,24 +3015,40 @@ struct ConvDirectNHWC[
         ],
     ):
         """Load a micro tile from the output buffer.
+        Parameters:
+            has_residual: True when F is not multiple of simd_size. The residual
+              is loaded and padded with zero to fit a simd vector.
+
         Arguments:
-            n_ho_wo: offset of micro tile in fused (n, ho, wo) dimension.
-            f: offset of micro tile in F dimension.
+            output_base: Point to micro tile start, (n, ho, wo, f).
             output_micro_tile: micro_kernel_height * micro_kernel_width simd vectors.
         """
-        let output_offset = n_ho_wo * self.conv_shape.f + f
+        var output_ptr = output_base
 
-        @always_inline
-        @parameter
-        fn body[idx0: Int, idx1: Int]():
-            let output_ptr = self.output.data.offset(
-                output_offset + idx0 * self.conv_shape.f + idx1 * simd_size
-            )
-            output_micro_tile.simd_store[simd_size](
-                Index(idx0, idx1 * simd_size), output_ptr.simd_load[simd_size]()
-            )
+        @unroll
+        for i in range(micro_kernel_height):
 
-        unroll[micro_kernel_height, micro_kernel_width, body]()
+            @unroll
+            for j in range(micro_kernel_width):
+
+                @parameter
+                if has_residual:
+                    let residual = self.conv_shape.f - (
+                        self.conv_shape.f // simd_size
+                    ) * simd_size
+                    output_micro_tile.simd_store[simd_size](
+                        Index(i, j * simd_size),
+                        partial_simd_load[type, simd_size](
+                            output_ptr.offset(j * simd_size), 0, residual, 0.0
+                        ),
+                    )
+                else:
+                    output_micro_tile.simd_store[simd_size](
+                        Index(i, j * simd_size),
+                        output_ptr.offset(j * simd_size).simd_load[simd_size](),
+                    )
+
+            output_ptr = output_ptr.offset(self.conv_shape.f)
 
     @always_inline
     fn _micro_kernel[
@@ -3041,42 +3098,53 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        has_residual: Bool,
     ](
         self,
-        n_ho_wo: Int,
-        f: Int,
         output_micro_tile: NDBuffer[
             2,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
             type,
         ],
+        output_base: DTypePointer[type],
     ):
-        """Store a micro tile to the output buffer.
+        """Store a micro tile from the output buffer.
+        Parameters:
+            has_residual: True when F is not multiple of simd_size. Only the
+              residual elements within the simd vector are stored to output.
+
         Arguments:
-            n_ho_wo: offset of micro tile in fused (n, ho, wo) dimension.
-            f: offset of micro tile in F dimension.
             output_micro_tile: micro_kernel_height * micro_kernel_width simd vectors.
+            output_base: Point to micro tile start, (n, ho, wo, f).
         """
-        # TODO: use aligned load/store.
-        var output_ptr = self.output.data.offset(
-            n_ho_wo * self.conv_shape.f + f
-        )
+        var output_ptr = output_base
 
-        @always_inline
-        @parameter
-        fn body[idx0: Int, idx1: Int]():
-            let output_vec = output_micro_tile.simd_load[simd_size](
-                Index(idx0, idx1 * simd_size)
-            )
-            output_ptr.offset(idx1 * simd_size).simd_store[simd_size](
-                output_vec
-            )
+        @unroll
+        for i in range(micro_kernel_height):
 
-            @parameter
-            if idx1 == micro_kernel_width - 1:
-                output_ptr = output_ptr.offset(self.conv_shape.f)
+            @unroll
+            for j in range(micro_kernel_width):
+                let output_vec = output_micro_tile.simd_load[simd_size](
+                    Index(i, j * simd_size)
+                )
 
-        unroll[micro_kernel_height, micro_kernel_width, body]()
+                @parameter
+                if has_residual:
+                    let residual = self.conv_shape.f - (
+                        self.conv_shape.f // simd_size
+                    ) * simd_size
+                    partial_simd_store[type, simd_size](
+                        output_ptr.offset(j * simd_size),
+                        0,
+                        residual,
+                        output_vec,
+                    )
+                else:
+                    output_ptr.offset(j * simd_size).simd_store[simd_size](
+                        output_vec
+                    )
+
+            output_ptr = output_ptr.offset(self.conv_shape.f)
 
     @always_inline
     fn _accumulate[
@@ -3144,6 +3212,7 @@ struct ConvDirectNHWC[
     fn _h_loop[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
+        has_residual: Bool,
     ](
         self,
         n: Int,
@@ -3208,7 +3277,9 @@ struct ConvDirectNHWC[
 
             # region effected by left padding, [0, left_pad_impact_end)
             for wo in range(left_pad_impact_end):
-                self._inner_loops_padding[1, micro_kernel_width, True,](
+                self._inner_loops_padding[
+                    1, micro_kernel_width, True, has_residual
+                ](
                     input_base,
                     filter_base,
                     output_base,
@@ -3229,7 +3300,9 @@ struct ConvDirectNHWC[
             @always_inline
             @parameter
             fn update_middle[height: Int](wo: Int):
-                self._inner_loops_padding[height, micro_kernel_width, False,](
+                self._inner_loops_padding[
+                    height, micro_kernel_width, False, has_residual
+                ](
                     input_base,
                     filter_base,
                     output_base,
@@ -3251,7 +3324,9 @@ struct ConvDirectNHWC[
 
             # region effected by right padding, [right_pad_impact_start, WO)
             for wo in range(right_pad_impact_start, self.conv_shape.out_w):
-                self._inner_loops_padding[1, micro_kernel_width, True,](
+                self._inner_loops_padding[
+                    1, micro_kernel_width, True, has_residual
+                ](
                     input_base,
                     filter_base,
                     output_base,
@@ -3272,6 +3347,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         w_padding_impact: Bool,
+        has_residual: Bool,
     ](
         self,
         input_base: DTypePointer[type],  # points to (ho, wo) mapped in input
@@ -3287,6 +3363,10 @@ struct ConvDirectNHWC[
         """Inner loop computation with padding
         Given input (ho, wo), this kernel accumulates over the stencil RxS.
         """
+        assert_param[
+            not has_residual or (has_residual and micro_kernel_width == 1),
+            "Use Height x 1 kernel for residual in F.",
+        ]()
 
         assert_param[
             not w_padding_impact
@@ -3328,20 +3408,12 @@ struct ConvDirectNHWC[
                 ](output_micro_tile)
             # Load micro tile from output buffer.
             else:
-                var output_ptr = output_base.offset(f - f_tile_offset)
-
-                @unroll
-                for i in range(micro_kernel_height):
-
-                    @unroll
-                    for j in range(micro_kernel_width):
-                        let output_vec = output_ptr.offset(
-                            j * simd_size
-                        ).simd_load[simd_size]()
-                        output_micro_tile.aligned_simd_store[
-                            simd_size, alignment
-                        ](Index(i, j * simd_size), output_vec)
-                    output_ptr = output_ptr.offset(self.conv_shape.f)
+                self._load_output_micro_tile[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    simd_size,
+                    has_residual,
+                ](output_base.offset(f - f_tile_offset), output_micro_tile)
 
             # Shift in input H when shifting 1 in filter stencil' R dimension.
             var h_shift = 0
@@ -3393,20 +3465,12 @@ struct ConvDirectNHWC[
                 h_shift += self.conv_shape.dilation[0]
 
             # Store the micro tile
-            var output_ptr = output_base.offset(f - f_tile_offset)
-            #
-            @unroll
-            for i in range(micro_kernel_height):
-
-                @unroll
-                for j in range(micro_kernel_width):
-                    let output_vec = output_micro_tile.aligned_simd_load[
-                        simd_size, alignment
-                    ](Index(i, j * simd_size))
-                    output_ptr.offset(j * simd_size).simd_store[simd_size](
-                        output_vec
-                    )
-                output_ptr = output_ptr.offset(self.conv_shape.f)
+            self._store_output_micro_tile[
+                micro_kernel_height,
+                micro_kernel_width,
+                simd_size,
+                has_residual,
+            ](output_micro_tile, output_base.offset(f - f_tile_offset))
 
             filter_tile = filter_tile.offset(filter_F_stride)
 
@@ -3522,17 +3586,13 @@ fn pack_filter_rscf_to_frscf[
         R, S, C, F - original filter dimensions
         filter: filter in RSCF layout.
         packed_filter: packed filter in FRScf layout. Here,
-            F       - F tiles
+            F       - the index of continuous segments in micro kernel
             R, S, C - original R, S, C
-            f       - c, f index with CF tile.
+            f       - the index within a continuous segments
 
-    The packed buffer may be larger than the filter because it's padded so
-    that its last dimension is multiple of micro_kernel_f_size. This function
-    only copies R*S*C*F elements. The values in the remaining memory are set
-    to zero.
-
-    This function has the same assumption as direct conv that F is multiple of
-    simd_size. If violated, it could result in segmentation fault.
+    F is first broken down to segements of size micro_kernel_f_size, then the
+    remainder is further divided by simd_size. The last residual elements if
+    any is padded with zero to fill simd_size.
     """
     alias simd_size = simdwidthof[type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
@@ -3574,13 +3634,42 @@ fn pack_filter_rscf_to_frscf[
 
                     packed_filter_ptr = packed_filter_ptr.offset(f_tile_size)
 
+    # If F % simd_size != 0, the following won't touch the remainder.
     tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](0, F)
 
+    # Check the remainder if any
+    let F_round_by_simd = (F // simd_size) * simd_size
+    let residual = F - F_round_by_simd
+
+    # Handle the remaider if any
+    if residual > 0:
+        var packed_filter_ptr = packed_filter.data.offset(
+            F_round_by_simd * R * S * C
+        )
+        for r in range(R):
+            for s in range(S):
+                for c in range(C):
+                    let filter_ptr = filter.data.offset(
+                        F_round_by_simd + F * (c + C * (s + S * r))
+                    )
+                    # Load remainder elements and pad with zero to
+                    # to fill a simd vector.
+                    let filter_vec = partial_simd_load[type, simd_size](
+                        filter_ptr, 0, residual, 0.0
+                    )
+                    packed_filter_ptr.simd_store[simd_size](filter_vec)
+                    # Hence, packed filter is incremented by simd_size
+                    packed_filter_ptr = packed_filter_ptr.offset(simd_size)
+
     # Set the remaining memory to zero.
-    let filter_size = filter.num_elements()
-    let remaining = packed_filter.num_elements() - filter_size
+    let filter_size_roundup = R * S * C * (
+        F_round_by_simd + simd_size if residual > 0 else F
+    )
+    let remaining = packed_filter.num_elements() - filter_size_roundup
     if remaining > 0:
-        memset_zero[type](packed_filter.data.offset(filter_size), remaining)
+        memset_zero[type](
+            packed_filter.data.offset(filter_size_roundup), remaining
+        )
 
 
 @always_inline

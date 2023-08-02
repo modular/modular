@@ -741,3 +741,95 @@ fn main():
             Index(1, 1),  # pad_w
             rt,
         )
+
+        # Test with F not multiple of simd_size
+
+        test[DType.float32, True](
+            1,  # N
+            5,  # H
+            5,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            7,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            7,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            42,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            23,  # H
+            23,  # W
+            17,  # C
+            3,  # R
+            3,  # S
+            90,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            5,  # H
+            11,  # W
+            2,  # C
+            3,  # R
+            5,  # S
+            7,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            7,  # H
+            9,  # W
+            2,  # C
+            3,  # R
+            3,  # S
+            42,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, True](
+            1,  # N
+            11,  # H
+            7,  # W
+            17,  # C
+            3,  # R
+            5,  # S
+            90,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(2, 2),  # pad_w
+            rt,
+        )
