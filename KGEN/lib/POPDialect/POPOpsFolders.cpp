@@ -843,15 +843,30 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {
-  auto count = dyn_cast<IntegerAttr>(getCount());
-  if (!count)
-    return ErrorTree(getLoc(), "not concrete");
+  // Determine the allocation size.
+  int64_t count = cast<IntegerAttr>(getCount()).getInt();
   Type type = cast<PointerType>(getType()).getElementAsType();
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
   if (!size)
     return ErrorTree(getLoc(), "could not query type size");
-  int64_t addr = state.allocateMemory(count.getInt() * *size);
+
+  // Determine the alignment. If the alignment is unspecified or zero, query the
+  // natural alignment of the type.
+  int64_t align = 0;
+  if (TypedAttr alignAttr = getAlignmentAttr())
+    align = cast<IntegerAttr>(alignAttr).getInt();
+  if (align < 0)
+    return ErrorTree(getLoc(), "invalid alignment value: " + Twine(align));
+  if (align == 0) {
+    std::optional<int64_t> typeAlign =
+        DataLayoutInterface::getTypeABIAlign(state.getTarget(), type);
+    if (!typeAlign)
+      return ErrorTree(getLoc(), "could not query type alignment");
+    align = *typeAlign;
+  }
+
+  int64_t addr = state.allocateMemory(count * *size, align, MemoryKind::Stack);
   state.mapResults(PointerAttr::get(addr, getType()));
   return success();
 }

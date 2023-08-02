@@ -37,6 +37,9 @@ public:
   IREvaluator(Elaborator &elaborator,
               DenseMap<StringAttr, Attribute> paramValues =
                   DenseMap<StringAttr, Attribute>());
+  IREvaluator(const IREvaluator &other)
+      : ParameterEvaluator(other), InterpreterState(other.getTarget()),
+        elaborator(other.elaborator) {}
 
   /// Evaluate symbolic expressions using the symbol table.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;

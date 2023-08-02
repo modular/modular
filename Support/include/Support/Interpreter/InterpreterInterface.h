@@ -22,6 +22,8 @@ namespace M {
 class InterpreterState {
 public:
   InterpreterState(TargetInfoAttr target) : target(target) {}
+  InterpreterState(const InterpreterState &other) = delete;
+  InterpreterState(InterpreterState &&other) = default;
 
   virtual ~InterpreterState() = default;
 
@@ -40,8 +42,10 @@ public:
   // Interpreter Memory Management
 
   /// Allocate internal interpreter memory of a requested size.
-  /// TODO: Allow alignment as well.
-  int64_t allocateMemory(size_t size);
+  int64_t allocateMemory(size_t size, size_t align, MemoryKind kind);
+
+  /// Try to get a memory reference at the given address.
+  ErrorOr<void *> getMemory(int64_t addr, size_t size);
 
   /// Write an attribute value of a given type to the provided chunk of memory.
   ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);
@@ -49,9 +53,6 @@ public:
   /// Read an attribute value of the given type from the provided chunk of
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
-
-  /// Try to get a memory reference at the given address.
-  ErrorOr<void *> getMemory(int64_t addr, size_t size);
 
   //===--------------------------------------------------------------------===//
   // Interpreter Control Flow
@@ -143,8 +144,23 @@ private:
   /// The interpreter target configuration.
   TargetInfoAttr target;
 
+  /// This struct represents a piece of memory in the interpreter.
+  struct MemoryBlob {
+    /// The kind of memory in the slot.
+    MemoryKind kind;
+    /// The base address of the blob.
+    int64_t baseAddr;
+    /// The size of the blob.
+    size_t size;
+    /// The alignment of the blob.
+    size_t align;
+    /// The actual memory managed by the interpreter.
+    std::unique_ptr<void, void (*)(void *)> memory;
+  };
+
   /// An internal memory table.
-  std::vector<uint8_t> memory;
+  /// TODO: Support different address spaces.
+  std::vector<MemoryBlob> memory;
 
   /// The current operation being interpreted. The interpreter exits when the
   /// operation is null, in which case the required invariant be that the stack
