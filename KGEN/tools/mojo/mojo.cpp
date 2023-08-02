@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Build/mojo-build.h"
+#include "Crashpad.h"
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
 #include "Format/mojo-format.h"
@@ -44,6 +45,7 @@ int main(int argc, char **argv) {
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
+  initCrashpad(argv[0]);
 
   // Store command line arguments and record the program name.
   SmallVector<const char *, 256> argvStorage(argv, argv + argc);
