@@ -130,7 +130,7 @@ endmacro()
 
 # This target represents the full mojo-sdk, and builds both `mojo` and all of
 # the necessary standard library packages.
-add_custom_target(mojo-sdk DEPENDS mojo)
+add_custom_target(mojo-sdk DEPENDS mojo mojo-lsp-server)
 
 # This function will generate the CMake targets needed to build a Mojo package
 # for the current source directory, or directory specified by PACKAGE_DIR.
