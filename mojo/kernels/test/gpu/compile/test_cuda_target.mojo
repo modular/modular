@@ -10,9 +10,17 @@ from Activations import gelu
 from Assert import assert_param
 from DType import DType
 from Functional import elementwise
+from Pointer import DTypePointer
 from Index import StaticIntTuple
 from IO import print
-from NvidiaGPU import *
+from NvidiaGPU import (
+    ThreadIdx,
+    BlockIdx,
+    BlockDim,
+    GridDim,
+    AddressSpace,
+    stack_allocation,
+)
 from Pointer import DTypePointer
 from Range import range
 from TargetInfo import triple_is_nvidia_cuda, simdwidthof
@@ -94,6 +102,18 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
         return
 
     buf.store(tid, gelu(buf.load(tid)))
+
+
+# ===----------------------------------------------------------------------===#
+# Check stack allocation
+# ===----------------------------------------------------------------------===#
+
+
+# CHECK-LABEL: test_shared_stack_allocation
+# CHECK-DAG: cvta.local.u64
+@export
+fn test_shared_stack_allocation() -> DTypePointer[DType.float32]:
+    return stack_allocation[5, DType.float32, AddressSpace.SHARED]()
 
 
 # ===----------------------------------------------------------------------===#
