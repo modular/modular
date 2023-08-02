@@ -21,6 +21,7 @@ from ConvUtils import (
     get_direct_conv_micro_kernel_width,
     get_conv_num_tasks,
     get_conv_num_partitions,
+    get_conv2d_shape,
 )
 from DType import DType
 from Functional import (
@@ -59,6 +60,8 @@ from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim
 from SIMD import SIMD
 from TargetInfo import simd_byte_width, simdwidthof, alignof
+from TypeUtilities import rebind
+from OptionalParam import OptionalParamInts
 
 
 alias MAX_NUM_CHANNELS_TILE = 384
@@ -3672,3 +3675,104 @@ fn conv_shape[
     output_shape[3] = output_channels
 
     return output_shape
+
+
+# must be register passable because it is used as a parameter
+@register_passable("trivial")
+struct ConvInfoStatic:
+    var pad_h: DimList
+    var pad_w: DimList
+    var stride: DimList
+    var dilation: DimList
+
+    fn __init__(
+        pad_h: DimList, pad_w: DimList, stride: DimList, dilation: DimList
+    ) -> Self:
+        return Self {
+            pad_h: pad_h, pad_w: pad_w, stride: stride, dilation: dilation
+        }
+
+
+struct ConvInfo[conv_info_static: ConvInfoStatic]:
+    var pad_h: OptionalParamInts[2, conv_info_static.pad_h]
+    var pad_w: OptionalParamInts[2, conv_info_static.pad_w]
+    var stride: OptionalParamInts[2, conv_info_static.stride]
+    var dilation: OptionalParamInts[2, conv_info_static.dilation]
+
+    fn __init__(
+        inout self,
+        pad_h: StaticIntTuple[2],
+        pad_w: StaticIntTuple[2],
+        stride: StaticIntTuple[2],
+        dilation: StaticIntTuple[2],
+    ):
+        self.pad_h = pad_h
+        self.pad_w = pad_w
+        self.stride = stride
+        self.dilation = dilation
+
+
+fn conv_2d_nhwc_direct[
+    filter_rank: Int,
+    filter_packed: Bool,
+    conv_info_static: ConvInfoStatic,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+](
+    input: NDBuffer[4, input_shape, input_type],
+    filter: NDBuffer[filter_rank, filter_shape, filter_type],
+    output: NDBuffer[4, output_shape, output_type],
+    conv_info: ConvInfo[conv_info_static],
+    out_chain: OutputChainPtr,
+):
+    assert_param[
+        input_type == filter_type and input_type == output_type,
+        "conv input/output/filter types must be the same",
+    ]()
+    assert_param[
+        (filter_packed and filter_rank == 5)
+        or (not filter_packed and filter_rank == 4),
+        "unexpected filter rank for filter layout",
+    ]()
+
+    if output.dim[3]() % simdwidthof[output_type]() != 0:
+        return out_chain.mark_error(
+            "F must be divisible by simd_width in direct conv currently. This"
+            " limitation will be removed soon."
+        )
+
+    let output_rebind = rebind[NDBuffer[4, output_shape, input_type]](output)
+    let filter_rebind = rebind[NDBuffer[filter_rank, filter_shape, input_type]](
+        filter
+    )
+    alias filter_layout = Image2DLayout.FRSCf if filter_packed else Image2DLayout.RSCF
+    let conv_shape = get_conv2d_shape[
+        filter_rank,
+        output_shape,
+        input_shape,
+        filter_shape,
+        input_type,
+        Image2DLayout.NHWC,
+        filter_layout,
+    ](
+        output_rebind,
+        input,
+        filter_rebind,
+        conv_info.pad_h.get(),
+        conv_info.pad_w.get(),
+        conv_info.stride.get(),
+        conv_info.dilation.get(),
+    )
+
+    ConvDirectNHWC[
+        filter_rank,
+        input_shape,
+        filter_shape,
+        output_shape,
+        input_type,
+        filter_packed,
+    ].run(output_rebind, input, filter_rebind, conv_shape, out_chain)
