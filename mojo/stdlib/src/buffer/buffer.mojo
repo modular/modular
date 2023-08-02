@@ -48,10 +48,7 @@ fn _raw_stack_allocation[
     Returns:
         A data pointer of the given dtype pointing to the allocated space.
     """
-    let ptr = stack_allocation[
-        count, __mlir_type[`!pop.scalar<`, type.value, `>`], alignment
-    ]()
-    return ptr.address
+    return stack_allocation[count, type, alignment]()
 
 
 # ===----------------------------------------------------------------------===#
