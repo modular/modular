@@ -10,6 +10,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/JSON.h>
 #include <llvm/Support/ToolOutputFile.h>
 
 using namespace M;
@@ -17,11 +18,19 @@ using namespace llvm;
 
 namespace {
 
+enum class OutputFormat { YAML, JSON };
+
 struct SystemInfoCLIOptions {
 
   llvm::cl::opt<std::string> outputFilename{
       "o", llvm::cl::desc("Output filename"), llvm::cl::value_desc("filename"),
       llvm::cl::init("-")};
+
+  llvm::cl::opt<OutputFormat> format{
+      "format", llvm::cl::desc("Format. Defaults to yaml"),
+      M::cl::values(clEnumValN(OutputFormat::YAML, "yaml", "YAML format")),
+      M::cl::values(clEnumValN(OutputFormat::JSON, "json", "JSON format")),
+      llvm::cl::init(OutputFormat::YAML)};
 
   llvm::cl::list<HostProperty> QueryProperty{
       "query", M::cl::desc("Available Queries:"),
@@ -64,6 +73,7 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv, "Modular System Info Tool");
 
   auto outFilePathStr = cli.outputFilename.getValue();
+  OutputFormat format = cli.format.getValue();
 
   std::error_code ec;
   if (outFilePathStr != "-" && !std::filesystem::exists(outFilePathStr, ec) &&
@@ -84,26 +94,35 @@ int main(int argc, char **argv) {
     exit(reportError("Cannot open output file: '" + outFilePathStr +
                      "': " + error.message()));
 
-  auto &os = outputFile ? outputFile->os() : llvm::outs();
-
   auto hostMachineOr = getHostMachineInfo();
   if (hostMachineOr.isError())
     return reportError(hostMachineOr.getError());
 
   HostMachineInfo hostInfo = hostMachineOr.takeValue();
 
-  if (cli.QueryProperty.empty()) {
-    hostInfo.print(os);
+  if (format == OutputFormat::YAML) {
+    auto &os = outputFile ? outputFile->os() : llvm::outs();
+    if (cli.QueryProperty.empty())
+      hostInfo.print(os);
+
+    for (auto query : cli.QueryProperty)
+      hostInfo.print(query, os);
     os.flush();
     outputFile->keep();
     return EXIT_SUCCESS;
   }
 
-  for (auto query : cli.QueryProperty)
-    hostInfo.print(query, os);
-
+  auto os = outputFile ? llvm::json::OStream(outputFile->os())
+                       : llvm::json::OStream(llvm::outs());
+  if (cli.QueryProperty.empty())
+    hostInfo.print(os);
+  else {
+    os.objectBegin();
+    for (auto query : cli.QueryProperty)
+      hostInfo.print(query, os);
+    os.objectEnd();
+  }
   os.flush();
   outputFile->keep();
-
   return EXIT_SUCCESS;
 }

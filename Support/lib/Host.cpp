@@ -627,6 +627,49 @@ void M::HostMachineInfo::print(llvm::json::OStream &json) const {
 }
 
 void HostMachineInfo::print(HostProperty property,
+                            llvm::json::OStream &json) const {
+  switch (property) {
+  case HostProperty::TargetTriple:
+    json.attribute("target-triple", triple);
+    break;
+  case HostProperty::OS:
+    json.attribute("os", osName);
+    break;
+  case HostProperty::Arch:
+    json.attribute("arch", cpuArch);
+    break;
+  case HostProperty::CPUModel:
+    json.attribute("cpu-model", cpuModelName);
+    break;
+  case HostProperty::SIMDBitWidth:
+    json.attribute("simd-bitwidth", simdBitWidth);
+    break;
+  case HostProperty::Features:
+    json.attribute("features", cpuFeatures);
+    break;
+  case HostProperty::CoreCount:
+    json.attribute("core-count", numPhysicalCores);
+    break;
+  case HostProperty::L1CacheSize:
+    json.attribute("l1-cache-size", l1CacheSize);
+    break;
+  case HostProperty::L2CacheSize:
+    json.attribute("l2-cache-size", l2CacheSize);
+    break;
+  case HostProperty::L3CacheSize:
+    json.attribute("l3-cache-size", l3CacheSize);
+    break;
+  case HostProperty::L4CacheSize:
+    json.attribute("l4-cache-size", l4CacheSize);
+    break;
+  case HostProperty::Affinities:
+    if (affinities)
+      json.attribute("affinities", *affinities);
+    break;
+  }
+}
+
+void HostMachineInfo::print(HostProperty property,
                             llvm::raw_ostream &os) const {
   switch (property) {
   case HostProperty::TargetTriple:
