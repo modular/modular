@@ -66,7 +66,7 @@ private:
   Histogram() {}
 };
 
-template <typename T, typename DurationT = std::chrono::nanoseconds>
+template <typename T, typename DurationT>
 class Timer {
 private:
   friend class TelemetryContext;
@@ -94,7 +94,7 @@ private:
   opentelemetry::context::Context context{};
 };
 
-template <typename T, typename DurationT = std::chrono::nanoseconds>
+template <typename T, typename DurationT>
 class Timer {
   using ClockType = std::chrono::high_resolution_clock;
   using TimePointType = std::chrono::time_point<ClockType>;

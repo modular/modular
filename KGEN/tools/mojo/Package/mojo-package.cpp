@@ -498,8 +498,9 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   [[maybe_unused]] auto flushTelemetry =
       runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
-      runtime.getTelemetryContext()->createUInt64Timer(
-          "mojo.kgen.compile.time");
+      runtime.getTelemetryContext()
+          ->createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.kgen.compile.time");
 
   auto runPipeline = [&](mlir::PassManager &pm) -> ErrorOrSuccess {
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
