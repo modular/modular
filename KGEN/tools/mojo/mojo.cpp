@@ -13,8 +13,10 @@
 #include "Run/mojo-run.h"
 
 #include "Config/Version.h"
+#include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
+#include "Support/Process.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -57,6 +59,14 @@ int main(int argc, char **argv) {
   registerPackageSubcommand(registry);
   registerREPLSubcommand(registry);
   registerRunSubcommand(registry);
+
+  // Configure the current python if it hasn't been set.
+  ErrorOr<Config> config = Config::open();
+  if (succeeded(config)) {
+    (void)setProcessEnv("MOJO_PYTHON_LIBRARY",
+                        config->getValue("mojo.python_lib"),
+                        /*overwrite=*/false);
+  }
 
   // If the user hasn't provided any arguments, treat this as the `repl`
   // subcommand.

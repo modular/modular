@@ -18,8 +18,10 @@
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -31,6 +33,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
@@ -492,6 +495,14 @@ int main(int argc, char **argv) {
   registerDefaultTimingManagerCLOptions();
   registerPassManagerCLOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
+
+  // Configure the current python if it hasn't been set.
+  ErrorOr<Config> config = Config::open();
+  if (succeeded(config)) {
+    (void)setProcessEnv("MOJO_PYTHON_LIBRARY",
+                        config->getValue("mojo.python_lib"),
+                        /*overwrite=*/false);
+  }
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;

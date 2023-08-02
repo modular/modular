@@ -8,6 +8,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
+include(AddPython)
+modular_find_python3_development()
+
 add_subdirectory(pytests)
 
 configure_lit_site_cfg(
