@@ -5,9 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Interpreter/InterpreterInterface.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 
@@ -19,10 +21,23 @@ using namespace M;
 /// that an address of 0 can actually be considered a null pointer.
 static constexpr int64_t invalidMemOffset = 10'000'000;
 
-int64_t InterpreterState::allocateMemory(size_t size) {
-  int64_t addr = memory.size() + invalidMemOffset;
-  memory.resize(memory.size() + size);
-  return addr;
+int64_t InterpreterState::allocateMemory(size_t size, size_t align,
+                                         MemoryKind kind) {
+  // Pick the base address of the new blob.
+  int64_t baseAddr = invalidMemOffset;
+  if (!memory.empty()) {
+    MemoryBlob &last = memory.back();
+    baseAddr = last.baseAddr + last.size;
+  }
+  // Ensure the base address is aligned.
+  baseAddr = llvm::alignTo(baseAddr, align);
+
+  // Create the blob with aligned memory.
+  MemoryBlob blob{
+      kind, baseAddr, size, align, {alignedAlloc(align, size), &alignedFree}};
+  memset(blob.memory.get(), 0, size);
+  memory.push_back(std::move(blob));
+  return baseAddr;
 }
 
 ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
@@ -32,18 +47,27 @@ ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
   // Otherwise, check for an address that we know is invalid.
   if (addr < invalidMemOffset)
     return Error("address is invalid: " + Twine(addr));
-  addr -= invalidMemOffset;
+
+  // Binary search for the blob that corresponds to the address.
+  auto it =
+      llvm::lower_bound(memory, addr, [](const MemoryBlob &blob, int64_t addr) {
+        return blob.baseAddr + blob.size <= static_cast<size_t>(addr);
+      });
+  if (it == memory.end())
+    return Error("address is out-of-bounds: " + Twine(addr));
+  int64_t offset = addr - it->baseAddr;
+
   // Accessing memory at the end iterator is okay if the access size is zero.
   // For example, if the memory size is 2, a memory access at index 2 is only
   // valid if the access size is 0. This is because the index points to the
   // beginning of the byte in memory. Check if the address exceeds the size of
   // allocated memory.
-  if (static_cast<size_t>(addr) > memory.size())
+  if (static_cast<size_t>(offset) > it->size)
     return Error("address is out-of-bounds: " + Twine(addr));
   // Now check if the access size will still be in-bounds.
-  if (addr + size > memory.size())
+  if (offset + size > it->size)
     return Error("memory access size " + Twine(size) + " is out-of-bounds");
-  return reinterpret_cast<void *>(memory.data() + addr);
+  return (uint8_t *)it->memory.get() + offset;
 }
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
@@ -173,6 +197,13 @@ InterpreterState::startInterpreterAt(Region &region,
   pushFrame(nullptr, region.getParentOp());
   transferControlFlowTo(&region.front(), arguments);
 
+  // Reset the interpret to a clean state.
+  auto resetState = llvm::make_scope_exit([&] {
+    stack.clear();
+    memory.clear();
+    returnValues.reset();
+  });
+
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> results = runInterpreter();
   if (results)
@@ -189,8 +220,6 @@ InterpreterState::startInterpreterAt(Region &region,
       error = ErrorTree(frame.origin->getLoc(),
                         Error("failed to evaluate call"), std::move(error));
   }
-  // Reset the interpret to a clean state.
-  stack.clear();
   return std::move(error);
 }
 

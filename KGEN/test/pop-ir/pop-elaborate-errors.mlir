@@ -20,7 +20,7 @@ kgen.generator @invalid_bitcast<size, type: dtype>(%a: !pop.simd<4, f32>) -> !po
 kgen.generator @out_of_range_read() -> i32 {
   %0 = pop.stack_allocation 0 x i32
   // expected-note @below {{failed to interpret operation pop.load}}
-  // expected-note @below {{memory access size 4 is out-of-bounds}}
+  // expected-note @below {{address is out-of-bounds}}
   %1 = pop.load %0 : !pop.pointer<i32>
   kgen.return %1 : i32
 }
