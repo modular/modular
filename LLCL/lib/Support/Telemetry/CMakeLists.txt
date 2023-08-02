@@ -14,6 +14,8 @@ if(MODULAR_ENABLE_TELEMETRY)
 
   add_modular_library(LLCLTelemetry
     TelemetryContext.cpp
+    FileMetricExporter.cpp
+    FileLogExporter.cpp
     MetricReader.cpp
 
     LINK_LIBS PUBLIC
@@ -39,6 +41,8 @@ if(MODULAR_ENABLE_TELEMETRY)
 else()
   add_modular_library(LLCLTelemetry
     TelemetryContext.cpp
+    FileMetricExporter.cpp
+    FileLogExporter.cpp
     MetricReader.cpp
     )
 endif()

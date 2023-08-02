@@ -170,10 +170,6 @@ public:
 
 private:
 #ifdef MODULAR_ENABLE_TELEMETRY
-  /// Buffer OTel's outputs in a string and flush it atomically to a file every
-  /// time we call `flush`.
-  std::stringstream outputStream;
-  std::filesystem::path filePath;
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;

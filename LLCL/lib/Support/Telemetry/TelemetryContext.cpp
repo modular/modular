@@ -6,19 +6,14 @@
 
 #include "LLCL/Support/Telemetry/Telemetry.h"
 
+#include "LLCL/Support/Telemetry/Exporters/FileLogExporter.h"
+#include "LLCL/Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
-#include "Support/FileSystemExtras.h"
 #include "Support/Host.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/Threading.h"
-#include <filesystem>
 #include <mutex>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-#include "opentelemetry/exporters/ostream/log_record_exporter.h"
-#include "opentelemetry/exporters/ostream/metric_exporter.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
@@ -35,11 +30,10 @@
 #include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-#define DEBUG_TYPE "telemetry-context"
-
 using namespace M;
 using namespace LLCL;
 using namespace Telemetry;
+using namespace Exporter;
 
 TelemetryContext::TelemetryContext(
     const llvm::StringMap<TelemetryContext::AttributeValue> &resources) {
@@ -79,7 +73,8 @@ TelemetryContext::TelemetryContext(
   //       exporters for each (if OTel allows it).
   StringRef httpEndpoint =
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
-  filePath = cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  std::filesystem::path filePath =
+      cfg.getValue("telemetry.exporters.metrics.file_path").str();
   if (httpEndpoint.empty()) {
     // Default to MODULAR_HOME/telemetry.log
     if (filePath.empty())
@@ -98,8 +93,7 @@ TelemetryContext::TelemetryContext(
   std::unique_ptr<opentelemetry::sdk::metrics::PushMetricExporter>
       metricExporter;
   if (httpEndpoint.empty()) {
-    metricExporter = std::make_unique<
-        opentelemetry::exporter::metrics::OStreamMetricExporter>(outputStream);
+    metricExporter = std::make_unique<FileMetricExporter>(filePath);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
@@ -123,8 +117,7 @@ TelemetryContext::TelemetryContext(
   // -------- Logs --------
   std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> logExporter;
   if (httpEndpoint.empty()) {
-    logExporter = std::make_unique<
-        opentelemetry::exporter::logs::OStreamLogRecordExporter>(outputStream);
+    logExporter = std::make_unique<FileLogExporter>(filePath);
   } else {
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         oltpLogOptions;
@@ -149,24 +142,8 @@ TelemetryContext::~TelemetryContext() { flush(); }
 void TelemetryContext::flush() {
 #ifdef MODULAR_ENABLE_TELEMETRY
   // From OTel: Export must not be called concurrently for the same exporter
-  // instance (collectAndExport calls Export). This also conveniently holds the
-  // export lock so we don't have multiple flushes attempting to mutate the put
-  // pointer on the stream.
+  // instance (collectAndExport calls Export).
   std::lock_guard<std::mutex> lock(exportLock);
   metricReader->collectAndExport();
-
-  if (filePath.empty())
-    return;
-
-  // Flush the stream to a file, if it exists.
-  auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
-    // Do the stream manipulation inside the atomic region - other things may
-    // try to write during this, and we need to hold the lock.
-    os << outputStream.str();
-    // Seek back to the beginning.
-    outputStream.seekp(0, std::ios_base::beg);
-  });
-  if (err.isError())
-    LLVM_DEBUG(llvm::dbgs() << err.getError());
 #endif // MODULAR_ENABLE_TELEMETRY
 }
