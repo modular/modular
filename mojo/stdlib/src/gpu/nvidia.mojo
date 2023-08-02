@@ -5,8 +5,70 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs."""
 
-from SIMD import Int32
+from DType import DType
 from Intrinsics import llvm_intrinsic
+from Memory import stack_allocation as _stack_allocation
+from Pointer import DTypePointer
+from SIMD import Int32
+
+
+# ===----------------------------------------------------------------------===#
+# Address Space
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct AddressSpace:
+    var _value: Int
+
+    alias GENERIC = AddressSpace(0)
+    """Generic address space."""
+    alias GLOBAL = AddressSpace(1)
+    """Global address space."""
+    alias CONSTANT = AddressSpace(2)
+    """Constant address space."""
+    alias SHARED = AddressSpace(3)
+    """Shared address space."""
+    alias PARAM = AddressSpace(4)
+    """Param address space."""
+    alias LOCAL = AddressSpace(5)
+    """Local address space."""
+
+    fn __init__(value: Int) -> Self:
+        return Self {_value: value}
+
+    fn value(self) -> Int:
+        """The integral value of the address space.
+
+        Returns:
+          The integral value of the address space.
+        """
+        return self._value
+
+
+# ===----------------------------------------------------------------------===#
+# stack allocation
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn stack_allocation[
+    count: Int, type: DType, alignment: Int, address_space: AddressSpace
+]() -> DTypePointer[type]:
+    return _stack_allocation[count, type, alignment, address_space.value()]()
+
+
+@always_inline
+fn stack_allocation[
+    count: Int, type: DType, address_space: AddressSpace
+]() -> DTypePointer[type]:
+    return _stack_allocation[count, type, 1, address_space.value()]()
+
+
+# ===----------------------------------------------------------------------===#
+# ThreadIdx
+# ===----------------------------------------------------------------------===#
 
 
 # ===----------------------------------------------------------------------===#
