@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import NDBuffer, _raw_stack_allocation
+from Buffer import NDBuffer
 from Functional import tile, tile_and_unswitch, vectorize_unroll
 from IO import print
 from Index import Index, StaticIntTuple
@@ -21,6 +21,7 @@ from Matmul import (
     MatmulOperandLayout,
     calculate_tile_n_k,
 )
+from Memory import stack_allocation
 from MatmulUtils import get_pack_data_size
 from Pointer import DTypePointer
 from Range import range
@@ -322,7 +323,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn _allocate_buffers(inout self):
         """Allocate space for packing and maybe other intermediate data space."""
         # TODO: read these data out from matmul config.
-        self.packed_b = _raw_stack_allocation[
+        self.packed_b = stack_allocation[
             get_pack_data_size[data_type.value_type](),  # Count.
             data_type.value_type,  # Data type.
             simd_byte_width(),  # Alignment.

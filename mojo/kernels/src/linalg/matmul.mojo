@@ -12,7 +12,6 @@ from Buffer import (
     DynamicRankBuffer,
     partial_simd_load,
     partial_simd_store,
-    _raw_stack_allocation,
 )
 from Functional import (
     tile,
@@ -27,7 +26,7 @@ from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr, OwningOutputChainPtr
 from Math import min, fma, div_ceil, align_down
-from Memory import memset_zero
+from Memory import memset_zero, stack_allocation
 from MOGG import soft_fusion_run_wrapper
 from MatmulUtils import (
     get_packB_unroll_factor,
@@ -1683,7 +1682,7 @@ struct BTileGenerator[
 
         @parameter
         if not b_packed:
-            b_tile_stack_ptr = _raw_stack_allocation[
+            b_tile_stack_ptr = stack_allocation[
                 config.pack_data_size,
                 type,
                 alignof[SIMD[type, simdwidthof[type]()]](),
