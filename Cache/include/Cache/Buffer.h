@@ -61,6 +61,7 @@ public:
   const char *getBufferEnd() const;
   size_t getBufferSize() const;
   StringRef getBuffer() const;
+  llvm::MemoryBufferRef getMemBufferRef() const;
 
 protected:
   /// So RCRef can access protected constructors.
