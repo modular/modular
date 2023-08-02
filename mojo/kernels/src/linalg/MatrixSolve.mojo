@@ -8,14 +8,18 @@
 from Assert import assert_param
 from Buffer import NDBuffer
 from DType import DType
+from Functional import _elementwise_impl
 from Index import Index
 from Index import StaticIntTuple
 from List import DimList
 from LLCL import OutputChainPtr
 from Range import range
+from SIMD import SIMD
 from Tracing import TraceLevel
+from TypeUtilities import rebind
 
 
+@always_inline
 fn matrix_solve_tiny[
     type: DType, M: Int, N: Int, K: Int
 ](
@@ -72,6 +76,7 @@ fn matrix_solve_tiny[
     )
 
 
+@always_inline
 fn matrix_solve[
     type: DType, x_rank: Int, a_rank: Int, b_rank: Int
 ](
@@ -128,3 +133,52 @@ fn matrix_solve[
         matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
     out_chain.mark_ready()
+
+
+@always_inline
+fn matrix_band_part[
+    type: DType,
+    int_type: DType,
+    cond_type: DType,
+    rank: Int,
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    num_lower: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    num_upper: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    exclude_buf: NDBuffer[1, DimList.create_unknown[1](), cond_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    let lower_diagonal_index = num_lower[0].to_int()
+    let upper_diagonal_index = num_upper[0].to_int()
+    let exclude = exclude_buf[0] != 0
+
+    assert_param[rank >= 2, "Matrix band only supports rank >=2"]()
+
+    @parameter
+    @always_inline
+    fn func[
+        simd_width: Int, inner_rank: Int
+    ](index: StaticIntTuple[inner_rank]):
+        let idx = rebind[StaticIntTuple[rank]](index)
+
+        let row = idx[rank - 2]
+        let col = idx[rank - 1]
+
+        var in_band = (
+            lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
+        ) and (upper_diagonal_index < 0 or (col - row) <= upper_diagonal_index)
+        if exclude:
+            in_band = not in_band
+
+        if in_band:
+            output[idx] = input[idx]
+        else:
+            output[idx] = 0
+
+    _elementwise_impl[rank, 1, single_thread_blocking_override, func](
+        input.dynamic_shape,
+        out_chain,
+    )
