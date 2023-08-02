@@ -17,6 +17,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -29,6 +30,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include <deque>
 
@@ -369,21 +371,59 @@ orderAndLowerGlobalVariables(ModuleOp module,
 
     GlobalVarDeclOp op = node->op;
     mlir::IRRewriter b{OpBuilder(op)};
+    MLIRContext *ctx = op.getContext();
+
+    // Prepare locations and names for outlining the constructor and destructor.
+    StringRef name = op.getSymName();
+    auto ctorName = b.getStringAttr("(ctor_fn)" + name);
+    auto dtorName = b.getStringAttr("(dtor_fn)" + name);
+    Location ctorLoc = op->getLoc();
+    Location dtorLoc = op->getLoc();
+    if (auto fusedLoc =
+            dyn_cast<mlir::FusedLocWith<DebugInfo::DIFileAttr>>(op.getLoc())) {
+      // GlobalVarDeclOp either has a file scope or no scope.
+      DebugInfo::DIFileAttr fileAttr = fusedLoc.getMetadata();
+
+      // TODO: "C" as the Dwarf language type is the best option for now.
+      DebugInfo::DIBuilder dib(ctx);
+      dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+                                /*isOptimized=*/true,
+                                DebugInfo::EmissionKind::Full);
+
+      // We set the scoped location for the outlined methods.
+      auto spType = DebugInfo::DISubroutineType::get(ctx, {}, {});
+      auto fileLoc = cast<FileLineColLoc>(fusedLoc.getLocations()[0]);
+      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
+      auto getXtorLoc = [&](StringAttr xtorName) {
+        guard = dib.pushSubprogram(
+            xtorName, xtorName, fileAttr, fileLoc.getLine(), fileLoc.getLine(),
+            DebugInfo::SubprogramFlags::Definition, spType);
+        return dib.createScopedLoc(fileLoc);
+      };
+      ctorLoc = getXtorLoc(ctorName);
+      dtorLoc = getXtorLoc(dtorName);
+    }
 
     // Outline the constructor and destructor into functions.
-    StringRef name = op.getSymName();
-    auto ctorFn = b.create<LIT::FuncOp>(
-        op.getLoc(), b.getStringAttr("(ctor_fn)" + name),
-        SignatureType::get(b.getContext(), {}, {}), std::nullopt);
-    auto dtorFn = b.create<LIT::FuncOp>(
-        op.getLoc(), b.getStringAttr("(dtor_fn)" + name),
-        SignatureType::get(b.getContext(), {}, {}), std::nullopt);
-    ctorFn.getBodyRegion().takeBody(op.getCtor());
-    dtorFn.getBodyRegion().takeBody(op.getDtor());
-    b.setInsertionPointToEnd(ctorFn.getBody());
-    b.create<KGEN::ReturnOp>(op.getLoc());
-    b.setInsertionPointToEnd(dtorFn.getBody());
-    b.create<KGEN::ReturnOp>(op.getLoc());
+    auto sig = SignatureType::get(ctx, {}, {});
+    auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
+      b.setInsertionPoint(op);
+      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, sig, std::nullopt);
+      fn.getBodyRegion().takeBody(body);
+
+      // If we have a debuginfo scope available, we update the ops in the body.
+      if (auto sp = fn.getSubprogramScope()) {
+        fn.getBodyRegion().walk([&](Operation *op) {
+          op->setLoc(mlir::FusedLoc::get(
+              ctx, {op->getLoc()->findInstanceOf<FileLineColLoc>()}, sp));
+        });
+      }
+      b.setInsertionPointToEnd(fn.getBody());
+      b.create<KGEN::ReturnOp>(xtorLoc);
+      return fn;
+    };
+    LIT::FuncOp ctorFn = makeXtor(ctorLoc, ctorName, op.getCtor());
+    LIT::FuncOp dtorFn = makeXtor(dtorLoc, dtorName, op.getDtor());
 
     // If the global had a linkage name, make sure it gets renamed.
     StringAttr linkageName = op.getLinkageNameAttr();
