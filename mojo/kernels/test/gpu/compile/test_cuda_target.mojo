@@ -94,3 +94,14 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
         return
 
     buf.store(tid, gelu(buf.load(tid)))
+
+
+# ===----------------------------------------------------------------------===#
+# Check barrier
+# ===----------------------------------------------------------------------===#
+
+# CHECK-LABEL: barrier
+# CHECK: bar.sync 0
+@export
+fn test_barrier():
+    barrier()
