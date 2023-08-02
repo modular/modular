@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from lit.llvm import llvm_config
+import platform
 
 config.name = "Support"
 
@@ -36,3 +37,6 @@ tool_dirs = [
 tools = ["build-info", "support-dialect-opt", "system-info", "driver-tblgen"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+if platform.system() == "Darwin" and platform.processor() == "arm":
+    config.available_features.add("apple-m1")
