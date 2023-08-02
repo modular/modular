@@ -8,12 +8,13 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from Buffer import NDBuffer, Buffer, _raw_stack_allocation
+from Buffer import NDBuffer, Buffer
 from DType import DType
 from Range import range
 from DType import DType
 from Functional import elementwise
 from Math import mul
+from Memory import stack_allocation
 from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple, Index
@@ -61,9 +62,9 @@ fn test_slice[
 ):
 
     # Isn't always used but is used for the output buffer if we copy.
-    let output_mem = _raw_stack_allocation[numelems, dtype, 1]()
+    let output_mem = stack_allocation[numelems, dtype, 1]()
 
-    let memory1 = _raw_stack_allocation[numelems, dtype, 1]()
+    let memory1 = stack_allocation[numelems, dtype, 1]()
     let in_tensor = NDBuffer[outer_rank, rebind[DimList](static_shape), dtype,](
         memory1,
         dims,
@@ -73,21 +74,21 @@ fn test_slice[
     print("In shape:", in_tensor.dynamic_shape)
     print("In strides:", in_tensor.dynamic_stride)
 
-    let start_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     let start_tensor = NDBuffer[
         1,
         DimList.create_unknown[1](),
         DType.index,
     ](start_tensor_mem.address, StaticIntTuple[1](outer_rank), DType.index)
 
-    let end_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     let end_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
         end_tensor_mem.address,
         StaticIntTuple[1](outer_rank),
         DType.index,
     )
 
-    let step_tensor_mem = _raw_stack_allocation[outer_rank, DType.index, 1]()
+    let step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
     let step_tensor = NDBuffer[1, DimList.create_unknown[1](), DType.index,](
         step_tensor_mem.address,
         StaticIntTuple[1](outer_rank),

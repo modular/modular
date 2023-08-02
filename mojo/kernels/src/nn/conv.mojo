@@ -9,7 +9,6 @@ from Buffer import (
     NDBuffer,
     Buffer,
     DynamicRankBuffer,
-    _raw_stack_allocation,
     partial_simd_load,
     partial_simd_store,
     _compute_ndbuffer_offset,
@@ -54,7 +53,7 @@ from MatmulUtils import (
     PartitionHeuristic,
     partition_work,
 )
-from Memory import memset_zero
+from Memory import memset_zero, stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim
@@ -900,7 +899,7 @@ struct ConvIm2ColNCHW[
         run the matmul routine on the whole problem space.
         """
         # Allocate buffer to pack transformed image.
-        let _bpacked_data = _raw_stack_allocation[
+        let _bpacked_data = stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
             simd_byte_width(),  # Alignment.
@@ -2013,7 +2012,7 @@ struct ConvIm2ColNHWC[
             return
 
         # Allocate buffer to pack transformed image.
-        let _bpacked_data = _raw_stack_allocation[
+        let _bpacked_data = stack_allocation[
             pack_cache_size,  # Count.
             type,  # Data type.
             simd_byte_width(),  # Alignment.
