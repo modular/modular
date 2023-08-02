@@ -9,6 +9,11 @@ from SIMD import Int32
 from Intrinsics import llvm_intrinsic
 
 
+# ===----------------------------------------------------------------------===#
+# ThreadIdx
+# ===----------------------------------------------------------------------===#
+
+
 struct ThreadIdx:
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
@@ -39,6 +44,11 @@ struct ThreadIdx:
         Returns: The `z` coordinate within the block.
         """
         return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.tid.z", Int32]().value
+
+
+# ===----------------------------------------------------------------------===#
+# BlockIdx
+# ===----------------------------------------------------------------------===#
 
 
 struct BlockIdx:
@@ -73,6 +83,11 @@ struct BlockIdx:
         return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ctaid.z", Int32]().value
 
 
+# ===----------------------------------------------------------------------===#
+# BlockDim
+# ===----------------------------------------------------------------------===#
+
+
 struct BlockDim:
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
@@ -105,6 +120,11 @@ struct BlockDim:
         return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.ntid.z", Int32]().value
 
 
+# ===----------------------------------------------------------------------===#
+# GridDim
+# ===----------------------------------------------------------------------===#
+
+
 struct GridDim:
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
@@ -135,3 +155,16 @@ struct GridDim:
         Returns: The `z` dimension of the grid.
         """
         return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.nctaid.z", Int32]().value
+
+
+# ===----------------------------------------------------------------------===#
+# barrier
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn barrier():
+    """Performs a synchronization barrier on block (equivelent to `__syncthreads`
+    in CUDA).
+    """
+    llvm_intrinsic["llvm.nvvm.barrier0", NoneType]()
