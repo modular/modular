@@ -163,10 +163,17 @@ private:
   /// Get the memory blob corresponding to the address.
   ErrorOr<MemoryBlob &> getBlob(int64_t addr);
 
+  /// Get the memory blob corresponding to the address.
+  MemoryBlob &addBlob(size_t size, size_t align, MemoryKind kind);
+
   /// Exchange raw pointers to interpreter memory to dialect resource references
   /// upon exit from the interpreter.
-  ErrorOrSuccess exchangeInterpreterMemory(Region &entry,
-                                           MutableArrayRef<Attribute> results);
+  ErrorOrSuccess externalizeMemory(Region &entry,
+                                   MutableArrayRef<Attribute> results);
+
+  /// Exchange memory references for interpreter memory references upon entering
+  /// the interpreter.
+  ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
   /// An internal memory table.
   /// TODO: Support different address spaces.

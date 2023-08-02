@@ -60,6 +60,13 @@ struct PointerParameterAttr
     return !isParameterizedType(cast<PointerAttr>(attr).getType());
   }
 };
+
+struct MemRefParameterAttr
+    : public ParameterAttr::ExternalModel<MemRefParameterAttr, MemRefAttr> {
+  bool isConstant(Attribute attr) const {
+    return !isParameterizedType(cast<MemRefAttr>(attr).getType());
+  }
+};
 } // namespace
 
 void KGENDialect::injectAttrInterfaces() {
@@ -68,6 +75,7 @@ void KGENDialect::injectAttrInterfaces() {
   StringAttr::attachInterface<StringParameterAttr>(*getContext());
   TypeAttr::attachInterface<TypeParameterAttr>(*getContext());
   PointerAttr::attachInterface<PointerParameterAttr>(*getContext());
+  MemRefAttr::attachInterface<MemRefParameterAttr>(*getContext());
 }
 
 bool ParameterAttr::isSimpleConstant(Attribute attr) {
