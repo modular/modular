@@ -1465,7 +1465,6 @@ struct TiledMatmul[
         return NDBuffer[3, config.packed_shape, b_type](
             b_packed_ptr.address,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
-            b_type,
         )
 
 
@@ -1523,7 +1522,6 @@ fn pack_b[
                         tile_k // vnni_factor,
                         inner_size * vnni_factor,
                     ),
-                    type,
                 )
                 let valid_k = min(tile_k, k_in - idx_k)
                 let valid_n = min(tile_n, n_in - idx_n)
@@ -1568,7 +1566,6 @@ fn pack_b[
                 ](
                     dst_flat.data.offset(dst_offset),
                     DimList(tile_n // inner_size, tile_k, inner_size),
-                    type,
                 )
                 let valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 let valid_n_t = min(tile_n, n_in_t - idx_n_t)
@@ -1723,9 +1720,7 @@ struct BTileGenerator[
         )
 
         let packed_b = NDBuffer[3, config.packed_shape, type](
-            self.b_tile_stack_ptr,
-            tile_shape_nopack,
-            type,
+            self.b_tile_stack_ptr, tile_shape_nopack
         )
 
         @parameter
@@ -1792,7 +1787,6 @@ struct BTileGenerator[
                     + global_offset.N * self.tile_n_k[1]
                 ),
                 tile_shape_pack,
-                type,
             )
             return b_tile_view
 

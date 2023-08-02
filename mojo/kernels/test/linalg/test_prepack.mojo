@@ -25,7 +25,7 @@ fn test_prepack():
     alias inner_size = 2 * simd_size
     alias n = 12
     alias tile_n = 8
-    alias type = DType.float32.value
+    alias type = DType.float32
 
     alias k_padded = div_ceil(k, tile_k) * tile_k
     alias n_padded = div_ceil(n, tile_n) * tile_n
@@ -43,10 +43,10 @@ fn test_prepack():
     dst_storage.fill(0)
 
     let src_buf = NDBuffer[2, src_shape_dyn, type](
-        src_storage.data, src_shape_static, type
+        src_storage.data, src_shape_static
     )
     let dst_buf = NDBuffer[2, dst_shape_dyn, type](
-        dst_storage.data, dst_shape_static, type
+        dst_storage.data, dst_shape_static
     )
 
     for i in range(src_storage.__len__()):

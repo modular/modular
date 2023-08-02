@@ -81,7 +81,7 @@ fn test_matrix_dynamic_shape():
     let a = Buffer[16, DType.int32](vec.data)
     # let m = Matrix[DimList(4, 4), DType.int32, False](vec.data, Index(4,4), DType.int32)
     let m = Matrix[DimList.create_unknown[2](), DType.int32, False](
-        vec.data, Index(4, 4), DType.int32
+        vec.data, Index(4, 4)
     )
     for i in range(16):
         a[i] = i

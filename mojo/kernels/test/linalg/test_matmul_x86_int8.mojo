@@ -83,33 +83,29 @@ fn main():
     let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
     let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
 
-    let a = NDBuffer[2, DimList.create_unknown[2](), a_type](
-        a_ptr, Index(m, k), a_type
-    )
-    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](
-        b_ptr, Index(k, n), b_type
-    )
+    let a = NDBuffer[2, DimList.create_unknown[2](), a_type](a_ptr, Index(m, k))
+    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
     let bp = NDBuffer[2, DimList.create_unknown[2](), b_type](
-        bp_ptr, Index(k, n), b_type
+        bp_ptr, Index(k, n)
     )
     let c = NDBuffer[2, DimList.create_unknown[2](), c_type](
-        c0_ptr, Index(m, n), c_type
+        c0_ptr, Index(m, n)
     )
 
     let am = Matrix[DimList.create_unknown[2](), a_type, False](
-        a_ptr, Index(m, k), a_type
+        a_ptr, Index(m, k)
     )
     let bm = Matrix[DimList.create_unknown[2](), b_type, False](
-        b_ptr, Index(k, n), b_type
+        b_ptr, Index(k, n)
     )
     let bpm = Matrix[DimList.create_unknown[2](), b_type, False](
-        bp_ptr, Index(k, n), b_type
+        bp_ptr, Index(k, n)
     )
     let cm0 = Matrix[DimList.create_unknown[2](), c_type, False](
-        c0_ptr, Index(m, n), c_type
+        c0_ptr, Index(m, n)
     )
     let cm1 = Matrix[DimList.create_unknown[2](), c_type, False](
-        c1_ptr, Index(m, n), c_type
+        c1_ptr, Index(m, n)
     )
     for i in range(m):
         for p in range(k):

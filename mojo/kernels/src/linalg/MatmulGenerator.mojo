@@ -374,7 +374,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
             buffer_pointer = self.b
 
         return NDBuffer[2, DimList.create_unknown[2](), data_type.value_type](
-            buffer_pointer, buffer_shape, data_type.value_type
+            buffer_pointer, buffer_shape
         )
 
     @always_inline
@@ -385,9 +385,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         result i.e. matrix C buffer.
         """
         return NDBuffer[2, DimList.create_unknown[2](), data_type.accum_type](
-            self.c,
-            Index(self.global_gemm_size.M, self.global_gemm_size.N),
-            data_type.accum_type,
+            self.c, Index(self.global_gemm_size.M, self.global_gemm_size.N)
         )
 
     @always_inline
@@ -426,7 +424,7 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
             buffer_pointer = self.packed_b
 
         return NDBuffer[3, DimList.create_unknown[3](), data_type.value_type](
-            buffer_pointer, buffer_shape, data_type.value_type
+            buffer_pointer, buffer_shape
         )
 
 

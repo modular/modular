@@ -65,10 +65,10 @@ fn batched_matmul_parallel_sync[
         if M == 1 and N == 1:
             for batch in range(B):
                 let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    a_buf.data + batch * K, Index(K), type
+                    a_buf.data + batch * K, Index(K)
                 )
                 let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    b_buf.data + batch * K, Index(K), type
+                    b_buf.data + batch * K, Index(K)
                 )
 
                 @always_inline
@@ -228,19 +228,13 @@ fn batched_matmul_parallel_sync[
 
     # Flatten to 3D Tensor.
     let c = NDBuffer[3, DimList.create_unknown[3](), type](
-        c_buf.data.bitcast[type](),
-        c_matrix_shape,
-        type,
+        c_buf.data.bitcast[type](), c_matrix_shape
     )
     let a = NDBuffer[3, DimList.create_unknown[3](), type](
-        a_buf.data.bitcast[type](),
-        a_matrix_shape,
-        type,
+        a_buf.data.bitcast[type](), a_matrix_shape
     )
     let b = NDBuffer[3, DimList.create_unknown[3](), type](
-        b_buf.data.bitcast[type](),
-        b_matrix_shape,
-        type,
+        b_buf.data.bitcast[type](), b_matrix_shape
     )
 
     let m = c.dim[1]()
@@ -313,17 +307,14 @@ fn batched_matmul_parallel_sync[
             let c_view = NDBuffer[2, DimList.create_unknown[2](), type](
                 c.data.offset(batch * c_stride_between_batches),
                 StaticIntTuple[2](c.dim[1](), c.dim[2]()),
-                type,
             )
             let a_view = NDBuffer[2, DimList.create_unknown[2](), type](
                 a.data.offset(batch * a_stride_between_batches),
                 StaticIntTuple[2](a.dim[1](), a.dim[2]()),
-                type,
             )
             let b_view = NDBuffer[2, DimList.create_unknown[2](), type](
                 b.data.offset(batch * b_stride_between_batches),
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
-                type,
             )
 
             @parameter

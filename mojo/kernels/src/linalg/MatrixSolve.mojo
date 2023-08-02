@@ -117,19 +117,13 @@ fn matrix_solve[
     for batch in range(batch_size):
         # Get a 2D view of the Tensor.
         let x_view = NDBuffer[2, DimList(3, 2), type](
-            x.data.offset(batch * 3 * 2),
-            StaticIntTuple[2](3, 2),
-            type,
+            x.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
         )
         let a_view = NDBuffer[2, DimList(3, 3), type](
-            a.data.offset(batch * 3 * 3),
-            StaticIntTuple[2](3, 3),
-            type,
+            a.data.offset(batch * 3 * 3), StaticIntTuple[2](3, 3)
         )
         let b_view = NDBuffer[2, DimList(3, 2), type](
-            b.data.offset(batch * 3 * 2),
-            StaticIntTuple[2](3, 2),
-            type,
+            b.data.offset(batch * 3 * 2), StaticIntTuple[2](3, 2)
         )
         matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
