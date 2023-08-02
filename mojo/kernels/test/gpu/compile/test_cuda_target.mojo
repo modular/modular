@@ -20,6 +20,7 @@ from NvidiaGPU import (
     GridDim,
     AddressSpace,
     stack_allocation,
+    barrier,
 )
 from Pointer import DTypePointer
 from Range import range
