@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo %s | FileCheck %s
-# RUN: %mojo %s --debug-level=full | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from SIMD import Float32
 from IO import print

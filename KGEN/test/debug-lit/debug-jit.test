@@ -1,6 +1,6 @@
 # COM: I can't figure out how to get this to work on linux, I keep getting "ModuleNotFoundError: No module named 'lldb'"
 # RUN: %lldb -b -o 'settings set plugin.jit-loader.gdb.enable on' -o 'b %S/Inputs/test.mojo:11' \
-# RUN:       -o 'run %S/Inputs/test.mojo --debug-level=full -O0' mojo | FileCheck %s
+# RUN:       -o 'run --debug-level full -O0 %S/Inputs/test.mojo' mojo | FileCheck %s
 
 # COM: This test passes most of the time on MacOS, but sometimes not. Disable it
 # COM: to keep people's local tests happy.
