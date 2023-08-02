@@ -379,10 +379,9 @@ orderAndLowerGlobalVariables(ModuleOp module,
     auto dtorName = b.getStringAttr("(dtor_fn)" + name);
     Location ctorLoc = op->getLoc();
     Location dtorLoc = op->getLoc();
-    if (auto fusedLoc =
-            dyn_cast<mlir::FusedLocWith<DebugInfo::DIFileAttr>>(op.getLoc())) {
+    if (DebugInfo::DIScopeAttr scope = op.getLocScope()) {
       // GlobalVarDeclOp either has a file scope or no scope.
-      DebugInfo::DIFileAttr fileAttr = fusedLoc.getMetadata();
+      auto fileAttr = cast<DebugInfo::DIFileAttr>(scope);
 
       // TODO: "C" as the Dwarf language type is the best option for now.
       DebugInfo::DIBuilder dib(ctx);
@@ -392,7 +391,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
 
       // We set the scoped location for the outlined methods.
       auto spType = DebugInfo::DISubroutineType::get(ctx, {}, {});
-      auto fileLoc = cast<FileLineColLoc>(fusedLoc.getLocations()[0]);
+      auto fileLoc = op->getLoc()->findInstanceOf<FileLineColLoc>();
       DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
       auto getXtorLoc = [&](StringAttr xtorName) {
         guard = dib.pushSubprogram(

@@ -765,7 +765,8 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
 //===----------------------------------------------------------------------===//
 
 def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
-    ASTDeclInterface, Symbol, NoTerminator, ExportInterface
+    ASTDeclInterface, Symbol, NoTerminator, ExportInterface,
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
   ]> {
   let summary = "Global variable declaration.";
   let description = [{

@@ -662,29 +662,38 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-/// Verify that the body has no arguments.
-LogicalResult StructDeclOp::verify() {
-  if (getFields().getNumArguments())
-    return emitOpError("expected declaration body to have no arguments");
+/// Verify the debuginfo scope of an op that must be a top-level declaration.
+static LogicalResult verifyTopLevelLocScope(Operation *op) {
+  Location loc = op->getLoc();
 
-  // If the struct decl doesn't contain a location scope, we don't verify it.
-  Location loc = getLoc();
+  // If the decl doesn't contain a location scope, we don't verify it.
   auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(loc);
   if (!fusedLoc)
     return success();
 
   DebugInfo::DIScopeAttr scope = fusedLoc.getMetadata();
   auto funcScope = dyn_cast<DebugInfo::DIFileAttr>(scope);
-  if (!funcScope)
-    return emitOpError("must have file scope in location, but got ") << scope;
-  return success();
+  if (funcScope)
+    return success();
+  return op->emitOpError("must have file scope in location, but got ") << scope;
+}
+
+/// Return the debuginfo scope of an op that must be a top-level declaration.
+static DebugInfo::DIFileAttr getTopLevelScope(Operation *op) {
+  if (auto fusedLoc =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DIFileAttr>>(op->getLoc()))
+    return fusedLoc.getMetadata();
+  return {};
+}
+
+LogicalResult StructDeclOp::verify() {
+  if (getFields().getNumArguments())
+    return emitOpError("expected declaration body to have no arguments");
+  return verifyTopLevelLocScope(*this);
 }
 
 DebugInfo::DIScopeAttr StructDeclOp::getLocScope() {
-  if (auto fusedLoc =
-          dyn_cast<mlir::FusedLocWith<DebugInfo::DIFileAttr>>(getLoc()))
-    return fusedLoc.getMetadata();
-  return {};
+  return getTopLevelScope(*this);
 }
 
 /// Verify that there are no duplicate field names.
@@ -1147,7 +1156,11 @@ LogicalResult GlobalVarDeclOp::verify() {
     return emitOpError() << "constructor region should have zero arguments";
   if (getDtor().getNumArguments())
     return emitOpError() << "destructor region should have zero arguments";
-  return success();
+  return verifyTopLevelLocScope(*this);
+}
+
+DebugInfo::DIScopeAttr GlobalVarDeclOp::getLocScope() {
+  return getTopLevelScope(*this);
 }
 
 //===----------------------------------------------------------------------===//

@@ -29,6 +29,23 @@ lit.struct.decl @Foo {
 
 // -----
 
+#file = #debuginfo.file<"bar.mlir" in "">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+#loc = loc("bar.mlir":12:7)
+
+// CHECK: bar.mlir:12:7: error: 'lit.globalvar.decl' op must have file scope in location, but got #debuginfo.compile_unit
+lit.globalvar.decl @foo : index {
+}, {
+} loc(fused<#compile_unit>[#loc])
+
+// -----
+
 #file = #debuginfo.file<"foo.mlir" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<
