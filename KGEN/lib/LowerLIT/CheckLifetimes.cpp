@@ -1304,6 +1304,11 @@ void DestructorInsertion::scanBlock(Block &block) {
 }
 
 void DestructorInsertion::checkOp(Operation &op) {
+  // Debuginfo ops may reference values that aren't fully initialized, so we
+  // skip over them.
+  if (isa<DebugInfo::ValueOp>(op))
+    return;
+
   if (auto errorReturn = dyn_cast<ErrorReturnOp>(op)) {
     // This marks a point where we abandoned an effort to initialize
     // a value fully. Call the destructor on the members that we

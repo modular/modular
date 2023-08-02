@@ -416,7 +416,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
 lit.struct.decl @SomeData {
 }
 
-lit.struct.decl @MyStruct {
+lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !kgen.signature<(!pop.pointer<@MyStruct> owned_in_mem) -> !lit.none>} {
   lit.struct.field str : !kgen.declref<@SomeData>
 }
 
@@ -424,6 +424,7 @@ lit.struct.decl @MyStruct {
 lit.func @init(%self: !pop.pointer<@MyStruct> init_self) {
   // CHECK-NEXT: debuginfo.value #local_variable
   debuginfo.value #local_variable = %self : !pop.pointer<@MyStruct>
+  // CHECK-NOT: __del__
   %2 = kgen.call @bar(%self) : (!pop.pointer<@MyStruct> init_self) -> !lit.none
   kgen.return
 }
