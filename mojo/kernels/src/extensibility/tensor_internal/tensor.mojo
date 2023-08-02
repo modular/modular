@@ -1021,6 +1021,9 @@ struct Tensor[dtype: DType]:
     fn dim(self, idx: Int) -> Int:
         """Gets the dimension at the specified index.
 
+        Args:
+          idx: The dimension index.
+
         Returns:
           The dimension at the specified index.
         """
