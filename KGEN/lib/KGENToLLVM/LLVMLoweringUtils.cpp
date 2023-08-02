@@ -1059,42 +1059,42 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
   addUnresolvedConverter(converter);
 
   // Add direct debug info conversions.
-  addConversion([&, target](POP::ArrayType type) {
+  addConversion([&converter, target](POP::ArrayType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::ClosureType type) {
+  addConversion([&converter, target](POP::ClosureType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::CoroutineType type) {
+  addConversion([&converter, target](POP::CoroutineType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::PackType type) {
+  addConversion([&converter, target](POP::PackType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::PointerType type) {
+  addConversion([&converter, target](POP::PointerType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::SIMDType type) {
+  addConversion([&converter, target](POP::SIMDType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&, target](POP::StructType type) {
+  addConversion([&converter, target](POP::StructType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
 
-  addConversion([&](POP::VariantType type) {
+  addConversion([&converter, target](POP::VariantType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });
