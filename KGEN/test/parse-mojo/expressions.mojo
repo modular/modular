@@ -72,7 +72,7 @@ struct MemoryOnlyPair:
     _ = self.y+arg.x
 
 fn inferred_function_with_memory_result[
-  width: Int](x: SIMD[DType.float32.value, width]) -> MemoryOnlyInt: pass
+  width: Int](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
 fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -123,7 +123,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
   # CHECK-NEXT: kgen.call @{{.*}}inferred_function_with_memory_result{{.*}}([[TMP]]
-  _ = inferred_function_with_memory_result(SIMD[DType.float32.value, 4]())
+  _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: [[TMP:%.*]] = lit.varlet.decl "anonymous*"
