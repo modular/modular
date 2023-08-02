@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -verify-diagnostics -import-mojo -debug-level=full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: kgen-translate -verify-diagnostics -import-mojo -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 # CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__del__{{.*}}", linkageName = "__del__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR1:.*]]
 # CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__moveinit__{{.*}}", linkageName = "__moveinit__{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR2:.*]]

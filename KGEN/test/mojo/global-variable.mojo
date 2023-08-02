@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo %s | FileCheck %s
-# RUN: %mojo %s --debug-level=full | FileCheck %s
+# COM: %mojo -debug-level full %s | FileCheck %s
 
 # COM: This test will pass when https://reviews.llvm.org/D154802 lands.
 # XFAIL: system-linux

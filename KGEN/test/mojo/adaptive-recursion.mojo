@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo %s | FileCheck %s
-# RUN: %mojo %s --debug-level=full | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from IO import print
 from Assert import assert_param
