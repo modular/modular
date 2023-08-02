@@ -6,6 +6,7 @@
 
 #include "Support/Host.h"
 #include "Support/ErrorOr.h"
+#include "Support/PlatformUtils.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetOperations.h"
@@ -25,6 +26,10 @@
 #include <string>
 
 #ifdef __APPLE__
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
+#include "clang/Basic/TargetInfo.h"
 #include <mach/mach_init.h>
 #include <mach/task.h>
 #include <sys/sysctl.h>
@@ -189,6 +194,60 @@ M::ErrorOr<size_t> M::getNumPhysicalCores() {
 #endif
   return llvm::get_physical_cores();
 }
+
+#if defined(MODULAR_ARM_NEON) && defined(__APPLE__)
+namespace {
+// Intercept diagnostics from Clang and then bundle them up in an `Error` if
+// something bad happens.
+struct DiagInterceptor : public clang::DiagnosticConsumer {
+  void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                        const clang::Diagnostic &info) override {
+    if (level >= clang::DiagnosticsEngine::Level::Error) {
+      // Keep the last message.
+      msg.clear();
+      info.FormatDiagnostic(msg);
+    }
+  }
+
+  SmallString<64> msg;
+};
+} // namespace
+
+static ErrorOrSuccess getCPUFeatures(const std::string &triple,
+                                     const std::string &cpu,
+                                     std::vector<std::string> &featureVec) {
+  // Instantiate the Clang diagnostic engine. Pass in our interceptor.
+  clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
+      new clang::DiagnosticIDs());
+  clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagOpts(
+      new clang::DiagnosticOptions());
+  DiagInterceptor interceptor;
+  clang::DiagnosticsEngine diags(std::move(ids), std::move(diagOpts),
+                                 &interceptor, /*ShouldOwnClient=*/false);
+
+  auto opts = std::make_shared<clang::TargetOptions>();
+
+  opts->Triple = triple;
+  opts->CPU = cpu;
+
+  // Ask Clang to create the target info for the triple and CPU. This
+  // will populate `opts` with the feature set.
+  auto targetInfo = std::unique_ptr<clang::TargetInfo>(
+      clang::TargetInfo::CreateTargetInfo(diags, opts));
+
+  if (!targetInfo)
+    return Error("failed to create target info: " + interceptor.msg);
+
+  for (StringRef feature : opts->Features) {
+    if (feature.front() == '+') {
+      (void)feature.consume_front("+");
+      featureVec.emplace_back(feature.str());
+    }
+  }
+
+  return success();
+}
+#endif //  defined(MODULAR_ARM_NEON) && defined(__APPLE__)
 
 void CPUSystemInfo::print(raw_ostream &os) const {
   os << "CPUSystemInfo(";
@@ -736,7 +795,16 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   machineInfo.cpuModelName = std::move(cpuModelName);
 
   llvm::StringMap<bool> features;
-  llvm::sys::getHostCPUFeatures(features);
+  auto gotfeatures = llvm::sys::getHostCPUFeatures(features);
+  if (!gotfeatures) {
+    // getCPUFeatures doesn't do anything for M1. So let's ask clang.
+#if defined(MODULAR_ARM_NEON) && defined(__APPLE__)
+    RETURN_ERROR(getCPUFeatures(machineInfo.triple, machineInfo.cpuArch,
+                                machineInfo.cpuFeatures));
+#else
+    return Error("Failed to get cpu features");
+#endif //  defined(MODULAR_ARM_NEON) && defined(__APPLE__)
+  }
 
   for (const auto &feature : features)
     if (feature.getValue())

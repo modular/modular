@@ -29,6 +29,11 @@ add_modular_library(MSupport
   MVersion
   )
 
+if (APPLE)
+  target_include_directories(MSupport PRIVATE ${CLANG_INCLUDE_DIRS})
+  target_link_libraries(MSupport PRIVATE clangBasic)
+endif ()
+
 #TODO: Move this to a cmake module.
 if (MODULAR_USE_TCMALLOC AND UNIX)
 
