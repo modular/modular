@@ -64,22 +64,12 @@ TelemetryContext::TelemetryContext(
                resource.second);
   }
 
-  // -------- Exporter options (export to file or to OTLP receiver) --------
+  // -------- Get config --------
   auto configOr = Config::open();
   if (configOr.isError())
     llvm::report_fatal_error(configOr.getError());
   Config cfg = std::move(*configOr);
-  // TODO: Allow separate configuration for metrics and logs, and multiple
-  //       exporters for each (if OTel allows it).
-  StringRef httpEndpoint =
-      cfg.getValue("telemetry.exporters.metrics.http_endpoint");
-  std::filesystem::path filePath =
-      cfg.getValue("telemetry.exporters.metrics.file_path").str();
-  if (httpEndpoint.empty()) {
-    // Default to MODULAR_HOME/telemetry.log
-    if (filePath.empty())
-      filePath = Config::getModularHomeDirPath() / "telemetry.log";
-  }
+
   // Get the user ID out of the config.
   StringRef uuid = cfg.getValue("user.id");
   if (!uuid.empty())
@@ -89,49 +79,83 @@ TelemetryContext::TelemetryContext(
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
 
   // -------- Metrics --------
-  // Create OpenTelemetry OTLP HTTP exporter.
-  std::unique_ptr<opentelemetry::sdk::metrics::PushMetricExporter>
-      metricExporter;
-  if (httpEndpoint.empty()) {
-    metricExporter = std::make_unique<FileMetricExporter>(filePath);
-  } else {
-    opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
-    otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
-    metricExporter =
-        opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
-            otlpOptions);
-  }
   // Initialize the MeterProvider.
-  metricReader =
-      std::make_shared<ManualExportingMetricReader>(std::move(metricExporter));
-
   auto provider = std::make_unique<opentelemetry::sdk::metrics::MeterProvider>(
       std::make_unique<opentelemetry::sdk::metrics::ViewRegistry>(),
       otelResources);
-  provider->AddMetricReader(metricReader);
+
+  // Get metrics exporter config.
+  StringRef httpEndpoint =
+      cfg.getValue("telemetry.exporters.metrics.http_endpoint");
+  std::filesystem::path filePath =
+      cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  if (httpEndpoint.empty() && filePath.empty()) {
+    // If no config provided, export to a default path.
+    filePath = Config::getModularHomeDirPath() / "telemetry.log";
+  }
+
+  // Create metric readers, one for each exporter.
+
+  if (!filePath.empty()) {
+    // File exporter.
+    auto exporter = std::make_unique<FileMetricExporter>(filePath);
+    metricReaders.emplace_back(
+        std::make_shared<ManualExportingMetricReader>(std::move(exporter)));
+    provider->AddMetricReader(metricReaders.back());
+  }
+
+  if (!httpEndpoint.empty()) {
+    // HTTP OTLP exporter.
+    opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
+    otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
+    auto exporter =
+        opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
+            otlpOptions);
+    metricReaders.emplace_back(
+        std::make_shared<ManualExportingMetricReader>(std::move(exporter)));
+    provider->AddMetricReader(metricReaders.back());
+  }
+
   metricsProvider = std::unique_ptr<opentelemetry::metrics::MeterProvider>(
       provider.release());
-
   meter = metricsProvider->GetMeter("modular");
 
   // -------- Logs --------
-  std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> logExporter;
-  if (httpEndpoint.empty()) {
-    logExporter = std::make_unique<FileLogExporter>(filePath);
-  } else {
+  // Get logs exporter config.
+  httpEndpoint = cfg.getValue("telemetry.exporters.logs.http_endpoint");
+  filePath = cfg.getValue("telemetry.exporters.logs.file_path").str();
+  if (httpEndpoint.empty() && filePath.empty()) {
+    // If no config provided, export to a default path.
+    filePath = Config::getModularHomeDirPath() / "telemetry.log";
+  }
+
+  // Create log processors for each exporter.
+  std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>
+      processors;
+
+  if (!filePath.empty()) {
+    // File exporter.
+    auto logExporter = std::make_unique<FileLogExporter>(filePath);
+    processors.emplace_back(
+        opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
+            std::move(logExporter)));
+  }
+
+  if (!httpEndpoint.empty()) {
+    // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         oltpLogOptions;
     oltpLogOptions.url = (httpEndpoint + "/v1/logs").str();
-    // Create OTLP exporter instance
-    logExporter =
+    auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             oltpLogOptions);
+    processors.emplace_back(
+        opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
+            std::move(logExporter)));
   }
-  auto processor =
-      opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
-          std::move(logExporter));
+
   loggerProvider = opentelemetry::sdk::logs::LoggerProviderFactory::Create(
-      std::move(processor), otelResources);
+      std::move(processors), otelResources);
   eventLoggerProvider =
       opentelemetry::sdk::logs::EventLoggerProviderFactory::Create();
 #endif // MODULAR_ENABLE_TELEMETRY
@@ -144,6 +168,7 @@ void TelemetryContext::flush() {
   // From OTel: Export must not be called concurrently for the same exporter
   // instance (collectAndExport calls Export).
   std::lock_guard<std::mutex> lock(exportLock);
-  metricReader->collectAndExport();
+  for (auto reader : metricReaders)
+    reader->collectAndExport();
 #endif // MODULAR_ENABLE_TELEMETRY
 }

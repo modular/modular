@@ -17,7 +17,7 @@ using namespace Telemetry;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 
-static TempFile setupLogFile(StringRef prefix) {
+static TempFile setupLogFile(StringRef prefix, StringRef signalType) {
   auto cfgOr = Config::open();
   EXPECT_FALSE(cfgOr.isError()) << cfgOr.getError();
 
@@ -25,7 +25,7 @@ static TempFile setupLogFile(StringRef prefix) {
   EXPECT_FALSE(tmpOr.isError()) << tmpOr.getError();
 
   // Set the config value.
-  cfgOr->setValue("telemetry.exporters.metrics.file_path",
+  cfgOr->setValue(("telemetry.exporters." + signalType + ".file_path").str(),
                   tmpOr->getPath().string());
 
   // Flush the config to the file so we can read it from the context.
@@ -34,6 +34,14 @@ static TempFile setupLogFile(StringRef prefix) {
 
   // Return the temp file so it'll automatically get destroyed.
   return std::move(*tmpOr);
+}
+
+static TempFile setupMetricsLogFile(StringRef prefix) {
+  return setupLogFile(prefix, "metrics");
+}
+
+static TempFile setupLogsLogFile(StringRef prefix) {
+  return setupLogFile(prefix, "logs");
 }
 
 /// This function parses an OTel message, and provides visitor-style access to
@@ -111,7 +119,7 @@ static void iterateMessages(StringRef log,
 /// This test ensures that when we create and increment a counter, we get the
 /// values we expect in the log file, in the order we expect.
 TEST(Telemetry, Counter) {
-  TempFile tmpFile = setupLogFile("counter");
+  TempFile tmpFile = setupMetricsLogFile("counter");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -154,7 +162,7 @@ TEST(Telemetry, Counter) {
 /// This test checks that if we create a histogram and add some records, we get
 /// the values we expect in the log file.
 TEST(Telemetry, Histogram) {
-  TempFile tmpFile = setupLogFile("histogram");
+  TempFile tmpFile = setupMetricsLogFile("histogram");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -204,7 +212,7 @@ TEST(Telemetry, Histogram) {
 /// This test checks that logs are properly flushed to the log file, escapes and
 /// all.
 TEST(Telemetry, Logger) {
-  TempFile tmpFile = setupLogFile("log");
+  TempFile tmpFile = setupLogsLogFile("log");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -239,7 +247,7 @@ TEST(Telemetry, Logger) {
 }
 
 TEST(Telemetry, Resources) {
-  TempFile tmpFile = setupLogFile("log");
+  TempFile tmpFile = setupLogsLogFile("log");
 
   llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
   StringRef resourceVal = "aResource value here";
