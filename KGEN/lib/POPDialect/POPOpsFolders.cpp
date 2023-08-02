@@ -8,6 +8,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -868,6 +869,35 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
 
   int64_t addr = state.allocateMemory(count * *size, align, MemoryKind::Stack);
   state.mapResults(PointerAttr::get(addr, getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedAllocOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  int64_t align = cast<IntegerAttr>(operands.front()).getInt();
+  int64_t size = cast<IntegerAttr>(operands.back()).getInt();
+  // The default "system" alignment technically has no guarantees and varies
+  // depending on the underlying allocator implementation. Just use 64 for
+  // consistency.
+  if (align <= 0)
+    align = 64;
+
+  int64_t addr = state.allocateMemory(size, align, MemoryKind::Heap);
+  state.mapResults(PointerAttr::get(addr, getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// AlignedFreeOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess AlignedFreeOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  // TODO: Teach the interpreter how to handle use-after-free.
   return success();
 }
 

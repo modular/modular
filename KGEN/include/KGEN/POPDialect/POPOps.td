@@ -1474,7 +1474,8 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 // AlignedAllocOp
 //===----------------------------------------------------------------------===//
 
-def POP_AlignedAllocOp : POPOp<"aligned_alloc"> {
+def POP_AlignedAllocOp : POPOp<"aligned_alloc",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "aligned heap allocation";
   let description = [{
     The `pop.aligned_alloc` operation performs an aligned allocation of memory
@@ -1499,7 +1500,8 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc"> {
 // AlignedFreeOp
 //===----------------------------------------------------------------------===//
 
-def POP_AlignedFreeOp : POPOp<"aligned_free"> {
+def POP_AlignedFreeOp : POPOp<"aligned_free",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "free aligned heap memory";
   let description = [{
     The `pop.aligned_free` operation frees heap memory allocated by
@@ -1514,7 +1516,7 @@ def POP_AlignedFreeOp : POPOp<"aligned_free"> {
   }];
 
   let arguments = (ins Arg<POP_PointerType, "", [MemFree]>:$ptr);
-  
+
   let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
 }
 

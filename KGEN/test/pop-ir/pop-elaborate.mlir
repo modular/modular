@@ -74,6 +74,18 @@ kgen.generator @bitcast_offset() -> !pop.struct<scalar<ui8>, scalar<ui8>>{
   kgen.return %5 : !pop.struct<scalar<ui8>, scalar<ui8>>
 }
 
+kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !pop.struct<pointer<i16>, pointer<i16>> {
+  %idx4 = index.constant 4
+  %idx1 = index.constant 1
+  %idx32 = index.constant 0x2000
+  %0 = pop.aligned_alloc %idx32, %idx4 : <i16>
+  pop.store %arg0, %0 : !pop.pointer<i16>
+  %1 = pop.offset %0[%idx1] : !pop.pointer<i16>
+  pop.store %arg1, %1 : !pop.pointer<i16>
+  %2 = pop.struct.create(%0, %1) : !pop.struct<pointer<i16>, pointer<i16>>
+  kgen.return %2 : !pop.struct<pointer<i16>, pointer<i16>>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -151,5 +163,15 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
     :() -> !pop.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
 
+  // CHECK-NEXT: <{ #M.memref<return_heap_concrete_mem, 0, heap>, #M.memref<return_heap_concrete_mem, 2, heap> }>
+  kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
+    :(i16, i16) -> !pop.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
+
   kgen.return
 }
+
+// NOTE: Bytes are encoded backwards in resource blobs.
+// CHECK: dialect_resources
+// CHECK-NEXT: M: {
+// CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
+// CHECK-NEXT: }

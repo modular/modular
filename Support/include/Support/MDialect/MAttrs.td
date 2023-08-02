@@ -285,10 +285,16 @@ def MemRefAttr : MAttr<"MemRef", "memref", [TypedAttrInterface]> {
   let parameters = (ins "MemoryHandle":$memory, "int64_t":$offset,
                         "MemoryKind":$kind,
                         AttributeSelfTypeParameter<"">:$type);
-
   let assemblyFormat = [{
     `<` $memory `,` $offset `,` custom<MemoryKind>($kind) `>`
   }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "MemoryHandle":$hdl, "int64_t":$offset,
+                                        "MemoryKind":$kind, "Type":$type), [{
+      return $_get(type.getContext(), hdl, offset, kind, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
