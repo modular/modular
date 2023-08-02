@@ -18,61 +18,104 @@ using namespace M;
 // InterpreterState
 //===----------------------------------------------------------------------===//
 
+/// Provide a virtual "invalid space" for the interpreter's memory. This is so
+/// that an address of 0 can actually be considered a null pointer.
+static constexpr int64_t kHeapBaseAddr = 1'000'000'000;
+/// Give the memory segments a healthy amount of maximum memory.
+static constexpr int64_t kTableSize = 4'000'000'000;
+/// Put the stack after the heap.
+/// FIXME: The stack pointer does not grow downwards like in every system.
+static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
+
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
-    : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)) {}
+    : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
+      heapMemory(kHeapBaseAddr, kHeapBaseAddr + kTableSize),
+      stackMemory(kStackBaseAddr, kStackBaseAddr + kTableSize) {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
-/// Provide a virtual "invalid space" for the interpreter's memory. This is so
-/// that an address of 0 can actually be considered a null pointer.
-static constexpr int64_t invalidMemOffset = 10'000'000;
-
-InterpreterState::MemoryBlob &
-InterpreterState::addBlob(size_t size, size_t align, MemoryKind kind) {
+ErrorOr<InterpreterState::MemoryBlob &>
+InterpreterState::MemoryTable::addBlob(size_t size, size_t align) {
   // Pick the base address of the new blob.
-  int64_t baseAddr = invalidMemOffset;
-  if (!memory.empty()) {
-    MemoryBlob &last = memory.back();
+  int64_t baseAddr = minAddr;
+  if (!blobs.empty()) {
+    MemoryBlob &last = blobs.back();
     baseAddr = last.baseAddr + last.size;
   }
   // Ensure the base address is aligned.
   baseAddr = llvm::alignTo(baseAddr, align);
 
+  // Ensure the new blob does not exceed the maximum address. The table sizes
+  // are big so this is purely defensive.
+  if (LLVM_UNLIKELY(baseAddr + static_cast<int64_t>(size) >= maxAddr))
+    return Error("interpreter is out of memory!");
+
   // Create the blob with aligned memory.
   MemoryBlob blob{
-      kind, baseAddr, size, align, {alignedAlloc(align, size), &alignedFree}};
+      baseAddr, size, align, {alignedAlloc(align, size), &alignedFree}};
   memset(blob.memory.get(), 0, size);
-  memory.push_back(std::move(blob));
-  return memory.back();
-}
-
-int64_t InterpreterState::allocateMemory(size_t size, size_t align,
-                                         MemoryKind kind) {
-  return addBlob(size, align, kind).baseAddr;
+  blobs.push_back(std::move(blob));
+  return blobs.back();
 }
 
 ErrorOr<InterpreterState::MemoryBlob &>
-InterpreterState::getBlob(int64_t addr) {
+InterpreterState::MemoryTable::getBlob(int64_t addr) {
   // Check for a null pointer access.
   if (!addr)
     return Error("null address");
   // Otherwise, check for an address that we know is invalid.
-  if (addr < invalidMemOffset)
-    return Error("address is invalid: " + Twine(addr));
+  if (addr < minAddr || addr >= maxAddr)
+    return Error("address is out-of-bounds: " + Twine(addr));
 
   // Binary search for the blob that corresponds to the address.
   auto it =
-      llvm::lower_bound(memory, addr, [](const MemoryBlob &blob, int64_t addr) {
+      llvm::lower_bound(blobs, addr, [](const MemoryBlob &blob, int64_t addr) {
         return blob.baseAddr + blob.size <= static_cast<size_t>(addr);
       });
-  if (it == memory.end())
+  if (it == blobs.end())
     return Error("address is out-of-bounds: " + Twine(addr));
+
+  // If the blob has been freed, then return an error.
+  if (!it->memory)
+    return Error("accessing memory that was freed");
+
   return *it;
 }
 
+ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
+                                                       size_t align) {
+  // Track the additional stack allocation on the current frame.
+  ++getCurrentFrame().numStackAllocs;
+
+  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(size, align);
+  if (blob.isError())
+    return blob.takeError();
+  return blob->baseAddr;
+}
+
+ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
+                                                      size_t align) {
+  ErrorOr<MemoryBlob &> blob = heapMemory.addBlob(size, align);
+  if (blob.isError())
+    return blob.takeError();
+  return blob->baseAddr;
+}
+
+ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
+  ErrorOr<MemoryBlob &> blob = heapMemory.getBlob(addr);
+  if (blob.isError())
+    return blob.takeError();
+  // Don't do anything fancy here. Just free the underlying memory and mark the
+  // blob as freed.
+  blob->memory.reset();
+  return success();
+}
+
 ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
-  ErrorOr<MemoryBlob &> blob = getBlob(addr);
+  // Determine which table the address belongs to and then lookup the blob.
+  MemoryTable &table = stackMemory.contains(addr) ? stackMemory : heapMemory;
+  ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
   if (blob.isError())
     return blob.takeError();
   int64_t offset = addr - blob->baseAddr;
@@ -179,21 +222,17 @@ InterpreterState::externalizeMemory(Region &entry,
         // Allow null pointers to persist.
         if (ptr.getAddr() == 0)
           return {ptr, WalkResult::advance()};
-        // Find the memory point this address points to.
-        ErrorOr<MemoryBlob &> blob = getBlob(ptr.getAddr());
+        // Find the memory point this address points to. It is only possible
+        // to return heap-allocated memory at the moment.
+        ErrorOr<MemoryBlob &> blob = heapMemory.getBlob(ptr.getAddr());
         if (blob.isError()) {
           err = blob.takeError();
           return {ptr, WalkResult::interrupt()};
         }
-        // Returning stack memory invalid.
-        if (blob->kind == MemoryKind::Stack) {
-          err = Error("returning reference to stack memory");
-          return {ptr, WalkResult::interrupt()};
-        }
         // Materialize the blob.
         MemoryHandle hdl = getOrMaterialize(*blob);
-        return {MemRefAttr::get(hdl, ptr.getAddr() - blob->baseAddr, blob->kind,
-                                ptr.getType()),
+        return {MemRefAttr::get(hdl, ptr.getAddr() - blob->baseAddr,
+                                MemoryKind::Heap, ptr.getType()),
                 WalkResult::advance()};
       });
 
@@ -209,15 +248,18 @@ ErrorOrSuccess
 InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   // Intern each resource once into the interpreter.
   DenseMap<mlir::AsmResourceBlob *, size_t> blobs;
-  auto getOrIntern = [&](MemRefAttr ref) -> MemoryBlob & {
+  auto getOrIntern = [&](MemRefAttr ref) -> ErrorOr<MemoryBlob &> {
     mlir::AsmResourceBlob *blob = ref.getMemory().getBlob();
-    if (auto [it, inserted] = blobs.try_emplace(blob, memory.size()); !inserted)
-      return memory.at(it->second);
+    if (auto [it, inserted] = blobs.try_emplace(blob, heapMemory.blobs.size());
+        !inserted)
+      return heapMemory.blobs.at(it->second);
     // Initialize the memory.
-    MemoryBlob &mem = addBlob(blob->getData().size(), blob->getDataAlignment(),
-                              ref.getKind());
-    memcpy(mem.memory.get(), blob->getData().data(), blob->getData().size());
-    return mem;
+    ErrorOr<MemoryBlob &> mem =
+        heapMemory.addBlob(blob->getData().size(), blob->getDataAlignment());
+    if (mem.isError())
+      return mem.takeError();
+    memcpy(mem->memory.get(), blob->getData().data(), blob->getData().size());
+    return *mem;
   };
 
   // Replace memory references in the inputs with interpreter memory pointers.
@@ -229,9 +271,17 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
           err = "reference to undefined dialect resource";
           return {ref, WalkResult::interrupt()};
         }
-        MemoryBlob &blob = getOrIntern(ref);
+        if (ref.getKind() != MemoryKind::Heap) {
+          err = "only heap memory can be interned in the interpreter";
+          return {ref, WalkResult::interrupt()};
+        }
+        ErrorOr<MemoryBlob &> blob = getOrIntern(ref);
+        if (blob.isError()) {
+          err = blob.takeError();
+          return {ref, WalkResult::interrupt()};
+        }
         return {
-            PointerAttr::get(blob.baseAddr + ref.getOffset(), ref.getType()),
+            PointerAttr::get(blob->baseAddr + ref.getOffset(), ref.getType()),
             WalkResult::advance()};
       });
 
@@ -318,7 +368,8 @@ InterpreterState::startInterpreterAt(Region &region,
   // Reset the interpret to a clean state.
   auto resetState = llvm::make_scope_exit([&] {
     stack.clear();
-    memory.clear();
+    heapMemory.reset();
+    stackMemory.reset();
     returnValues.reset();
   });
 
@@ -393,6 +444,16 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
   // The stack frame must be empty.
   assert(stack.empty() && "exiting interpreter with remaining stack frames");
   return takeReturnValues();
+}
+
+Operation *InterpreterState::popFrame() {
+  // Drop all stack memory on the current frame.
+  for (size_t i = 0, e = getCurrentFrame().numStackAllocs; i != e; ++i)
+    stackMemory.blobs.pop_back();
+
+  Operation *origin = getCurrentFrame().origin;
+  stack.pop_back();
+  return origin;
 }
 
 void InterpreterState::transferControlFlowTo(Operation *target) {

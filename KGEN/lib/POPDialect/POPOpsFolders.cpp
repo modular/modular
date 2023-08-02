@@ -867,8 +867,10 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
     align = *typeAlign;
   }
 
-  int64_t addr = state.allocateMemory(count * *size, align, MemoryKind::Stack);
-  state.mapResults(PointerAttr::get(addr, getType()));
+  ErrorOr<int64_t> addr = state.allocateStackMemory(count * *size, align);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+  state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
   return success();
 }
 
@@ -886,8 +888,10 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
   if (align <= 0)
     align = 64;
 
-  int64_t addr = state.allocateMemory(size, align, MemoryKind::Heap);
-  state.mapResults(PointerAttr::get(addr, getType()));
+  ErrorOr<int64_t> addr = state.allocateHeapMemory(size, align);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+  state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
   return success();
 }
 
@@ -897,7 +901,9 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess AlignedFreeOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
-  // TODO: Teach the interpreter how to handle use-after-free.
+  auto ptr = cast<PointerAttr>(operands.front());
+  if (ErrorOrSuccess err = state.freeHeapMemory(ptr.getAddr()); err.isError())
+    return ErrorTree(getLoc(), err.takeError());
   return success();
 }
 

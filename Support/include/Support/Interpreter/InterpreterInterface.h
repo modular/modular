@@ -43,8 +43,16 @@ public:
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Management
 
-  /// Allocate internal interpreter memory of a requested size.
-  int64_t allocateMemory(size_t size, size_t align, MemoryKind kind);
+  /// Allocate stack memory of the request size and alignment on the current
+  /// stack frame.
+  ErrorOr<int64_t> allocateStackMemory(size_t size, size_t align);
+
+  /// Allocate internal interpreter heap memory of a requested size and
+  /// alignment.
+  ErrorOr<int64_t> allocateHeapMemory(size_t size, size_t align);
+
+  /// Free heap-allocated memory from the interpreter.
+  ErrorOrSuccess freeHeapMemory(int64_t addr);
 
   /// Try to get a memory reference at the given address.
   ErrorOr<void *> getMemory(int64_t addr, size_t size);
@@ -82,10 +90,16 @@ public:
   /// stacktrace.
   struct StackFrame {
     StackFrame(Operation *origin, Operation *func)
-        : origin(origin), func(func) {}
+        : origin(origin), func(func), numStackAllocs(0) {}
 
+    /// The operation that created the frame and invoked the function.
     Operation *origin;
+    /// The corresponding function to the frame.
     Operation *func;
+    /// The number of memory blobs allocated on the stack. This many blobs
+    /// are popped off stack memory when the function returns.
+    size_t numStackAllocs;
+    /// The map of SSA values to constant values in the current frame.
     DenseMap<Value, Attribute> values;
   };
 
@@ -95,11 +109,7 @@ public:
   }
 
   /// Pop the current stack frame, returning the origin operation.
-  Operation *popFrame() {
-    Operation *origin = stack.back().origin;
-    stack.pop_back();
-    return origin;
-  }
+  Operation *popFrame();
 
   /// Set the return values.
   void setReturnValues(ArrayRef<Attribute> values) {
@@ -121,7 +131,7 @@ public:
   /// Map a value to a constant value, overwriting the previous value if there
   /// was one.
   void mapOrOverwrite(Value value, Attribute attr) {
-    stack.back().values[value] = attr;
+    getCurrentFrame().values[value] = attr;
   }
 
   /// Map the results of the current operation.
@@ -133,7 +143,7 @@ public:
 
   /// Lookup a constant value for the value.
   Attribute lookupValue(Value value) {
-    Attribute attr = stack.back().values[value];
+    Attribute attr = getCurrentFrame().values[value];
     assert(attr && "value was not mapped");
     return attr;
   }
@@ -146,10 +156,11 @@ private:
   /// The interpreter target configuration.
   TargetInfoAttr target;
 
+  //===--------------------------------------------------------------------===//
+  // Interpreter Memory Model
+
   /// This struct represents a piece of memory in the interpreter.
   struct MemoryBlob {
-    /// The kind of memory in the slot.
-    MemoryKind kind;
     /// The base address of the blob.
     int64_t baseAddr;
     /// The size of the blob.
@@ -160,11 +171,30 @@ private:
     std::unique_ptr<void, void (*)(void *)> memory;
   };
 
-  /// Get the memory blob corresponding to the address.
-  ErrorOr<MemoryBlob &> getBlob(int64_t addr);
+  /// A memory table is just a vector of blobs organized in ascending address.
+  struct MemoryTable {
+    explicit MemoryTable(int64_t minAddr, int64_t maxAddr)
+        : minAddr(minAddr), maxAddr(maxAddr) {}
 
-  /// Get the memory blob corresponding to the address.
-  MemoryBlob &addBlob(size_t size, size_t align, MemoryKind kind);
+    /// Get the memory blob corresponding to the address.
+    ErrorOr<MemoryBlob &> getBlob(int64_t addr);
+
+    /// Allocate a new memory blob .
+    ErrorOr<MemoryBlob &> addBlob(size_t size, size_t align);
+
+    /// Return true if the table contains the address.
+    bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }
+
+    /// Reset the table.
+    void reset() { blobs.clear(); }
+
+    /// The base address of the table (inclusive).
+    int64_t minAddr;
+    /// The maximum address of the table (exclusive).
+    int64_t maxAddr;
+    /// The memory blobs in the table.
+    std::vector<MemoryBlob> blobs;
+  };
 
   /// Exchange raw pointers to interpreter memory to dialect resource references
   /// upon exit from the interpreter.
@@ -175,14 +205,27 @@ private:
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
-  /// An internal memory table.
-  /// TODO: Support different address spaces.
-  std::vector<MemoryBlob> memory;
+  /// The blob manager to materializing interpreter memory into the IR. Access
+  /// to the blob manager is thread-safe.
+  MBlobManagerInterface &blobMgr;
+
+  /// An internal memory table for heap-allocated memory.
+  MemoryTable heapMemory;
+  /// A stack of stack-allocated blobs.
+  MemoryTable stackMemory;
+
+  //===--------------------------------------------------------------------===//
+  // Interpreter Execution
 
   /// The current operation being interpreted. The interpreter exits when the
   /// operation is null, in which case the required invariant be that the stack
   /// frame is empty.
-  Operation *pc;
+  Operation *pc = nullptr;
+
+  StackFrame &getCurrentFrame() {
+    assert(!stack.empty() && "expected a stack frame");
+    return stack.back();
+  }
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.
@@ -190,10 +233,6 @@ private:
 
   /// An optional list of return values.
   std::optional<SmallVector<Attribute>> returnValues;
-
-  /// The blob manager to materializing interpreter memory into the IR. Access
-  /// to the blob manager is thread-safe.
-  MBlobManagerInterface &blobMgr;
 };
 } // namespace M
 
