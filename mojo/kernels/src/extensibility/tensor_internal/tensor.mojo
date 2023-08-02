@@ -18,6 +18,7 @@ from StaticTuple import StaticTuple
 from String import String
 from TargetInfo import sizeof, is_little_endian
 
+
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
 
@@ -198,7 +199,7 @@ struct _Rep32:
         """
         var rank = self.get_rank()
         var product: Int = 1
-        if rank == 3:
+        if rank == 4:
             product = self.dim3.to_int()
             rank -= 1
         for i in range(rank):
@@ -647,7 +648,7 @@ struct TensorShape:
             self._rep = _TensorShapeStorage(_as_rep16(other._rep))
 
     fn __moveinit__(inout self, owned existing: Self):
-        """Move the value of the shape.
+        """Move initializer for the shape.
 
         Args:
             existing: The shape to move.
@@ -777,14 +778,15 @@ struct TensorSpec:
         """
         self = TensorSpec(type, TensorShape(shapes))
 
-    fn __init__(inout self, type: DType, shape: TensorShape):
+    fn __init__(inout self, type: DType, owned shape: TensorShape):
         """Initializes a Tensorspec from the dtype and shape provided.
 
         Args:
           type: The dtype of the specification.
           shape: The shapes to initialize the shape with.
         """
-        var rep = _as_rep16(shape._rep)
+        let owned_shape = shape ^
+        var rep = _as_rep16(owned_shape._rep)
         rep.auxillary = type._as_i8()
 
         self.shape = TensorShape()
@@ -799,17 +801,13 @@ struct TensorSpec:
         self.shape = other.shape
 
     fn __moveinit__(inout self, owned existing: Self):
-        """Move the value of the spec.
+        """Move initializer for the spec.
 
         Args:
             existing: The spec to move.
         """
-        self.shape = existing.shape
-        existing = TensorSpec()
-
-    fn __del__(owned self):
-        """Delete the spec and release any owned memory."""
-        self.shape.__del__()
+        self.shape = existing.shape ^
+        existing.shape = TensorShape()
 
     fn __getitem__(self, index: Int) -> Int:
         """Gets the dimension at the specified index.
@@ -901,7 +899,7 @@ struct Tensor[dtype: DType]:
         Args:
           shape: The tensor shape.
         """
-        self = Tensor[dtype](TensorSpec(dtype, shape))
+        self = Tensor[dtype](TensorSpec(dtype, shape ^))
 
     fn __init__(inout self, owned spec: TensorSpec):
         """Allocates a tensor using the spec provided.
@@ -909,37 +907,37 @@ struct Tensor[dtype: DType]:
         Args:
           spec: The tensor spec.
         """
+        let num_elements = spec.num_elements()
         self._spec = spec
-        self._ptr = DTypePointer[dtype].alloc(self._spec.num_elements())
+        self._ptr = DTypePointer[dtype].alloc(num_elements)
 
     fn __init__(
         inout self, owned ptr: DTypePointer[dtype], owned shape: TensorShape
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
-        reliquishes the ownership of the pointer being passed in.
+        relinquishes the ownership of the pointer being passed in.
 
         Args:
           ptr: The data pointer.
           shape: The tensor shapes.
         """
-        self = Tensor[dtype](ptr, TensorSpec(dtype, shape))
+        self = Tensor[dtype](ptr, TensorSpec(dtype, shape ^))
 
     fn __init__(
         inout self, owned ptr: DTypePointer[dtype], owned spec: TensorSpec
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
-        reliquishes the ownership of the pointer being passed in.
+        relinquishes the ownership of the pointer being passed in.
 
         Args:
           ptr: The data pointer.
           spec: The tensor spec.
         """
-        self._spec = spec
+        self._spec = spec ^
         self._ptr = ptr
 
     fn __del__(owned self):
         """Delete the spec and release any owned memory."""
-        self._spec.__del__()
         self._ptr.free()
 
     fn __copyinit__(inout self, other: Self):
@@ -948,49 +946,75 @@ struct Tensor[dtype: DType]:
         Args:
             other: The tensor to copy from.
         """
+        let num_elements = other.num_elements()
         self._spec = other._spec
-        self._ptr = DTypePointer[dtype].alloc(self._spec.num_elements())
-        memcpy(self._ptr, other._ptr, self._spec.num_elements())
+        self._ptr = DTypePointer[dtype].alloc(num_elements)
+        memcpy(self._ptr, other._ptr, num_elements)
 
     fn __moveinit__(inout self, owned existing: Self):
-        """Move the value of the tensor.
+        """Move initializer for the tensor.
 
         Args:
             existing: The tensor to move.
         """
-        self._spec = existing._spec
+        self._spec = existing._spec ^
         self._ptr = existing._ptr
-        existing = TensorSpec()
+        existing._spec = TensorSpec()
+        existing._ptr = DTypePointer[dtype]()
 
-    fn type(self) -> DType:
-        """Gets the underlying DType of the Tensor.
+    fn data(self) -> DTypePointer[dtype]:
+        """Gets the underlying Data pointer to the Tensor.
 
         Returns:
-          The underlying DType of the Tensor.
+          The underlying data pointer of the tensor.
+        """
+        return self._ptr
+
+    fn type(self) -> DType:
+        """Gets the underlying DType of the tensor.
+
+        Returns:
+          The underlying DType of the tensor.
         """
         return dtype
 
     fn rank(self) -> Int:
-        """Gets the underlying rank of the Tensor.
+        """Gets the rank of the tensor.
 
         Returns:
-          The underlying rank of the Tensor.
+          The rank of the tensor.
         """
         return self._spec.rank()
 
-    fn spec(self) -> TensorSpec:
-        """Gets the underlying tensor spec of the Tensor.
+    fn num_elements(self) -> Int:
+        """Gets the total number of elements in the tensor.
 
         Returns:
-          The underlying tensor spec of the Tensor.
+          The total number of elements in the tensor.
+        """
+        return self._spec.num_elements()
+
+    fn bytecount(self) -> Int:
+        """Gets the total bytecount of the tensor.
+
+        Returns:
+          The total bytecount of the tensor.
+        """
+        return self._spec.bytecount()
+
+    fn spec(self) -> TensorSpec:
+        """Gets the specification of the tensor.
+
+        Returns:
+          The underlying tensor spec of the tensor.
         """
         return self._spec
 
     fn shape(self) -> TensorShape:
-        """Gets the underlying tensor shape of the Tensor.
+        """Gets the shape of the tensor.
 
         Returns:
-          The underlying tensor shape of the Tensor.
+          The underlying tensor shape of the tensor.
         """
         return self._spec.shape
 
@@ -998,7 +1022,7 @@ struct Tensor[dtype: DType]:
         """Gets the value at the specified indices.
 
         Args:
-          indices: The indecies of the tensor.
+          indices: The indices of the value to retrieve.
 
         Returns:
           The value at the specified indices.
@@ -1009,11 +1033,12 @@ struct Tensor[dtype: DType]:
         """Gets the value at the specified indices.
 
         Args:
-          indices: The indecies of the tensor.
+          indices: The indices of the value to retrieve.
 
         Returns:
           The value at the specified indices.
         """
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         return self._ptr.load(self._compute_linear_offset(indices))
 
     fn __getitem__[
@@ -1022,20 +1047,22 @@ struct Tensor[dtype: DType]:
         """Gets the value at the specified indices.
 
         Args:
-          indices: The indecies of the tensor.
+          indices: The indices of the value to retrieve.
 
         Returns:
           The value at the specified indices.
         """
+        debug_assert(rank == self.rank(), "invalid rank value")
         return self._ptr.load(self._compute_linear_offset(indices))
 
     fn __setitem__(inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
 
         Args:
-          indices: The indecies of the tensor.
+          indices: The indices of the value to set.
           val: The value to store.
         """
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         return self._ptr.store(self._compute_linear_offset(indices), val)
 
     fn __setitem__[
@@ -1044,31 +1071,60 @@ struct Tensor[dtype: DType]:
         """Sets the value at the specified indices.
 
         Args:
-          indices: The indecies of the tensor.
+          indices: The indices of the value to set.
           val: The value to store.
         """
+        debug_assert(rank == self.rank(), "invalid rank value")
         return self._ptr.store(self._compute_linear_offset(indices), val)
 
     fn _compute_linear_offset[
         rank: Int
     ](self, indices: StaticIntTuple[rank]) -> Int:
+        """Computes the linear offset into the tensor from the indices provided.
+
+        Parameters:
+          rank: The rank of the indices.
+
+        Args:
+          indices: The indices to index against.
+
+        Returns:
+          The linearized index into the tensor data.
+        """
+
         @parameter
         if rank == 1:
             return indices[0]
 
-        var result = 0
+        var result = indices[0]
 
         @unroll
-        for i in range(rank):
-            result = self._spec[i] * result + indices[i]
+        for i in range(rank - 1):
+            result = self._spec[i + 1] * result + indices[i + 1]
         return result
 
     fn _compute_linear_offset(self, *indices: Int) -> Int:
+        """Computes the linear offset into the tensor from the indices provided.
+
+        Args:
+          indices: The indices to index against.
+
+        Returns:
+          The linearized index into the tensor data.
+        """
         return self._compute_linear_offset(VariadicList[Int](indices))
 
     fn _compute_linear_offset(self, indices: VariadicList[Int]) -> Int:
+        """Computes the linear offset into the tensor from the indices provided.
+
+        Args:
+          indices: The indices to index against.
+
+        Returns:
+          The linearized index into the tensor data.
+        """
         let rank = indices.__len__()
-        var result = 0
-        for i in range(rank):
-            result = self._spec[i] * result + indices[i]
+        var result = indices[0]
+        for i in range(rank - 1):
+            result = self._spec[i + 1] * result + indices[i + 1]
         return result
