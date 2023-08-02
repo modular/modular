@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import debug_assert
+from Assert import debug_assert, assert_param
 from Buffer import NDBuffer
 from DType import DType
 from Functional import async_parallelize, vectorize_unroll
@@ -376,3 +376,124 @@ fn pool_shape[
     )
 
     return output_shape
+
+
+@always_inline
+fn _pool_dispatcher[
+    type: DType,
+    int_type: DType,
+    init_fn: fn () -> SIMD[type, 1],
+    update_fn: fn (SIMD[type, 1], SIMD[type, 1]) -> SIMD[type, 1],
+    reduce_fn: fn (SIMD[type, 1], Int) -> SIMD[type, 1],
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    out_chain: OutputChainPtr,
+):
+    # Only supported layout in MO right now.
+    alias layout = Image2DLayout.NHWC
+
+    # Padding directly on the op is not yet supported in MO so is always 0.
+    # It's decomposed to more ops currently.
+    let pad_h = StaticIntTuple[2](0, 0)
+    let pad_w = StaticIntTuple[2](0, 0)
+
+    assert_param[
+        type == DType.float32, "Pool input / output type must be Float32"
+    ]()
+
+    let filter_shape = StaticIntTuple[2](filter[0].to_int(), filter[1].to_int())
+    let stride = StaticIntTuple[2](strides[0].to_int(), strides[1].to_int())
+    let dilation = StaticIntTuple[2](
+        dilations[0].to_int(), dilations[1].to_int()
+    )
+
+    Pool2d[
+        DimList.create_unknown[4](),  # Output shape.
+        DimList.create_unknown[4](),  # Input shape.
+        type,  # Data type.
+        layout,  # Data Layout.
+        init_fn,
+        update_fn,
+        reduce_fn,
+    ].run(
+        ImageData[DimList.create_unknown[4](), type, layout](output),
+        ImageData[DimList.create_unknown[4](), type, layout](input),
+        pad_h,
+        pad_w,
+        filter_shape,
+        stride,
+        dilation,
+        out_chain,
+    )
+
+
+@always_inline
+fn max_pool[
+    type: DType, int_type: DType
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    out_chain: OutputChainPtr,
+):
+    """Computes fp32 pooling.
+
+    Args:
+        output: Pre-allocated output tensor space.
+        input: Batched image input to the pool2d operator.
+        filter_shape(StaticIntTuple): Filter size on height and width
+          dimensions with assumed tuple def (filter_h, filter_w)
+        strides: Strides on height and width dimensions with assumed
+          tuple def (stride_h, stride_w).
+        dilations: Dilations on height and width dimensions with assumed
+          tuple def (dilation_h, dilation_w).
+        out_chain: OutputChain.
+    """
+
+    _pool_dispatcher[
+        type,
+        int_type,
+        max_pool_init_fn[type],
+        max_pool_update_fn[type],
+        max_pool_reduce_fn[type],
+    ](input, filter, strides, dilations, output, out_chain)
+
+
+@always_inline
+fn avg_pool[
+    type: DType, int_type: DType
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), type],
+    filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    output: NDBuffer[4, DimList.create_unknown[4](), type],
+    out_chain: OutputChainPtr,
+):
+    """Computes fp32 pooling.
+
+    Args:
+        output: Pre-allocated output tensor space.
+        input: Batched image input to the pool2d operator.
+        filter_shape(StaticIntTuple): Filter size on height and width
+          dimensions with assumed tuple def (filter_h, filter_w)
+        strides: Strides on height and width dimensions with assumed
+          tuple def (stride_h, stride_w).
+        dilations: Dilations on height and width dimensions with assumed
+          tuple def (dilation_h, dilation_w).
+        out_chain: OutputChain.
+    """
+
+    _pool_dispatcher[
+        type,
+        int_type,
+        avg_pool_init_fn[type],
+        avg_pool_update_fn[type],
+        avg_pool_reduce_fn[type],
+    ](input, filter, strides, dilations, output, out_chain)
