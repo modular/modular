@@ -27,31 +27,6 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 """
 
 # ===----------------------------------------------------------------------===#
-# Utilities
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _raw_stack_allocation[
-    count: Int,
-    type: DType,
-    alignment: Int,
-]() -> DTypePointer[type]:
-    """Allocates data buffer space on the stack given a data type and number of
-    elements.
-
-    Parameters:
-        count: number of elements to allocate memory for.
-        type: the data type of each element.
-        alignment: address alignment of the allocated data.
-
-    Returns:
-        A data pointer of the given dtype pointing to the allocated space.
-    """
-    return stack_allocation[count, type, alignment]()
-
-
-# ===----------------------------------------------------------------------===#
 # Buffer
 # ===----------------------------------------------------------------------===#
 
@@ -383,7 +358,7 @@ struct Buffer[size: Dim, type: DType]:
             Constructed buffer with the allocated space.
         """
         assert_param[size.has_value(), "must have known size"]()
-        let data_pointer = _raw_stack_allocation[size.get(), type, alignment]()
+        let data_pointer = stack_allocation[size.get(), type, alignment]()
         return Self(data_pointer)
 
     @staticmethod
@@ -1419,7 +1394,7 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        let data_pointer = _raw_stack_allocation[
+        let data_pointer = stack_allocation[
             shape.product[rank]().get(), type, alignment
         ]()
         return NDBuffer[rank, shape, type](data_pointer)
