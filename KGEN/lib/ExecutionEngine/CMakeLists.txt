@@ -76,6 +76,5 @@ add_modular_library(KGENExecutionEngine
   MCache
   MSupport
 )
-set_property(TARGET KGENExecutionEngine PROPERTY KGEN_ORC_RT_LIB "${ORC_LIB}")
 target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_ASAN_LIB="${KGEN_ASAN_LIBRARY}")
 target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_TSAN_LIB="${KGEN_TSAN_LIBRARY}")
