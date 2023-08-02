@@ -173,7 +173,7 @@ private:
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
-  std::shared_ptr<ManualExportingMetricReader> metricReader;
+  std::vector<std::shared_ptr<ManualExportingMetricReader>> metricReaders;
   // Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
