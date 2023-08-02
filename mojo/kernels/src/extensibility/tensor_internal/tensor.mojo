@@ -59,9 +59,11 @@ struct _RepKind:
 
     var kind: UInt8
 
+    @always_inline("nodebug")
     fn __init__(value: Int) -> _RepKind:
         return Self {kind: value}
 
+    @always_inline("nodebug")
     fn __eq__(self, rhs: _RepKind) -> Bool:
         return (self.kind == rhs.kind).__bool__()
 
@@ -82,6 +84,7 @@ struct _Rep16:
     var auxillary: UInt8
     """Auxillary information about the shape."""
 
+    @always_inline
     fn __init__() -> Self:
         """Default initializes the _Rep16 type."""
         return Self {
@@ -92,6 +95,7 @@ struct _Rep16:
             auxillary: 0,
         }
 
+    @always_inline
     fn get_rank(self) -> Int:
         """Gets the rank of the representation.
 
@@ -101,6 +105,7 @@ struct _Rep16:
         debug_assert(self.rank.to_int() < 4, "index out of range")
         return self.rank.to_int()
 
+    @always_inline
     fn get_num_elements(self) -> Int:
         """Gets the number of elements of the representation.
 
@@ -113,6 +118,7 @@ struct _Rep16:
             product *= self.dims[i].to_int()
         return product
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets dimension at the specified index.
 
@@ -124,6 +130,7 @@ struct _Rep16:
         """
         return self.dims[index].to_int()
 
+    @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
@@ -134,6 +141,7 @@ struct _Rep16:
         debug_assert(index < self.get_rank(), "index out of range")
         self.dims[index] = val
 
+    @always_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -142,6 +150,7 @@ struct _Rep16:
         """
         return self.__str__()
 
+    @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -172,6 +181,7 @@ struct _Rep32:
     var auxillary: UInt8
     """Auxillary information about the shape."""
 
+    @always_inline
     fn __init__() -> Self:
         """Default initializes the _Rep32 type."""
         return Self {
@@ -182,6 +192,7 @@ struct _Rep32:
             auxillary: 0,
         }
 
+    @always_inline
     fn get_rank(self) -> Int:
         """Gets the rank of the representation.
 
@@ -191,6 +202,7 @@ struct _Rep32:
         debug_assert(self.rank.to_int() < 4, "index out of range")
         return self.rank.to_int()
 
+    @always_inline
     fn get_num_elements(self) -> Int:
         """Gets the number of elements of the representation.
 
@@ -206,6 +218,7 @@ struct _Rep32:
             product *= self.dims012[i].to_int()
         return product
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets dimension at the specified index.
 
@@ -221,6 +234,7 @@ struct _Rep32:
         else:
             return self.dims012[index].to_int()
 
+    @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
@@ -234,6 +248,7 @@ struct _Rep32:
         else:
             self.dims012[index] = val
 
+    @always_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -242,6 +257,7 @@ struct _Rep32:
         """
         return self.__str__()
 
+    @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -276,6 +292,7 @@ struct _RepOutOfLine:
     var auxillary: UInt8
     """Auxillary information about the shape."""
 
+    @always_inline
     fn __init__() -> Self:
         """Default initializes the _RepOutOfLine type."""
         assert_param[
@@ -293,6 +310,7 @@ struct _RepOutOfLine:
             auxillary: 0,
         }
 
+    @always_inline
     fn get_rank(self) -> Int:
         """Gets the rank of the representation.
 
@@ -301,6 +319,7 @@ struct _RepOutOfLine:
         """
         return self.rank.to_int()
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets dimension at the specified index.
 
@@ -312,6 +331,7 @@ struct _RepOutOfLine:
         """
         return self.dims.load(index).to_int()
 
+    @always_inline
     fn __setitem__(inout self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
@@ -322,6 +342,7 @@ struct _RepOutOfLine:
         debug_assert(index < self.get_rank(), "index out of range")
         self.dims.store(index, val)
 
+    @always_inline
     fn get_num_elements(self) -> Int:
         """Gets the number of elements of the representation.
 
@@ -333,6 +354,7 @@ struct _RepOutOfLine:
             prod *= self[i]
         return prod
 
+    @always_inline
     fn copy(self) -> Self:
         """Creates a new copy of the object. Note that this will cause a heap
         allocation.
@@ -351,6 +373,7 @@ struct _RepOutOfLine:
             auxillary: self.auxillary,
         }
 
+    @always_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -359,6 +382,7 @@ struct _RepOutOfLine:
         """
         return self.__str__()
 
+    @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -381,12 +405,14 @@ struct _TensorShapeStorage:
     var ptr: DTypePointer[DType.invalid]
     var idx: Int64
 
+    @always_inline
     fn __init__() -> Self:
         """Default initializes the _TensorShapeStorage type."""
         var rep = _Rep32()
         let rep_ptr = Pointer.address_of(rep)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
+    @always_inline
     fn __init__(rep: _Rep16) -> Self:
         """Initializes the _TensorShapeStorage from a _Rep16.
 
@@ -400,6 +426,7 @@ struct _TensorShapeStorage:
         let rep_ptr = Pointer.address_of(rep_copy)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
+    @always_inline
     fn __init__(rep: _Rep32) -> Self:
         """Initializes the _TensorShapeStorage from a _Rep32.
 
@@ -413,6 +440,7 @@ struct _TensorShapeStorage:
         let rep_ptr = Pointer.address_of(rep_copy)
         return rep_ptr.bitcast[_TensorShapeStorage]().load()
 
+    @always_inline
     fn __init__(rep: _RepOutOfLine) -> Self:
         """Initializes the _TensorShapeStorage from a _Rep32.
 
@@ -574,10 +602,12 @@ struct TensorShape:
     var _rep: _TensorShapeStorage
     """The underlying _TensorShapeStorage backing."""
 
+    @always_inline
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self._rep = _TensorShapeStorage()
 
+    @always_inline
     fn __init__(inout self, *shapes: Int):
         """Initializes a TensorShape from the values provided.
 
@@ -586,6 +616,7 @@ struct TensorShape:
         """
         self = TensorShape(VariadicList[Int](shapes))
 
+    @always_inline
     fn __init__(inout self, shapes: VariadicList[Int]):
         """Initializes a TensorShape from the values provided.
 
@@ -633,6 +664,7 @@ struct TensorShape:
 
         self._rep = rep
 
+    @always_inline
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing shape.
 
@@ -647,6 +679,7 @@ struct TensorShape:
         else:
             self._rep = _TensorShapeStorage(_as_rep16(other._rep))
 
+    @always_inline
     fn __moveinit__(inout self, owned existing: Self):
         """Move initializer for the shape.
 
@@ -656,6 +689,7 @@ struct TensorShape:
         self._rep = existing._rep
         existing._rep = _TensorShapeStorage()
 
+    @always_inline
     fn __del__(owned self):
         """Delete the shape and release any owned memory."""
         let rep_kind = self._get_rep_kind()
@@ -663,6 +697,7 @@ struct TensorShape:
             let out_of_line = _as_rep_out_of_line(self._rep)
             out_of_line.dims.free()
 
+    @always_inline
     fn _get_rep_kind(self) -> _RepKind:
         """Gets the underlying representation kind.
 
@@ -671,6 +706,7 @@ struct TensorShape:
         """
         return _as_rep32(self._rep).rep_kind
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets the dimension at the specified index.
 
@@ -689,6 +725,7 @@ struct TensorShape:
             return _as_rep_out_of_line(self._rep)[index]
         return -1
 
+    @always_inline
     fn _is_out_of_line(self) -> Bool:
         """Checks if the representation is out of line.
 
@@ -697,6 +734,7 @@ struct TensorShape:
         """
         return self._get_rep_kind() == _RepKind.KIND_OUT_OF_LINE
 
+    @always_inline
     fn rank(self) -> Int:
         """Gets the rank of the shape.
 
@@ -705,6 +743,7 @@ struct TensorShape:
         """
         return _as_rep32(self._rep).get_rank()
 
+    @always_inline
     fn num_elements(self) -> Int:
         """Gets the total number of elements in the shape.
 
@@ -720,6 +759,7 @@ struct TensorShape:
             return _as_rep_out_of_line(self._rep).get_num_elements()
         return -1
 
+    @always_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -728,6 +768,7 @@ struct TensorShape:
         """
         return self.__str__()
 
+    @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of the shape.
 
@@ -756,10 +797,12 @@ struct TensorSpec:
     var shape: TensorShape
     """The underlying shape of the specification."""
 
+    @always_inline
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self.shape = TensorShape()
 
+    @always_inline
     fn __init__(inout self, type: DType, *shapes: Int):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
@@ -769,6 +812,7 @@ struct TensorSpec:
         """
         self = TensorSpec(type, VariadicList[Int](shapes))
 
+    @always_inline
     fn __init__(inout self, type: DType, shapes: VariadicList[Int]):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
@@ -778,6 +822,7 @@ struct TensorSpec:
         """
         self = TensorSpec(type, TensorShape(shapes))
 
+    @always_inline
     fn __init__(inout self, type: DType, owned shape: TensorShape):
         """Initializes a Tensorspec from the dtype and shape provided.
 
@@ -792,6 +837,7 @@ struct TensorSpec:
         self.shape = TensorShape()
         self.shape._rep = rep
 
+    @always_inline
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing spec.
 
@@ -800,6 +846,7 @@ struct TensorSpec:
         """
         self.shape = other.shape
 
+    @always_inline
     fn __moveinit__(inout self, owned existing: Self):
         """Move initializer for the spec.
 
@@ -809,6 +856,7 @@ struct TensorSpec:
         self.shape = existing.shape ^
         existing.shape = TensorShape()
 
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets the dimension at the specified index.
 
@@ -820,6 +868,7 @@ struct TensorSpec:
         """
         return self.shape[index]
 
+    @always_inline
     fn rank(self) -> Int:
         """Gets the rank of the spec.
 
@@ -828,6 +877,7 @@ struct TensorSpec:
         """
         return self.shape.rank()
 
+    @always_inline
     fn dtype(self) -> DType:
         """Gets the rank of the DType of the spec.
 
@@ -836,6 +886,7 @@ struct TensorSpec:
         """
         return DType._from_ui8(_as_rep16(self.shape._rep).auxillary.value)
 
+    @always_inline
     fn num_elements(self) -> Int:
         """Gets the total number of elements in the spec.
 
@@ -844,6 +895,7 @@ struct TensorSpec:
         """
         return self.shape.num_elements()
 
+    @always_inline
     fn bytecount(self) -> Int:
         """Gets the total byte count.
 
@@ -852,6 +904,7 @@ struct TensorSpec:
         """
         return self.num_elements() * self.dtype().sizeof()
 
+    @always_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the spec.
 
@@ -860,6 +913,7 @@ struct TensorSpec:
         """
         return self.__str__()
 
+    @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of the spec.
 
@@ -888,11 +942,13 @@ struct Tensor[dtype: DType]:
     var _ptr: DTypePointer[dtype]
     """The underlying data of the tensor."""
 
+    @always_inline
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self._spec = TensorSpec()
         self._ptr = DTypePointer[dtype]()
 
+    @always_inline
     fn __init__(inout self, owned shape: TensorShape):
         """Allocates a tensor using the shape provided.
 
@@ -901,6 +957,7 @@ struct Tensor[dtype: DType]:
         """
         self = Tensor[dtype](TensorSpec(dtype, shape ^))
 
+    @always_inline
     fn __init__(inout self, owned spec: TensorSpec):
         """Allocates a tensor using the spec provided.
 
@@ -911,6 +968,7 @@ struct Tensor[dtype: DType]:
         self._spec = spec
         self._ptr = DTypePointer[dtype].alloc(num_elements)
 
+    @always_inline
     fn __init__(
         inout self, owned ptr: DTypePointer[dtype], owned shape: TensorShape
     ):
@@ -923,6 +981,7 @@ struct Tensor[dtype: DType]:
         """
         self = Tensor[dtype](ptr, TensorSpec(dtype, shape ^))
 
+    @always_inline
     fn __init__(
         inout self, owned ptr: DTypePointer[dtype], owned spec: TensorSpec
     ):
@@ -936,10 +995,12 @@ struct Tensor[dtype: DType]:
         self._spec = spec ^
         self._ptr = ptr
 
+    @always_inline
     fn __del__(owned self):
         """Delete the spec and release any owned memory."""
         self._ptr.free()
 
+    @always_inline
     fn __copyinit__(inout self, other: Self):
         """Creates a deep copy of an existing tensor.
 
@@ -962,6 +1023,7 @@ struct Tensor[dtype: DType]:
         existing._spec = TensorSpec()
         existing._ptr = DTypePointer[dtype]()
 
+    @always_inline
     fn data(self) -> DTypePointer[dtype]:
         """Gets the underlying Data pointer to the Tensor.
 
@@ -970,6 +1032,7 @@ struct Tensor[dtype: DType]:
         """
         return self._ptr
 
+    @always_inline
     fn type(self) -> DType:
         """Gets the underlying DType of the tensor.
 
@@ -978,6 +1041,7 @@ struct Tensor[dtype: DType]:
         """
         return dtype
 
+    @always_inline
     fn rank(self) -> Int:
         """Gets the rank of the tensor.
 
@@ -986,6 +1050,7 @@ struct Tensor[dtype: DType]:
         """
         return self._spec.rank()
 
+    @always_inline
     fn num_elements(self) -> Int:
         """Gets the total number of elements in the tensor.
 
@@ -994,6 +1059,7 @@ struct Tensor[dtype: DType]:
         """
         return self._spec.num_elements()
 
+    @always_inline
     fn bytecount(self) -> Int:
         """Gets the total bytecount of the tensor.
 
@@ -1002,6 +1068,7 @@ struct Tensor[dtype: DType]:
         """
         return self._spec.bytecount()
 
+    @always_inline
     fn spec(self) -> TensorSpec:
         """Gets the specification of the tensor.
 
@@ -1010,6 +1077,7 @@ struct Tensor[dtype: DType]:
         """
         return self._spec
 
+    @always_inline
     fn shape(self) -> TensorShape:
         """Gets the shape of the tensor.
 
@@ -1018,6 +1086,7 @@ struct Tensor[dtype: DType]:
         """
         return self._spec.shape
 
+    @always_inline
     fn dim(self, idx: Int) -> Int:
         """Gets the dimension at the specified index.
 
@@ -1029,6 +1098,7 @@ struct Tensor[dtype: DType]:
         """
         return self.spec()[idx]
 
+    @always_inline
     fn __getitem__(self, index: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified index.
 
@@ -1041,6 +1111,7 @@ struct Tensor[dtype: DType]:
         debug_assert(self.rank() == 1, "rank must be 1")
         return self._ptr.load(index)
 
+    @always_inline
     fn __getitem__(self, *indices: Int) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
@@ -1052,6 +1123,7 @@ struct Tensor[dtype: DType]:
         """
         return self[VariadicList[Int](indices)]
 
+    @always_inline
     fn __getitem__(self, indices: VariadicList[Int]) -> SIMD[dtype, 1]:
         """Gets the value at the specified indices.
 
@@ -1064,6 +1136,7 @@ struct Tensor[dtype: DType]:
         debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         return self._ptr.load(self._compute_linear_offset(indices))
 
+    @always_inline
     fn __getitem__[
         rank: Int
     ](self, indices: StaticIntTuple[rank]) -> SIMD[dtype, 1]:
@@ -1078,6 +1151,7 @@ struct Tensor[dtype: DType]:
         debug_assert(rank == self.rank(), "invalid rank value")
         return self._ptr.load(self._compute_linear_offset(indices))
 
+    @always_inline
     fn __setitem__(inout self, index: Int, val: SIMD[dtype, 1]):
         """Sets the value at the specified index.
 
@@ -1088,6 +1162,7 @@ struct Tensor[dtype: DType]:
         debug_assert(self.rank() == 1, "rank must be 1")
         return self._ptr.store(index, val)
 
+    @always_inline
     fn __setitem__(inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
 
@@ -1098,6 +1173,7 @@ struct Tensor[dtype: DType]:
         debug_assert(indices.__len__() == self.rank(), "invalid rank value")
         return self._ptr.store(self._compute_linear_offset(indices), val)
 
+    @always_inline
     fn __setitem__[
         rank: Int
     ](inout self, indices: StaticIntTuple[rank], val: SIMD[dtype, 1]):
@@ -1110,6 +1186,7 @@ struct Tensor[dtype: DType]:
         debug_assert(rank == self.rank(), "invalid rank value")
         return self._ptr.store(self._compute_linear_offset(indices), val)
 
+    @always_inline
     fn _compute_linear_offset[
         rank: Int
     ](self, indices: StaticIntTuple[rank]) -> Int:
@@ -1131,6 +1208,7 @@ struct Tensor[dtype: DType]:
             result = self.dim(i + 1) * result + indices[i + 1]
         return result
 
+    @always_inline
     fn _compute_linear_offset(self, *indices: Int) -> Int:
         """Computes the linear offset into the tensor from the indices provided.
 
@@ -1142,6 +1220,7 @@ struct Tensor[dtype: DType]:
         """
         return self._compute_linear_offset(VariadicList[Int](indices))
 
+    @always_inline
     fn _compute_linear_offset(self, indices: VariadicList[Int]) -> Int:
         """Computes the linear offset into the tensor from the indices provided.
 
