@@ -115,8 +115,8 @@ public:
 
   /// Create a Timer. If unit is omitted, the method will implicitly set
   /// it to one of {"ns", "us", "ms", "s"} based on the DurationT template
-  /// parameter.
-  template <typename DurationT = std::chrono::nanoseconds>
+  /// parameter (e.g. std::chrono::microseconds).
+  template <typename DurationT>
   Timer<uint64_t, DurationT> createUInt64Timer(StringRef name,
                                                StringRef description = "",
                                                StringRef unit = "") {

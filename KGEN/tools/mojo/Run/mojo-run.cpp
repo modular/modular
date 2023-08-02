@@ -177,7 +177,8 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
   [[maybe_unused]] auto flushTelemetry =
       runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
-      runtime.getTelemetryContext()->createUInt64Timer("mojo.run.time");
+      runtime.getTelemetryContext()
+          ->createUInt64Timer<std::chrono::milliseconds>("mojo.run.time");
 
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);

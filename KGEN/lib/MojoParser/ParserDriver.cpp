@@ -289,8 +289,9 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   [[maybe_unused]] auto flushTelemetry =
       sharedState.runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
-      sharedState.runtime.getTelemetryContext()->createUInt64Timer(
-          "mojo.parser.compile.time");
+      sharedState.runtime.getTelemetryContext()
+          ->createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.parser.compile.time");
 
   // This is the result module we are parsing into.
   auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,
