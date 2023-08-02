@@ -7,6 +7,7 @@
 #include "KGEN/CompilerRT.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Process.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
@@ -105,14 +106,7 @@ const char *KGEN_CompilerRT_Python_SetPythonPath() {
 
   // Set the `PYTHONPATH` environment variable to the site-package paths.
   std::string pythonPath = bufferOrErr.get()->getBuffer().trim().str();
-#if defined(_WIN32)
-  int result = SetEnvironmentVariableA("PYTHONPATH", pythonPath.c_str());
-  int failureCode = 0;
-#else
-  int result = setenv("PYTHONPATH", pythonPath.c_str(), /*overwrite=*/1);
-  int failureCode = -1;
-#endif
-  if (result == failureCode)
+  if (failed(setProcessEnv("PYTHONPATH", pythonPath)))
     return "an error occurred when attempting to set 'PYTHONPATH'";
 
   return "";

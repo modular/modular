@@ -16,6 +16,7 @@ add_modular_library(MSupport
   Host.cpp
   JSON.cpp
   MicroBenchmark.cpp
+  Process.cpp
   Target.cpp
   TimeProfiler.cpp
   URI.cpp
