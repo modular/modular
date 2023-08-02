@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
+
 from Buffer import Buffer, NDBuffer
 from DType import DType
 from Index import StaticIntTuple
