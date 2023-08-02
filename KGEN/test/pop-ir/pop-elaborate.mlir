@@ -86,6 +86,16 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !pop.struct<pointer<i16>,
   kgen.return %2 : !pop.struct<pointer<i16>, pointer<i16>>
 }
 
+// COM: Check that the pointers alias.
+kgen.generator @copy_load(%arg0: !pop.pointer<i16>, %arg1: !pop.pointer<i16>) -> i16 {
+  %0 = pop.load %arg1: !pop.pointer<i16>
+  %idx1 = index.constant 1
+  %1 = pop.offset %arg1[%idx1] : !pop.pointer<i16>
+  pop.store %0, %1 : !pop.pointer<i16>
+  %2 = pop.load %arg0 : !pop.pointer<i16>
+  kgen.return %2 : i16
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -167,8 +177,21 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
     :(i16, i16) -> !pop.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
 
+  // CHECK-NEXT: <-8531>
+  kgen.param.constant: i16 = <apply(
+    :(!pop.pointer<i16>, !pop.pointer<i16>) -> i16 @copy_load,
+    #M.memref<mem, 2, heap>, #M.memref<mem, 0, heap>)>
+
   kgen.return
 }
+
+{-#
+  dialect_resources: {
+    M: {
+      mem: "0x20000000ADDEEFBE"
+    }
+  }
+#-}
 
 // NOTE: Bytes are encoded backwards in resource blobs.
 // CHECK: dialect_resources

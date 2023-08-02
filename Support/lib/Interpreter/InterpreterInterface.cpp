@@ -19,9 +19,7 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
-    : target(target),
-      blobMgr(*ctx->getOrLoadDialect<MDialect>()
-                   ->getRegisteredInterface<MBlobManagerInterface>()) {}
+    : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)) {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
@@ -30,8 +28,8 @@ InterpreterState::InterpreterState(TargetInfoAttr target)
 /// that an address of 0 can actually be considered a null pointer.
 static constexpr int64_t invalidMemOffset = 10'000'000;
 
-int64_t InterpreterState::allocateMemory(size_t size, size_t align,
-                                         MemoryKind kind) {
+InterpreterState::MemoryBlob &
+InterpreterState::addBlob(size_t size, size_t align, MemoryKind kind) {
   // Pick the base address of the new blob.
   int64_t baseAddr = invalidMemOffset;
   if (!memory.empty()) {
@@ -46,7 +44,12 @@ int64_t InterpreterState::allocateMemory(size_t size, size_t align,
       kind, baseAddr, size, align, {alignedAlloc(align, size), &alignedFree}};
   memset(blob.memory.get(), 0, size);
   memory.push_back(std::move(blob));
-  return baseAddr;
+  return memory.back();
+}
+
+int64_t InterpreterState::allocateMemory(size_t size, size_t align,
+                                         MemoryKind kind) {
+  return addBlob(size, align, kind).baseAddr;
 }
 
 ErrorOr<InterpreterState::MemoryBlob &>
@@ -147,8 +150,9 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-ErrorOrSuccess InterpreterState::exchangeInterpreterMemory(
-    Region &entry, MutableArrayRef<Attribute> results) {
+ErrorOrSuccess
+InterpreterState::externalizeMemory(Region &entry,
+                                    MutableArrayRef<Attribute> results) {
   // Use the parent function name as the base name for materialized resources.
   auto symbol = cast<mlir::SymbolOpInterface>(entry.getParentOp());
   std::string baseName = (symbol.getName() + "_mem").str();
@@ -195,6 +199,44 @@ ErrorOrSuccess InterpreterState::exchangeInterpreterMemory(
 
   for (Attribute &result : results) {
     result = replacer.replace(result);
+    if (err)
+      return std::move(*err);
+  }
+  return success();
+}
+
+ErrorOrSuccess
+InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
+  // Intern each resource once into the interpreter.
+  DenseMap<mlir::AsmResourceBlob *, size_t> blobs;
+  auto getOrIntern = [&](MemRefAttr ref) -> MemoryBlob & {
+    mlir::AsmResourceBlob *blob = ref.getMemory().getBlob();
+    if (auto [it, inserted] = blobs.try_emplace(blob, memory.size()); !inserted)
+      return memory.at(it->second);
+    // Initialize the memory.
+    MemoryBlob &mem = addBlob(blob->getData().size(), blob->getDataAlignment(),
+                              ref.getKind());
+    memcpy(mem.memory.get(), blob->getData().data(), blob->getData().size());
+    return mem;
+  };
+
+  // Replace memory references in the inputs with interpreter memory pointers.
+  mlir::AttrTypeReplacer replacer;
+  std::optional<Error> err;
+  replacer.addReplacement(
+      [&](MemRefAttr ref) -> std::pair<Attribute, WalkResult> {
+        if (!ref.getMemory().getBlob()) {
+          err = "reference to undefined dialect resource";
+          return {ref, WalkResult::interrupt()};
+        }
+        MemoryBlob &blob = getOrIntern(ref);
+        return {
+            PointerAttr::get(blob.baseAddr + ref.getOffset(), ref.getType()),
+            WalkResult::advance()};
+      });
+
+  for (Attribute &arg : args) {
+    arg = replacer.replace(arg);
     if (err)
       return std::move(*err);
   }
@@ -264,9 +306,14 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
 ErrorTreeOr<SmallVector<Attribute>>
 InterpreterState::startInterpreterAt(Region &region,
                                      ArrayRef<Attribute> arguments) {
+  // Internal memory references.
+  SmallVector<Attribute> args = llvm::to_vector(arguments);
+  if (ErrorOrSuccess err = internalizeMemory(args); err.isError())
+    return ErrorTree(region.getLoc(), err.takeError());
+
   // Push an empty stack frame and map the region arguments.
   pushFrame(nullptr, region.getParentOp());
-  transferControlFlowTo(&region.front(), arguments);
+  transferControlFlowTo(&region.front(), args);
 
   // Reset the interpret to a clean state.
   auto resetState = llvm::make_scope_exit([&] {
@@ -279,8 +326,8 @@ InterpreterState::startInterpreterAt(Region &region,
   ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
   if (result) {
     SmallVector<Attribute> results = result.takeValue();
-    if (ErrorOrSuccess err = exchangeInterpreterMemory(region, results);
-        err.isError())
+    // Externalize references to interpreter memory.
+    if (ErrorOrSuccess err = externalizeMemory(region, results); err.isError())
       return ErrorTree(region.getLoc(), err.takeError());
     return results;
   }
