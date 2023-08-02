@@ -303,7 +303,7 @@ fn to_buffer[
     unroll[rank, body]()
 
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
-        DTypePointer[type](data), shape_tuple, type, stride_tuple
+        DTypePointer[type](data), shape_tuple, stride_tuple
     )
 
 
@@ -636,7 +636,6 @@ fn broadcast_to_tensor[
     ](
         original.data,
         shape,
-        original.dynamic_dtype,
         stride,
     )
 
@@ -1179,7 +1178,7 @@ fn reshape[
 
     # Return the a view with the new shape.
     return NDBuffer[output_rank, DimList.create_unknown[output_rank](), type](
-        input.data, new_shape, input.dynamic_dtype, stride_tuple
+        input.data, new_shape, stride_tuple
     )
 
 
@@ -1287,7 +1286,7 @@ fn transpose[
 
     # Create the transposed view.
     return NDBuffer[rank, DimList.create_unknown[rank](), type](
-        input.data, new_shape, input.dynamic_dtype, new_stride
+        input.data, new_shape, new_stride
     )
 
 
