@@ -115,13 +115,21 @@ if (MODULAR_RELEASE_PACKAGE_BUILD)
   return()
 endif()
 
-add_custom_target(mblack
-  ${CMAKE_COMMAND} -E env PYI_LOG_LEVEL=ERROR
-  ${PYTHON_EXE} -m PyInstaller -F --name mblack
-  --add-data "${MODULAR_UTILS_DIR}/mblack/src/mblib2to3${mblackPathSeparator}mblib2to3"
-  "${MODULAR_UTILS_DIR}/mblack/src/mblack/__main__.py"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-  ${CMAKE_CURRENT_BINARY_DIR}/dist/mblack${CMAKE_EXECUTABLE_SUFFIX}
-  ${CMAKE_BINARY_DIR}/bin/
+set(MBLACK_BIN "${CMAKE_BINARY_DIR}/lib/mblack/mblack${CMAKE_EXECUTABLE_SUFFIX}")
+set(MBLACK_SRC "${MODULAR_UTILS_DIR}/mblack/src/mblack/__main__.py")
+
+add_custom_command(
+  OUTPUT "${MBLACK_BIN}"
+  COMMAND "${CMAKE_COMMAND}" -E env PYI_LOG_LEVEL=ERROR
+    "${PYTHON_EXE}" -m PyInstaller -y -D --name mblack
+    --add-data "${MODULAR_UTILS_DIR}/mblack/src/mblib2to3${mblackPathSeparator}mblib2to3"
+    --distpath "${CMAKE_BINARY_DIR}/lib"
+    "${MBLACK_SRC}"
+  DEPENDS "${MBLACK_SRC}"
+  COMMENT "Building mblack."
+  VERBATIM
   )
+
+add_custom_target(mblack DEPENDS "${MBLACK_BIN}")
+
 add_dependencies(mojo mblack)
