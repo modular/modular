@@ -6,6 +6,7 @@
 
 #include "MojoREPL.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
+#include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBBroadcaster.h"
@@ -23,6 +24,7 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/Process.h"
 #include "llvm/TargetParser/Host.h"
 
 using namespace M;
@@ -319,6 +321,20 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
   launchInfo.GetEnvironment() = target.GetEnvironment();
   launchInfo.GetEnvironment()["LD_LIBRARY_PATH"] +=
       (":" + exeModule->GetFileSpec().GetDirectory().GetStringRef()).str();
+
+  // Pass in the python library into the target launch environment.
+  std::optional<std::string> pythonLib =
+      llvm::sys::Process::GetEnv("MOJO_PYTHON_LIBRARY");
+  if (!pythonLib) {
+    ErrorOr<Config> config = Config::open();
+    if (succeeded(config)) {
+      StringRef pythonLibConfig = config->getValue("mojo.python_lib");
+      if (!pythonLibConfig.empty())
+        pythonLib = pythonLibConfig.str();
+    }
+  }
+  if (pythonLib)
+    launchInfo.GetEnvironment()["MOJO_PYTHON_LIBRARY"] = *pythonLib;
 
   // Launch the process synchronously, waiting for it to stop at the REPL
   // breakpoint.
