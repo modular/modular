@@ -576,12 +576,8 @@ struct NDBuffer[
     var data: DTypePointer[type]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var _rank: Int
-    """The dynamic value of the rank."""
     var dynamic_shape: StaticIntTuple[rank]
     """The dynamic value of the shape."""
-    var dynamic_dtype: DType
-    """The dynamic dtype."""
     var dynamic_stride: StaticIntTuple[rank]
     """The dynamic stride of the buffer."""
     var is_contiguous: Bool
@@ -598,9 +594,7 @@ struct NDBuffer[
 
         return Self {
             data: DTypePointer[type].get_null(),
-            _rank: rank,
             dynamic_shape: StaticIntTuple[rank](),
-            dynamic_dtype: type,
             dynamic_stride: StaticIntTuple[rank](),
             is_contiguous: False,
         }
@@ -628,9 +622,7 @@ struct NDBuffer[
 
         return Self {
             data: ptr.address,
-            _rank: rank,
             dynamic_shape: shape,
-            dynamic_dtype: type,
             dynamic_stride: _compute_ndbuffer_stride[rank](shape),
             is_contiguous: True,
         }
@@ -658,9 +650,7 @@ struct NDBuffer[
 
         return Self {
             data: ptr,
-            _rank: rank,
             dynamic_shape: shape,
-            dynamic_dtype: type,
             dynamic_stride: _compute_ndbuffer_stride[rank](shape),
             is_contiguous: True,
         }
@@ -669,7 +659,6 @@ struct NDBuffer[
     fn __init__(
         ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
         dynamic_shape: StaticIntTuple[rank],
-        dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -680,16 +669,13 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_dtype: Dtype for the buffer.
 
         Returns:
             The NDBuffer object.
         """
         return Self {
             data: ptr,
-            _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
         }
@@ -698,7 +684,6 @@ struct NDBuffer[
     fn __init__(
         ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
         dynamic_shape: StaticIntTuple[rank],
-        dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -709,16 +694,13 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_dtype: Dtype for the buffer.
 
         Returns:
             The NDBuffer object.
         """
         return NDBuffer[rank, shape, type] {
             data: ptr.address,
-            _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
         }
@@ -727,7 +709,6 @@ struct NDBuffer[
     fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
-        dynamic_dtype: DType,
     ) -> NDBuffer[rank, shape, type]:
         """Constructs an NDBuffer with statically known rank, but dynamic
         shapes and type.
@@ -738,16 +719,13 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_dtype: Dtype for the buffer.
 
         Returns:
             The NDBuffer object.
         """
         return NDBuffer[rank, shape, type] {
             data: ptr,
-            _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
             dynamic_stride: _compute_ndbuffer_stride[rank](dynamic_shape),
             is_contiguous: True,
         }
@@ -756,7 +734,6 @@ struct NDBuffer[
     fn __init__(
         ptr: Pointer[__mlir_type[`!pop.scalar<`, type.value, `>`]],
         dynamic_shape: StaticIntTuple[rank],
-        dynamic_dtype: DType,
         dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
         """Constructs a strided NDBuffer with statically known rank, but
@@ -768,7 +745,6 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_dtype: Dtype for the buffer.
             dynamic_stride: A static tuple of size 'rank' representing strides.
 
         Returns:
@@ -776,9 +752,7 @@ struct NDBuffer[
         """
         return NDBuffer[rank, shape, type] {
             data: ptr.address,
-            _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
             dynamic_stride: dynamic_stride,
             is_contiguous: _compute_ndbuffer_stride[rank](dynamic_shape)
             == dynamic_stride,
@@ -788,7 +762,6 @@ struct NDBuffer[
     fn __init__(
         ptr: DTypePointer[type],
         dynamic_shape: StaticIntTuple[rank],
-        dynamic_dtype: DType,
         dynamic_stride: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
         """Constructs a strided NDBuffer with statically known rank, but
@@ -800,7 +773,6 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
-            dynamic_dtype: Dtype for the buffer.
             dynamic_stride: A static tuple of size 'rank' representing strides.
 
         Returns:
@@ -808,9 +780,7 @@ struct NDBuffer[
         """
         return NDBuffer[rank, shape, type] {
             data: ptr,
-            _rank: rank,
             dynamic_shape: dynamic_shape,
-            dynamic_dtype: dynamic_dtype,
             dynamic_stride: dynamic_stride,
             is_contiguous: _compute_ndbuffer_stride[rank](dynamic_shape)
             == dynamic_stride,
@@ -1598,9 +1568,7 @@ struct DynamicRankBuffer:
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
         return NDBuffer[rank, DimList.create_unknown[rank](), type](
-            self.data.bitcast[type](),
-            self._shape_to_static_tuple[rank](),
-            self.type.value,
+            self.data.bitcast[type](), self._shape_to_static_tuple[rank]()
         )
 
     @always_inline
@@ -1631,7 +1599,6 @@ struct DynamicRankBuffer:
         return NDBuffer[rank, DimList.create_unknown[rank](), type](
             self.data.bitcast[type](),
             self._shape_to_static_tuple[rank](),
-            self.type.value,
             stride,
         )
 
