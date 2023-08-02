@@ -125,6 +125,10 @@ StringRef Buffer::getBuffer() const {
   return StringRef(getBufferStart(), getBufferSize());
 }
 
+llvm::MemoryBufferRef Buffer::getMemBufferRef() const {
+  return llvm::MemoryBufferRef(getBuffer(), /*Identifier=*/"");
+}
+
 //===----------------------------------------------------------------------===//
 // WriteableBuffer getFile
 //===----------------------------------------------------------------------===//
