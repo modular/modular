@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from Buffer import NDBuffer, Buffer, _raw_stack_allocation
+from Buffer import NDBuffer, Buffer
 from Range import range
 from DType import DType
+from Memory import stack_allocation
 from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
 from Math import mul, min
 from List import Dim, DimList
@@ -22,7 +23,7 @@ from SIMD import SIMD
 fn test_elementwise[
     numelems: Int, outer_rank: Int, static_shape: DimList, is_blocking: Bool
 ](dims: DimList):
-    var memory1 = _raw_stack_allocation[numelems, DType.float32, 1]()
+    var memory1 = stack_allocation[numelems, DType.float32, 1]()
     var buffer1 = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
@@ -33,7 +34,7 @@ fn test_elementwise[
         DType.float32,
     )
 
-    var memory2 = _raw_stack_allocation[numelems, DType.float32, 1]()
+    var memory2 = stack_allocation[numelems, DType.float32, 1]()
     var buffer2 = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
@@ -44,7 +45,7 @@ fn test_elementwise[
         DType.float32,
     )
 
-    var memory3 = _raw_stack_allocation[numelems, DType.float32, 1]()
+    var memory3 = stack_allocation[numelems, DType.float32, 1]()
     var out_buffer = NDBuffer[
         outer_rank,
         rebind[DimList](static_shape),
