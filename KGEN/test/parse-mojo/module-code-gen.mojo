@@ -4,39 +4,109 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate %s -verify-diagnostics -import-mojo | FileCheck %s
+# RUN: kgen-translate %s -verify-diagnostics -import-mojo -split-input-file | FileCheck %s
 
-from String import String
+struct String:
+   var size: Int
+   fn __init__(inout self, sz:Int):
+      self.size = sz
+
+   fn __copyinit__(inout self, existing: Self):
+      pass
+
+   fn __moveinit__(inout self, owned existing: Self):
+      pass
+
+   fn __del__(owned self):
+      pass
+
+   fn __add__(self, existing: Self) -> String:
+      return self
+
+   fn __add__(self, other: __mlir_type.index) -> String:
+     return self
+
+   fn __add__(self, existing: Int) -> String:
+     return self
 
 ##===----------------------------------------------------------------------===##
 # Runtime Closures
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.file_module @"$module-code-gen" {
-# CHECK-NEXT:    lit.struct.decl @"_CI_$module-code-gen_\22($String::String,$String::String)\22throws"
-# CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@"$String"::@String>
+# CHECK-NEXT:    lit.struct.decl @"_CI_{{.*}}({{.*}}::String,{{.*}}::String)\22throws"
+# CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@{{.*}}::@String>
+
+# CHECK:    lit.struct.decl @"_CI_{{.*}}(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"
+# CHECK-NEXT:      lit.struct.field field0 : index
+# CHECK-NEXT:      lit.struct.field field1 : !kgen.declref<{{.*}}::@Int>
+# CHECK-NEXT:      lit.struct.field field2 : !kgen.declref<{{.*}}::@String>
+# CHECK-NEXT:      lit.func @"__del__
+# CHECK-SAME:      ({{.*}}::_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22)"
+# CHECK-NEXT:      [[VAR0:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:      lit.ownership.mark.destroyed %self
+# CHECK-NEXT:      lit.return [[VAR0]] : !lit.none
+# CHECK-NEXT:      lit.end_func
+# CHECK-NEXT:      }
+# CHECK-NEXT:      lit.func @"__moveinit__
+# CHECK-SAME:      ({{.*}}::_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22=&,{{.*}}::_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22)"
+# CHECK-SAME:      (%self: !pop.pointer<@"{{.*}}"::@"_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"> init_self, %existing: 
+# CHECK-SAME:      !pop.pointer<@"{{.*}}"::@"_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"> owned_in_mem) -> !lit.none attributes {specialFnKind = 4 : i8} {
+# CHECK-NEXT:      [[W0:%.*]] = lit.struct.gep %self[field0] : <index>
+# CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %existing[field0] : <index>
+# CHECK-NEXT:      [[W2:%.*]] = pop.load %1 : !pop.pointer<index>
+# CHECK-NEXT:      pop.store [[W2]], [[W0]] : !pop.pointer<index>
+# CHECK-NEXT:      [[W3:%.*]] = lit.struct.gep %self[field1] : <{{.*}}::@Int> 
+# CHECK-NEXT:      [[W4:%.*]] = lit.struct.gep %existing[field1] : <{{.*}}::@Int> 
+# CHECK-NEXT:      [[W5:%.*]] = pop.load %4 : !pop.pointer<{{.*}}::@Int>
+# CHECK-NEXT:      pop.store [[W5]], [[W3]] : !pop.pointer<{{.*}}::@Int>
+# CHECK-NEXT:      [[W6:%.*]] = lit.struct.gep %self[field2] : <@"{{.*}}"::@String>
+# CHECK-NEXT:      [[W7:%.*]] = lit.struct.gep %existing[field2] : <@"{{.*}}"::@String>
+# CHECK-NEXT:      [[W8:%.*]] = kgen.call @"{{.*}}"::@String::@"__moveinit__({{.*}}::String=&,{{.*}}::String)"(%6, %7) : (!pop.pointer<@"{{.*}}"::@String> init_self, !pop.pointer<@"{{.*}}"::@String> owned_in_mem) -> !lit.none
+# CHECK-NEXT:      [[W9:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:      lit.ownership.mark.destroyed %existing : !pop.pointer<@"{{.*}}"::@"_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22">
+# CHECK-NEXT:      lit.return [[W9]] : !lit.none
+# CHECK-NEXT:      lit.end_func
 # CHECK-NEXT:    }
-# CHECK-NEXT:    lit.struct.decl @"_CI_$module-code-gen_\22($String::String,$String::String)\22"
-# CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@"$String"::@String>
+
+# CHECK-NEXT:    lit.func @"__copyinit__
+# CHECK-SAME:    ({{.*}}::_CI_{{.*}}_\22(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22=&,{{.*}}::_CI_{{.*}}(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22)"
+# CHECK-SAME:    (%self: !pop.pointer<@{{.*}}::@"_CI_{{.*}}(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"> init_self, 
+# CHECK-SAME:    %existing: !pop.pointer<@{{.*}}::@"_CI_{{.*}}(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
+# CHECK-NEXT:    [[V0:%.*]] = lit.struct.gep %self[field0] : <index>
+# CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %existing[field0] : <index>
+# CHECK-NEXT:    [[V2:%.*]] = pop.load [[V1]] : !pop.pointer<index>
+# CHECK-NEXT:    pop.store [[V2]], [[V0]] : !pop.pointer<index>
+# CHECK-NEXT:    [[V3:%.*]] = lit.struct.gep %self[field1] : <{{.*}}::@Int>
+# CHECK-NEXT:    [[V4:%.*]] = lit.struct.gep %existing[field1] : <{{.*}}::@Int>
+# CHECK-NEXT:    [[V5:%.*]] = pop.load [[V4]] : !pop.pointer<{{.*}}::@Int>
+# CHECK-NEXT:    pop.store [[V5]], [[V3]] : !pop.pointer<{{.*}}::@Int>
+# CHECK-NEXT:    [[V6:%.*]] = lit.struct.gep %self[field2] : <@{{.*}}::@String>
+# CHECK-NEXT:    [[V7:%.*]] = lit.struct.gep %existing[field2] : <@{{.*}}::@String>
+# CHECK-NEXT:    [[V8:%.*]] = kgen.call @{{.*}}::@String::@"__copyinit__
+# CHECK-NEXT:    [[V9:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:    lit.return [[V9]] : !lit.none
+# CHECK-NEXT:    lit.end_func
 # CHECK-NEXT:    }
-# CHECK-NEXT: lit.struct.decl @"_CW_$module-code-gen_\22(,$String::String)\22"
+
+# CHECK: lit.struct.decl @"_CW_{{.*}}(,{{.*}}::String)\22"
 # CHECK-NEXT:     lit.struct.field field0 : !pop.pointer<array<0, i1>>
 # CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field move : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> owned_in_mem) -> !lit.none>  
 # CHECK-NEXT: lit.func @"__del__
 # CHECK-NEXT:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]] : !pop.pointer<!kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>>
+# CHECK-NEXT:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
 # CHECK-NEXT:   [[IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:   [[IMPL:%.*]] = pop.load [[IMPL_PTR]] : !pop.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   kgen.call_signature [[DTOR]]([[IMPL]]) : (!pop.pointer<array<0, i1>>) -> !lit.none
+# CHECK-NEXT:   [[IMPL:%.*]] = pop.load [[IMPL_PTR]]
+# CHECK-NEXT:   kgen.call_signature [[DTOR]]([[IMPL]])
 # CHECK-NEXT:   kgen.param.constant
 # CHECK-NEXT:   lit.ownership.mark.destroyed %self
 # CHECK: lit.func @"__moveinit__
 # CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]] : !pop.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !pop.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]]
+# CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]]
 # CHECK-NEXT:   [[MOVE_PTR:%.*]] = lit.struct.gep %self[move]
 # CHECK-NEXT:   [[MOVE:%.*]] = pop.load [[MOVE_PTR]]
 # CHECK-NEXT:   kgen.call_signature [[MOVE]]([[SELF_IMPL]], [[EXISTING_IMPL]])
@@ -56,12 +126,40 @@ from String import String
 # CHECK-SAME:  -> !kgen.signature<(!pop.pointer<{{.*}}@String> byref_result, !pop.pointer<{{.*}}@String> borrow_in_mem) capturing -> !lit.none> 
 # CHECK-SAME: attributes {isParametric, specialFnKind = 0 : i8} {
 fn makes_escaping_closure(m: String, z:String, y:Bool) -> fn(String) escaping -> String:
+   let register_passible_var: Int = 3
+   let mlir_type_var: __mlir_type.index = register_passible_var.value
    fn dummy(n:String) escaping -> String:
-      return n + m
+      return n + m + register_passible_var + mlir_type_var
    fn duplicate(n:String) escaping -> String:
-      return n + m
+      return n + m + register_passible_var + mlir_type_var
    fn two_effects(n:String) escaping raises -> String:
       return n + m
    fn myclosure(n:String) -> String:
       return n + m
    return myclosure
+
+# // -----
+
+struct StringNoMove:
+   var size: Int
+   fn __init__(inout self, sz:Int):
+      self.size = sz
+
+   fn __copyinit__(inout self, existing: Self):
+      pass
+
+   fn __del__(owned self):
+      pass
+
+   fn __add__(self, existing: Self) -> Int:
+      return 42
+
+# CHECK: lit.struct.decl @"_CI_{{.*}}_\22({{.*}}::StringNoMove)\22"
+# CHECK: lit.struct.field field0 : !kgen.declref<{{.*}}::@StringNoMove>
+# CHECK: lit.func @"__del__({{.*}}::_CI_{{.*}}_\22({{.*}}::StringNoMove)\22)"
+# CHECK: lit.func @"__copyinit__(${{.*}}::_CI_${{.*}}_\22(${{.*}}::StringNoMove)\22=&,${{.*}}::_CI_${{.*}}_\22(${{.*}}::StringNoMove)\22)"
+# CHECK-NOT: lit.func @"__moveinit__(${{.*}}::_CI_${{.*}}_\22(${{.*}}::StringNoMove)
+fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
+   fn foo() escaping -> Int:
+      return m + m
+   return 43

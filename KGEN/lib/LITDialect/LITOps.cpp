@@ -719,7 +719,7 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*paramVarargs=*/false,
         /*registerPassable=*/0, /*destructor=*/nullptr, /*moveInit=*/nullptr,
-        /*closureSignature=*/nullptr,
+        /*copyInit=*/nullptr, /*closureSignature=*/nullptr,
         /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());
 }

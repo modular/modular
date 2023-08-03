@@ -1735,7 +1735,7 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
 LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
     llvm::SMLoc location, SignatureType signatureType, unsigned captureCount,
     FileModuleOp fileModuleOp) {
-  assert(captureCount < signatureType.getValueInputs().size() &&
+  assert(captureCount <= signatureType.getValueInputs().size() &&
          "Cannot capture more values than inputs");
   std::pair<SignatureType, StringAttr> key(signatureType,
                                            fileModuleOp.getSymNameAttrName());
@@ -1744,8 +1744,8 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
     StringAttr name =
         getClosureNameFromType("_CI_", fileModuleOp, signatureType);
     ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-    existing = emitter.createClosureImplStructDecl(
-        name, translateLocation(location), signatureType, captureCount);
+    existing = emitter.createClosureImplStructDecl(name, fileModuleOp->getLoc(),
+                                                   signatureType, captureCount);
     ASTDecl &decl = declResolver->addFullyResolvedDecl(
         existing.getOperation(), existing.getSymNameAttr(), location,
         impl->topLevelDecl);
