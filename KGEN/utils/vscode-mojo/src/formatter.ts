@@ -17,17 +17,25 @@ export function registerFormatter(outputChannel: vscode.OutputChannel,
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
       const backupFolder = vscode.workspace.workspaceFolders?.[0];
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
+      const formatter = get<string>('formatter', workspaceFolder);
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      // Resolve the path to the formatter.
-      const mojoPath =
-          await mojoSDK.resolvePath('mojo', /*promptSDKInstall*/ true);
-      if (!mojoPath)
-        return [];
+      var command = "";
+      if (formatter) {
+        command = formatter;
+      } else {
+        const mojoPath =
+            await mojoSDK.resolvePath('mojo', /*promptSDKInstall*/ true);
+        if (!mojoPath)
+          return [];
 
-      const originalDocumentText = document.getText();
-      const command = mojoPath + " format --quiet " + args.join(' ') + ' -';
+        command = mojoPath + " format";
+      }
+
+      command += " --quiet " + args.join(' ') + ' -';
+
       return new Promise<vscode.TextEdit[]>(function(resolve, reject) {
+        const originalDocumentText = document.getText();
         const process = exec(command, {cwd}, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being
