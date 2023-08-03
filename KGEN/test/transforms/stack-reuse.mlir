@@ -122,3 +122,24 @@ kgen.func @no_alloc_users() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @use_in_region
+kgen.func @use_in_region(%arg0 : index) {
+  // CHECK-NEXT: %0 = pop.stack_allocation
+  %0 = pop.stack_allocation 1 x index
+  // CHECK-NOT: pop.stack_allocation
+  %1 = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.store %arg0, %0
+  pop.store %arg0, %0 : !pop.pointer<index>
+  pop.store %arg0, %1 : !pop.pointer<index>
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop {
+    // CHECK-NEXT: pop.load %0
+    %2 = pop.load %1 : !pop.pointer<index>
+    // CHECK-NEXT: pop.load %0
+    %3 = pop.load %0 : !pop.pointer<index>
+    // CHECK-NEXT: hlcf.break
+    hlcf.break
+  }
+  kgen.return
+}
