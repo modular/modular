@@ -1027,11 +1027,30 @@ OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
-  auto array = dyn_cast_if_present<POP::ArrayAttr>(adaptor.getArray());
   auto index = dyn_cast<IntegerAttr>(getIndex());
-  if (!array || !index)
+  if (!index)
     return {};
-  return array.getValues()[index.getInt()];
+
+  std::optional<int64_t> size = getArray().getType().getResolvedSize();
+  if (!size)
+    return {};
+
+  // Bounds check the array access.
+  int64_t idx = index.getInt();
+  if (idx < 0 || idx >= *size)
+    return {};
+
+  // Try fold if the array is a constant.
+  auto array = dyn_cast_if_present<POP::ArrayAttr>(adaptor.getArray());
+  if (array)
+    return array.getValues()[idx];
+
+  // If we directly come from an `ArrayCreate` we can just fold to the operand
+  // of that.
+  if (auto arrayCreate = getArray().getDefiningOp<POP::ArrayCreateOp>())
+    return arrayCreate.getOperand(idx);
+
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
