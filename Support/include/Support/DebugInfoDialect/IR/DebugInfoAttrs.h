@@ -107,8 +107,12 @@ void updateSubprogram(mlir::FunctionOpInterface op, StringAttr linkageName,
 ErrorOr<DebugInfo::DIScopeAttr> getScopeWithinBody(Location loc);
 
 /// Update the location of the op as if it was inlined at the given caller
-/// location, handling special location interfaces.
-void updateInlinedLoc(Operation *op, Location callerLoc);
+/// location, handling special location interfaces. An optional flag can be
+/// specified to indicate that we are in an `always_inline(nodebug)` context,
+/// and need to erase the location of the inlined operations by replacing them
+/// with the location of the call.
+void updateInlinedLoc(Operation *op, Location callerLoc,
+                      bool stripDebugInfo = false);
 } // namespace M::DebugInfo
 
 #endif // SUPPORT_DEBUGINFODIALECT_IR_DEBUGINFOATTRS_H
