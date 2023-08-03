@@ -9,7 +9,7 @@ from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
 from Concat import concat_shape, concat as _concat
-from Conv import conv_shape
+from Conv import conv_shape, conv_2d_nhwc_direct, ConvInfo, ConvInfoStatic
 from DType import DType
 from Functional import (
     _elementwise_impl,
@@ -123,7 +123,8 @@ fn MOGGExport():
     alias _ceil = ceil
     alias _concat = concat
     alias _concat_shape = concat_shape
-    alias _conv = conv_shape
+    alias _conv_shape = conv_shape
+    alias _conv = conv
     alias _div = div
     alias _erf = erf
     alias _exp = exp
@@ -660,7 +661,6 @@ fn broadcast_to_shape[
         1, DimList.create_unknown[1](), target_shape_type
     ],
 ) -> StaticIntTuple[output_rank]:
-
     # TODO(#17512)
     debug_assert(
         output_rank == target_shape_buf.dim(0),
@@ -1152,6 +1152,7 @@ fn slice[
 # Reshape op
 # ===----------------------------------------------------------------------===#
 
+
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
@@ -1164,7 +1165,6 @@ fn reshape[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     new_shape: StaticIntTuple[output_rank],
 ) -> NDBuffer[output_rank, DimList.create_unknown[output_rank](), type]:
-
     var stride_tuple = StaticIntTuple[output_rank]()
     var stride: Int = 1
 
@@ -1200,7 +1200,6 @@ fn reshape_shape[
         1, DimList.create_unknown[1](), target_shape_type
     ],
 ) -> StaticIntTuple[output_rank]:
-
     # TODO(#17512)
     debug_assert(
         output_rank == target_shape_buf.dim(0),
@@ -1411,6 +1410,7 @@ fn gather[
 # ===----------------------------------------------------------------------===#
 # MOGG matmul
 # ===----------------------------------------------------------------------===#
+
 
 # TODO(16425): Unify with existing shim.
 @always_inline
@@ -1692,7 +1692,6 @@ fn split_ith_output_shape[
     split_sizes_buf: NDBuffer[1, DimList.create_unknown[1](), split_size_type],
     split_axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
 ) -> StaticIntTuple[rank]:
-
     # extract relevant hyper parameters
     # TODO(#17512)
     debug_assert(
@@ -1723,6 +1722,81 @@ fn split_ith_output_shape[
     var output_shape = input_buf.get_shape()
     output_shape[split_axis] = output_split_size
     return output_shape
+
+
+@always_inline
+fn conv[
+    filter_rank: Int,
+    strides_rank: Int,
+    dilation_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilation_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[4, DimList.create_unknown[4](), input_type],
+    filter: NDBuffer[
+        filter_rank, DimList.create_unknown[filter_rank](), filter_type
+    ],
+    strides: NDBuffer[
+        strides_rank, DimList.create_unknown[strides_rank](), strides_type
+    ],
+    dilation: NDBuffer[
+        dilation_rank, DimList.create_unknown[dilation_rank](), dilation_type
+    ],
+    output: NDBuffer[4, DimList.create_unknown[4](), output_type],
+    out_chain: OutputChainPtr,
+):
+    """Including this function in MOGG.mojo since it is intended to be a temporary
+    wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
+    but eventually they will be StaticIntTuple parameters (along with padding).
+    """
+    assert_param[
+        strides_type.is_integral() and dilation_type.is_integral(),
+        "stride and dilation must have integral type",
+    ]()
+
+    # TODO: support pre-packed filter in graph compiler
+    alias filter_packed = False
+
+    if strides.size() != 2:
+        return out_chain.mark_error("2 values expected in strides input")
+
+    if dilation.size() != 2:
+        return out_chain.mark_error("2 values expected in dilation input")
+
+    let strides_flat = strides.flatten()
+    let dilation_flat = dilation.flatten()
+    let strides_tuple = Index(
+        strides_flat[0].to_int(), strides_flat[1].to_int()
+    )
+    let dilation_tuple = Index(
+        dilation_flat[0].to_int(), dilation_flat[1].to_int()
+    )
+    if dilation_tuple != Index(1, 1):
+        return out_chain.mark_error("Non-unit dilation is not supported yet.")
+
+    # fused padding not supported yet
+    # assume that input has been pre-padded in a separate op
+    let pad_h_tuple = Index(0, 0)
+    let pad_w_tuple = Index(0, 0)
+
+    # TODO: eventually padding, strides and dilation will be passed in as
+    # parameters here when they are constant in the graph
+    alias conv_info_static = ConvInfoStatic(
+        DimList.create_unknown[2](),
+        DimList.create_unknown[2](),
+        DimList.create_unknown[2](),
+        DimList.create_unknown[2](),
+    )
+    let conv_info = ConvInfo[conv_info_static](
+        pad_h_tuple, pad_w_tuple, strides_tuple, dilation_tuple
+    )
+
+    conv_2d_nhwc_direct[filter_rank, filter_packed, conv_info_static](
+        input, filter, output, conv_info, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
