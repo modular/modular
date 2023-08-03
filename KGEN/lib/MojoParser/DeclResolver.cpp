@@ -3292,13 +3292,17 @@ static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   return func.getBoundReference();
 }
 
-/// Look up a __moveinit__ impl for the specified `type`.  This returns the
-/// __moveinit__ method if successful, and returns null if there is none.
-static TypedAttr lookupMoveInit(ASTDecl &structDecl, SharedState &shared) {
-  auto moveinits =
-      shared.lookupAndResolveDecl("__moveinit__", structDecl.getLoc(),
-                                  structDecl, /*searchParentScopes=*/false);
-  ArrayRef<ASTDecl *> entries = moveinits.getIfSuccess();
+/// Look up a __moveinit__ or __copyinit__ impl for the specified `type`.  This
+/// returns the __moveinit__ or __copyinit__ method if successful, and returns
+/// null if there is none.
+static TypedAttr lookupMoveCopyInit(ASTDecl &structDecl, SharedState &shared,
+                                    bool isMove) {
+  StringRef name = isMove ? "__moveinit__" : "__copyinit__";
+  SpecialFunctionKind specialKind =
+      isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit;
+  LookupResult inits = shared.lookupAndResolveDecl(
+      name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
+  ArrayRef<ASTDecl *> entries = inits.getIfSuccess();
 
   // It is valid to overload __moveinit__ with both inout and consuming version,
   // for the transfering and destructive move.  The transfering version is more
@@ -3306,14 +3310,17 @@ static TypedAttr lookupMoveInit(ASTDecl &structDecl, SharedState &shared) {
   TypedAttr result;
   for (auto candidate : entries) {
     LIT::FuncOp func = dyn_cast<LIT::FuncOp>(*candidate);
-    if (!func ||
-        func.getSpecialFunctionKind() != SpecialFunctionKind::kMoveInit)
+    if (!func || func.getSpecialFunctionKind() != specialKind)
       continue;
 
     // If we have multiple __moveinit__ implementations, prefer the owned one.
-    if (!result || func.getSignature().getInputConvention(1) ==
-                       ValueInputConvention::OwnedInMem)
+    if (isMove && (!result || func.getSignature().getInputConvention(1) ==
+                                  ValueInputConvention::OwnedInMem))
       result = func.getBoundReference();
+    if (!isMove && !result) {
+      result = func.getBoundReference();
+      break;
+    }
   }
   return result;
 }
@@ -3856,9 +3863,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
   // Similarly, look up a __moveinit__ used by temporary elision.  This can't
   // be present for @register_passable types.
-  if (!structOp.isRegisterPassable())
-    if (auto moveInitAttr = lookupMoveInit(structDecl, shared))
+  if (!structOp.isRegisterPassable()) {
+    if (auto moveInitAttr =
+            lookupMoveCopyInit(structDecl, shared, /*isMove*/ true))
       structOp.setMoveInitAttr(moveInitAttr);
+    if (auto copyInitAttr =
+            lookupMoveCopyInit(structDecl, shared, /*isMove*/ false))
+      structOp.setCopyInitAttr(copyInitAttr);
+  }
 
   return success();
 }
