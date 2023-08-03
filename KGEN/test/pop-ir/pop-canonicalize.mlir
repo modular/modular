@@ -611,6 +611,24 @@ kgen.func @array_get() -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @array_get_non_const_0
+kgen.func @array_get_non_const_0(%arg0: index, %arg1: index) -> index {
+  // CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index)
+  // CHECK: kgen.return %[[ARG0]]
+  %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, index>
+  %1 = pop.array.get %0[0] : !pop.array<2, index>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @array_get_non_const_1
+kgen.func @array_get_non_const_1(%arg0: index, %arg1: index) -> index {
+  // CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index)
+  // CHECK: kgen.return %[[ARG1]]
+  %0 = pop.array.create [%arg0, %arg1] : !pop.array<2, index>
+  %1 = pop.array.get %0[1] : !pop.array<2, index>
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @array_gep
 kgen.func @array_gep(%array: !pop.pointer<array<1, index>>, %idx: index) -> !pop.pointer<index> {
   // CHECK: (%[[ARRAY:.*]]: !pop.pointer<array<1, index>>, %[[IDX:.*]]: index)
