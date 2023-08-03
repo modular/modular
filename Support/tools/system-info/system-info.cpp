@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
     ctx.loadDialect<MDialect>();
     std::string cpu = cli.cpu;
     if (cpu.empty())
-      cpu = "generic";
+      cpu = cli.arch;
     auto targetInfoAttrOr = M::getMArchFeatures(&ctx, cli.arch, cpu, "");
     if (targetInfoAttrOr.isError())
       return reportError(targetInfoAttrOr.getError());
