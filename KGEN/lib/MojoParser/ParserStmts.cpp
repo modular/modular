@@ -58,18 +58,12 @@ struct StmtParser : public ParserBase {
     // variable definitions at the top of the function.
     if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
       if (funcOp.getIsDef()) {
-        // Create the varDeclCursor with an arbitrary op.  We delete it on
-        // destruction of this statement parser.
-        varDeclCursor = builder.create<mlir::index::ConstantOp>(
-            mlir::UnknownLoc::get(getContext()), 1234567);
+        // The operation builder inserts before its insertion point, but for a
+        // stable insertion point, keep the previous iterator position.
+        varDeclCursor = OpBuilder(builder.getInsertionBlock(),
+                                  std::prev(builder.getInsertionPoint()));
       }
     }
-  }
-
-  ~StmtParser() {
-    // The varDeclCursor operation is no longer needed.
-    if (varDeclCursor)
-      varDeclCursor->erase();
   }
 
   ASTDecl &getParentDecl() { return parentDecl; }
@@ -89,12 +83,12 @@ struct StmtParser : public ParserBase {
 
   ExprEmitter getEmitter(bool allowImplicitVarDecl = false) {
     return ExprEmitter(shared, *curDeclScope, builder,
-                       allowImplicitVarDecl ? varDeclCursor : nullptr);
+                       allowImplicitVarDecl ? varDeclCursor : std::nullopt);
   }
 
   /// Get an expression emitter for a parameter expression.
   ExprEmitter getParamEmitter(ExprContext context) {
-    return ExprEmitter(shared, *curDeclScope, context, nullptr);
+    return ExprEmitter(shared, *curDeclScope, context);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -139,12 +133,12 @@ private:
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
 
-  /// This is the operation we should install VarDecl's ahead of if we are
+  /// This is the insertion point we should install VarDecl's after if we are
   /// parsing into a 'def'.  This ensures they are emitted ahead of anything
   /// else in the region for the decl, and in decls with multiple regions (e.g.
   /// function bodies with if statements) it ensures the decl dominates the
   /// whole body.
-  Operation *varDeclCursor = nullptr;
+  std::optional<OpBuilder> varDeclCursor;
 };
 } // namespace
 

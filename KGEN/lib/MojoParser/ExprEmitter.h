@@ -222,16 +222,16 @@ private:
 /// functions used by the individual node emission hooks.
 class ExprEmitter : public SharedStateUser {
 public:
-  // Create an ExprEmitter for a dynamic context with a builder.
+  /// Create an ExprEmitter for a dynamic context with a builder.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, OpBuilder builder,
-              Operation *varDeclCursor)
+              std::optional<OpBuilder> varDeclCursor = {})
       : SharedStateUser(shared), builder(std::move(builder)),
         paramContext(EC_Unknown), declScope(declScope),
         varDeclCursor(varDeclCursor) {}
 
   /// Create an ExprEmitter for a parameter context.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext,
-              Operation *varDeclCursor)
+              std::optional<OpBuilder> varDeclCursor = {})
       : SharedStateUser(shared), builder({}), paramContext(paramContext),
         declScope(declScope), varDeclCursor(varDeclCursor) {}
 
@@ -251,8 +251,8 @@ public:
   /// This is scope to resolve declaration references against.
   ASTDecl &declScope;
 
-  /// When non-null, implicitly declared variables are added above this op.
-  Operation *varDeclCursor;
+  /// If specified, implicitly declared variables are added after this iterator.
+  std::optional<OpBuilder> varDeclCursor;
 
   /// Emit an error about use of a dynamic value (the expression) in a context
   /// that only allows parameter expressions.  This always returns a null

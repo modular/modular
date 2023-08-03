@@ -555,8 +555,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Use this builder to place any VarLetDeclOps. In Python there is only one
     // scope per function and all variables belong to that scope, so builders
     // should reflect that.
-    OpBuilder varDeclBuilder(emitter.varDeclCursor);
-    auto varDecl = // Marked isSynth to disable warnings.
+    OpBuilder varDeclBuilder(
+        emitter.varDeclCursor->getInsertionBlock(),
+        std::next(emitter.varDeclCursor->getInsertionPoint()));
+    VarLetDeclOp varDecl = // Marked isSynth to disable warnings.
         createVarDecl(varDeclBuilder, /*isVar=*/true, /*isSynth=*/true);
 
     // In a normal implicit declaration, we add it to the name table so
@@ -2671,7 +2673,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // dummy declaration.
   ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
-  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type, nullptr);
+  ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
   bool paramVararg = false;
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;

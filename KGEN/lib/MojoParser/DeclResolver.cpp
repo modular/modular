@@ -56,7 +56,7 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
-  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
+  ExprEmitter emitter(p.shared, declScope, EC_Type);
   result = emitter.emitExprType(expr);
   if (!result)
     return failure();
@@ -1245,7 +1245,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
   }
 
   // Resolve each of the parameter declarations.
-  ExprEmitter emitter(p.shared, declScope, EC_Type, nullptr);
+  ExprEmitter emitter(p.shared, declScope, EC_Type);
   ParsedArgument::processParameterArgs(emitter, declScope, args, inputParams,
                                        /*isResultParams=*/false, paramVararg);
 
@@ -1661,7 +1661,7 @@ void Decorators::applyBodyDecorators(
   // TODO: Emit an attempt to call the decorator value.
   SmallVector<TypedAttr> decoPValues;
   decoPValues.reserve(decoratorExprs.size());
-  ExprEmitter emitter(shared, decl, EC_Decorator, /*varDeclCursor=*/nullptr);
+  ExprEmitter emitter(shared, decl, EC_Decorator);
   for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
     // Make sure we don't have another body decorator.
     if (failed(process(decorator))) {
@@ -2266,7 +2266,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return success();
   };
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
-  ExprEmitter typeEmitter(shared, sigDecl, EC_Type, nullptr);
+  ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
       defaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
@@ -2474,7 +2474,7 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
                                     ASTDecl &parentDecl, OpBuilder &builder,
                                     SMLoc loc, SharedState &shared) {
   // Emit the initializer expression into the slot.
-  ExprEmitter emitter(shared, parentDecl, builder, /*varDeclCursor*/ nullptr);
+  ExprEmitter emitter(shared, parentDecl, builder);
 
   ASTType declType = argValue.getRValueType();
   Type varType = POP::PointerType::get(declType);
@@ -2582,8 +2582,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
                        cast<POP::PointerType>(func.getArgument(0).getType())
                            .getElementType())) {
       // Emit `object()` into the memory type return slot.
-      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue,
-                          /*varDeclCursor=*/nullptr);
+      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
       ValueDest resultDest(SLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
@@ -2927,8 +2926,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
 
   // Parse the type if present.
   ASTType parsedType;
-  ExprEmitter emitter(shared, *decl.getParentDecl(), EC_VarInit,
-                      /*varDeclCursor=*/nullptr);
+  ExprEmitter emitter(shared, *decl.getParentDecl(), EC_VarInit);
   if (p.consumeIf(Token::colon)) {
     ExprNode *typeExpr = nullptr;
     if (p.parseExpression(typeExpr, decl.getIndentation()))
@@ -3089,8 +3087,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     return failure();
 
   ASTDecl &parentDecl = *decl.getParentDecl();
-  ExprEmitter emitter(shared, parentDecl, EC_AliasValue,
-                      /*varDeclCursor*/ nullptr);
+  ExprEmitter emitter(shared, parentDecl, EC_AliasValue);
 
   // Emit the value and convert to the expected type if we know it.
   auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
@@ -3509,8 +3506,7 @@ static void synthesizeMemberwiseInit(
   Block *body = funcOp.getBody();
   builder.setInsertionPointToStart(body);
   builder.setLoc(funcOp->getLoc());
-  ExprEmitter emitter(resolver.shared, funcDecl, builder,
-                      /*varDeclCursor*/ nullptr);
+  ExprEmitter emitter(resolver.shared, funcDecl, builder);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
@@ -3621,8 +3617,7 @@ static void synthesizeCopyMoveInit(
   Block *body = funcOp.getBody();
   builder.setInsertionPointToStart(body);
   builder.setLoc(funcOp->getLoc());
-  ExprEmitter emitter(resolver.shared, funcDecl, builder,
-                      /*varDeclCursor*/ nullptr);
+  ExprEmitter emitter(resolver.shared, funcDecl, builder);
   DeclRefNode srcExpr(StringRef(decoratorLoc.getPointer(), 1));
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
