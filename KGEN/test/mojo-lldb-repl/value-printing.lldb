@@ -13,6 +13,20 @@
 # CHECK: }
 let x = 12
 
+# CHECK: (FloatLiteral) x = {
+# CHECK:   (scalar<f64>) value = {
+# CHECK:     (f64)  = 4.2{{.*}}
+# CHECK:   }
+# CHECK: }
+let x = 4.2
+
+# CHECK: (Bool) x = {
+# CHECK:   (scalar<bool>) value = {
+# CHECK:     (i1)  = 1
+# CHECK:   }
+# CHECK: }
+let x = True
+
 # CHECK:  (SIMD[si32, 8]) x = {
 # CHECK:    (simd<8, si32>) value = {
 # CHECK:      (si32) [0] = 5

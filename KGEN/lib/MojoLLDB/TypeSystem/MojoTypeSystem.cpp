@@ -358,6 +358,9 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return result;
   }
 
+  if (isa<FloatType>(mlirType))
+    return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
+
   if (auto simd = dyn_cast<POP::SIMDType>(mlirType))
     return lldb::eTypeHasChildren | lldb::eTypeIsArray;
 
