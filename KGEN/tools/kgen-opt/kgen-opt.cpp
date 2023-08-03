@@ -192,7 +192,6 @@ int main(int argc, char **argv) {
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerExternalizePrecompiledFunctions();
   KGEN::registerFoldGlobalConstLoads();
-  KGEN::registerForceInline();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
   KGEN::registerLoopUnrolling();
@@ -223,12 +222,13 @@ int main(int argc, char **argv) {
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
 
-  // Register the elaborator with the provided runtime.
+  // Register passes that require a runtime.
   LLCL::Runtime runtime(
       LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
       LLCL::createSingleThreadWorkQueue());
   mlir::registerPass(
-      [&]() { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
+      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
+  mlir::registerPass([&] { return KGEN::createForceInline(runtime); });
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));
