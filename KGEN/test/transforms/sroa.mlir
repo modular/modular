@@ -346,3 +346,43 @@ kgen.func @oobOffsetGep() {
   %offset = pop.offset %alloc[%0] : !pop.pointer<index>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @load_of_array
+// MEM2REG-LABEL: kgen.func @load_of_array
+kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
+  %array = kgen.param.constant: array<4, index> = <[0, 0, 0, 0]>
+  %0 = kgen.param.constant = <3>
+  %1 = kgen.param.constant = <2>
+  %2 = kgen.param.constant = <1>
+  %3 = kgen.param.constant = <0>
+  %4 = pop.stack_allocation 1 x !pop.array<4, index> 
+  pop.store %array, %4 : !pop.pointer<array<4, index>>
+  %5 = pop.array.get %arg0[0] : !pop.array<4, index>
+  %6 = pop.array.gep %4[%3] : <array<4, index>>
+  pop.store %5, %6 : !pop.pointer<index>
+  %7 = pop.array.gep %4[%2] : <array<4, index>>
+  pop.store %2, %7 : !pop.pointer<index>
+  %8 = pop.array.get %arg0[2] : !pop.array<4, index>
+  %9 = pop.array.gep %4[%1] : <array<4, index>>
+  pop.store %8, %9 : !pop.pointer<index>
+  %10 = pop.array.get %arg0[3] : !pop.array<4, index>
+  %11 = pop.array.gep %4[%0] : <array<4, index>>
+  pop.store %10, %11 : !pop.pointer<index>
+  %12 = pop.load %4 : !pop.pointer<array<4, index>>
+  kgen.return %12 : !pop.array<4, index>
+}
+
+// Check sroa has decomposed it.
+// CHECK: pop.stack_allocation 1 x index
+// CHECK: pop.stack_allocation 1 x index
+// CHECK: pop.stack_allocation 1 x index
+// CHECK: pop.stack_allocation 1 x index
+
+// MEM2REG:(%[[IN_ARRAY:.*]]: !pop.array<4, index>
+// MEM2REG: %[[INDEX:.*]] = kgen.param.constant = <1>
+
+// MEM2REG: %[[FIRST:.*]] = pop.array.get %[[IN_ARRAY]][0] : !pop.array<4, index>
+// MEM2REG: %[[THIRD:.*]] = pop.array.get %[[IN_ARRAY]][2] : !pop.array<4, index>
+// MEM2REG: %[[FOURTH:.*]] = pop.array.get %[[IN_ARRAY]][3] : !pop.array<4, index>
+// MEM2REG: %[[OUT:.*]] = pop.array.create [%[[FIRST]], %[[INDEX]], %[[THIRD]], %[[FOURTH]]] : !pop.array<4, index>
+// MEM2REG: kgen.return %[[OUT]] : !pop.array<4, index>
