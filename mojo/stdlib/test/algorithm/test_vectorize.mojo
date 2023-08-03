@@ -75,18 +75,18 @@ fn test_vectorize_unroll():
 
     alias buf_len = 23
     let vec = Buffer[buf_len, DType.float32].stack_allocation()
-    let ref = Buffer[buf_len, DType.float32].stack_allocation()
+    let buf = Buffer[buf_len, DType.float32].stack_allocation()
 
     for i in range(buf_len):
         vec[i] = i
-        ref[i] = i
+        buf[i] = i
 
     @always_inline
     @parameter
-    fn double_ref[simd_width: Int](idx: Int):
-        ref.simd_store[simd_width](
+    fn double_buf[simd_width: Int](idx: Int):
+        buf.simd_store[simd_width](
             idx,
-            ref.simd_load[simd_width](idx) + ref.simd_load[simd_width](idx),
+            buf.simd_load[simd_width](idx) + buf.simd_load[simd_width](idx),
         )
 
     @parameter
@@ -101,9 +101,9 @@ fn test_vectorize_unroll():
     alias unroll_factor = 2
 
     vectorize_unroll[simd_width, unroll_factor, double_vec](vec.__len__())
-    vectorize[simd_width, double_ref](ref.__len__())
+    vectorize[simd_width, double_buf](buf.__len__())
 
-    let err = memcmp(vec.data, ref.data, ref.__len__())
+    let err = memcmp(vec.data, buf.data, buf.__len__())
     # CHECK: 0
     print(err)
 
