@@ -88,3 +88,7 @@ fn exported_function():
 
 def def_function() -> Int:
     return 120
+
+
+fn main():
+    print("foo")

@@ -1249,6 +1249,22 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 
   auto structDecl = cast<StructDeclOp>(*decl);
 
+  // In the case of a SubscriptNode, the type is being referenced at the
+  // location of its `base` member, and not at the location of the subscript,
+  // which is the opening bracket [.
+  if (auto subscript = dyn_cast<SubscriptNode>(expr)) {
+    shared.notifyListenerOnRef(*decl, structDecl.getName(),
+                               subscript->base->getLoc());
+
+    // In the case of a AttributeRefNode, we want to start with the identifier,
+    // and not with the .
+  } else if (auto attribute = dyn_cast<AttributeRefNode>(expr)) {
+    shared.notifyListenerOnRef(*decl, structDecl.getName(),
+                               attribute->getAttributeNameLoc());
+  } else {
+    shared.notifyListenerOnRef(*decl, structDecl.getName(), expr->getLoc());
+  }
+
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
   for (ParamBindAttr binding : type.getParamBindings())
