@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate-opt %s -elaborate-generators="test-diagnostics=true" -verify-diagnostics
+// RUN: kgen-opt %s -elaborate-generators="test-diagnostics=true" -verify-diagnostics
 
 // expected-remark @below {{Generator has already been specialized}}
 kgen.generator @foo() {

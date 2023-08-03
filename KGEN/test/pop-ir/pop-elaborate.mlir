@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate-opt -split-input-file -elaborate-generators %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -elaborate-generators %s | FileCheck %s
 
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32

@@ -38,7 +38,6 @@ if(LLDB_FOUND)
 endif()
 
 add_subdirectory(tools/kgen)
-add_subdirectory(tools/kgen-elaborate-opt)
 add_subdirectory(tools/kgen-opt)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/mojo-lsp-server)

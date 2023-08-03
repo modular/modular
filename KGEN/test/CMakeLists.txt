@@ -22,7 +22,6 @@ add_modular_testsuite(check-kgen
   TOOLS
   llvm-objdump
   kgen
-  kgen-elaborate-opt
   kgen-opt
   kgen-translate
   mojo-lsp-server

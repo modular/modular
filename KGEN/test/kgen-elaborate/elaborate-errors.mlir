@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate-opt %s -elaborate-generators="enable-search=true max-depth=128" -verify-diagnostics -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="enable-search=true max-depth=128" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 // This yields a verification error when elaborated.
 // expected-error @below {{no viable expansions found}}
