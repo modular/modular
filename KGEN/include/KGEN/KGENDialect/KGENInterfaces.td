@@ -128,6 +128,9 @@ def FuncInterface : OpInterface<"FuncInterface"> {
       Return whether the function should be always_inline'd, and whether it
       should maintain debug info when inlined.
     }], "AlwaysInlineLevel", "getAlwaysInlineLevel", (ins)>,
+    InterfaceMethod<[{
+      Return the decorators attached to this function.
+    }], "ArrayRef<TypedAttr>", "getDecorators", (ins), [{}], [{ return {}; }]>,
   ];
 
   let extraSharedClassDeclaration = [{

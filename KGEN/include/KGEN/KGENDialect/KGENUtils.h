@@ -174,7 +174,7 @@ void printFunctionSignature(OpAsmPrinter &p, Region &region,
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalAlwaysInline(OpAsmParser &parser,
                                       AlwaysInlineLevelAttr &attr);
-void printOptionalAlwaysInline(OpAsmPrinter &p, AlwaysInlineLevelAttr level);
+void printOptionalAlwaysInline(AsmPrinter &p, AlwaysInlineLevel level);
 
 /// Parse and print a constraint specification if present.
 ParseResult parseOptionalConstraints(OpAsmParser &p,

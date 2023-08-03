@@ -507,7 +507,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(getSymName());
   printFunctionSignature(p, getBodyRegion(), getInputParams(),
                          getResultParams(), getFunctionType(), getSignature());
-  printOptionalAlwaysInline(p, getAlwaysInlineLevelAttr());
+  printOptionalAlwaysInline(p, getAlwaysInlineLevel());
 
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(

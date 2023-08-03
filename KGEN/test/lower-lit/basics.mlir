@@ -27,6 +27,17 @@ lit.func @letDecl(%arg0: index) -> index {
   kgen.return %b : index
 }
 
+lit.func @decorator() {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @decorated_fn
+lit.func @decorated_fn()
+  // CHECK-NEXT: decorators <:() -> () @decorator>
+  decorators<:() -> () @decorator> {
+  kgen.return
+}
+
 //===----------------------------------------------------------------------===//
 // Aliases
 //===----------------------------------------------------------------------===//
