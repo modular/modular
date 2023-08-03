@@ -10,6 +10,7 @@
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/ostream/metric_exporter.h"
 #include <filesystem>
+#include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::LLCL::Telemetry::Exporter {
