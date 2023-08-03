@@ -527,15 +527,14 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   }
 
   b.clearInsertionPoint();
+  if (auto newLoc = op.getLoc()->findInstanceOf<FileLineColLoc>())
+    b.setLoc(newLoc);
   LLVMFuncOp suspendFn = b.createFunc(
       (coro.asyncFn.getSymName() + ".suspend").str(),
       LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), captureTypes),
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
   suspendFn.getBody().takeBody(op.getBody());
-  DebugInfo::updateSubprogram(suspendFn, suspendFn.getSymNameAttr(),
-                              suspendFn.getSymNameAttr());
-  b.setLoc(suspendFn.getLoc());
   b.setInsertionPointToEnd(&suspendFn.getBody().front());
   b.create<ReturnOp>(ValueRange());
 

@@ -1,4 +1,6 @@
-// RUN: kgen-opt %s -lower-coroutines-async -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -lower-coroutines-async -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
+
+// CHECK: #[[SUSPEND_LOC:.*]] = loc("foo.mlir":10:5)
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
@@ -31,13 +33,15 @@ llvm.func @coro_destroy() {
 }
 
 // CHECK-LABEL: llvm.func internal @async_fn_af.suspend
-// CHECK-SAME: (%arg0: i64)
-// CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : i64 to index
-// CHECK-NEXT: "do_something"(%0)
+// CHECK-SAME: (%arg0: i64 loc({{.*}}))
+// CHECK-NEXT:   %0 = builtin.unrealized_conversion_cast %arg0 : i64 to index
+// CHECK-NEXT:   "do_something"(%0)
+// CHECK-NEXT:   llvm.return loc(#[[SUSPEND_LOC]])
+// CHECK-NEXT: } loc(#[[SUSPEND_LOC]])
 
 
 // CHECK-LABEL: llvm.func @async_fn_af
-// CHECK-SAME: (%arg0: !llvm.ptr<i8>)
+// CHECK-SAME: (%arg0: !llvm.ptr<i8> loc({{.*}}))
 llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[C32:.*]] = llvm.mlir.constant(40 : i32)
   // CHECK: %[[C1:.*]] = llvm.mlir.constant(8 : i32)
@@ -71,7 +75,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   pop.coroutine.await {
   ^bb0:
     "do_something"(%idx1) : (index) -> ()
-  }
+  } loc(callsite("foo.mlir":10:5 at "bar.mlir":12:7))
   // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
   // CHECK: %[[END_FN:.*]] = llvm.mlir.addressof @__kgen_coro_end_fn
@@ -94,7 +98,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[RESULT:.*]] = llvm.insertvalue %[[CTXT_SZ]], %[[V0]][1] : !llvm.struct<(i32, i32)>
 // CHECK-NEXT: llvm.return %[[RESULT]] : !llvm.struct<(i32, i32)>
 
-// CHECK-LABEL: llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8>
+// CHECK-LABEL: llvm.func @async_fn(%arg0: i32 loc({{.*}})) -> !llvm.ptr<i8>
 // CHECK-NEXT: %[[AFP:.*]] = llvm.mlir.addressof @async_fn_afp
 // CHECK-NEXT: %[[AFP_i8ptr:.*]] = llvm.bitcast %[[AFP]]
 // CHECK-NEXT: %[[AFP_PREPARE:.*]] = llvm.call_intrinsic "llvm.coro.prepare.async"(%[[AFP_i8ptr]])
@@ -116,7 +120,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: %[[RESULT:.*]] = llvm.bitcast %[[FRAME]]
 // CHECK-NEXT: llvm.return %[[RESULT]] : !llvm.ptr<i8>
 
-// CHECK-LABEL: llvm.func internal @__kgen_coro_end_fn(%arg0: !llvm.ptr<i8>)
+// CHECK-LABEL: llvm.func internal @__kgen_coro_end_fn(%arg0: !llvm.ptr<i8> loc({{.*}}))
 // CHECK-NEXT: %[[CLOSURE:.*]] = llvm.getelementptr inbounds %arg0[8] : (!llvm.ptr<i8>) -> !llvm.ptr<struct<(ptr<func<void (ptr<i8>)>>, ptr<i8>)>>
 // CHECK-NEXT: %[[FN_PTR:.*]] = llvm.getelementptr inbounds %[[CLOSURE]][0, 0]
 // CHECK-NEXT: %[[FN:.*]] = llvm.load %[[FN_PTR]]
@@ -125,7 +129,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: llvm.call %[[FN]](%[[ARG]])
 // CHECK-NEXT: llvm.return
 
-// CHECK-LABEL: llvm.func internal @__kgen_coro_ctxt_proj_fn(%arg0: !llvm.ptr<i8>) -> !llvm.ptr<i8>
+// CHECK-LABEL: llvm.func internal @__kgen_coro_ctxt_proj_fn(%arg0: !llvm.ptr<i8> loc({{.*}})) -> !llvm.ptr<i8>
 // CHECK-NEXT: llvm.return %arg0 : !llvm.ptr<i8>
 
 }
