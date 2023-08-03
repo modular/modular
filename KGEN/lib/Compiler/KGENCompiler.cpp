@@ -216,18 +216,17 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Run the inliner with an inner function pass pipeline.
   auto buildInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
     pm.addPass(createCleanupCompilerGlobals());
-    if (options.optimizationLevel >= 1) {
-      pm.addPass(createSimplifyCF());
-      pm.addPass(createSROA());
-      pm.addPass(createMem2Reg());
-      pm.addPass(mlir::createCSEPass());
-    }
-    if (options.optimizationLevel >= 2) {
-      pm.addPass(createCanonicalizer());
-      pm.addPass(createSROA());
-      pm.addPass(createMem2Reg());
-      pm.addPass(createCanonicalizer());
-    }
+    if (options.optimizationLevel < 1)
+      return;
+    pm.addPass(createSimplifyCF());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createHoistTrivialInvariants());
+    pm.addPass(createCanonicalizer());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(createCanonicalizer());
   };
   pm.addPass(createForceInline(
       runtime,
@@ -240,14 +239,15 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   else if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
-  if (options.optimizationLevel >= 1)
-    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   // Long-tail optimization passes.
   // FIXME: This section needs to be trimmed down.
-  if (options.optimizationLevel >= 2) {
+  if (options.optimizationLevel >= 1) {
+    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
+  }
+  if (options.optimizationLevel >= 2) {
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
@@ -257,10 +257,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createLowerClosures());
 
   // Run passes that require closures to be lifted.
-  // FIXME: `hoist-trivial-invariants` and `stack-reuse` should be taught to run
-  // earlier.
+  // FIXME: `stack-reuse` should be taught to run earlier.
   if (options.optimizationLevel >= 1) {
-    pm.addNestedPass<FuncOp>(createHoistTrivialInvariants());
     pm.addNestedPass<FuncOp>(createStackReuse());
     pm.addNestedPass<FuncOp>(mlir::createCSEPass());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
