@@ -22,15 +22,20 @@ export class MOJOContext implements vscode.Disposable {
   sdk: MOJOSDK = new MOJOSDK();
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
-  outputChannel: vscode.OutputChannel;
-  launchSuspended: boolean;
+  _outputChannel: vscode.OutputChannel|undefined;
+  launchLanguageServerSuspended: boolean = false;
+
+  private getOutputChannel(): vscode.OutputChannel {
+    return this._outputChannel!;
+  }
 
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(outputChannel: vscode.OutputChannel, launchSuspended: boolean = false) {
-    this.outputChannel = outputChannel;
-    this.launchSuspended = launchSuspended;
+  async activate(outputChannel: vscode.OutputChannel,
+                 launchLanguageServerSuspended: boolean = false) {
+    this._outputChannel = outputChannel;
+    this.launchLanguageServerSuspended = launchLanguageServerSuspended;
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
@@ -65,11 +70,11 @@ export class MOJOContext implements vscode.Disposable {
    * Open or return a language server for the given uri and language.
    */
   async getOrActivateLanguageClient(uri: vscode.Uri):
-      Promise<vscodelc.LanguageClient> {
+      Promise<vscodelc.LanguageClient|undefined> {
     // Check the scheme of the uri.
     let validSchemes = [ 'file' ];
     if (!validSchemes.includes(uri.scheme)) {
-      return null;
+      return undefined;
     }
 
     // Resolve the workspace folder if this document is in one. We use the
@@ -82,8 +87,10 @@ export class MOJOContext implements vscode.Disposable {
     let client = this.workspaceClients.get(workspaceFolderStr);
     if (!client) {
       client = await this.activateWorkspaceFolder(workspaceFolder,
-                                                  this.outputChannel);
-      this.workspaceClients.set(workspaceFolderStr, client);
+                                                  this.getOutputChannel());
+      if (client) {
+        this.workspaceClients.set(workspaceFolderStr, client);
+      }
     }
     return client;
   }
@@ -92,16 +99,18 @@ export class MOJOContext implements vscode.Disposable {
    *  Activate the language client for the given language in the given workspace
    *  folder.
    */
-  async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder,
+  async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder|
+                                undefined,
                                 outputChannel: vscode.OutputChannel):
-      Promise<vscodelc.LanguageClient> {
+      Promise<vscodelc.LanguageClient|undefined> {
     // Try to activate the language client.
     const [server, serverPath] =
         await this.startLanguageClient(workspaceFolder, outputChannel);
 
     // Watch for configuration changes on this folder.
-    await configWatcher.activate(this, workspaceFolder, [ 'serverPath' ],
-                                 [ serverPath ]);
+    if (workspaceFolder)
+      await configWatcher.activate(this, workspaceFolder, [ 'serverPath' ],
+                                   [ serverPath ]);
     return server;
   }
 
@@ -110,9 +119,9 @@ export class MOJOContext implements vscode.Disposable {
    *  server, or null if the server could not be started, and the resolved
    *  server path.
    */
-  async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder,
+  async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder|undefined,
                             outputChannel: vscode.OutputChannel):
-      Promise<[ vscodelc.LanguageClient, string ]> {
+      Promise<[ vscodelc.LanguageClient | undefined, string ]> {
     const clientTitle = 'Mojo Language Client';
 
     // Get the path of the lsp-server that is used to provide language
@@ -123,7 +132,7 @@ export class MOJOContext implements vscode.Disposable {
     // If the server path is empty, bail. We don't emit errors if the user
     // hasn't explicitly configured the server.
     if (serverPath === '') {
-      return [ null, serverPath ];
+      return [ undefined, serverPath ];
     }
 
     // Check that the file actually exists.
@@ -139,11 +148,11 @@ export class MOJOContext implements vscode.Disposable {
                   {openToSide : false, query : `mojo.serverPath`});
             }
           });
-      return [ null, serverPath ];
+      return [ undefined, serverPath ];
     }
 
     let args = [];
-    if (this.launchSuspended)
+    if (this.launchLanguageServerSuspended)
       args.push("--suspended");
 
     // Configure the server options.
@@ -154,7 +163,7 @@ export class MOJOContext implements vscode.Disposable {
     };
 
     // This setting is not exposed in package.json because it's internal.
-    const env = config.get<undefined|{[key: string] : string}>("env");
+    const env = config.get<{[key: string] : string}>("env", workspaceFolder);
     if (env) {
       for (let [name, value] of Object.entries(env)) {
         // We need to resolve wildcard values manually.
@@ -162,13 +171,13 @@ export class MOJOContext implements vscode.Disposable {
                                  ? value.replace("${workspaceFolder}",
                                                  workspaceFolder.uri.fsPath)
                                  : value;
-        serverOptions.options.env[name] = resolvedPath;
+        serverOptions.options!.env[name] = resolvedPath;
       }
     }
 
     // Configure file patterns relative to the workspace folder.
     let filePattern: vscode.GlobPattern = '**/*.{lit,mojo}';
-    let selectorPattern: string = null;
+    let selectorPattern: string|undefined = undefined;
     if (workspaceFolder) {
       filePattern = new vscode.RelativePattern(workspaceFolder, filePattern);
       selectorPattern = `${workspaceFolder.uri.fsPath}/**/*`;
@@ -184,7 +193,7 @@ export class MOJOContext implements vscode.Disposable {
     let middleware = {};
     if (!workspaceFolder) {
       middleware = {
-        didOpen : (document, next) : Promise<void> => {
+        didOpen : (document: any, next: any) : Promise<void> => {
           if (!vscode.workspace.getWorkspaceFolder(document.uri)) {
             return next(document);
           }
@@ -225,7 +234,8 @@ export class MOJOContext implements vscode.Disposable {
    * input filePath.
    */
   async resolvePath(filePath: string, defaultPath: string,
-                    workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
+                    workspaceFolder: vscode.WorkspaceFolder|
+                    undefined): Promise<string> {
     const configPath = filePath;
 
     // If the path is already fully resolved, there is nothing to do.
@@ -258,9 +268,11 @@ export class MOJOContext implements vscode.Disposable {
    * workspace folder.
    */
   async resolveServerPath(serverSettingName: string,
-                          workspaceFolder: vscode.WorkspaceFolder):
-      Promise<string> {
+                          workspaceFolder: vscode.WorkspaceFolder|
+                          undefined): Promise<string> {
     const serverPath = config.get<string>(serverSettingName, workspaceFolder);
+    if (serverPath === undefined)
+      return "";
     return this.resolvePath(serverPath, 'mojo-lsp-server', workspaceFolder);
   }
 
@@ -268,7 +280,7 @@ export class MOJOContext implements vscode.Disposable {
    * Return the language client for the given language and uri, or null if no
    * client is active.
    */
-  getLanguageClient(uri: vscode.Uri): vscodelc.LanguageClient {
+  getLanguageClient(uri: vscode.Uri): vscodelc.LanguageClient|undefined {
     let workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
     let workspaceFolderStr =
         workspaceFolder ? workspaceFolder.uri.toString() : "";
