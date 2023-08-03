@@ -110,7 +110,7 @@ lit.func @struct_ops_fold() -> (!kgen.declref<@FooStruct>, !kgen.declref<@FooStr
 #loc6 = loc(fused<#subprogram1>[#loc3])
 
 // CHECK-LABEL: kgen.func @no_hoist
-kgen.func @no_hoist() {
+kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
   // CHECK-NEXT: lit.async.execute <() -> ()> {
   %0 = lit.async.execute <() -> ()> {
     // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
@@ -119,11 +119,11 @@ kgen.func @no_hoist() {
     pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
     lit.async.return  loc(#loc5)
   } callLoc(#loc4) loc(#loc5)
-  kgen.return loc(#loc4)
+  kgen.return %0 : !pop.coroutine<() -> ()> loc(#loc4)
 } loc(#loc4)
 
 // CHECK-LABEL: kgen.func @hoist
-kgen.func @hoist() {
+kgen.func @hoist() -> !pop.coroutine<() -> ()> {
   // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
   // CHECK-NEXT: lit.async.execute <() -> ()> {
   %0 = lit.async.execute <() -> ()> {
@@ -133,5 +133,5 @@ kgen.func @hoist() {
     pop.store %array, %1 : !pop.pointer<array<1, index>>
     lit.async.return
   }
-  kgen.return
+  kgen.return %0 : !pop.coroutine<() -> ()>
 }
