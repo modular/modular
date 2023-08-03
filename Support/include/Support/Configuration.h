@@ -56,6 +56,7 @@ public:
   // No copying.
   Config(const Config &other) = delete;
   Config(Config &&other) = default;
+  Config &operator=(Config &&other) = default;
 
   /// Open the default configuration, and parse it.
   static ErrorOr<Config> open();
