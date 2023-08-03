@@ -275,7 +275,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
         return newVal;
       };
 
-      size_t sizeOfArray = *containerTy.getResolvedSize();
+      int64_t sizeOfArray = *containerTy.getResolvedSize();
 
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself. We can't replace all users but we have several which
@@ -298,7 +298,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
             continue;
 
           // Oddly this comes up. Guard against out of range accesses.
-          if (static_cast<int64_t>(index.getLimitedValue()) >= sizeOfArray)
+          if (index.getSExtValue() >= sizeOfArray)
             continue;
 
           gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
