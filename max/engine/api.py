@@ -44,10 +44,8 @@ class TorchLoadOptions:
 class Model:
     """A loaded model that you can execute.
 
-    You should not instantiate this class directly. Instead, create a
-    :obj:`Model` by passing your model file to :func:`InferenceSession.load()`.
-    Then you can run the model by passing your input data to
-    :func:`Model.execute()`.
+    Do not instantiate this class directly. Instead, create it with
+    :obj:`InferenceSession`.
     """
 
     _impl: _Model
@@ -72,7 +70,8 @@ class Model:
         ----------
         ``kwargs``
             The input tensors, each specified with the approprite tensor name
-            as a keyword and passed as an :obj:`np.ndarray`.
+            as a keyword and passed as an :obj:`np.ndarray`. You can find the
+            model's tensor names with :obj:`~Model.input_metadata`.
 
         Returns
         -------
@@ -84,8 +83,7 @@ class Model:
         ------
         RuntimeError
             If the given input tensors' name, shape, and dtype don't match what
-            the model expects (you can check what the model expects with
-            :obj:`~Model.input_metadata`).
+            the model expects.
         """
         return self._impl.execute(**kwargs)
 
@@ -95,9 +93,10 @@ class Model:
     @property
     def input_metadata(self) -> List["TensorSpec"]:
         """
-        Metadata about the input tensors that the model accepts.
+        Metadata about the model's input tensors, as a list of
+        :obj:`TensorSpec` objects.
 
-        You can use this to query the tensor shapes and data types like this:
+        For example, you can print the input tensor names, shapes, and dtypes:
 
         .. code-block:: python
 
@@ -109,9 +108,10 @@ class Model:
     @property
     def output_metadata(self) -> List["TensorSpec"]:
         """
-        Metadata about the output tensors that the model returns.
+        Metadata about the model's output tensors, as a list of
+        :obj:`TensorSpec` objects.
 
-        You can use this to query the tensor shapes and data types like this:
+        For example, you can print the output tensor names, shapes, and dtypes:
 
         .. code-block:: python
 
@@ -151,10 +151,10 @@ class DType(Enum):
 
 class TensorSpec:
     """
-    Defines the properties of a tensor, namely its shape and data type.
+    Defines the properties of a tensor, including its name, shape and data type.
 
-    You can get a list of ``TensorSpec`` objects that specify the input tensors
-    of a :obj:`Model` from :obj:`Model.input_metadata`.
+    For usage examples, see :obj:`Model.input_metadata` and
+    :obj:`Model.output_metadata`.
     """
 
     _impl: _TensorSpec
@@ -185,8 +185,8 @@ class TensorSpec:
     def shape(self) -> List[int]:
         """The shape of the tensor as a list of integers.
 
-        If a dimension is indeterminate for a certain axis, such as the first
-        axis of a batched tensor, that axis is denoted by ``None``."""
+        If a dimension size is unknown/dynamic (such as the batch size), its
+        value is ``None``."""
         return self._impl.shape
 
     @property
@@ -229,6 +229,15 @@ def _unwrap_pybind_objects_dict_factory(
 
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
+
+    You need an instance of this to load a model as a :obj:`Model` object.
+    For example:
+
+    .. code-block:: python
+
+        session = engine.InferenceSession()
+        model_path = Path('bert-base-uncased')
+        model = session.load(model_path)
 
     Parameters
     ----------
