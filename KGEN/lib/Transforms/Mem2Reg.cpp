@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ControlFlowUtils.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -34,31 +35,19 @@ static Type getAllocType(StackAllocationOp alloc) {
   return ParamRefType::get(cast<PointerType>(alloc.getType()).getElementType());
 }
 
-/// Return true if the store to an alloc crosses a region of an unknown
-/// operation.
-static bool crossesUnknownRegion(StackAllocationOp alloc, Operation *op) {
-  for (Operation *cur = op->getParentOp(), *parent = alloc->getParentOp();
-       cur != parent; cur = cur->getParentOp()) {
-    // If there is any non-control-flow operation between the store and the
-    // allocation, then the store crosses an unknown region.
-    if (!isa<HLCF::ControlFlowNode>(cur))
-      return true;
-  }
-  return false;
-}
-
 /// We can promote a stack allocation if all its uses are as the pointer to
 /// loads and stores and no load or store crosses a region of an unknown
 /// operation.
 static bool canPromote(StackAllocationOp alloc) {
   for (Operation *user : alloc->getUsers()) {
     if (isa<LoadOp>(user)) {
-      if (crossesUnknownRegion(alloc, user))
+      if (userCrossesFunctionCFG(alloc, user))
         return false;
       continue;
     }
     auto store = dyn_cast<StoreOp>(user);
-    if (!store || store.getArg() == alloc || crossesUnknownRegion(alloc, store))
+    if (!store || store.getArg() == alloc ||
+        userCrossesFunctionCFG(alloc, store))
       return false;
   }
   return true;

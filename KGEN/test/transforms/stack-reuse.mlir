@@ -143,3 +143,24 @@ kgen.func @use_in_region(%arg0 : index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @use_crosses_region
+kgen.func @use_crosses_region(%arg0: index) {
+  // CHECK-NEXT: %0 = pop.stack_allocation
+  %0 = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %1 = pop.stack_allocation
+  %1 = pop.stack_allocation 1 x index
+  // CHECK-NEXT: pop.store %arg0, %0
+  pop.store %arg0, %0 : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %arg0, %1
+  pop.store %arg0, %1 : !pop.pointer<index>
+  // CHECK-NEXT: stage_closure
+  kgen.stage_closure = () -> () {
+    // CHECK-NEXT: pop.load %1
+    pop.load %1 : !pop.pointer<index>
+    // CHECK-NEXT: pop.store %arg0, %0
+    pop.store %arg0, %0 : !pop.pointer<index>
+    kgen.return
+  }
+  kgen.return
+}
