@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOPARSER_H
 #define KGEN_MOJOPARSER_H
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
@@ -277,6 +278,10 @@ public:
 
   /// Get the declaration that defined an AST type.
   MojoASTDeclRef getDecl(MojoASTTypeRef type);
+
+  /// Substitute parameters into a type and resolve them.
+  MojoASTTypeRef concretizeType(KGEN::ParamBindArrayAttr params,
+                                MojoASTTypeRef type);
 
 protected:
   /// A struct representing the internal state of the parser.
