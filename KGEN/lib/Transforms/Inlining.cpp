@@ -1188,6 +1188,23 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
       : ForceInlineBase(options), runtime(runtime),
         buildFuncPasses(std::move(buildFuncPasses)) {}
 
+  LogicalResult initialize(MLIRContext *ctx) override {
+    // Parse the pass pipeline if provided.
+    if (!buildFuncPasses) {
+      buildFuncPasses = [this](mlir::OpPassManager &pm) {
+        (void)mlir::parsePassPipeline(funcPipelineStr, pm);
+      };
+      return success();
+    }
+    // Otherwise, convert the pipeline functor to a string so that reproducer
+    // generation has the nested passes.
+    mlir::OpPassManager pipeline(FuncOp::getOperationName());
+    buildFuncPasses(pipeline);
+    llvm::raw_string_ostream os(funcPipelineStr);
+    pipeline.printAsTextualPipeline(os);
+    return success();
+  }
+
   void runOnOperation() override;
 
   /// The LLCL runtime to use.
@@ -1199,13 +1216,6 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 
 void ForceInlinePass::runOnOperation() {
   TimeTraceScope traceScope("ForceInlinePass::runOnOperation");
-
-  // Parse the pass pipeline if provided.
-  auto buildFromPipelineStr = [this](mlir::OpPassManager &pm) {
-    (void)mlir::parsePassPipeline(funcPipelineStr, pm);
-  };
-  if (!buildFuncPasses)
-    buildFuncPasses = buildFromPipelineStr;
 
   // Create a runtime instance if needed.
   auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
