@@ -391,10 +391,13 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
 std::optional<uint64_t>
 MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
                            lldb_private::ExecutionContextScope *exeScope) {
-  // TODO: Realistically we should generically introspect the type and perform
-  // whatever necessary transformations to determine what the size should be
-  // when compiled. For now we just explicitly check for the single case that
-  // we ever generate variables for, i.e., Pointers.
+  MojoASTTypeRef astType(type);
+  Type mlirTy = astType.getMLIRType();
+  if (mlirTy.isIntOrFloat())
+    return mlirTy.getIntOrFloatBitWidth();
+  if (mlirTy.isIndex())
+    return GetPointerByteSize() * CHAR_BIT;
+  // TODO: Use the target info to get the current target width and return that.
   return GetPointerByteSize() * CHAR_BIT;
 }
 
@@ -498,10 +501,9 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   if (auto simdTy = dyn_cast<POP::SIMDType>(mlirType)) {
     if (simdTy.isScalar())
       return 1;
-    return 0;
+    getParserContext().getDecl(refType);
+    return simdTy.getResolvedSize().value_or(0);
   }
-  // TODO: Change to return simdTy.getResolvedSize() when
-  // GetChildCompilerTypeAtIndex supports non-scalar SIMDs.
 
   if (auto declRef = getParserContext().getDecl(refType)) {
     if (Operation *op = declRef.getIfOperation()) {
@@ -548,22 +550,31 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
         refType.getPointerElementType().getMLIRType());
 
   if (auto simdType = dyn_cast<POP::SIMDType>(mlirType)) {
-    if (simdType.isScalar()) {
-      if (auto dtypeAttr =
-              llvm::dyn_cast<DTypeConstantAttr>(simdType.getDType())) {
-        Type mlirType;
-        if (auto floatType =
-                getEquivalentFloatType(getMLIRContext(), dtypeAttr.getDType()))
-          mlirType = floatType;
-        else if (auto intType = getEquivalentIntegerType(getMLIRContext(),
-                                                         dtypeAttr.getDType()))
-          mlirType = intType;
+    if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
+      if (kgenDTypeOpt.has_value()) {
+        Type eltType;
+        if (auto intType = getEquivalentIntegerType(getMLIRContext(),
+                                                    kgenDTypeOpt.value()))
+          eltType = intType;
+        else if (auto floatType = getEquivalentFloatType(getMLIRContext(),
+                                                         kgenDTypeOpt.value()))
+          eltType = floatType;
         else
           return {};
-        return getCompilerTypeFromType(mlirType);
+
+        if (!simdType.isScalar()) {
+          // Set stuff required for printing array elements.
+          childName = std::string(llvm::formatv("[{0}]", idx));
+          childByteSize =
+              GetBitSize(getCompilerTypeFromType(eltType).GetOpaqueQualType(),
+                         exeCtx->GetBestExecutionContextScope())
+                  .value() /
+              8;
+          childByteOffset = (int32_t)idx * (int32_t)childByteSize;
+        }
+        return getCompilerTypeFromType(eltType);
       }
     }
-    // TODO: Handle non-scalar SIMD vectors
     return {};
   }
   auto declRef = getParserContext().getDecl(refType);
@@ -571,9 +582,18 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
           dyn_cast_if_present<LIT::StructDeclOp>(declRef.getIfOperation())) {
     auto field = *std::next(structDeclOp.getFieldDecls().begin(), idx);
     childName.assign(field.getName());
-    MojoASTTypeRef childType = MojoASTTypeRef(field.getTypeAttr().getValue());
+    auto refType = cast<DeclRefType>(mlirType);
+    MojoASTTypeRef fieldType = MojoASTTypeRef(field.getTypeAttr().getValue());
+
+    // If the DeclRefType has parameters, try to evaluate and substitute them
+    // into the type. This is needed for displaying SIMDs-- we have to resolve
+    // their size here.
+    if (!refType.getParamValues().empty())
+      fieldType = getParserContext().concretizeType(refType.getParamValues(),
+                                                    fieldType);
+
     return lldb_private::CompilerType(weak_from_this(),
-                                      childType.getAsVoidPointer());
+                                      fieldType.getAsVoidPointer());
   }
   return {};
 }
