@@ -30,11 +30,11 @@ struct HoistTrivialInvariants
 /// Hoist invariant operations to the earlest legal point we can within the
 /// function. Either to the start if they use only input arguments or to the
 /// producer of whichever operand is dominated by all other operands.
-static void moveInvariants(FuncOp func, Operation *opWithRegion,
-                           iterator_range<Region::OpIterator> range,
+static void moveInvariants(FuncOp func, mlir::DominanceInfo &domInfo,
+                           Operation *opWithRegion, Region &region,
                            unsigned &numHoisted) {
   // Move the invariants.
-  for (Operation &op : llvm::make_early_inc_range(range)) {
+  for (Operation &op : llvm::make_early_inc_range(region.front())) {
     // This pass only will hoist
     if (!isPure(&op))
       continue;
@@ -60,7 +60,6 @@ static void moveInvariants(FuncOp func, Operation *opWithRegion,
 
     // The operand which is dominated by all others.
     PointerUnion<Operation *, Region *> leastDominatingOperand = nullptr;
-    mlir::DominanceInfo domTree;
 
     // Traverse again to avoid touching dom info on region variant ops.
     for (Value operand : op.getOperands()) {
@@ -68,7 +67,7 @@ static void moveInvariants(FuncOp func, Operation *opWithRegion,
         if (!leastDominatingOperand) {
           leastDominatingOperand = parent;
         } else if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
-          if (domTree.dominates(op, parent))
+          if (domInfo.dominates(op, parent))
             leastDominatingOperand = parent;
         } else if (leastDominatingOperand.get<Region *>()->isAncestor(
                        parent->getParentRegion())) {
@@ -105,26 +104,27 @@ static void moveInvariants(FuncOp func, Operation *opWithRegion,
 
 void HoistTrivialInvariants::runOnOperation() {
   FuncOp func = getOperation();
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 
   unsigned numHoisted = 0;
   func.walk([&](Operation *opWithRegion) {
     // We maintain a small list of operations which we are allowed to hoist
     // invariants from.
     if (auto loop = dyn_cast<HLCF::LoopOp>(opWithRegion))
-      moveInvariants(func, loop, loop.getOps(), numHoisted);
+      moveInvariants(func, domInfo, loop, loop.getBody(), numHoisted);
 
     // We hoist from both branches of the if regardless of the condition with
     // the guarantee that these ops have no side effects and LLVM is free to
     // move them back if that is more optimal.
     if (auto ifOp = dyn_cast<HLCF::IfOp>(opWithRegion)) {
-      moveInvariants(func, ifOp, ifOp.getThenRegion().getOps(), numHoisted);
-      moveInvariants(func, ifOp, ifOp.getElseRegion().getOps(), numHoisted);
+      moveInvariants(func, domInfo, ifOp, ifOp.getThenRegion(), numHoisted);
+      moveInvariants(func, domInfo, ifOp, ifOp.getElseRegion(), numHoisted);
     }
 
     if (auto tryOp = dyn_cast<LIT::TryOp>(opWithRegion)) {
-      moveInvariants(func, tryOp, tryOp.getTryRegion().getOps(), numHoisted);
-      moveInvariants(func, tryOp, tryOp.getExceptRegion().getOps(), numHoisted);
-      moveInvariants(func, tryOp, tryOp.getElseRegion().getOps(), numHoisted);
+      moveInvariants(func, domInfo, tryOp, tryOp.getTryRegion(), numHoisted);
+      moveInvariants(func, domInfo, tryOp, tryOp.getExceptRegion(), numHoisted);
+      moveInvariants(func, domInfo, tryOp, tryOp.getElseRegion(), numHoisted);
     }
   });
   this->numHoisted = numHoisted;
