@@ -29,8 +29,9 @@ static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
     : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
-      heapMemory(kHeapBaseAddr, kHeapBaseAddr + kTableSize),
-      stackMemory(kStackBaseAddr, kStackBaseAddr + kTableSize) {}
+      heapMemory(MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize),
+      stackMemory(MemoryKind::Stack, kStackBaseAddr,
+                  kStackBaseAddr + kTableSize) {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
@@ -201,16 +202,27 @@ InterpreterState::externalizeMemory(Region &entry,
   std::string baseName = (symbol.getName() + "_mem").str();
 
   // Deduplicate references to the same allocation blob.
+  struct MaterializedMemory {
+    MemoryHandle hdl;
+    int64_t baseAddr;
+    MemoryKind kind;
+  };
   DenseMap<MemoryBlob *, MemoryHandle> blobs;
-  auto getOrMaterialize = [&](MemoryBlob &blob) {
-    if (auto it = blobs.find(&blob); it != blobs.end())
-      return it->second;
+  auto getOrMaterialize = [&](int64_t addr) -> ErrorOr<MaterializedMemory> {
+    // Find the memory point this address points to. Only heap and stack memory
+    // can be materialized.
+    MemoryTable &table = stackMemory.contains(addr) ? stackMemory : heapMemory;
+    ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
+    if (blob.isError())
+      return blob.takeError();
+    if (auto it = blobs.find(&*blob); it != blobs.end())
+      return MaterializedMemory{it->second, blob->baseAddr, table.kind};
     MemoryHandle hdl = blobMgr.insert(
-        baseName,
-        mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-            ArrayRef<char>((char *)blob.memory.get(), blob.size), blob.align));
-    blobs.try_emplace(&blob, hdl);
-    return hdl;
+        baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+                      ArrayRef<char>((char *)blob->memory.get(), blob->size),
+                      blob->align));
+    blobs.try_emplace(&*blob, hdl);
+    return MaterializedMemory{hdl, blob->baseAddr, table.kind};
   };
 
   // Replace raw pointers in the results except for null pointers. Error if a
@@ -222,18 +234,16 @@ InterpreterState::externalizeMemory(Region &entry,
         // Allow null pointers to persist.
         if (ptr.getAddr() == 0)
           return {ptr, WalkResult::advance()};
-        // Find the memory point this address points to. It is only possible
-        // to return heap-allocated memory at the moment.
-        ErrorOr<MemoryBlob &> blob = heapMemory.getBlob(ptr.getAddr());
-        if (blob.isError()) {
-          err = blob.takeError();
+        // Materialize the blob.
+        ErrorOr<MaterializedMemory> result = getOrMaterialize(ptr.getAddr());
+        if (result.isError()) {
+          err = result.takeError();
           return {ptr, WalkResult::interrupt()};
         }
-        // Materialize the blob.
-        MemoryHandle hdl = getOrMaterialize(*blob);
-        return {MemRefAttr::get(hdl, ptr.getAddr() - blob->baseAddr,
-                                MemoryKind::Heap, ptr.getType()),
-                WalkResult::advance()};
+        auto [hdl, baseAddr, kind] = result.takeValue();
+        return {
+            MemRefAttr::get(hdl, ptr.getAddr() - baseAddr, kind, ptr.getType()),
+            WalkResult::advance()};
       });
 
   for (Attribute &result : results) {
@@ -249,13 +259,25 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   // Intern each resource once into the interpreter.
   DenseMap<mlir::AsmResourceBlob *, size_t> blobs;
   auto getOrIntern = [&](MemRefAttr ref) -> ErrorOr<MemoryBlob &> {
+    // Get the right table for the memory kind.
+    if (!llvm::is_contained({MemoryKind::Heap, MemoryKind::Stack},
+                            ref.getKind()))
+      return Error(
+          "only heap and stack memory can be interned in the interpreter");
+    MemoryTable &table =
+        ref.getKind() == MemoryKind::Heap ? heapMemory : stackMemory;
+
+    // Retrieve the blob and see if it has already been interned.
     mlir::AsmResourceBlob *blob = ref.getMemory().getBlob();
-    if (auto [it, inserted] = blobs.try_emplace(blob, heapMemory.blobs.size());
+    if (!blob)
+      return Error("reference to undefined dialect resource");
+    if (auto [it, inserted] = blobs.try_emplace(blob, table.blobs.size());
         !inserted)
-      return heapMemory.blobs.at(it->second);
+      return table.blobs.at(it->second);
+
     // Initialize the memory.
     ErrorOr<MemoryBlob &> mem =
-        heapMemory.addBlob(blob->getData().size(), blob->getDataAlignment());
+        table.addBlob(blob->getData().size(), blob->getDataAlignment());
     if (mem.isError())
       return mem.takeError();
     memcpy(mem->memory.get(), blob->getData().data(), blob->getData().size());
@@ -267,14 +289,6 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   std::optional<Error> err;
   replacer.addReplacement(
       [&](MemRefAttr ref) -> std::pair<Attribute, WalkResult> {
-        if (!ref.getMemory().getBlob()) {
-          err = "reference to undefined dialect resource";
-          return {ref, WalkResult::interrupt()};
-        }
-        if (ref.getKind() != MemoryKind::Heap) {
-          err = "only heap memory can be interned in the interpreter";
-          return {ref, WalkResult::interrupt()};
-        }
         ErrorOr<MemoryBlob &> blob = getOrIntern(ref);
         if (blob.isError()) {
           err = blob.takeError();
