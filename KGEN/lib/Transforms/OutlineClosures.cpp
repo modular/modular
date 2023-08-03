@@ -232,10 +232,13 @@ void OutlineClosuresPass::runOnOperation() {
       // parent's scope.
       if (DebugInfo::DIScopeAttr scope =
               DebugInfo::extractScope(regionDecl->getParentOp())) {
-        auto declLoc = cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
-            regionDecl->getLoc());
-        b.setLoc(
-            FusedLoc::get(declLoc.getContext(), declLoc.getLocations(), scope));
+        MLIRContext *ctx = scope.getContext();
+        Location regionLoc = regionDecl->getLoc();
+        // The region may not include a scope if it's always_inline_no_debug.
+        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(regionLoc))
+          b.setLoc(FusedLoc::get(ctx, fusedLoc.getLocations(), scope));
+        else
+          b.setLoc(FusedLoc::get(ctx, regionLoc, scope));
       }
 
       // Create a container for the struct with all the various captures.
