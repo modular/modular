@@ -34,7 +34,9 @@ static std::optional<lsp::URIForFile>
 getURIFromLoc(llvm::SourceMgr &mgr, SMLoc loc,
               const lsp::URIForFile &mainFileURI) {
   int bufferId = mgr.FindBufferContainingLoc(loc);
-  if (bufferId == 0 || bufferId == static_cast<int>(mgr.getMainFileID()))
+  if (bufferId == 0)
+    return std::nullopt;
+  if (bufferId == static_cast<int>(mgr.getMainFileID()))
     return mainFileURI;
   llvm::Expected<lsp::URIForFile> fileForLoc = lsp::URIForFile::fromFile(
       mgr.getBufferInfo(bufferId).Buffer->getBufferIdentifier());
@@ -159,6 +161,18 @@ namespace {
 /// Database of symbols in a single file.
 class SymbolIndex {
 public:
+  /// This struct represents a reference or a declaration in the doc managed by
+  /// this index to a symbol that might be defined elsewhere.
+  struct SymbolRef {
+    SymbolRef(const Symbol &symbol, const lsp::Range &range)
+        : symbol(symbol), range(range) {}
+
+    /// The symbol being referenced.
+    const Symbol &symbol;
+    /// The range in the index's doc where the symbol is being referenced.
+    lsp::Range range;
+  };
+
   SymbolIndex(const llvm::SourceMgr &sourceMgr)
       : sourceMgr(sourceMgr), rangeToSymbol(allocator) {}
 
@@ -175,7 +189,8 @@ public:
 
   /// Look for the symbol whose declaration or references contain the given
   /// position in the document.
-  Symbol *getSymbolAt(const lsp::Position &position) const;
+  std::optional<SymbolIndex::SymbolRef>
+  getSymbolAt(const lsp::Position &position) const;
 
   /// Look for the symbol corresponding to the given decl in the symbol table.
   /// Return nullptr if not found.
@@ -248,8 +263,14 @@ void SymbolIndex::registerRef(MojoASTDeclRef declRef, SMLoc loc,
     insertRangeInMainDoc(getRangeForText(sourceMgr, loc, spelling), *symbol);
 }
 
-Symbol *SymbolIndex::getSymbolAt(const lsp::Position &position) const {
-  return rangeToSymbol.lookup(position, nullptr);
+std::optional<SymbolIndex::SymbolRef>
+SymbolIndex::getSymbolAt(const lsp::Position &position) const {
+  if (auto it = rangeToSymbol.find(position);
+      it.valid() && it.start() <= position) {
+    return SymbolIndex::SymbolRef(*it.value(),
+                                  lsp::Range(it.start(), it.stop()));
+  }
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -804,12 +825,15 @@ void MojoDocument::onDefinition(
 
 std::optional<lsp::Location>
 MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
-  if (Symbol *symbol = context->symbolIndex.getSymbolAt(pos))
+  if (auto symbolRef = context->symbolIndex.getSymbolAt(pos)) {
+    auto &symbol = symbolRef->symbol;
     if (auto symbolUri =
-            getURIFromLoc(context->sourceMgr, symbol->identifierLoc, uri))
+            getURIFromLoc(context->sourceMgr, symbol.identifierLoc, uri)) {
       return lsp::Location(*symbolUri, getRangeForText(context->sourceMgr,
-                                                       symbol->identifierLoc,
-                                                       symbol->identifier));
+                                                       symbol.identifierLoc,
+                                                       symbol.identifier));
+    }
+  }
 
   return std::nullopt;
 }
@@ -829,14 +853,13 @@ void MojoDocument::onHover(
 
 std::optional<lsp::Hover>
 MojoDocument::onHoverSync(const lsp::Position &pos) const {
-  Symbol *symbol = context->symbolIndex.getSymbolAt(pos);
-  if (!symbol)
-    return std::nullopt;
-
-  lsp::Hover hover(symbol->getIdentifierRange(context->sourceMgr));
-  hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
-  hover.contents.value = symbol->getMarkdownDeclaration();
-  return hover;
+  if (auto symbolRef = context->symbolIndex.getSymbolAt(pos)) {
+    lsp::Hover hover(symbolRef->range);
+    hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
+    hover.contents.value = symbolRef->symbol.getMarkdownDeclaration();
+    return hover;
+  }
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//

@@ -6,7 +6,7 @@
 
 import os
 from pathlib import Path
-from typing import Optional, TypeVar
+from typing import Generator, Optional, TypeVar
 
 from lsprotocol.types import (
     CompletionList,
@@ -31,7 +31,7 @@ def fail_if_none(t: Optional[T]) -> T:
 
 
 class Document:
-    """Helper class for dealing with documents, either from files or from memory"""
+    """Helper class for dealing with documents, either from files or from memory."""
 
     @staticmethod
     def from_file(file_name: str):
@@ -45,35 +45,53 @@ class Document:
         self.contents = contents
         self.lines = contents.splitlines()
 
-    def find_first_range(self, substr: str) -> Optional[Range]:
-        """Find the range of the first occurrence of the given `substr` in the document."""
+    def find_all_ranges(self, substr: str) -> Generator[Range, None, None]:
+        """Generate all non-overlapping locations where `substr` is found in the document.
+
+        This function, just like all other `find` methods, omits lines that end with `# skip`.
+        """
         for line in range(0, len(self.lines)):
-            if (character := self.lines[line].find(substr)) != -1:
-                return Range(
+            if self.lines[line].strip().endswith("# skip"):
+                continue
+            start = 0
+            while (character := self.lines[line].find(substr, start)) != -1:
+                yield Range(
                     start=Position(line, character),
                     end=Position(line, character + len(substr)),
                 )
+                start = character + len(substr)
+
+    def find_first_range(self, substr: str) -> Optional[Range]:
+        """Find the range of the first occurrence of the given `substr` in the document.
+
+        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        for range in self.find_all_ranges(substr):
+            return range
         return None
 
     def find_first_pos(self, substr: str) -> Optional[Position]:
-        """Find the position of the first occurrence of the given `substr` in the document."""
-        range = self.find_first_range(substr)
-        return range.start if range else None
+        """Find the position of the first occurrence of the given `substr` in the document.
+
+        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        for range in self.find_all_ranges(substr):
+            return range.start
+        return None
 
     def find_last_range(self, substr: str) -> Optional[Range]:
-        """Find the range of the last occurrence of the given `substr` in the document."""
-        for line in reversed(range(0, len(self.lines))):
-            if (character := self.lines[line].rfind(substr)) != -1:
-                return Range(
-                    start=Position(line, character),
-                    end=Position(line, character + len(substr)),
-                )
+        """Find the range of the last occurrence of the given `substr` in the document.
+
+        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        for range in reversed(list(self.find_all_ranges(substr))):
+            return range
         return None
 
     def find_last_pos(self, substr: str) -> Optional[Position]:
-        """Find the position of the first occurrence of the given `substr` in the document."""
-        range = self.find_first_range(substr)
-        return range.start if range else None
+        """Find the position of the last occurrence of the given `substr` in the document.
+
+        See `find_all_ranges` for additional notes on the `find` family of functions."""
+        for range in reversed(list(self.find_all_ranges(substr))):
+            return range.start
+        return None
 
     @property
     def identifier(self) -> TextDocumentIdentifier:

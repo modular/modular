@@ -56,7 +56,7 @@ let foo: Int
 ```"""
     )
     assert result.range == Range(
-        start=Position(line=4, character=6), end=Position(line=4, character=9)
+        start=Position(line=5, character=16), end=Position(line=5, character=19)
     )
 
     result = await client.text_document_hover_async(
@@ -79,7 +79,7 @@ var bar: Int
 ```"""
     )
     assert result.range == Range(
-        start=Position(line=5, character=6), end=Position(line=5, character=9)
+        start=Position(line=6, character=8), end=Position(line=6, character=11)
     )
 
 
