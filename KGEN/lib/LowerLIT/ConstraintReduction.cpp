@@ -29,19 +29,12 @@ public:
 
 public:
   GeneratorOp generatorOp;
-
   ConstraintSet constraints;
-
-  /// This string is set to information indicating context about in inferred
-  /// constraint or diagnostic, e.g. that this is happening with argument #0.
-  std::string inferenceContext;
-  Location inferenceLoc;
 };
 } // namespace
 
 SignatureUnifier::SignatureUnifier(GeneratorOp generatorOp)
-    : generatorOp(generatorOp), constraints(generatorOp),
-      inferenceLoc(UnknownLoc::get(generatorOp.getContext())) {}
+    : generatorOp(generatorOp), constraints(generatorOp) {}
 
 /// Add the constraints already on the generator to the constraint set,
 /// returning failure if a contradiction was detected.
