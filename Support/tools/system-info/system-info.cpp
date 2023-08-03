@@ -123,12 +123,14 @@ int main(int argc, char **argv) {
     auto targetInfoAttrOr = M::getMArchFeatures(&ctx, cli.arch, cpu, "");
     if (targetInfoAttrOr.isError())
       return reportError(targetInfoAttrOr.getError());
-    auto jsonOr = serializeTargetInfoAttrToJSON(targetInfoAttrOr.takeValue());
+    TargetInfoAttr targetInfoAttr = targetInfoAttrOr.takeValue();
+    auto jsonOr = serializeTargetInfoAttrToJSON(targetInfoAttr);
     if (jsonOr.isError())
       return reportError(jsonOr.getError());
     auto hostInfoOr =
         HostMachineInfo::deserializeTargetInfoFromJSON(jsonOr.takeValue());
     hostInfo = hostInfoOr.takeValue();
+    hostInfo.osName = targetInfoAttr.getOS().str();
   } else {
     // Get info from host machine.
     auto hostMachineOr = getHostMachineInfo();
