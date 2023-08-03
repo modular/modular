@@ -11,6 +11,13 @@ include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 
+//===----------------------------------------------------------------------===//
+// Parameter Interfaces
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// DeclInterface
+
 def DeclInterface : OpInterface<"DeclInterface"> {
   let description = [{
     This interface represents an operation whose region defines a new
@@ -81,29 +88,8 @@ def DeclInterface : OpInterface<"DeclInterface"> {
   ];
 }
 
-def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
-  let description = [{
-    The `FunctionLike` interface represents an operation whose regions behave
-    like functions in terms of control-flow:
-
-    - the region executes with a stack,
-    - region arguments are passed into the region through the stack, and
-    - region results are returned via the stack.
-
-    This interface specifies the required result types of the region, allowing
-    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
-    function never returns.
-  }];
-
-  let cppNamespace = "::M::KGEN";
-  let methods = [
-    InterfaceMethod<[{
-      Get the expected result types of the region.
-    }], "ArrayRef<Type>", "getResultTypes", (ins)>,
-  ];
-
-  let verify = [{ return HLCF::verifyControlFlow(cast<FunctionLike>($_op)); }];
-}
+//===----------------------------------------------------------------------===//
+// FuncInterface
 
 def FuncInterface : OpInterface<"FuncInterface"> {
   let description = [{
@@ -188,38 +174,8 @@ def FuncInterface : OpInterface<"FuncInterface"> {
   let dependentTraits = [DeclInterface];
 }
 
-def ExportInterface : OpInterface<"ExportInterface"> {
-  let description = [{
-    This interface allows a symbol-defining operation to specify its export
-    semantics via a `#kgen.export_kind` attribute.
-  }];
-  let cppNamespace = "::M::KGEN";
-
-  let methods = [
-    InterfaceMethod<[{
-      Return the exported symbol name.
-    }], "StringAttr", "getLinkageNameAttr", (ins), [{}], [{
-      return $_op.getSymNameAttr();
-    }]>,
-    InterfaceMethod<[{
-      Return the export kind.
-    }], "ExportKind", "getExportKind", (ins), [{}]>,
-    InterfaceMethod<[{
-      Set the export kind.
-    }], "void", "setExportKind", (ins "ExportKind":$exportKind), [{}]>
-  ];
-
-  let dependentTraits = [Symbol];
-  let verify = [{ return impl::verifyExportInterface($_op); }];
-
-  let extraSharedClassDeclaration = [{
-    bool isExported() { return $_op.getExportKind() != ExportKind::NotExported; }
-    bool isCExported() { return $_op.getExportKind() == ExportKind::CExported; }
-    void setNotExported() { $_op.setExportKind(ExportKind::NotExported); }
-    void setExported() { $_op.setExportKind(ExportKind::Exported); }
-    void setCExported() { $_op.setExportKind(ExportKind::CExported); }
-  }];
-}
+//===----------------------------------------------------------------------===//
+// GeneratorUserOpInterface
 
 def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
   let description = [{
@@ -270,34 +226,8 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
   }];
 }
 
-def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
-  let description = [{
-    This interface represents a direct function call to a signature-typed
-    callee, transferring the call arguments via some memory mechanism: stack,
-    frame, or something else. The callee can be parametric, but the call itself
-    is always direct.  Call operations that implement this interface could
-    conceptually be inlined, unlike indirect calls.
-  }];
-  let cppNamespace = "::M::KGEN";
-
-  let methods = [
-    InterfaceMethod<[{
-      Get the parameter expression of the operation's callee.
-    }], "TypedAttr", "getCallee", (ins)>,
-    InterfaceMethod<[{
-      Get the call arguments.
-    }], "ValueRange", "getArguments", (ins), [{}], [{
-      return $_op.getOperands();
-    }]>,
-  ];
-
-  let extraSharedClassDeclaration = [{
-    /// Get the signature type of the callee.
-    SignatureType getCalleeType() {
-      return cast<SignatureType>($_op.getCallee().getType());
-    }
-  }];
-}
+//===----------------------------------------------------------------------===//
+// ParamOpInterface
 
 def ParamOpInterface : OpInterface<"ParamOpInterface"> {
   let description = [{
@@ -433,6 +363,109 @@ class CallLikeOperation {
       setParamDeclsAttr(ParamDeclArrayAttr::get(getContext(), decls));
     }
     bool $cppClass::isImplicitlyParametric() { return true; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Compilation Model
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// ExportInterface
+
+def ExportInterface : OpInterface<"ExportInterface"> {
+  let description = [{
+    This interface allows a symbol-defining operation to specify its export
+    semantics via a `#kgen.export_kind` attribute.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Return the exported symbol name.
+    }], "StringAttr", "getLinkageNameAttr", (ins), [{}], [{
+      return $_op.getSymNameAttr();
+    }]>,
+    InterfaceMethod<[{
+      Return the export kind.
+    }], "ExportKind", "getExportKind", (ins), [{}]>,
+    InterfaceMethod<[{
+      Set the export kind.
+    }], "void", "setExportKind", (ins "ExportKind":$exportKind), [{}]>
+  ];
+
+  let dependentTraits = [Symbol];
+  let verify = [{ return impl::verifyExportInterface($_op); }];
+
+  let extraSharedClassDeclaration = [{
+    bool isExported() { return $_op.getExportKind() != ExportKind::NotExported; }
+    bool isCExported() { return $_op.getExportKind() == ExportKind::CExported; }
+    void setNotExported() { $_op.setExportKind(ExportKind::NotExported); }
+    void setExported() { $_op.setExportKind(ExportKind::Exported); }
+    void setCExported() { $_op.setExportKind(ExportKind::CExported); }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Control Flow
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// FunctionLike
+
+def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
+  let description = [{
+    The `FunctionLike` interface represents an operation whose regions behave
+    like functions in terms of control-flow:
+
+    - the region executes with a stack,
+    - region arguments are passed into the region through the stack, and
+    - region results are returned via the stack.
+
+    This interface specifies the required result types of the region, allowing
+    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
+    function never returns.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+  let methods = [
+    InterfaceMethod<[{
+      Get the expected result types of the region.
+    }], "ArrayRef<Type>", "getResultTypes", (ins)>,
+  ];
+
+  let verify = [{ return HLCF::verifyControlFlow(cast<FunctionLike>($_op)); }];
+}
+
+//===----------------------------------------------------------------------===//
+// CallOpInterface
+
+def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
+  let description = [{
+    This interface represents a direct function call to a signature-typed
+    callee, transferring the call arguments via some memory mechanism: stack,
+    frame, or something else. The callee can be parametric, but the call itself
+    is always direct.  Call operations that implement this interface could
+    conceptually be inlined, unlike indirect calls.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Get the parameter expression of the operation's callee.
+    }], "TypedAttr", "getCallee", (ins)>,
+    InterfaceMethod<[{
+      Get the call arguments.
+    }], "ValueRange", "getArguments", (ins), [{}], [{
+      return $_op.getOperands();
+    }]>,
+  ];
+
+  let extraSharedClassDeclaration = [{
+    /// Get the signature type of the callee.
+    SignatureType getCalleeType() {
+      return cast<SignatureType>($_op.getCallee().getType());
+    }
   }];
 }
 
