@@ -2474,6 +2474,25 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                      CallSyntax::kOperator, this);
 }
 
+AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  // Complain if lifetimes are not enabled.
+  if (!emitter.shared.useExperimentalLifetimes())
+    emitter.emitError(getLoc(), "lifetimes are not enabled yet") << getRange();
+
+  // Get the base type and lifetime specifier.
+  PValue lifetimePVal = emitter.emitExprPValue(
+      lifetime, EC_LifetimeSpec, emitter.shared.getLifetimeType());
+  if (!lifetimePVal)
+    return {};
+  auto subType = emitter.emitExprType(subExpr);
+  if (!subType)
+    return {};
+
+  // FIXME: Swap RefType attr order to match syntax order.
+  auto result = RefType::get(isMutable, subType, lifetimePVal.get());
+  return emitter.emitResult(result, this, dest);
+}
+
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
 

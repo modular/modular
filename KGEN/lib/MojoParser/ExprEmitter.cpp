@@ -101,6 +101,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in capture-by-copy";
   case EC_Decorator:
     return " in decorator";
+  case EC_LifetimeSpec:
+    return " in lifetime specifier";
   }
 }
 

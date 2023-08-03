@@ -119,6 +119,8 @@ public:
 
     // Ternary expressions.
     kIfElse,
+    // Reference types
+    kRef, // ref[lifetime] x    |    mutref[lifetime] x
 
     // Not a valid expression node.
     kInvalid,

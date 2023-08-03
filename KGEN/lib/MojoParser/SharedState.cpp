@@ -102,6 +102,7 @@ struct SharedState::Impl {
   /// This is the decl for the builtin 'lit.none' type/attr.
   ASTType noneType;
   NoneAttr noneAttr;
+  ASTType lifetimeType;
 
   /// A module state corresponding to the top-level decl. All imported packages
   /// or modules are nested within.
@@ -268,6 +269,7 @@ ASTType SharedState::getTypeCheckErrorType() const {
 }
 ASTType SharedState::getNoneType() const { return impl->noneType; }
 NoneAttr SharedState::getNoneAttr() const { return impl->noneAttr; }
+ASTType SharedState::getLifetimeType() const { return impl->lifetimeType; }
 
 /// Add declarations for magic things to the builtins decl.
 void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
@@ -282,6 +284,7 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
   impl->typeCheckErrorType = TypeCheckErrorType::get(context);
+  impl->lifetimeType = LifetimeType::get(context);
 
   // Add an empty struct with the specified name to the resolver.
   auto addMagicMLIRDecl = [&](StringRef name, Type magicType) {

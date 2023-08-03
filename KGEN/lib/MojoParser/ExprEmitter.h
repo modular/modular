@@ -61,6 +61,7 @@ enum ExprContext {
   EC_Destructor,            // Looking up T's destructor for `var x : T`
   EC_CaptureCopy,           // def f(): use(x)
   EC_Decorator,             // @x
+  EC_LifetimeSpec,          // ref[x] y
 };
 const char *getContextMessage(ExprContext context);
 
