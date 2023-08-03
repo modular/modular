@@ -66,6 +66,11 @@ ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
   if (size == 0)
     size = status.getSize();
 
+  // If the size is still zero, then we have an empty buffer. Since Buffer is
+  // read-only, we can simply return an empty string.
+  if (size == 0)
+    return BufferRef::create("");
+
   std::error_code ec;
   llvm::sys::fs::mapped_file_region mappedFile(
       fd, llvm::sys::fs::mapped_file_region::readonly, size, offset, ec);
