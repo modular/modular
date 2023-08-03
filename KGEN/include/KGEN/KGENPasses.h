@@ -154,9 +154,9 @@ createAlwaysInlineParametric(LLCL::Runtime &runtime,
 
 /// Create an inliner pass with an LLCL runtime instance and a function pass
 /// pipeline to run.
-std::unique_ptr<mlir::Pass>
-createForceInline(LLCL::Runtime &runtime, const ForceInlineOptions &options,
-                  std::function<void(mlir::OpPassManager &)> buildFuncPasses);
+std::unique_ptr<mlir::Pass> createForceInline(
+    LLCL::Runtime &runtime, const ForceInlineOptions &options = {},
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
 } // namespace KGEN
 } // namespace M
