@@ -171,10 +171,10 @@ private:
     std::unique_ptr<void, void (*)(void *)> memory;
   };
 
-  /// A memory table is just a vector of blobs organized in ascending address.
+  /// A memory table is just a vector of blobs organized by ascending address.
   struct MemoryTable {
-    explicit MemoryTable(int64_t minAddr, int64_t maxAddr)
-        : minAddr(minAddr), maxAddr(maxAddr) {}
+    explicit MemoryTable(MemoryKind kind, int64_t minAddr, int64_t maxAddr)
+        : kind(kind), minAddr(minAddr), maxAddr(maxAddr) {}
 
     /// Get the memory blob corresponding to the address.
     ErrorOr<MemoryBlob &> getBlob(int64_t addr);
@@ -188,6 +188,8 @@ private:
     /// Reset the table.
     void reset() { blobs.clear(); }
 
+    /// The kind of contained memory.
+    MemoryKind kind;
     /// The base address of the table (inclusive).
     int64_t minAddr;
     /// The maximum address of the table (exclusive).

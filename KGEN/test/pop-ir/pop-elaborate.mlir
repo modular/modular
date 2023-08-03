@@ -96,6 +96,12 @@ kgen.generator @copy_load(%arg0: !pop.pointer<i16>, %arg1: !pop.pointer<i16>) ->
   kgen.return %2 : i16
 }
 
+kgen.generator @modify_stack_mem(%arg0: !pop.pointer<i16>) -> !pop.pointer<i16> {
+  %zero = kgen.param.constant: i16 = <0>
+  pop.store %zero, %arg0 : !pop.pointer<i16>
+  kgen.return %arg0 : !pop.pointer<i16>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -182,19 +188,25 @@ kgen.generator export @do_it() {
     :(!pop.pointer<i16>, !pop.pointer<i16>) -> i16 @copy_load,
     #M.memref<mem, 2, heap>, #M.memref<mem, 0, heap>)>
 
+  // CHECK-NEXT: <#M.memref<modify_stack_mem_concrete_mem, 0, stack>>
+  kgen.param.constant: !pop.pointer<i16> = <apply(
+    :(!pop.pointer<i16>) -> !pop.pointer<i16> @modify_stack_mem,
+    #M.memref<stack, 0, stack>)>
+
   kgen.return
 }
 
+// NOTE: Bytes are encoded backwards in resource blobs.
 {-#
+  // CHECK: dialect_resources
   dialect_resources: {
+    // CHECK-NEXT: M: {
     M: {
-      mem: "0x20000000ADDEEFBE"
+      // CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
+      mem: "0x20000000ADDEEFBE",
+      // CHECK-NEXT: modify_stack_mem_concrete_mem: "0x200000000000"
+      stack: "0x20000000ADDE"
+    // CHECK-NEXT: }
     }
   }
 #-}
-
-// NOTE: Bytes are encoded backwards in resource blobs.
-// CHECK: dialect_resources
-// CHECK-NEXT: M: {
-// CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
-// CHECK-NEXT: }
