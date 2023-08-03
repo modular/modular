@@ -7,10 +7,16 @@
 add_modular_tool(kgen-opt
   kgen-opt.cpp
 
+  LINK_COMPONENTS
+  native
+  nativecodegen
+
   LINK_LIBS PRIVATE
   DebugInfoToLLVM
   LITDialect
+  KGENCompiler
   KGENDialect
+  KGENElaborator
   POPDialect
   KGENToLLVM
   KGENTransforms
@@ -19,6 +25,7 @@ add_modular_tool(kgen-opt
   LLCLRuntimeGlobals
   MSupportGlobals
 
+  MLIRBuiltinToLLVMIRTranslation
   MLIRIR
   MLIRIndexDialect
   MLIRIndexToLLVM

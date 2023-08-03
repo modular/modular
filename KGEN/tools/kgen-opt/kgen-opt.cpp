@@ -10,9 +10,11 @@
 
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/InitAllDialects.h"
+#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
@@ -21,8 +23,11 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 
@@ -156,8 +161,17 @@ struct TestGeneratePreElaboratedBody
 int main(int argc, char **argv) {
   DialectRegistry registry;
 
-  // Register MLIR stuff
+  // Register all KGEN dialects.
   registerAllKGENDialects(registry);
+
+  // Initialize the host target.
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmParser();
+  llvm::InitializeNativeTargetAsmPrinter();
+
+  // Initialize LLVM exporters.
+  mlir::registerBuiltinDialectTranslation(registry);
+  mlir::registerLLVMDialectTranslation(registry);
 
   // Register the standard passes we want.
   mlir::registerCSEPass();
@@ -208,6 +222,13 @@ int main(int argc, char **argv) {
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
+
+  // Register the elaborator with the provided runtime.
+  LLCL::Runtime runtime(
+      LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue());
+  mlir::registerPass(
+      [&]() { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
 
   return failed(
       mlir::MlirOptMain(argc, argv, "kgen optimizer driver", registry));

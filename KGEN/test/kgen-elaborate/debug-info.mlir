@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate-opt %s -elaborate-generators=elaborate-locations=true -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators=elaborate-locations=true -mlir-print-debuginfo | FileCheck %s
 
 // Check that debug info gets resolved during elaboration.
 

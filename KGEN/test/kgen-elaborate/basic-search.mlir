@@ -1,4 +1,4 @@
-// RUN: kgen-elaborate-opt %s -split-input-file -elaborate-generators="enable-search=true test-diagnostics=true" -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true test-diagnostics=true" -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.func @"even_only,param=16"()
 // CHECK-NOT: @"even_only,
