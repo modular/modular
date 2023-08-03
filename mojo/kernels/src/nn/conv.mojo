@@ -3480,78 +3480,6 @@ struct ConvDirectNHWC[
 # ===----------------------------------------------------------------------=== #
 
 
-fn pack_filter_rscf_to_cfrscf[
-    micro_kernel_width: Int,
-    simd_size: Int,
-    type: DType,
-](
-    conv_shape: ConvShape,
-    c_tile_size: Int,
-    filter: DTypePointer[type],
-    packed_filter: DTypePointer[type],
-):
-    """This packs the filter form RSCF to CFRScf.
-    Args:
-        conv_shape: contains R, S, C, F.
-        c_tile_size: the tile size in C.
-        filter: filter in RSCF layout.
-        packed_filter: packed filter in CFRScf layout. Here,
-            C    - C tiles
-            F    - F tiles
-            R, S - original R, S
-            c, f - c, f index with CF tile.
-
-    The buffer is padded so that F is multiple of micro_kernel_f_size.
-    The results from direct conv kernel will be incorrect if the original
-    F is not divisible over micro_kernel_f_size.
-
-    The above also assumes that the packed filter pointer must have been
-    proper allocated. We could pass in a NDBuffer of shape (C, F, R, S, c, f)
-    but it seems too complicated.
-    TODO: Address this when there is layout support.
-    """
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
-
-    var packed_filter_ptr = packed_filter
-
-    for c_tile_start in range(0, conv_shape.c, c_tile_size):
-        for f_tile_start in range(0, conv_shape.f, micro_kernel_f_size):
-            for r in range(conv_shape.r):
-                for s in range(conv_shape.s):
-                    for c in range(
-                        min(conv_shape.c - c_tile_start, c_tile_size)
-                    ):
-                        let filter_ptr = filter.offset(
-                            f_tile_start
-                            + conv_shape.f
-                            * (
-                                c_tile_start
-                                + c
-                                + conv_shape.c * (s + conv_shape.s * r)
-                            )
-                        )
-
-                        # F dimension is padded with zeros to make the packed F
-                        # multiple of micro_kernel_f_size.
-                        @always_inline
-                        @parameter
-                        fn body[idx: Int]():
-                            var filter_vec = SIMD[type, simd_size](0.0)
-                            if idx * simd_size < conv_shape.f - f_tile_start:
-                                filter_vec = filter_ptr.offset(
-                                    idx * simd_size
-                                ).simd_load[simd_size]()
-                            packed_filter_ptr.offset(
-                                idx * simd_size
-                            ).simd_store[simd_size](filter_vec)
-
-                        unroll[micro_kernel_width, body]()
-
-                        packed_filter_ptr = packed_filter_ptr.offset(
-                            micro_kernel_f_size
-                        )
-
-
 fn get_packed_filter_shape[
     type: DType
 ](R: Int, S: Int, C: Int, F: Int, inout shape_ref: DynamicRankBuffer):
@@ -3575,7 +3503,8 @@ fn get_packed_filter_shape[
     shape_ref.type.dispatch_integral[dispatch_type]()
 
 
-fn pack_filter_rscf_to_frscf[
+@always_inline
+fn pack_filter[
     type: DType,
 ](
     filter: NDBuffer[4, DimList.create_unknown[4](), type],

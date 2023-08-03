@@ -17,7 +17,7 @@ from ConvUtils import (
 from Conv import (
     ConvDirectNHWC,
     Naive2dConvolution,
-    pack_filter_rscf_to_frscf,
+    pack_filter,
 )
 from DType import DType
 from IO import print
@@ -124,7 +124,7 @@ fn test[
 
     @parameter
     if filter_packed:
-        pack_filter_rscf_to_frscf[type](filter, packed_filter)
+        pack_filter[type](filter, packed_filter)
 
     # Reference: naive conv
     Naive2dConvolution[
