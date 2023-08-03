@@ -895,9 +895,9 @@ def LIT_AsyncCallOp : LITOp<"async.call", [CalleeArgumentTypes,
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
 
-def LIT_AsyncExecuteOp : LITOp<"async.execute",
-  [SingleBlock, DebugInfo_InlinedSubprogramScoped]
->{
+def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
+    DeclareOpInterfaceMethods<FunctionLike>,
+    DebugInfo_InlinedSubprogramScoped]> {
   let summary = "Execute an async region.";
   let description = [{
     The `lit.async.execute` operation asynchronously executes a region and

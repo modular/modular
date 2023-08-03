@@ -1200,6 +1200,12 @@ void AsyncCallOp::concretizeCallee(mlir::IRRewriter &b,
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
 
+/// The results of a `lit.async.execute` when treated like a function, although
+/// an async one, are the results of the coroutine.
+ArrayRef<Type> AsyncExecuteOp::getResultTypes() {
+  return getType().getResultTypes();
+}
+
 LogicalResult AsyncExecuteOp::verify() {
   auto ret = dyn_cast<AsyncReturnOp>(getBody()->getTerminator());
   if (!ret)
