@@ -15,7 +15,7 @@ export class MOJOSDK {
   /**
    * The resolved Mojo SDK path, or empty if the SDK isn't installed.
    */
-  private mojoSDKPath: string;
+  private mojoSDKPath: string|undefined;
 
   /**
    * Construct a new MOJOSDK object.

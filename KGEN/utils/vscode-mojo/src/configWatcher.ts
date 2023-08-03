@@ -14,7 +14,7 @@ import {MOJOContext} from './mojoContext';
  *  Prompt the user to see if we should restart the server.
  */
 async function promptRestart(settingName: string, promptMessage: string) {
-  switch (config.get<string>(settingName)) {
+  switch (config.get<string>(settingName, /*workspaceFolder=*/ undefined)) {
   case 'restart':
     vscode.commands.executeCommand('mojo.restart');
     break;

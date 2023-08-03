@@ -1,10 +1,11 @@
 {
 	"compilerOptions": {
 		"module": "commonjs",
-		"target": "es6",
 		"outDir": "out",
 		"rootDir": "src",
-		"sourceMap": true
+		"sourceMap": true,
+		"strict": true,
+		"target": "es6"
 	},
 	"include": [
 		"src"
