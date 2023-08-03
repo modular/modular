@@ -92,11 +92,9 @@ struct StackReuse : public impl::StackReuseBase<StackReuse> {
 /// 1. Upon crossing any basic block, e.g. when entering a region or resuming
 ///    after the parent operation, all variant stack allocations in any region
 ///    of the operation are conservatively assigned a new opaque value.
-/// 2. A stack allocation is considered variant in a region if it has any use
-///    inside of it.
-/// 3. Storing to a view of a stack allocation is not field-sensitive. The
+/// 2. Storing to a view of a stack allocation is not field-sensitive. The
 ///    entire stack allocation is assumed to take on a whole new opaque value.
-/// 4. This pass must run after `lower-closures`. This is because it makes the
+/// 3. This pass must run after `lower-closures`. This is because it makes the
 ///    assumption that `dominance == liveness`. It can be taught to run before;
 ///    see `mem-2-reg` for an example.
 ///
@@ -169,20 +167,23 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
           // If the pointer is the argument of a store, then it escapes.
           if (store.getArg() == ptr)
             return;
+          // Indicate that this stack allocation was modified in this parent
+          // operation.
+          touchedParents.insert(user->getParentOp());
           // Stores are terimnals.
-        } else if (isa<LoadOp>(user)) {
+          continue;
+        }
+        if (isa<LoadOp>(user)) {
           // Loads are terminals.
-        } else if (isa<ArrayGEPOp, StructGEPOp, OffsetOp, PointerBitcastOp>(
-                       user)) {
+          continue;
+        }
+        if (isa<ArrayGEPOp, StructGEPOp, OffsetOp, PointerBitcastOp>(user)) {
           // Recurse on the view.
           toCheck.push_back(user);
-        } else {
-          // Any other using operation conservatively is an escape.
-          return;
+          continue;
         }
-        // For this valid user of the stack allocation, save its parent
-        // operation.
-        touchedParents.insert(user->getParentOp());
+        // Any other using operation conservatively is an escape.
+        return;
       }
     }
     // The projection of the pointer does not escape.
@@ -322,8 +323,8 @@ static void scanRegion(
       continue;
 
     // Don't do anything too fancy here. Mark all stack allocations variant in
-    // the operatin as having new opaque values when recursing into the regions.
-    // Stronger control-flow analysis can be added if necessary.
+    // the operation as having new opaque values when recursing into the
+    // regions. Stronger control-flow analysis can be added if necessary.
     ArrayRef<StackAllocationOp> variant = regionVariants[&op];
     for (Region &region : op.getRegions()) {
       markVariantPvsOpaque(variant, pvs, rmap, opaqueCounter);
