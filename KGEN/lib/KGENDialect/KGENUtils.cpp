@@ -1380,11 +1380,10 @@ ParseResult KGEN::parseOptionalAlwaysInline(OpAsmParser &parser,
   return success();
 }
 
-void KGEN::printOptionalAlwaysInline(OpAsmPrinter &p,
-                                     AlwaysInlineLevelAttr level) {
-  if (level.getValue() == AlwaysInlineLevel::Enabled)
+void KGEN::printOptionalAlwaysInline(AsmPrinter &p, AlwaysInlineLevel level) {
+  if (level == AlwaysInlineLevel::Enabled)
     p << " always_inline";
-  else if (level.getValue() == AlwaysInlineLevel::EnabledNoDebug)
+  else if (level == AlwaysInlineLevel::EnabledNoDebug)
     p << " always_inline_no_debug";
 }
 
@@ -1444,6 +1443,11 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
     result.addAttribute("constraints", constraints);
   }
 
+  DecoratorsAttr decorators;
+  if (parseOptionalDecorators(parser, decorators))
+    return failure();
+  result.addAttribute("decorators", decorators);
+
   if (opKind == GeneratorOrFuncKind::generator) {
     result.addAttribute("functionType", TypeAttr::get(functionType));
     result.addAttribute("inputParams", inputParams);
@@ -1496,9 +1500,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
                          decl.getResultParams(), op.getFunctionType(),
                          op.getSignature());
 
-  if (isa<GeneratorOp, FuncOp>(*op))
-    printOptionalAlwaysInline(
-        p, op->getAttrOfType<AlwaysInlineLevelAttr>("alwaysInlineLevel"));
+  printOptionalAlwaysInline(p, op.getAlwaysInlineLevel());
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),
@@ -1509,7 +1511,8 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
   ignoredAttrs.append(ignoredAttrNames.begin(), ignoredAttrNames.end());
   p.printOptionalAttrDictWithKeyword(op->getAttrs(), ignoredAttrs);
 
-  printOptionalConstraints(p, func, cast<DeclInterface>(*op).getConstraints());
+  printOptionalConstraints(p, op, cast<DeclInterface>(*op).getConstraints());
+  printOptionalDecorators(p, op, op.getDecorators());
 
   p << ' ';
   if (!func.isExternal())

@@ -163,7 +163,7 @@ printRegionDeclaration(OpAsmPrinter &p, Operation *op, ParamDeclAttr paramDecl,
   printFunctionSignature(p, body, inputParams, resultParams,
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
-  printOptionalAlwaysInline(p, alwaysInlineLevel);
+  printOptionalAlwaysInline(p, alwaysInlineLevel.getValue());
   printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);

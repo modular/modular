@@ -72,6 +72,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
+                       KGEN_DecoratorsAttr:$decorators,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
                        KGEN_ExportKindAttr:$exportKind,
                        // If the body was precompiled, this will hold a
@@ -92,9 +93,10 @@ def KGEN_FuncOp : KGENOp<"func", [
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    CArg<"AlwaysInlineLevel",
                         "AlwaysInlineLevel::Disabled">:$alwaysInlineLevel,
-                   CArg<"ExportKind", "ExportKind::NotExported">:$exportKind), [{
-      build($_builder, $_state, name, signature, alwaysInlineLevel,
-            exportKind, /*precompiledBodyRef=*/{});
+                   CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
+                   CArg<"ArrayRef<TypedAttr>", "{}">:$decorators), [{
+      build($_builder, $_state, name, signature, decorators,
+            alwaysInlineLevel, exportKind, /*precompiledBodyRef=*/{});
     }]>,
   ];
 
@@ -186,6 +188,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        ConstraintArrayAttr:$constraints,
+                       KGEN_DecoratorsAttr:$decorators,
                        KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
                        KGEN_ExportKindAttr:$exportKind);
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
@@ -200,8 +203,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
-            resultParams, /*constraints=*/{}, AlwaysInlineLevel::Disabled,
-            ExportKind::NotExported);
+            resultParams, /*constraints=*/{}, /*decorators=*/{},
+            AlwaysInlineLevel::Disabled, ExportKind::NotExported);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "FunctionType":$functionType), [{

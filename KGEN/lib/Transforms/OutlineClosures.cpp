@@ -158,6 +158,7 @@ void OutlineClosuresPass::runOnOperation() {
           ParamDeclArrayAttr::get(&getContext(), inputParamDecls),
           regionDecl.getResultParamsAttr(),
           ConstraintArrayAttr::get(&getContext(), {}),
+          DecoratorsAttr::get(&getContext(), {}),
           regionDecl.getAlwaysInlineLevelAttr(),
           ExportKindAttr::get(&getContext(), ExportKind::NotExported));
       symtab.insert(liftedWrapper);
