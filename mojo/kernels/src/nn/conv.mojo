@@ -3747,12 +3747,6 @@ fn conv_2d_nhwc_direct[
         "unexpected filter rank for filter layout",
     ]()
 
-    if output.dim[3]() % simdwidthof[output_type]() != 0:
-        return out_chain.mark_error(
-            "F must be divisible by simd_width in direct conv currently. This"
-            " limitation will be removed soon."
-        )
-
     let output_rebind = rebind[NDBuffer[4, output_shape, input_type]](output)
     let filter_rebind = rebind[NDBuffer[filter_rank, filter_shape, input_type]](
         filter
