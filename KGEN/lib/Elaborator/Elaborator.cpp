@@ -548,20 +548,22 @@ static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
       continue;
 
     Operation *cloned = b.clone(op, map);
+    bool stripDebugInfo =
+        alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug;
     // Walk the cloned op because there might be many ops within it.
-    cloned->walk([&](Operation *clonedOp) {
-      // Erase nested DebugInfo::ValueOp.
-      if (isa<DebugInfo::ValueOp>(clonedOp))
-        return clonedOp->erase();
-
-      // Update locations if needed.
-      if (alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug) {
-        clonedOp->setLoc(call.getLoc());
-      } else if (!scope) {
-        // If the scope is not null, it must be defined a nested function, and
-        // we do not update any locations.
-        DebugInfo::updateInlinedLoc(clonedOp, call.getLoc());
+    cloned->walk<mlir::WalkOrder::PreOrder>([&](Operation *clonedOp) {
+      // Erase `debuginfo.value` operations when inlining without debug info.
+      if (stripDebugInfo && isa<DebugInfo::ValueOp>(clonedOp)) {
+        clonedOp->erase();
+        return WalkResult::skip();
       }
+
+      // Inline the location, and recurse into the body if allowed.
+      if (stripDebugInfo || !scope)
+        DebugInfo::updateInlinedLoc(clonedOp, call.getLoc(), stripDebugInfo);
+      if (isa<DebugInfo::SubprogramScoped>(op))
+        return WalkResult::skip();
+      return WalkResult::advance();
     });
   }
 

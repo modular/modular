@@ -134,42 +134,31 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   Region &body = scope->getRegion(0);
   Location callLoc = scope->getLoc();
 
-  // If the scope represents an `always_inline_no_debug` function, just nuke all
-  // debug info and locations from here.
-  if (noDebug) {
-    body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      if (isa<DebugInfo::ValueOp>(op)) {
-        op->erase();
+  bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
+  body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    // Erase `debuginfo.value` operations when inlining without debug info.
+    if (noDebug && isa<DebugInfo::ValueOp>(op)) {
+      op->erase();
+      return WalkResult::skip();
+    }
+
+    // Inline the location if needed.
+    if (noDebug || scopeIsNotSubprogram)
+      DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
+
+    // Recurse into the body if needed and allowed.
+    if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
+      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
+        updateScopeDebugInfoFrom(op, tag, updateAttrName);
         return WalkResult::skip();
       }
-
-      op->setLoc(callLoc);
-      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
-        auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
-        if (tag) {
-          updateScopeDebugInfoFrom(op, tag, updateAttrName);
-          return WalkResult::skip();
-        }
-      }
-      return WalkResult::advance();
-    });
-  } else {
-    bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
-    body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      // Only update locations if the scope is not function-like.
-      if (scopeIsNotSubprogram)
-        DebugInfo::updateInlinedLoc(op, callLoc);
-
-      if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
-        auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
-        if (tag) {
-          updateScopeDebugInfoFrom(op, tag, updateAttrName);
-          return WalkResult::skip();
-        }
-      }
-      return WalkResult::advance();
-    });
-  }
+    } else if (isa<DebugInfo::SubprogramScoped>(op)) {
+      updateScopeDebugInfoFrom(op, IntegerAttr::get(tag.getType(), 0),
+                               updateAttrName);
+      return WalkResult::skip();
+    }
+    return WalkResult::advance();
+  });
 
   // If this scope is a trivial control-flow scope, fold it away.
   if (singleExit)

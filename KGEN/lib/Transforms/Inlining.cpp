@@ -530,19 +530,14 @@ void inlineGeneratorCall(CallOp call, GeneratorOp callee,
 
   bool stripDebugInfo = level == AlwaysInlineLevel::EnabledNoDebug;
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // If this is an `always_inline(nodebug)`, erase the location of the
-    // inlined operations by replacing them with the location of the call.
-    // Otherwise, propagate the inlined location via a `CallSiteLoc`.
-    if (stripDebugInfo) {
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-        value.erase();
-        return WalkResult::skip();
-      }
-      op->setLoc(call.getLoc());
-      return WalkResult::advance();
+    // Erase `debuginfo.value` operations when inlining without debug info.
+    if (stripDebugInfo && isa<DebugInfo::ValueOp>(op)) {
+      op->erase();
+      return WalkResult::skip();
     }
-    DebugInfo::updateInlinedLoc(op, call.getLoc());
+
+    // Inline the location, and recurse into the body if allowed.
+    DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
     if (isa<DebugInfo::SubprogramScoped>(op))
       return WalkResult::skip();
     return WalkResult::advance();
