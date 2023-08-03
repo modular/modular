@@ -721,3 +721,14 @@ lit.func @try_in_loop(%arg0: i1) {
   "after.loop"() : () -> ()
   kgen.return
 }
+
+// CHECK-LABEL: lit.func @recurse
+// CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
+// CHECK-NEXT: %0 = kgen.call @recurse(%x) : (!pop.scalar<index>) -> !pop.scalar<index>
+// CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
+// CHECK-NEXT:}
+lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
+  %0 = kgen.call @recurse(%x) : (!pop.scalar<index>) -> !pop.scalar<index>
+  lit.return %0 : !pop.scalar<index>
+  lit.end_func
+}
