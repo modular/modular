@@ -7,6 +7,7 @@
 add_modular_conversion_library(KGENTransforms
   Canonicalizer.cpp
   CleanupCompilerGlobals.cpp
+  ControlFlowUtils.cpp
   EliminateDeadSymbols.cpp
   ExternalizePrecompiledFunctions.cpp
   FoldGlobalConstLoads.cpp

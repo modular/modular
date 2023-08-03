@@ -226,6 +226,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
     pm.addPass(createCanonicalizer());
     pm.addPass(createSROA());
     pm.addPass(createMem2Reg());
+    pm.addPass(createStackReuse());
+    pm.addPass(mlir::createCSEPass());
     pm.addPass(createCanonicalizer());
   };
   pm.addPass(createForceInline(
@@ -255,14 +257,6 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
-
-  // Run passes that require closures to be lifted.
-  // FIXME: `stack-reuse` should be taught to run earlier.
-  if (options.optimizationLevel >= 1) {
-    pm.addNestedPass<FuncOp>(createStackReuse());
-    pm.addNestedPass<FuncOp>(mlir::createCSEPass());
-    pm.addNestedPass<FuncOp>(createCanonicalizer());
-  }
 
   // Loop raising must happen after `hoist-trivial-invariants`.
   // FIXME: Move this earlier in the pipeline.

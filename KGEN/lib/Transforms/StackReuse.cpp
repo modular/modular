@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ControlFlowUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/TimeProfiler.h"
@@ -94,9 +95,6 @@ struct StackReuse : public impl::StackReuseBase<StackReuse> {
 ///    of the operation are conservatively assigned a new opaque value.
 /// 2. Storing to a view of a stack allocation is not field-sensitive. The
 ///    entire stack allocation is assumed to take on a whole new opaque value.
-/// 3. This pass must run after `lower-closures`. This is because it makes the
-///    assumption that `dominance == liveness`. It can be taught to run before;
-///    see `mem-2-reg` for an example.
 ///
 /// Each of these cases could be developed if necessary.
 ///
@@ -164,16 +162,20 @@ runAnalysis(Region &top, DenseMap<Value, StackAllocationOp> &aliases,
 
       for (Operation *user : ptr.getUsers()) {
         if (auto store = dyn_cast<StoreOp>(user)) {
-          // If the pointer is the argument of a store, then it escapes.
-          if (store.getArg() == ptr)
+          // If the pointer is the argument of a store or the store leaves the
+          // CFG, then it escapes.
+          if (store.getArg() == ptr || userCrossesFunctionCFG(op, user))
             return;
           // Indicate that this stack allocation was modified in this parent
           // operation.
           touchedParents.insert(user->getParentOp());
-          // Stores are terimnals.
+          // Stores are terminals.
           continue;
         }
         if (isa<LoadOp>(user)) {
+          // If the load leaves the CFG, then it escapes.
+          if (userCrossesFunctionCFG(op, user))
+            return;
           // Loads are terminals.
           continue;
         }
