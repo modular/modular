@@ -76,53 +76,7 @@ struct Replacer {
   void replaceUser(Operation *user, SmallVectorImpl<Operation *> &toDelete) {
     Derived *derived = getDerived();
 
-    if (auto load = dyn_cast<POP::LoadOp>(user)) {
-      // Store each load in its index in the array, using the fact that C++ will
-      // make value null by default.
-      SmallVector<Value> loadedVals(newAllocas.size());
-
-      // Get the load for the given index in the aggregate or create a load to
-      // the equivelent scalar.
-      auto getOrCreateLoad = [&](uint64_t index) {
-        Value newVal = loadedVals[index];
-        if (!newVal) {
-          newVal =
-              builder.create<POP::LoadOp>(load.getLoc(), newAllocas[index]);
-          loadedVals[index] = newVal;
-        }
-        return newVal;
-      };
-
-      // A load from an allocation of N is implicitly a load from the first
-      // dimension.
-      if (std::is_same<ContainerType, POP::StackAllocationOp>::value) {
-        load.replaceAllUsesWith(getOrCreateLoad(0));
-        return;
-      }
-
-      // Replace the *user* of each load with the loaded scalar or for GEPs the
-      // pointer itself.
-      for (Operation *loadUser : load->getUsers()) {
-        if (auto gep = dyn_cast<POP::StructGEPOp>(loadUser)) {
-          gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
-          toDelete.push_back(gep);
-        } else if (auto extract = dyn_cast<POP::StructExtractOp>(loadUser)) {
-          Value newVal = getOrCreateLoad(extract.getIndex().getLimitedValue());
-          extract.replaceAllUsesWith(newVal);
-          toDelete.push_back(extract);
-        } else if (auto get = dyn_cast<POP::ArrayGetOp>(loadUser)) {
-          auto attr = cast<IntegerAttr>(get.getIndex());
-          Value newVal = getOrCreateLoad(attr.getInt());
-          get.replaceAllUsesWith(newVal);
-          toDelete.push_back(get);
-        } else if (auto gep = dyn_cast<POP::ArrayGEPOp>(loadUser)) {
-          APInt index;
-          matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index));
-          gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
-          toDelete.push_back(gep);
-        }
-      }
-    } else if (auto store = dyn_cast<StoreOp>(user)) {
+    if (auto store = dyn_cast<StoreOp>(user)) {
       auto operand = store.getArg();
       int64_t index = 0;
 
@@ -193,10 +147,40 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
   /// Replace some of the struct specific things.
   void replaceUserImpl(Operation *user,
                        SmallVectorImpl<Operation *> &toDelete) {
-    if (auto gep = dyn_cast<StructGEPOp>(user))
+    if (auto gep = dyn_cast<StructGEPOp>(user)) {
       gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
-    else if (auto extract = dyn_cast<StructExtractOp>(user))
+    } else if (auto extract = dyn_cast<StructExtractOp>(user)) {
       extract.replaceAllUsesWith(newAllocas[extract.getIndexAttr().getInt()]);
+    } else if (auto load = dyn_cast<POP::LoadOp>(user)) {
+      // Store each load in its index in the array, using the fact that C++ will
+      // make value null by default.
+      SmallVector<Value> loadedVals(newAllocas.size());
+
+      // Get the load for the given index in the aggregate or create a load to
+      // the equivelent scalar.
+      auto getOrCreateLoad = [&](uint64_t index) {
+        Value newVal = loadedVals[index];
+        if (!newVal) {
+          newVal =
+              builder.create<POP::LoadOp>(load.getLoc(), newAllocas[index]);
+          loadedVals[index] = newVal;
+        }
+        return newVal;
+      };
+
+      // Replace the *user* of each load with the loaded scalar or for GEPs the
+      // pointer itself.
+      for (Operation *loadUser : load->getUsers()) {
+        if (auto gep = dyn_cast<POP::StructGEPOp>(loadUser)) {
+          gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
+          toDelete.push_back(gep);
+        } else if (auto extract = dyn_cast<POP::StructExtractOp>(loadUser)) {
+          Value newVal = getOrCreateLoad(extract.getIndex().getLimitedValue());
+          extract.replaceAllUsesWith(newVal);
+          toDelete.push_back(extract);
+        }
+      }
+    }
   }
 
   /// The extractor op for structures.
@@ -229,27 +213,6 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       if (auto store = dyn_cast<POP::StoreOp>(user))
         if (store.getArg() == alloc)
           return false;
-
-      // We allow loads if they are only then used in GEPs or Gets.
-      if (auto load = dyn_cast<POP::LoadOp>(user)) {
-        for (Operation *loadUser : load->getUsers()) {
-          if (!isa<POP::ArrayGEPOp, POP::ArrayGetOp>(loadUser))
-            return false;
-
-          // Allow GEPs through only if the index is constant.
-          if (auto gep = dyn_cast<POP::ArrayGEPOp>(loadUser)) {
-            APInt index;
-            if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
-                index.isNegative())
-              return false;
-
-            // Oddly this comes up. Guard against out of range accesses.
-            if (static_cast<int64_t>(index.getLimitedValue()) >=
-                *containerTy.getResolvedSize())
-              return false;
-          }
-        }
-      }
 
       // We only support array GEPs of constant array indexing.
       if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
@@ -295,6 +258,68 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       APInt index;
       matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index));
       gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+    } else if (auto load = dyn_cast<POP::LoadOp>(user)) {
+      // Store each load in its index in the array, using the fact that C++ will
+      // make value null by default.
+      SmallVector<Value> loadedVals(newAllocas.size());
+
+      // Get the load for the given index in the aggregate or create a load to
+      // the equivelent scalar.
+      auto getOrCreateLoad = [&](uint64_t index) {
+        Value newVal = loadedVals[index];
+        if (!newVal) {
+          newVal =
+              builder.create<POP::LoadOp>(load.getLoc(), newAllocas[index]);
+          loadedVals[index] = newVal;
+        }
+        return newVal;
+      };
+
+      size_t sizeOfArray = *containerTy.getResolvedSize();
+
+      // Replace the *user* of each load with the loaded scalar or for GEPs the
+      // pointer itself. We can't replace all users but we have several which
+      // are easy cases to catch and help the compiler without requring
+      // canonicalize & cse to be run again before mem2reg / more sroa.
+      for (Operation *loadUser : llvm::make_early_inc_range(load->getUsers())) {
+        if (auto get = dyn_cast<POP::ArrayGetOp>(loadUser)) {
+          auto attr = cast<IntegerAttr>(get.getIndex());
+          if (attr.getInt() < 0 || attr.getInt() > sizeOfArray)
+            continue;
+
+          Value newVal = getOrCreateLoad(attr.getInt());
+          get.replaceAllUsesWith(newVal);
+          get->dropAllReferences();
+          toDelete.push_back(get);
+        } else if (auto gep = dyn_cast<POP::ArrayGEPOp>(loadUser)) {
+          APInt index;
+          if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
+              index.isNegative())
+            continue;
+
+          // Oddly this comes up. Guard against out of range accesses.
+          if (static_cast<int64_t>(index.getLimitedValue()) >= sizeOfArray)
+            continue;
+
+          gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+          gep->dropAllReferences();
+          toDelete.push_back(gep);
+        }
+      }
+
+      // If there are any uses left materialize the array and use the
+      // reconstituted array made up of each scalar aggregate inplace of the
+      // load of the old one.
+      if (!load.use_empty()) {
+        // Load all the scalars.
+        SmallVector<Value> allScalars;
+        for (size_t i = 0; i < newAllocas.size(); ++i)
+          allScalars.push_back(getOrCreateLoad(i));
+
+        auto newArr = builder.create<POP::ArrayCreateOp>(
+            load.getLoc(), load.getType(), allScalars);
+        load.replaceAllUsesWith(newArr.getResult());
+      }
     }
   }
 };
@@ -375,6 +400,11 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
       auto newGep = builder.create<StructGEPOp>(gep.getLoc(), newAllocas[0],
                                                 gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
+    } else if (auto load = dyn_cast<LoadOp>(user)) {
+      // A load from a stack allocation is implicitly the first element in the
+      // stack.
+      Value v = builder.create<POP::LoadOp>(load.getLoc(), newAllocas[0]);
+      load.replaceAllUsesWith(v);
     }
   }
 };
