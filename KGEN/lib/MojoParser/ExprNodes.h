@@ -467,6 +467,27 @@ struct UnaryOpNode final : public ExprNode {
                         ExprEmitter &emitter) const;
 };
 
+/// `borrowed[lt] Type` and related ownership type specifiers.
+struct OwnershipOpNode final : public ExprNode {
+  OwnershipOpNode(SMLoc keywordLoc, bool isMutable, ExprNode *lifetime,
+                  ExprNode *subExpr)
+      : ExprNode(kRef), isMutable(isMutable), keywordLoc(keywordLoc),
+        lifetime(lifetime), subExpr(subExpr) {}
+
+  bool isMutable;
+  const SMLoc keywordLoc;
+  // NOTE: We don't keep track of the [] locations.
+  ExprNode *const lifetime;
+  ExprNode *const subExpr;
+
+  static bool classof(const ExprNode *node) { return node->kind == kRef; }
+  SMLoc getLoc() const override { return keywordLoc; }
+  SourceRange getRange() const override {
+    return {keywordLoc, subExpr->getRangeEnd()};
+  }
+  AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
+};
+
 /// This represents a chained comparison expression (ex. a < b <= c).
 /// exprs stores all the expressions in the comparison (ex. a, b, c), while
 /// ops stores the ops in between pairs of expressions (ex. <, <=).

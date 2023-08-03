@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Expression parsing in Lightning is done in with a 2-phase approach where we
+// Expression parsing in Mojo is done in with a 2-phase approach where we
 // parse one or more expressions into an AST-like representation in a first
 // pass, then type check and generate operations or a type for it in a second
 // pass.  This enables a number of features:
@@ -38,23 +38,23 @@ using namespace M;
 enum class Precedence {
   kInvalid, // No precedence
 
-  kAssignExpr, // infix: := (walrus)
-  kIfElse,     // infix: if - else + lambda.
-  kBoolOr,     // infix: or
-  kBoolAnd,    // infix: and
-  kBoolNot,    // prefix: not
-  kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
-  kOr,         // infix: |
-  kXor,        // infix: ^
-  kAnd,        // infix: &
-  kShift,      // infix: <<, >>
-  kSum,        // infix: +, -
-  kTerm,       // infix: *, @, /, //, %
-  kFactor,     // prefix: +, -, ~
-  kPower,      // infix: **
-  kAwait,      // prefix: await
-  kPrimary,    // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-               //         foo.bar, foo[bar]
+  kAssignExpr,     // infix: := (walrus)
+  kIfElse,         // infix: if - else + lambda.
+  kBoolOr,         // infix: or
+  kBoolAnd,        // infix: and
+  kBoolNot,        // prefix: not
+  kComparison,     // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+  kOr,             // infix: |
+  kXor,            // infix: ^
+  kAnd,            // infix: &
+  kShift,          // infix: <<, >>
+  kSum,            // infix: +, -
+  kTerm,           // infix: *, @, /, //, %
+  kFactor,         // prefix: +, -, ~
+  kPower,          // infix: **
+  kAwaitOwnership, // prefix: await, borrowed[], owned[], inout[]
+  kPrimary,        // prefix: foo, "123", 123, 1.23, True, False, foo(1),
+                   //         foo.bar, foo[bar]
 
   kExpression = kIfElse, // "expression" precedence is if/else + lambda.
   kHighest = kPrimary
@@ -358,6 +358,9 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::minus:
   case Token::tilde:
   case Token::kw_await:
+  case Token::kw_borrowed: // borrowed [lifetime] type
+  case Token::kw_inout:    // inout [lifetime] type
+  case Token::kw_owned:    // owned [lifetime] type
   case Token::kw_not:
   case Token::identifier:
   case Token::integer:
@@ -374,6 +377,8 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_async:
   case Token::kw_def:
   case Token::kw_fn:
+  case Token::kw__ref:
+  case Token::kw__mutref:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
   case Token::kw___get_address_as_owned_value:
@@ -421,52 +426,51 @@ getUnaryOpInfo(Token::Kind tokKind) {
 /// u_expr ::=  power | "-" u_expr | "+" u_expr | "~" u_expr
 ///
 ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
-  Token::Kind tokKind = getToken().getKind();
-  switch (tokKind) {
+  Token startTok = getToken();
+  switch (startTok.getKind()) {
   case Token::plus:
   case Token::minus:
   case Token::tilde:
   case Token::kw_await:
   case Token::kw_not: { // u_expr
-    auto unaryLoc = consumeToken().getLoc();
+    consumeToken();
     // Get the kind enum and the precedence of the subexpression.
-    auto [unaryKind, subExprPrec] = getUnaryOpInfo(tokKind);
-
+    auto [unaryKind, subExprPrec] = getUnaryOpInfo(startTok.getKind());
     ExprNode *expr = nullptr;
     if (parseExpression(expr, subExprPrec))
       return failure();
-    result = alloc<UnaryOpNode>(unaryKind, unaryLoc, expr);
+    result = alloc<UnaryOpNode>(unaryKind, startTok.getLoc(), expr);
     break;
   }
   case Token::identifier: // primary -> atom -> identifier
-    result = alloc<DeclRefNode>(getToken().getSpelling());
     consumeToken(Token::identifier);
+    result = alloc<DeclRefNode>(startTok.getSpelling());
     break;
   case Token::integer: // primary -> literal -> integer
-    result = alloc<IntLiteralNode>(getToken().getSpelling());
     consumeToken(Token::integer);
+    result = alloc<IntLiteralNode>(startTok.getSpelling());
     break;
   case Token::kw_False:
-    result = alloc<BoolLiteralNode>(getToken().getLoc(), false);
     consumeToken(Token::kw_False);
+    result = alloc<BoolLiteralNode>(startTok.getLoc(), false);
     break;
   case Token::kw_True:
-    result = alloc<BoolLiteralNode>(getToken().getLoc(), true);
     consumeToken(Token::kw_True);
+    result = alloc<BoolLiteralNode>(startTok.getLoc(), true);
     break;
   case Token::kw_Self:
-    result =
-        alloc<SimpleLiteralNode>(ExprNode::kSelfLiteral, getToken().getLoc());
     consumeToken(Token::kw_Self);
+    result =
+        alloc<SimpleLiteralNode>(ExprNode::kSelfLiteral, startTok.getLoc());
     break;
   case Token::kw__:
-    result = alloc<SimpleLiteralNode>(ExprNode::kDiscardLiteral,
-                                      getToken().getLoc());
     consumeToken(Token::kw__);
+    result =
+        alloc<SimpleLiteralNode>(ExprNode::kDiscardLiteral, startTok.getLoc());
     break;
   case Token::float_num: // primary -> literal -> floatnumber
-    result = alloc<FloatLiteralNode>(getToken().getSpelling());
     consumeToken(Token::float_num);
+    result = alloc<FloatLiteralNode>(startTok.getSpelling());
     break;
   case Token::string: { // primary -> literal -> stringliteral
     SmallVector<StringRef> spellings;
@@ -479,20 +483,23 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   }
   case Token::kw_None:
-    result = getNoneExpr(getToken().getLoc());
     consumeToken(Token::kw_None);
+    result = getNoneExpr(startTok.getLoc());
     break;
   case Token::l_paren: // primary -> atom -> enclosure -> parenth_form
-    if (parsePrefixLParen(result, consumeToken(Token::l_paren).getLoc()))
+    consumeToken(Token::l_paren);
+    if (parsePrefixLParen(result, startTok.getLoc()))
       return failure();
     break;
   case Token::l_square: // list_display
-    if (parsePrefixLSquare(result, consumeToken(Token::l_square).getLoc()))
+    consumeToken(Token::l_square);
+    if (parsePrefixLSquare(result, startTok.getLoc()))
       return failure();
     break;
   case Token::l_brace: { // dict_display
+    consumeToken(Token::l_brace);
     DictionaryNode *dict = nullptr;
-    if (parsePrefixLBrace(dict, consumeToken(Token::l_brace).getLoc(),
+    if (parsePrefixLBrace(dict, startTok.getLoc(),
                           /*isSubscript=*/false))
       return failure();
     result = dict;
@@ -505,6 +512,23 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     if (failed(parseFunctionType(result)))
       return failure();
     break;
+
+  case Token::kw__ref:      // ref [lifetime] type
+  case Token::kw__mutref: { // mutref [lifetime] type
+    consumeToken();
+    // Parse the lifetime specifier.
+    ExprNode *lifetime = nullptr;
+    ExprNode *expr = nullptr;
+    if (parseToken(Token::l_square, "expected '[' before lifetime") ||
+        parseExpression(lifetime, Precedence::kAssignExpr) ||
+        parseToken(Token::r_square, "expected ']' after lifetime") ||
+        parsePrimaryExpr(expr))
+      return failure();
+    bool isMutable = startTok.getKind() == Token::kw__mutref;
+    result =
+        alloc<OwnershipOpNode>(startTok.getLoc(), isMutable, lifetime, expr);
+    break;
+  }
 
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
@@ -521,7 +545,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   }
 
   // Check isPrimaryExprToken agrees with the cases above.
-  assert(isPrimaryExprToken(tokKind) &&
+  assert(isPrimaryExprToken(startTok.getKind()) &&
          "isPrimaryExprToken out of sync with grammar above");
 
   // Parse postfix productions so long as they aren't the start of the next
