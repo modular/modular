@@ -12,9 +12,14 @@
 // CHECK-NEXT:    kgen.return %array : !pop.array<0, i8> loc(#[[LOC_CLOSURE]])
 // CHECK-NEXT:  } loc(#[[LOC_CLOSURE]])
 
+// CHECK-LABEL: kgen.generator @foo_OtherClosure() always_inline_no_debug {
+// CHECK-NEXT:    kgen.return loc(#[[LOC1:.*]])
+// CHECK-NEXT:  } loc(#[[LOC1]])
+
 // CHECK-LABEL: kgen.generator @foo() -> !pop.array<0, i1> {
 // CHECK-NEXT:    kgen.param.declare Closure: () -> !pop.array<0, i8> = <@foo_Closure> loc(#[[LOC_CLOSURE_DEC:loc[0-9]*]])
-// CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_FOO:loc[0-9]*]])
+// CHECK-NEXT:    kgen.param.declare OtherClosure: () -> () = <@foo_OtherClosure> loc(#[[LOC_FOO:loc[0-9]*]])
+// CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_FOO]])
 // CHECK-NEXT:    kgen.return %array : !pop.array<0, i1> loc(#[[LOC_FOO]])
 // CHECK-NEXT:  } loc(#[[LOC_FOO]])
 
@@ -29,11 +34,15 @@ kgen.generator @foo() -> !pop.array<0, i1> {
     kgen.return %array_2 : !pop.array<0, i8> loc(#locClosure)
   } loc(#locClosure)
 
+  kgen.param.declare.region OtherClosure = () -> () always_inline_no_debug {
+    kgen.return loc(#loc1)
+  } loc(#loc1)
+
   %array = kgen.param.constant: array<0, i1> = <[]> loc(#locFoo)
   kgen.return %array : !pop.array<0, i1> loc(#locFoo)
 } loc(#locFoo)
 
-// CHECK-DAG: #[[LOC1:loc[0-9]*]] = loc("foo.mojo":170:1)
+// CHECK-DAG: #[[LOC1]] = loc("foo.mojo":170:1)
 // CHECK-DAG: #[[LOC2:loc[0-9]*]] = loc("foo.mojo":239:5)
 // CHECK-DAG: #[[LOC3:loc[0-9]*]] = loc("foo.mojo":242:9)
 #loc1 = loc("foo.mojo":170:1)
