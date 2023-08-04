@@ -1,4 +1,8 @@
 // RUN: mojo package %mojo_cpu_build_arch %S/test_package --name mojo-test-pkg | FileCheck %s
+// RUN: mojo package -debug-level full %mojo_cpu_build_arch %S/test_package --name mojo-test-pkg | FileCheck %s --check-prefix=DEBUGINFO
+
+// DEBUGINFO-DAG: #local_variable{{[0-9]+}} =
+// DEBUGINFO-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @"$mojo-test-pkg" attributes {archiveBytes = {{.*}}, compiledFor = {{.*}}, postElaborationModule = {{.*}}, preElaborationModule = {{.*}}
 

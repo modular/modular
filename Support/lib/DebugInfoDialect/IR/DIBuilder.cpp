@@ -61,9 +61,11 @@ DISubprogramAttr DIBuilder::createSubprogram(StringRef name,
                                              SubprogramFlags subprogramFlags,
                                              DISubroutineType type) {
   // Get the last non-local scope to use as the parent for the subprogram.
-  auto it = scopes.rbegin();
-  while (isa<DILocalScopeAttr>(*it))
-    ++it;
+  auto range = llvm::reverse(scopes);
+  auto it = llvm::find_if(
+      range, [](DIScopeAttr scope) { return !isa<DILocalScopeAttr>(scope); });
+  assert(it != range.end() &&
+         "didn't find a non-local scope -- forgot to push one?");
   return DISubprogramAttr::get(compileUnit, *it, name, linkageName, file, line,
                                scopeLine, subprogramFlags, type);
 }

@@ -398,6 +398,8 @@ M::importMojoPackage(StringRef path, StringRef packageName,
     return {};
   }
   SharedState sharedState(sourceMgr, config);
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+
   auto [module, packageDecl] = importMojoImpl(
       path, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
@@ -407,6 +409,9 @@ M::importMojoPackage(StringRef path, StringRef packageName,
             module, SMLoc(), StringAttr(), /*parentDecl=*/nullptr,
             LexerCursor(), LexerCursor(), /*indentation=*/-1);
         sharedState.initialize(topLevelDecl);
+
+        if (sharedState.diBuilder)
+          fileGuard = sharedState.diBuilder->pushFile(path, "/");
 
         // Build the package.
         return sharedState.createPackage(path, packageName);
