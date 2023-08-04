@@ -11,6 +11,7 @@
 #include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
 #include "Support/Host.h"
+#include "llvm/Support/Threading.h"
 #include <mutex>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -21,6 +22,7 @@
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
 #include "opentelemetry/metrics/provider.h"
+#include "opentelemetry/sdk/common/global_log_handler.h"
 #include "opentelemetry/sdk/logs/event_logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/processor.h"
@@ -30,10 +32,51 @@
 #include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
+#define DEBUG_TYPE "telemetry-context"
+
 using namespace M;
 using namespace LLCL;
 using namespace Telemetry;
 using namespace Exporter;
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+static void configureInternalLogging(Config &cfg) {
+  // OTel internal logging (e.g. warnings and errors related to OTel's
+  // operation) is off by default and controlled with `telemetry.internal_log`
+  // config key (or equivalently with `TELEMETRY_INTERNAL_LOG` env var).
+  bool internalLogsOff = false;
+  opentelemetry::sdk::common::internal_log::LogLevel logLevel;
+  StringRef internalLogConfig = cfg.getValue("telemetry.internal_log");
+  if (internalLogConfig.empty() || internalLogConfig == "off") {
+    internalLogsOff = true;
+  } else {
+    if (internalLogConfig == "error") {
+      logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Error;
+    } else if (internalLogConfig.startswith("warn")) {
+      logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Warning;
+    } else if (internalLogConfig == "info") {
+      logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Info;
+    } else if (internalLogConfig == "debug") {
+      logLevel = opentelemetry::sdk::common::internal_log::LogLevel::Debug;
+    } else {
+      LLVM_DEBUG(llvm::dbgs()
+                 << "Unrecognized log level for telemetry.internal_log: "
+                 << internalLogConfig);
+      internalLogsOff = true;
+    }
+  }
+  if (internalLogsOff) {
+    // Use NOOP log handler to disable all OTel internal logs.
+    auto noopHandler = std::make_shared<
+        opentelemetry::sdk::common::internal_log::NoopLogHandler>();
+    opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogHandler(
+        noopHandler);
+  } else {
+    opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogLevel(
+        logLevel);
+  }
+}
+#endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::TelemetryContext(
     const llvm::StringMap<TelemetryContext::AttributeValue> &resources) {
@@ -69,6 +112,10 @@ TelemetryContext::TelemetryContext(
   if (configOr.isError())
     llvm::report_fatal_error(configOr.getError());
   Config cfg = std::move(*configOr);
+
+  // Configure OTel internal logging.
+  static llvm::once_flag flag;
+  llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
 
   // Get the user ID out of the config.
   StringRef uuid = cfg.getValue("user.id");
