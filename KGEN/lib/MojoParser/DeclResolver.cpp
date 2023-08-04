@@ -712,8 +712,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // implementation to either `__wrap_and_execute_main` or
   // `__wrap_and_execute_raising_main` in the Startup module, depending on
   // how the user specified their main function.
-  auto shimBodyBuilder =
-      ImplicitLocOpBuilder::atBlockBegin(loc, shimMainFn.getBody());
   bool isRaisingMain = userMainSignature.isThrows();
   ASTDecl *mainWrapperDecl =
       resolveStartDecl(isRaisingMain ? "__wrap_and_execute_raising_main"
@@ -729,6 +727,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
       {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
                                userMainSignature)},
       mainWrapperFn.getSignature().dropParamValues());
+
+  auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
+      shimMainFn->getLoc(), shimMainFn.getBody());
   auto wrappedCall = shimBodyBuilder.create<CallOp>(
       shimMainFn.getArgumentTypes()[0], wrapperFnRef, ArrayRef<ParamDeclAttr>(),
       shimMainFn.getArguments());
