@@ -313,6 +313,14 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   return *decl;
 }
 
+void DeclResolver::moveDecls(ASTDecl &dst, ASTDecl &src) {
+  dst.hasReferenceError |= src.hasReferenceError;
+  for (auto &[name, children] : src.declsInScope)
+    for (ASTDecl *child : children)
+      child->parentDecl = &dst;
+  dst.declsInScope = std::move(src.declsInScope);
+}
+
 void DeclResolver::aliasDecls(const TinyPtrVector<ASTDecl *> &decls,
                               StringAttr name, llvm::SMLoc aliasLoc,
                               ASTDecl &context) {
@@ -2275,8 +2283,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   // Propagate errors and the parsed decls in the signature.
-  decl.hasReferenceError |= sigDecl.hasReferenceError;
-  decl.declsInScope = std::move(sigDecl.declsInScope);
+  moveDecls(decl, sigDecl);
 
   if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
       !bitEnumContainsAny(effects, FnEffects::Escaping))
@@ -3183,8 +3190,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
 
   // Propagate signature errors and decls.
-  decl.hasReferenceError |= sigDecl.hasReferenceError;
-  decl.declsInScope = std::move(sigDecl.declsInScope);
+  moveDecls(decl, sigDecl);
 
   structOp.setInputParams(inputParamDecls);
   structOp.setParamVarargs(paramVarargs);

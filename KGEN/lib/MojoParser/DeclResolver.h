@@ -201,7 +201,6 @@ private:
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasForwardDeclOp op, Lexer &lexer, ASTDecl &decl);
 
-private:
   /// Add a pre-existing set of declarations, which may optionally be imported
   /// from a given module, as children of the specified context, using the
   /// provided alias name (which may differ from that of the decl).
@@ -210,6 +209,11 @@ private:
                                ASTDecl &context, bool emitDiagnostics = true,
                                StringAttr moduleName = StringAttr(),
                                StringAttr declNameInModule = StringAttr());
+
+  /// Move the children decls of `src` into `dst`. This is useful when a
+  /// temporary decl needs to be created for parsing subexpressions but whose
+  /// children will be inherited later by a decl being resolved.
+  void moveDecls(ASTDecl &dst, ASTDecl &src);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
