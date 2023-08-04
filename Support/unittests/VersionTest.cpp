@@ -89,6 +89,19 @@ TEST(Version, Equal) {
   ASSERT_FALSE(v1Alpha_2.isError()) << v1Alpha_2.getError();
 
   EXPECT_TRUE(*v1Alpha == *v1Alpha_2);
+  EXPECT_FALSE(*v1Alpha != *v1Alpha_2);
   EXPECT_FALSE(*v1Alpha < *v1Alpha_2);
+  EXPECT_TRUE(*v1Alpha <= *v1Alpha_2);
+  EXPECT_TRUE(*v1Alpha_2 >= *v1Alpha);
   EXPECT_FALSE(*v1Alpha_2 < *v1Alpha);
+}
+
+TEST(Version, NotEqual) {
+  auto v1Alpha = Version::parse("1.0.0-alpha");
+  ASSERT_FALSE(v1Alpha.isError()) << v1Alpha.getError();
+
+  auto v1Alpha_2 = Version::parse("1.0.0-beta");
+  ASSERT_FALSE(v1Alpha_2.isError()) << v1Alpha_2.getError();
+
+  EXPECT_TRUE(*v1Alpha != *v1Alpha_2);
 }

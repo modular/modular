@@ -23,14 +23,22 @@ public:
 
   /// Compare two Version objects according to SemVer 2.0.0 section 11. In this
   /// context, "less than" means "lower precedence".
-  bool operator<(const Version &other);
-  bool operator>(const Version &other) { return !(*this < other); }
+  bool operator<(const Version &other) const;
+
+  bool operator<=(const Version &other) const {
+    return (*this < other) || (*this == other);
+  }
+  bool operator>(const Version &other) const { return !(*this <= other); }
+  bool operator>=(const Version &other) const { return !(*this < other); }
 
   /// Check if two version objects are semantically equal.
-  bool operator==(const Version &other) {
+  bool operator==(const Version &other) const {
     return major == other.major && minor == other.minor &&
            patch == other.patch && label == other.label;
   }
+
+  /// Check if two version objects are not equal.
+  bool operator!=(const Version &other) const { return !(*this == other); }
 
   /// Get the major version.
   unsigned getMajor() const { return major; }
