@@ -29,7 +29,7 @@ namespace M::LLCL::Telemetry {
 /// ensure that any telemetry that hasn't yet been exported is exported. This
 /// timeout is how long it waits for the export to complete before the
 /// destructor returns.
-constexpr auto kShutdownFlushTimeout = std::chrono::milliseconds(100);
+constexpr auto kShutdownFlushTimeout = std::chrono::milliseconds(500);
 /// Periodically export metrics every kExportInterval duration.
 constexpr auto kExportInterval = std::chrono::milliseconds(10000);
 /// Timeout for periodic metric exports. Note that periodic exports happen
