@@ -16,7 +16,6 @@ if(MODULAR_ENABLE_TELEMETRY)
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp
-    MetricReader.cpp
 
     LINK_LIBS PUBLIC
     LLCLSupport
@@ -43,6 +42,5 @@ else()
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp
-    MetricReader.cpp
     )
 endif()

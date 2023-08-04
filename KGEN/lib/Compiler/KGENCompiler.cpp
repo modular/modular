@@ -364,8 +364,6 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // Run the passes as a cached transform. Don't deflate the op as part of this
   // - we don't want that cost right now.
   {
-    [[maybe_unused]] auto flushTelemetry =
-        runtime.getTelemetryContext()->autoFlush();
     [[maybe_unused]] auto timeScope =
         runtime.getTelemetryContext()
             ->createUInt64Timer<std::chrono::milliseconds>(

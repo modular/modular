@@ -20,14 +20,23 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
-#include <filesystem>
-#include <mutex>
-#include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::LLCL::Telemetry {
 
-class ManualExportingMetricReader;
+// TODO: Support some of these in config file.
+/// When the TelemetryContext is destroyed, it does a synchronous flush to
+/// ensure that any telemetry that hasn't yet been exported is exported. This
+/// timeout is how long it waits for the export to complete before the
+/// destructor returns.
+constexpr auto kShutdownFlushTimeout = std::chrono::milliseconds(100);
+/// Periodically export metrics every kExportInterval duration.
+constexpr auto kExportInterval = std::chrono::milliseconds(10000);
+/// Timeout for periodic metric exports. Note that periodic exports happen
+/// asynchronously and this timeout is for the worker thread that does them
+/// (OTel-managed thread). NOTE: this value must be smaller than the export
+/// interval.
+constexpr auto kExportTimeout = std::chrono::milliseconds(1000);
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
@@ -151,21 +160,34 @@ public:
 #endif
   }
 
-  /// Flush all the collected metrics.
-  void flush();
+  /// Flush all the collected metrics. Blocks until the flush completes
+  /// or the timeout elapses, whichever comes first.
+  /// NOTE: TelemetryContext flushes periodically asynchronously. Manual
+  /// flushing is not recommended except where needed (for example the
+  /// TelemetryContext flushes itself at shutdown).
+  void
+  flush(std::chrono::microseconds timeout = std::chrono::microseconds::max());
 
   /// This struct provides an RAII-style way to flush telemetry at the end of a
   /// scope.
   struct AutoFlush {
-    AutoFlush(LLCL::RCRef<TelemetryContext> ctx) : context(std::move(ctx)) {}
-    ~AutoFlush() { context->flush(); }
+    AutoFlush(LLCL::RCRef<TelemetryContext> ctx,
+              std::chrono::microseconds timeout)
+        : context(std::move(ctx)), timeout(timeout) {}
+    ~AutoFlush() { context->flush(timeout); }
 
     LLCL::RCRef<TelemetryContext> context;
+    std::chrono::microseconds timeout;
   };
 
-  /// Get an AutoFlush object from `this`.
-  AutoFlush autoFlush() {
-    return AutoFlush(LLCL::RCRef<TelemetryContext>::copy(this));
+  /// Get an AutoFlush object from `this`. The object will flush when it goes
+  /// out of scope, blocking until the flush completes or the timeout elapses,
+  /// whichever comes first. NOTE: TelemetryContext flushes periodically
+  /// asynchronously. Flushing with scoped autoflush is not generally
+  /// recommended.
+  AutoFlush autoFlush(
+      std::chrono::microseconds timeout = std::chrono::microseconds::max()) {
+    return AutoFlush(LLCL::RCRef<TelemetryContext>::copy(this), timeout);
   }
 
 private:
@@ -173,14 +195,9 @@ private:
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
-  std::vector<std::shared_ptr<ManualExportingMetricReader>> metricReaders;
-  // Logs.
+  //  Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;
-
-  /// We must not call export concurrently for the same exporter instance, so we
-  /// need to make sure we lock it.
-  std::mutex exportLock;
 #endif
 };
 
