@@ -8,11 +8,9 @@
 
 #include "LLCL/Support/Telemetry/Exporters/FileLogExporter.h"
 #include "LLCL/Support/Telemetry/Exporters/FileMetricExporter.h"
-#include "LLCL/Support/Telemetry/MetricReader.h"
 #include "Support/Configuration.h"
 #include "Support/Host.h"
 #include "llvm/Support/Threading.h"
-#include <mutex>
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h"
@@ -24,9 +22,11 @@
 #include "opentelemetry/metrics/provider.h"
 #include "opentelemetry/sdk/common/global_log_handler.h"
 #include "opentelemetry/sdk/logs/event_logger_provider_factory.h"
+#include "opentelemetry/sdk/logs/logger_provider.h"
 #include "opentelemetry/sdk/logs/logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/processor.h"
 #include "opentelemetry/sdk/logs/simple_log_record_processor_factory.h"
+#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h"
 #include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/resource/resource.h"
@@ -131,6 +131,10 @@ TelemetryContext::TelemetryContext(
       std::make_unique<opentelemetry::sdk::metrics::ViewRegistry>(),
       otelResources);
 
+  opentelemetry::sdk::metrics::PeriodicExportingMetricReaderOptions options;
+  options.export_interval_millis = kExportInterval;
+  options.export_timeout_millis = kExportTimeout;
+
   // Get metrics exporter config.
   StringRef httpEndpoint =
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
@@ -146,9 +150,10 @@ TelemetryContext::TelemetryContext(
   if (!filePath.empty()) {
     // File exporter.
     auto exporter = std::make_unique<FileMetricExporter>(filePath);
-    metricReaders.emplace_back(
-        std::make_shared<ManualExportingMetricReader>(std::move(exporter)));
-    provider->AddMetricReader(metricReaders.back());
+    auto reader = std::make_shared<
+        opentelemetry::sdk::metrics::PeriodicExportingMetricReader>(
+        std::move(exporter), options);
+    provider->AddMetricReader(reader);
   }
 
   if (!httpEndpoint.empty()) {
@@ -158,9 +163,10 @@ TelemetryContext::TelemetryContext(
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
-    metricReaders.emplace_back(
-        std::make_shared<ManualExportingMetricReader>(std::move(exporter)));
-    provider->AddMetricReader(metricReaders.back());
+    auto reader = std::make_shared<
+        opentelemetry::sdk::metrics::PeriodicExportingMetricReader>(
+        std::move(exporter), options);
+    provider->AddMetricReader(reader);
   }
 
   metricsProvider = std::unique_ptr<opentelemetry::metrics::MeterProvider>(
@@ -208,14 +214,20 @@ TelemetryContext::TelemetryContext(
 #endif // MODULAR_ENABLE_TELEMETRY
 }
 
-TelemetryContext::~TelemetryContext() { flush(); }
+TelemetryContext::~TelemetryContext() { flush(kShutdownFlushTimeout); }
 
-void TelemetryContext::flush() {
+void TelemetryContext::flush(std::chrono::microseconds timeout) {
 #ifdef MODULAR_ENABLE_TELEMETRY
-  // From OTel: Export must not be called concurrently for the same exporter
-  // instance (collectAndExport calls Export).
-  std::lock_guard<std::mutex> lock(exportLock);
-  for (auto reader : metricReaders)
-    reader->collectAndExport();
+  // Flush metrics.
+  auto metricsProviderImpl =
+      static_cast<opentelemetry::sdk::metrics::MeterProvider *>(
+          metricsProvider.get());
+  metricsProviderImpl->ForceFlush(timeout);
+
+  // Flush logs.
+  auto loggerProviderImpl =
+      std::static_pointer_cast<opentelemetry::sdk::logs::LoggerProvider>(
+          loggerProvider);
+  loggerProviderImpl->ForceFlush(timeout);
 #endif // MODULAR_ENABLE_TELEMETRY
 }

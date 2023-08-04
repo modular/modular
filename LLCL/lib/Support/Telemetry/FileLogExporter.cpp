@@ -28,6 +28,10 @@ FileLogExporter::Export(const opentelemetry::nostd::span<
   // Export data to outputStream using OTel's OStreamLogRecordExporter.
   ostreamExporter.Export(records);
 
+  // If there is nothing to write, return.
+  if (outputStream.tellp() == 0)
+    return opentelemetry::sdk::common::ExportResult::kSuccess;
+
   // Flush the stream to a file.
   auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
     // Do the stream manipulation inside the atomic region - other things may

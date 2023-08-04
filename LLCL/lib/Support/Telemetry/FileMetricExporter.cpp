@@ -26,6 +26,10 @@ opentelemetry::sdk::common::ExportResult FileMetricExporter::Export(
   // Export data to outputStream using OTel's OStreamMetricExporter.
   ostreamExporter.Export(data);
 
+  // If there is nothing to write, return.
+  if (outputStream.tellp() == 0)
+    return opentelemetry::sdk::common::ExportResult::kSuccess;
+
   // Flush the stream to a file.
   auto err = appendFileUnderLock(filePath, [&](llvm::raw_ostream &os) {
     // Do the stream manipulation inside the atomic region - other things may

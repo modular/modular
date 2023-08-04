@@ -286,8 +286,6 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
                SmallVectorImpl<std::string> *includedFiles,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
-  [[maybe_unused]] auto flushTelemetry =
-      sharedState.runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
       sharedState.runtime.getTelemetryContext()
           ->createUInt64Timer<std::chrono::milliseconds>(

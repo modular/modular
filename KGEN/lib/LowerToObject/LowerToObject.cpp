@@ -126,9 +126,6 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
                                      const CompilationOptions &options,
                                      LLCL::Runtime &runtime) {
   TimeTraceScope<> traceScope("llvm-optimize", module.getName());
-  // Create the flush before the timer - objects are destroyed in reverse order.
-  [[maybe_unused]] auto flushTelemetry =
-      runtime.getTelemetryContext()->autoFlush();
   [[maybe_unused]] auto timeScope =
       runtime.getTelemetryContext()
           ->createUInt64Timer<std::chrono::milliseconds>(
