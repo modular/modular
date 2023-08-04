@@ -25,13 +25,10 @@
 // CHECK-DAG: #[[LOC_TRY_FILE:.*]] = loc("silly.mlir":17:3)
 // CHECK-DAG: #[[LOC_TRY:.*]] = loc(fused<#[[SP]]>[#[[LOC_TRY_FILE]]])
 #locTry = loc("silly.mlir":17:3)
-// CHECK-DAG: #[[FILE_LOC2:.*]] = loc("test.mlir":3:10)
-// CHECK-DAG: #[[CALL_LOC:.*]] = loc(fused<#[[SP]]>[#[[FILE_LOC2]]])
-#loc10 = loc(fused<#callerSp>["test.mlir":2:3])
 
 // CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index
 kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -> !kgen.paramref<ty> {
-  // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC]])
+  // CHECK: %[[RES:.*]] = kgen.call @sillyFn() : () -> index loc(#[[CALL_LOC:.*]])
   %0 = kgen.call_param[() -> !kgen.paramref<ty>: fn]() loc(#loc11)
   // CHECK: debuginfo.value #[[VAR]] = %[[RES]] : index loc(#[[CALL_LOC]])
   debuginfo.value #local_variable = %0 : !kgen.paramref<ty> loc(#loc11)
@@ -49,14 +46,6 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.paramref<ty>>() -
   } else {
     lit.try.yield loc(#loc11)
   } loc(#loc11)
-
-  // CHECK: %1 = kgen.stage_closure
-  // CHECK:   kgen.return loc(#[[LOC_CL:.*]])
-  // CHECK: } callLoc(#[[CALL_LOC]]) loc(#[[LOC_CL]])
-  kgen.param.declare.region SomeClosure = (%arg0: index) {
-    kgen.return loc(#locClosure)
-  } loc(#locClosure)
-  %2 = kgen.create_closure [<>(index) capturing -> (): SomeClosure]() loc(#loc11)
 
   // CHECK: kgen.return %[[RES]] : index loc(#[[SP_LOC:.*]])
   kgen.return %0 : !kgen.paramref<ty> loc(#loc10)
@@ -80,22 +69,9 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 // CHECK-DAG: #[[PARAM_REF_LOC:.*]] = loc(fused<1 : index>[#[[FILE_LOC3]]])
 // CHECK-DAG: #[[FW_LOC]] = loc(fused<#[[SP]]>[#[[PARAM_REF_LOC]]])
 
-
+// CHECK-DAG: #[[FILE_LOC2:.*]] = loc("test.mlir":3:10)
+// CHECK-DAG: #[[CALL_LOC]] = loc(fused<#[[SP]]>[#[[FILE_LOC2]]])
+#loc10 = loc(fused<#callerSp>["test.mlir":2:3])
 #loc11 = loc(fused<#callerSp>["test.mlir":3:10])
 #paramRefLoc = loc(fused<#kgen.param.decl.ref<"a">>["test.mlir":4:3])
 #locFwParam = loc(fused<#callerSp>[#paramRefLoc])
-
-// CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<{{.*}} name = "SomeClosure", linkageName = "SomeClosure",
-#closureSp = #debuginfo.subprogram<
-  compileUnit = #compile_unit,
-  scope = #file,
-  name = "SomeClosure",
-  linkageName = "SomeClosure",
-  file = #file,
-  line = 10,
-  scopeLine = 10,
-  subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (): DW_CC_normal>
-
-// CHECK-DAG: #[[LOC_CL]] = loc(fused<#[[CL_SP]]>
-#locClosure = loc(fused<#closureSp>["silly.mlir":10:1])

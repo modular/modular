@@ -320,15 +320,6 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
 // CHECK: %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK: %2 = kgen.call @"nopExample,dt=f32"(%1) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
-// COM: These are disabled because we don't handle regions for now
-// XCHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=test_region_concrete_region_1"() {
-// XCHECK:    %0 = kgen.param.constant
-// XCHECK:    %1 = pop.cast
-// XCHECK:    %2 = pop.add %1, %1 : !pop.scalar<si32>
-// XCHECK:    %3 = pop.mul %2, %1 : !pop.scalar<si32>
-// XCHECK:    %4 = pop.add %3, %3 : !pop.scalar<si32>
-// XCHECK:    %5 = pop.mul %4, %3 : !pop.scalar<si32>
-
 kgen.generator @takeUnary
   <dt: dtype, fn: <dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)>>() {
 
@@ -385,96 +376,6 @@ kgen.generator @test_symbol() {
   kgen.return
 }
 
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // This function is instantiated with regions defined below.
-// COM: kgen.generator @take_non_parametric_f32<fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>() {
-// COM:   %0 = kgen.param.constant: !pop.scalar<f32> = <#pop.simd<"1.0">>
-// COM:   %1 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%0)
-// COM:   %2 = kgen.call_param[(!pop.scalar<f32>) -> !pop.scalar<f32>: fn](%1)
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region"() {
-// COM: // CHECK:   %0 = kgen.param.constant
-// COM: // CHECK:   %1 = pop.mul %0, %0 : !pop.scalar<f32>
-// COM: // CHECK:   %2 = pop.mul %1, %1 : !pop.scalar<f32>
-// COM: // CHECK:   kgen.return
-// COM: // CHECK-LABEL: kgen.func @"take_non_parametric_f32,fn=test_region_concrete_region_0"() {
-// COM: // CHECK:   %0 = kgen.param.constant
-// COM: // CHECK:   %1 = pop.add %0, %0 : !pop.scalar<f32>
-// COM: // CHECK:   %2 = pop.add %1, %1 : !pop.scalar<f32>
-// COM: // CHECK:   kgen.return
-// COM:
-// COM: // CHECK-LABEL:  kgen.func @test_region() {
-// COM: kgen.generator @test_region() {
-// COM:   // CHECK:  kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region"() : () -> ()
-// COM:   kgen.param.declare.region fn0 = (%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-// COM:     %result = pop.mul %arg0, %arg0 : !pop.scalar<f32>
-// COM:     kgen.return %result : !pop.scalar<f32>
-// COM:   }
-// COM:   kgen.call @take_non_parametric_f32<
-// COM:     fn : (!pop.scalar<f32>) -> !pop.scalar<f32> = fn0>() : () -> ()
-// COM:
-// COM:   // CHECK: kgen.call @"take_non_parametric_f32,fn=test_region_concrete_region_0"()
-// COM:
-// COM:   // This is the same as above, but calling through a parameter.  This shows the
-// COM:   // kgen.call_param -> kgen.call lowering maintains the region correctly.
-// COM:   kgen.param.declare take_non_parametric_f32
-// COM:     : <fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>()->() = <@take_non_parametric_f32>
-// COM:   kgen.param.declare.region fn1 = (%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-// COM:     %result = pop.add %arg0, %arg0 : !pop.scalar<f32>
-// COM:     kgen.return %result : !pop.scalar<f32>
-// COM:   }
-// COM:   kgen.call_param[()->():
-// COM:     bind_signature(:<fn: (!pop.scalar<f32>) -> !pop.scalar<f32>>()->() take_non_parametric_f32, fn1)]()
-// COM:
-// COM:   // Check a call to a parametric region.
-// COM:   // CHECK: kgen.call @"takeUnary,dt=si32,fn=test_region_concrete_region_1"()
-// COM:   kgen.param.declare.region fn2 = <dt:dtype>(%arg0: !pop.scalar<dt>) -> !pop.scalar<dt> {
-// COM:     %0 = pop.add %arg0, %arg0 : !pop.scalar<dt>
-// COM:     %1 = pop.mul %0, %arg0 : !pop.scalar<dt>
-// COM:     kgen.return %1 : !pop.scalar<dt>
-// COM:   }
-// COM:   kgen.call @takeUnary<dt: dtype = si32,
-// COM:      fn : <dt:dtype>(!pop.scalar<dt>) -> !pop.scalar<dt> = fn2>() : () -> ()
-// COM:
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK:  kgen.func @"just_call_it_pass_it,fn=test_region_insanity_concrete_region,littleFn=test_region_insanity_concrete_region_0"() {
-// COM: // CHECK:    %0 = kgen.param.constant
-// COM: // CHECK:    %1 = pop.cast %0
-// COM: // CHECK:    %2 = kgen.param.constant = <127>
-// COM: // CHECK:    kgen.return
-// COM: kgen.generator @just_call_it_pass_it
-// COM:   <fn: <subFn:<dt: dtype->index>()->()>()->(),
-// COM:    littleFn: <dt: dtype->index>()->()>() {
-// COM:
-// COM:   kgen.call_param[()->(): bind_signature(:<subFn : <dt: dtype->index>()->()>()->() fn, littleFn)]()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: @test_region_insanity
-// COM: kgen.generator @test_region_insanity() {
-// COM:   // CHECK: kgen.call @"just_call_it_pass_it,fn=test_region_insanity_concrete_region,littleFn=test_region_insanity_concrete_region_0"()
-// COM:   kgen.param.declare.region fn = <subFn:<dt: dtype->index>()->()>() {
-// COM:     kgen.call_param[<() -> index>()->(): bind_signature(:<dt: dtype->index>()->() subFn, f64)]<() ->resultParam>()
-// COM:     %0 = kgen.param.constant = <add(resultParam, 4)>
-// COM:     kgen.return
-// COM:   }
-// COM:   kgen.param.declare.region littleFn = <dt: dtype->index>() {
-// COM:     %one = kgen.param.constant: !pop.scalar<si64> = <#pop.simd<1>>
-// COM:     %0 = pop.cast %one : !pop.scalar<si64> to !pop.scalar<dt>
-// COM:     kgen.return<123>
-// COM:   }
-// COM:   kgen.call @just_call_it_pass_it<
-// COM:     fn: <subFn:<dt: dtype->index>()->()>()->() = fn,
-// COM:     littleFn: <dt: dtype->index>()->() = littleFn>() : () -> ()
-// COM:   kgen.return
-// COM: }
-// COM:
 // -----
 
 // CHECK-LABEL: kgen.func @"parametricBinOp,ty=!pop.scalar<f32>"
@@ -558,363 +459,6 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 }
 
 // -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @top
-// COM: kgen.generator @top() {
-// COM:   // CHECK: kgen.call @"mid,fn=top_concrete_region,N=4"()
-// COM:   kgen.param.declare.region fn = <fn: ()->index>() -> index {
-// COM:     %0 = kgen.call_param[()->index: fn]()
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   %0:2 = kgen.call @mid<fn: <fn: ()->index>() -> index = fn, N=4>() : () -> (index, index)
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"mid,fn=top_concrete_region,N=4"
-// COM: kgen.generator @mid<fn: <fn: ()->index>() -> index, N>() -> (index, index) {
-// COM:   // CHECK: %[[C0:.*]] = index.constant 0
-// COM:   // CHECK: %[[C1:.*]] = index.constant 1
-// COM:   // CHECK: %[[C4:.*]] = kgen.param.constant = <4>
-// COM:   // CHECK: %[[ADD:.*]] = index.add %[[C1]], %[[C4]]
-// COM:   // CHECK: return %[[C0]], %[[ADD]]
-// COM:   %c0 = index.constant 0
-// COM:   %c1 = index.constant 1
-// COM:   kgen.param.declare.region fn0 = () -> index {
-// COM:     kgen.return %c0 : index
-// COM:   }
-// COM:   %1 = kgen.call_param[()->index: bind_signature(:<fn: ()->index>() -> index fn, fn0)]()
-// COM:   kgen.param.declare.region fn1 = () -> index {
-// COM:     %3 = kgen.param.constant = <N>
-// COM:     %5 = index.add %c1, %3
-// COM:     kgen.return %5 : index
-// COM:   }
-// COM:   %2 = kgen.call_param[()->index: bind_signature(:<fn: ()->index>() -> index fn, fn1)]()
-// COM:   kgen.return %1, %2 : index, index
-// COM: }
-// COM:
-// COM: // -----
-// COM:
-// COM: // CHECK-LABEL: kgen.func @outermost
-// COM: kgen.generator @outermost() -> index{
-// COM:   // CHECK: kgen.call @"middle,outer=outermost_concrete_region"
-// COM:   kgen.param.declare.region outer = <fn:()->index>() -> index {
-// COM:     %2 = kgen.call_param[()->index:fn]()
-// COM:     kgen.return %2 : index
-// COM:   }
-// COM:   %1 = kgen.call @middle<outer:<fn:()->index>()->index = outer>() : () -> index
-// COM:   kgen.return %1 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"middle,outer=outermost_concrete_region"
-// COM: kgen.generator @middle<outer:<fn:()->index>()->index>() -> index{
-// COM:   // CHECK: %[[X:.*]] = index.constant 1
-// COM:   %x = index.constant 1
-// COM:   kgen.param.declare.region fn = () -> index {
-// COM:     kgen.return %x : index
-// COM:   }
-// COM:   %1 = kgen.call @inner <fn: () -> index = fn, outer:<fn:()->index>()->index = outer>() : () -> index
-// COM:   // CHECK: return %[[X]]
-// COM:   kgen.return %1 : index
-// COM: }
-// COM:
-// COM: // COM: Inlined instations of symbols get removed.
-// COM: // CHECK-NOT: kgen.func @"inner
-// COM: kgen.generator @inner<fn: ()->index, outer:<fn:()->index>()->index>() -> index {
-// COM:   %0 = kgen.call_param[()->index: bind_signature(:<fn:()->index>()->index outer, fn)]()
-// COM:   kgen.return %0 : index
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: @inlined_region_return
-// COM: kgen.generator @inlined_region_return() {
-// COM:   // CHECK: kgen.param.constant = <2>
-// COM:   kgen.param.declare.region fn = <()->index>() {
-// COM:     kgen.return<2>
-// COM:   }
-// COM:   kgen.call @wants_region_return<fn: <()->index>()->() = fn>() : () -> ()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK-NOT: @wants_region_return
-// COM: kgen.generator @wants_region_return<fn: <()->index>()->()>() {
-// COM:   kgen.call_param[<()->index>()->(): fn]<() -> result>()
-// COM:   %0 = kgen.param.constant = <result>
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: kgen.generator.interface @iface() -> index
-// COM:
-// COM: // CHECK-LABEL: kgen.func @iface1
-// COM: kgen.generator @iface1() -> index implements @iface {
-// COM:   %0 = index.constant 0
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @iface2
-// COM: kgen.generator @iface2() -> index implements @iface {
-// COM:   %0 = index.constant 1
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-NOT @"two_instances
-// COM: kgen.generator @two_instances<fn: ()->index>() -> index {
-// COM:   %0 = kgen.call @iface() : () -> index
-// COM:   %1 = kgen.call_param[()->index: fn]()
-// COM:   %2 = index.add %0, %1
-// COM:   kgen.return %2 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @inline_call_two_instances
-// COM: kgen.generator @inline_call_two_instances(%arg0: index) -> index {
-// COM:   // CHECK-NEXT: kgen.call @iface1
-// COM:   // CHECK-NEXT: index.add %0, %arg0
-// COM:   kgen.param.declare.region fn = () -> index {
-// COM:     kgen.return %arg0 : index
-// COM:   }
-// COM:   %0 = kgen.call @two_instances<fn: ()->index = fn>() : () -> index
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @inline_call_two_instances_concrete_1
-// COM: // CHECK-NEXT: kgen.call @iface2
-// COM: // CHECK-NEXT: index.add %0, %arg0
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: kgen.generator.interface @iface<fn: ()->index>() -> index
-// COM:
-// COM: kgen.generator @iface1<fn: ()->index>() -> index implements @iface {
-// COM:   %0 = index.constant 0
-// COM:   %1 = kgen.call_param[()->index: fn]()
-// COM:   %2 = index.add %0, %1
-// COM:   kgen.return %2 : index
-// COM: }
-// COM:
-// COM: kgen.generator @iface2<fn: ()->index>() -> index implements @iface {
-// COM:   %0 = index.constant 1
-// COM:   %1 = kgen.call_param[()->index: fn]()
-// COM:   %2 = index.add %0, %1
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @inline_call_interface
-// COM: kgen.generator @inline_call_interface(%arg0: index) -> index {
-// COM:   // CHECK: index.add %idx0, %arg0
-// COM:   kgen.param.declare.region fn = () -> index {
-// COM:     kgen.return %arg0: index
-// COM:   }
-// COM:   %0 = kgen.call @iface<fn: ()->index = fn>() : () -> index
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @inline_call_interface_concrete_0
-// COM: // CHECK: index.add %idx1, %arg0
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @"invokeWithN,N=1
-// COM: // CHECK-NEXT: constant = <11>
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"invokeWithN,N=2
-// COM: // CHECK-NEXT: constant = <20>
-// COM:
-// COM: kgen.generator @invokeWithN<N, fn: <N>() -> index>() -> index{
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<N>() -> index fn, N)]()
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"invokeTwice,M=10"
-// COM: // CHECK-NEXT: kgen.call @"invokeWithN,N=1
-// COM: // CHECK-NEXT: kgen.call @"invokeWithN,N=2
-// COM: kgen.generator @invokeTwice<M>() {
-// COM:   kgen.param.declare.region fn0 = <N>() -> index {
-// COM:     %1 = kgen.param.constant = <add(N, M)>
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %0 = kgen.call @invokeWithN<N = 1, fn: <N>() -> index = fn0>() : () -> index
-// COM:   kgen.param.declare.region fn1 = <N>() -> index {
-// COM:     %1 = kgen.param.constant = <mul(N, M)>
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %1 = kgen.call @invokeWithN<N = 2, fn: <N>() -> index = fn1>() : () -> index
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @doIt
-// COM: // CHECK-NEXT: kgen.call @"invokeTwice,M=10"
-// COM: kgen.generator @doIt() {
-// COM:   kgen.call @invokeTwice<M = 10>() : () -> ()
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // This test case caught a tricky bug with name shadowing.
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"invokeWithN,N=1
-// COM: // CHECK-NEXT: constant = <11>
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"invokeWithN,N=2
-// COM: // CHECK-NEXT: constant = <20>
-// COM:
-// COM: kgen.generator @invokeWithN<N, fn: <N>() -> index>() -> index{
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<N>() -> index fn, N)]()
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @aliasN<N>() {
-// COM:   kgen.param.declare M = <N>
-// COM:   kgen.param.declare.region fn0 = <N>() -> index {
-// COM:     %1 = kgen.param.constant = <add(N, M)>
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %0 = kgen.call @invokeWithN<N = 1, fn: <N>() -> index = fn0>() : () -> index
-// COM:   kgen.param.declare.region fn1 = <N>() -> index {
-// COM:     %1 = kgen.param.constant = <mul(N, M)>
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %1 = kgen.call @invokeWithN<N = 2, fn: <N>() -> index = fn1>() : () -> index
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @doIt() {
-// COM:   kgen.call @aliasN<N = 10>() : () -> ()
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @"nestMe,fn=tripleNested,A=1_region_concrete_region_concrete_region"
-// COM: // CHECK-NEXT: kgen.param.constant = <6>
-// COM: kgen.generator @nestMe<fn: () -> index>() -> index {
-// COM:   %0 = kgen.call_param[() -> index: fn]()
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @tripleNested<A>() -> index{
-// COM:   kgen.param.declare.region fn = () -> index {
-// COM:     kgen.param.declare B = <2>
-// COM:     kgen.param.declare.region fn = () -> index {
-// COM:       kgen.param.declare C = <3>
-// COM:       kgen.param.declare.region fn = () -> index {
-// COM:         %3 = kgen.param.constant = <add(A, B, C)>
-// COM:         kgen.return %3 : index
-// COM:       }
-// COM:       %2 = kgen.call @nestMe<fn: () -> index = fn>() : () -> index
-// COM:       kgen.return %2 : index
-// COM:     }
-// COM:     %1 = kgen.call @nestMe<fn: () -> index = fn>() : () -> index
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %0 = kgen.call @nestMe<fn: () -> index = fn>() : () -> index
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @doIt() {
-// COM:   %0 = kgen.call @tripleNested<A=1>() : () -> index
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @"nestMe,N=6,fn=tripleNested,A=1_region,N=2_region,N=4_region"
-// COM: // CHECK-NEXT: kgen.param.constant = <21>
-// COM:
-// COM: kgen.generator @nestMe<N, fn: <N>() -> index>() -> index {
-// COM:   %0 = kgen.call_param[() -> index: bind_signature(:<N>() -> index fn, N)]()
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @tripleNested<A>() -> index{
-// COM:   kgen.param.declare.region fn = <N>() -> index {
-// COM:     kgen.param.declare B = <N>
-// COM:     kgen.param.declare C = <3>
-// COM:     kgen.param.declare.region fn = <N>() -> index {
-// COM:       kgen.param.declare D = <N>
-// COM:       kgen.param.declare E = <5>
-// COM:       kgen.param.declare.region fn = <N>() -> index {
-// COM:       kgen.param.declare F = <N>
-// COM:         %3 = kgen.param.constant = <add(A, B, C, D, E, F)>
-// COM:         kgen.return %3 : index
-// COM:       }
-// COM:       %2 = kgen.call @nestMe<N = 6, fn: <N>() -> index = fn>() : () -> index
-// COM:       kgen.return %2 : index
-// COM:     }
-// COM:     %1 = kgen.call @nestMe<N = 4, fn: <N>() -> index = fn>() : () -> index
-// COM:     kgen.return %1 : index
-// COM:   }
-// COM:   %0 = kgen.call @nestMe<N = 2, fn: <N>() -> index = fn>() : () -> index
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @doIt() {
-// COM:   %0 = kgen.call @tripleNested<A=1>() : () -> index
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: kgen.generator @hasReturn<() -> index>() {
-// COM:   kgen.return<2>
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: kgen.func @"placeholder
-// COM: kgen.generator @placeholder<fn: () -> index>() -> index {
-// COM:   // CHECK-NEXT: kgen.param.constant = <2>
-// COM:   %0 = kgen.call_param[() -> index: fn]()
-// COM:   kgen.return %0 : index
-// COM: }
-// COM:
-// COM: kgen.generator @returnValueOverwritesParameter<SomeParam: dtype>() {
-// COM:   kgen.param.declare.region fn = () -> index {
-// COM:     %0 = kgen.param.constant = <SomeParam>
-// COM:     kgen.call @hasReturn<() -> SomeParam>() : () -> ()
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   %0 = kgen.call @placeholder<fn: () -> index = fn>() : () -> index
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @top() {
-// COM:   kgen.call @returnValueOverwritesParameter<SomeParam: dtype = f32>() : () -> ()
-// COM:   kgen.return
-// COM: }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @passNonIsolatedRegion
-// COM: kgen.generator @passNonIsolatedRegion() {
-// COM:   // CHECK-NEXT: kgen.call @"callARegion,fn=passNonIsolatedRegion
-// COM:   kgen.param.declare.region fn = () {
-// COM:     kgen.return
-// COM:   }
-// COM:   kgen.call @callARegion<fn: () -> () = fn>() : () -> ()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @callARegion<fn: () -> ()>() {
-// COM:   kgen.call @noReallyCallIt<fn: () -> () = fn>() : () -> ()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @noReallyCallIt<fn: () -> ()>() {
-// COM:   kgen.return
-// COM: }
-
-// -----
 
 // CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=foo"
 kgen.generator @takeStringParameter<SomeString: string>()
@@ -928,32 +472,6 @@ kgen.generator @giveString() {
   kgen.call @takeStringParameter<:string "foo">() : () -> ()
   kgen.return
 }
-
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: @"pasteTwice
-// COM: kgen.generator @pasteTwice<fn: () -> ()>() {
-// COM:   // CHECK-NEXT: kgen.call @makeResult
-// COM:   // CHECK-NEXT: kgen.call @makeResult
-// COM:   kgen.call_param[() -> (): fn]()
-// COM:   kgen.call_param[() -> (): fn]()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @bindResult() {
-// COM:   kgen.param.declare.region fn = () {
-// COM:     kgen.call @makeResult<() -> ResultParam>() : () -> ()
-// COM:     kgen.return
-// COM:   }
-// COM:   kgen.call @pasteTwice<fn: () -> () = fn>() : () -> ()
-// COM:   kgen.return
-// COM: }
-// COM:
-// COM: kgen.generator @makeResult<() -> index>() {
-// COM:   kgen.return<0>
-// COM: }
 
 // -----
 
@@ -993,35 +511,6 @@ kgen.generator @check() {
   %0 = kgen.param.constant: i1 = <result>
   kgen.return
 }
-
-// -----
-// COM: This is commented out because the elaborator doesn't currently support regions, but it will in the future.
-
-// COM: // CHECK-LABEL: kgen.func @"call_it_nested
-// COM: kgen.generator @call_it_nested<fn: <fn: (index) -> index>(index) -> index>(%arg0: index) -> index {
-// COM:   // CHECK-NEXT: %idx1 = index.constant 1
-// COM:   // CHECK-NEXT: %0 = index.add %arg0, %idx1
-// COM:   kgen.param.declare.region fn0 = (%arg1: index) -> index {
-// COM:     %0 = index.add %arg0, %arg1
-// COM:     kgen.return %0 : index
-// COM:   }
-// COM:   %1 = kgen.call_param[(index) -> index: bind_signature(:<fn: (index) -> index>(index) -> index fn, fn0)](%arg0)
-// COM:   // CHECK-NEXT: kgen.return %0
-// COM:   kgen.return %1 : index
-// COM: }
-// COM:
-// COM: // CHECK-LABEL: @call_nested
-// COM: kgen.generator @call_nested(%arg0: index) -> index {
-// COM:   // CHECK-NEXT: %0 = kgen.call @"call_it_nested{{.*}}(%arg0)
-// COM:   kgen.param.declare.region fn = <fn: (index) -> index>(%arg1: index) -> index {
-// COM:     %1 = index.constant 1
-// COM:     %2 = kgen.call_param[(index) -> index: fn](%1)
-// COM:     kgen.return %2 : index
-// COM:   }
-// COM:   %0 = kgen.call @call_it_nested<fn: <fn: (index) -> index>(index) -> index = fn>(%arg0) : (index) -> index
-// COM:   // CHECK-NEXT: return %0
-// COM:   kgen.return %0 : index
-// COM: }
 
 // -----
 
@@ -1125,61 +614,6 @@ kgen.generator @constexpr_load_store() {
 
 // -----
 
-// CHECK-LABEL: kgen.func @bind_signature_region
-kgen.generator @bind_signature_region() -> index {
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  kgen.param.declare.region Fn = <A>() -> index {
-    %0 = kgen.param.constant = <A>
-    kgen.return %0 : index
-  }
-  kgen.param.declare BoundFn: () -> index = <bind_signature(:<index>() -> index Fn, 1)>
-  %0 = kgen.call_param[() -> index: BoundFn]()
-  // CHECK-NEXT: kgen.return %index1
-  kgen.return %0 : index
-}
-
-// -----
-
-// CHECK-LABEL: kgen.func @partial_bind_signature_region
-kgen.generator @partial_bind_signature_region() -> index {
-  // CHECK-NEXT: %index1 = kgen.param.constant = <1>
-  kgen.param.declare.region Fn = <A, B>() -> index {
-    %0 = kgen.param.constant = <sub(A, B)>
-    kgen.return %0 : index
-  }
-  kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index Fn, #kgen.unbound, 1)>
-  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
-  // CHECK-NEXT: kgen.return %index1
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @partial_bind_signature_region_2
-kgen.generator @partial_bind_signature_region_2() -> index {
-  // CHECK-NEXT: %index3 = kgen.param.constant = <3>
-  kgen.param.declare.region Fn = <A, B>() -> index {
-    %0 = kgen.param.constant = <add(A, B)>
-    kgen.return %0 : index
-  }
-  kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index Fn, 1, #kgen.unbound)>
-  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
-  // CHECK-NEXT: kgen.return %index3
-  kgen.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @partial_bind_signature_region_3
-kgen.generator @partial_bind_signature_region_3() -> index {
-  // CHECK-NEXT: %index4 = kgen.param.constant = <4>
-  kgen.param.declare.region Fn = <A, B, C>() -> index {
-   %0 = kgen.param.constant = <add(sub(B, A), C)>
-   kgen.return %0 : index
-  }
-  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index Fn, 1, #kgen.unbound, #kgen.unbound)>
-  kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index,index>() -> index BoundFn, #kgen.unbound, 3)>
-  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn2, 2)]()
-  // CHECK-NEXT: kgen.return %index4
-  kgen.return %0 : index
-}
-
 // CHECK-LABEL: kgen.func @"param_add,A=1,B=2"
 kgen.generator @param_add<A, B>() -> index {
   // CHECK-NEXT: %index3 = kgen.param.constant = <3>
@@ -1188,8 +622,8 @@ kgen.generator @param_add<A, B>() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @partial_bind_signature_region_4
-kgen.generator @partial_bind_signature_region_4() -> index {
+// CHECK-LABEL: kgen.func @partial_bind_signature_region
+kgen.generator @partial_bind_signature_region() -> index {
   kgen.param.declare BoundFn: <index>() -> index = <bind_signature(:<index, index>() -> index @param_add, 1, #kgen.unbound)>
   // CHECK-NEXT: %0 = kgen.call @"param_add,A=1,B=2"() : () -> index
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn, 2)]()
@@ -1197,19 +631,19 @@ kgen.generator @partial_bind_signature_region_4() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @"param_add3,A=1,B=2,C=3"
-kgen.generator @param_add3<A, B, C>() -> index {
+// CHECK-LABEL: kgen.func @"param_add2,A=1,B=2,C=3"
+kgen.generator @param_add2<A, B, C>() -> index {
   // CHECK-NEXT: %index4 = kgen.param.constant = <4>
   %0 = kgen.param.constant = <add(sub(B, A), C)>
   // CHECK-NEXT: kgen.return %index4
   kgen.return %0 : index
 }
 
-// CHECK-LABEL: kgen.func @partial_bind_signature_region_5
-kgen.generator @partial_bind_signature_region_5() -> index {
-  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index @param_add3, 1, #kgen.unbound, #kgen.unbound)>
+// CHECK-LABEL: kgen.func @partial_bind_signature_region_2
+kgen.generator @partial_bind_signature_region_2() -> index {
+  kgen.param.declare BoundFn: <index, index>() -> index = <bind_signature(:<index, index, index>() -> index @param_add2, 1, #kgen.unbound, #kgen.unbound)>
   kgen.param.declare BoundFn2: <index>() -> index = <bind_signature(:<index, index>() -> index BoundFn, #kgen.unbound, 3)>
-  // CHECK-NEXT: %0 = kgen.call @"param_add3,A=1,B=2,C=3"() : () -> index
+  // CHECK-NEXT: %0 = kgen.call @"param_add2,A=1,B=2,C=3"() : () -> index
   %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index BoundFn2, 2)]()
   // CHECK-NEXT: kgen.return %0
   kgen.return %0 : index
@@ -1961,47 +1395,6 @@ kgen.generator @pointer_attr_elaborate() {
 
 // -----
 
-// COM: This test checks that we can inline a non-capturing region into a callee
-// COM: that takes it as a parameter without needing to inline the callee.
-
-// CHECK-LABEL: func @"dont_inline_me
-kgen.generator @dont_inline_me<T: type, input: (!kgen.paramref<T>) -> ()>(%arg0: !kgen.paramref<T>) {
-  // CHECK-NEXT: index.add %arg0, %arg0
-  kgen.call_param[(!kgen.paramref<T>) -> (): input](%arg0)
-  kgen.return
-}
-
-// CHECK-LABEL: func @"dont_inline_me_2
-kgen.generator @dont_inline_me_2<T: type, input: (!kgen.paramref<T>) -> ()>(%arg0: !kgen.paramref<T>) {
-  // CHECK-NEXT: index.add %arg0, %arg0
-  kgen.call_param[(!kgen.paramref<T>) -> (): input](%arg0)
-  kgen.return
-}
-
-// CHECK-LABEL: func @caller
-kgen.generator @caller(%arg0 : index) {
-  // CHECK-NEXT: kgen.param.constant = <1>
-  %0 = kgen.param.constant = <1>
-  kgen.param.declare.region foo = (%arg: index) -> () {
-    %2 = index.add %arg, %arg
-    kgen.return
-  }
-  kgen.param.declare callee :(index) -> () = <
-    bind_signature(:<type, (!kgen.paramref<*(1,0)>) -> ()>(!kgen.paramref<*(0,0)>) -> () @dont_inline_me, index, foo)
-  >
-  // CHECK-NEXT: kgen.call @"dont_inline_me
-  kgen.call_param[(index) -> (): callee](%0)
-  kgen.param.declare callee2: (index) -> () = <
-      bind_signature(:<type, (!kgen.paramref<*(1,0)>) -> ()>(!kgen.paramref<*(0,0)>) -> () @dont_inline_me_2, index, foo)
-    >
-  // CHECK-NEXT: kgen.call @"dont_inline_me_2
-  kgen.call_param[(index) -> (): callee2](%0)
-  // CHECK-NEXT: kgen.return
-  kgen.return
-}
-
-// -----
-
 // COM: https://github.com/modularml/modular/issues/9745
 
 // CHECK-LABEL: kgen.func @true_inside_false_param_if
@@ -2175,6 +1568,7 @@ kgen.generator @param_apply() {
 }
 
 // -----
+
 // COM: This crashes if you don't handle nested parameter ifs correctly *with* multi-versioned kgen.param.apply.
 
 kgen.generator @"$List::VariadicList::__init__(__mlir_type.!kgen.paramref<type>*)"<type: type>(%arg0: !kgen.variadic<type>) vararg -> !kgen.variadic<type> {
@@ -2260,7 +1654,9 @@ kgen.generator export @nonparametric_async_call() {
   lit.async.call[<>() async -> (): @async_fn]()
   kgen.return
 }
+
 // -----
+
 // COM: Check conditional parameter expressions.
 
 kgen.generator @add_param<a : index>(%v : index) -> index {
@@ -2341,107 +1737,6 @@ kgen.generator @main() {
 
 kgen.generator @take_closure(%arg0: !kgen.signature<(index) capturing -> index>, %arg1: index) {
   %0 = kgen.call_signature %arg0(%arg1) : (index) capturing -> index
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @main_make_closure_no_param
-kgen.generator @main_make_closure_no_param() {
-  kgen.param.declare.region g = (%arg0: index) capturing {
-    kgen.return
-  }
-  // CHECK: kgen.stage_closure = (%arg0: index) capturing {
-  %0 = kgen.create_closure [<>(index) capturing -> (): g]()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @main_make_closure_with_param
-kgen.generator @main_make_closure_with_param() {
-  kgen.param.declare.region h = <N>() capturing {
-    %4 = kgen.param.constant = <N>
-    kgen.return
-  }
-  // CHECK: [[ARG0:%[0-9]+]] = kgen.stage_closure = () capturing {
-  // CHECK-NEXT: kgen.param.constant = <3>
-  // CHECK: [[ARG2:%[0-9]+]] = kgen.stage_closure = () capturing {
-  // CHECK-NEXT: kgen.param.constant = <4>
-  kgen.param.declare Bound1: <>() capturing -> () = <bind_signature(:<index>() capturing -> () h, 3)>
-  kgen.param.declare Bound2: <>() capturing -> () = <bind_signature(:<index>() capturing -> () h, 4)>
-  %0 = kgen.create_closure [<>() capturing -> (): Bound1]()
-  %3 = kgen.create_closure [<>() capturing -> (): Bound2]()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @make_closure_param
-kgen.generator @make_closure_param(%arg0: index) {
-  kgen.param.declare.region g = <N>() capturing -> index {
-      %6 = kgen.param.constant = <N>
-      kgen.return %arg0 : index
-  }
-  // CHECK: kgen.stage_closure = () capturing -> index
-  %0 = kgen.create_closure [<>() capturing -> index: bind_signature(:<index>() capturing -> index g, 4)]()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @"make_closure_capture_param,N=5"
-kgen.generator @make_closure_capture_param<N>(%arg0: index) {
-  kgen.param.declare.region g = <M>() capturing -> index {
-      %6 = kgen.param.constant = <N>
-      kgen.return %arg0 : index
-  }
-  // CHECK: [[ARG0:%[0-9]+]] = kgen.stage_closure = () capturing -> index {
-  // CHECK: kgen.param.constant = <5>
-  %0 = kgen.create_closure [<>() capturing -> index: bind_signature(:<index>() capturing -> index g, 4)]()
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @main_make_closure_capture_param
-kgen.generator @main_make_closure_capture_param() {
-  %idx4 = index.constant 4
-  kgen.param.declare Bound: (index) -> () = <bind_signature(:<index>(index) -> () @make_closure_capture_param, 5)>
-  // CHECK: kgen.call @"make_closure_capture_param,N=5"(%idx4) : (index) -> ()
-  kgen.call_param[(index) -> (): Bound](%idx4)
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @main_make_closure_with_dtype_param
-kgen.generator @main_make_closure_with_dtype_param() {
-  %idx4 = index.constant 4
-
-  kgen.param.declare.region k = <dt:dtype>() capturing -> index {
-    kgen.return %idx4 : index
-  }
-  // CHECK: kgen.stage_closure = () capturing -> index {
-  // CHECK: kgen.stage_closure = () capturing -> index {
-  %0 = kgen.create_closure[<>() capturing -> index: bind_signature(:<dtype>() capturing -> index k, si32)]()
-  %1 = kgen.create_closure[<>() capturing -> index: bind_signature(:<dtype>() capturing -> index k, f32)]()
-  kgen.return
-}
-
-kgen.generator @foo_3() -> index {
-  %idx3 = index.constant 3
-  kgen.return %idx3 : index
-}
-
-kgen.generator @foo_4() -> index {
-  %idx4 = index.constant 4
-  kgen.return %idx4 : index
-}
-
-// CHECK-LABEL: kgen.func @main_make_closure_with_symbol_param
-kgen.generator @main_make_closure_with_symbol_param() {
-  %idx4 = index.constant 4
-  kgen.param.declare.region h = <fn: () -> index>() capturing -> index {
-    %9 = kgen.call_param[() -> index: fn]()
-    kgen.return %idx4 : index
-  }
-  // CHECK: kgen.stage_closure = () capturing -> index {
-  // CHECK: kgen.call @foo_3() : () -> index
-  // CHECK: kgen.stage_closure = () capturing -> index {
-  // CHECK: kgen.call @foo_4() : () -> index
-  kgen.param.declare Bound1: <>() capturing -> index = <bind_signature(:<() -> index>() capturing -> index h, @foo_3)>
-  kgen.param.declare Bound2: <>() capturing -> index = <bind_signature(:<() -> index>() capturing -> index h, @foo_4)>
-  %0 = kgen.create_closure[<>() capturing -> index: Bound1]()
-  %1 = kgen.create_closure[<>() capturing -> index: Bound2]()
   kgen.return
 }
 

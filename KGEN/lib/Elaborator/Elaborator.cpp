@@ -500,99 +500,6 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// inlineCallToConcreteRegion
-//===----------------------------------------------------------------------===//
-
-/// Inline a call to a concretized region. This will clone the ops from the
-/// callee into the caller, it replaces the call's uses with the inlined values,
-/// and it erases the call. This also handles async calls correctly by creating
-/// an AsyncExecuteOp and inlining the body into that.
-static void inlineCallToConcreteRegion(GeneratorUserOpInterface call,
-                                       Region *callee, IRMapping &map,
-                                       AlwaysInlineLevel alwaysInlineLevel) {
-  assert(callee->hasOneBlock() &&
-         "callee region must resolve to a single block");
-
-  OpBuilder b(call);
-  Operation *scope = nullptr;
-  if (isa<CallOp, CallParamOp>(&*call)) {
-    // No scope.
-  } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
-    // Nested function-like op should retain scoped location of the callee.
-    scope = b.create<LIT::AsyncExecuteOp>(callee->getParentOp()->getLoc(),
-                                          asyncCall.getType(), call->getLoc());
-    b.createBlock(&scope->getRegions().front());
-  } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
-    // Nested function-like op should retain scoped location of the callee.
-    scope = b.create<StageClosureOp>(callee->getParentOp()->getLoc(),
-                                     createClosure.getType(), call->getLoc());
-    b.createBlock(&scope->getRegions().front());
-    for (BlockArgument arg :
-         callee->getArguments().drop_front(createClosure.getCaptures().size()))
-      b.getInsertionBlock()->addArgument(arg.getType(), arg.getLoc());
-  } else {
-    llvm::report_fatal_error("unhandled call operation in elaborator '" +
-                             call->getName().getStringRef() + "'");
-  }
-
-  for (auto [callArg, genArg] :
-       llvm::zip(call->getOperands(), callee->getArguments()))
-    map.map(map.lookupOrDefault(genArg), callArg);
-
-  Operation *terminator = callee->front().getTerminator();
-  // Handle debug info as we clone.
-  for (Operation &op : callee->front()) {
-    // Don't copy DebugInfo::ValueOp ops when we have no debug info.
-    if (auto value = dyn_cast<DebugInfo::ValueOp>(&op);
-        value && alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug)
-      continue;
-
-    Operation *cloned = b.clone(op, map);
-    bool stripDebugInfo =
-        alwaysInlineLevel == AlwaysInlineLevel::EnabledNoDebug;
-    // Walk the cloned op because there might be many ops within it.
-    cloned->walk<mlir::WalkOrder::PreOrder>([&](Operation *clonedOp) {
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (stripDebugInfo && isa<DebugInfo::ValueOp>(clonedOp)) {
-        clonedOp->erase();
-        return WalkResult::skip();
-      }
-
-      // Inline the location, and recurse into the body if allowed.
-      if (stripDebugInfo || !scope)
-        DebugInfo::updateInlinedLoc(clonedOp, call.getLoc(), stripDebugInfo);
-      if (isa<DebugInfo::SubprogramScoped>(op))
-        return WalkResult::skip();
-      return WalkResult::advance();
-    });
-  }
-
-  Operation *returnOp = map.lookup(terminator);
-  // If the remapped return isn't parented under the call's region, then we know
-  // it's inside another scope - so use the results of that scope.
-  if (scope) {
-    if (isa<LIT::AsyncExecuteOp>(scope)) {
-      // Replace the returnOp with a LIT::AsyncReturnOp.
-      returnOp->replaceAllUsesWith(b.create<LIT::AsyncReturnOp>(
-          returnOp->getLoc(), returnOp->getOperands()));
-    } else if (isa<StageClosureOp>(scope)) {
-      returnOp->replaceAllUsesWith(
-          b.create<ReturnOp>(returnOp->getLoc(), returnOp->getOperands()));
-    } else {
-      llvm::report_fatal_error("unhandled call operation in elaborator '" +
-                               call->getName().getStringRef() + "'");
-    }
-    // And replace the call uses with the results of the AsyncExecuteOp
-    // itself.
-    call->replaceAllUsesWith(scope->getResults());
-  } else {
-    call->replaceAllUsesWith(returnOp->getOperands());
-  }
-  returnOp->erase();
-  call->erase();
-}
-
-//===----------------------------------------------------------------------===//
 // getMangledRegionParamName
 //===----------------------------------------------------------------------===//
 
@@ -1566,25 +1473,16 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
   LLVM_DEBUG(logger.logOp("Inlining call to parameter region:",
                           region->getParentOp()));
 
-  // Inline the call now. We clone them now so that we don't modify the original
-  // region in case it's re-used.
-  IRMapping map;
-  assert(parent->stack.back().ops.back() == call);
-  inlineCallToConcreteRegion(call, region, map, AlwaysInlineLevel::Enabled);
   // Delete the call operation now, so when the new frame consisting of the
   // inlined operations has been processed, the elaborator can immediately
   // continue on to the next operation.
+  assert(parent->stack.back().ops.back() == call);
   parent->stack.back().ops.pop_back();
 
   // Collect all the ops to process *in the region*.
-  std::vector<Operation *> opsToRewriteInRegion;
-  llvm::append_range(opsToRewriteInRegion,
-                     llvm::reverse(regionGraph->paramOps));
-  collectOpsToProcess(region, *regionGraph, opsToRewriteInRegion);
   std::vector<Operation *> opsToRewrite;
-  opsToRewrite.reserve(opsToRewriteInRegion.size());
-  for (Operation *op : opsToRewriteInRegion)
-    opsToRewrite.push_back(map.lookup(op));
+  llvm::append_range(opsToRewrite, llvm::reverse(regionGraph->paramOps));
+  collectOpsToProcess(region, *regionGraph, opsToRewrite);
 
   // Push a new work item.
   ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
