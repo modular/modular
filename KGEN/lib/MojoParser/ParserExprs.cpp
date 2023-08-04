@@ -377,8 +377,8 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_async:
   case Token::kw_def:
   case Token::kw_fn:
-  case Token::kw__ref:
-  case Token::kw__mutref:
+  case Token::kw_ref:
+  case Token::kw_mutref:
   case Token::kw___get_address_as_lvalue:
   case Token::kw___get_lvalue_as_address:
   case Token::kw___get_address_as_owned_value:
@@ -513,8 +513,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
       return failure();
     break;
 
-  case Token::kw__ref:      // ref [lifetime] type
-  case Token::kw__mutref: { // mutref [lifetime] type
+  case Token::kw_ref:      // ref [lifetime] type
+  case Token::kw_mutref: { // mutref [lifetime] type
     consumeToken();
     // Parse the lifetime specifier.
     ExprNode *lifetime = nullptr;
@@ -524,7 +524,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
         parseToken(Token::r_square, "expected ']' after lifetime") ||
         parsePrimaryExpr(expr))
       return failure();
-    bool isMutable = startTok.getKind() == Token::kw__mutref;
+    bool isMutable = startTok.getKind() == Token::kw_mutref;
     result =
         alloc<OwnershipOpNode>(startTok.getLoc(), isMutable, lifetime, expr);
     break;

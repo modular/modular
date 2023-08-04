@@ -28,9 +28,9 @@ var x = OwnedInt(10)
 let y = OwnedInt(20)
 
 
-fn mutate(inout ref: OwnedInt):
-    ref.value += 5
-    x.value = y.value + ref.value
+fn mutate(inout reff: OwnedInt):
+    reff.value += 5
+    x.value = y.value + reff.value
 
 
 fn main():

@@ -1173,8 +1173,8 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl {{.*}}ref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
-    alias ref = nestedFunction
+    # CHECK: lit.alias.decl {{.*}}thinref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
+    alias thinref = nestedFunction
     # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[(2).value]()
 
@@ -1196,8 +1196,8 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl {{.*}}ref: <{{.*}}@"$Int"::@Int>() -> !lit.none = <*"nestedFunction[{{.*}}$Int::Int]()">
-        alias ref = nestedFunction
+        # CHECK: lit.alias.decl {{.*}}reff: <{{.*}}@"$Int"::@Int>() -> !lit.none = <*"nestedFunction[{{.*}}$Int::Int]()">
+        alias reff = nestedFunction
         # CHECK: call_param[{{.*}}: bind_signature(:<{{.*}}@"$Int"::@Int>() -> !lit.none *"nestedFunction[{{.*}}$Int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
@@ -1277,7 +1277,7 @@ var trivial_global_implicit = 1
 @register_passable
 struct RegType: pass
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType> 
+# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType>
 # CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
 # CHECK-NEXT: pop.store %0, %1
@@ -1291,7 +1291,7 @@ var reg_global_implicit = RegType()
 @value
 struct MemType: pass
 
-# CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}} 
+# CHECK-LABEL: lit.globalvar.decl @mem_global {{.*}}
 # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous*"
 # CHECK-NEXT: %0 = kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
 # CHECK-NEXT: %1 = lit.globalvar.ref
