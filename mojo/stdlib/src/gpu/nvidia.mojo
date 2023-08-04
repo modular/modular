@@ -66,6 +66,11 @@ fn stack_allocation[
     return _stack_allocation[count, type, 1, address_space.value()]()
 
 
+@always_inline
+fn stack_allocation[count: Int, type: DType]() -> DTypePointer[type]:
+    return _stack_allocation[count, type, 1]()
+
+
 # ===----------------------------------------------------------------------===#
 # ThreadIdx
 # ===----------------------------------------------------------------------===#
