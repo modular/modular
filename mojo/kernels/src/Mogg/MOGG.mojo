@@ -843,11 +843,14 @@ fn mean[
     rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    input_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
     output_0_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    input_shape: StaticIntTuple[rank],
     axis_buffer: NDBuffer[1, DimList.create_unknown[1](), index_type],
     output_buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
@@ -857,17 +860,6 @@ fn mean[
     # Only one reduce dimension supported currently, it must be deduced from
     # the attached input lambda rather than read directly.
     let reduce_dim = axis_buffer[0].to_int()
-
-    # TODO (#17421): Remove and add back input_0_fn to MOGG signature so that it
-    # can be fused
-    @parameter
-    @always_inline
-    fn input_0_fn[
-        _type: DType, width: Int, _rank: Int
-    ](coords: StaticIntTuple[_rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](
-            input_buffer.simd_load[width](rebind[StaticIntTuple[rank]](coords))
-        )
 
     @always_inline
     fn reduce_impl[
@@ -879,7 +871,7 @@ fn mean[
     @parameter
     if type.is_floating_point():
         # Apply mean division before storing to the output lambda.
-        let reciprocal = 1.0 / input_buffer.dim(reduce_dim)
+        let reciprocal = 1.0 / input_shape[reduce_dim]
 
         @always_inline
         @parameter
@@ -897,11 +889,11 @@ fn mean[
             input_0_fn,
             wrapped_output_mul,
             reduce_impl,
-        ](input_buffer.dynamic_shape, 0, reduce_dim, out_chain)
+        ](input_shape, 0, reduce_dim, out_chain)
 
     else:
         # For ints just a normal divide.
-        let dim_size = input_buffer.dim(reduce_dim)
+        let dim_size = input_shape[reduce_dim]
 
         @always_inline
         @parameter
@@ -919,7 +911,7 @@ fn mean[
             input_0_fn,
             wrapped_output_div,
             reduce_impl,
-        ](input_buffer.dynamic_shape, 0, reduce_dim, out_chain)
+        ](input_shape, 0, reduce_dim, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
