@@ -22,10 +22,12 @@ from NvidiaGPU import (
     stack_allocation,
     barrier,
 )
+from Memory import memset_zero
 from Pointer import DTypePointer
 from Range import range
 from TargetInfo import triple_is_nvidia_cuda, simdwidthof
 from LLCL import OutputChainPtr
+from SIMD import Float32
 
 
 # ===----------------------------------------------------------------------===#
@@ -126,3 +128,96 @@ fn test_shared_stack_allocation() -> DTypePointer[DType.float32]:
 @export
 fn test_barrier():
     barrier()
+
+
+# ===----------------------------------------------------------------------===#
+# SGEMM with register coarsening
+# ===----------------------------------------------------------------------===#
+
+
+@export
+fn gemm(
+    c: DTypePointer[DType.float32],
+    a: DTypePointer[DType.float32],
+    b: DTypePointer[DType.float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    # Compute C = A x B
+    #   where A is a (m x k) matrix
+    #   where B is a (k x n) matrix
+    #   where C is a (m x n) matrix
+    #
+    # Use register and shared memory tiling and thread coarsening
+    #
+    # NOTE: A and C are column major, B is row major.
+
+    alias TILE_SZ_A = 128
+    alias TILE_SZ_B = 16
+    alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+
+    # Utilities for accessing flattened matrices.
+    @always_inline
+    fn get_a(row: Int, col: Int) -> Float32:
+        return a.load(row + m * col)
+
+    @always_inline
+    fn get_b(row: Int, col: Int) -> Float32:
+        return b.load(row * n + col)
+
+    @always_inline
+    fn set_c(row: Int, col: Int, val: Float32):
+        c.store(row + col * m, val)
+
+    # Allocate B array into shared memory for tiling.
+    let b_shared = stack_allocation[
+        TILE_SZ_RATIO * TILE_SZ_B, DType.float32, AddressSpace.SHARED
+    ]()
+
+    # Thread indexing offsets.
+    let row = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    let col = BlockIdx.y() * TILE_SZ_B
+
+    # Privatization of the C matrix.
+    let c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
+
+    memset_zero(c_reg, TILE_SZ_B)
+
+    # Loop over each input tile.
+    for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
+        let i = ThreadIdx.x() // TILE_SZ_B
+        let j = ThreadIdx.x() % TILE_SZ_B
+
+        # Load the B matrix into shared memory.
+        let b_val: Float32
+        if tile_idx * TILE_SZ_RATIO + i < k and col + j < n:
+            b_val = get_b(tile_idx * TILE_SZ_RATIO + i, col + j)
+        else:
+            b_val = 0
+        b_shared.store(i * TILE_SZ_B + j, b_val)
+
+        barrier()
+
+        # Loop within the tile.
+        for idx in range(TILE_SZ_RATIO):
+            # Load the A tile into the register.
+            let a_reg: Float32
+            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
+                a_reg = get_a(row, tile_idx * TILE_SZ_RATIO + idx)
+            else:
+                a_reg = 0
+
+            # Compute the output element for each thread.
+            for out_idx in range(TILE_SZ_B):
+                c_reg.store(
+                    out_idx,
+                    c_reg.load(out_idx)
+                    + a_reg * b_shared.load(idx * TILE_SZ_RATIO + out_idx),
+                )
+        barrier()
+
+    # Store the values into the output matrix.
+    for out_idx in range(TILE_SZ_B):
+        if row < m and col + out_idx < n:
+            set_c(row, col + out_idx, c_reg.load(out_idx))
