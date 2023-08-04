@@ -117,11 +117,11 @@ fn testTestParamStruct(a: TestParamStruct[4]):
 # CHECK-LABEL: lit.func @"testSIMD(
 fn testSIMD(a: SIMD[DType.float64, 1],
             b: SIMD[DType.int32, 1],
-            inout ref: SIMD[DType.int32, 1]):
+            inout reff: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.varlet.decl {{.*}} : <scalar<f64>>
   var field1 = a.value
   # CHECK: %field2 = lit.varlet.decl {{.*}} : <scalar<si32>>
-  var field2 = ref.value
+  var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
   _ = a.fma(a, a)
