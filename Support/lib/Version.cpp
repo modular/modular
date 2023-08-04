@@ -47,7 +47,7 @@ ErrorOr<Version> Version::parse(StringRef str) {
   return out;
 }
 
-bool Version::operator<(const Version &other) {
+bool Version::operator<(const Version &other) const {
   if (major < other.major)
     return true;
   if (minor < other.minor)
