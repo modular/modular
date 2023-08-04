@@ -34,6 +34,7 @@ add_modular_unittest(
   TensorSpecTest.cpp
   TimeProfilerTest.cpp
   URITest.cpp
+  VersionTest.cpp
 
   LINK_LIBS PRIVATE
   MSupport
