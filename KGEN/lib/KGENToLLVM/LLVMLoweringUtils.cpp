@@ -744,13 +744,10 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
     if (!type)
       return {};
     Value aggregate = b.create<LLVM::UndefOp>(type);
-    ArrayRef<TypedAttr> values;
-    if (auto arrayAttr = dyn_cast<POP::ArrayAttr>(attr))
-      values = arrayAttr.getValues();
-    else if (auto structAttr = dyn_cast<POP::StructAttr>(attr))
-      values = structAttr.getValues();
-    else
-      values = cast<POP::PackAttr>(attr).getValues();
+    ArrayRef<TypedAttr> values =
+        TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
+            .Case<POP::ArrayAttr, POP::StructAttr, POP::PackAttr>(
+                [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
       Value element = convertParameterToLLVM(b, tc, symtab, value);
