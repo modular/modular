@@ -10,7 +10,11 @@ from Matmul import (
     GemmShape,
     MatmulConfig,
 )
-from MatmulUtils import get_pack_data_size
+from MatmulUtils import (
+    get_matmul_a_row_size,
+    get_matmul_pack_inner_size,
+    get_matmul_prefetch_b_distance_k,
+)
 from Buffer import NDBuffer
 from TargetInfo import simdwidthof
 from Index import Index
@@ -24,9 +28,9 @@ alias c_type = DType.float32
 
 
 alias simd_size: Int = simdwidthof[c_type]()
-alias a_row_size: Int = 6
-alias pack_inner_size: Int = 4
-alias prefetch_b_distance_k: Int = 4
+alias a_row_size: Int = get_matmul_a_row_size[False]()
+alias pack_inner_size: Int = get_matmul_pack_inner_size[False]()
+alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 
 alias M: Int = 64
 alias N: Int = 64
