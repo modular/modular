@@ -963,6 +963,7 @@ struct NDBuffer[
         )
         return self._offset(idx).simd_load[width]()
 
+    @always_inline
     fn simd_load[
         width: Int,
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
@@ -1056,6 +1057,7 @@ struct NDBuffer[
         )
         return self._offset(idx).aligned_simd_load[width, alignment]()
 
+    @always_inline
     fn aligned_simd_load[
         width: Int, alignment: Int
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
