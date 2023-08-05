@@ -264,50 +264,67 @@ InterpreterState::externalizeMemory(Region &entry,
   auto symbol = cast<mlir::SymbolOpInterface>(entry.getParentOp());
   std::string baseName = (symbol.getName() + "_mem").str();
 
-  // Deduplicate references to the same allocation blob.
-  struct MaterializedMemory {
-    MemoryHandle hdl;
-    int64_t baseAddr;
-    MemoryKind kind;
-  };
-  DenseMap<MemoryBlob *, MemoryHandle> blobs;
-  auto getOrMaterialize = [&](int64_t addr) -> ErrorOr<MaterializedMemory> {
-    // Find the memory point this address points to. Only heap and stack memory
-    // can be materialized.
-    MemoryTable &table = stackMemory.contains(addr) ? stackMemory : heapMemory;
-    ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
-    if (blob.isError())
-      return blob.takeError();
-    if (auto it = blobs.find(&*blob); it != blobs.end())
-      return MaterializedMemory{it->second, blob->baseAddr, table.kind};
-    MemoryHandle hdl = blobMgr.insert(
-        baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-                      ArrayRef<char>((char *)blob->memory.get(), blob->size),
-                      blob->align));
-    blobs.try_emplace(&*blob, hdl);
-    return MaterializedMemory{hdl, blob->baseAddr, table.kind};
+  // Lazily materialize interpreter memory.
+  MemorySpaceAttr interpreterMemorySpace;
+  DenseMap<const MemoryBlob *, int64_t> blobIndices;
+  auto getOrMaterializeMemory = [&] {
+    if (interpreterMemorySpace)
+      return interpreterMemorySpace;
+
+    // First map all the blobs to indices so that pointers can be unmapped.
+    int64_t blobIndex = 0;
+    for (const MemoryTable *table : {&heapMemory, &stackMemory})
+      for (const MemoryBlob &blob : table->blobs)
+        blobIndices.try_emplace(&blob, blobIndex++);
+
+    // Now unmap the memory.
+    std::vector<M::MemoryBlob> blobs;
+    for (const MemoryTable *table : {&heapMemory, &stackMemory}) {
+      for (const MemoryBlob &blob : table->blobs) {
+        MemoryHandle hdl = blobMgr.insert(
+            baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+                          ArrayRef<char>((char *)blob.memory.get(), blob.size),
+                          blob.align));
+        SmallVector<M::MemoryBlob::PointerRegion> pointerRegions;
+        if (blob.pointerRegions) {
+          int index = -1;
+          // Iterate over the pointer regions indices set in the bitvector.
+          while ((index = blob.pointerRegions->find_next(index)) != -1) {
+            // Read out the address and map it to a blob.
+            APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
+            llvm::LoadIntFromMemory(addrInt,
+                                    (uint8_t *)blob.memory.get() + index,
+                                    target.getDataLayout().getPointerSize());
+            ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
+                getMemory(addrInt.getSExtValue(), 0);
+            // If the address is garbage, just ignore it and let it live.
+            if (mem.isError())
+              continue;
+            auto [memBlob, offset] = mem.takeValue();
+            pointerRegions.push_back(M::MemoryBlob::PointerRegion{
+                index, blobIndices.at(&memBlob), offset});
+          }
+        }
+        blobs.emplace_back(hdl, table->kind, std::move(pointerRegions));
+      }
+    }
+    interpreterMemorySpace = MemorySpaceAttr::get(target.getContext(), blobs);
+    return interpreterMemorySpace;
   };
 
   // Replace raw pointers in the results except for null pointers. Error if a
   // reference to invalid memory is returned from the function.
   mlir::AttrTypeReplacer replacer;
   std::optional<Error> err;
-  replacer.addReplacement(
-      [&](PointerAttr ptr) -> std::pair<Attribute, WalkResult> {
-        // Allow null pointers to persist.
-        if (ptr.getAddr() == 0)
-          return {ptr, WalkResult::advance()};
-        // Materialize the blob.
-        ErrorOr<MaterializedMemory> result = getOrMaterialize(ptr.getAddr());
-        if (result.isError()) {
-          err = result.takeError();
-          return {ptr, WalkResult::interrupt()};
-        }
-        auto [hdl, baseAddr, kind] = result.takeValue();
-        return {
-            MemRefAttr::get(hdl, ptr.getAddr() - baseAddr, kind, ptr.getType()),
-            WalkResult::advance()};
-      });
+  replacer.addReplacement([&](PointerAttr ptr) -> Attribute {
+    ErrorOr<std::pair<MemoryBlob &, int64_t>> mem = getMemory(ptr.getAddr(), 0);
+    // If the memory is garbage, let it live.
+    if (mem.isError())
+      return ptr;
+    auto [blob, offset] = mem.takeValue();
+    MemorySpaceAttr space = getOrMaterializeMemory();
+    return MemRefAttr::get(space, blobIndices.at(&blob), offset, ptr.getType());
+  });
 
   for (Attribute &result : results) {
     result = replacer.replace(result);
@@ -319,32 +336,58 @@ InterpreterState::externalizeMemory(Region &entry,
 
 ErrorOrSuccess
 InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
+  // This struct represents an interned memory space and allows index + offset
+  // pairs to be mapped to addresses.
+  struct InternedMemorySpace {
+    std::vector<MemoryBlob *> blobs;
+  };
+  DenseMap<MemorySpaceAttr, InternedMemorySpace> interned;
+
+  // This functor deduplicates incoming memory spaces and maps the contained
+  // memory into the interpreter.
+  auto getOrInternSpace =
+      [&](MemorySpaceAttr space) -> ErrorOr<InternedMemorySpace &> {
+    if (auto it = interned.find(space); it != interned.end())
+      return it->second;
+    // Process and intern the blobs.
+    InternedMemorySpace map;
+    for (const M::MemoryBlob &blob : space.getValue()) {
+      MemoryTable &table =
+          blob.getKind() == MemoryKind::Heap ? heapMemory : stackMemory;
+      mlir::AsmResourceBlob *asmBlob = blob.getHandle().getBlob();
+
+      // Initialize the memory.
+      ErrorOr<MemoryBlob &> mem =
+          table.addBlob(asmBlob->getData().size(), asmBlob->getDataAlignment());
+      if (mem.isError())
+        return mem.takeError();
+      memcpy(mem->memory.get(), asmBlob->getData().data(),
+             asmBlob->getData().size());
+      map.blobs.push_back(&*mem);
+    }
+
+    // Now that all the blobs have been processed, map any pointer values.
+    for (auto [blob, interned] : llvm::zip(space.getValue(), map.blobs)) {
+      for (const M::MemoryBlob::PointerRegion &ptr : blob.getPointerRegions()) {
+        // Map the pointer to an interpreter address.
+        int64_t addr = map.blobs[ptr.blobIndex]->baseAddr + ptr.blobOffset;
+        // Write the address in memory.
+        APInt addrInt(target.getDataLayout().getPointerBitWidth(), addr);
+        llvm::StoreIntToMemory(addrInt,
+                               (uint8_t *)interned->memory.get() + ptr.offset,
+                               target.getDataLayout().getPointerSize());
+      }
+    }
+
+    return interned.try_emplace(space, std::move(map)).first->second;
+  };
+
   // Intern each resource once into the interpreter.
-  DenseMap<mlir::AsmResourceBlob *, size_t> blobs;
-  auto getOrIntern = [&](MemRefAttr ref) -> ErrorOr<MemoryBlob &> {
-    // Get the right table for the memory kind.
-    if (!llvm::is_contained({MemoryKind::Heap, MemoryKind::Stack},
-                            ref.getKind()))
-      return Error(
-          "only heap and stack memory can be interned in the interpreter");
-    MemoryTable &table =
-        ref.getKind() == MemoryKind::Heap ? heapMemory : stackMemory;
-
-    // Retrieve the blob and see if it has already been interned.
-    mlir::AsmResourceBlob *blob = ref.getMemory().getBlob();
-    if (!blob)
-      return Error("reference to undefined dialect resource");
-    if (auto [it, inserted] = blobs.try_emplace(blob, table.blobs.size());
-        !inserted)
-      return table.blobs.at(it->second);
-
-    // Initialize the memory.
-    ErrorOr<MemoryBlob &> mem =
-        table.addBlob(blob->getData().size(), blob->getDataAlignment());
-    if (mem.isError())
-      return mem.takeError();
-    memcpy(mem->memory.get(), blob->getData().data(), blob->getData().size());
-    return *mem;
+  auto getOrIntern = [&](MemRefAttr ref) -> ErrorOr<int64_t> {
+    ErrorOr<InternedMemorySpace &> space = getOrInternSpace(ref.getMemory());
+    if (space.isError())
+      return space.takeError();
+    return space->blobs[ref.getIndex()]->baseAddr + ref.getOffset();
   };
 
   // Replace memory references in the inputs with interpreter memory pointers.
@@ -352,14 +395,12 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   std::optional<Error> err;
   replacer.addReplacement(
       [&](MemRefAttr ref) -> std::pair<Attribute, WalkResult> {
-        ErrorOr<MemoryBlob &> blob = getOrIntern(ref);
-        if (blob.isError()) {
-          err = blob.takeError();
+        ErrorOr<int64_t> addr = getOrIntern(ref);
+        if (addr.isError()) {
+          err = addr.takeError();
           return {ref, WalkResult::interrupt()};
         }
-        return {
-            PointerAttr::get(blob->baseAddr + ref.getOffset(), ref.getType()),
-            WalkResult::advance()};
+        return {PointerAttr::get(*addr, ref.getType()), WalkResult::advance()};
       });
 
   for (Attribute &arg : args) {

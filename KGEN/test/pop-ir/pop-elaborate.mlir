@@ -102,6 +102,24 @@ kgen.generator @modify_stack_mem(%arg0: !pop.pointer<i16>) -> !pop.pointer<i16> 
   kgen.return %arg0 : !pop.pointer<i16>
 }
 
+kgen.generator @return_pointer_to_pointer(%arg0: !pop.pointer<i16>) -> !pop.pointer<pointer<i16>> {
+  %idx-1 = index.constant -1
+  %idx16 = index.constant 16
+  %0 = pop.aligned_alloc %idx-1, %idx16 : <pointer<i16>>
+  %idx1 = index.constant 1
+  %1 = pop.offset %0[%idx1] : !pop.pointer<pointer<i16>>
+  pop.store %arg0, %1 : !pop.pointer<pointer<i16>>
+  kgen.return %1 : !pop.pointer<pointer<i16>>
+}
+
+kgen.generator @load_pointer_to_pointer(%arg0: !pop.pointer<pointer<i16>>) -> i16 {
+  %idx1 = index.constant 1
+  %0 = pop.offset %arg0[%idx1] : !pop.pointer<pointer<i16>>
+  %1 = pop.load %0 : !pop.pointer<pointer<i16>>
+  %2 = pop.load %1 : !pop.pointer<i16>
+  kgen.return %2 : i16
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -179,19 +197,31 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
     :() -> !pop.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
 
-  // CHECK-NEXT: <{ #M.memref<return_heap_concrete_mem, 0, heap>, #M.memref<return_heap_concrete_mem, 2, heap> }>
+  // CHECK-NEXT: <{ #M.memref<[(return_heap_concrete_mem, heap, [])], 0, 0>,
+  // CHECK-SAME:    #M.memref<[(return_heap_concrete_mem, heap, [])], 0, 2> }>
   kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
     :(i16, i16) -> !pop.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
     :(!pop.pointer<i16>, !pop.pointer<i16>) -> i16 @copy_load,
-    #M.memref<mem, 2, heap>, #M.memref<mem, 0, heap>)>
+    #M.memref<[(mem, heap, [])], 0, 2>, #M.memref<[(mem, heap, [])], 0, 0>)>
 
-  // CHECK-NEXT: <#M.memref<modify_stack_mem_concrete_mem, 0, stack>>
+  // CHECK-NEXT: <#M.memref<[(modify_stack_mem_concrete_mem, stack, [])], 0, 0>>
   kgen.param.constant: !pop.pointer<i16> = <apply(
     :(!pop.pointer<i16>) -> !pop.pointer<i16> @modify_stack_mem,
-    #M.memref<stack, 0, stack>)>
+    #M.memref<[(stack, stack, [])], 0, 0>)>
+
+  // CHECK-NEXT: <#M.memref<[(return_pointer_to_pointer_concrete_mem, heap, [(8, 1, 0)]),
+  // CHECK-SAME:             (return_pointer_to_pointer_concrete_mem_1, stack, [])], 0, 8>>
+  kgen.param.constant: !pop.pointer<pointer<i16>> = <apply(
+    :(!pop.pointer<i16>) -> !pop.pointer<pointer<i16>> @return_pointer_to_pointer,
+    #M.memref<[(some_ptr, stack, [])], 0, 0>)>
+
+  // CHECK-NEXT: <-8531>
+  kgen.param.constant: i16 = <apply(
+    :(!pop.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
+    #M.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
 
   kgen.return
 }
@@ -202,10 +232,15 @@ kgen.generator export @do_it() {
   dialect_resources: {
     // CHECK-NEXT: M: {
     M: {
-      // CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
       mem: "0x20000000ADDEEFBE",
+      stack: "0x20000000ADDE",
+      some_ptr: "0x20000000EFBE",
+      pointer: "0x40000000000000000000000000F2052A01000000"
+      // CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
       // CHECK-NEXT: modify_stack_mem_concrete_mem: "0x200000000000"
-      stack: "0x20000000ADDE"
+      // COM: 0x012A05F200 -> 5000000000, the base stack address
+      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem: "0x40000000000000000000000000F2052A01000000"
+      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem_1: "0x20000000EFBE"
     // CHECK-NEXT: }
     }
   }

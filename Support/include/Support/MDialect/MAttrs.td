@@ -262,6 +262,32 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
+// MemorySpaceAttr
+//===----------------------------------------------------------------------===//
+
+def MemorySpaceAttr : ArrayOfAttr<MDialect, "MemorySpace", "memory_space",
+                                  "MemoryBlob"> {
+  let summary = "IR reprsentation of a memory space and values";
+  let description = [{
+    The `#M.memory_space` attribute describes an abstract memory space
+    consisting of distinct memory allocations represented as blobs. The contents
+    of the blobs can be either dumb bits or pointers. Pointers are specially
+    indicated and encoded, consisting of the blob index and the offset.
+
+    Example:
+
+    ```mlir
+    #M.memory_space<[
+      (blob0, stack, [(24, 1, 8), (50, 0, 0), (64, 1, 8))]),
+      (blob1, heap, [(0, 1, 8), (8, 1, 16)])
+    ]>
+    ```
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // MemRefAttr
 //===----------------------------------------------------------------------===//
 
@@ -282,19 +308,22 @@ def MemRefAttr : MAttr<"MemRef", "memref", [TypedAttrInterface]> {
     ```
   }];
 
-  let parameters = (ins "MemoryHandle":$memory, "int64_t":$offset,
-                        "MemoryKind":$kind,
+  let parameters = (ins "MemorySpaceAttr":$memory, "int64_t":$index,
+                        "int64_t":$offset,
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = [{
-    `<` $memory `,` $offset `,` custom<MemoryKind>($kind) `>`
+    `<` $memory `,` $index `,` $offset `>`
   }];
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "MemoryHandle":$hdl, "int64_t":$offset,
-                                        "MemoryKind":$kind, "Type":$type), [{
-      return $_get(type.getContext(), hdl, offset, kind, type);
+    AttrBuilderWithInferredContext<(ins "MemorySpaceAttr":$memory,
+                                        "int64_t":$index, "int64_t":$offset,
+                                        "Type":$type), [{
+      return $_get(type.getContext(), memory, index, offset, type);
     }]>
   ];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//
