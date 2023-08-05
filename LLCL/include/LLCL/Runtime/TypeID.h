@@ -16,7 +16,6 @@
 #ifndef LLCL_RUNTIME_TYPEID_H
 #define LLCL_RUNTIME_TYPEID_H
 
-#include "LLCL/Runtime/Globals/TypeInfoTable.h"
 #include "LLCL/Support/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
