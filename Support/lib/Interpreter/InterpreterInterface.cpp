@@ -36,6 +36,40 @@ InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
+InterpreterState::MemoryBlob::MemoryBlob(int64_t baseAddr, size_t size,
+                                         size_t align)
+    : baseAddr(baseAddr), size(size), align(align),
+      memory(alignedAlloc(align, size), &alignedFree) {}
+
+ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
+    int64_t offset, int64_t regionSize, int64_t pointerSize,
+    bool writePointer) {
+  if (!pointerRegions) {
+    if (!writePointer)
+      return success();
+    pointerRegions.emplace(size);
+    pointerRegions->set(offset);
+    return success();
+  }
+
+  // The write clobbers a pointer region if a bit is set between
+  // `(offset - pointerSize, offset)` or between
+  // `(offset + size - pointerSize, offset + size)`, indicating partial
+  // overwrite of a pointer region.
+  if (pointerRegions->find_first_in(
+          std::max<int64_t>(0, offset - pointerSize + 1), offset) != -1 ||
+      pointerRegions->find_first_in(
+          std::max<int64_t>(0, offset + regionSize - pointerSize + 1),
+          offset + regionSize) != -1)
+    return Error("write clobbers a pointer region");
+
+  if (!writePointer)
+    pointerRegions->reset(offset, offset + regionSize);
+  else
+    pointerRegions->set(offset);
+  return success();
+}
+
 ErrorOr<InterpreterState::MemoryBlob &>
 InterpreterState::MemoryTable::addBlob(size_t size, size_t align) {
   // Pick the base address of the new blob.
@@ -53,8 +87,7 @@ InterpreterState::MemoryTable::addBlob(size_t size, size_t align) {
     return Error("interpreter is out of memory!");
 
   // Create the blob with aligned memory.
-  MemoryBlob blob{
-      baseAddr, size, align, {alignedAlloc(align, size), &alignedFree}};
+  MemoryBlob blob(baseAddr, size, align);
   memset(blob.memory.get(), 0, size);
   blobs.push_back(std::move(blob));
   return blobs.back();
@@ -113,7 +146,8 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
   return success();
 }
 
-ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
+ErrorOr<std::pair<InterpreterState::MemoryBlob &, int64_t>>
+InterpreterState::getMemory(int64_t addr, size_t size) {
   // Determine which table the address belongs to and then lookup the blob.
   MemoryTable &table = stackMemory.contains(addr) ? stackMemory : heapMemory;
   ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
@@ -131,7 +165,36 @@ ErrorOr<void *> InterpreterState::getMemory(int64_t addr, size_t size) {
   // Now check if the access size will still be in-bounds.
   if (offset + size > blob->size)
     return Error("memory access size " + Twine(size) + " is out-of-bounds");
-  return (uint8_t *)blob->memory.get() + offset;
+  return std::pair<MemoryBlob &, int64_t>(*blob, offset);
+}
+
+ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
+                                                    bool writePointer) {
+  ErrorOr<std::pair<MemoryBlob &, int64_t>> memref = getMemory(addr, size);
+  if (memref.isError())
+    return memref.takeError();
+  auto [blob, offset] = memref.takeValue();
+
+  // If the access is a pointer write, then mark the region as a pointer. The
+  // pointer write size must be equal to the target pointer size.
+  size_t pointerSize = target.getDataLayout().getPointerSize();
+  if (writePointer && size != pointerSize)
+    return Error("pointer write size is not equal to pointer bitwidth");
+  if (ErrorOrSuccess err =
+          blob.setPointerRegion(offset, size, pointerSize, writePointer);
+      err.isError())
+    return err.takeError();
+
+  return (uint8_t *)blob.memory.get() + offset;
+}
+
+ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
+                                                          size_t size) {
+  ErrorOr<std::pair<MemoryBlob &, int64_t>> memref = getMemory(addr, size);
+  if (memref.isError())
+    return memref.takeError();
+  auto [blob, offset] = memref.takeValue();
+  return (uint8_t *)blob.memory.get() + offset;
 }
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
@@ -139,7 +202,7 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
   if (isa<IntegerAttr, FloatAttr>(value)) {
     int64_t size =
         *DataLayoutInterface::getTypeStoreSize(target, value.getType());
-    ErrorOr<void *> mem = getMemory(addr, size);
+    ErrorOr<void *> mem = getWritableMemory(addr, size);
     if (mem.isError())
       return mem.takeError();
 
@@ -165,25 +228,25 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                                                              Type type) {
   if (isa<IndexType, IntegerType, FloatType>(type)) {
     int64_t size = *DataLayoutInterface::getTypeStoreSize(target, type);
-    ErrorOr<void *> mem = getMemory(addr, size);
+    ErrorOr<const void *> mem = getReadableMemory(addr, size);
     if (mem.isError())
       return mem.takeError();
 
     if (auto intType = dyn_cast<IntegerType>(type)) {
       APInt value(intType.getWidth(), 0);
-      llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), size);
+      llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, size);
       return IntegerAttr::get(type, value);
     }
 
     if (auto fpType = dyn_cast<FloatType>(type)) {
       APInt intVal(fpType.getWidth(), 0);
-      llvm::LoadIntFromMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+      llvm::LoadIntFromMemory(intVal, (const uint8_t *)*mem, size);
       APFloat value(fpType.getFloatSemantics(), intVal);
       return FloatAttr::get(fpType, value);
     }
 
     APInt value(64, 0);
-    llvm::LoadIntFromMemory(value, reinterpret_cast<uint8_t *>(*mem), size);
+    llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, size);
     return IntegerAttr::get(type, value);
   }
 

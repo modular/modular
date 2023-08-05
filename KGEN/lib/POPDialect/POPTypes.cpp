@@ -204,8 +204,7 @@ PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
-  return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                          CHAR_BIT);
+  return target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
@@ -215,7 +214,8 @@ std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
 ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem = state.getMemory(addr, size);
+  ErrorOr<void *> mem =
+      state.getWritableMemory(addr, size, /*writePointer=*/true);
   if (mem.isError())
     return mem.takeError();
   // The pointer size of the target is variable.
@@ -227,11 +227,11 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
 ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
                                          InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem = state.getMemory(addr, size);
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, size);
   if (mem.isError())
     return mem.takeError();
   APInt intVal(size * CHAR_BIT, 0);
-  llvm::LoadIntFromMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
+  llvm::LoadIntFromMemory(intVal, (const uint8_t *)*mem, size);
   return PointerAttr::get(intVal.getLimitedValue(), *this);
 }
 
@@ -299,7 +299,7 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
                                  InterpreterState &state) const {
   KGENDType dtype = *getResolvedDType();
   int64_t vecSize = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem = state.getMemory(addr, vecSize);
+  ErrorOr<void *> mem = state.getWritableMemory(addr, vecSize);
   if (mem.isError())
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
@@ -333,10 +333,10 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
                                       InterpreterState &state) const {
   DType dtype = *getResolvedDType();
   int64_t vecSize = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem = state.getMemory(addr, vecSize);
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, vecSize);
   if (mem.isError())
     return mem.takeError();
-  auto *data = reinterpret_cast<uint8_t *>(*mem);
+  auto *data = reinterpret_cast<const uint8_t *>(*mem);
   int64_t count = *getResolvedSize();
 
   // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
@@ -672,7 +672,7 @@ ErrorOrSuccess VariantType::writeTo(TypedAttr value, int64_t addr,
   addr += *computeVariantContentSize(*this, state.getTarget());
 
   unsigned discrSize = getVariantDiscrSize(*this);
-  ErrorOr<void *> mem = state.getMemory(addr, discrSize);
+  ErrorOr<void *> mem = state.getWritableMemory(addr, discrSize);
   if (mem.isError())
     return mem.takeError();
   APInt discrVal(discrSize * CHAR_BIT, *getTypeIndex(typeValue.getType()));
@@ -685,12 +685,12 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
                                          InterpreterState &state) const {
   // Read the discriminator first so we know what type to read.
   unsigned discrSize = getVariantDiscrSize(*this);
-  ErrorOr<void *> mem = state.getMemory(
+  ErrorOr<const void *> mem = state.getReadableMemory(
       addr + *computeVariantContentSize(*this, state.getTarget()), discrSize);
   if (mem.isError())
     return mem.takeError();
   APInt discrVal(discrSize * CHAR_BIT, 0);
-  llvm::LoadIntFromMemory(discrVal, reinterpret_cast<uint8_t *>(*mem),
+  llvm::LoadIntFromMemory(discrVal, reinterpret_cast<const uint8_t *>(*mem),
                           discrSize);
 
   TypedAttr type = getTypes()[discrVal.getZExtValue()];
@@ -707,8 +707,7 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 
 std::optional<int64_t> ClosureType::getTypeSize(TargetInfoAttr target) const {
   // This type is lowered to a pair of pointers.
-  return 2 * llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                              CHAR_BIT);
+  return 2 * target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
@@ -720,8 +719,7 @@ std::optional<int64_t> ClosureType::getTypeAlign(TargetInfoAttr target) const {
 //===----------------------------------------------------------------------===//
 
 std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
-  return llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                          CHAR_BIT);
+  return target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t>
