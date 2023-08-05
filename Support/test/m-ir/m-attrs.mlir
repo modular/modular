@@ -36,8 +36,8 @@
 // CHECK: #M<multiline["a", "b", "c"]>
 "M"() {a = #M<multiline["a", "b", "c"]>} : () -> ()
 
-// CHECK: #M.memref<my_blob, 24, heap> : memref<2xi32>
-"M"() {a = #M.memref<my_blob, 24, heap> : memref<2xi32>} : () -> ()
+// CHECK: #M.memref<[(my_blob, heap, [])], 0, 24> : memref<2xi32>
+"M"() {a = #M.memref<[(my_blob, heap, [])], 0, 24> : memref<2xi32>} : () -> ()
 
 {-#
   dialect_resources: {

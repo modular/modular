@@ -1069,52 +1069,113 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//
-// MemRefAttr
+// MemorySpaceAttr
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-/// Allow memory handles to be parsed.
 template <>
-struct FieldParser<M::MemoryHandle> {
-  static FailureOr<M::MemoryHandle> parse(AsmParser &p) {
-    return p.parseResourceHandle<M::MemoryHandle>();
+struct FieldParser<MemoryBlob> {
+  static FailureOr<MemoryBlob> parse(AsmParser &p) {
+    if (p.parseLParen())
+      return failure();
+    FailureOr<MemoryHandle> hdl = p.parseResourceHandle<MemoryHandle>();
+    if (failed(hdl))
+      return failure();
+    StringRef kindStr;
+    SmallVector<MemoryBlob::PointerRegion> pointerRegions;
+    if (p.parseComma() || p.parseKeyword(&kindStr) || p.parseComma() ||
+        p.parseCommaSeparatedList(
+            AsmParser::Delimiter::Square,
+            [&] {
+              MemoryBlob::PointerRegion &region = pointerRegions.emplace_back();
+              return failure(
+                  p.parseLParen() || p.parseInteger(region.offset) ||
+                  p.parseComma() || p.parseInteger(region.blobIndex) ||
+                  p.parseComma() || p.parseInteger(region.blobOffset) ||
+                  p.parseRParen());
+            }) ||
+        p.parseRParen())
+      return failure();
+    MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
+                          .Case("stack", MemoryKind::Stack)
+                          .Case("heap", MemoryKind::Heap);
+    return MemoryBlob(*hdl, kind, std::move(pointerRegions));
   }
 };
 
-/// Allow memory handles to be printed.
-static AsmPrinter &operator<<(AsmPrinter &p, M::MemoryHandle hdl) {
-  p.printResourceHandle(hdl);
-  return p;
-}
-} // namespace mlir
-
-static ParseResult parseMemoryKind(AsmParser &p, MemoryKind &kind) {
-  StringRef kw;
-  if (p.parseKeyword(&kw))
-    return failure();
-  kind = llvm::StringSwitch<MemoryKind>(kw)
-             .Case("stack", MemoryKind::Stack)
-             .Case("heap", MemoryKind::Heap)
-             .Case("const_global", MemoryKind::ConstGlobal)
-             .Case("global", MemoryKind::Global);
-  return success();
-}
-
-static void printMemoryKind(AsmPrinter &p, MemoryKind kind) {
-  switch (kind) {
+static AsmPrinter &operator<<(AsmPrinter &p, const MemoryBlob &blob) {
+  p << '(';
+  p.printResourceHandle(blob.getHandle());
+  p << ", ";
+  switch (blob.getKind()) {
   case MemoryKind::Stack:
     p << "stack";
     break;
   case MemoryKind::Heap:
     p << "heap";
     break;
-  case MemoryKind::ConstGlobal:
-    p << "const_global";
-    break;
-  case MemoryKind::Global:
-    p << "global";
-    break;
   }
+  p << ", [";
+  llvm::interleaveComma(blob.getPointerRegions(), p,
+                        [&](const MemoryBlob::PointerRegion &region) {
+                          p << '(' << region.offset << ", " << region.blobIndex
+                            << ", " << region.blobOffset << ')';
+                        });
+  p << "])";
+  return p;
+}
+} // namespace mlir
+
+namespace M {
+static llvm::hash_code hash_value(const MemoryBlob &b) {
+  return llvm::hash_combine(b.getHandle(), b.getKind(), b.getPointerRegions());
+}
+
+static bool operator==(const MemoryBlob &lhs, const MemoryBlob &rhs) {
+  return std::make_tuple(lhs.getHandle(), lhs.getKind(),
+                         lhs.getPointerRegions()) ==
+         std::make_tuple(rhs.getHandle(), rhs.getKind(),
+                         rhs.getPointerRegions());
+}
+
+static llvm::hash_code hash_value(const MemoryBlob::PointerRegion &region) {
+  return llvm::hash_combine(region.offset, region.blobIndex, region.blobOffset);
+}
+
+static bool operator==(const MemoryBlob::PointerRegion &lhs,
+                       const MemoryBlob::PointerRegion &rhs) {
+  return std::make_tuple(lhs.offset, lhs.blobIndex, lhs.blobOffset) ==
+         std::make_tuple(rhs.offset, rhs.blobIndex, rhs.blobOffset);
+}
+} // namespace M
+
+LogicalResult
+MemorySpaceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                        ArrayRef<MemoryBlob> blobs) {
+  for (auto [i, blob] : llvm::enumerate(blobs)) {
+    for (const MemoryBlob::PointerRegion &region : blob.getPointerRegions()) {
+      if (region.blobIndex < 0 ||
+          static_cast<size_t>(region.blobIndex) >= blobs.size()) {
+        return emitError() << "blob #" << i << " pointer at offset "
+                           << region.offset
+                           << " has an out-of-bounds blob index: "
+                           << region.blobIndex;
+      }
+    }
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// MemRefAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult MemRefAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                 MemorySpaceAttr space, int64_t index,
+                                 int64_t offset, Type type) {
+  if (index < 0 || static_cast<size_t>(index) >= space.size())
+    return emitError() << "memref blob index " << index << " is out-of-bounds";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
