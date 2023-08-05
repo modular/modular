@@ -1449,24 +1449,24 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 
   let arguments = (ins AttrOfType<Index>:$count,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       OptionalAttr<AttrOfType<Index>>:$addressSpace);
+                       OptionalAttr<AttrOfType<Index>>:$address_space);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $alignment, $addressSpace) `` attr-dict
+    custom<PointerOf>(type($result), $alignment, $address_space) `` attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$result,
                    "int64_t":$count,
                    CArg<"TypedAttr", "TypedAttr()">:$alignment,
-                   CArg<"unsigned", "0">:$addressSpace)>,
+                   CArg<"unsigned", "0">:$address_space)>,
     OpBuilder<(ins "Type":$result,
                    "TypedAttr":$count,
                    CArg<"TypedAttr", "TypedAttr()">:$alignment,
-                   CArg<"unsigned", "0">:$addressSpace)>
+                   CArg<"unsigned", "0">:$address_space)>
   ];
 }
 
