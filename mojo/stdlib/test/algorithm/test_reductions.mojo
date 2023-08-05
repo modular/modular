@@ -7,10 +7,12 @@
 
 from Buffer import Buffer, NDBuffer
 from DType import DType
-from Index import StaticIntTuple
+from Index import Index, StaticIntTuple
+from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from IO import print
 from List import DimList
 from Range import range
+from TypeUtilities import rebind
 from Reductions import (
     all_true,
     any_true,
@@ -21,6 +23,8 @@ from Reductions import (
     product,
     sum,
     variance,
+    argmax,
+    argmin,
 )
 
 
@@ -160,11 +164,11 @@ fn test_boolean():
 
     # Create a mem of size size
     let vector = Buffer[size, DType.bool].stack_allocation()
-    vector[0] = True.value
-    vector[1] = False.value
-    vector[2] = False.value
-    vector[3] = False.value
-    vector[4] = True.value
+    vector[0] = True
+    vector[1] = False
+    vector[2] = False
+    vector[3] = False
+    vector[4] = True
 
     # CHECK: False
     print(all_true(vector))
@@ -208,9 +212,280 @@ fn test_boolean():
     print(none_true(vector))
 
 
+# CHECK-LABEL: test_argn
+fn test_argn():
+    print("== test_argn")
+
+    alias size = 15
+
+    let vector = NDBuffer[1, DimList(size), DType.float32].stack_allocation()
+    let output = NDBuffer[1, DimList(1), DType.index].stack_allocation()
+
+    for i in range(size):
+        vector[i] = i
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.float32]](
+                vector
+            ),
+            0,
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+        # CHECK: argmax = 14
+        print("argmax = ", output[0])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.float32]](
+                vector
+            ),
+            0,
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+        # CHECK: argmin = 0
+        print("argmin = ", output[0])
+
+
+# CHECK-LABEL: test_argn_2
+fn test_argn_2():
+    print("== test_argn_2")
+
+    alias batch_size = 4
+    alias size = 15
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, size), DType.float32
+    ].stack_allocation()
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    for i in range(batch_size):
+        for j in range(size):
+            vector[Index(i, j)] = i * size + j
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+        # CHECK: argmax = 14
+        # CHECK: argmax = 14
+        # CHECK: argmax = 14
+        # CHECK: argmax = 14
+        for i in range(batch_size):
+            print("argmax = ", output[Index(i, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        for i in range(batch_size):
+            print("argmin = ", output[Index(i, 0)])
+
+
+# CHECK-LABEL: test_argn_2_test_2
+fn test_argn_2_test_2():
+    print("== test_argn_2_test_2")
+
+    alias batch_size = 2
+    alias size = 3
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, size), DType.float32
+    ].stack_allocation()
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    for i in range(batch_size):
+        for j in range(size):
+            vector[Index(i, j)] = i * size + j
+            if i % 2:
+                vector[Index(i, j)] *= -1
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+        # CHECK: argmax = 2
+        # CHECK: argmax = 0
+        for i in range(batch_size):
+            print("argmax = ", output[Index(i, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+        # CHECK: argmin = 0
+        # CHECK: argmin = 2
+        for i in range(batch_size):
+            print("argmin = ", output[Index(i, 0)])
+
+
+# CHECK-LABEL: test_argn_2_neg_axis
+fn test_argn_2_neg_axis():
+    print("== test_argn_2_neg_axis")
+
+    alias batch_size = 2
+    alias size = 3
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, size), DType.float32
+    ].stack_allocation()
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    for i in range(batch_size):
+        for j in range(size):
+            vector[Index(i, j)] = i * size + j
+            if i % 2:
+                vector[Index(i, j)] *= -1
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            -1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+        # CHECK: argmax = 2
+        # CHECK: argmax = 0
+        for i in range(batch_size):
+            print("argmax = ", output[Index(i, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            -1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+        # CHECK: argmin = 0
+        # CHECK: argmin = 2
+        for i in range(batch_size):
+            print("argmin = ", output[Index(i, 0)])
+
+
+# CHECK-LABEL: test_argn_test_zeros
+fn test_argn_test_zeros():
+    print("== test_argn_test_zeros")
+
+    alias batch_size = 1
+    alias size = 16
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, size), DType.float32
+    ].stack_allocation()
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    for i in range(batch_size):
+        for j in range(size):
+            vector[Index(i, j)] = 0
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+        # CHECK: argmax = 0
+        for i in range(batch_size):
+            print("argmax = ", output[Index(i, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.float32]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+        # CHECK: argmin = 0
+        for i in range(batch_size):
+            print("argmin = ", output[Index(i, 0)])
+
+
 fn main():
     test_reductions()
     test_product()
     test_mean_variance()
     test_3d_reductions()
     test_boolean()
+    test_argn()
+    test_argn_2()
+    test_argn_2_test_2()
+    test_argn_2_neg_axis()
+    test_argn_test_zeros()
