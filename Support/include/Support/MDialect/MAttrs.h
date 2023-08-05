@@ -64,6 +64,10 @@ class DataLayout {
 public:
   /// Get the default address space pointer bitwidth.
   int32_t getPointerBitWidth() const { return ptrWidth; }
+  /// Get the default address space pointer size in bytes.
+  int32_t getPointerSize() const {
+    return llvm::divideCeil(getPointerBitWidth(), 8);
+  }
   /// Get the bitwidth of a fixed vector type.
   int32_t getVectorBitWidth(int32_t numElts, int32_t eltBitWidth) const {
     return numElts * eltBitWidth;

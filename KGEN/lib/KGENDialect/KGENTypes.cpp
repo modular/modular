@@ -368,8 +368,7 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
   // Non-capturing closures are function pointers. Capturing closures contain
   // a function pointer and a capture state pointer.
-  return (isCapturing() ? 2 : 1) *
-         llvm::divideCeil(target.getDataLayout().getPointerBitWidth(), 8);
+  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t>
@@ -526,10 +525,8 @@ DeclRefType DeclRefType::get(SymbolRefAttr name) {
 // An index type as same alignment and size of a pointer type.
 std::optional<int64_t>
 KGEN::StringType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(
-                 llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                                  CHAR_BIT),
-                 target.getDataLayout().getPointerABIAlign());
+  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
+                           target.getDataLayout().getPointerABIAlign());
 }
 
 std::optional<int64_t>
@@ -571,10 +568,8 @@ VariadicType VariadicType::get(Type elementType) {
 /// the size of a pointer, plus the size of the size type (which has the same
 /// size and alignment as a pointer type).
 std::optional<int64_t> VariadicType::getTypeSize(TargetInfoAttr target) const {
-  return 2 * llvm::alignTo(
-                 llvm::divideCeil(target.getDataLayout().getPointerBitWidth(),
-                                  CHAR_BIT),
-                 target.getDataLayout().getPointerABIAlign());
+  return 2 * llvm::alignTo(target.getDataLayout().getPointerSize(),
+                           target.getDataLayout().getPointerABIAlign());
 }
 
 /// The alignment of the variadic type is that its pointer and size.

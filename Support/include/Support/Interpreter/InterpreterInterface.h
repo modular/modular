@@ -54,8 +54,22 @@ public:
   /// Free heap-allocated memory from the interpreter.
   ErrorOrSuccess freeHeapMemory(int64_t addr);
 
-  /// Try to get a memory reference at the given address.
-  ErrorOr<void *> getMemory(int64_t addr, size_t size);
+  /// Get writable memory for the given address to interpreter memory.
+  ///
+  /// The `writePointer` flag must be set if the memory is being written to as a
+  /// pointer value. Pointers are special because they are the only fundamental
+  /// type whose in-memory representation differs between compile-time and
+  /// run-time. The interpreter implements special handling for pointer values
+  /// to ensure they are mapped in to and out of the interpreter memory space
+  /// when required.
+  ///
+  /// Clobbering a pointer region is invalid. This can either be partially
+  /// overwriting a pointer region with a non-pointer value or a pointer value.
+  ErrorOr<void *> getWritableMemory(int64_t addr, size_t size,
+                                    bool writePointer = false);
+
+  /// Get readable memory for the given address to interpreter memory.
+  ErrorOr<const void *> getReadableMemory(int64_t addr, size_t size);
 
   /// Write an attribute value of a given type to the provided chunk of memory.
   ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);
@@ -161,6 +175,13 @@ private:
 
   /// This struct represents a piece of memory in the interpreter.
   struct MemoryBlob {
+    /// Create a memory blob.
+    explicit MemoryBlob(int64_t baseAddr, size_t size, size_t align);
+
+    /// Mark or unmark the given region of the blob as a pointer value.
+    ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
+                                    int64_t pointerSize, bool writePointer);
+
     /// The base address of the blob.
     int64_t baseAddr;
     /// The size of the blob.
@@ -169,6 +190,9 @@ private:
     size_t align;
     /// The actual memory managed by the interpreter.
     std::unique_ptr<void, void (*)(void *)> memory;
+    /// A bit is set for each offset value where pointer regions begin. The
+    /// vector is lazily-initialized to save memory.
+    std::optional<llvm::BitVector> pointerRegions;
   };
 
   /// A memory table is just a vector of blobs organized by ascending address.
@@ -197,6 +221,11 @@ private:
     /// The memory blobs in the table.
     std::vector<MemoryBlob> blobs;
   };
+
+  /// Get the memory blob for the given address. Check that the access is
+  /// in-bounds and then compute the offset into the blob.
+  ErrorOr<std::pair<MemoryBlob &, int64_t>> getMemory(int64_t addr,
+                                                      size_t size);
 
   /// Exchange raw pointers to interpreter memory to dialect resource references
   /// upon exit from the interpreter.
