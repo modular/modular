@@ -18,7 +18,7 @@ from Functional import (
     vectorize_unroll,
     async_parallelize,
 )
-from Reductions import argmax, _reduce_generator, reduce_shape
+from Reductions import argmax as _argmax, _reduce_generator, reduce_shape
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from Memory import memset_zero
@@ -115,7 +115,7 @@ fn MOGGExport():
     alias _dtype_bool = DTypeBoolTypeDef
     alias _to_buffer = to_buffer
     alias _to_shape = to_shape
-    alias _arg_max = argmax
+    alias _arg_max = argmax_wrapped
     alias _abs = abs_wrapped
     alias _add = add
     alias _avg_pool_shape = pool_shape
@@ -713,6 +713,27 @@ fn abs_wrapped[
     type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return abs(value)
+
+
+# ===----------------------------------------------------------------------===#
+# ArgMax wrapper op
+# ===----------------------------------------------------------------------===#
+
+
+# Call abs, needed as it has multiple overloads which can't be aliased
+@always_inline
+fn argmax_wrapped[
+    type: DType,
+    out_type: DType,
+    axis_type: DType,
+    rank: Int,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_chain: OutputChainPtr,
+):
+    return _argmax(input, axis_buf, output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
