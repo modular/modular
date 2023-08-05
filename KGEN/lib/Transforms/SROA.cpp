@@ -92,8 +92,7 @@ struct Replacer {
 
         // Stack of >1 stores are implicity only a reference to the first
         // element so we can stop after the first store.
-        if constexpr (std::is_same<ContainerType,
-                                   POP::StackAllocationOp>::value)
+        if constexpr (std::is_same_v<ContainerType, POP::StackAllocationOp>)
           break;
       }
     } else {

@@ -526,7 +526,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type allocaType, int64_t count,
 
   Value ptr = b.create<LLVM::AllocaOp>(
       op->getLoc(), allocaType,
-      allocaType.cast<LLVM::LLVMPointerType>().getElementType(), countVal,
+      cast<LLVM::LLVMPointerType>(allocaType).getElementType(), countVal,
       align);
 
   // Insert lifetime markers starting from the op to the end of its block.
