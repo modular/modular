@@ -949,6 +949,15 @@ struct Tensor[dtype: DType]:
         self._ptr = DTypePointer[dtype]()
 
     @always_inline
+    fn __init__(inout self, *dims: Int):
+        """Allocates a tensor using the shape provided.
+
+        Args:
+          dims: The tensor dimensions.
+        """
+        self = Tensor[dtype](TensorSpec(dtype, dims))
+
+    @always_inline
     fn __init__(inout self, owned shape: TensorShape):
         """Allocates a tensor using the shape provided.
 
