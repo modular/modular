@@ -52,6 +52,9 @@ public:
   /// Get the label (any extra identifiers after the patch).
   StringRef getLabel() const { return label; }
 
+  /// Print this version to a string.
+  std::string toString() const;
+
 private:
   unsigned major;
   unsigned minor;
