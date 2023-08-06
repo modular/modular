@@ -95,6 +95,13 @@ bool Version::operator<(const Version &other) const {
   return false;
 }
 
+std::string Version::toString() const {
+  std::string out;
+  llvm::raw_string_ostream stream(out);
+  stream << *this;
+  return out;
+}
+
 llvm::raw_ostream &M::operator<<(llvm::raw_ostream &os, const Version &other) {
   os << other.getMajor() << "." << other.getMinor() << "." << other.getPatch();
   if (StringRef label = other.getLabel(); !label.empty())
