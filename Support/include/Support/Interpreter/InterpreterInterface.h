@@ -238,7 +238,7 @@ private:
 
   /// The blob manager to materializing interpreter memory into the IR. Access
   /// to the blob manager is thread-safe.
-  MBlobManagerInterface &blobMgr;
+  DialectResourceManager &blobMgr;
 
   /// An internal memory table for heap-allocated memory.
   MemoryTable heapMemory;

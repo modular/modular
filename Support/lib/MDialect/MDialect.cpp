@@ -19,7 +19,7 @@ using namespace M;
 namespace {
 class MOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 public:
-  MOpAsmDialectInterface(Dialect *dialect, MBlobManagerInterface &blobMgr)
+  MOpAsmDialectInterface(Dialect *dialect, DialectResourceManager &blobMgr)
       : OpAsmDialectInterface(dialect), blobMgr(blobMgr) {}
 
   std::string
@@ -46,7 +46,7 @@ public:
 
 private:
   /// The blob manager.
-  MBlobManagerInterface &blobMgr;
+  DialectResourceManager &blobMgr;
 };
 } // namespace
 
@@ -60,7 +60,7 @@ void MDialect::initialize() {
   injectTypeInterfaces();
   injectAttrInterfaces();
 
-  auto &blobMgr = addInterface<MBlobManagerInterface>();
+  auto &blobMgr = addInterface<DialectResourceManager>();
   addInterface<MOpAsmDialectInterface>(blobMgr);
 }
 

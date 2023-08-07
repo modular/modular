@@ -660,11 +660,15 @@ AlignedBytesType AlignedBytesAttr::getAlignedBytesType() const {
 
 /// Construct the default data layout and then overwrite the entries when
 /// parsing the data layout string.
-DataLayout::DataLayout(StringRef dlSpecStr)
-    : intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
-      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}}, vecAbiAlign{{64, 8},
-                                                                    {128, 16}},
-      ptrWidth(64), ptrAbiAlign(8), dlSpecStr(dlSpecStr) {}
+// clang-format off
+DataLayout::DataLayout(StringRef dlSpecStr) :
+      intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
+      fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}},
+      vecAbiAlign{{64, 8}, {128, 16}},
+      ptrWidth(64),
+      ptrAbiAlign(8),
+      dlSpecStr(dlSpecStr) {}
+// clang-format on
 
 /// Checked version of split to ensure mandatory subparts.
 static ErrorOr<std::pair<StringRef, StringRef>> checkedSplit(StringRef str,
@@ -1067,6 +1071,16 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
   return os << '"' << triple.normalize() << '"';
 }
 } // namespace llvm
+
+//===----------------------------------------------------------------------===//
+// MemoryBlob
+//===----------------------------------------------------------------------===//
+
+DialectResourceManager &MemoryHandle::getManagerInterface(MLIRContext *ctx) {
+  auto *dialect = ctx->getOrLoadDialect<MDialect>();
+  assert(dialect && "MDialect is not registered");
+  return *dialect->getRegisteredInterface<DialectResourceManager>();
+}
 
 //===----------------------------------------------------------------------===//
 // MemorySpaceAttr
