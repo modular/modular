@@ -131,12 +131,25 @@ private:
 } // namespace detail
 
 //===----------------------------------------------------------------------===//
-// MemRefAttr
+// MemoryBlob
 //===----------------------------------------------------------------------===//
 
-using MemoryHandle = mlir::DialectResourceBlobHandle<MDialect>;
-using MBlobManagerInterface =
-    mlir::ResourceBlobManagerDialectInterfaceBase<MemoryHandle>;
+class DialectResourceManager;
+
+class MemoryHandle : public mlir::DialectResourceBlobHandle<MDialect> {
+public:
+  using DialectResourceBlobHandle::DialectResourceBlobHandle;
+
+  /// Get the manager interface for the handle.
+  static DialectResourceManager &getManagerInterface(MLIRContext *ctx);
+};
+
+class DialectResourceManager
+    : public mlir::ResourceBlobManagerDialectInterfaceBase<MemoryHandle> {
+public:
+  using ResourceBlobManagerDialectInterfaceBase::
+      ResourceBlobManagerDialectInterfaceBase;
+};
 
 enum class MemoryKind { Stack, Heap };
 
