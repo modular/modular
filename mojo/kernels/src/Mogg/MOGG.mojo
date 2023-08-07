@@ -83,7 +83,7 @@ from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from Split import split as _split
 from String import String
 from Slice import slice_as_view, slice_shape
-from MatrixSolve import matrix_solve as _matrix_solve
+from MatrixSolve import matrix_solve
 from MatrixBandPart import matrix_band_part
 from MOGGTests import (
     _test_many_ranks_and_types,
@@ -817,7 +817,6 @@ fn split[
     simd_width: Int,
     axis_type: DType,
     split_sizes_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     split_sizes: NDBuffer[1, DimList.create_unknown[1](), split_sizes_type],
@@ -829,15 +828,8 @@ fn split[
     if axis_int < 0:
         axis_int = axis_int + rank
 
-    @parameter
-    @always_inline
-    fn func(out_chain: OutputChainPtr):
-        # NOTE: Synchronous, so stack allocated variadic list is safe
-        _split[type, rank](
-            input, axis_int, VariadicList(variadic_outs), out_chain
-        )
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+    # NOTE: Synchronous, so stack allocated variadic list is safe
+    _split[type, rank](input, axis_int, VariadicList(variadic_outs), out_chain)
 
 
 # ===----------------------------------------------------------------------===#
@@ -982,15 +974,13 @@ fn pad[
     output_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    @parameter
-    @always_inline
-    fn func(out_chain: OutputChainPtr):
-        let paddings_ptr = paddings_buf.data
-        let constant_simd = constant_buf[0]
-        _pad(output_buf, input_buf, paddings_ptr, constant_simd)
-        out_chain.mark_ready()
+    let paddings_ptr = paddings_buf.data
+    let constant_simd = constant_buf[0]
+    _pad(output_buf, input_buf, paddings_ptr, constant_simd)
 
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
 
 
 # ===----------------------------------------------------------------------===#
@@ -1493,30 +1483,6 @@ fn pack_matmul_b_shape_func[
 
 
 @always_inline
-fn soft_fusion_run_wrapper[
-    single_thread_blocking_override: Bool,
-    func: fn (OutputChainPtr) capturing -> None,
-](out_chain: OutputChainPtr):
-    """Runs func with the async behaviour expected by single_thread_blocking_override.
-
-    If single_thread_blocking_override is true, we want to run the func
-    synchronously without signaling the out_chain since the out_chain represents
-    the out_chain for the entire soft-fused kernel.
-
-    Else if single_thread_blocking_override is false, run the kernel asynchronously
-    and signal the out_chain when done.
-    """
-
-    @parameter
-    if single_thread_blocking_override:
-        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
-        func(new_chain.borrow())
-        new_chain.wait()
-    else:
-        func(out_chain)
-
-
-@always_inline
 fn matmul[
     type: DType,
     transpose_in_1: Bool,  # matches name of MO attribute
@@ -1625,36 +1591,11 @@ fn batched_matmul[
 
 
 # ===----------------------------------------------------------------------===#
-# MOGG matrix solve
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn matrix_solve[
-    type: DType,
-    x_rank: Int,
-    a_rank: Int,
-    b_rank: Int,
-    single_thread_blocking_override: Bool,
-](
-    a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
-    b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
-    x: NDBuffer[x_rank, DimList.create_unknown[x_rank](), type],
-    out_chain: OutputChainPtr,
-):
-    @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
-        return _matrix_solve[type, x_rank, a_rank, b_rank](a, b, x, chain)
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
-
-
-# ===----------------------------------------------------------------------===#
 # MOGG scatter_nd
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn scatter_nd[
     output_rank: Int,
     updates_rank: Int,
@@ -1671,14 +1612,14 @@ fn scatter_nd[
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
     out_chain: OutputChainPtr,
 ):
-    @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
-        return _scatter_nd[type, updates_rank, indices_rank, output_rank](
-            updates, indices, output, chain
-        )
 
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+    return _scatter_nd[
+        type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+    ](updates, indices, output, out_chain)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
