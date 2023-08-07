@@ -310,42 +310,49 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
 
-    if axis.get() < 0:
-        return out_chain.mark_error(
-            "gather kernel does not support negative axis"
-        )
-
-    # The output shape has the same shape as the input, with the indexed-axis
-    # replaced by the shape of the indices
-    for i in range(axis.get()):
-        if output.dim(i) != input_shape[i]:
+    # Disable error checking in trivial kernels.
+    @parameter
+    if not single_thread_blocking_override:
+        if axis.get() < 0:
             return out_chain.mark_error(
-                "gather: output_shape[0:axis] does not match"
-                " input_shape[0:axis]"
-            )
-    for i in range(axis.get(), axis.get() + indices_rank):
-        if output.dim(i) != indices_shape[i - axis.get()]:
-            return out_chain.mark_error(
-                "gather: output_shape[axis:axis+indices_rank] does not match"
-                " indices_shape"
-            )
-    for i in range(axis.get() + indices_rank, output_rank):
-        if output.dim(i) != input_shape[i - indices_rank + 1]:
-            return out_chain.mark_error(
-                "gather: output_shape[axis + indices_rank:] does not match"
-                " input_shape[axis:]"
+                "gather kernel does not support negative axis"
             )
 
-    if axis.get() >= input_rank:
-        return out_chain.mark_error("gather: axis must be less than input rank")
+        # The output shape has the same shape as the input, with the indexed-axis
+        # replaced by the shape of the indices
+        for i in range(axis.get()):
+            if output.dim(i) != input_shape[i]:
+                return out_chain.mark_error(
+                    "gather: output_shape[0:axis] does not match"
+                    " input_shape[0:axis]"
+                )
+        for i in range(axis.get(), axis.get() + indices_rank):
+            if output.dim(i) != indices_shape[i - axis.get()]:
+                return out_chain.mark_error(
+                    "gather: output_shape[axis:axis+indices_rank] does not"
+                    " match indices_shape"
+                )
+        for i in range(axis.get() + indices_rank, output_rank):
+            if output.dim(i) != input_shape[i - indices_rank + 1]:
+                return out_chain.mark_error(
+                    "gather: output_shape[axis + indices_rank:] does not match"
+                    " input_shape[axis:]"
+                )
+
+        if axis.get() >= input_rank:
+            return out_chain.mark_error(
+                "gather: axis must be less than input rank"
+            )
 
     out_chain.trace[TraceLevel.OP]("mojo.gather")
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     let indices_len = indices_shape.flattened_length()
     if input_shape.flattened_length() == 0 or indices_len == 0:
-        # No-op
-        out_chain.mark_ready()
+
+        @parameter
+        if not single_thread_blocking_override:
+            out_chain.mark_ready()
         return
 
     @parameter
@@ -428,11 +435,13 @@ fn gather[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn scatter_nd[
     type: DType,
     updates_rank: Int,
     indices_rank: Int,
     output_rank: Int,
+    single_thread_blocking_override: Bool,
 ](
     updates: NDBuffer[
         updates_rank, DimList.create_unknown[updates_rank](), type
@@ -461,14 +470,18 @@ fn scatter_nd[
     let updates_shape = updates.get_shape()
     let indices_shape = indices.get_shape()
 
-    if indices_shape[indices_rank - 1] != 1:
-        return out_chain.mark_error("unsupported indices shape")
+    @parameter
+    if not single_thread_blocking_override:
+        if indices_shape[indices_rank - 1] != 1:
+            return out_chain.mark_error("unsupported indices shape")
 
-    if (
-        updates_shape[0] != indices_shape[0]
-        or updates_shape[1] != indices_shape[1]
-    ):
-        return out_chain.mark_error("updates and index shape prefix mismatch")
+        if (
+            updates_shape[0] != indices_shape[0]
+            or updates_shape[1] != indices_shape[1]
+        ):
+            return out_chain.mark_error(
+                "updates and index shape prefix mismatch"
+            )
 
     let N = updates_shape[0] * updates_shape[1]
     let D = updates_shape[2] * updates_shape[3]
@@ -486,7 +499,9 @@ fn scatter_nd[
         for d in range(D):
             output_1d[index * D + d] = updates_1d[n * D + d]
 
-    out_chain.mark_ready()
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
 
 
 @always_inline
