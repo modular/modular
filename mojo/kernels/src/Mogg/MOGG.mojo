@@ -70,7 +70,7 @@ from MatmulUtils import (
     _get_tile_n_k_ND,
     search_mm_config,
 )
-
+from MOGGDecorators import *
 from Pad import pad as _pad, pad_shape
 from Pointer import Pointer, DTypePointer
 from Pool import avg_pool, pool_shape, max_pool
@@ -216,58 +216,72 @@ fn MOGGExport():
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_intrinsic("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
+@mogg_intrinsic("float16")
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
+@mogg_intrinsic("float32")
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
+@mogg_intrinsic("float64")
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
+@mogg_intrinsic("int8")
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
+@mogg_intrinsic("int16")
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
+@mogg_intrinsic("int32")
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
+@mogg_intrinsic("uint32")
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
+@mogg_intrinsic("int64")
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
+@mogg_intrinsic("uint8")
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
+@mogg_intrinsic("uint16")
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
+@mogg_intrinsic("bool")
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
+@mogg_intrinsic("index")
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
+@mogg_intrinsic("outChain")
 fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
     return ty
 
@@ -1787,12 +1801,14 @@ fn conv[
 
 
 # Helper function to mark the output chain as ready in tests.
+@mogg_intrinsic("mark_output_chain_ready")
 @always_inline
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
     out_chain.mark_ready()
 
 
 # Helper function to query buffer shapes for tests.
+@mogg_intrinsic("print_shape_info")
 fn print_buffer_info[
     type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):

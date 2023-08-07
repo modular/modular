@@ -12,12 +12,14 @@ from LLCL import OutputChainPtr
 from Functional import vectorize
 from Range import range
 from SIMD import SIMD
+from MOGGDecorators import *
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_intrinsic("test_many_ranks_and_types")
 fn _test_many_ranks_and_types[
     type1: DType,
     rank1: Int,
@@ -43,6 +45,7 @@ fn _test_many_ranks_and_types[
     return tensor1
 
 
+@mogg_intrinsic("test_one_rank_many_tensor")
 fn _test_one_rank_many_tensor[
     type: DType, rank: Int
 ](
@@ -59,6 +62,7 @@ fn _test_one_rank_many_tensor[
     return tensor1
 
 
+@mogg_intrinsic("test_3D_in_out_lambda")
 fn _test_3D_in_out_lambda[
     type: DType,
     simd_width: Int,
