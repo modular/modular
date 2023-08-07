@@ -902,6 +902,9 @@ ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess AlignedFreeOp::interpret(ArrayRef<Attribute> operands,
                                             InterpreterState &state) {
   auto ptr = cast<PointerAttr>(operands.front());
+  // Free functions tolerate null pointers.
+  if (ptr.getAddr() == 0)
+    return success();
   if (ErrorOrSuccess err = state.freeHeapMemory(ptr.getAddr()); err.isError())
     return ErrorTree(getLoc(), err.takeError());
   return success();
