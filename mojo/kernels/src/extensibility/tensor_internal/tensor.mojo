@@ -3,7 +3,41 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the TensorSpec, TensorShape, and Tensor type."""
+"""
+Implements the TensorSpec, TensorShape, and Tensor type.
+
+Example:
+
+```mojo
+from DType import DType
+from Tensor import Tensor, TensorSpec, TensorShape
+from Index import Index
+from Random import rand
+from Range import range
+
+let height = 256
+let width = 256
+let channels = 3
+
+# Create the tensor of dimensions height, width, channels
+# and fill with random values.
+let image = rand[DType.float32](height, width, channels)
+
+# Declare the grayscale image.
+let spec = TensorSpec(DType.float32, height, width)
+var gray_scale_image = Tensor[DType.float32](spec)
+
+# Perform the RGB to grayscale transform.
+for y in range(height):
+  for x in range(width):
+    let r = image[y,x,0]
+    let g = image[y,x,1]
+    let b = image[y,x,2]
+    gray_scale_image[Index(y,x)] = 0.299 * r + 0.587 * g + 0.114 * b
+
+print(gray_scale_image.shape().__str__())
+```
+"""
 
 
 from Assert import assert_param, debug_assert
