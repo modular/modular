@@ -37,7 +37,7 @@ alias b_type = DType.int8
 alias c_type = DType.int32
 
 alias transpose_b = False
-alias b_packed = True
+alias b_packed = False
 
 
 fn gemm_naive[
@@ -74,10 +74,16 @@ fn _get_tile_n_k[
 
 
 fn main():
-    alias m: Int = 256
-    alias n: Int = 256
-    alias k: Int = 256
-    let a_ptr = DTypePointer[a_type].aligned_alloc(alignment, m * k)
+    alias m: Int = 257
+    alias n: Int = 1023
+    alias k: Int = 513
+
+    # k%4 != 0 can overread into unallocated memory and fault
+    # 3 bytes of padding fixes this. See issue 18784
+    alias extra_bytes = 3
+    let a_ptr = DTypePointer[a_type].aligned_alloc(
+        alignment, m * k + extra_bytes
+    )
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let bp_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
     let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
@@ -107,16 +113,21 @@ fn main():
     let cm1 = Matrix[DimList.create_unknown[2](), c_type, False](
         c1_ptr, Index(m, n)
     )
+
+    var cnt: Int = 0
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            am[i, p] = (i * k + p) % 128
+            am[i, p] = cnt % 128
+            cnt += 1
 
+    cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            bm[p, j] = (p * n + j) % 256 - 128
+            bm[p, j] = cnt % 256 - 128
             bpm[p, j] = bm[p, j]
+            cnt += 1
 
     for i in range(m):
         for j in range(n):

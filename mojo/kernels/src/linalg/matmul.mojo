@@ -25,7 +25,7 @@ from Functional import (
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr, OwningOutputChainPtr
-from Math import min, fma, div_ceil, align_down
+from Math import min, fma, div_ceil, align_down, align_up
 from Memory import memset_zero, stack_allocation
 from MatmulUtils import (
     get_packB_unroll_factor,
@@ -521,21 +521,24 @@ struct PackMatrixCols[
     fn _pack(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI."""
         assert_param[use_vnni]()
-        let kc = min(self.valid_data_dim[0], self.pack_tile_dim[0])
-        let nc = min(self.valid_data_dim[1], self.pack_tile_dim[1])
+        let kc = self.valid_data_dim[0]
+        let nc = self.valid_data_dim[1]
         let nr = column_inner_size
-        for i in range(0, kc, 4):
-            for j in range(nc // nr):
+        for i in range(0, align_up(kc, 4), 4):
+            for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
 
                     @unroll
                     for l in range(4):
-                        let global_idx = self.global_offset + Index(
-                            i + l, p + nr * j
-                        )
+                        let local_idx = Index(i + l, p + nr * j)
+                        let val = 0 if local_idx[0] >= kc or local_idx[
+                            1
+                        ] >= nc else self.original_matrix[
+                            self.global_offset + local_idx
+                        ]
                         self.packed_matrix.simd_store[1](
                             Index(j, i // 4, 4 * p + l),
-                            self.original_matrix[global_idx],
+                            val,
                         )
 
     @adaptive
@@ -544,7 +547,6 @@ struct PackMatrixCols[
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         assert_param[not use_vnni]()
         let valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
-
         alias unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
@@ -988,7 +990,6 @@ struct MatmulInnerLoopBPacked[
 
         # Global K index.
         let global_k = self.global_offset.K + tile_n_k_idx[1]
-
         let b_ptr = self.b_packed._offset(
             Index(n_outer_idx, tile_n_k_idx[1] // 4, 0)
         ).bitcast[DType.int32]()
@@ -1006,19 +1007,18 @@ struct MatmulInnerLoopBPacked[
 
         # This inner kernels works with non-transposed A.
         let K = self.a.dim(1)
-        let a_ptr = self.a.data.offset(
-            self.global_offset.M * K + global_k
-        ).bitcast[DType.int32]()
+        let a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
-
         @unroll
         for idx0 in range(a_row_size):
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                let a_val = a_ptr.offset(idx0 * K // 4).load().cast[c_type]()
+                let a_val = a_ptr.offset(idx0 * K).bitcast[
+                    DType.int32
+                ]().load().cast[c_type]()
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 let c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local.aligned_simd_load[simd_size, alignment](
@@ -1057,8 +1057,8 @@ struct MatmulInnerLoopBPacked[
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
-
-            for idx_k in range(0, self.tile_n_k[1], 4):
+            let k4 = align_up(self.tile_n_k[1], 4)
+            for idx_k in range(0, k4, 4):
                 # accumulate data for this (n, k) index
                 self._accumulate[0](c_local, Index(idx_n, idx_k))
 
@@ -1710,11 +1710,13 @@ struct BTileGenerator[
             A view of the packed tile.
 
         """
-
+        let k = align_up(tile_dim_nk[1], 4) if config.use_vnni else tile_dim_nk[
+            1
+        ]
         let vnni_factor = 4 if config.use_vnni else 1
         let tile_shape_nopack = DimList(
             tile_dim_nk[0] // inner_size,
-            tile_dim_nk[1] // vnni_factor,
+            k // vnni_factor,
             vnni_factor * inner_size,
         )
 
