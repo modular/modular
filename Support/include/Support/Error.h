@@ -119,6 +119,12 @@ private:
 bool operator==(const Error &, const Error &);
 inline bool operator!=(const Error &a, const Error &b) { return !(a == b); }
 
+/// Convert an LLVM error (which must be in error state) to a Modular error.
+/// Note that while llvm::Error has a "success"/"no-error" state, M::Error does
+/// not.  If you are unsure whether or not the llvm::Error is in error state,
+/// use toModularErrorOr to get an M::ErrorOrSuccess instead.
+Error toModularError(llvm::Error llvmError);
+
 } // namespace M
 
 #endif // SUPPORT_ERROR_H

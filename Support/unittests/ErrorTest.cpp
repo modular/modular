@@ -6,6 +6,7 @@
 
 #include "Support/Error.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Error.h"
 
 #include <utility>
 
@@ -96,4 +97,11 @@ TEST(Error, twineMoveAssign) {
   Error errorMoved(llvm::Twine("Previous value"));
   errorMoved = std::move(error);
   EXPECT_STREQ("Toaster is broken", errorMoved.get());
+}
+
+TEST(Error, fromLLVM) {
+  llvm::Error llvmError =
+      llvm::createStringError(std::error_code(), "Toaster overheated");
+  Error modularError = toModularError(std::move(llvmError));
+  EXPECT_STREQ("Toaster overheated", modularError.get());
 }
