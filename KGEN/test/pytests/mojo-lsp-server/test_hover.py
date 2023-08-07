@@ -590,9 +590,9 @@ Implements SIMD struct.
 
 
 async def test_hover_external_symbol(client: LanguageClient):
-    doc = Document.from_file("aliases.mojo")
-
     requests = Requests(client)
+
+    doc = Document.from_file("aliases.mojo")
     requests.open_document(doc)
 
     async def assert_hover(func_name: str, expected: str):
@@ -623,4 +623,19 @@ alias IDENTITY = 0
 ```mojo
 alias ExternalAlias = 0
 ```""",
+    )
+
+    doc = Document.from_file("types.mojo")
+    requests.open_document(doc)
+
+    await assert_hover(
+        "Builtin",
+        """### package `Builtin`
+
+---
+
+###
+Implements the Builtin package.
+
+""",
     )
