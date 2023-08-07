@@ -163,7 +163,10 @@ LIT::FuncOp StructEmitter::addVoidMethod(
 
 struct ValueInfo {
   enum FuncIndex { Destruct = 0, Move = 1, Copy = 2 };
-  ValueInfo(StructDeclOp structDeclOp, SharedState &shared) {
+
+  static ValueInfo createValueInfo(StructDeclOp structDeclOp,
+                                   SharedState &shared) {
+    std::bitset<3> existingFunctions;
     existingFunctions.reset();
     Type selfType = ASTDecl::computeSelfTypeForStruct(structDeclOp);
     ASTDecl &astDecl = shared.declResolver->getDeclForTypeSymbol(
@@ -172,40 +175,52 @@ struct ValueInfo {
       for (auto iter = childDecl.second.begin(); iter != childDecl.second.end();
            iter++) {
         ASTDecl *declaration = *iter;
-        if (auto func = dyn_cast<LIT::FuncOp>(*declaration)) {
-          // Resolving the signature will guarantee the special kind is set.
-          shared.declResolver->resolveSignature(*declaration,
-                                                declaration->getLoc());
-          switch ((SpecialFunctionKind)func.getSpecialFnKind()) {
-          case SpecialFunctionKind::kDel:
-            existingFunctions[FuncIndex::Destruct].flip();
-            break;
-          case SpecialFunctionKind::kCopyInitReg:
-          case SpecialFunctionKind::kCopyInit:
-            existingFunctions[FuncIndex::Copy].flip();
-            break;
-          case SpecialFunctionKind::kMoveInit:
-            existingFunctions[FuncIndex::Move].flip();
-            break;
-          default:
-            break;
-          }
+        // Resolving the signature will guarantee the special kind is set.
+        if (failed(shared.declResolver->resolveSignature(
+                *declaration, declaration->getLoc())))
+          return {};
+
+        auto func = dyn_cast<LIT::FuncOp>(**iter);
+        if (!func)
+          continue;
+        switch ((SpecialFunctionKind)func.getSpecialFnKind()) {
+        case SpecialFunctionKind::kDel:
+          existingFunctions[FuncIndex::Destruct].flip();
+          break;
+        case SpecialFunctionKind::kCopyInitReg:
+        case SpecialFunctionKind::kCopyInit:
+          existingFunctions[FuncIndex::Copy].flip();
+          break;
+        case SpecialFunctionKind::kMoveInit:
+          existingFunctions[FuncIndex::Move].flip();
+          break;
+        default:
+          break;
         }
       }
     }
+    return ValueInfo(existingFunctions);
   }
   bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
   bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
   bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
+  ValueInfo() : initialized(false) {}
+  operator bool() const { return initialized; }
 
 private:
+  ValueInfo(std::bitset<3> const &existingFunctions)
+      : existingFunctions(existingFunctions), initialized(true) {}
   std::bitset<3> existingFunctions;
+  bool initialized;
 };
 
 GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     StructDeclOp declOp, SMLoc loc, ASTDecl &parent,
     bool forceGenerateDestructor) {
-  ValueInfo valueInfo(declOp, shared);
+  ValueInfo valueInfo = ValueInfo::createValueInfo(declOp, shared);
+  if (!valueInfo)
+    return {};
+
   bool isMemoryOnly = !declOp.isRegisterPassable();
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
@@ -287,5 +302,5 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
         moveFunc.getOperation(), StringAttr::get(shared.getContext(), name),
         loc, &parent);
   }
-  return GeneratedStubs{destructorFunc, copyFunc, moveFunc};
+  return GeneratedStubs(destructorFunc, copyFunc, moveFunc);
 }
