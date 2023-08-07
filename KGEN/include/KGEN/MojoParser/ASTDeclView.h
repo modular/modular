@@ -93,6 +93,14 @@ public:
 
   std::string getDeclarationSnippet() const override;
 
+  /// The output of the generation is defined in the following schema:
+  ///
+  ///  {
+  ///    "kind": "variable",
+  ///    "name": string,
+  ///    "isVar": boolean,
+  ///    "type": string
+  ///  }
   llvm::json::Object toJSON() const override;
 
   //===----------------------------------------------------------------------===//
@@ -127,6 +135,14 @@ public:
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
+  /// The output of the generation is defined in the following schema:
+  ///
+  ///  {
+  ///    "kind": "parameter",
+  ///    "description": string,
+  ///    "name": string,
+  ///    "type": string
+  ///  }
   llvm::json::Object toJSON() const override;
 
   //===----------------------------------------------------------------------===//
@@ -169,6 +185,16 @@ public:
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
+  /// The output of the generation is defined in the following schema:
+  ///
+  ///  {
+  ///    "kind": "argument",
+  ///    "name": string,
+  ///    "description": string,
+  ///    "inout": boolean,
+  ///    "owned": boolean,
+  ///    "type": string
+  ///  }
   llvm::json::Object toJSON() const override;
 
 public:
@@ -201,15 +227,14 @@ public:
 
   StringRef getValue() const { return value; }
 
-  /// The output of the generation is defined in the following format:
+  /// The output of the generation is defined in the following schema:
   ///
-  /// Alias:
   ///  {
   ///    "kind": "alias",
-  ///    "name": "...",
-  ///    "value": "...",
-  ///    "summary": "...",
-  ///    "description": "..."
+  ///    "name": string,
+  ///    "description": string,
+  ///    "summary": string,
+  ///    "value": string
   ///  }
   llvm::json::Object toJSON() const override;
 
@@ -277,35 +302,22 @@ public:
   /// Return true if this function raises.
   bool raises() const { return raisesFlag; }
 
-  /// The output of the generation is defined in the following format:
+  /// The output of the generation is defined in the following schema:
   ///
-  /// Function:
   /// {
   ///   "kind": "function",
-  ///   "name": "baz",
-  ///   "overloads": [
-  ///     {
-  ///       "signature": "baz() -> Int",
-  ///       "summary": "...",
-  ///       "description": "...",
-  ///       "args": [
-  ///         {
-  ///           "name": "foo",
-  ///           "type": "Int",
-  ///           "description": "...",
-  ///         }
-  ///       ]
-  ///       "parameters": [
-  ///         {
-  ///           "name": "bar",
-  ///           "type": "Int",
-  ///           "description": "...",
-  ///         }
-  ///       ],
-  ///       "returns": "...",
-  ///       "constraints": "..."
-  ///     }
-  ///   ]
+  ///   "name": string,
+  ///   "args": ArgumentDeclView[],
+  ///   "constraints": string,
+  ///   "description": string,
+  ///   "isDef": boolean,
+  ///   "isStatic": boolean,
+  ///   "parameters": ParameterDeclView[],
+  ///   "raises": boolean,
+  ///   "returns": string,
+  ///   "returnType": string,
+  ///   "signature": string, // E.g., "baz() -> Int"
+  ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
 
@@ -361,15 +373,14 @@ public:
 
   std::string getMarkdownDocString() const override;
 
-  /// The output of the generation is defined in the following format:
+  /// The output of the generation is defined in the following schema:
   ///
-  /// Struct field:
   /// {
   ///   "kind": "field",
-  ///   "name": "foo",
-  ///   "description": "...",
-  ///   "summary": "...",
-  ///   "type": "Int"
+  ///   "name": string,
+  ///   "description": string,
+  ///   "summary": string,
+  ///   "type": string
   /// }
   llvm::json::Object toJSON() const override;
 
@@ -399,11 +410,11 @@ private:
 };
 
 /// A collection of overloaded functions in the same scope.
-class FunctionDeclViewOverloadSet {
+class FunctionDeclOverloadSetView {
 public:
   /// Create a list of function overload sets by grouping the given functions by
   /// their name. It's assumed that the input list is sorted by name.
-  static SmallVector<FunctionDeclViewOverloadSet, 2>
+  static SmallVector<FunctionDeclOverloadSetView, 2>
   fromSortedFunctions(SmallVector<FunctionDeclView, 2> &&functions);
 
   /// Get the common name of the functions in this overload set.
@@ -412,11 +423,17 @@ public:
   /// Get the functions in this overload set.
   ArrayRef<FunctionDeclView> getFunctions() const { return functions; }
 
-  /// Serialize the fields in this view to JSON.
+  /// The output of the generation is defined in the following schema:
+  ///
+  /// {
+  ///   "kind": "function",
+  ///   "name": string,
+  ///   "overloads": FunctionDeclView[]
+  /// }
   llvm::json::Object toJSON() const;
 
 private:
-  FunctionDeclViewOverloadSet(StringRef baseName) : baseName(baseName) {}
+  FunctionDeclOverloadSetView(StringRef baseName) : baseName(baseName) {}
 
   void append(FunctionDeclView function) {
     functions.push_back(std::move(function));
@@ -442,23 +459,17 @@ public:
   /// Return the parameters of this struct.
   ArrayRef<ParameterDeclView> getParameters() const { return parameters; }
 
-  /// The output of the generation is defined in the following format:
-  /// Struct:
+  /// The output of the generation is defined in the following schema:
+  ///
   /// {
   ///   "kind": "struct",
-  ///   "name": "...",
-  ///   "summary": "...",
-  ///   "description": "...",
-  ///   "parameters": [
-  ///     {
-  ///       "name": "bar",
-  ///       "type": "Int",
-  ///       "description": "...",
-  ///     }
-  ///   ],
-  ///   "aliases": [ ... ],
-  ///   "functions": [ ... ],
-  ///   "structs": [ ... ]
+  ///   "name": string,
+  ///   "aliases": AliasDeclView[],
+  ///   "description": string,
+  ///   "functions": FunctionDeclOverloadSetView[],
+  ///   "parameters": ParameterDeclView[],
+  ///   "structs": StructDeclView[],
+  ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
 
@@ -483,7 +494,7 @@ private:
   SmallVector<AliasDeclView> aliases;
   SmallVector<StructFieldDeclView> fields;
   SmallVector<ParameterDeclView> parameters;
-  SmallVector<FunctionDeclViewOverloadSet, 2> functionOverloads;
+  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -511,17 +522,16 @@ public:
   /// Return the structs defined at the top-level of this module.
   llvm::ArrayRef<StructDeclView> getStructs() const { return structs; }
 
-  /// The output of the generation is defined in the following format:
+  /// The output of the generation is defined in the following schema:
   ///
-  /// Module:
   /// {
   ///   "kind": "module",
-  ///   "name": "...",
-  ///   "summary": "...",
-  ///   "description": "...",
-  ///   "aliases": [ ... ],
-  ///   "functions": [ ... ],
-  ///   "structs": [ ... ]
+  ///   "name": string,
+  ///   "aliases": AliasDeclView[],
+  ///   "description": string,
+  ///   "functions": FunctionDeclOverloadSetView[],
+  ///   "structs": StructDeclView[],
+  ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
 
@@ -541,7 +551,7 @@ private:
 
   SmallVector<AliasDeclView> aliases;
   SmallVector<StructDeclView, 2> structs;
-  SmallVector<FunctionDeclViewOverloadSet, 2> functionOverloads;
+  SmallVector<FunctionDeclOverloadSetView, 2> functionOverloads;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -561,14 +571,13 @@ public:
 
   std::string getMarkdownDocString() const override;
 
-  /// The output of the generation is defined in the following format:
+  /// The output of the generation is defined in the following schema:
   ///
-  /// Package:
   /// {
   ///   "kind": "package",
-  ///   "name": "...",
-  ///   "description": "...",
-  ///   "summary": "...",
+  ///   "name": string,
+  ///   "description": string,
+  ///   "summary": string
   /// }
   llvm::json::Object toJSON() const override;
 
