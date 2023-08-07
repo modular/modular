@@ -273,14 +273,22 @@ InterpreterState::externalizeMemory(Region &entry,
 
     // First map all the blobs to indices so that pointers can be unmapped.
     int64_t blobIndex = 0;
-    for (const MemoryTable *table : {&heapMemory, &stackMemory})
-      for (const MemoryBlob &blob : table->blobs)
+    for (const MemoryTable *table : {&heapMemory, &stackMemory}) {
+      for (const MemoryBlob &blob : table->blobs) {
+        // Don't extern freed blobs.
+        if (!blob.memory)
+          continue;
         blobIndices.try_emplace(&blob, blobIndex++);
+      }
+    }
 
     // Now unmap the memory.
     std::vector<M::MemoryBlob> blobs;
     for (const MemoryTable *table : {&heapMemory, &stackMemory}) {
       for (const MemoryBlob &blob : table->blobs) {
+        if (!blob.memory)
+          continue;
+
         MemoryHandle hdl = blobMgr.insert(
             baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
                           ArrayRef<char>((char *)blob.memory.get(), blob.size),
