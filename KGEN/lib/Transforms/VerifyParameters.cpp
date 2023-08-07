@@ -112,8 +112,14 @@ static void propagateTrivialParameters(Region *region,
     if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
       if (mlir::LocationAttr loc = inlined.getCallLocAttr())
         inlined.setCallLocAttr(rebindLoc(loc));
-    op.setLoc(rebindLoc(op.getLoc()));
+    // DeclInterface's location might reference parameters declared by it (e.g.
+    // in case of a parametric argument making it into a subprogram scope type),
+    // so we will handle it when we recurse into it.
+    if (!isa<DeclInterface>(op))
+      op.setLoc(rebindLoc(op.getLoc()));
   }
+  if (auto declScope = dyn_cast<DeclInterface>(region->getParentOp()))
+    declScope->setLoc(rebindLoc(declScope->getLoc()));
 
   // Recurse into nested parameter scopes.
   for (Region *region : graph.nestedDecls)
