@@ -44,7 +44,7 @@ if (MODULAR_USE_TCMALLOC AND UNIX)
     )
   else()
     file(GLOB_RECURSE Tcmalloc_LIBRARY
-      /usr/lib/*libtcmalloc_minimal.so
+      /usr/lib/*libtcmalloc_minimal.so*
     )
   endif()
 
