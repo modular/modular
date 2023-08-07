@@ -72,6 +72,14 @@ kgen.generator @foo() {
     kgen.return loc(#locClosure)
   // CHECK-NEXT: } {isolated} loc(#[[LOC_CL]])
   } loc(#locClosure)
+
+  // CHECK: kgen.param.declare.region OtherClosure
+  kgen.param.declare.region OtherClosure = <K>(%arg1: !pop.array<K, index>) {
+    // CHECK-NEXT: kgen.return loc(#[[LOC_OTHER:.*]])
+    kgen.return loc(#locOther)
+  // CHECK-NEXT: } {isolated} loc(#[[LOC_OTHER]])
+  } loc(#locOther)
+
   // CHECK-NEXT: kgen.return loc(#[[LOC_FOO:.*]])
   kgen.return loc(#locFoo)
 // CHECK-NEXT: } loc(#[[LOC_FOO]])
@@ -81,14 +89,26 @@ kgen.generator @foo() {
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 
 // CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<2, 1 : index>>>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[OTHER_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo", linkageName = "foo"
 // CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "SomeClosure", linkageName = "SomeClosure", {{.*}}> : ![[CL_SP_TYPE]]
-#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 25, scopeLine = 25, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 183, scopeLine = 183, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<N, 1 : index>>>) -> (): DW_CC_normal>
+// CHECK-DAG: #[[OTHER_SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "OtherClosure", linkageName = "OtherClosure", {{.*}}> : ![[OTHER_SP_TYPE]]
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 25, scopeLine = 25, subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<
+  compileUnit = #compile_unit, scope = #file, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 183, scopeLine = 183, subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<N, 1 : index>>>) -> (): DW_CC_normal>
+#subprogram2 = #debuginfo.subprogram<
+  compileUnit = #compile_unit, scope = #file, name = "OtherClosure", linkageName = "OtherClosure", file = #file, line = 56, scopeLine = 56, subprogramFlags = "Definition|Optimized"
+> : !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>
 
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mojo":25:1)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mojo":183:5)
+// CHECK-DAG: #[[LOC3:.*]] = loc("foo.mlir":56:5)
 // CHECK-DAG: #[[LOC_FOO]] = loc(fused<#[[SP]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC_CL]] = loc(fused<#[[CL_SP]]>[#[[LOC2]]])
+// CHECK-DAG: #[[LOC_OTHER]] = loc(fused<#[[OTHER_SP]]>[#[[LOC3]]])
 #locFoo = loc(fused<#subprogram>["foo.mojo":25:1])
 #locClosure = loc(fused<#subprogram1>["foo.mojo":183:5])
+#locOther = loc(fused<#subprogram2>["foo.mlir":56:5])
