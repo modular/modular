@@ -43,6 +43,15 @@ static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
       .Default({});
 }
 
+static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
+  if (auto val = dyn_cast_if_present<PValue>(
+          (*unwrapMojoASTDecl(declRef.getAsVoidPointer())).getIRValue())) {
+    if (auto paramRef = dyn_cast<ParamDeclRefAttr>(val.get()))
+      return paramRef;
+  }
+  return {};
+}
+
 /// Return the defining Op from the IR encapsulated by this decl. It might be
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
@@ -83,6 +92,9 @@ std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
     auto func = cast<FuncOp>(*decl.getParentDecl());
     return func.getValueParamNames()[bbArg.getArgNumber()];
   }
+
+  if (auto paramRef = getIfParameter(*this))
+    return demangleIfNeeded(paramRef).getName();
 
   return getFromOp(getDefiningOpFromIR(*this));
 }
@@ -131,6 +143,9 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return func.getValueParamNames()[bbArg.getArgNumber()];
   }
 
+  if (auto paramRef = getIfParameter(*this))
+    return demangleIfNeeded(paramRef).getName().getValue();
+
   return getFromOp(getDefiningOpFromIR(*this));
 }
 
@@ -177,6 +192,27 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
       --index;
     return std::make_unique<ArgumentDeclView>(functionView->getArgs()[index]);
   }
+
+  // Now we inspect the IR checking for a parameter.
+  if (ParamDeclRefAttr param = getIfParameter(*this)) {
+    auto name = demangleIfNeeded(param).getName().getValue();
+    // The parent FunctionDeclView or StructDeclView is the one who owns the
+    // docstring of this parameter, so it's easier to construct that view and
+    // extract the parameter from it.
+    auto getParamViewFromParent =
+        [&](auto &parentView) -> std::unique_ptr<DeclView> {
+      for (const ParameterDeclView &paramView : parentView->parameters)
+        if (paramView.getName() == name)
+          return std::make_unique<ParameterDeclView>(paramView);
+      return nullptr;
+    };
+
+    return TypeSwitch<DeclView *, std::unique_ptr<DeclView>>(
+               getParentDecl().getView().get())
+        .Case<FunctionDeclView, StructDeclView>(getParamViewFromParent)
+        .Default({nullptr});
+  }
+
   // FIXME(#17974): Owned arguments are resolved as VarLet decls, and currently
   // it is not possible to recover their original BlockArguments, so we can't
   // generate a proper View for this kind of decl.

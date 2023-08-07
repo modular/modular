@@ -214,7 +214,7 @@ fn function_that_raises(inout self: Self, arg_in_function_that_raises: Int) rais
 A function with param.
 
 #### Parameters:
-&nbsp;&nbsp;Param: An Int param.
+&nbsp;&nbsp;Param1: An Int param.
 \\
 &nbsp;&nbsp;Param2: Another Int param.
 
@@ -223,7 +223,7 @@ A function with param.
 
 ###
 ```mojo
-fn function_with_param[Param: Int, Param2: Int](inout self: Self)
+fn function_with_param[Param1: Int, Param2: Int](inout self: Self)
 ```""",
     )
 
@@ -511,6 +511,42 @@ An arg in a function with by-ref result.
 ###
 ```mojo
 arg_in_function_that_raises: Int
+```""",
+    )
+
+    await assert_decl(
+        "Param1",
+        """### parameter `Param1`
+
+---
+
+###
+An Int param.
+
+
+---
+
+###
+```mojo
+Param1: Int
+```""",
+    )
+
+    await assert_decl(
+        "Param2",
+        """### parameter `Param2`
+
+---
+
+###
+Another Int param.
+
+
+---
+
+###
+```mojo
+Param2: Int
 ```""",
     )
 

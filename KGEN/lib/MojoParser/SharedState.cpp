@@ -1850,6 +1850,12 @@ void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
     parserListener->onModuleImport(&decl, spelling, loc);
 }
 
+void SharedState::notifyListenerOnParameter(ASTDecl &decl,
+                                            SMLoc identifierLoc) {
+  if (isListenerInterestedInLoc(parserListener, identifierLoc))
+    parserListener->onParameterDecl(&decl, identifierLoc);
+}
+
 void SharedState::notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onStructDecl(&decl, identifierLoc);

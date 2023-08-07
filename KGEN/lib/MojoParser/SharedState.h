@@ -269,6 +269,10 @@ public:
   void notifyListenerOnModuleImport(ASTDecl &decl, StringRef spelling,
                                     SMLoc loc);
 
+  /// Notify the parser listener, if present, of a parsed function or struct
+  /// parameter.
+  void notifyListenerOnParameter(ASTDecl &decl, SMLoc identifierLoc);
+
   /// Notify the parser listener, if present, that a new `struct` declaration
   /// has been resolved by the parser.
   void notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc);

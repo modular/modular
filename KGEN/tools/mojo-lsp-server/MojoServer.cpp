@@ -304,6 +304,8 @@ public:
   void onModuleImport(MojoASTDeclRef declRef, StringRef spelling,
                       SMLoc loc) override;
 
+  void onParameterDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+
   void onStructDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
 
   void onStructFieldDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
@@ -899,6 +901,12 @@ void LSPParserListener::onModuleImport(MojoASTDeclRef declRef,
 
 void LSPParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
                                           SMLoc identifierLoc) {
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
+                                              identifierLoc);
+}
+
+void LSPParserListener::onParameterDecl(MojoASTDeclRef declRef,
+                                        SMLoc identifierLoc) {
   mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
                                               identifierLoc);
 }
