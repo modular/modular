@@ -45,13 +45,19 @@ class Document:
         self.contents = contents
         self.lines = contents.splitlines()
 
-    def find_all_ranges(self, substr: str) -> Generator[Range, None, None]:
+    def find_all_ranges(
+        self, substr: str, in_line_with: Optional[str] = None
+    ) -> Generator[Range, None, None]:
         """Generate all non-overlapping locations where `substr` is found in the document.
 
         This function, just like all other `find` methods, omits lines that end with `# skip`.
+
+        in_line_with: if provided, this function will only consider lines that contain that substring.
         """
         for line in range(0, len(self.lines)):
             if self.lines[line].strip().endswith("# skip"):
+                continue
+            if in_line_with and in_line_with not in self.lines[line]:
                 continue
             start = 0
             while (character := self.lines[line].find(substr, start)) != -1:
@@ -61,11 +67,13 @@ class Document:
                 )
                 start = character + len(substr)
 
-    def find_first_range(self, substr: str) -> Optional[Range]:
+    def find_first_range(
+        self, substr: str, in_line_with: Optional[str] = None
+    ) -> Optional[Range]:
         """Find the range of the first occurrence of the given `substr` in the document.
 
         See `find_all_ranges` for additional notes on the `find` family of functions."""
-        for range in self.find_all_ranges(substr):
+        for range in self.find_all_ranges(substr, in_line_with):
             return range
         return None
 
@@ -77,11 +85,13 @@ class Document:
             return range.start
         return None
 
-    def find_last_range(self, substr: str) -> Optional[Range]:
+    def find_last_range(
+        self, substr: str, in_line_with: Optional[str] = None
+    ) -> Optional[Range]:
         """Find the range of the last occurrence of the given `substr` in the document.
 
         See `find_all_ranges` for additional notes on the `find` family of functions."""
-        for range in reversed(list(self.find_all_ranges(substr))):
+        for range in reversed(list(self.find_all_ranges(substr, in_line_with))):
             return range
         return None
 

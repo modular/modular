@@ -8,9 +8,11 @@ from String import String
 from Index import StaticIntTuple  # skip
 from StaticTuple import StaticTuple  # skip
 import DType
+import Builtin
 
 
 fn functionWithNestedType(x: DType.DType):
+    let y: Builtin.Int.Int = 12
     pass
 
 
