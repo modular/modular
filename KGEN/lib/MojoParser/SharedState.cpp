@@ -14,6 +14,7 @@
 #include "ClosureEmitter.h"
 #include "DeclResolver.h"
 #include "ExprEmitter.h"
+#include "ExprNodes.h"
 #include "IRValues.h"
 
 #include "Cache/Buffer.h"
@@ -1869,4 +1870,21 @@ void SharedState::notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
                                       SMLoc loc) {
   if (isListenerInterestedInLoc(parserListener, loc))
     parserListener->onRef(&decl, spelling, loc);
+}
+
+void SharedState::notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
+                                      const ExprNode *expr) {
+  // In the case of a SubscriptNode, the type is being referenced at the
+  // location of its `base` member, and not at the location of the subscript,
+  // which is the opening bracket [.
+  if (auto subscript = dyn_cast<SubscriptNode>(expr)) {
+    notifyListenerOnRef(decl, spelling, subscript->base->getLoc());
+
+    // In the case of a AttributeRefNode, we want to start with the identifier,
+    // and not with the .
+  } else if (auto attribute = dyn_cast<AttributeRefNode>(expr)) {
+    notifyListenerOnRef(decl, spelling, attribute->getAttributeNameLoc());
+  } else {
+    notifyListenerOnRef(decl, spelling, expr->getLoc());
+  }
 }

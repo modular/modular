@@ -422,7 +422,7 @@ bool CallArgument::isPositionalStringLiteral(StringRef str) const {
 }
 
 /// Emit a reference to a declaration to an AnyValue. If the value is concrete
-/// and has a runtime value, `mlirValue` is populated with the correspondong SSA
+/// and has a runtime value, `mlirValue` is populated with the corresponding SSA
 /// value.
 /// FIXME: The `mlirValue` is a hack for closures and should be removed.
 static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
@@ -440,6 +440,8 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
+
+  emitter.shared.notifyListenerOnRef(decl, spelling, expr);
 
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
@@ -520,7 +522,6 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     return {};
   }
 
-  emitter.shared.notifyListenerOnRef(decl, spelling, expr->getLoc());
   return value;
 }
 

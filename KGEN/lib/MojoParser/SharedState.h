@@ -46,6 +46,7 @@ class StructDeclOp;
 class FuncOp;
 class FileModuleOp;
 class PackageOp;
+class ExprNode;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -284,6 +285,11 @@ public:
   /// resolved by the parser, i.e. its declaration is known.
   void notifyListenerOnRef(ASTDecl &decl, StringRef spelling, SMLoc loc);
 
+  /// Notify the parser listener, if present, that a new reference from an
+  /// expression has been resolved.
+  void notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
+                           const ExprNode *expr);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
@@ -325,8 +331,9 @@ private:
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 
-  /// Import the specified module or package, returning the module state. Always
-  /// returns a valid module state, even if the module could not be found.
+  /// Import the specified module or package, returning the module state.
+  /// Always returns a valid module state, even if the module could not be
+  /// found.
   ModuleState &importModuleState(StringRef name, ASTDecl *context,
                                  llvm::SMLoc loc);
 
@@ -348,8 +355,8 @@ private:
                                  ModuleState &parentState, FileLineColLoc loc,
                                  bool enableCaching);
 
-  /// Create a new module state for a package with the given name, location, and
-  /// body.
+  /// Create a new module state for a package with the given name, location,
+  /// and body.
   ModuleState &createPackageState(StringAttr declName, StringAttr mangledName,
                                   StringRef packagePath,
                                   ModuleState &parentState, FileLineColLoc loc);
@@ -370,8 +377,8 @@ private:
   void resolveModuleDependencies(ModuleState &module, ASTDecl *parentDecl,
                                  StringRef moduleBuffer);
 
-  /// Attempt to get a cached version of the given modules. If loading from the
-  /// cache fails, the modules will be processed as normal.
+  /// Attempt to get a cached version of the given modules. If loading from
+  /// the cache fails, the modules will be processed as normal.
   void loadModulesFromCache(MutableArrayRef<ModuleState *> moduleStates);
 
   /// Implicitly import the builtin modules into the given module decl.

@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+from typing import Optional
 
 import pytest_lsp
 from lib.utils import Document, Requests, fail_if_none
-from lsprotocol.types import Location
+from lsprotocol.types import Location, MarkupContent, Range
 from pytest_lsp import ClientServerConfig, LanguageClient
 
 
@@ -23,6 +24,38 @@ async def client(lsp_client: LanguageClient):
     yield
     # Teardown
     await lsp_client.shutdown_session()
+
+
+async def assert_ref(
+    kind: str,
+    requests,
+    doc,
+    identifier: str,
+    range: Optional[Range],
+):
+    assert range is not None
+    ref_hover = fail_if_none(await requests.hover(doc, range.start))
+    assert isinstance(ref_hover.contents, MarkupContent)
+    assert f"{kind} `{identifier}`" in ref_hover.contents.value
+    assert ref_hover.range == range
+
+
+async def assert_all_refs(
+    kind: str,
+    requests,
+    doc,
+    identifier: str,
+    count: int,
+):
+    """Issue hover requests on every occurence of `identifier`, then assert the hover response expecting a `kind` type.
+    Finally, `identifier_count` is expected to be the number of occurences of `identifier`.
+    """
+    identifier_count = 0
+    for range in doc.find_all_ranges(identifier):
+        await assert_ref(kind, requests, doc, identifier, range)
+        identifier_count += 1
+
+    assert identifier_count == count
 
 
 async def assert_hover_and_decl_location(requests, doc, arg_name: str):
@@ -76,3 +109,53 @@ async def test_global_variables_ref(client: LanguageClient):
 
     await assert_hover_and_decl_location(requests, doc, "let_global_variable")
     await assert_hover_and_decl_location(requests, doc, "var_global_variable")
+
+
+async def test_refs(client: LanguageClient):
+    requests = Requests(client)
+
+    doc = Document.from_file("types.mojo")
+    requests.open_document(doc)
+
+    await assert_all_refs("struct", requests, doc, "Bool", count=3)
+    await assert_all_refs("struct", requests, doc, "StaticIntTuple", count=3)
+    await assert_all_refs("struct", requests, doc, "StaticTuple", count=3)
+    await assert_ref(
+        "struct",
+        requests,
+        doc,
+        "DType",
+        doc.find_last_range("DType"),
+    )
+    await assert_ref(
+        "struct",
+        requests,
+        doc,
+        "Int",
+        doc.find_last_range("Int", in_line_with="Builtin.Int.Int"),
+    )
+    await assert_ref(
+        "struct",
+        requests,
+        doc,
+        "Int",
+        doc.find_first_range("Int", in_line_with="StaticTuple[size, Int]"),
+    )
+    await assert_ref(
+        "module",
+        requests,
+        doc,
+        "Int",
+        doc.find_first_range("Int", in_line_with="Builtin.Int.Int"),
+    )
+
+    doc = Document.from_file("struct_fields.mojo")
+    requests.open_document(doc)
+
+    await assert_all_refs("struct", requests, doc, "SomeStruct", count=2)
+    await assert_all_refs("variable", requests, doc, "someStruct", count=2)
+
+    doc = Document.from_file("aliases.mojo")
+    requests.open_document(doc)
+
+    await assert_all_refs("struct", requests, doc, "StructWithAlias", count=2)

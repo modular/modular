@@ -106,7 +106,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
           return MangledSymbol::demangle(name, /*parseSignature=*/false)
               ->identifier;
         })
-        .Case([](FileModuleOp op) {
+        .Case<FileModuleOp, PackageOp>([](auto op) {
           // We remove the leading $.
           StringRef fullName = op.getName();
           fullName.consume_front("$");
