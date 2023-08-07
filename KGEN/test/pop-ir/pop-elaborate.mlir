@@ -126,6 +126,15 @@ kgen.generator @free_null(%arg0: !pop.pointer<i16>) -> index {
   kgen.return %idx0 : index
 }
 
+kgen.generator @freed_memory() -> !pop.pointer<i16> {
+  %idx-1 = index.constant -1
+  %idx4 = index.constant 4
+  %0 = pop.aligned_alloc %idx-1, %idx4 : <i16>
+  %1 = pop.aligned_alloc %idx-1, %idx4 : <i16>
+  pop.aligned_free %0 : <i16>
+  kgen.return %1 : !pop.pointer<i16>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -214,7 +223,7 @@ kgen.generator export @do_it() {
     #M.memref<[(mem, heap, [])], 0, 2>, #M.memref<[(mem, heap, [])], 0, 0>)>
 
   // CHECK-NEXT: <#M.memref<[(modify_stack_mem_concrete_mem, stack, [])], 0, 0>>
-  kgen.param.constant: !pop.pointer<i16> = <apply(
+  kgen.param.constant: pointer<i16> = <apply(
     :(!pop.pointer<i16>) -> !pop.pointer<i16> @modify_stack_mem,
     #M.memref<[(stack, stack, [])], 0, 0>)>
 
@@ -232,6 +241,9 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <apply(
     :(!pop.pointer<i16>) -> index @free_null, #M.pointer<0>)>
+
+  // CHECK-NEXT: <#M.memref<[(freed_memory_concrete_mem, heap, [])], 0, 0>>
+  kgen.param.constant: pointer<i16> = <apply(:() -> !pop.pointer<i16> @freed_memory)>
 
   kgen.return
 }
@@ -251,6 +263,7 @@ kgen.generator export @do_it() {
       // COM: 0x012A05F200 -> 5000000000, the base stack address
       // CHECK-NEXT: return_pointer_to_pointer_concrete_mem: "0x40000000000000000000000000F2052A01000000"
       // CHECK-NEXT: return_pointer_to_pointer_concrete_mem_1: "0x20000000EFBE"
+      // CHECK-NEXT: freed_memory_concrete_mem:
     // CHECK-NEXT: }
     }
   }
