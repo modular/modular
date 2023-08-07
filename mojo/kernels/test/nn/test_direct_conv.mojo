@@ -219,7 +219,22 @@ fn test[
 fn main():
     """It only includes shapes where F is multiple simd_size."""
     with Runtime() as rt:
-        # likely partition in n_ho_wo
+        # likely partition in n_ho_wo or sequential
+        test[DType.float32, False](
+            1,  # N
+            6,  # H
+            5,  # W
+            1,  # C
+            3,  # R
+            4,  # S
+            4,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
         test[DType.float32, False](
             1,  # N
             12,  # H

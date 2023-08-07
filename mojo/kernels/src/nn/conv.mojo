@@ -2925,7 +2925,10 @@ struct ConvDirectNHWC[
 
                         # Accumulate with register blocking.
                         self._micro_kernel[
-                            micro_kernel_height, micro_kernel_width, simd_size
+                            micro_kernel_height,
+                            micro_kernel_width,
+                            simd_size,
+                            has_residual,
                         ](
                             input_base_offsets,
                             input_offset,
@@ -3055,6 +3058,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        has_residual: Bool,
     ](
         self,
         input_base_offsets: Buffer[micro_kernel_height, DType.int32],
@@ -3076,10 +3080,25 @@ struct ConvDirectNHWC[
                 input_base_offsets[idx0].value + input_offset
             ).simd_load[1]()
             let input_vec = SIMD[type, simd_size](input_val)
+
             # Load a simd vector from filter.
-            let filter_vec = filter_ptr.offset(idx1 * simd_size).simd_load[
-                simd_size
-            ]()
+            let filter_vec: SIMD[type, simd_size]
+            # Partial load if filter is not multiple of simd_size.
+            @parameter
+            if has_residual and not filter_packed:
+                let residual = self.conv_shape.f - (
+                    self.conv_shape.f // simd_size
+                ) * simd_size
+                filter_vec = partial_simd_load[type, simd_size](
+                    filter_ptr, 0, residual, 0.0
+                )
+            # It's always safe to load a full vector from packed filter because
+            # the filter to padded to multiple simd_size during pre-packing.
+            else:
+                filter_vec = filter_ptr.offset(idx1 * simd_size).simd_load[
+                    simd_size
+                ]()
+
             # The following should be lifted to registers and show up as
             # FMA instructions.
             let output_micro_idx = Index(idx0, idx1 * simd_size)
