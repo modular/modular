@@ -1792,7 +1792,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // Now mark the decl as fully resolved.
   decl.resolvedness = DeclResolvedness::fully;
 
-  shared.notifyListenerOnVariable(decl, identifierLoc);
+  shared.notifyListenerOnVariableDecl(decl, identifierLoc);
   return success();
 }
 

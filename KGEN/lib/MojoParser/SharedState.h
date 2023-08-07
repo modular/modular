@@ -232,13 +232,13 @@ public:
   // Listener Interface
 
   /// Notify the parser listener, if present, of a parsed alias decl.
-  void notifyListenerOnAlias(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnAliasDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, of a parsed alias decl.
-  void notifyListenerOnArgument(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnArgumentDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, of a parsed function.
-  void notifyListenerOnFunction(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnFunctionDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener that an import is currently being resolved.
   void notifyListenerOnImport(SMLoc importLoc);
@@ -260,7 +260,7 @@ public:
 
   /// Notify the parser listener, if present, that a new `module` decl has been
   /// created by the parser.
-  void notifyListenerOnModule(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnModuleDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new import of the form
   /// `from Module [as Alias]` has been resolved by the parser. The provided
@@ -271,19 +271,19 @@ public:
 
   /// Notify the parser listener, if present, of a parsed function or struct
   /// parameter.
-  void notifyListenerOnParameter(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnParameterDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new `struct` declaration
   /// has been resolved by the parser.
-  void notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnStructDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new `struct field`
   /// declaration has been resolved by the parser.
-  void notifyListenerOnStructField(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnStructFieldDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new `let` or `var`
   /// declaration has been resolved by the parser.
-  void notifyListenerOnVariable(ASTDecl &decl, SMLoc identifierLoc);
+  void notifyListenerOnVariableDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new reference has been
   /// resolved by the parser, i.e. its declaration is known.

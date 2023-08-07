@@ -1062,7 +1062,7 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
     loadModulesFromCache(modulesToLoad);
   }
 
-  notifyListenerOnModule(moduleDecl, moduleDecl.getLoc());
+  notifyListenerOnModuleDecl(moduleDecl, moduleDecl.getLoc());
   return moduleState;
 }
 
@@ -1792,17 +1792,20 @@ static bool isListenerInterestedInLoc(MojoParserListener *listener, SMLoc loc) {
   return listener && listener->isInterestedInLoc(loc);
 }
 
-void SharedState::notifyListenerOnAlias(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnAliasDecl(ASTDecl &decl,
+                                            SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onAliasDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnArgument(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnArgumentDecl(ASTDecl &decl,
+                                               SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onArgumentDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnFunction(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnFunctionDecl(ASTDecl &decl,
+                                               SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onFunctionDecl(&decl, identifierLoc);
 }
@@ -1836,7 +1839,8 @@ void SharedState::notifyListenerOnMemberLookup(
     notifyListenerOnMemberLookup(getDeclFn(), lookupLoc);
 }
 
-void SharedState::notifyListenerOnModule(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnModuleDecl(ASTDecl &decl,
+                                             SMLoc identifierLoc) {
   // TODO: This hook should likely be removed in favor of just `onRef`. It's
   // used to index other modules for the sake of references, but we should just
   // handle this when we see the reference.
@@ -1850,24 +1854,26 @@ void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
     parserListener->onModuleImport(&decl, spelling, loc);
 }
 
-void SharedState::notifyListenerOnParameter(ASTDecl &decl,
-                                            SMLoc identifierLoc) {
+void SharedState::notifyListenerOnParameterDecl(ASTDecl &decl,
+                                                SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onParameterDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnStruct(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnStructDecl(ASTDecl &decl,
+                                             SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onStructDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnStructField(ASTDecl &decl,
-                                              SMLoc identifierLoc) {
+void SharedState::notifyListenerOnStructFieldDecl(ASTDecl &decl,
+                                                  SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onStructFieldDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnVariable(ASTDecl &decl, SMLoc identifierLoc) {
+void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
+                                               SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
     parserListener->onVariableDecl(&decl, identifierLoc);
 }

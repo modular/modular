@@ -1224,7 +1224,7 @@ void ParsedArgument::processParameterArgs(
     params.push_back(newDecl);
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
-    emitter.shared.notifyListenerOnParameter(resolvedDecl, arg.loc);
+    emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
   }
 }
 
@@ -2473,7 +2473,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     }
   }
 
-  shared.notifyListenerOnFunction(decl, identifierLoc);
+  shared.notifyListenerOnFunctionDecl(decl, identifierLoc);
   return success();
 }
 
@@ -2654,7 +2654,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         if (bv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       }
-      shared.notifyListenerOnArgument(argDecl, argDecl.getLoc());
+      shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
       return success();
     };
 
@@ -3013,7 +3013,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, processDecorator);
 
-  shared.notifyListenerOnVariable(decl, identifierLoc);
+  shared.notifyListenerOnVariableDecl(decl, identifierLoc);
   return success();
 }
 
@@ -3086,7 +3086,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     // Process the doc string of the alias.
     p.parseDocString(decl);
 
-    shared.notifyListenerOnAlias(decl, identifierLoc);
+    shared.notifyListenerOnAliasDecl(decl, identifierLoc);
     return success();
   }
 
@@ -3119,7 +3119,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   // Process the doc string of the alias.
   p.parseDocString(decl);
 
-  shared.notifyListenerOnAlias(decl, identifierLoc);
+  shared.notifyListenerOnAliasDecl(decl, identifierLoc);
   return success();
 }
 
@@ -3214,7 +3214,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
         return processStructSignatureDecorator(decorator, structOp);
       });
 
-  shared.notifyListenerOnStruct(decl, identifierLoc);
+  shared.notifyListenerOnStructDecl(decl, identifierLoc);
   return success();
 }
 
@@ -3907,7 +3907,7 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
   fieldOp.setType(type);
   rejectDecorators(decoratorExprs, decl, shared);
-  shared.notifyListenerOnStructField(decl, identifierLoc);
+  shared.notifyListenerOnStructFieldDecl(decl, identifierLoc);
   return success();
 }
 
