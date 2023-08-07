@@ -3609,9 +3609,14 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   }
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = dyn_cast<StructDeclOp>(structDecl);
-  auto [_, copyCtr, moveCtr] = structEmitter.addMissingValueMemberStubsToStruct(
+  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
       declOp, structDecl.getLoc(), structDecl);
-
+  if (!stubs) {
+    emitError(decoratorLoc, "'@value' cannot synthesize members of struct '")
+        << declOp.getSymName() << "'";
+    return;
+  }
+  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   if (copyCtr) {
     if (failed(structEmitter.populateMoveCopy(copyCtr, declOp, structDecl,
                                               structDecl.getLoc(), false)))
@@ -3619,6 +3624,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     else
       declOp.setCopyInitAttr(copyCtr.getBoundReference());
   }
+  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
   if (moveCtr) {
     if (failed(structEmitter.populateMoveCopy(moveCtr, declOp, structDecl,
                                               structDecl.getLoc(), true)))

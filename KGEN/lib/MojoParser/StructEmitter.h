@@ -18,9 +18,20 @@
 namespace M::KGEN::LIT {
 
 struct GeneratedStubs {
+public:
+  GeneratedStubs() : initialized(false) {}
+  GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr)
+      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), initialized(true) {}
+  operator bool() const { return initialized; }
+  LIT::FuncOp getDestructor() const { return dtor; }
+  LIT::FuncOp getCopyConstrucotr() const { return copyCtr; }
+  LIT::FuncOp getMoveConstructor() const { return moveCtr; }
+
+private:
   LIT::FuncOp dtor;
   LIT::FuncOp copyCtr;
   LIT::FuncOp moveCtr;
+  bool initialized;
 };
 
 class StructEmitter {

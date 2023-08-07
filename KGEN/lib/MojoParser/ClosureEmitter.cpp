@@ -134,9 +134,11 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
-  auto [destructor, copyCtr, moveCtr] =
-      structEmitter.addMissingValueMemberStubsToStruct(
-          declOp, parent.getLoc(), astDecl, /*forceGenerateDestructor*/ true);
+  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
+      declOp, parent.getLoc(), astDecl, /*forceGenerateDestructor*/ true);
+  LIT::FuncOp destructor = stubs.getDestructor();
+  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
 
   // Populate methods.
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
@@ -199,8 +201,11 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
-  auto [_, copyCtr, moveCtr] = structEmitter.addMissingValueMemberStubsToStruct(
+  GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
       declOp, astDecl.getLoc(), astDecl);
+
+  LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  LIT::FuncOp moveCtr = stubs.getMoveConstructor();
 
   if (failed(structEmitter.populateMoveCopy(copyCtr, declOp, astDecl,
                                             astDecl.getLoc(), false)))

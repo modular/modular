@@ -621,6 +621,12 @@ struct CantSynthesize:
   var x : InMemStruct # expected-note {{'x' declared here}}
 
 
+@value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
+struct ResolveErrorIsBubbled:
+   fn failedSig(self) -> unknown: # expected-error {{use of unknown declaration 'unknown'}}
+      pass
+
+
 ##===----------------------------------------------------------------------===##
 # Class
 ##===----------------------------------------------------------------------===##
