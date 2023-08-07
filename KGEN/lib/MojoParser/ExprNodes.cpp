@@ -525,6 +525,10 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
   return value;
 }
 
+AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  llvm_unreachable("emitIR is undefined for synthetic nodes.");
+}
+
 /// Emit IR for an unqualified declaration reference "x" looked up in current
 /// context.
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
