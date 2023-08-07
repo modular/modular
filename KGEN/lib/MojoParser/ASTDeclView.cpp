@@ -289,6 +289,8 @@ StringRef DeclView::getKindAsString() const {
     return "function";
   case DK_ModuleDeclView:
     return "module";
+  case DK_PackageDeclView:
+    return "package";
   case DK_ParameterDeclView:
     return "parameter";
   case DK_StructDeclView:
@@ -798,6 +800,36 @@ ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
   structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
   functionOverloads = FunctionDeclViewOverloadSet::fromSortedFunctions(
       extractChildDecls<FunctionDeclView, FuncOp>(decl));
+
+  if (auto docStr = decl.getParsedDocString()) {
+    summary = docStr->getSummary();
+    description = llvm::join(docStr->getDescription(), "\n");
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// PackageDeclView
+//===----------------------------------------------------------------------===//
+
+std::string PackageDeclView::getDeclarationSnippet() const { return {}; }
+
+std::string PackageDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, summary, description);
+  return markdown;
+}
+
+llvm::json::Object PackageDeclView::toJSON() const {
+  return llvm::json::Object{{"description", description},
+                            {"kind", getKindAsString()},
+                            {"name", getName()},
+                            {"summary", summary}};
+}
+
+PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
+    : DeclView(DK_PackageDeclView, declRef.getName().value_or(StringRef())) {
+  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
 
   if (auto docStr = decl.getParsedDocString()) {
     summary = docStr->getSummary();

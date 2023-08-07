@@ -68,6 +68,7 @@ public:
     DK_ArgumentDeclView,
     DK_FunctionDeclView,
     DK_ModuleDeclView,
+    DK_PackageDeclView,
     DK_ParameterDeclView,
     DK_StructDeclView,
     DK_StructFieldDeclView,
@@ -541,6 +542,49 @@ private:
   SmallVector<AliasDeclView> aliases;
   SmallVector<StructDeclView, 2> structs;
   SmallVector<FunctionDeclViewOverloadSet, 2> functionOverloads;
+
+  //===----------------------------------------------------------------------===//
+  // Parsed DocString
+  //===----------------------------------------------------------------------===//
+
+  std::string description;
+  std::string summary;
+};
+
+class PackageDeclView : public DeclView {
+public:
+  std::string getDeclarationSnippet() const override;
+
+  /// Get the description of this decl extracted from its docstring. It might be
+  /// empty.
+  StringRef getDescription() const { return description; }
+
+  std::string getMarkdownDocString() const override;
+
+  /// The output of the generation is defined in the following format:
+  ///
+  /// Package:
+  /// {
+  ///   "kind": "package",
+  ///   "name": "...",
+  ///   "description": "...",
+  ///   "summary": "...",
+  /// }
+  llvm::json::Object toJSON() const override;
+
+public:
+  //===----------------------------------------------------------------------===//
+  // LLVM RTTI Support
+  //===----------------------------------------------------------------------===//
+
+  static bool classof(const DeclView *decl) {
+    return decl->getKind() == DK_PackageDeclView;
+  }
+
+private:
+  friend class MojoASTDeclRef;
+
+  PackageDeclView(MojoASTDeclRef declRef);
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString

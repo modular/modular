@@ -157,6 +157,8 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
   if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(astDecl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
+  if (isa<PackageOp>(astDecl))
+    return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
 
   // After failing to match with regular Ops, we then inspect the IR to identify
   // if this decl is an argument.
