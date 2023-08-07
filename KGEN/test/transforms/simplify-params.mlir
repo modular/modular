@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters=simplify=true -verify-parameters
+// RUN: kgen-opt %s -split-input-file -mlir-print-debuginfo -allow-unregistered-dialect -verify-parameters=simplify=true -verify-parameters | FileCheck %s
 
 kgen.generator @unbound_fn<p0>() {
   kgen.return
@@ -44,7 +44,7 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
   }
 
   kgen.param.declare dt: dtype = <si8>
-  // CHECK: F2 = <c0, c1:  simd<c0, si8>>(%arg0: !pop.simd<c0, si8>)
+  // CHECK: F2 = <c0, c1:  simd<c0, si8>>(%arg0: !pop.simd<c0, si8> loc({{.*}}))
   kgen.param.declare.region F2 = <c0, c1: simd<c0, dt>>(%arg0: !pop.simd<c0, dt>) {
     // CHECK-NEXT: fork f0: simd<c0, si8> = <[c1]>
     kgen.param.fork f0: simd<c0, dt> = <[c1]>
@@ -58,3 +58,37 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
   kgen.param.result_bind<a2>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator @foo
+kgen.generator @foo() {
+  kgen.param.declare N = <2> loc(#locFoo)
+  // CHECK: kgen.param.declare.region SomeClosure
+  kgen.param.declare.region SomeClosure = () capturing {
+    // CHECK-NEXT: kgen.param.constant: array<1, i1> = <[1]> loc(#[[LOC_CL:.*]])
+    %array = kgen.param.constant: array<1, i1> = <[1]> loc(#locClosure)
+    // CHECK-NEXT: kgen.return loc(#[[LOC_CL]])
+    kgen.return loc(#locClosure)
+  // CHECK-NEXT: } {isolated} loc(#[[LOC_CL]])
+  } loc(#locClosure)
+  // CHECK-NEXT: kgen.return loc(#[[LOC_FOO:.*]])
+  kgen.return loc(#locFoo)
+// CHECK-NEXT: } loc(#[[LOC_FOO]])
+} loc(#locFoo)
+
+#file = #debuginfo.file<"foo.mojo" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+
+// CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<2, 1 : index>>>) -> (): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo", linkageName = "foo"
+// CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "SomeClosure", linkageName = "SomeClosure", {{.*}}> : ![[CL_SP_TYPE]]
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 25, scopeLine = 25, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 183, scopeLine = 183, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<N, 1 : index>>>) -> (): DW_CC_normal>
+
+// CHECK-DAG: #[[LOC1:.*]] = loc("foo.mojo":25:1)
+// CHECK-DAG: #[[LOC2:.*]] = loc("foo.mojo":183:5)
+// CHECK-DAG: #[[LOC_FOO]] = loc(fused<#[[SP]]>[#[[LOC1]]])
+// CHECK-DAG: #[[LOC_CL]] = loc(fused<#[[CL_SP]]>[#[[LOC2]]])
+#locFoo = loc(fused<#subprogram>["foo.mojo":25:1])
+#locClosure = loc(fused<#subprogram1>["foo.mojo":183:5])
