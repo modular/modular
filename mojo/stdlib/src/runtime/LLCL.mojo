@@ -409,6 +409,24 @@ struct OutputChainPtr:
         ](self.ptr)
 
     @always_inline
+    fn mark_error[
+        single_thread_blocking_override: Bool
+    ](self, message: StringRef):
+        """Marks the output chain as having an error with message.
+        The underlying LLCL::OutputChain is not moved.
+        """
+
+        @parameter
+        if not single_thread_blocking_override:
+            external_call[
+                "KGEN_CompilerRT_LLCL_OutputChainPtr_MarkError", NoneType
+            ](
+                self.ptr,
+                message.data,
+                message.length.value,
+            )
+
+    @always_inline
     fn mark_error(self, message: StringRef):
         """Marks the output chain as having an error with message.
         The underlying LLCL::OutputChain is not moved.
