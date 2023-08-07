@@ -140,10 +140,6 @@ TelemetryContext::TelemetryContext(
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       cfg.getValue("telemetry.exporters.metrics.file_path").str();
-  if (httpEndpoint.empty() && filePath.empty()) {
-    // If no config provided, export to a default path.
-    filePath = Config::getModularHomeDirPath() / "telemetry.log";
-  }
 
   // Create metric readers, one for each exporter.
 
@@ -177,10 +173,6 @@ TelemetryContext::TelemetryContext(
   // Get logs exporter config.
   httpEndpoint = cfg.getValue("telemetry.exporters.logs.http_endpoint");
   filePath = cfg.getValue("telemetry.exporters.logs.file_path").str();
-  if (httpEndpoint.empty() && filePath.empty()) {
-    // If no config provided, export to a default path.
-    filePath = Config::getModularHomeDirPath() / "telemetry.log";
-  }
 
   // Create log processors for each exporter.
   std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>

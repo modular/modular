@@ -9,6 +9,7 @@
 #include "Support/FileSystemExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 using namespace M;
@@ -17,32 +18,55 @@ using namespace Telemetry;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 
-static TempFile setupLogFile(StringRef prefix, StringRef signalType) {
-  auto cfgOr = Config::open();
-  EXPECT_FALSE(cfgOr.isError()) << cfgOr.getError();
+/// RAII-style way to restore Modular config after each test.
+struct LogFileSetup {
+public:
+  LogFileSetup(StringRef signalType) {
+    EXPECT_THAT(signalType.str(), testing::AnyOf("metrics", "logs"));
 
-  auto tmpOr = TempFile::create((prefix + "-test-telemetry-%%%%%%%.log").str());
-  EXPECT_FALSE(tmpOr.isError()) << tmpOr.getError();
+    filePathKey = ("telemetry.exporters." + signalType + ".file_path").str();
+    httpUrlKey = ("telemetry.exporters." + signalType + ".http_endpoint").str();
 
-  // Set the config value.
-  cfgOr->setValue(("telemetry.exporters." + signalType + ".file_path").str(),
-                  tmpOr->getPath().string());
+    auto cfgOr = Config::open();
+    EXPECT_FALSE(cfgOr.isError()) << cfgOr.getError();
+    cfg = std::move(*cfgOr);
 
-  // Flush the config to the file so we can read it from the context.
-  auto err = cfgOr->flush();
-  EXPECT_FALSE(err.isError()) << err.getError();
+    // Get the original value to restore later.
+    filePathOriginalValue = cfg.getValue(filePathKey);
+    httpUrlOriginalValue = cfg.getValue(httpUrlKey);
+  }
 
-  // Return the temp file so it'll automatically get destroyed.
-  return std::move(*tmpOr);
-}
+  ~LogFileSetup() {
+    cfg.setValue(filePathKey, filePathOriginalValue);
+    cfg.setValue(httpUrlKey, httpUrlOriginalValue);
+    cfg.flush();
+  }
 
-static TempFile setupMetricsLogFile(StringRef prefix) {
-  return setupLogFile(prefix, "metrics");
-}
+  TempFile getLogFile(StringRef prefix) {
+    auto tmpOr =
+        TempFile::create((prefix + "-test-telemetry-%%%%%%%.log").str());
+    EXPECT_FALSE(tmpOr.isError()) << tmpOr.getError();
 
-static TempFile setupLogsLogFile(StringRef prefix) {
-  return setupLogFile(prefix, "logs");
-}
+    // Set the config value.
+    cfg.setValue(filePathKey, tmpOr->getPath().string());
+    // These tests don't need to send to any HTTP endpoint.
+    cfg.setValue(httpUrlKey, "");
+
+    // Flush the config to the file so we can read it from the context.
+    auto err = cfg.flush();
+    EXPECT_FALSE(err.isError()) << err.getError();
+
+    // Return the temp file so it'll automatically get destroyed.
+    return std::move(*tmpOr);
+  }
+
+private:
+  Config cfg;
+  std::string filePathKey;
+  std::string httpUrlKey;
+  std::string filePathOriginalValue;
+  std::string httpUrlOriginalValue;
+};
 
 /// This function parses an OTel message, and provides visitor-style access to
 /// the fields in a message. The message looks like this:
@@ -119,7 +143,8 @@ static void iterateMessages(StringRef log,
 /// This test ensures that when we create and increment a counter, we get the
 /// values we expect in the log file, in the order we expect.
 TEST(Telemetry, Counter) {
-  TempFile tmpFile = setupMetricsLogFile("counter");
+  LogFileSetup logFileSetup("metrics");
+  TempFile tmpFile = logFileSetup.getLogFile("counter");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -162,7 +187,8 @@ TEST(Telemetry, Counter) {
 /// This test checks that if we create a histogram and add some records, we get
 /// the values we expect in the log file.
 TEST(Telemetry, Histogram) {
-  TempFile tmpFile = setupMetricsLogFile("histogram");
+  LogFileSetup logFileSetup("metrics");
+  TempFile tmpFile = logFileSetup.getLogFile("histogram");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -212,7 +238,8 @@ TEST(Telemetry, Histogram) {
 /// This test checks that logs are properly flushed to the log file, escapes and
 /// all.
 TEST(Telemetry, Logger) {
-  TempFile tmpFile = setupLogsLogFile("log");
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log");
 
   RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
 
@@ -247,7 +274,8 @@ TEST(Telemetry, Logger) {
 }
 
 TEST(Telemetry, Resources) {
-  TempFile tmpFile = setupLogsLogFile("log");
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log");
 
   llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
   StringRef resourceVal = "aResource value here";
