@@ -120,6 +120,12 @@ kgen.generator @load_pointer_to_pointer(%arg0: !pop.pointer<pointer<i16>>) -> i1
   kgen.return %2 : i16
 }
 
+kgen.generator @free_null(%arg0: !pop.pointer<i16>) -> index {
+  %idx0 = index.constant 0
+  pop.aligned_free %arg0 : <i16>
+  kgen.return %idx0 : index
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -222,6 +228,10 @@ kgen.generator export @do_it() {
   kgen.param.constant: i16 = <apply(
     :(!pop.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
     #M.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
+
+  // CHECK-NEXT: <0>
+  kgen.param.constant: index = <apply(
+    :(!pop.pointer<i16>) -> index @free_null, #M.pointer<0>)>
 
   kgen.return
 }
