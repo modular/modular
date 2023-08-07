@@ -44,6 +44,9 @@ struct RegExample:
   fn __del__(owned self):
     pass
 
+  fn mutate(inout self):
+    pass
+
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
@@ -415,7 +418,7 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`]
 
   # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
-  # CHECK-NEXT: [[PTR:%.*]]  = lit.ownership.make.pointer.lvalue %ptr live_on_entry = false, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make.pointer.lvalue %ptr live_on_entry = false, exit = true
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
@@ -498,6 +501,22 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
      __get_lvalue_as_address(x)
   )
 
+# CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
+fn regpassable_owned_args_mutable(owned x: RegExample):
+  # CHECK-NEXT: %x_0 = lit.varlet.decl "x", var = true, synth = true
+  # CHECK-NEXT: pop.store %x, %x_0
+  # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}(%x_0)
+  x.mutate()
+
+  # CHECK-NEXT: [[X:%.*]] = pop.load %x_0
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[X]])
+  # CHECK-NEXT: [[X:%.*]] = {{.*}}"__init__
+  # CHECK-NEXT: pop.store [[X]], %x_0
+  x = RegExample()
+  # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}(%x_0)
+  x.mutate()
+  # CHECK-NEXT: [[X:%.*]] = pop.load %x_0
+  # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[X]])
 
 # Result optimization cannot emit directly into a value that is passed as an
 # argument, because this forms a mutable reference to something immutably
