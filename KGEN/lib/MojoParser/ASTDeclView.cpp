@@ -89,11 +89,8 @@ static std::string generateTypeString(
     case ValueInputConvention::ByRef:
     case ValueInputConvention::InitSelf:
     case ValueInputConvention::ByRefResult:
-      astType = astType.getPointerElementType();
-      break;
     case ValueInputConvention::OwnedInMem:
     case ValueInputConvention::BorrowedInMem:
-      // TODO: Produce "owned" marker in docs.
       astType = astType.getPointerElementType();
       break;
     case ValueInputConvention::OwnedInReg:
@@ -664,24 +661,24 @@ StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// FunctionDeclViewOverloadSet
+// FunctionDeclOverloadSetView
 //===----------------------------------------------------------------------===//
 
-SmallVector<FunctionDeclViewOverloadSet, 2>
-FunctionDeclViewOverloadSet::fromSortedFunctions(
+SmallVector<FunctionDeclOverloadSetView, 2>
+FunctionDeclOverloadSetView::fromSortedFunctions(
     SmallVector<FunctionDeclView, 2> &&functions) {
-  SmallVector<FunctionDeclViewOverloadSet, 2> overloads;
+  SmallVector<FunctionDeclOverloadSetView, 2> overloads;
   for (auto &function : functions) {
     if (overloads.empty() ||
         overloads.back().getBaseName() != function.getName())
-      overloads.emplace_back(FunctionDeclViewOverloadSet(function.getName()));
+      overloads.emplace_back(FunctionDeclOverloadSetView(function.getName()));
 
     overloads.back().append(std::move(function));
   }
   return overloads;
 }
 
-llvm::json::Object FunctionDeclViewOverloadSet::toJSON() const {
+llvm::json::Object FunctionDeclOverloadSetView::toJSON() const {
   return llvm::json::Object{{"kind", "function"},
                             {"name", baseName},
                             {"overloads", toJSONArray(functions)}};
@@ -754,7 +751,7 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
   fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(decl);
-  functionOverloads = FunctionDeclViewOverloadSet::fromSortedFunctions(
+  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
       extractChildDecls<FunctionDeclView, FuncOp>(decl));
 
   // Grab the types of the parameters to the struct.
@@ -798,7 +795,7 @@ ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
   structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
-  functionOverloads = FunctionDeclViewOverloadSet::fromSortedFunctions(
+  functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
       extractChildDecls<FunctionDeclView, FuncOp>(decl));
 
   if (auto docStr = decl.getParsedDocString()) {
