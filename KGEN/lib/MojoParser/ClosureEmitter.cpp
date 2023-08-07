@@ -10,7 +10,6 @@
 
 #include "ClosureEmitter.h"
 #include "ASTDecl.h"
-#include "DeclResolver.h"
 #include "ExprEmitter.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -21,48 +20,6 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
-
-/// Given a struct and a list of arguments, generate a function. For example,
-/// given {MyStruct, "prefix", [ParamType1, ParamType2], [borrow_in_mem,
-/// borrow_in_mem], ["x","b"]}, this function produces:
-///       lit.func @prefixParam1Param2(%self: !pop.pointer<@MyStruct> init_self,
-///       %x: ParamType1 borrow_in_mem, %b : ParamType2 borrow_in_mem) ->
-///       !lit.none  {
-///          %0 = kgen.param.constant: !lit.none = <#lit.none>
-///          lit.return %0 : !lit.none
-///          lit.end_func
-///      }
-static LIT::FuncOp addVoidMethod(StructDeclOp selfStruct, StringRef prefix,
-                                 ArrayRef<Type> argTypes,
-                                 ArrayRef<ValueInputConvention> argConventions,
-                                 ArrayRef<StringAttr> argNames,
-                                 SpecialFunctionKind kind,
-                                 ClosureEmitter &emitter) {
-  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
-      selfStruct.getLoc(), &selfStruct.getFields().front());
-  auto metadata = b.getAttr<FnMetadataAttr>(argConventions,
-                                            ArrayRef<TypedAttr>(), FnEffects());
-  auto funcType = FunctionType::get(selfStruct->getContext(), argTypes,
-                                    emitter.getNoneType());
-  SignatureType signature = SignatureType::get({}, {}, funcType, metadata);
-
-  StringAttr nameAttr =
-      DeclResolver::getMangledName(b.getStringAttr(prefix), signature);
-  auto func = b.create<LIT::FuncOp>(nameAttr, signature, argNames, kind);
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  DeclResolver::setLocationDebugScope(emitter.sharedState(), diScopeGuard, func,
-                                      nameAttr);
-
-  Block *body = func.getBody();
-  for (Type inputVal : func.getArgumentTypes())
-    body->addArgument(inputVal, selfStruct.getLoc());
-
-  b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
-  ExprEmitter::emitNormalReturn(
-      b, b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>()), func);
-  b.create<LIT::EndFuncOp>();
-  return func;
-}
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                  ArrayRef<Type> fields, Location location) {
@@ -119,103 +76,16 @@ static void populateMoveCopy(ImplicitLocOpBuilder &builder,
   builder.setLoc(initialLocation);
 }
 
-/// Given a function of the form
-/// "lit.func __copyinit__(%target: !pop.pointer<@MyStruct>, %existing:
-/// !pop.pointer<@MyStruct>), populate the method with the following:
-/// %targetField0Ptr = lit.struct.get %self[field0]
-/// %sourceField0Ptr = lit.struct.get %existing[field0]
-/// copyinit_of_type_of_field0(%targetField0, %field
-static LogicalResult populateDirectCopy(LIT::FuncOp func, StructDeclOp declOp,
-                                        bool isMove, SharedState &shared) {
-  assert(func.getNumArguments() == 2 &&
-         "copy functions should have two arguments");
-  ImplicitLocOpBuilder b =
-      ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
-  Value copySelf = func.getBody()->getArgument(0);
-  Value copyExisting = func.getBody()->getArgument(1);
-  for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
-    auto targetFieldOp = b.create<StructGEPOp>(copySelf, fieldOp);
-    auto srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
-    Type fieldType = fieldOp.getType();
-    auto copySrcIntoTarget = [targetFieldOp, srcFieldOp, &b]() {
-      auto loadedSrc = b.create<POP::LoadOp>(srcFieldOp->getResult(0));
-      b.create<POP::StoreOp>(loadedSrc.getResult(),
-                             targetFieldOp->getResult(0));
-    };
-
-    // A field is either of type DeclRef or it's a raw mlir type.
-    if (auto declRef = dyn_cast<KGEN::DeclRefType>(fieldType)) {
-      // if register passable, load existing and store into target
-      ASTDecl &ast =
-          shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-      auto structDecl = dyn_cast<StructDeclOp>(ast);
-      assert(structDecl && "DeclRefs should refer to Struct decls.");
-      if (structDecl.isRegisterPassable()) {
-        copySrcIntoTarget();
-      } else {
-        // if it is mem type, call __copyinit__ or __moveinit__ method. Error
-        // out if it does not exist
-        std::optional<TypedAttr> copyCtor =
-            isMove ? structDecl.getMoveInit() : structDecl.getCopyInit();
-        if (copyCtor.has_value()) {
-          SymbolConstantAttr symConstantAttr =
-              cast<SymbolConstantAttr>(copyCtor.value());
-          ArrayRef<ParamDeclAttr> params;
-          b.create<KGEN::CallOp>(
-              symConstantAttr.getType().getValueResults(), symConstantAttr,
-              params,
-              ValueRange({targetFieldOp.getResult(), srcFieldOp.getResult()}));
-        } else {
-          return failure();
-        }
-      }
-    } else {
-      copySrcIntoTarget();
-    }
-  }
-  return success();
-}
-
-struct ValueStruct {
-  LIT::FuncOp dtor;
-  LIT::FuncOp copyCtr;
-  LIT::FuncOp moveCtr;
-};
-
-ValueStruct populateStructWithValueMembers(StructDeclOp declOp,
-                                           ClosureEmitter &emitter) {
-  OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
-  Type ptrToSelf =
-      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
-  StringAttr selfName = b.getStringAttr("self");
-  StringAttr existingName = b.getStringAttr("existing");
-  LIT::FuncOp destructorFunc = addVoidMethod(
-      declOp, "__del__", SmallVector<Type>({ptrToSelf}),
-      SmallVector<ValueInputConvention>({ValueInputConvention::OwnedInMem}),
-      SmallVector<StringAttr>({selfName}), SpecialFunctionKind::kDel, emitter);
-  LIT::FuncOp moveFunc = addVoidMethod(
-      declOp, "__moveinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
-      SmallVector<ValueInputConvention>(
-          {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem}),
-      SmallVector<StringAttr>({selfName, existingName}),
-      SpecialFunctionKind::kMoveInit, emitter);
-  LIT::FuncOp copyFunc = addVoidMethod(
-      declOp, "__copyinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
-      SmallVector<ValueInputConvention>({ValueInputConvention::InitSelf,
-                                         ValueInputConvention::BorrowedInMem}),
-      SmallVector<StringAttr>({selfName, existingName}),
-      SpecialFunctionKind::kCopyInit, emitter);
-  return ValueStruct{destructorFunc, copyFunc, moveFunc};
-}
-
-StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
-    StringAttr name, Location location, SignatureType signatureType) {
+StructDeclOp
+ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
+                                               SignatureType signatureType) {
   auto emptyList =
       POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
   auto opaquePointer = POP::PointerType::get(emptyList);
   SmallVector<Type> fieldTypes;
   fieldTypes.push_back(opaquePointer);
-  StructDeclOp declOp = createStruct(fileModuleOp, name, fieldTypes, location);
+  StructDeclOp declOp =
+      createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc());
   TypedAttr signatureAttr = SymbolConstantAttr::get(
       SymbolRefAttr::get(
           StringAttr::get(name.getContext(), name.str() + "_closureSignature")),
@@ -226,7 +96,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   auto dtor = b.create<StructFieldOp>(
-      location, StringAttr::get(b.getContext(), "dtor"),
+      declOp.getLoc(), StringAttr::get(b.getContext(), "dtor"),
       SignatureType::get(b.getContext(), TypeRange({opaquePointer}), noneType),
       nullptr);
   SmallVector<Type> callInputTypes;
@@ -249,15 +119,24 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         FunctionType::get(signatureType.getContext(), inputTypes, noneType),
         b.getAttr<FnMetadataAttr>(inputConventions, ArrayRef<TypedAttr>(),
                                   FnEffects()));
-    return b.create<StructFieldOp>(location,
+    return b.create<StructFieldOp>(declOp.getLoc(),
                                    StringAttr::get(b.getContext(), name),
                                    cpySignatureType, nullptr);
   };
   auto copy = createCopyOrMoveMember(true);
   auto move = createCopyOrMoveMember(false);
 
+  ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
+      SymbolRefAttr::get(fileModuleOp.getDeclName()));
+  ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
+      declOp.getOperation(), declOp.getDeclName(), parent.getLoc(), &parent);
+  for (StructFieldOp field : declOp.getFieldDecls())
+    shared.declResolver->addFullyResolvedDecl(
+        field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
+
   auto [destructor, copyCtr, moveCtr] =
-      populateStructWithValueMembers(declOp, *this);
+      structEmitter.addMissingValueMemberStubsToStruct(
+          declOp, parent.getLoc(), astDecl, /*forceGenerateDestructor*/ true);
 
   // Populate methods.
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
@@ -275,7 +154,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 }
 
 StructDeclOp
-ClosureEmitter::createClosureImplStructDecl(StringAttr name, Location loc,
+ClosureEmitter::createClosureImplStructDecl(StringAttr name,
                                             SignatureType closureImplSignature,
                                             unsigned captureCount) {
   SmallVector<Type> types;
@@ -309,16 +188,29 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name, Location loc,
     }
     }
   }
-  StructDeclOp declOp = createStruct(fileModuleOp, name, types, loc);
-  auto [destructor, copyCtr, moveCtr] =
-      populateStructWithValueMembers(declOp, *this);
-  if (failed(populateDirectCopy(copyCtr, declOp, false, shared)))
+  ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
+      SymbolRefAttr::get(fileModuleOp.getDeclName()));
+  StructDeclOp declOp =
+      createStruct(fileModuleOp, name, types, fileModuleOp.getLoc());
+  ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
+      declOp.getOperation(), declOp.getDeclName(), parent.getLoc(), &parent);
+
+  for (StructFieldOp field : declOp.getFieldDecls())
+    shared.declResolver->addFullyResolvedDecl(
+        field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
+
+  auto [_, copyCtr, moveCtr] = structEmitter.addMissingValueMemberStubsToStruct(
+      declOp, astDecl.getLoc(), astDecl);
+
+  if (failed(structEmitter.populateMoveCopy(copyCtr, declOp, astDecl,
+                                            astDecl.getLoc(), false)))
     shared.emitError(copyCtr.getLoc(), "Cannot copy captured value because")
         << declOp.getSymName() << "` does not implement copy constructor.";
 
   // It is permissible for a closure implementation to not have a move
   // constructor.
-  if (failed(populateDirectCopy(moveCtr, declOp, true, shared)))
+  if (failed(structEmitter.populateMoveCopy(moveCtr, declOp, astDecl,
+                                            astDecl.getLoc(), true)))
     moveCtr.erase();
   else
     declOp.setMoveInitAttr(moveCtr.getBoundReference());

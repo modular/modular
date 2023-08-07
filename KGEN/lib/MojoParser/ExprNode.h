@@ -53,6 +53,7 @@ public:
     kDictSubscript,  // thing{a: 1, x: 2}
     kChainedCmp,     // a < b <= c
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
+    kSynthetic,      // There is no source corresponding to the IR.
 
     // Address conversions
     kGetLValueAsAddress,       // __get_lvalue_as_address(x)

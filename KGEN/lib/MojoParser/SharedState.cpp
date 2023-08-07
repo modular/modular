@@ -1714,20 +1714,7 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
     StringAttr name =
         getClosureNameFromType("_CW_", fileModuleOp, signatureType);
     ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-    existing = emitter.createClosureWrapperStructDecl(
-        name, translateLocation(location), signatureType);
-    ASTDecl &decl = declResolver->addFullyResolvedDecl(
-        existing.getOperation(), existing.getSymNameAttr(), location,
-        impl->topLevelDecl);
-    for (StructFieldOp field : existing.getFieldDecls()) {
-      declResolver->addFullyResolvedDecl(field.getOperation(),
-                                         field.getNameAttr(), location, &decl);
-    }
-    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>()) {
-      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
-                                         funcOp.getSymNameAttr(), location,
-                                         impl->topLevelDecl);
-    }
+    existing = emitter.createClosureWrapperStructDecl(name, signatureType);
     impl->closureWrappers[key] = existing;
   }
   return existing;
@@ -1745,19 +1732,8 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
     StringAttr name =
         getClosureNameFromType("_CI_", fileModuleOp, signatureType);
     ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-    existing = emitter.createClosureImplStructDecl(name, fileModuleOp->getLoc(),
-                                                   signatureType, captureCount);
-    ASTDecl &decl = declResolver->addFullyResolvedDecl(
-        existing.getOperation(), existing.getSymNameAttr(), location,
-        impl->topLevelDecl);
-    for (StructFieldOp field : existing.getFieldDecls())
-      declResolver->addFullyResolvedDecl(field.getOperation(),
-                                         field.getNameAttr(), location, &decl);
-
-    for (auto funcOp : existing.getRegion().getOps<LIT::FuncOp>())
-      declResolver->addFullyResolvedDecl(funcOp.getOperation(),
-                                         funcOp.getSymNameAttr(), location,
-                                         impl->topLevelDecl);
+    existing =
+        emitter.createClosureImplStructDecl(name, signatureType, captureCount);
     impl->closureImpls[key] = existing;
   }
   return existing;
