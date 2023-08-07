@@ -34,16 +34,6 @@ getDatabasePath(Config &config, const std::filesystem::path &modularHome) {
   return modularHome / "crashdb";
 }
 
-/// Convert an LLVM ErrorOr value to a Modular ErrorOr value.
-template <typename T>
-static ErrorOr<T> toModularError(llvm::ErrorOr<T> llvmErrorOr) {
-  // Note: llvm::ErrorOr's operator bool is inverted from Modular's, so this
-  // sees whether it was successful, not whether it failed
-  if (llvmErrorOr)
-    return std::move(*llvmErrorOr);
-  return Error(llvmErrorOr.getError().message());
-}
-
 /// Attempt to locate the Crashpad handler executable.
 ///
 /// If specified in the configuration, that takes precedence.  Otherwise, we
@@ -60,13 +50,13 @@ static ErrorOr<std::filesystem::path> getHandlerPath(Config &config,
   if (program.empty()) {
     StringRef parent = llvm::sys::path::parent_path(argv0);
     if (!parent.empty())
-      UNWRAP_ERROR_OR_SET(program, toModularError(llvm::sys::findProgramByName(
-                                       kHandlerProgramName, parent)));
+      UNWRAP_LLVM_ERROR_OR_SET(
+          program, llvm::sys::findProgramByName(kHandlerProgramName, parent));
   }
   // Next best: Handler anywhere on the path
   if (program.empty())
-    UNWRAP_ERROR_OR_SET(program, toModularError(llvm::sys::findProgramByName(
-                                     kHandlerProgramName)));
+    UNWRAP_LLVM_ERROR_OR_SET(program,
+                             llvm::sys::findProgramByName(kHandlerProgramName));
   // No luck
   if (program.empty())
     return Error("unable to locate crashpad handler executable");

@@ -8,6 +8,7 @@
 #include "Support/Error.h"
 #include "Support/LogicalResult.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Error.h"
 
 #include "gtest/gtest.h"
 
@@ -63,3 +64,61 @@ TEST(ErrorOr, referenceType) {
 
 // TODO(akirchhoff): Test move semantics
 // TODO(akirchhoff): Test copying
+
+TEST(ErrorOr, fromLLVMError) {
+  llvm::Error llvmError =
+      llvm::createStringError(std::error_code(), "Toaster overheated");
+  EXPECT_TRUE(!!llvmError);
+  ErrorOrSuccess modularError = toModularErrorOr(std::move(llvmError));
+  EXPECT_TRUE(modularError);
+  EXPECT_STREQ("Toaster overheated", modularError.getError());
+}
+
+TEST(ErrorOr, fromLLVMErrorEmpty) {
+  llvm::Error llvmError = llvm::Error::success();
+  EXPECT_FALSE(!!llvmError);
+  ErrorOrSuccess modularError = toModularErrorOr(std::move(llvmError));
+  EXPECT_FALSE(modularError);
+}
+
+TEST(ErrorOr, fromLLVMExpectedOK) {
+  llvm::Expected<int> llvmExpected(5);
+  EXPECT_TRUE(!!llvmExpected);
+  ErrorOr<int> modularErrorOr = toModularErrorOr(std::move(llvmExpected));
+  EXPECT_FALSE(modularErrorOr);
+  EXPECT_EQ(5, *modularErrorOr);
+}
+
+TEST(ErrorOr, fromLLVMExpectedError) {
+  llvm::Expected<int> llvmExpected(
+      llvm::createStringError(std::error_code(), "Toaster overheated"));
+  EXPECT_FALSE(!!llvmExpected);
+  ErrorOr<int> modularErrorOr = toModularErrorOr(std::move(llvmExpected));
+  EXPECT_TRUE(modularErrorOr);
+  EXPECT_STREQ("Toaster overheated", modularErrorOr.getError());
+}
+
+TEST(ErrorOr, fromLLVMErrorOrOK) {
+  llvm::ErrorOr<int> llvmErrorOr(5);
+  EXPECT_TRUE(!!llvmErrorOr);
+  ErrorOr<int> modularErrorOr = toModularErrorOr(std::move(llvmErrorOr));
+  EXPECT_FALSE(modularErrorOr);
+  EXPECT_EQ(5, *modularErrorOr);
+}
+
+namespace {
+class ToasterErrorCategory : public std::error_category {
+public:
+  const char *name() const override { return "Toaster"; }
+  std::string message(int code) const override { return "Toaster overheated"; }
+};
+} // namespace
+
+TEST(ErrorOr, fromLLVMErrorOrError) {
+  static ToasterErrorCategory toasterCategory;
+  llvm::ErrorOr<int> llvmErrorOr(std::error_code(0, toasterCategory));
+  EXPECT_FALSE(!!llvmErrorOr);
+  ErrorOr<int> modularErrorOr = toModularErrorOr(std::move(llvmErrorOr));
+  EXPECT_TRUE(modularErrorOr);
+  EXPECT_STREQ("Toaster overheated", modularErrorOr.getError());
+}

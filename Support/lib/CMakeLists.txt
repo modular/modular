@@ -11,6 +11,7 @@ add_modular_library(MSupport
   CommonCLOptions.cpp
   Configuration.cpp
   Error.cpp
+  ErrorOr.cpp
   FileSystemExtras.cpp
   HMAC.cpp
   Host.cpp

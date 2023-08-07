@@ -37,6 +37,16 @@ template <typename KeyT, typename ValueT, unsigned InlineBuckets,
 class SmallDenseMap;
 } // namespace llvm
 
+// Forward declarations of LLVM classes we do not import into the M (Modular)
+// namespace.
+namespace llvm {
+class Error;
+template <class T>
+class ErrorOr;
+template <class T>
+class Expected;
+} // namespace llvm
+
 // Import classes from the `llvm` and `mlir` namespace into the `M` namespace.
 // All of the following classes have been already forward declared and imported
 // from `llvm` in to the `mlir` namespace. For classes with default template

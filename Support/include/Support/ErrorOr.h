@@ -261,6 +261,26 @@ public:
   ErrorOrSuccess() : ErrorOr(Detail::Empty()) {}
 };
 
+/// Convert an LLVM error (which may be in either success state or error state)
+/// to a Modular ErrorOrSuccess.
+ErrorOrSuccess toModularErrorOr(llvm::Error llvmError);
+
+/// Convert an LLVM Expected value to a Modular ErrorOr.
+template <typename T>
+ErrorOr<T> toModularErrorOr(llvm::Expected<T> expected) {
+  if (expected)
+    return std::move(*expected);
+  return toModularError(expected.takeError());
+}
+
+/// Convert an LLVM ErrorOr value to a Modular ErrorOr.
+template <typename T>
+ErrorOr<T> toModularErrorOr(llvm::ErrorOr<T> expected) {
+  if (expected)
+    return std::move(*expected);
+  return Error(expected.getError().message());
+}
+
 /// Given an expression that returns an `ErrorOrSuccess` (or `ErrorOr`):
 ///  1) evaluate the expression
 ///  2) if it contains an `Error`, `return` it, exiting this function/lambda
@@ -269,6 +289,15 @@ public:
   if (auto err = (EXPRESSION)) {                                               \
     return err.takeError();                                                    \
   }
+
+/// Given an expression that returns an `llvm::Error`, `llvm::ErrorOr`, or
+/// `llvm::Expected`:
+///  1) evaluate the expression
+///  2) if it contains an error, `return` it (converted to M::Error), exiting
+///     this function/lambda
+///  3) otherwise discard the normal value returned.
+#define RETURN_LLVM_ERROR(EXPRESSION)                                          \
+  RETURN_ERROR(::M::toModularErrorOr(EXPRESSION))
 
 /// DO NOT USE THIS MACRO.
 #define _UNWRAP_ERROR_IMPL(VARIABLE, LHS, EXPRESSION)                          \
@@ -301,6 +330,33 @@ public:
 /// sense anyway though, because why would you want to bind the result name?
 #define UNWRAP_ERROR(VARIABLE, EXPRESSION)                                     \
   _UNWRAP_ERROR_IMPL(VARIABLE, auto VARIABLE, EXPRESSION)
+
+/// Given an expression that returns an `llvm::Error`, `llvm::ErrorOr<T>`, or
+/// `llvm::Expected<T>`:
+///  1) evaluate the expression
+///  2) if it contains an error, `return` it (converted to M::Error), exiting
+///     this function/lambda
+///  3) otherwise bind the normal value to an existing local variable named
+///     `VARIABLE`
+/// This differs from UNWRAP_LLVM_ERROR in that it moves the unwrapped value
+/// into an existing local variable instead creating a new one.
+#define UNWRAP_LLVM_ERROR_OR_SET(VARIABLE, EXPRESSION)                         \
+  UNWRAP_ERROR_OR_SET(VARIABLE, ::M::toModularErrorOr(EXPRESSION))
+
+/// Given an expression that returns an `llvm::Error`, `llvm::ErrorOr<T>`, or
+/// `llvm::Expected<T>`:
+///  1) evaluate the expression
+///  2) if it contains an error, `return` it (converted to M::Error), exiting
+///     this function/lambda
+///  3) otherwise bind the normal value to a new local variable named `VARIABLE`
+/// This differs from UNWRAP_LLVM_ERROR_OR_SET in that it creates a new variable
+/// instead of moving the unwrapped value into an existing one.
+///
+/// WARNING: This macro contains multiple statements, so it should not be used
+/// in the body of an if statement without braces.  Such a thing doesn't make
+/// sense anyway though, because why would you want to bind the result name?
+#define UNWRAP_LLVM_ERROR(VARIABLE, EXPRESSION)                                \
+  UNWRAP_ERROR(VARIABLE, ::M::toModularErrorOr(EXPRESSION))
 
 } // namespace M
 
