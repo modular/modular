@@ -78,7 +78,11 @@ fn matrix_solve_tiny[
 
 @always_inline
 fn matrix_solve[
-    type: DType, x_rank: Int, a_rank: Int, b_rank: Int
+    type: DType,
+    x_rank: Int,
+    a_rank: Int,
+    b_rank: Int,
+    single_thread_blocking_override: Bool,
 ](
     a: NDBuffer[a_rank, DimList.create_unknown[a_rank](), type],
     b: NDBuffer[b_rank, DimList.create_unknown[b_rank](), type],
@@ -96,12 +100,14 @@ fn matrix_solve[
 
     @parameter
     if not type.is_floating_point():
-        return out_chain.mark_error("Only floating point types are supported.")
+        return out_chain.mark_error[single_thread_blocking_override](
+            "Only floating point types are supported."
+        )
 
     @parameter
     if a_rank > 2:
         if a.dim(0) != b.dim(0) or b.dim(0) != x.dim(0):
-            return out_chain.mark_error(
+            return out_chain.mark_error[single_thread_blocking_override](
                 "input and output batch sizes must match"
             )
 
@@ -109,11 +115,17 @@ fn matrix_solve[
     alias col_dim = a_rank - 1
 
     if x.dim(row_dim) != 3 or x.dim(col_dim) != 2:
-        return out_chain.mark_error("The x matrix's shape must be (3,2)")
+        return out_chain.mark_error[single_thread_blocking_override](
+            "The x matrix's shape must be (3,2)"
+        )
     if a.dim(row_dim) != 3 or a.dim(col_dim) != 3:
-        return out_chain.mark_error("The a matrix's shape must be (3,3)")
+        return out_chain.mark_error[single_thread_blocking_override](
+            "The a matrix's shape must be (3,3)"
+        )
     if b.dim(row_dim) != 3 or b.dim(col_dim) != 2:
-        return out_chain.mark_error("The b matrix's shape must be (3,2)")
+        return out_chain.mark_error[single_thread_blocking_override](
+            "The b matrix's shape must be (3,2)"
+        )
 
     var batch_size = 1
     for i in range(row_dim):
@@ -132,4 +144,6 @@ fn matrix_solve[
         )
         matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
-    out_chain.mark_ready()
+    @parameter
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()

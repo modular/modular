@@ -27,7 +27,6 @@ from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr, OwningOutputChainPtr
 from Math import min, fma, div_ceil, align_down
 from Memory import memset_zero, stack_allocation
-from MOGG import soft_fusion_run_wrapper
 from MatmulUtils import (
     get_packB_unroll_factor,
     MatmulConfig,
@@ -1920,8 +1919,10 @@ fn matmul_parallel_sync[
         )
 
     @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
+    if single_thread_blocking_override:
+        # Any error thrown by this kernel will get swallowed by this chain.
+        # (It doesn't presently have any mark_error's)
+        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
         matmul_parallel_sync[
             a_type,
             b_type,
@@ -1931,9 +1932,19 @@ fn matmul_parallel_sync[
             b_packed,
             elementwise_epilogue_enabled,
             elementwise_lambda_fn,
-        ](c, a, b, chain, num_threads)
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+        ](c, a, b, new_chain.borrow(), num_threads)
+        new_chain.wait()
+    else:
+        matmul_parallel_sync[
+            a_type,
+            b_type,
+            c_type,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_epilogue_enabled,
+            elementwise_lambda_fn,
+        ](c, a, b, out_chain, num_threads)
 
 
 fn matmul_parallel_sync[

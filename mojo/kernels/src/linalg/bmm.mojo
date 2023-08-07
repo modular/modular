@@ -8,7 +8,7 @@ from Assert import assert_param
 from DType import DType
 from Buffer import NDBuffer
 from List import DimList
-from LLCL import OutputChainPtr
+from LLCL import OutputChainPtr, OwningOutputChainPtr
 from Index import StaticIntTuple, Index
 from SIMD import SIMD
 from Math import max, min, div_ceil, gcd
@@ -22,7 +22,6 @@ from MatmulUtils import (
 )
 from Matmul import _submatmul_sequential_sync
 from Memory import memset_zero
-from MOGG import soft_fusion_run_wrapper
 from TargetInfo import simdwidthof
 from Functional import (
     sync_parallelize,
@@ -131,16 +130,24 @@ fn batched_matmul_parallel_sync[
         return
 
     @parameter
-    @always_inline
-    fn func(chain: OutputChainPtr):
-        return batched_matmul_parallel_sync[
+    if single_thread_blocking_override:
+        # Any error thrown by this kernel will get swallowed by this chain.
+        # (It doesn't presently have any mark_error's)
+        let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
+        batched_matmul_parallel_sync[
             rank,
             type,
             adj_a,
             adj_b,
-        ](c_buf, a_buf, b_buf, chain)
-
-    soft_fusion_run_wrapper[single_thread_blocking_override, func](out_chain)
+        ](c_buf, a_buf, b_buf, new_chain.borrow())
+        new_chain.wait()
+    else:
+        batched_matmul_parallel_sync[
+            rank,
+            type,
+            adj_a,
+            adj_b,
+        ](c_buf, a_buf, b_buf, out_chain)
 
 
 @always_inline
