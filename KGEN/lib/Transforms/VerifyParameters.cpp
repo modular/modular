@@ -24,34 +24,32 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+/// Function to walk all op users of parameters and substitute parameters based
+/// on the values currently in the evaluator.
+static void processOp(Operation *op, ParameterEvaluator &evaluator) {
+  SmallVector<NamedAttribute> attrs;
+  bool changed = false;
+  for (const NamedAttribute &attr : op->getAttrs()) {
+    Attribute newAttr = evaluator.getReboundAttribute(attr.getValue());
+    attrs.emplace_back(attr.getName(), newAttr);
+    changed |= newAttr != attr.getValue();
+  }
+  if (changed)
+    op->setAttrs(DictionaryAttr::getWithSorted(op->getContext(), attrs));
+
+  for (OpResult result : op->getResults())
+    result.setType(evaluator.getReboundType(result.getType()));
+  for (Region &region : op->getRegions())
+    for (BlockArgument arg : region.getArguments())
+      arg.setType(evaluator.getReboundType(arg.getType()));
+}
+
 /// Propagate trivial parameter declarations in the region, given the use-def
 /// graph for that region and the top-level graph to lookup nested regions.
 static void propagateTrivialParameters(Region *region,
                                        const ParameterUseDefGraph &graph,
                                        const ParameterUseDefGraph &topLevel,
                                        ParameterEvaluator evaluator) {
-  // Function to walk all op users of parameters and substitute parameters based
-  // on the values currently in the evaluator.
-  auto processOp = [&](Operation *op) {
-    SmallVector<NamedAttribute> attrs;
-    bool changed = false;
-    for (const NamedAttribute &attr : op->getAttrs()) {
-      Attribute newAttr = evaluator.getReboundAttribute(attr.getValue());
-      attrs.emplace_back(attr.getName(), newAttr);
-      changed |= newAttr != attr.getValue();
-    }
-    if (changed)
-      op->setAttrs(DictionaryAttr::getWithSorted(op->getContext(), attrs));
-
-    op->setLoc(cast<Location>(evaluator.getReboundAttribute(op->getLoc())));
-
-    for (OpResult result : op->getResults())
-      result.setType(evaluator.getReboundType(result.getType()));
-    for (Region &region : op->getRegions())
-      for (BlockArgument arg : region.getArguments())
-        arg.setType(evaluator.getReboundType(arg.getType()));
-  };
-
   // Collect the defining operations in topological order. The same operation
   // can define multiple parameters, so punt them according to their most
   // dominated definition. Do this by collecting them in reverse.
@@ -71,7 +69,7 @@ static void propagateTrivialParameters(Region *region,
       // Skip the top-level declaration since it cannot reference parameters
       // declared inside it.
       if (op != topLevel.scope->getParentOp())
-        processOp(op);
+        processOp(op, evaluator);
     } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       // If the value of the declared parameter is "trivial", i.e. a simple
       // constant, then propagate it.
@@ -85,7 +83,7 @@ static void propagateTrivialParameters(Region *region,
       } else {
         evaluator.setOrOverwriteParameterValue(decl,
                                                ParamDeclRefAttr::get(decl));
-        processOp(op);
+        processOp(op, evaluator);
       }
     } else {
       // If this is any other operation, just walk its definitions in the
@@ -99,12 +97,23 @@ static void propagateTrivialParameters(Region *region,
       // Nested regions can declare parameters, so we cannot fully rebind the
       // operation now. It will be handled later when this function recurses.
       if (!isa<ParamDeclareRegionOp>(op))
-        processOp(op);
+        processOp(op, evaluator);
     }
   }
 
   for (Operation *op : graph.paramOps)
-    processOp(op);
+    processOp(op, evaluator);
+
+  // Any op might contain a parametric location, so we go through all of them.
+  auto rebindLoc = [&](Location loc) {
+    return cast<Location>(evaluator.getReboundAttribute(loc));
+  };
+  for (Operation &op : region->getOps()) {
+    if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
+      if (mlir::LocationAttr loc = inlined.getCallLocAttr())
+        inlined.setCallLocAttr(rebindLoc(loc));
+    op.setLoc(rebindLoc(op.getLoc()));
+  }
 
   // Recurse into nested parameter scopes.
   for (Region *region : graph.nestedDecls)
