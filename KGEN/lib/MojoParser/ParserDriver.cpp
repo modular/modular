@@ -61,6 +61,8 @@ void MojoParserListener::onModuleImport(MojoASTDeclRef declRef,
                                         StringRef spelling, SMLoc importLoc) {}
 void MojoParserListener::onModuleDecl(MojoASTDeclRef declRef,
                                       SMLoc identifierLoc) {}
+void MojoParserListener::onParameterDecl(MojoASTDeclRef declRef,
+                                         SMLoc identifierLoc) {}
 void MojoParserListener::onStructDecl(MojoASTDeclRef declRef,
                                       SMLoc identifierLoc) {}
 void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,

@@ -132,6 +132,8 @@ public:
   /// empty.
   StringRef getDescription() const { return description; }
 
+  std::string getMarkdownDocString() const override;
+
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 

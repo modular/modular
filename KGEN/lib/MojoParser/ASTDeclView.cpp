@@ -368,6 +368,13 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
 // ParameterDeclView
 //===----------------------------------------------------------------------===//
 
+std::string ParameterDeclView::getMarkdownDocString() const {
+  std::string markdown;
+  llvm::raw_string_ostream os(markdown);
+  dumpMarkdownDocumentationHeader(os, description);
+  return markdown;
+}
+
 llvm::json::Object ParameterDeclView::toJSON() const {
   return llvm::json::Object{{"kind", getKindAsString()},
                             {"name", getName()},

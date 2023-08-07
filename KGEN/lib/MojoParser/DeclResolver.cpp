@@ -1222,8 +1222,9 @@ void ParsedArgument::processParameterArgs(
     auto newDecl =
         ParamDeclAttr::get(mangleParameter(arg.name, line, col), type);
     params.push_back(newDecl);
-    emitter.getDeclResolver().addFullyResolvedDecl(
+    ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
+    emitter.shared.notifyListenerOnParameter(resolvedDecl, arg.loc);
   }
 }
 
