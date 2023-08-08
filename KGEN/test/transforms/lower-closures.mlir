@@ -123,3 +123,12 @@ kgen.func @constant_in(%arg0: index, %arg1: index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @create_closure(
+kgen.func @create_closure() {
+  // CHECK: %0 = kgen.create_closure [() -> (): @create_closure_closure]()
+  %0 = kgen.stage_closure = () {
+    kgen.return
+  }
+  kgen.return
+}
