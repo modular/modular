@@ -150,7 +150,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
                                         op.getType().getValueResults());
   auto none = TypeArrayAttr::get(op.getContext(), {});
   auto metadata = FnMetadataAttr::get(op.getContext(), body.getNumArguments(),
-                                      FnEffects::Capturing);
+                                      op.getResult().getType().getFnEffects());
   auto sig = SignatureType::get(none, none, functionType, metadata);
 
   // Create the lifted function.
