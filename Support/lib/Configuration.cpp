@@ -268,17 +268,20 @@ ErrorOrSuccess Config::flush() {
   if (std::filesystem::exists(parent_dir, ec)) {
     if (!std::filesystem::is_directory(parent_dir, ec) && !ec) {
       // We know correctly that is it not a directory.
-      return Error(Twine(parent_dir) + " is not a directory");
+      return Error(Twine(parent_dir.string()) + " is not a directory");
     } else if (ec) {
       // We know it exists, but cannot stat it.
-      return Error(Twine(parent_dir) + " could not be read: " + ec.message());
+      return Error(Twine(parent_dir.string()) +
+                   " could not be read: " + ec.message());
     }
   } else if (ec) {
     // The parent_dir may or may not exist; an error occurred during "exists".
-    return Error(Twine(parent_dir) + " could not be read: " + ec.message());
+    return Error(Twine(parent_dir.string()) +
+                 " could not be read: " + ec.message());
   } else if (!create_directories(parent_dir, ec)) {
     // The directory did not exist, and we failed to create it.
-    return Error(Twine(parent_dir) + " could not be created: " + ec.message());
+    return Error(Twine(parent_dir.string()) +
+                 " could not be created: " + ec.message());
   }
 
   // Write the config file to the output atomically.
