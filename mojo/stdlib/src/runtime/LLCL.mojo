@@ -622,12 +622,21 @@ struct AsyncTaskGroup:
     var out_chain: OwningOutputChainPtr
     # Vector holding co-routines.
     var coroutines: CoroutineList[NoneType]
+    # Bool to indicate whether we use the monolithic Queue for scheduling
+    # this AsyncTaskGroup or thread local queues.
+    var _use_global_queue: Bool
 
     @always_inline
     fn __init__(inout self, num_work_items: Int, out_chain: OutputChainPtr):
         self.counter = num_work_items
         self.out_chain = out_chain.fork()
         self.coroutines = num_work_items
+        # We choose to keep tasks not perfectly parallelizable to the
+        # monolithic queue for better load balancing. Only push tasks which
+        # occupy all the cores to taskId affinitized queues.
+        self._use_global_queue = (
+            num_work_items != out_chain.get_runtime().parallelism_level()
+        )
 
     # This destroy's self when all the references are gone.
     @always_inline
@@ -670,7 +679,13 @@ struct AsyncTaskGroup:
         self.coroutines.add(coroutine ^)
         external_call[
             "KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask", NoneType
-        ](self.out_chain.ptr, _coro_resume_fn, hdl, task_id)
+        ](
+            self.out_chain.ptr,
+            _coro_resume_fn,
+            hdl,
+            task_id,
+            self._use_global_queue,
+        )
 
 
 struct AsyncTaskGroupPtr:
