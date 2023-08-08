@@ -262,6 +262,25 @@ void Config::flush(raw_ostream &os) {
 ErrorOrSuccess Config::flush() {
   std::filesystem::path configFilePath = getConfigFilePath();
 
+  // Ensure that the parent directory exists.
+  std::error_code ec;
+  auto parent_dir = configFilePath.parent_path();
+  if (std::filesystem::exists(parent_dir, ec)) {
+    if (!std::filesystem::is_directory(parent_dir, ec) && !ec) {
+      // We know correctly that is it not a directory.
+      return Error(Twine(parent_dir) + " is not a directory");
+    } else if (ec) {
+      // We know it exists, but cannot stat it.
+      return Error(Twine(parent_dir) + " could not be read: " + ec.message());
+    }
+  } else if (ec) {
+    // The parent_dir may or may not exist; an error occurred during "exists".
+    return Error(Twine(parent_dir) + " could not be read: " + ec.message());
+  } else if (!create_directories(parent_dir, ec)) {
+    // The directory did not exist, and we failed to create it.
+    return Error(Twine(parent_dir) + " could not be created: " + ec.message());
+  }
+
   // Write the config file to the output atomically.
   auto pathOr = writeFileUnderLock(configFilePath,
                                    [&](llvm::raw_ostream &os) { flush(os); });
