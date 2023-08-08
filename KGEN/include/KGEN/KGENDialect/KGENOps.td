@@ -1021,19 +1021,26 @@ def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
   let summary = "Declare a global variable with an constructor.";
   let description = [{
     The `kgen.global` operation declares a global variable bound to a symbol
-    name. It contains the type of the global variable, an constructor function,
-    a destructor function, and an initialization priority. The initialization
-    priority determines the order in which the constructors of all the globals
-    in the program will be invoked (lower is earlier) and the reverse order in
-    which the destructors are invoked.
+    name. It contains the type of the global variable, and optionally a
+    constructor function, a destructor function, and an initialization priority.
+    The initialization priority determines the order in which the constructors
+    of all the globals in the program will be invoked (lower is earlier) and
+    the reverse order in which the destructors are invoked.
 
-    The constructor and destructor functions are expected to have zero arguments
-    and zero results.
+    The constructors and destructors are optional, and so a global variable
+    that does not require constructors and destructors can be defined by:
+
+    ```mlir
+    kgen.global @my_global : f32
+    ```
+
+    The optional constructor and destructor functions are expected to have
+    zero arguments and zero results.
 
     Example:
 
     ```mlir
-    kgen.global @foo : i32 (2, @foo_ctor, @foo_dtor)
+    kgen.global @foo : i32 [@foo_ctor, @foo_dtor](2)
     ```
 
     The global `@foo` with initialization priority `2` will be initialized
@@ -1041,13 +1048,16 @@ def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
   }];
 
   let arguments = (ins
-    SymbolNameAttr:$sym_name, TypeAttr:$type, I32Attr:$priority,
-    SymbolRefAttr:$ctor, SymbolRefAttr:$dtor, KGEN_ExportKindAttr:$exportKind);
+    SymbolNameAttr:$sym_name, TypeAttr:$type, OptionalAttr<I32Attr>:$priority,
+    OptionalAttr<SymbolRefAttr>:$ctor, OptionalAttr<SymbolRefAttr>:$dtor,
+    KGEN_ExportKindAttr:$exportKind);
 
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name `:` $type
-    ` ` `(` $priority `,` $ctor `,` $dtor `)` attr-dict
+    ` ` (`[` $ctor `,` $dtor `]` `` `(` $priority^ `)`)? attr-dict
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

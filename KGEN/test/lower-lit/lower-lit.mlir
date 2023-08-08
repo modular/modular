@@ -283,7 +283,7 @@ lit.func @removeMetadata(%arg0: !pop.pointer<index> byref) throws -> index {
 // CHECK-NEXT: kgen.return
 // CHECK: (dtor_fn)foo
 // CHECK-NEXT: kgen.return
-// CHECK: kgen.global @foo : index (0, @"(ctor_fn)foo", @"(dtor_fn)foo")
+// CHECK: kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0)
 lit.globalvar.decl @foo : index {
 }, {
 }
@@ -297,15 +297,15 @@ lit.globalvar.decl @bar : index {
   // CHECK-NEXT: kgen.return
 }, {
 }
-// CHECK: kgen.global @bar : index (2,
+// CHECK: kgen.global @bar : index [{{.*}}](2)
 
-// CHECK: kgen.global @baz : index (1,
+// CHECK: kgen.global @baz : index [{{.*}}](1)
 lit.globalvar.decl @baz : index {
   lit.globalvar.ref @foo : <index>
 }, {
 }
 
-// CHECK: kgen.global @boo : index (3,
+// CHECK: kgen.global @boo : index [{{.*}}](3)
 lit.globalvar.decl @boo : index {
   lit.globalvar.ref @bar : <index>
   lit.globalvar.ref @baz : <index>

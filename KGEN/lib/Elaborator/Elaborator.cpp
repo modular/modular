@@ -2636,9 +2636,10 @@ public:
     for (Operation &op : theModule.getOps()) {
       if (auto gen = dyn_cast<GeneratorOp>(op); gen && gen.isExported()) {
         roots.insert(gen);
-      } else if (auto global = dyn_cast<GlobalOp>(op)) {
-        addAsRoot(global.getCtor());
-        addAsRoot(global.getDtor());
+      } else if (auto global = dyn_cast<GlobalOp>(op);
+                 global && global.getCtor()) {
+        addAsRoot(*global.getCtor());
+        addAsRoot(*global.getDtor());
       }
     }
 

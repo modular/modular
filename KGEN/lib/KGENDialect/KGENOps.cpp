@@ -1106,6 +1106,15 @@ LogicalResult CreateClosureOp::verify() {
 // GlobalOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult GlobalOp::verify() {
+  if (getCtor() || getDtor() || getPriority())
+    if (!getCtor() || !getDtor() || !getPriority())
+      return emitOpError("does not define all of the constructor, destructor, "
+                         "or priority values, if one of these values is "
+                         "defined, then all must be defined");
+  return success();
+}
+
 LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
   auto module = (*this)->getParentOfType<ModuleOp>();
   auto verifyFunc = [&](SymbolRefAttr ref, StringRef name) -> LogicalResult {
@@ -1117,8 +1126,10 @@ LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
     }
     return success();
   };
-  if (failed(verifyFunc(getCtor(), "constructor")) ||
-      failed(verifyFunc(getDtor(), "destructor")))
+  if (!getCtor() || !getDtor())
+    return success();
+  if (failed(verifyFunc(*getCtor(), "constructor")) ||
+      failed(verifyFunc(*getDtor(), "destructor")))
     return failure();
   return success();
 }

@@ -1853,8 +1853,8 @@ kgen.generator @global_dtor() {
   kgen.return
 }
 
-// CHECK: kgen.global @global_var : f32 (0, @global_init, @global_dtor)
-kgen.global @global_var : f32 (0, @global_init, @global_dtor)
+// CHECK: kgen.global @global_var : f32 [@global_init, @global_dtor](0)
+kgen.global @global_var : f32 [@global_init, @global_dtor](0)
 
 // -----
 

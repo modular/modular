@@ -51,10 +51,10 @@ kgen.func @unused_global_fn() {
 }
 
 // CHECK: kgen.global @global_var
-kgen.global @global_var : i32 (2, @global_var_fn, @global_var_fn)
+kgen.global @global_var : i32 [@global_var_fn, @global_var_fn](2)
 
 // CHECK-NOT: kgen.global @global_var
-kgen.global @unused_global : i64 (3, @unused_global_fn, @unused_global_fn)
+kgen.global @unused_global : i64 [@unused_global_fn, @unused_global_fn](3)
 
 // CHECK: kgen.func export @anchor_global
 kgen.func export @anchor_global() {

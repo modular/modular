@@ -13,7 +13,7 @@ kgen.func @noop() {
   kgen.return
 }
 
-kgen.global export @exported_global : i32 (0, @noop, @noop)
+kgen.global export @exported_global : i32 [@noop, @noop](0)
 
 // EXEC: --- 'my_exported_kernel' returned 1.0
 
