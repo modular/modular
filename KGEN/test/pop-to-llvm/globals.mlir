@@ -119,9 +119,9 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   }
 
   // CHECK: llvm.mlir.global internal @foo() {{.*}} : i32
-  kgen.global @foo : i32 (2, @foo_c, @foo_d)
+  kgen.global @foo : i32 [@foo_c, @foo_d](2)
   // CHECK: llvm.mlir.global internal @bar() {{.*}} : i64
-  kgen.global @bar : i64 (5, @bar_c, @bar_d)
+  kgen.global @bar : i64 [@bar_c, @bar_d](5)
 
   llvm.func @noop() {
     llvm.return
@@ -129,7 +129,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK: llvm.mlir.global external @exported() {{.*}} : f32
   // CHECK-NEXT: [[UNDEF:%.*]] = llvm.mlir.undef
   // CHECK-NEXT: llvm.return [[UNDEF]]
-  kgen.global export @exported : f32 (0, @noop, @noop)
+  kgen.global export @exported : f32 [@noop, @noop](0)
 }
 
 // -----

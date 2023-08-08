@@ -32,7 +32,7 @@ kgen.func @kgen_global_dtor() {
   kgen.return
 }
 
-kgen.global @global : i32 (2, @kgen_global_ctor, @kgen_global_dtor)
+kgen.global @global : i32 [@kgen_global_ctor, @kgen_global_dtor](2)
 
 kgen.func export @kgen_main() {
   %0 = pop.global.address @global : <i32>
@@ -49,7 +49,7 @@ kgen.func @noop() {
   kgen.return
 }
 
-kgen.global @another : i32 (2, @noop, @noop)
+kgen.global @another : i32 [@noop, @noop](2)
 
 kgen.func @split_callee() {
   kgen.return

@@ -87,7 +87,7 @@ lit.file_module @module {
 // CHECK-NEXT:    pop.global.address @foo : <index> loc(#[[LOC_DTOR_OP:.*]])
 // CHECK-NEXT:    kgen.return loc(#[[LOC_DTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])
-// CHECK-NEXT:  kgen.global @foo : index (0, @"(ctor_fn)foo", @"(dtor_fn)foo") loc(#[[LOC_OP:.*]])
+// CHECK-NEXT:  kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0) loc(#[[LOC_OP:.*]])
 lit.globalvar.decl @foo : index {
   lit.globalvar.ref @foo : <index> loc(fused<#file>["foo.mlir":9:4])
 }, {

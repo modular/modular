@@ -225,7 +225,7 @@ kgen.func @global_ctor() {
   kgen.return
 }
 
-kgen.global @global_var : i32 (2, @global_ctor, @global_ctor)
+kgen.global @global_var : i32 [@global_ctor, @global_ctor](2)
 
 kgen.func @func() {
   // expected-error @below {{'pop.global.address' op result type does not match global type 'i32'}}

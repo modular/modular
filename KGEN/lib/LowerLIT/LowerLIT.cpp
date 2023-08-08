@@ -435,8 +435,9 @@ orderAndLowerGlobalVariables(ModuleOp module,
     // Replace the `lit.globalvar.decl` operation with a `kgen.global`.
     b.setInsertionPoint(op);
     b.replaceOpWithNewOp<GlobalOp>(
-        op, name, op.getType(), initOrder++, getFullyResolvedSymbolRef(ctorFn),
-        getFullyResolvedSymbolRef(dtorFn), op.getExportKind());
+        op, name, op.getType(), b.getI32IntegerAttr(initOrder++),
+        getFullyResolvedSymbolRef(ctorFn), getFullyResolvedSymbolRef(dtorFn),
+        op.getExportKind());
 
     for (GlobalRefNode *refdBy : node->refdBy)
       if (++refdBy->numReady == refdBy->numRefs)

@@ -1530,9 +1530,11 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
     if (!type)
       return global.emitError("could not convert global type");
 
-    ctors.push_back(global.getCtor());
-    dtors.push_back(global.getDtor());
-    priorities.push_back(global.getPriorityAttr());
+    if (global.getCtor()) {
+      ctors.push_back(*global.getCtor());
+      dtors.push_back(*global.getDtor());
+      priorities.push_back(global.getPriorityAttr());
+    }
 
     // Create the LLVM global.
     bool isExported = global.isExported();
@@ -1541,9 +1543,11 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
         isExported ? LLVM::Linkage::External : LLVM::Linkage::Internal,
         global.getSymName(), /*value=*/Attribute());
 
-    // If the global is exported, explicitly initialize it as undef.
+    // If the global is not exported, then no need to initialize it.
     if (!isExported)
       continue;
+
+    // If the global is exported, explicitly initialize it as undef.
     b.createBlock(&llvmGlobal.getBodyRegion());
     Value undef = b.create<LLVM::UndefOp>(llvmGlobal.getLoc(), type);
     b.create<LLVM::ReturnOp>(llvmGlobal.getLoc(), undef);
