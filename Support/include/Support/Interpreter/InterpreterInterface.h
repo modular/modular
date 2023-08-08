@@ -7,6 +7,7 @@
 #ifndef SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 #define SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 
+#include "Support/ADT/SmartVariant.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
@@ -175,12 +176,38 @@ private:
 
   /// This struct represents a piece of memory in the interpreter.
   struct MemoryBlob {
-    /// Create a memory blob.
-    explicit MemoryBlob(int64_t baseAddr, size_t size, size_t align);
+    using OwnedMemory = std::unique_ptr<void, void (*)(void *)>;
+    using MemoryT = SmartVariant<OwnedMemory, MemoryHandle, std::nullptr_t>;
+
+    /// Create a memory blob. If `hdl` is null, an owned blob will be created.
+    explicit MemoryBlob(int64_t baseAddr, size_t size, size_t align,
+                        std::optional<MemoryHandle> hdl);
 
     /// Mark or unmark the given region of the blob as a pointer value.
     ErrorOrSuccess setPointerRegion(int64_t offset, int64_t regionSize,
                                     int64_t pointerSize, bool writePointer);
+
+    /// Return true if the memory is owned by the interpreter.
+    bool isOwned() const { return isa<OwnedMemory>(memory); }
+
+    /// Get the handle to external memory.
+    MemoryHandle getHandle() const { return cast<MemoryHandle>(memory); }
+
+    /// Get the pointer to owned memory.
+    void *getOwned() const { return cast<OwnedMemory>(memory).get(); }
+
+    /// Get the pointer to the memory.
+    void *getMemory() const {
+      if (isOwned())
+        return getOwned();
+      return (void *)getHandle().getBlob()->getData().data();
+    }
+
+    /// Return true if the memory has been freed.
+    bool isFreed() const { return isa<std::nullptr_t>(memory); }
+
+    /// Free the owned memory.
+    void free() { memory = nullptr; }
 
     /// The base address of the blob.
     int64_t baseAddr;
@@ -189,7 +216,7 @@ private:
     /// The alignment of the blob.
     size_t align;
     /// The actual memory managed by the interpreter.
-    std::unique_ptr<void, void (*)(void *)> memory;
+    MemoryT memory;
     /// A bit is set for each offset value where pointer regions begin. The
     /// vector is lazily-initialized to save memory.
     std::optional<llvm::BitVector> pointerRegions;
@@ -204,7 +231,8 @@ private:
     ErrorOr<MemoryBlob &> getBlob(int64_t addr);
 
     /// Allocate a new memory blob .
-    ErrorOr<MemoryBlob &> addBlob(size_t size, size_t align);
+    ErrorOr<MemoryBlob &> addBlob(size_t size, size_t align,
+                                  std::optional<MemoryHandle> hdl);
 
     /// Return true if the table contains the address.
     bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }
@@ -244,6 +272,8 @@ private:
   MemoryTable heapMemory;
   /// A stack of stack-allocated blobs.
   MemoryTable stackMemory;
+  /// Constant global memory mapped into interpreter memory.
+  MemoryTable constGlobalMemory;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Execution

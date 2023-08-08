@@ -22,24 +22,32 @@ using namespace M;
 /// that an address of 0 can actually be considered a null pointer.
 static constexpr int64_t kHeapBaseAddr = 1'000'000'000;
 /// Give the memory segments a healthy amount of maximum memory.
-static constexpr int64_t kTableSize = 4'000'000'000;
+static constexpr int64_t kTableSize = 1'000'000'000;
 /// Put the stack after the heap.
 /// FIXME: The stack pointer does not grow downwards like in every system.
 static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
+/// The start of constant global memory.
+static constexpr int64_t kConstGlobalBaseAddr = kStackBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
     : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
       heapMemory(MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize),
       stackMemory(MemoryKind::Stack, kStackBaseAddr,
-                  kStackBaseAddr + kTableSize) {}
+                  kStackBaseAddr + kTableSize),
+      constGlobalMemory(MemoryKind::ConstGlobal, kConstGlobalBaseAddr,
+                        kConstGlobalBaseAddr + kTableSize) {}
 
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
 InterpreterState::MemoryBlob::MemoryBlob(int64_t baseAddr, size_t size,
-                                         size_t align)
+                                         size_t align,
+                                         std::optional<MemoryHandle> hdl)
     : baseAddr(baseAddr), size(size), align(align),
-      memory(alignedAlloc(align, size), &alignedFree) {}
+      memory(
+          hdl ? MemoryT(*hdl)
+              : MemoryT(OwnedMemory(alignedAlloc(align, size), &alignedFree))) {
+}
 
 ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
     int64_t offset, int64_t regionSize, int64_t pointerSize,
@@ -71,7 +79,8 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setPointerRegion(
 }
 
 ErrorOr<InterpreterState::MemoryBlob &>
-InterpreterState::MemoryTable::addBlob(size_t size, size_t align) {
+InterpreterState::MemoryTable::addBlob(size_t size, size_t align,
+                                       std::optional<MemoryHandle> hdl) {
   // Pick the base address of the new blob.
   int64_t baseAddr = minAddr;
   if (!blobs.empty()) {
@@ -87,9 +96,7 @@ InterpreterState::MemoryTable::addBlob(size_t size, size_t align) {
     return Error("interpreter is out of memory!");
 
   // Create the blob with aligned memory.
-  MemoryBlob blob(baseAddr, size, align);
-  memset(blob.memory.get(), 0, size);
-  blobs.push_back(std::move(blob));
+  blobs.emplace_back(baseAddr, size, align, hdl);
   return blobs.back();
 }
 
@@ -111,7 +118,7 @@ InterpreterState::MemoryTable::getBlob(int64_t addr) {
     return Error("address is out-of-bounds: " + Twine(addr));
 
   // If the blob has been freed, then return an error.
-  if (!it->memory)
+  if (it->isFreed())
     return Error("accessing memory that was freed");
 
   return *it;
@@ -122,34 +129,44 @@ ErrorOr<int64_t> InterpreterState::allocateStackMemory(size_t size,
   // Track the additional stack allocation on the current frame.
   ++getCurrentFrame().numStackAllocs;
 
-  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(size, align);
+  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
+  // Zero-initialize the memory.
+  memset(blob->getOwned(), 0, size);
   return blob->baseAddr;
 }
 
 ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
                                                       size_t align) {
-  ErrorOr<MemoryBlob &> blob = heapMemory.addBlob(size, align);
+  ErrorOr<MemoryBlob &> blob = heapMemory.addBlob(size, align, /*hdl=*/{});
   if (blob.isError())
     return blob.takeError();
+  // Zero-initialize the memory.
+  memset(blob->getOwned(), 0, size);
   return blob->baseAddr;
 }
 
 ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
+  // Free functions tolerate null pointers.
+  if (addr == 0)
+    return success();
   ErrorOr<MemoryBlob &> blob = heapMemory.getBlob(addr);
   if (blob.isError())
     return blob.takeError();
   // Don't do anything fancy here. Just free the underlying memory and mark the
   // blob as freed.
-  blob->memory.reset();
+  blob->free();
   return success();
 }
 
 ErrorOr<std::pair<InterpreterState::MemoryBlob &, int64_t>>
 InterpreterState::getMemory(int64_t addr, size_t size) {
   // Determine which table the address belongs to and then lookup the blob.
-  MemoryTable &table = stackMemory.contains(addr) ? stackMemory : heapMemory;
+  MemoryTable &table = stackMemory.contains(addr)  ? stackMemory
+                       : heapMemory.contains(addr) ? heapMemory
+                                                   : constGlobalMemory;
+
   ErrorOr<MemoryBlob &> blob = table.getBlob(addr);
   if (blob.isError())
     return blob.takeError();
@@ -174,6 +191,8 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   if (memref.isError())
     return memref.takeError();
   auto [blob, offset] = memref.takeValue();
+  if (!blob.isOwned())
+    return Error("cannot write to constant global memory");
 
   // If the access is a pointer write, then mark the region as a pointer. The
   // pointer write size must be equal to the target pointer size.
@@ -185,7 +204,7 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
       err.isError())
     return err.takeError();
 
-  return (uint8_t *)blob.memory.get() + offset;
+  return (uint8_t *)blob.getOwned() + offset;
 }
 
 ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
@@ -194,7 +213,7 @@ ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
   if (memref.isError())
     return memref.takeError();
   auto [blob, offset] = memref.takeValue();
-  return (uint8_t *)blob.memory.get() + offset;
+  return (uint8_t *)blob.getMemory() + offset;
 }
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
@@ -273,10 +292,11 @@ InterpreterState::externalizeMemory(Region &entry,
 
     // First map all the blobs to indices so that pointers can be unmapped.
     int64_t blobIndex = 0;
-    for (const MemoryTable *table : {&heapMemory, &stackMemory}) {
+    for (const MemoryTable *table :
+         {&heapMemory, &stackMemory, &constGlobalMemory}) {
       for (const MemoryBlob &blob : table->blobs) {
         // Don't extern freed blobs.
-        if (!blob.memory)
+        if (blob.isFreed())
           continue;
         blobIndices.try_emplace(&blob, blobIndex++);
       }
@@ -284,22 +304,25 @@ InterpreterState::externalizeMemory(Region &entry,
 
     // Now unmap the memory.
     std::vector<M::MemoryBlob> blobs;
-    for (const MemoryTable *table : {&heapMemory, &stackMemory}) {
+    for (const MemoryTable *table :
+         {&heapMemory, &stackMemory, &constGlobalMemory}) {
       for (const MemoryBlob &blob : table->blobs) {
-        if (!blob.memory)
+        if (blob.isFreed())
           continue;
 
-        MemoryHandle hdl = blobMgr.addBlobResource(baseName, blob.memory.get(),
-                                                   blob.size, blob.align);
+        MemoryHandle hdl =
+            blob.isOwned() ? blobMgr.addBlobResource(baseName, blob.getOwned(),
+                                                     blob.size, blob.align)
+                           : blob.getHandle();
         SmallVector<M::MemoryBlob::PointerRegion> pointerRegions;
         if (blob.pointerRegions) {
+          assert(blob.isOwned() && "const memory cannot have pointers");
           int index = -1;
           // Iterate over the pointer regions indices set in the bitvector.
           while ((index = blob.pointerRegions->find_next(index)) != -1) {
             // Read out the address and map it to a blob.
             APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
-            llvm::LoadIntFromMemory(addrInt,
-                                    (uint8_t *)blob.memory.get() + index,
+            llvm::LoadIntFromMemory(addrInt, (uint8_t *)blob.getOwned() + index,
                                     target.getDataLayout().getPointerSize());
             ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
                 getMemory(addrInt.getSExtValue(), 0);
@@ -358,29 +381,38 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     // Process and intern the blobs.
     InternedMemorySpace map;
     for (const M::MemoryBlob &blob : space.getValue()) {
-      MemoryTable &table =
-          blob.getKind() == MemoryKind::Heap ? heapMemory : stackMemory;
-      mlir::AsmResourceBlob *asmBlob = blob.getHandle().getBlob();
+      MemoryTable &table = blob.getKind() == MemoryKind::Stack ? stackMemory
+                           : blob.getKind() == MemoryKind::Heap
+                               ? heapMemory
+                               : constGlobalMemory;
+
+      // Constant global is mapped directly into the interpreter.
+      std::optional<MemoryHandle> hdl;
+      if (blob.getKind() == MemoryKind::ConstGlobal)
+        hdl = blob.getHandle();
 
       // Initialize the memory.
-      ErrorOr<MemoryBlob &> mem =
-          table.addBlob(asmBlob->getData().size(), asmBlob->getDataAlignment());
+      mlir::AsmResourceBlob *asmBlob = blob.getHandle().getBlob();
+      ErrorOr<MemoryBlob &> mem = table.addBlob(
+          asmBlob->getData().size(), asmBlob->getDataAlignment(), hdl);
       if (mem.isError())
         return mem.takeError();
-      memcpy(mem->memory.get(), asmBlob->getData().data(),
-             asmBlob->getData().size());
+      if (!hdl)
+        memcpy(mem->getOwned(), asmBlob->getData().data(),
+               asmBlob->getData().size());
       map.blobs.push_back(&*mem);
     }
 
     // Now that all the blobs have been processed, map any pointer values.
     for (auto [blob, interned] : llvm::zip(space.getValue(), map.blobs)) {
       for (const M::MemoryBlob::PointerRegion &ptr : blob.getPointerRegions()) {
+        assert(interned->isOwned() && "const memory cannot have pointers");
         // Map the pointer to an interpreter address.
         int64_t addr = map.blobs[ptr.blobIndex]->baseAddr + ptr.blobOffset;
         // Write the address in memory.
         APInt addrInt(target.getDataLayout().getPointerBitWidth(), addr);
         llvm::StoreIntToMemory(addrInt,
-                               (uint8_t *)interned->memory.get() + ptr.offset,
+                               (uint8_t *)interned->getOwned() + ptr.offset,
                                target.getDataLayout().getPointerSize());
       }
     }

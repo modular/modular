@@ -2467,9 +2467,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         return failure();
       // Emit Closure structures necessary for instantiating an escaping
       // closure.
-      if (signature.isEscaping()) {
+      if (signature.isEscaping())
         emitClosureInstance(signature, shared, funcOp, decl.getLoc());
-      }
       decl.irValue = SBValue(b.create<CreateClosureOp>(
           parent.getLoc(), funcOp.getSignature(),
           ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));

@@ -135,6 +135,14 @@ kgen.generator @freed_memory() -> !pop.pointer<i16> {
   kgen.return %1 : !pop.pointer<i16>
 }
 
+kgen.generator @const_string(%arg0: !pop.pointer<i8>) -> !pop.struct<i8, pointer<i8>> {
+  %0 = pop.load %arg0 : !pop.pointer<i8>
+  %idx2 = index.constant 2
+  %1 = pop.offset %arg0[%idx2] : !pop.pointer<i8>
+  %2 = pop.struct.create(%0, %1) : !pop.struct<i8, pointer<i8>>
+  kgen.return %2 : !pop.struct<i8, pointer<i8>>
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -245,6 +253,12 @@ kgen.generator export @do_it() {
   // CHECK-NEXT: <#M.memref<[(freed_memory_concrete_mem, heap, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(:() -> !pop.pointer<i16> @freed_memory)>
 
+  // COM: `ord("hello world"[2]) -> 108`.
+  // CHECK-NEXT: <{ 108, #M.memref<[(string, const_global, [])], 0, 4> }>
+  kgen.param.constant: struct<i8, pointer<i8>> = <apply(
+    :(!pop.pointer<i8>) -> !pop.struct<i8, pointer<i8>> @const_string,
+    #M.memref<[(string, const_global, [])], 0, 2>)>
+
   kgen.return
 }
 
@@ -257,13 +271,15 @@ kgen.generator export @do_it() {
       mem: "0x20000000ADDEEFBE",
       stack: "0x20000000ADDE",
       some_ptr: "0x20000000EFBE",
-      pointer: "0x40000000000000000000000000F2052A01000000"
+      pointer: "0x40000000000000000000000000F2052A01000000",
+      string: "hello world"
       // CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
       // CHECK-NEXT: modify_stack_mem_concrete_mem: "0x200000000000"
-      // COM: 0x012A05F200 -> 5000000000, the base stack address
-      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem: "0x40000000000000000000000000F2052A01000000"
+      // COM: 0x77359400 -> 2000000000, the base stack address
+      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem: "0x4000000000000000000000000094357700000000"
       // CHECK-NEXT: return_pointer_to_pointer_concrete_mem_1: "0x20000000EFBE"
       // CHECK-NEXT: freed_memory_concrete_mem:
+      // CHECK-NEXT: string: "hello world"
     // CHECK-NEXT: }
     }
   }
