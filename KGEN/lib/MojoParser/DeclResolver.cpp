@@ -351,7 +351,13 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   // replacement is only known when the import decl is referenced (and thus
   // resolved), so we can't alias the import directly.
   ASTDecl *frontDecl = decls.front();
-  if (isa<UnresolvedImportOp>(*frontDecl)) {
+  if (auto importOp = dyn_cast<UnresolvedImportOp>(*frontDecl)) {
+    // If the import is overlapping with an existing declaration, let it slide.
+    // FIXME: This is assuming that the import would resolve to the same decl.
+    if (ArrayRef<ASTDecl *> decls = context.lookupInCurrentScope(name);
+        !decls.empty())
+      return success();
+
     ASTDecl &importDecl = addDecl(
         frontDecl->getIfOperation(), frontDecl->getLoc(), name, &context,
         frontDecl->getCursor(), frontDecl->getCursor(), /*indentation=*/-1);
