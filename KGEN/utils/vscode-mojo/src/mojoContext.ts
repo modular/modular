@@ -23,7 +23,6 @@ export class MOJOContext implements vscode.Disposable {
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   _outputChannel: vscode.OutputChannel|undefined;
-  launchLanguageServerSuspended: boolean = false;
 
   private getOutputChannel(): vscode.OutputChannel {
     return this._outputChannel!;
@@ -35,13 +34,13 @@ export class MOJOContext implements vscode.Disposable {
   async activate(outputChannel: vscode.OutputChannel,
                  launchLanguageServerSuspended: boolean = false) {
     this._outputChannel = outputChannel;
-    this.launchLanguageServerSuspended = launchLanguageServerSuspended;
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
     // every folder within the workspace.
     const startClientOnOpenDocument = async (document: vscode.TextDocument) => {
-      await this.getOrActivateLanguageClient(document.uri);
+      await this.getOrActivateLanguageClient(document.uri,
+                                             launchLanguageServerSuspended);
     };
     // Process any existing documents.
     for (const textDoc of vscode.workspace.textDocuments) {
@@ -69,7 +68,8 @@ export class MOJOContext implements vscode.Disposable {
   /**
    * Open or return a language server for the given uri and language.
    */
-  async getOrActivateLanguageClient(uri: vscode.Uri):
+  async getOrActivateLanguageClient(uri: vscode.Uri,
+                                    launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
     // Check the scheme of the uri.
     let validSchemes = [ 'file' ];
@@ -86,8 +86,9 @@ export class MOJOContext implements vscode.Disposable {
     // Get or create a client context for this folder.
     let client = this.workspaceClients.get(workspaceFolderStr);
     if (!client) {
-      client = await this.activateWorkspaceFolder(workspaceFolder,
-                                                  this.getOutputChannel());
+      client = await this.activateWorkspaceFolder(
+          workspaceFolder, this.getOutputChannel(),
+          launchLanguageServerSuspended);
       if (client) {
         this.workspaceClients.set(workspaceFolderStr, client);
       }
@@ -101,11 +102,12 @@ export class MOJOContext implements vscode.Disposable {
    */
   async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder|
                                 undefined,
-                                outputChannel: vscode.OutputChannel):
+                                outputChannel: vscode.OutputChannel,
+                                launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
     // Try to activate the language client.
-    const [server, serverPath] =
-        await this.startLanguageClient(workspaceFolder, outputChannel);
+    const [server, serverPath] = await this.startLanguageClient(
+        workspaceFolder, outputChannel, launchLanguageServerSuspended);
 
     // Watch for configuration changes on this folder.
     if (workspaceFolder)
@@ -120,7 +122,8 @@ export class MOJOContext implements vscode.Disposable {
    *  server path.
    */
   async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder|undefined,
-                            outputChannel: vscode.OutputChannel):
+                            outputChannel: vscode.OutputChannel,
+                            launchLanguageServerSuspended: boolean):
       Promise<[ vscodelc.LanguageClient | undefined, string ]> {
     const clientTitle = 'Mojo Language Client';
 
@@ -152,7 +155,7 @@ export class MOJOContext implements vscode.Disposable {
     }
 
     let args = [];
-    if (this.launchLanguageServerSuspended)
+    if (launchLanguageServerSuspended)
       args.push("--suspended");
 
     // Configure the server options.
