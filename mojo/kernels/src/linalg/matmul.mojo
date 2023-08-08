@@ -1652,10 +1652,21 @@ fn pack_b_ndbuffer[
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
 ):
-    """Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`."""
+    """
+    Perform matmul weight packing on the given input.
 
+    Performs the layout transformation on `b_input` expected by
+    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
+    `output_buffer`.
+
+    Parameters:
+        type: the data type of elements inside `b_input`
+
+    Args:
+        b_input: input buffer that contains the weight to be packed
+        output_buffer: output buffer to store the packed weight
+        out_chain: the to signal when writes to output buffer have finished
+    """
     pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
 
 
@@ -1667,11 +1678,21 @@ fn pack_transposed_b_ndbuffer[
     output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
     out_chain: OutputChainPtr,
 ):
-    """Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`.
+    """
+    Perform matmul weight packing on a transposed input.
 
-    This also un-transposes b_input as part of the layout transformation."""
+    Performs the layout transformation on `b_input` expected by
+    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
+    `output_buffer`. This also un-transposes `b_input`.
+
+    Parameters:
+        type: the data type of elements inside `b_input`
+
+    Args:
+        b_input: input buffer that contains the transposed weight to be packed
+        output_buffer: output buffer to store the packed weight
+        out_chain: the to signal when writes to output buffer have finished
+    """
     pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
 
 
