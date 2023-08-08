@@ -634,7 +634,7 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = (5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<@"$Object"::@object> borrow_in_mem)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<@"$Object"::@object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: [[B:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[B]], %a_0
@@ -1205,11 +1205,11 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %float4: {{.*}}(!pop.pointer<{{.*}}@"$Int"::@Int> byref) -> !lit.none
 # CHECK-SAME: %float5: {{.*}}(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) throws -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
 # CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$Builtin"::@"$Int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$Builtin"::@"$Int"::@Int> borrow) throws|vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$Builtin"::@"$Int"::@Int>) throws|vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
 # CHECK-SAME: %float8: {{.*}}<{{.*}}@"$Int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: {{.*}}@"$Int"::@Int = *(0,0)>> borrow) -> !lit.none
 # CHECK-SAME: %float9: {{.*}}<[] -> {{.*}}@"$Int"::@Int>() -> !lit.none
 # CHECK-SAME: %float10: {{.*}}<<{{.*}}@"$Int"::@Int, @"$expressions"::@ParamType<[[A]]: {{.*}}@"$Int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)> borrow) throws|async|packvararg|param_vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<@"$Builtin"::@"$Error"::@Error, !lit.none>
 # CHECK-SAME: %float12: {{.*}}<(!kgen.declref<{{.*}}@"$Int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<{{.*}}@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
   float0: fn(Int) -> Int,

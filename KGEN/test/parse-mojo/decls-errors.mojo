@@ -174,10 +174,11 @@ def top_level_fn(a: Int):
       return a
 
 
-# expected-note @+2 {{consider passing by reference instead}}
-# expected-error @+1 {{'def' requires argument type 'ThingWithStaticMethod' to be copyable, but it doesn't provide a '__copyinit__' method}}
 def use_non_copyable_type(a: ThingWithStaticMethod):
   pass
+
+def test_use_non_copyable_type(owned b: ThingWithStaticMethod):
+  use_non_copyable_type(b^)
 
 # Issue #14191
 # expected-error @+1 {{unexpected tokens after decorator, each need to be on their own line}}

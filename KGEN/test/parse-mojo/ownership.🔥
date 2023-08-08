@@ -1023,3 +1023,10 @@ fn optimizeCopyToMove():
    # CHECK-NEXT: [[TMP:%.*]] = pop.load %v3
    # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[TMP]])
    # CHECK-NEXT: kgen.param.constant: !lit.none
+
+
+# CHECK-LABEL: lit.func @"def_borrowed
+# CHECK-SAME: %a: !pop.pointer<@"$ownership"::@MemExample> borrow_in_mem
+def def_borrowed(borrowed a: MemExample) -> None:
+  # CHECK-NEXT: kgen.param.constant: !lit.none
+  pass
