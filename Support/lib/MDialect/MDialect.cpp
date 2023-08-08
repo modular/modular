@@ -10,38 +10,88 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallString.h"
 
 using namespace M;
 
 //===----------------------------------------------------------------------===//
-// MemoryBlob
+// DialectResourceManager
+//===----------------------------------------------------------------------===//
+
+MemoryHandle DialectResourceManager::declareResource(StringRef key) {
+  auto modifyFn = [this, key](llvm::StringMap<ResourceEntry> &resources) {
+    // Functor used to attempt insertion with a given name.
+    auto tryInsertion = [&](StringRef name) -> ResourceEntry * {
+      auto it = resources.try_emplace(name, ResourceEntry());
+      if (it.second) {
+        it.first->getValue().key = it.first->getKey();
+        return &it.first->second;
+      }
+      return nullptr;
+    };
+
+    // Try inserting with the name provided by the user.
+    if (ResourceEntry *entry = tryInsertion(key))
+      return MemoryHandle(entry, cast<MDialect>(getDialect()));
+
+    // If an entry already exists for the user provided name, tweak the name
+    // and re-attempt insertion until we find one that is unique.
+    llvm::SmallString<32> nameStorage(key);
+    nameStorage.push_back('_');
+    size_t nameCounter = 1;
+    do {
+      Twine(nameCounter++).toVector(nameStorage);
+
+      // Try inserting with the new name.
+      if (ResourceEntry *entry = tryInsertion(nameStorage))
+        return MemoryHandle(entry, cast<MDialect>(getDialect()));
+      nameStorage.resize(key.size() + 1);
+    } while (true);
+  };
+  return resources.modify(std::move(modifyFn));
+}
+
+void DialectResourceManager::updateResourceWithBlob(
+    StringRef key, mlir::AsmResourceBlob &&newBlob) {
+  resources.modify([key, blob = std::move(newBlob)](
+                       llvm::StringMap<ResourceEntry> &resources) mutable {
+    auto it = resources.find(key);
+    assert(it != resources.end() && "resource entry was not declared");
+    it->second.updateValue(ResourceKind::Blob, std::move(blob));
+  });
+}
+
+void DialectResourceManager::updateResourceWithString(StringRef key,
+                                                      StringRef value) {
+  resources.modify(
+      [key, value](llvm::StringMap<ResourceEntry> &resources) mutable {
+        auto it = resources.find(key);
+        assert(it != resources.end() && "resource entry was not declared");
+        it->second.updateValue(
+            ResourceKind::String,
+            mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+                {value.data(), value.size()}, kPreferredMemoryAlignment));
+      });
+}
+
+MemoryHandle DialectResourceManager::addBlobResource(StringRef baseName,
+                                                     void *memory, size_t size,
+                                                     size_t align) {
+  MemoryHandle hdl = declareResource(baseName);
+  hdl.getResource()->updateValue(
+      ResourceKind::Blob, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+                              {(char *)memory, size}, align));
+  return hdl;
+}
+
+//===----------------------------------------------------------------------===//
+// MemoryHandle
 //===----------------------------------------------------------------------===//
 
 DialectResourceManager &MemoryHandle::getManagerInterface(MLIRContext *ctx) {
   auto *dialect = ctx->getOrLoadDialect<MDialect>();
   assert(dialect && "MDialect is not registered");
   return *dialect->getRegisteredInterface<DialectResourceManager>();
-}
-
-MemoryHandle DialectResourceManager::addBlobResource(StringRef baseName,
-                                                     void *memory, size_t size,
-                                                     size_t align) {
-  return insert(baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-                              ArrayRef<char>((char *)memory, size), align));
-}
-
-void DialectResourceManager::provideStringResource(StringRef key,
-                                                   StringRef value) {
-  stringResources.modify([key](StringSet<> &strings) { strings.insert(key); });
-  // There are no alignment guarantees for strings. Store them using the system
-  // preferred alignment of the compiler.
-  update(key, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-                  {value.data(), value.size()}, kPreferredMemoryAlignment));
-}
-
-bool DialectResourceManager::isStringResource(StringRef key) {
-  return stringResources.read(
-      [key](const StringSet<> &strings) { return strings.contains(key); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -60,7 +110,7 @@ public:
   }
   FailureOr<mlir::AsmDialectResourceHandle>
   declareResource(StringRef key) const final {
-    return blobMgr.insert(key);
+    return blobMgr.declareResource(key);
   }
 
   /// Parse a dialect resource. It may be either a string or a blob. Both are
@@ -70,12 +120,12 @@ public:
       FailureOr<std::string> value = entry.parseAsString();
       if (failed(value))
         return failure();
-      blobMgr.provideStringResource(entry.getKey(), *value);
+      blobMgr.updateResourceWithString(entry.getKey(), std::move(*value));
     } else {
       FailureOr<mlir::AsmResourceBlob> value = entry.parseAsBlob();
       if (failed(value))
         return failure();
-      blobMgr.update(entry.getKey(), std::move(*value));
+      blobMgr.updateResourceWithBlob(entry.getKey(), std::move(*value));
     }
     return success();
   }
@@ -90,7 +140,8 @@ public:
       if (const auto *dialectHandle = dyn_cast<MemoryHandle>(&handle)) {
         if (const mlir::AsmResourceBlob *blob = dialectHandle->getBlob()) {
           StringRef key = dialectHandle->getKey();
-          if (blobMgr.isStringResource(key)) {
+          if (dialectHandle->getResource()->getKind() ==
+              DialectResourceManager::ResourceKind::String) {
             ArrayRef<char> data = blob->getData();
             provider.buildString(key, {data.data(), data.size()});
           } else {
