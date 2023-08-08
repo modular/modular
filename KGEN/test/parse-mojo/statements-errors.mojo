@@ -163,6 +163,15 @@ fn main():
     for key, item in my_list_no_next:
         pass
 
+# Issue #18599
+fn spurious_for_loop_variable_unknown_decl():
+  # expected-error @below {{'FloatLiteral' does not implement the '__iter__' method}}
+  for i in 1.0:
+    # Note that the bug in issue #18599 is that after the above error, another error
+    # will be spuriously raised about i not being bound.  So the real check in
+    # this test is that no further error is raised.
+    print(i)
+
 ##===----------------------------------------------------------------------===##
 # Raise
 ##===----------------------------------------------------------------------===##
