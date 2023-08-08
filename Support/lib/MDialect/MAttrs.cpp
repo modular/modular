@@ -1102,7 +1102,8 @@ struct FieldParser<MemoryBlob> {
       return failure();
     MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
                           .Case("stack", MemoryKind::Stack)
-                          .Case("heap", MemoryKind::Heap);
+                          .Case("heap", MemoryKind::Heap)
+                          .Case("const_global", MemoryKind::ConstGlobal);
     return MemoryBlob(*hdl, kind, std::move(pointerRegions));
   }
 };
@@ -1117,6 +1118,9 @@ static AsmPrinter &operator<<(AsmPrinter &p, const MemoryBlob &blob) {
     break;
   case MemoryKind::Heap:
     p << "heap";
+    break;
+  case MemoryKind::ConstGlobal:
+    p << "const_global";
     break;
   }
   p << ", [";
@@ -1157,6 +1161,11 @@ LogicalResult
 MemorySpaceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                         ArrayRef<MemoryBlob> blobs) {
   for (auto [i, blob] : llvm::enumerate(blobs)) {
+    if (blob.getKind() == MemoryKind::ConstGlobal &&
+        !blob.getPointerRegions().empty()) {
+      return emitError() << "const_global blob #" << i
+                         << " cannot have pointer regions";
+    }
     for (const MemoryBlob::PointerRegion &region : blob.getPointerRegions()) {
       if (region.blobIndex < 0 ||
           static_cast<size_t>(region.blobIndex) >= blobs.size()) {

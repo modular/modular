@@ -171,7 +171,7 @@ private:
   Shared<llvm::StringSet<>> stringResources;
 };
 
-enum class MemoryKind { Stack, Heap };
+enum class MemoryKind { Stack, Heap, ConstGlobal };
 
 class MemoryBlob {
 public:
