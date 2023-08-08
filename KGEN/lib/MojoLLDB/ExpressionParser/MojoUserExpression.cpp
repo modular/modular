@@ -12,6 +12,7 @@
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
+#include "Support/FileSystemExtras.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
@@ -23,6 +24,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/Support/CrashRecoveryContext.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 
 using namespace M;
@@ -388,10 +390,10 @@ def __lldb_python_serialize_symbols(symbols):
   serialized = []
   for symbol in symbols:
     serialized.append(' '.join(symbol))
-  return '\n'.join(serialized)
+  print('\n'.join(serialized))
 
 
-__lldb_python_symbols = __lldb_python_serialize_symbols(__lldb_python_extract_symbols())
+__lldb_python_serialize_symbols(__lldb_python_extract_symbols())
   )";
 
   std::string escapedPythonExpr;
@@ -401,6 +403,71 @@ __lldb_python_symbols = __lldb_python_serialize_symbols(__lldb_python_extract_sy
   return llvm::formatv(rawSymbolsExtractor, escapedPythonExpr).str();
 }
 
+/// Try to get a python executable from the PATH.
+static std::optional<std::string> getPythonExecutable() {
+  llvm::ErrorOr<std::string> pyOrErr = llvm::sys::findProgramByName("python3");
+  if (!pyOrErr)
+    pyOrErr = llvm::sys::findProgramByName("python");
+  if (pyOrErr)
+    return *pyOrErr;
+  return std::nullopt;
+}
+
+/// Execute the script that extracts the top-level variables from the provided
+/// python expression.
+static ErrorOr<std::string>
+executeVariableExtractorScript(StringRef pythonExpr) {
+  // Create a temporary file to capture the output of the `python` invocation
+  // and another one to store the extractor script.
+  ErrorOr<TempFile> outOrErr =
+      TempFile::create("mojo-repl-extractor-%%%%%%.out");
+  if (failed(outOrErr))
+    return Error("could not create the temporary file to capture the 'python "
+                 "variable extractor' output");
+  std::string pythonScriptPath = outOrErr->getPath().string();
+
+  ErrorOr<TempFile> scriptOrErr =
+      TempFile::create("mojo-repl-extractor-%%%%%%.py");
+  if (failed(scriptOrErr))
+    return Error("could not create the 'python variable extractor' script");
+  std::string pythonScriptOutputPath = scriptOrErr->getPath().string();
+
+  {
+    std::error_code ec;
+    llvm::raw_fd_stream fs(pythonScriptPath, ec);
+    if (ec)
+      return Error("could not set the contents of the 'python variable "
+                   "extractor' script");
+    fs << createSymbolExtractorPythonCode(pythonExpr);
+  }
+
+  std::optional<std::string> pythonExe = getPythonExecutable();
+  if (!pythonExe)
+    return Error("could not find 'python' executable to execute the 'python "
+                 "variable extractor'");
+
+  // Invoke `python`, directing its output to the file.
+  const std::optional<StringRef> redirects[] = {
+      /*stdin=*/"",
+      /*stdout=*/pythonScriptOutputPath,
+      /*stderr=*/"",
+  };
+
+  const StringRef args[] = {*pythonExe, pythonScriptPath};
+  if (llvm::sys::ExecuteAndWait(*pythonExe, args, /*Env=*/std::nullopt,
+                                redirects) != 0)
+    return Error("could not execute the 'python variable extractor'");
+
+  auto bufferOrErr = llvm::MemoryBuffer::getFile(pythonScriptOutputPath);
+  if (!bufferOrErr)
+    return Error(
+        "could not parse the output of the 'python variable extractor'");
+
+  // Here we access the result, which is a serialized description of each
+  // symbol to extract.
+  return bufferOrErr.get()->getBuffer().str();
+}
+
 /// Import the various top-level python symbols defined in the given python
 /// expression into the current mojo context by emitting binding code to the
 /// given stream.
@@ -408,41 +475,21 @@ static LogicalResult
 importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
                             StringRef moduleName, raw_ostream &mojoExprOS,
                             DiagnosticManager &diagnosticManager) {
-  // We extract the necessary python symbols using the python ast module, which
-  // requires us to use the LLDB python interpreter.
-  ScriptInterpreter *scriptInterpreter = debugger.GetScriptInterpreter(
-      /*can_create=*/true, lldb::eScriptLanguagePython);
-  if (!scriptInterpreter ||
-      scriptInterpreter->GetLanguage() != lldb::eScriptLanguagePython) {
-    diagnosticManager.PutString(lldb_private::eDiagnosticSeverityWarning,
-                                "persisting Python symbols requires LLDB to be "
-                                "built with Python scripting support.");
-    // We don't fail hard here because we can't expect all LLDB distributions to
-    // have python integration.
-    return success();
-  }
+  // We extract the necessary python symbols using the python ast module,
+  // which requires us to invoke python.
 
-  ExecuteScriptOptions excOptions =
-      ExecuteScriptOptions().SetEnableIO(true).SetSetLLDBGlobals(false);
+  ErrorOr<std::string> extractorOutputOr =
+      executeVariableExtractorScript(pythonExpr);
 
-  // We first execute the code that extracts the symbols we need. Accessing the
-  // result is done later.
-  scriptInterpreter->ExecuteMultipleLines(
-      createSymbolExtractorPythonCode(pythonExpr).c_str(), excOptions);
-
-  // Here we access the result, which is a serialized description of each symbol
-  // to extract.
-  char *symbolsStr = nullptr;
-  if (!scriptInterpreter->ExecuteOneLineWithReturn(
-          "__lldb_python_symbols",
-          ScriptInterpreter::eScriptReturnTypeCharStrOrNone, &symbolsStr,
-          excOptions)) {
-    diagnosticManager.PutString(lldb_private::eDiagnosticSeverityError,
-                                "Unable to extract Python symbols into Mojo.");
+  if (failed(extractorOutputOr)) {
+    diagnosticManager.PutString(eDiagnosticSeverityWarning,
+                                extractorOutputOr.getError());
     return failure();
   }
 
-  StringRef symbols(symbolsStr);
+  // Here we access the result, which is a serialized description of each
+  // symbol to extract.
+  StringRef symbols = extractorOutputOr.get();
 
   SmallVector<StringRef> symbolLines;
   symbols.split(symbolLines, '\n', /*MaxSplit=*/-1, /*keepEmpty=*/false);
