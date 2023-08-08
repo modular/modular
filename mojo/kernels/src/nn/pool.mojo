@@ -402,7 +402,8 @@ fn _pool_dispatcher[
     let pad_w = StaticIntTuple[2](0, 0)
 
     assert_param[
-        type == DType.float32, "Pool input / output type must be Float32"
+        type.is_floating_point(),
+        "Pool input / output type must be floating point",
     ]()
 
     let filter_shape = StaticIntTuple[2](filter[0].to_int(), filter[1].to_int())
