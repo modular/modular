@@ -75,9 +75,9 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
 
 std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
   auto getFromOp = [](Operation *op) -> std::optional<StringAttr> {
-    if (!op)
-      return std::nullopt;
-    return cast<ASTDeclInterface>(*op).getDeclName();
+    if (auto interface = dyn_cast_if_present<ASTDeclInterface>(op))
+      return interface.getDeclName();
+    return std::nullopt;
   };
 
   // We first try to get the name from the operation. Then we try to match the
@@ -127,9 +127,8 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName());
         })
-        .Default([](Operation &op) {
-          return cast<ASTDeclInterface>(op).getDeclName();
-        });
+        .Case([](ASTDeclInterface op) { return op.getDeclName(); })
+        .Default({});
   };
 
   // We first try to get the name from the operation. Then we try to match the
