@@ -222,72 +222,72 @@ fn MOGGExport():
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_intrinsic("bfloat16")
+@mogg_register("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
-@mogg_intrinsic("float16")
+@mogg_register("float16")
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
-@mogg_intrinsic("float32")
+@mogg_register("float32")
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
-@mogg_intrinsic("float64")
+@mogg_register("float64")
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
-@mogg_intrinsic("int8")
+@mogg_register("int8")
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
-@mogg_intrinsic("int16")
+@mogg_register("int16")
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
-@mogg_intrinsic("int32")
+@mogg_register("int32")
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
-@mogg_intrinsic("uint32")
+@mogg_register("uint32")
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
-@mogg_intrinsic("int64")
+@mogg_register("int64")
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
-@mogg_intrinsic("uint8")
+@mogg_register("uint8")
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
-@mogg_intrinsic("uint16")
+@mogg_register("uint16")
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
-@mogg_intrinsic("bool")
+@mogg_register("bool")
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
-@mogg_intrinsic("index")
+@mogg_register("index")
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@mogg_intrinsic("outChain")
+@mogg_register("outChain")
 fn OutputChainPtrDef(ty: OutputChainPtr) -> OutputChainPtr:
     return ty
 
@@ -585,6 +585,8 @@ fn simd_store[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.static.broadcast_to")
+@mogg_view_op
 @always_inline
 fn broadcast_to_tensor[
     type: DType,
@@ -734,6 +736,8 @@ fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
 
 
 # Call abs, needed as it has multiple overloads which can't be aliased
+@mogg_register("mo.abs")
+@mogg_elementwise
 @always_inline
 fn abs_wrapped[
     type: DType, simd_width: Int
@@ -789,6 +793,8 @@ fn argmin_wrapped[
 
 
 # Cast a SIMD value to a new SIMD value of different type.
+@mogg_register("mo.cast")
+@mogg_elementwise
 @always_inline
 fn cast[
     type: DType, new_type: DType, simd_width: Int
@@ -858,6 +864,8 @@ fn split[
 
 
 # Call pow, needed as it has multiple overloads which can't be aliased
+@mogg_register("mo.pow")
+@mogg_elementwise
 @always_inline
 fn pow_wrapped[
     type: DType, power_type: DType, simd_width: Int
@@ -874,6 +882,8 @@ fn pow_wrapped[
 # These need wrappers as we can't take an alias of the ambiguous overload.
 
 
+@mogg_register("mo.max")
+@mogg_elementwise
 @always_inline
 fn mogg_max[
     type: DType, simd_width: Int
@@ -883,6 +893,8 @@ fn mogg_max[
     return max(x, y)
 
 
+@mogg_register("mo.min")
+@mogg_elementwise
 @always_inline
 fn mogg_min[
     type: DType, simd_width: Int
@@ -1182,6 +1194,8 @@ fn reduce_mul[
 
 
 # Wrapper for slice here to include the `single_thread_blocking_override`.
+@mogg_register("mo.slice")
+@mogg_view_op
 @always_inline
 fn slice[
     type: DType,
@@ -1206,6 +1220,8 @@ fn slice[
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
+@mogg_register("mo.static.reshape")
+@mogg_view_op
 @always_inline
 fn reshape[
     rank: Int,
@@ -1315,6 +1331,8 @@ fn reshape_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.transpose")
+@mogg_view_op
 @always_inline
 fn transpose[
     rank: Int,
@@ -1660,6 +1678,8 @@ fn softmax[
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
+@mogg_register("mo.logsoftmax")
+@always_inline
 fn logsoftmax[
     rank: Int,
     type: DType,
@@ -1807,14 +1827,14 @@ fn conv[
 
 
 # Helper function to mark the output chain as ready in tests.
-@mogg_intrinsic("mark_output_chain_ready")
+@mogg_register("mark_output_chain_ready")
 @always_inline
 fn mark_output_chain_ready(out_chain: OutputChainPtr):
     out_chain.mark_ready()
 
 
 # Helper function to query buffer shapes for tests.
-@mogg_intrinsic("print_shape_info")
+@mogg_register("print_shape_info")
 fn print_buffer_info[
     type: DType, rank: Int
 ](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]):
