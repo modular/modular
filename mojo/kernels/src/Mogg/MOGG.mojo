@@ -58,7 +58,12 @@ from Math import (
     log1p,
 )
 from Limits import isinf, min_or_neginf, max_or_inf
-from Matmul import matmul_parallel_sync, pack_b_ndbuffer
+from Matmul import (
+    matmul_parallel_sync,
+    pack_b_ndbuffer,
+    pack_b_ndbuffer_impl,
+    pack_transposed_b_ndbuffer,
+)
 from BatchedMatmul import (
     batched_matmul_parallel_sync,
     get_trace_information as get_trace_information_batched_matmul,
@@ -149,7 +154,8 @@ fn MOGGExport():
     alias _isnan = isnan
     alias _log1p = log1p
     alias _logsoftmax = logsoftmax
-    alias _pack_b = pack_b_ndbuffer
+    alias _pack_b_ndbuffer = pack_b_ndbuffer
+    alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _max_pool_shape = pool_shape
