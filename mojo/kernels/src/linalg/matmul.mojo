@@ -1819,12 +1819,15 @@ struct BTileGenerator[
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
             let vnni_factor = 4 if config.use_vnni else 1
+            let tile_k = align_up(
+                self.tile_n_k[1], 4
+            ) if config.use_vnni else self.tile_n_k[1]
             let tile_shape_pack = DimList(
                 self.tile_n_k[0] // inner_size,
-                self.tile_n_k[1] // vnni_factor,
+                tile_k // vnni_factor,
                 inner_size * vnni_factor,
             )
-            let tile_k_idx = global_offset.K // self.tile_n_k[1]
+            let tile_k_idx = global_offset.K // tile_k
             let b_flat = self.b.flatten()
             let n_padded = self.b.dim[1]()
             let b_tile_view = NDBuffer[3, config.packed_shape, type](
@@ -1836,8 +1839,7 @@ struct BTileGenerator[
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(
-                    tile_k_idx * self.tile_n_k[1] * n_padded
-                    + global_offset.N * self.tile_n_k[1]
+                    tile_k_idx * tile_k * n_padded + global_offset.N * tile_k
                 ),
                 tile_shape_pack,
             )

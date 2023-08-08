@@ -28,16 +28,10 @@ from MatmulUtils import (
     is_critical_stride,
     PartitionHeuristic,
 )
+from Math import div_ceil, align_up, max, min
 from IO import print, print_no_newline
 
 alias alignment = 64
-
-alias a_type = DType.uint8
-alias b_type = DType.int8
-alias c_type = DType.int32
-
-alias transpose_b = False
-alias b_packed = False
 
 
 fn gemm_naive[
@@ -73,10 +67,24 @@ fn _get_tile_n_k[
         ](k, n)
 
 
-fn main():
-    alias m: Int = 257
-    alias n: Int = 1023
-    alias k: Int = 513
+fn test_matmul[
+    m: Int,
+    n: Int,
+    k: Int,
+    transpose_b: Bool,
+    b_packed: Bool,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+]():
+    alias config = search_mm_config[
+        a_type, b_type, c_type, True, is_critical_stride(k)
+    ]()
+    let tile_n_k = _get_tile_n_k[config, transpose_b](n, k)
+    let tile_n = tile_n_k[0]
+    let tile_k = align_up(tile_n_k[1], 4) if b_packed else tile_n_k[1]
+    let padded_n = div_ceil(n, tile_n) * tile_n if b_packed else n
+    let padded_k = div_ceil(k, tile_k) * tile_k if b_packed else k
 
     # k%4 != 0 can overread into unallocated memory and fault
     # 3 bytes of padding fixes this. See issue 18784
@@ -85,14 +93,16 @@ fn main():
         alignment, m * k + extra_bytes
     )
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
-    let bp_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
+    let bp_ptr = DTypePointer[b_type].aligned_alloc(
+        alignment, padded_k * padded_n
+    )
     let c0_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
     let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
 
     let a = NDBuffer[2, DimList.create_unknown[2](), a_type](a_ptr, Index(m, k))
     let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
     let bp = NDBuffer[2, DimList.create_unknown[2](), b_type](
-        bp_ptr, Index(k, n)
+        bp_ptr, Index(padded_k, padded_n)
     )
     let c = NDBuffer[2, DimList.create_unknown[2](), c_type](
         c0_ptr, Index(m, n)
@@ -138,11 +148,6 @@ fn main():
         m, n, k, 0, 1
     )
 
-    alias config = search_mm_config[
-        a_type, b_type, c_type, True, is_critical_stride(k)
-    ]()
-    let tile_n_k = _get_tile_n_k[config, transpose_b](n, k)
-
     if b_packed:
         pack_b[
             transpose_b,
@@ -154,8 +159,8 @@ fn main():
         ](
             bp,
             b,
-            tile_n_k[0],
-            tile_n_k[1],
+            tile_n,
+            tile_k,
         )
 
     _submatmul_sequential_sync[
@@ -178,3 +183,42 @@ fn main():
     print(errors)
     if errors != 0:
         print("\nMatrices don't agree!")
+
+    a_ptr.free()
+    b_ptr.free()
+    bp_ptr.free()
+    c0_ptr.free()
+    c1_ptr.free()
+
+
+fn test_matmul_vnni():
+    print("== test_matmul_vnni")
+    test_matmul[
+        257,
+        1023,
+        513,
+        False,  # transpose_b
+        False,  # b_packed
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+    ]()
+
+
+fn test_matmul_vnni_bpacked():
+    print("== test_matmul_vnni_bpacked")
+    test_matmul[
+        257,
+        1023,
+        513,
+        False,  # transpose_b
+        True,  # b_packed
+        DType.uint8,
+        DType.int8,
+        DType.int32,
+    ]()
+
+
+fn main():
+    test_matmul_vnni()
+    test_matmul_vnni_bpacked()
