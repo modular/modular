@@ -48,7 +48,7 @@ public:
     assert(!workItems.dequeue());
   }
 
-  void addTask(WorkItem &&workItem) override {
+  void addTask(WorkItem &&workItem, int taskId = -1) override {
     assert(workItem);
 #if MODULAR_PARANOID
     assert(state != kShutdown);

@@ -7,7 +7,6 @@
 // This is a multi-threaded work queue implementation.
 //
 //===----------------------------------------------------------------------===//
-
 #include "LLCL/Runtime/AsyncValue.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/WorkQueue.h"
@@ -22,7 +21,6 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
-
 #define DEBUG_TYPE "llcl"
 
 using namespace M;
@@ -212,8 +210,10 @@ struct WorkQueueThread {
   /// Work items on this list always take precedence over those in taskList and
   /// overflowTaskList.
   SmallVector<WorkItem, 6> localTaskList;
-
-  /// The lock-free queue of pending work items available for any worker to
+  /// Thread Local Queue of tasks processed according to taskId ordering.
+  /// This is like localTaskList but can have multiple producers.
+  LockFreeRingBuffer<WorkItem> affinityTaskList;
+  /// The lock-free queue of pending tasks available for any worker to
   /// process.
   ///
   /// Work items on this list always take precedence over those in
@@ -259,9 +259,9 @@ struct WorkQueueThread {
                   std::mutex &overflowMutex,
                   SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
                   size_t cpuID)
-      : sharedState(sharedState), taskList(taskList),
-        overflowMutex(overflowMutex), overflowTaskList(overflowTaskList),
-        workerID(workerID), cpuID(cpuID) {
+      : sharedState(sharedState), affinityTaskList(kTaskListSlotsPerThread),
+        taskList(taskList), overflowMutex(overflowMutex),
+        overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID) {
     if (sharedState.mainWillDonate && workerID == 0) {
       // We can leave workerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
@@ -285,6 +285,10 @@ struct WorkQueueThread {
     localTaskList.emplace_back(std::move(workItem));
   }
 
+  /// Schedules work on to the thread local queue of this worker.
+  bool addAffinityTask(WorkItem &work) {
+    return affinityTaskList.enqueue(work);
+  }
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
   void join() {
@@ -417,6 +421,9 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    StringRef sleepingLabel) {
   while (true) {
   KeepRunning:
+    // Stop immediately if there is nothing to do.
+    if (earlyStopPredicate())
+      return;
     // Prefer to run local work items as soon as they are available.
     // CAUTION: a work function may add to this list, and may even invoke
     // runItems recursively.
@@ -431,10 +438,11 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
       doWork</*IsWaiter=*/true>(std::move(workItem));
     }
-
-    if (earlyStopPredicate())
-      return;
-
+    // Check for tasks in local taskId affinitized queue.
+    if (auto workItem = affinityTaskList.dequeue()) {
+      doWork</*IsWaiter=*/false>(std::move(workItem));
+      goto KeepRunning;
+    }
     // In the normal case we happily pick up and do work.
     if (WorkItem workItem = taskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(workItem));
@@ -460,6 +468,11 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       while (!spinWaiter.wait()) {
         // If we ever succeed in finding work to do, go back to running like
         // normal.
+        if (auto work = affinityTaskList.dequeue()) {
+          std::move(spinning).record();
+          doWork</*IsWaiter=*/false>(std::move(work));
+          goto KeepRunning;
+        }
         if (WorkItem workItem = taskList.dequeue()) {
           std::move(spinning).record();
           doWork</*IsWaiter=*/false>(std::move(workItem));
@@ -497,10 +510,30 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       }
     }
 
-    // We've waited long enough for new work to show up, so yield the thread to
-    // the OS so we don't burn power and starve other tasks on the system.
-    sharedState.markSuspended(workerID);
+    // We've waited long enough for new work to show up, so check one last time
+    // and yield the thread to the OS so we don't burn power and starve other
+    // tasks on the system.
 
+    sharedState.markSuspended(workerID);
+    // Lets reason about ordering of markSuspended here and takeSuspended in
+    // addTask.
+    // T0(scheduler)                            T1(worker)
+    // if(takeSuspended())                      markSuspended()
+    // sema.post()                              sema.wait()
+    //
+    // Ordering 1: markSuspeneded() andThen takeSuspended().
+    // if sema.post() andThen sema.wait() T1 does not go to sleep.
+    // else T1 sleeps and wakes immediately.
+    //
+    // Ordering 2: takeSuspended() andThen markSuspended()
+    // T0 is not going to post semaphore, but the task is already
+    // enqueued. Run it now, unMark and go back to KeepRunning.
+
+    if (auto labelledTask = affinityTaskList.dequeue()) {
+      doWork</*IsWaiter=*/false>(std::move(labelledTask));
+      sharedState.takeSuspendedThread(workerID);
+      goto KeepRunning;
+    }
     // Double check the fast predicate after marking ourselves as suspended
     // (which only matters for await()).  Await won't signal the waiter unless
     // it sees it at the right time.
@@ -546,7 +579,7 @@ public:
 
   void shutdown() override;
 
-  void addTask(WorkItem &&workItem) override;
+  void addTask(WorkItem &&workItem, int taskId = -1) override;
 
   void addLocalTask(WorkItem &&workItem) override;
 
@@ -721,7 +754,7 @@ void ThreadPoolWorkQueue::shutdown() {
 #endif
 }
 
-void ThreadPoolWorkQueue::addTask(WorkItem &&workItem) {
+void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
   assert(workItem);
 #if MODULAR_PARANOID
   // This is not a true interlock, but will at least catch obvious
@@ -736,6 +769,14 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem) {
   }
 #endif
 
+  if (taskId >= 0) {
+    auto workThread = getWorkQueueThread(taskId);
+    if (workThread->addAffinityTask(workItem)) {
+      if (sharedState.takeSuspendedThread(taskId))
+        workThread->sema.post();
+      return;
+    }
+  }
   // Try to add this work to the lock-free queue.
   if (taskList.enqueue(workItem)) {
     // If there are any suspended workers, kick one of them now to make sure
