@@ -12,11 +12,13 @@
 #include "Support/MDialect/MAttrInterfaces.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
+#include "Support/Threading/Shared.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/TargetParser/Triple.h"
 
 namespace M {
@@ -144,11 +146,29 @@ public:
   static DialectResourceManager &getManagerInterface(MLIRContext *ctx);
 };
 
+/// The IR resource manager for MDialect. It manages blob resource and tracks
+/// which are pure string resources. This class may be accessed in a
+/// multi-threaded context.
 class DialectResourceManager
     : public mlir::ResourceBlobManagerDialectInterfaceBase<MemoryHandle> {
 public:
   using ResourceBlobManagerDialectInterfaceBase::
       ResourceBlobManagerDialectInterfaceBase;
+
+  /// Copy memory into a blob resource in the manager. It is heap-allocated with
+  /// an alignment.
+  MemoryHandle addBlobResource(StringRef baseName, void *memory, size_t size,
+                               size_t align);
+
+  /// Copy memory into a string resource in the manager. It is heap-allocated.
+  void provideStringResource(StringRef key, StringRef value);
+
+  /// Return true if the reference handle is a string resource.
+  bool isStringResource(StringRef key);
+
+private:
+  /// Resources whose keys appear in this set are string-valued resources.
+  Shared<llvm::StringSet<>> stringResources;
 };
 
 enum class MemoryKind { Stack, Heap };

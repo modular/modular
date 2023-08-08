@@ -36,14 +36,16 @@
 // CHECK: #M<multiline["a", "b", "c"]>
 "M"() {a = #M<multiline["a", "b", "c"]>} : () -> ()
 
-// CHECK: #M.memref<[(my_blob, heap, [])], 0, 24> : memref<2xi32>
-"M"() {a = #M.memref<[(my_blob, heap, [])], 0, 24> : memref<2xi32>} : () -> ()
+// CHECK: #M.memref<[(my_blob, heap, []), (string_blob, heap, [])], 0, 24> : memref<2xi32>
+"M"() {a = #M.memref<[(my_blob, heap, []), (string_blob, heap, [])], 0, 24> : memref<2xi32>} : () -> ()
 
 {-#
   dialect_resources: {
     M: {
       // CHECK: my_blob: "0x80
-      my_blob: "0x80000000FFFEFDFC"
+      my_blob: "0x80000000FFFEFDFC",
+      // CHECK: string_blob: "hello world"
+      string_blob: "hello world"
     }
   }
 #-}

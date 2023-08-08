@@ -289,10 +289,8 @@ InterpreterState::externalizeMemory(Region &entry,
         if (!blob.memory)
           continue;
 
-        MemoryHandle hdl = blobMgr.insert(
-            baseName, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-                          ArrayRef<char>((char *)blob.memory.get(), blob.size),
-                          blob.align));
+        MemoryHandle hdl = blobMgr.addBlobResource(baseName, blob.memory.get(),
+                                                   blob.size, blob.align);
         SmallVector<M::MemoryBlob::PointerRegion> pointerRegions;
         if (blob.pointerRegions) {
           int index = -1;
