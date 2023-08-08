@@ -1366,9 +1366,12 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
     else if (arg.vararg == VarArgKind::KWVarArg)
       effects = effects | FnEffects::KWVararg;
 
-    // If no convention was explicitly specified, provide a default.
-    if (arg.convention == ParsedArgument::kConventionUnspec)
-      arg.convention = ParsedArgument::kConventionBorrowed;
+    // If no convention was explicitly specified, provide a default.  We default
+    // to borrowed in an 'fn' or owned in a 'def'.
+    if (arg.convention == ParsedArgument::kConventionUnspec) {
+      arg.convention = isDef ? ParsedArgument::kConventionOwned
+                             : ParsedArgument::kConventionBorrowed;
+    }
 
     // Emit default argument values.
     if (const ExprNode *initExpr = arg.initExpr) {
@@ -2693,33 +2696,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         argIRValue = MBValue(bbArg);
       else
         argIRValue = SBValue(bbArg);
-      if (!funcOp.getIsDef())
-        break;
-
-      // In a `def`, we create a mutable var.decl lvalue to allow reassignment.
-      // Figure out how to model the input value.
-      CValue srcVal;
-      if (convention == ValueInputConvention::BorrowedInMem)
-        srcVal = MBValue(bbArg);
-      else
-        srcVal = SBValue(bbArg);
-
-      // Check that the value is copyable - if not we want to emit a specific
-      // error.
-      if (!srcVal.getRValueType().isCopyable(argDecl.getLoc(), shared)) {
-        auto diag =
-            emitError(argDecl.getLoc())
-            << "'def' requires argument type " << srcVal.getRValueType()
-            << " to be copyable, but it doesn't provide a '__copyinit__' "
-               "method";
-        diag.attachNote(argDecl.getLoc())
-            << "consider passing by reference instead"
-            << FixIt::insertBeforeToken(argDecl.getLoc(), "inout ");
-        break;
-      }
-
-      argIRValue = makeArgLValueVarSlot(srcVal, argName, decl, builder,
-                                        argDecl.getLoc(), shared);
       break;
     }
 
