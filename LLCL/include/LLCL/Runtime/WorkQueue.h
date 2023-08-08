@@ -23,6 +23,11 @@
 #include <chrono>
 #include <memory>
 
+/// This is the default taskId for all tasks not originating from
+/// async_parallelize. We set it to -1 to indicate that the task
+/// should enqueue to Global queue.
+constexpr int kDefaultTaskId = -1;
+
 namespace M::LLCL {
 
 //===----------------------------------------------------------------------===//
@@ -128,7 +133,13 @@ public:
   /// Thread-safe. The work item will NEVER be run immediately. There is no
   /// intrinsic guarantee of fairness, and the caller is responsible for
   /// using AsyncValues or other mechanisms to prevent task starvation.
-  virtual void addTask(WorkItem &&workItem) = 0;
+  /// taskId, when >=0 indicates the thread local ring buffer to which
+  /// this task needs to be enqueued. taskId = kDefaultTaskId indicates that
+  /// the task will be pushed to the common taskList shared by all workers.
+  /// In the current implementation, taskId gets a non-negative value only
+  /// from `async_parallelize` from mojo. Every where else it should be
+  /// kDefaultTaskId.
+  virtual void addTask(WorkItem &&work, int taskId = kDefaultTaskId) = 0;
 
   /// Enqueue a work item for later execution, but on the current thread where
   /// possible. The work item will NEVER be run immediately.

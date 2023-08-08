@@ -234,8 +234,9 @@ KGEN_CompilerRT_LLCL_OutputChainPtr_Trace(LLCLOutputChainRef outChain,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_OutputChainPtr_ExecuteAsTask(LLCLOutputChainRef outChain,
                                                   void (*resume)(int8_t *),
-                                                  int8_t *hdl, size_t taskId) {
-  unwrap(outChain).executeAsTask(resume, hdl, taskId);
+                                                  int8_t *hdl, size_t taskId,
+                                                  bool useGlobalQueue) {
+  unwrap(outChain).executeAsTask(resume, hdl, taskId, useGlobalQueue);
 }
 
 /// Indicates the caller's task is done for the purposes of task overhang

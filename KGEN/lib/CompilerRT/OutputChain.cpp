@@ -113,7 +113,7 @@ void OutputChain::complete() {
 }
 
 void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
-                                size_t taskId) {
+                                size_t taskId, bool useGlobalQueue) {
   // If it is present, copy the profiling entry for use by the task.
   MojoProfilerEntry taskProfilerEntry =
       prototypeProfilerEntry.withNameSuffix(".task").withDetailSuffix(
@@ -132,7 +132,8 @@ void OutputChain::executeAsTask(void (*resume)(int8_t *), int8_t *hdl,
         // in the task body has been acted on.
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
 #endif
-      });
+      },
+      useGlobalQueue ? -1 : (int)taskId);
 }
 
 void OutputChain::taskIsDone() {

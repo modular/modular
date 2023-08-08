@@ -174,8 +174,9 @@ struct OutputChain {
   void recordProfilerEntry() &&;
 
   /// Begin executing the Mojo coroutine pointed to by hdl using the resumption
-  /// pointed to by resume.
-  void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId);
+  /// pointer to by resume.
+  void executeAsTask(void (*resume)(int8_t *), int8_t *hdl, size_t taskId,
+                     bool useGlobalQueue);
 
   /// Indicates the current task is done for the purposes of task overhang
   /// detections. Only needed for tasks which do not otherwise call markReady()
