@@ -1589,7 +1589,7 @@ fn pack_b[
 
 # TODO(16867): Merge this with pack_b.
 @always_inline
-fn pack_b_ndbuffer[
+fn pack_b_ndbuffer_impl[
     type: DType,
     transposed: Bool,
 ](
@@ -1642,6 +1642,37 @@ fn pack_b_ndbuffer[
         )
 
     out_chain.mark_ready()
+
+
+@always_inline
+fn pack_b_ndbuffer[
+    type: DType
+](
+    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+    """Performs the layout transformation on `b_input` expected by
+    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
+    `output_buffer`."""
+
+    pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
+
+
+@always_inline
+fn pack_transposed_b_ndbuffer[
+    type: DType
+](
+    b_input: NDBuffer[2, DimList.create_unknown[2](), type],
+    output_buffer: NDBuffer[2, DimList.create_unknown[2](), type],
+    out_chain: OutputChainPtr,
+):
+    """Performs the layout transformation on `b_input` expected by
+    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
+    `output_buffer`.
+
+    This also un-transposes b_input as part of the layout transformation."""
+    pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
 
 
 @value
