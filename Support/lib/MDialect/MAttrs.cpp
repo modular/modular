@@ -1073,16 +1073,6 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//
-// MemoryBlob
-//===----------------------------------------------------------------------===//
-
-DialectResourceManager &MemoryHandle::getManagerInterface(MLIRContext *ctx) {
-  auto *dialect = ctx->getOrLoadDialect<MDialect>();
-  assert(dialect && "MDialect is not registered");
-  return *dialect->getRegisteredInterface<DialectResourceManager>();
-}
-
-//===----------------------------------------------------------------------===//
 // MemorySpaceAttr
 //===----------------------------------------------------------------------===//
 
