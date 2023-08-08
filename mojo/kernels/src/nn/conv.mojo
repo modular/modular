@@ -248,20 +248,19 @@ struct Naive2dConvolution[
                     # Iterate on channels dimension.
                     for c_idx in range(self.input_shape.C):
                         # Accumulate product of input data filter data.
-                        value += (
-                            self.input[
-                                output_idx[0],  # N
-                                c_idx,  # C
-                                input_image_index[0],  # H
-                                input_image_index[1],  # W
-                            ]
-                            * self.filter[
-                                output_idx[1],
-                                c_idx,
-                                r_idx,
-                                s_idx,  # F  # C  # R  # S
-                            ]
-                        )
+                        let input_val = self.input[
+                            output_idx[0],  # N
+                            c_idx,  # C
+                            input_image_index[0],  # H
+                            input_image_index[1],  # W
+                        ]
+                        let filter_val = self.filter[
+                            output_idx[1],
+                            c_idx,
+                            r_idx,
+                            s_idx,  # F  # C  # R  # S
+                        ]
+                        value += input_val * filter_val
 
         # Store the computed output at the given output position..
         self.output[
@@ -2715,7 +2714,6 @@ struct ConvDirectNHWC[
             f_tile_iteration,
         ](
             self.partition_offsets[2],
-            # self.partition_offsets[2] + self.partition_sizes[2],
             f_round_by_simd,
             VariadicList[Int](
                 self.cf_tile_size[1], micro_kernel_f_size, simd_size
@@ -2723,9 +2721,15 @@ struct ConvDirectNHWC[
             simd_size,
         )
 
-        # If this is the last partition in F is not multiple of simd_size
+        # If this is the last partition in F and it's not a multiple of simd_size.
+        # The partition is aligned by micro_kernel_f_size, so only the last
+        # partition is possible to have residual.
         let residual = self.conv_shape.f - f_round_by_simd
-        if 0 < residual < simd_size:
+        if (
+            self.partition_offsets[2] + self.partition_sizes[2]
+            == self.conv_shape.f
+            and residual > 0
+        ):
 
             @parameter
             if padded:
