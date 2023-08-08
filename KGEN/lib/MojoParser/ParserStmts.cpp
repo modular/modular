@@ -32,6 +32,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <filesystem>
@@ -73,10 +74,18 @@ struct StmtParser : public ParserBase {
   void pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard);
 
   /// A local decl put in a scope when entering a new scope.
+  /// The astDeclCallback field is called after constructing an ASTDecl.
   struct ScopeDecl {
     DeclIRValue value;
     SMLoc loc;
     StringRef name;
+    void (*astDeclCallback)(ASTDecl &decl);
+    ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name)
+        : value(value), loc(loc), name(name), astDeclCallback(nullptr) {}
+    ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name,
+              void (*astDeclCallback)(ASTDecl &decl))
+        : value(value), loc(loc), name(name), astDeclCallback(astDeclCallback) {
+    }
   };
 
   // Expression emission.
@@ -237,8 +246,10 @@ ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
 
   // Add the scope variables.
   for (const ScopeDecl &decl : decls) {
-    getDeclResolver().addFullyResolvedDecl(decl.value, decl.name, decl.loc,
-                                           curDeclScope);
+    ASTDecl &astDecl = getDeclResolver().addFullyResolvedDecl(
+        decl.value, decl.name, decl.loc, curDeclScope);
+    if (decl.astDeclCallback)
+      decl.astDeclCallback(astDecl);
   }
 
   // Forward to the normal suite parse method.
@@ -863,6 +874,23 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
+  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
+  auto varDeclOp = builder.create<VarLetDeclOp>(
+      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())), target,
+      /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
+
+  // If there is a failure before we parse the for loop body, we still
+  // want to call the parser on it so that it builds an ASTDecl node
+  // and adds the for loop VarLetDecl to the lookup path.  Otherwise,
+  // we will get spurious “use of unknown declaration” errors on it
+  // besides whatever error is raised while processing the loop
+  // header.
+  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
+    std::ignore = parseLocalScopeSuite(
+        curIndent, ScopeDecl{&*varDeclOp, targetLoc, target,
+                             [](ASTDecl &d) { d.hasReferenceError = true; }});
+  });
+
   // retrieve the iterator object from the sequence expression
   auto tmpEmitter = getEmitter();
   ASTExprAnd<AnyValue> loadedSeq = {
@@ -878,6 +906,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert, seqExp)) {
     rangeDest.resetForError();
+    varDeclOp.getResult().setType(
+        POP::PointerType::get(shared.getTypeCheckErrorType()));
     return {};
   }
 
@@ -895,9 +925,11 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
       getEmitter().emitSRValue({currentLength, seqExp}, EC_ForIterator);
   if (!lengthSRVal)
     return {};
+
   SRValue popLength = getEmitter().emitBoxedIntAsPopScalar(lengthSRVal, seqExp);
   if (!popLength)
     return {};
+
   Value pop_zero = builder.create<POP::CastFromBuiltinOp>(
       translateLocation(seqExp->getLoc()),
       POP::SIMDType::get(builder.getContext(), 1,
@@ -921,12 +953,6 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // Create the body. Add Target element to the continue block by calling next
   // method. Emit the result into an implicitly declared variable at the current
   // scope.
-  builder.setInsertionPoint(loopOp);
-  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  auto varDeclOp = builder.create<VarLetDeclOp>(
-      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())), target,
-      /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
-
   builder.setInsertionPointAfter(condOp);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__next__",
@@ -936,6 +962,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
   }
 
+  avoidDroppingDeclOnFail.release();
   if (failed(parseLocalScopeSuite(curIndent,
                                   ScopeDecl{&*varDeclOp, targetLoc, target})))
     return failure();
