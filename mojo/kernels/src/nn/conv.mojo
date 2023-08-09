@@ -3582,25 +3582,75 @@ struct ConvDirectNHWC[
 # ===----------------------------------------------------------------------=== #
 
 
+fn pack_filter_shape_impl[
+    filter_type: DType
+](R: Int, S: Int, C: Int, F: Int) -> StaticIntTuple[5]:
+    """
+    Compute the shape of packed filter. The packed layout is FRSCf.
+    shape_ref should be allocated with size 5 outside this kernel.
+
+    Args:
+        R, S, C, F - original filter dimensions
+
+    Returns:
+        The output shape.
+    """
+    alias simd_size = simdwidthof[filter_type]()
+    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+    var output_shape = StaticIntTuple[5]()
+    output_shape[0] = div_ceil(F, micro_kernel_f_size)
+    output_shape[1] = R
+    output_shape[2] = S
+    output_shape[3] = C
+    output_shape[4] = micro_kernel_f_size
+
+    return output_shape
+
+
+@always_inline
+fn pack_conv_filter_shape[
+    filter_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    filter_buf: NDBuffer[4, DimList.create_unknown[4](), filter_type]
+) -> StaticIntTuple[5]:
+    """
+    Compute the output shape of convolution filter packing.
+
+    Parameters:
+        filter_type: Type of the filter.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        filter_buf: The filter to be packed.
+
+    Returns:
+        The output shape.
+    """
+    # ASSUME input has layout RSCF
+    let R = filter_buf.dim(0)
+    let S = filter_buf.dim(1)
+    let C = filter_buf.dim(2)
+    let F = filter_buf.dim(3)
+    return pack_filter_shape_impl[filter_type](R, S, C, F)
+
+
 fn get_packed_filter_shape[
     type: DType
 ](R: Int, S: Int, C: Int, F: Int, inout shape_ref: DynamicRankBuffer):
     """Compute the shape of packed filter. The packed layout is FRSCf.
     shape_ref should be allocated with size 5 outside this kernel.
     """
-    alias simd_size = simdwidthof[type]()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
-    alias micro_kernel_f_size = micro_kernel_width * simd_size
+    let output_shape = pack_filter_shape_impl[type](R, S, C, F)
 
     @always_inline
     @parameter
     fn dispatch_type[int_type: DType]():
         let shape = shape_ref.to_ndbuffer[1, int_type]()
-        shape[0] = div_ceil(F, micro_kernel_f_size)
-        shape[1] = R
-        shape[2] = S
-        shape[3] = C
-        shape[4] = micro_kernel_f_size
+        for axis in range(output_shape.__len__()):
+            shape[axis] = output_shape[axis]
 
     shape_ref.type.dispatch_integral[dispatch_type]()
 
@@ -3701,6 +3751,28 @@ fn pack_filter[
         memset_zero[type](
             packed_filter.data.offset(filter_size_roundup), remaining
         )
+
+
+@always_inline
+fn pack_conv_filter[
+    type: DType,
+](
+    filter: NDBuffer[4, DimList.create_unknown[4](), type],
+    packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
+    out_chain: OutputChainPtr,
+):
+    """This packs the filter form RSCF to FRSCf.
+    Args:
+        R, S, C, F - original filter dimensions
+        filter: filter in RSCF layout.
+        packed_filter: packed filter in FRScf layout. Here,
+            F       - the index of continuous segments in micro kernel
+            R, S, C - original R, S, C
+            f       - the index within a continuous segments
+        out_chain: chain to signal when writes to `packed_filter` have finished
+    """
+    pack_filter(filter, packed_filter)
+    out_chain.mark_ready()
 
 
 @always_inline
