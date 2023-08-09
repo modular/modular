@@ -27,6 +27,11 @@ using namespace M;
 int main(int argc, char *argv[]) {
   KGEN::KGENCommonOptions clOptions;
 
+  cl::opt<bool> disableParserCaching{
+      "mojo-disable-parser-caching",
+      cl::desc("Disable caching when parsing the input Mojo file."),
+      cl::init(false)};
+
   cl::opt<bool> validateDocStrings{
       "mojo-doc-validate",
       cl::desc("Validate doc strings in the input Mojo file."),
@@ -50,6 +55,8 @@ int main(int argc, char *argv[]) {
         config.useMLIRDiagnostics = true;
         config.validateDocStrings = validateDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
+        if (disableParserCaching)
+          config.moduleCachingLevel = MojoParserConfig::kCacheNone;
         return importMojoFile(sourceMgr, config, ts);
       });
 
