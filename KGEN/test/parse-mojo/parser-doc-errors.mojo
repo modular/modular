@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# FIXME(18903): Ensure the cache is populated.
+# RUN: kgen-translate -import-mojo -o /dev/null %s
 # RUN: kgen-translate -import-mojo -o /dev/null -mojo-doc-validate -verify-diagnostics %s
 
 
