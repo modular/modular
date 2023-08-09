@@ -79,6 +79,7 @@
 // CHECK-DAG: !array2 = !debuginfo.array<4 x !vector2>
 // CHECK-DAG: !member23 = !debuginfo.member<m22: !array>
 // CHECK-DAG: !member24 = !debuginfo.member<m0: !ptr>
+// CHECK-DAG: !ptr2 = !debuginfo.ptr<!subroutine1 {sizeInBits = 64, alignInBits = 64}>
 // CHECK-DAG: !array3 = !debuginfo.array<3 x !array1>
 // CHECK-DAG: !array4 = !debuginfo.array<5 x !array2>
 // CHECK-DAG: !member25 = !debuginfo.member<m1: !array2>
@@ -88,7 +89,7 @@
 // CHECK-DAG: !struct1 = !debuginfo.struct<struct(!member24, !member25)>
 // CHECK-DAG: !member27 = !debuginfo.member<m2: !struct1>
 // CHECK-DAG: !struct2 = !debuginfo.struct<struct(!member22, !member26, !member27)>
-// CHECK-DAG: !subroutine2 = !debuginfo.subroutine<(!array5, !subroutine, !subroutine1, !struct, !ptr, !ptr1, !basic, !vector1, !struct2) -> (): DW_CC_normal>
+// CHECK-DAG: !subroutine2 = !debuginfo.subroutine<(!array5, !subroutine, !ptr2, !struct, !ptr, !ptr1, !basic, !vector1, !struct2) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(!debuginfo.unresolved<!arrayTest>,
                                !debuginfo.unresolved<!closureTest>,
