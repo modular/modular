@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
+
 from Arange import arange, arange_shape
 from Buffer import NDBuffer, Buffer
 from DType import DType
