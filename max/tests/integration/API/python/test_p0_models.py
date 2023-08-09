@@ -97,7 +97,7 @@ def setup_environment(package_library_path: Path, package_binary_path: Path):
             del os.environ[key]
 
     if platform.system() == "Windows":
-        os.environ["PATH"] = f"{os.environ['Path']};{package_binary_path}"
+        os.environ["Path"] = f"{os.environ['Path']};{package_binary_path}"
     else:
         os.environ["PATH"] = f"{os.environ['PATH']}:{package_binary_path}"
 
@@ -157,6 +157,8 @@ def main(package_path: Path):
             print(f"Success: {success}")
             print(f"Failure: {failure}")
             print(f"Success Rate: {100 * success / total }%")
+            if failure > 0:
+                sys.exit(1)
 
 
 if __name__ == "__main__":
