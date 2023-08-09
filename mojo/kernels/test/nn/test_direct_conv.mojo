@@ -168,6 +168,7 @@ fn test[
             DimList.create_unknown[4](),
             type,
             True,
+            False,
         ].run(
             output,
             input,
@@ -182,6 +183,7 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
             type,
+            False,
             False,
         ].run(output, input, filter, conv_shape, direct_conv_chain.borrow())
     direct_conv_chain.wait()

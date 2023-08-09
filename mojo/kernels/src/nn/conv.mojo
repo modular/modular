@@ -2427,6 +2427,15 @@ struct ConvIm2ColNHWC[
 # Direct Convolution                                                           #
 # ===----------------------------------------------------------------------=== #
 
+alias elementwise_epilogue_type = fn (Int, Int, Int, Int) capturing -> None
+
+
+@closure
+fn direct_null_elementwise_epilogue(
+    point: Int, num_points: Int, f_offset: Int, f_size: Int
+):
+    pass
+
 
 @value
 struct ConvDirectNHWC[
@@ -2436,6 +2445,7 @@ struct ConvDirectNHWC[
     shape_output: DimList,
     type: DType,
     filter_packed: Bool,
+    elementwise_epilogue_enabled: Bool,
 ]:
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
@@ -2463,12 +2473,32 @@ struct ConvDirectNHWC[
 
     var cf_tile_size: StaticIntTuple[2]
 
+    var elementwise_epilogue_fn: elementwise_epilogue_type
+
     @staticmethod
     fn run(
         output: NDBuffer[4, shape_output, type],
         input: NDBuffer[4, shape_input, type],
         filter: NDBuffer[filter_rank, shape_filter, type],
         conv_shape: ConvShape,
+        out_chain: OutputChainPtr,
+    ):
+        Self.run(
+            output,
+            input,
+            filter,
+            conv_shape,
+            direct_null_elementwise_epilogue,
+            out_chain,
+        )
+
+    @staticmethod
+    fn run(
+        output: NDBuffer[4, shape_output, type],
+        input: NDBuffer[4, shape_input, type],
+        filter: NDBuffer[filter_rank, shape_filter, type],
+        conv_shape: ConvShape,
+        elementwise_epilogue_fn: elementwise_epilogue_type,
         out_chain: OutputChainPtr,
     ):
         """Run with no padding (valid padding in TF). The micro kernel can include
@@ -2557,6 +2587,7 @@ struct ConvDirectNHWC[
                     shape_output,
                     type,
                     filter_packed,
+                    elementwise_epilogue_enabled,
                 ](
                     task_output,
                     input,
@@ -2565,6 +2596,7 @@ struct ConvDirectNHWC[
                     Index(nhowo_range[0], c_range[0], f_range[0], 0),
                     Index(nhowo_range[1], c_range[1], f_range[1], 0),
                     task_tile_size,
+                    elementwise_epilogue_fn,
                 )
                 instance.direct_conv()
             # There are padding layers.
@@ -2605,6 +2637,7 @@ struct ConvDirectNHWC[
                     shape_output,
                     type,
                     filter_packed,
+                    elementwise_epilogue_enabled,
                 ](
                     task_output,
                     input,
@@ -2613,6 +2646,7 @@ struct ConvDirectNHWC[
                     Index(n_range[0], c_range[0], f_range[0], ho_range[0]),
                     Index(n_range[1], c_range[1], f_range[1], ho_range[1]),
                     task_tile_size,
+                    elementwise_epilogue_fn,
                 )
                 instance._n_loop()
 
@@ -2628,29 +2662,36 @@ struct ConvDirectNHWC[
             @always_inline
             fn reduce_task(tid: Int):
                 # Use all threads in reduction.
-                let reduce_range = partition_work(
-                    tid, num_threads, output_size, simd_size
-                )
+                let nhowo = conv_shape.n * conv_shape.out_w * conv_shape.out_h
+                let reduce_range = partition_work(tid, num_threads, nhowo, 1)
 
                 @parameter
                 @always_inline
-                fn sum[width: Int](idx: Int):
-                    let tid_output_offset = reduce_range[0] + idx
+                fn sum[width: Int](offset: Int):
+                    let tid_output_offset = reduce_range[
+                        0
+                    ] * conv_shape.f + offset
                     var vec = output_scratch.data.offset(
                         tid_output_offset
-                    ).simd_load[simd_size]()
+                    ).simd_load[width]()
                     # The number of partitions here is typically small.
                     # There may not be much benefit from unrolling the reduction axis.
                     # Only unroll the last dimension.
                     for i in range(1, num_partitions[1]):
                         vec += output_scratch.data.offset(
                             tid_output_offset + i * output_size
-                        ).simd_load[simd_size]()
-                    output.data.offset(tid_output_offset).simd_store[simd_size](
-                        vec
-                    )
+                        ).simd_load[width]()
+                    output.data.offset(tid_output_offset).simd_store[width](vec)
 
-                vectorize_unroll[simd_size, 4, sum](reduce_range[1])
+                vectorize_unroll[simd_size, 4, sum](
+                    reduce_range[1] * conv_shape.f
+                )
+
+                @parameter
+                if elementwise_epilogue_enabled:
+                    elementwise_epilogue_fn(
+                        reduce_range[0], reduce_range[1], 0, conv_shape.f
+                    )
 
             # NOTE: synchronous, so use of locally allocated output_ptr is safe.
             sync_parallelize[reduce_task](out_chain, num_threads)
@@ -2667,16 +2708,26 @@ struct ConvDirectNHWC[
         @always_inline
         @parameter
         fn c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
-            self._f_tile_loop[padded](n, c_tile_offset, c_tile_size)
+            self._f_tile_loop[padded, False](n, c_tile_offset, c_tile_size)
 
-        tile[c_tile_iteration](
-            self.partition_offsets[1],
-            self.partition_offsets[1] + self.partition_sizes[1],
-            tile_size,
-        )
+        # Can't fuse epilogue inside conv if C is partitioned
+        if self.partition_sizes[1] < self.conv_shape.c:
+            tile[c_tile_iteration](
+                self.partition_offsets[1],
+                self.partition_offsets[1] + self.partition_sizes[1],
+                tile_size,
+            )
+        # C is not partitioned, fuse epilogue in the last C tile.
+        else:
+            let c_round_by_tile = (self.conv_shape.c // tile_size) * tile_size
+            tile[c_tile_iteration](0, c_round_by_tile, tile_size)
+            # Update the last c tile with fusion if any
+            self._f_tile_loop[padded, True](
+                n, c_round_by_tile, self.conv_shape.c - c_round_by_tile
+            )
 
     fn _f_tile_loop[
-        padded: Bool
+        padded: Bool, last_c_tile: Bool
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
@@ -2689,12 +2740,12 @@ struct ConvDirectNHWC[
         fn f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             @parameter
             if padded:
-                self._h_loop[micro_kernel_height, size // simd_size, False](
-                    n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
-                )
+                self._h_loop[
+                    micro_kernel_height, size // simd_size, False, last_c_tile
+                ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
 
             else:
-                self._n_wo_ho_tile_loop[size, False](
+                self._n_wo_ho_tile_loop[size, False, last_c_tile](
                     f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
                 )
 
@@ -2733,11 +2784,11 @@ struct ConvDirectNHWC[
 
             @parameter
             if padded:
-                self._h_loop[micro_kernel_height, 1, True](
+                self._h_loop[micro_kernel_height, 1, True, last_c_tile](
                     n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size
                 )
             else:
-                self._n_wo_ho_tile_loop[simd_size, True](
+                self._n_wo_ho_tile_loop[simd_size, True, last_c_tile](
                     f_round_by_simd, simd_size, c_tile_offset, c_tile_size
                 )
 
@@ -2751,7 +2802,7 @@ struct ConvDirectNHWC[
             self._c_tile_loop[True](n, self.cf_tile_size[0])
 
     fn _n_wo_ho_tile_loop[
-        micro_kernel_f_size: Int, has_residual: Bool
+        micro_kernel_f_size: Int, has_residual: Bool, last_c_tile: Bool
     ](
         self,
         f_tile_offset: Int,
@@ -2777,6 +2828,7 @@ struct ConvDirectNHWC[
                     micro_kernel_width,
                     c_fully_cached,
                     has_residual,
+                    last_c_tile,
                 ](
                     f_tile_offset,
                     f_tile_size,
@@ -2805,6 +2857,7 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         c_fully_cached: Bool,
         has_residual: Bool,
+        last_c_tile: Bool,
     ](
         self,
         f_tile_offset: Int,
@@ -2975,6 +3028,13 @@ struct ConvDirectNHWC[
             ](
                 output_micro_tile,
                 self.output.data.offset(n_ho_wo * self.conv_shape.f + f),
+            )
+
+        @parameter
+        if elementwise_epilogue_enabled and last_c_tile:
+            let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
+            self.elementwise_epilogue_fn(
+                n_ho_wo, micro_kernel_height, f_tile_offset, f_tile_size_bounded
             )
 
     @always_inline
@@ -3236,6 +3296,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         has_residual: Bool,
+        last_c_tile: Bool,
     ](
         self,
         n: Int,
@@ -3301,7 +3362,7 @@ struct ConvDirectNHWC[
             # region effected by left padding, [0, left_pad_impact_end)
             for wo in range(left_pad_impact_end):
                 self._inner_loops_padding[
-                    1, micro_kernel_width, True, has_residual
+                    1, micro_kernel_width, True, has_residual, last_c_tile
                 ](
                     input_base,
                     filter_base,
@@ -3310,6 +3371,7 @@ struct ConvDirectNHWC[
                     f_tile_size,
                     c_tile_offset,
                     c_tile_size,
+                    n,
                     ho,
                     wo,
                 )
@@ -3324,7 +3386,7 @@ struct ConvDirectNHWC[
             @parameter
             fn update_middle[height: Int](wo: Int):
                 self._inner_loops_padding[
-                    height, micro_kernel_width, False, has_residual
+                    height, micro_kernel_width, False, has_residual, last_c_tile
                 ](
                     input_base,
                     filter_base,
@@ -3333,6 +3395,7 @@ struct ConvDirectNHWC[
                     f_tile_size,
                     c_tile_offset,
                     c_tile_size,
+                    n,
                     ho,
                     wo,
                 )
@@ -3348,7 +3411,7 @@ struct ConvDirectNHWC[
             # region effected by right padding, [right_pad_impact_start, WO)
             for wo in range(right_pad_impact_start, self.conv_shape.out_w):
                 self._inner_loops_padding[
-                    1, micro_kernel_width, True, has_residual
+                    1, micro_kernel_width, True, has_residual, last_c_tile
                 ](
                     input_base,
                     filter_base,
@@ -3357,6 +3420,7 @@ struct ConvDirectNHWC[
                     f_tile_size,
                     c_tile_offset,
                     c_tile_size,
+                    n,
                     ho,
                     wo,
                 )
@@ -3371,6 +3435,7 @@ struct ConvDirectNHWC[
         micro_kernel_width: Int,
         w_padding_impact: Bool,
         has_residual: Bool,
+        last_c_tile: Bool,
     ](
         self,
         input_base: DTypePointer[type],  # points to (ho, wo) mapped in input
@@ -3380,6 +3445,7 @@ struct ConvDirectNHWC[
         f_tile_size: Int,
         c_tile_offset: Int,
         c_tile_size: Int,
+        n: Int,  # batch Index
         ho: Int,  # index in output height
         wo: Int,  # index in output width
     ):
@@ -3496,6 +3562,19 @@ struct ConvDirectNHWC[
             ](output_micro_tile, output_base.offset(f - f_tile_offset))
 
             filter_tile = filter_tile.offset(filter_F_stride)
+
+        # Apply elmentwise epilogue to the
+        @parameter
+        if elementwise_epilogue_enabled and last_c_tile:
+            # If has residual, the tile size has been extended to a simd_size.
+            # Here needs to use the real bound F.
+            let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
+            let nhowo = wo + self.conv_shape.out_w * (
+                ho + self.conv_shape.out_h * n
+            )
+            self.elementwise_epilogue_fn(
+                nhowo, micro_kernel_height, f_tile_offset, f_tile_size_bounded
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3800,4 +3879,5 @@ fn conv_2d_nhwc_direct[
         output_shape,
         input_type,
         filter_packed,
+        False,
     ].run(output_rebind, input, filter_rebind, conv_shape, out_chain)
