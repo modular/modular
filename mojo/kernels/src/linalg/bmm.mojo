@@ -31,6 +31,125 @@ from Functional import (
 from String import String
 from Range import range
 from Reductions import _reduce_generator
+from TypeUtilities import rebind
+
+
+@always_inline
+fn _small_batched_matmul[
+    adj_a: Bool,
+    adj_b: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    rank: Int,
+    type: DType,
+](
+    c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    a_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    out_chain: OutputChainPtr,
+):
+    assert_param[
+        rank == 3 and not adj_a and not adj_b,
+        "_small_batched_matmul only supports rank 3 non-transposed inputs",
+    ]()
+    alias simd_width = simdwidthof[type]()
+
+    let B = a_buf.dim[0]()
+    let M = a_buf.dim[1]()
+    let N = b_buf.dim[2]()
+    let K = a_buf.dim[2]()
+
+    if M == 1 and N == 1:
+        for batch in range(B):
+            let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                a_buf.data + batch * K, Index(K)
+            )
+            let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
+                b_buf.data + batch * K, Index(K)
+            )
+
+            @always_inline
+            @parameter
+            fn input_fn[
+                type: DType, width: Int, rank: Int
+            ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
+                return (
+                    a_view.simd_load[width](idx[0])
+                    * b_view.simd_load[width](idx[0])
+                ).cast[type]()
+
+            @always_inline
+            @parameter
+            fn output_fn[
+                out_type: DType, width: Int, r: Int
+            ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
+                @parameter
+                if elementwise_epilogue_enabled:
+                    elementwise_epilogue_fn[out_type, width, rank](
+                        StaticIntTuple[rank](batch, 0, 0), value
+                    )
+                else:
+                    c_buf.simd_store[width](
+                        StaticIntTuple[rank](batch, 0, 0),
+                        rebind[SIMD[type, width]](value),
+                    )
+
+            @always_inline
+            fn reduce_impl[
+                ty: DType, width: Int
+            ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+                return v1 + v2
+
+            _reduce_generator[
+                type,
+                1,
+                simd_width,
+                # single_thread_blocking_override,
+                True,
+                input_fn,
+                output_fn,
+                reduce_impl,
+            ](a_view.dynamic_shape, 0, 0, out_chain)
+
+    else:
+        for batch in range(B):
+            memset_zero(c_buf.data + batch * M * N, M * N)
+            for m in range(M):
+                for k in range(K):
+                    let a_val = a_buf[batch, m, k]
+
+                    @always_inline
+                    @parameter
+                    fn compute_fn[simd_width: Int](n: Int):
+                        c_buf.simd_store[simd_width](
+                            StaticIntTuple[rank](batch, m, n),
+                            c_buf.simd_load[simd_width](batch, m, n)
+                            + a_val * b_buf.simd_load[simd_width](batch, k, n),
+                        )
+
+                    alias unroll_factor = 2
+
+                    vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
+
+            @parameter
+            if elementwise_epilogue_enabled:
+                for m in range(M):
+
+                    @always_inline
+                    @parameter
+                    fn apply_epilogue[width: Int](n: Int):
+                        let val = c_buf.simd_load[width](
+                            StaticIntTuple[rank](batch, m, n)
+                        )
+                        elementwise_epilogue_fn[type, width, rank](
+                            StaticIntTuple[rank](batch, m, n), val
+                        )
+
+                    vectorize_unroll[simd_width, 1, apply_epilogue](N)
+
+    return
 
 
 @always_inline
@@ -39,6 +158,10 @@ fn batched_matmul_parallel_sync[
     type: DType,
     adj_a: Bool,
     adj_b: Bool,
+    elementwise_epilogue_enabled: Bool,
+    elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
     single_thread_blocking_override: Bool,
 ](
     c_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -46,8 +169,6 @@ fn batched_matmul_parallel_sync[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    alias simd_width = simdwidthof[type]()
-
     # TODO: generalize to > rank 3
     @parameter
     if (
@@ -56,78 +177,18 @@ fn batched_matmul_parallel_sync[
         and not adj_a
         and not adj_b
     ):
-        let B = a_buf.dim[0]()
-        let M = a_buf.dim[1]()
-        let N = b_buf.dim[2]()
-        let K = a_buf.dim[2]()
+        return _small_batched_matmul[
+            adj_a, adj_b, elementwise_epilogue_enabled, elementwise_epilogue_fn
+        ](c_buf, a_buf, b_buf, out_chain)
 
-        if M == 1 and N == 1:
-            for batch in range(B):
-                let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    a_buf.data + batch * K, Index(K)
-                )
-                let b_view = NDBuffer[1, DimList.create_unknown[1](), type](
-                    b_buf.data + batch * K, Index(K)
-                )
-
-                @always_inline
-                @parameter
-                fn input_fn[
-                    type: DType, width: Int, rank: Int
-                ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
-                    return (
-                        a_view.simd_load[width](idx[0])
-                        * b_view.simd_load[width](idx[0])
-                    ).cast[type]()
-
-                @always_inline
-                @parameter
-                fn output_fn[
-                    out_type: DType, width: Int, r: Int
-                ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
-                    c_buf.simd_store[width](
-                        StaticIntTuple[rank](batch, 0, 0), value.cast[type]()
-                    )
-
-                @always_inline
-                fn reduce_impl[
-                    ty: DType, width: Int
-                ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-                    return v1 + v2
-
-                _reduce_generator[
-                    type,
-                    1,
-                    simdwidthof[type](),
-                    single_thread_blocking_override,
-                    input_fn,
-                    output_fn,
-                    reduce_impl,
-                ](a_view.dynamic_shape, 0, 0, out_chain)
-
-        else:
-            for batch in range(B):
-                memset_zero(c_buf.data + batch * M * N, M * N)
-                for m in range(M):
-                    for k in range(K):
-                        let a_val = a_buf[batch, m, k]
-
-                        @always_inline
-                        @parameter
-                        fn compute_fn[simd_width: Int](n: Int):
-                            c_buf.simd_store[simd_width](
-                                StaticIntTuple[rank](batch, m, n),
-                                c_buf.simd_load[simd_width](batch, m, n)
-                                + a_val
-                                * b_buf.simd_load[simd_width](batch, k, n),
-                            )
-
-                        alias unroll_factor = 2
-
-                        vectorize_unroll[simd_width, unroll_factor, compute_fn](
-                            N
-                        )
-        return
+    @closure
+    @always_inline
+    fn null_rowwise_epilogue(
+        start_row: Int,
+        num_rows: Int,
+        c: NDBuffer[2, DimList.create_unknown[2](), type],
+    ):
+        pass
 
     @parameter
     if single_thread_blocking_override:
@@ -139,7 +200,10 @@ fn batched_matmul_parallel_sync[
             type,
             adj_a,
             adj_b,
-        ](c_buf, a_buf, b_buf, new_chain.borrow())
+            elementwise_epilogue_enabled,
+            elementwise_epilogue_fn,
+            False,
+        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, new_chain.borrow())
         new_chain.wait()
     else:
         batched_matmul_parallel_sync[
@@ -147,7 +211,10 @@ fn batched_matmul_parallel_sync[
             type,
             adj_a,
             adj_b,
-        ](c_buf, a_buf, b_buf, out_chain)
+            elementwise_epilogue_enabled,
+            elementwise_epilogue_fn,
+            False,
+        ](c_buf, a_buf, b_buf, null_rowwise_epilogue, out_chain)
 
 
 @always_inline
@@ -164,7 +231,7 @@ fn batched_matmul_parallel_sync[
 ):
     @parameter
     fn null_elementwise_epilogue[
-        rank: Int, type: DType, width: Int
+        type: DType, width: Int, rank: Int
     ](out_coords: StaticIntTuple[rank], out_val: SIMD[type, width],):
         pass
 
@@ -195,7 +262,7 @@ fn batched_matmul_parallel_sync[
     adj_a: Bool,
     adj_b: Bool,
     elementwise_epilogue_enabled: Bool,
-    elementwise_epilogue_fn: fn[rank: Int, type: DType, width: Int] (
+    elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
     rowwise_epilogue_enabled: Bool,
@@ -337,7 +404,7 @@ fn batched_matmul_parallel_sync[
                 coords[rank - 1] = out_coords[1]
                 coords[rank - 2] = out_coords[0]
 
-                elementwise_epilogue_fn[rank, type, width](coords, out_val)
+                elementwise_epilogue_fn[type, width, rank](coords, out_val)
 
             @parameter
             @always_inline
