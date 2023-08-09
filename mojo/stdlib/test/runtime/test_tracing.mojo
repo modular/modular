@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
+
 from IO import print
 from LLCL import Runtime
 from Tracing import Trace, TraceLevel
