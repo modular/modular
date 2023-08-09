@@ -9,7 +9,14 @@ from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
 from Concat import concat_shape, concat as _concat
-from Conv import conv_shape, conv_2d_nhwc_direct, ConvInfo, ConvInfoStatic
+from Conv import (
+    conv_shape,
+    conv_2d_nhwc_direct,
+    pack_conv_filter_shape,
+    pack_conv_filter,
+    ConvInfo,
+    ConvInfoStatic,
+)
 from DType import DType
 from Functional import (
     _elementwise_impl,
@@ -146,6 +153,7 @@ fn MOGGExport():
     alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
+    alias _pack_conv_filter_shape = pack_conv_filter_shape
     alias _pad = pad
     alias _pad_shape = pad_shape
     alias _greater = greater
@@ -156,6 +164,7 @@ fn MOGGExport():
     alias _logsoftmax = logsoftmax
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
+    alias _pack_conv_filter = pack_conv_filter
     alias _pow = pow_wrapped
     alias _load_scalar = load_scalar
     alias _max_pool_shape = pool_shape
@@ -1756,6 +1765,7 @@ fn conv[
     strides_type: DType,
     dilation_type: DType,
     output_type: DType,
+    filter_packed: Bool,
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), input_type],
     filter: NDBuffer[
@@ -1778,9 +1788,6 @@ fn conv[
         strides_type.is_integral() and dilation_type.is_integral(),
         "stride and dilation must have integral type",
     ]()
-
-    # TODO: support pre-packed filter in graph compiler
-    alias filter_packed = False
 
     if strides.size() != 2:
         return out_chain.mark_error("2 values expected in strides input")
