@@ -1005,8 +1005,11 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
   }
 
   if (auto coroutineType = dyn_cast<POP::CoroutineType>(type)) {
-    return buildDebugTypeFromFunctionType(
+    // We map coroutine types to pointers to subroutine types.
+    DebugInfo::DIType srType = buildDebugTypeFromFunctionType(
         ctx, coroutineType.getSignature().getValues(), converter, target);
+    return DebugInfo::DIPointerType::get(srType, converter.getPointerBitwidth(),
+                                         converter.getPointerBitwidth());
   }
 
   if (auto packType = dyn_cast<POP::PackType>(type)) {
