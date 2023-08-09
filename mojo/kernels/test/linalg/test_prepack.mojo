@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from List import DimList, Dim
 from Matmul import pack_b
