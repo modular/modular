@@ -99,6 +99,21 @@ def KGEN_StringType : KGENType<"String", "string",
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralType
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal"> {
+  let summary = "Arbitrary-precision integer type for literals.";
+  let description = [{
+    The `!kgen.int_literal` type represents an infinite precision
+    integer value.  It can't be materialized, but allows for arbitrary
+    integer size for compile time computations.
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 

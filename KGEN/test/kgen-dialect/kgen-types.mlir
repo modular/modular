@@ -8,3 +8,8 @@ lit.struct.decl @MyStruct<a, b: dtype, c: type> {}
 kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStruct<a = a, b: dtype = b, c: type = c>>) {
   kgen.return
 }
+
+// CHECK: !kgen.int_literal
+kgen.func @int_literal(%arg0: !kgen.int_literal) {
+  kgen.return
+}
