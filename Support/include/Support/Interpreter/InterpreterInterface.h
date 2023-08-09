@@ -11,6 +11,7 @@
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MDialect.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/DebugStringHelper.h"
