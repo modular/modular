@@ -32,28 +32,28 @@ public:
 
   const llvm::APInt &getAPInt() const { return val; }
 
-  IPInt &operator=(const IPInt &RHS) {
-    val = RHS.getAPInt();
+  IPInt &operator=(const IPInt &rhs) {
+    val = rhs.getAPInt();
     return *this;
   }
 
-  bool operator==(const IPInt &RHS) const;
-  bool operator!=(const IPInt &RHS) const;
-  bool operator<(const IPInt &RHS) const;
-  bool operator<=(const IPInt &RHS) const;
-  bool operator>(const IPInt &RHS) const;
-  bool operator>=(const IPInt &RHS) const;
-  IPInt operator+(const IPInt &RHS) const;
-  IPInt operator-(const IPInt &RHS) const;
-  IPInt operator*(const IPInt &RHS) const;
-  IPInt operator/(const IPInt &RHS) const;
-  IPInt operator%(const IPInt &RHS) const;
-  IPInt operator<<(const IPInt &RHS) const;
-  IPInt operator>>(const IPInt &RHS) const;
-  IPInt operator&(const IPInt &RHS) const;
-  IPInt operator|(const IPInt &RHS) const;
-  IPInt operator^(const IPInt &RHS) const;
-  IPInt pow(const IPInt &RHS) const;
+  bool operator==(const IPInt &rhs) const;
+  bool operator!=(const IPInt &rhs) const;
+  bool operator<(const IPInt &rhs) const;
+  bool operator<=(const IPInt &rhs) const;
+  bool operator>(const IPInt &rhs) const;
+  bool operator>=(const IPInt &rhs) const;
+  IPInt operator+(const IPInt &rhs) const;
+  IPInt operator-(const IPInt &rhs) const;
+  IPInt operator*(const IPInt &rhs) const;
+  IPInt operator/(const IPInt &rhs) const;
+  IPInt operator%(const IPInt &rhs) const;
+  IPInt operator<<(const IPInt &rhs) const;
+  IPInt operator>>(const IPInt &rhs) const;
+  IPInt operator&(const IPInt &rhs) const;
+  IPInt operator|(const IPInt &rhs) const;
+  IPInt operator^(const IPInt &rhs) const;
+  IPInt pow(const IPInt &rhs) const;
 
   friend llvm::hash_code hash_value(const IPInt &Arg);
 
@@ -77,8 +77,8 @@ private:
     kSle,
   };
 
-  IPInt binop(const IPInt &RHS, IPInt::BinOp whichOp) const;
-  bool cmp(const IPInt &RHS, IPInt::CmpOp whichOp) const;
+  IPInt binop(const IPInt &rhs, IPInt::BinOp whichOp) const;
+  bool cmp(const IPInt &rhs, IPInt::CmpOp whichOp) const;
 
   llvm::APInt val;
 };
