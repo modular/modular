@@ -1607,8 +1607,12 @@ fn matmul[
 fn batched_matmul[
     rank: Int,
     type: DType,
-    transpose_in_1: Bool,  # matches name of MO attribute
+    transpose_in_1: Bool,
     single_thread_blocking_override: Bool,
+    lambdas_have_fusion: Bool,
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
     a: NDBuffer[rank, DimList.create_unknown[rank](), type],
     b: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -1633,7 +1637,13 @@ fn batched_matmul[
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
 
     return batched_matmul_parallel_sync[
-        rank, type, adj_a, adj_b, single_thread_blocking_override
+        rank,
+        type,
+        adj_a,
+        adj_b,
+        lambdas_have_fusion,
+        output_0_fn,
+        single_thread_blocking_override,
     ](c, a, b, out_chain)
 
 
