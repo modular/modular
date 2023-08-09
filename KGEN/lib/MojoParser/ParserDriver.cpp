@@ -266,6 +266,11 @@ static void eraseUnreachableDecls(ASTDecl &decl) {
           return WalkResult::skip();
       }
       refCollector.walk(op->getAttrDictionary());
+      for (Region &region : op->getRegions()) {
+        for (Block &block : region)
+          for (Type type : block.getArgumentTypes())
+            refCollector.walk(type);
+      }
       for (Type type : op->getResultTypes())
         refCollector.walk(type);
       return WalkResult::advance();

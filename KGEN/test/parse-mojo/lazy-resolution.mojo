@@ -1,0 +1,23 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: kgen-translate -import-mojo -mojo-disable-parser-caching %s | FileCheck %s
+
+# The following function has a use of the builtin Error type, make sure that
+# gets pulled in.
+
+# CHECK: lit.func @"use_of_error_type
+# CHECK: except (%{{.*}}: !kgen.declref<@"$Builtin"::@"$Error"::@Error>)
+
+# CHECK: lit.package @"$Builtin"
+# CHECK: lit.file_module @"$Error"
+# CHECK: lit.struct.decl @Error
+
+fn use_of_error_type():
+  try:
+    return
+  except:
+    pass
