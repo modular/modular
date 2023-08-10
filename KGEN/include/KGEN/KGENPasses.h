@@ -20,6 +20,9 @@
 namespace mlir {
 class ModuleOp;
 class OpPassManager;
+namespace index {
+class IndexDialect;
+} // namespace index
 namespace LLVM {
 class LLVMDialect;
 class LLVMFuncOp;

@@ -1846,8 +1846,8 @@ public:
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
       b.setInsertionPointToStart(global.getBody());
-      Value value =
-          convertParameterToLLVM(b, *getTypeConverter(), symtab, op.getValue());
+      Value value = convertParameterToLLVM(b, *getTypeConverter(), symtab,
+                                           /*imc=*/nullptr, op.getValue());
       if (!value)
         return failure();
       b.create<LLVM::ReturnOp>(value);

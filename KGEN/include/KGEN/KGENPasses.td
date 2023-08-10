@@ -238,7 +238,8 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   }];
 
   // We generate the LLVM dialect.
-  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+  let dependentDialects = ["mlir::LLVM::LLVMDialect",
+                           "mlir::index::IndexDialect"];
 }
 
 //===----------------------------------------------------------------------===//

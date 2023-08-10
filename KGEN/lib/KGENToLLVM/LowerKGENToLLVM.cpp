@@ -18,6 +18,7 @@
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
@@ -220,24 +221,30 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENParamValue
+// ConvertKGENParamConstant
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENParamConstant
-    : public ConvertSymbolOpToLLVM<ParamConstantOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+class ConvertKGENParamConstant : public ConvertSymbolOpToLLVM<ParamConstantOp> {
+public:
+  ConvertKGENParamConstant(mlir::LLVMTypeConverter &tc, SymbolTable &symtab,
+                           InterpreterMemoryConverter &imc)
+      : ConvertSymbolOpToLLVM(tc, symtab), imc(imc) {}
 
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value value =
-        convertParameterToLLVM(b, *getTypeConverter(), symtab, op.getValue());
+    Value value = convertParameterToLLVM(b, *getTypeConverter(), symtab, &imc,
+                                         op.getValue());
     if (!value)
       return failure();
     rewriter.replaceOp(op, value);
     return success();
   }
+
+private:
+  /// Convert for interpreter memory references.
+  InterpreterMemoryConverter &imc;
 };
 
 //===----------------------------------------------------------------------===//
@@ -271,7 +278,8 @@ static LogicalResult removeLinkOps(LinkOp linkOp, PatternRewriter &rewriter) {
 
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns,
-                                       SymbolTable &symtab) {
+                                       SymbolTable &symtab,
+                                       InterpreterMemoryConverter &imc) {
   patterns.insert<
       // clang-format off
       ConvertKGENCall,
@@ -282,11 +290,11 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       >(typeConverter);
   patterns.insert<
       // clang-format off
-      ConvertKGENParamConstant,
       ConvertKGENFunc,
       ConvertKGENExternFunc
       // clang-format on
       >(typeConverter, symtab);
+  patterns.insert<ConvertKGENParamConstant>(typeConverter, symtab, imc);
   // Just remove LinkOps.
   patterns.add(removeLinkOps);
 }
@@ -527,6 +535,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addIllegalDialect<KGENDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
   target.addLegalDialect<POP::POPDialect>();
+  target.addLegalDialect<mlir::index::IndexDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
   target.addLegalOp<KGEN::CallSignatureOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
@@ -560,7 +569,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   auto &symtabAnalysis = getAnalysis<mlir::SymbolTableAnalysis>();
   SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
-  populateKGENToLLVMPatterns(typeConverter, patterns, symtab);
+  InterpreterMemoryConverter imc(symtab, typeConverter);
+  populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc);
   DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });

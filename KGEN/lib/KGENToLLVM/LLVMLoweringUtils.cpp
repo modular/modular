@@ -11,6 +11,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
@@ -538,6 +539,114 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
 }
 
 //===----------------------------------------------------------------------===//
+// Interpreter Memory Conversion
+//===----------------------------------------------------------------------===//
+
+Value InterpreterMemoryConverter::convertMemRef(ImplicitLocOpBuilder &b,
+                                                MemRefAttr ref) {
+  MaterializedBlobs &materialized = getOrMaterialize(b, ref.getMemory());
+  Value ptr = getBlobPointer(b, LLVM::LLVMPointerType::get(b.getContext()),
+                             materialized, ref.getIndex(), ref.getOffset());
+  return b.create<LLVM::BitcastOp>(tc.convertType(ref.getType()), ptr);
+}
+
+Value InterpreterMemoryConverter::getBlobPointer(
+    ImplicitLocOpBuilder &b, Type ptrType, MaterializedBlobs &materialized,
+    int64_t index, int64_t offset) {
+  PointerUnion<Operation *, Value> value = materialized[index];
+  Value ptr = dyn_cast<Value>(value);
+  if (!ptr) {
+    ptr = b.create<LLVM::BitcastOp>(
+        ptrType, b.create<LLVM::AddressOfOp>(
+                     cast<LLVM::GlobalOp>(cast<Operation *>(value))));
+  }
+  return b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                               LLVM::GEPArg(offset), /*inbounds=*/true);
+}
+
+InterpreterMemoryConverter::MaterializedBlobs &
+InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
+                                             MemorySpaceAttr space) {
+  if (auto it = blobs.find(space); it != blobs.end())
+    return it->second;
+
+  MaterializedBlobs materialized;
+  auto i8PtrType = LLVM::LLVMPointerType::get(b.getI8Type());
+  auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
+
+  // First emit the allocations and the memcpy's.
+  for (const MemoryBlob &blob : space) {
+    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
+    if (blob.getKind() == MemoryKind::ConstGlobal) {
+      OpBuilder::InsertionGuard guard(b);
+      b.clearInsertionPoint();
+      // Create the global with the constant data stored in an `ElementsAttr`.
+      auto global = b.create<LLVM::GlobalOp>(
+          LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
+          /*isConstant=*/true, LLVM::Linkage::Internal,
+          blob.getHandle().getKey(),
+          IntArrayElementsAttr::get(b.getContext(), mem->getData(),
+                                    IntegerType::Signless),
+          mem->getDataAlignment());
+      symtab.insert(global);
+      materialized.emplace_back(global);
+      continue;
+    }
+    // Create the relevant allocation.
+    Value popAlloc;
+    if (blob.getKind() == MemoryKind::Stack) {
+      popAlloc = b.create<POP::StackAllocationOp>(
+          POP::PointerType::get(b.getI8Type()), mem->getData().size(),
+          b.getIndexAttr(mem->getDataAlignment()));
+    } else {
+      popAlloc = b.create<POP::AlignedAllocOp>(
+          POP::PointerType::get(b.getI8Type()),
+          b.create<mlir::index::ConstantOp>(mem->getDataAlignment()),
+          b.create<mlir::index::ConstantOp>(mem->getData().size()));
+    }
+    Value ptr = b.create<mlir::UnrealizedConversionCastOp>(i8PtrType, popAlloc)
+                    .getResult(0);
+    materialized.emplace_back(Value(b.create<LLVM::BitcastOp>(ptrType, ptr)));
+  }
+
+  // Perform memcpy of non-global blobs while remapping pointer regions.
+  int64_t pointerSize = tc.getTarget().getDataLayout().getPointerSize();
+  for (auto [blob, value] : llvm::zip(space, materialized)) {
+    // Constant globals don't have pointer regions.
+    if (blob.getKind() == MemoryKind::ConstGlobal)
+      continue;
+    auto ptr = cast<Value>(value);
+    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
+    ArrayRef<char> data = mem->getData();
+    auto ptrIt = blob.getPointerRegions().begin();
+    auto ptrEnd = blob.getPointerRegions().end();
+    for (int64_t i = 0, e = data.size(); i != e;) {
+      // GEP to the current offset.
+      Value gep = b.create<LLVM::GEPOp>(ptrType, b.getI8Type(), ptr,
+                                        LLVM::GEPArg(i), /*inbounds=*/true);
+      // Check if the current offset is the beginning of a pointer region.
+      if (ptrIt != ptrEnd && ptrIt->offset == i) {
+        // Store the pointer value to the current offset.
+        auto [_, index, offset] = *ptrIt++;
+        b.create<LLVM::StoreOp>(
+            getBlobPointer(b, ptrType, materialized, index, offset), gep,
+            mem->getDataAlignment());
+        i += pointerSize;
+      } else {
+        // Store the byte at this offset.
+        // FIXME: Vectorize the stores to reduce IR bloat.
+        b.create<LLVM::StoreOp>(
+            b.create<LLVM::ConstantOp>(b.getI8Type(), data[i]), gep,
+            mem->getDataAlignment());
+        ++i;
+      }
+    }
+  }
+
+  return blobs.try_emplace(space, std::move(materialized)).first->second;
+}
+
+//===----------------------------------------------------------------------===//
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
@@ -690,7 +799,9 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
                                    POPToLLVMTypeConverter &tc,
-                                   SymbolTable &symtab, TypedAttr attr) {
+                                   SymbolTable &symtab,
+                                   InterpreterMemoryConverter *imc,
+                                   TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // Builtin
 
@@ -725,6 +836,11 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
             b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())));
   }
 
+  // Materialize memrefs from the interpreter.
+  if (imc)
+    if (auto ref = dyn_cast<MemRefAttr>(attr))
+      return imc->convertMemRef(b, ref);
+
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
   if (auto stringAttr = dyn_cast<StringAttr>(attr))
@@ -750,7 +866,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      Value element = convertParameterToLLVM(b, tc, symtab, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, imc, value);
       if (!element)
         return {};
       // If this is a struct with one element, return it directly.
@@ -768,7 +884,8 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
         tc.convertType(variant.getType()));
     if (!variantType)
       return {};
-    Value value = convertParameterToLLVM(b, tc, symtab, variant.getValue());
+    Value value =
+        convertParameterToLLVM(b, tc, symtab, imc, variant.getValue());
     if (!value)
       return {};
 
@@ -792,7 +909,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      Value element = convertParameterToLLVM(b, tc, symtab, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, imc, value);
       if (!element)
         return {};
 
