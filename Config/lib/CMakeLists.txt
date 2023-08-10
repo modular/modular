@@ -17,6 +17,7 @@ add_custom_command(OUTPUT "${version_inc}"
                            "-DMODULAR_VERSION_MAJOR=${MODULAR_VERSION_MAJOR}"
                            "-DMODULAR_VERSION_MINOR=${MODULAR_VERSION_MINOR}"
                            "-DMODULAR_VERSION_PATCH=${MODULAR_VERSION_PATCH}"
+                           "-DMODULAR_VERSION_LABEL=${MODULAR_VERSION_LABEL}"
                            "-DMODULAR_DERIVED_DIR=${MODULAR_DERIVED_DIR}"
                            "-DMODULAR_BUILD_TYPE_LOWER=${MODULAR_BUILD_TYPE_LOWER}"
   -P "${generate_version_script}")

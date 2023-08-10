@@ -17,6 +17,7 @@ struct ModularVersion final {
   int major;
   int minor;
   int patch;
+  const char *label;    // version label like "-rc.1"
   const char *revision; // Truncated Git SHA
   const char *buildType;
 };

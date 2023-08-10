@@ -14,6 +14,7 @@ ModularVersion M::getModularVersion() {
   version.major = MODULAR_VERSION_MAJOR;
   version.minor = MODULAR_VERSION_MINOR;
   version.patch = MODULAR_VERSION_PATCH;
+  version.label = MODULAR_VERSION_LABEL;
   version.revision = MODULAR_VERSION_REVISION;
   version.buildType = MODULAR_BUILD_TYPE_LOWER;
   return version;

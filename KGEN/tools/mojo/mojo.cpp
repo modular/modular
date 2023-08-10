@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
     // Print the version and exit.
     ModularVersion version = getModularVersion();
     llvm::outs() << "mojo " << version.major << '.' << version.minor << '.'
-                 << version.patch << "\n";
+                 << version.patch << version.label << "\n";
     return 0;
   }
   case options::OPT_help:
