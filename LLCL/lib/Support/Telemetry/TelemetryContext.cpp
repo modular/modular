@@ -113,6 +113,12 @@ TelemetryContext::TelemetryContext(
     llvm::report_fatal_error(configOr.getError());
   Config cfg = std::move(*configOr);
 
+  // Check if telemetry is enabled. Note that currently users have to opt out of
+  // telemetry, so it is enabled unless the user explicitly disables.
+  bool enabled = true;
+  if (cfg.getValue("telemetry.enabled").equals_insensitive("false"))
+    enabled = false;
+
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
@@ -140,10 +146,15 @@ TelemetryContext::TelemetryContext(
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  if (enabled && httpEndpoint.empty() && filePath.empty()) {
+    // If telemetry is enabled and no config is provided, export to our default
+    // URL.
+    httpEndpoint = kTelemetryUrl;
+  }
 
   // Create metric readers, one for each exporter.
 
-  if (!filePath.empty()) {
+  if (enabled && !filePath.empty()) {
     // File exporter.
     auto exporter = std::make_unique<FileMetricExporter>(filePath);
     auto reader = std::make_shared<
@@ -152,7 +163,7 @@ TelemetryContext::TelemetryContext(
     provider->AddMetricReader(reader);
   }
 
-  if (!httpEndpoint.empty()) {
+  if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
@@ -173,12 +184,17 @@ TelemetryContext::TelemetryContext(
   // Get logs exporter config.
   httpEndpoint = cfg.getValue("telemetry.exporters.logs.http_endpoint");
   filePath = cfg.getValue("telemetry.exporters.logs.file_path").str();
+  if (enabled && httpEndpoint.empty() && filePath.empty()) {
+    // If telemetry is enabled and no config is provided, export to our default
+    // URL.
+    httpEndpoint = kTelemetryUrl;
+  }
 
   // Create log processors for each exporter.
   std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>
       processors;
 
-  if (!filePath.empty()) {
+  if (enabled && !filePath.empty()) {
     // File exporter.
     auto logExporter = std::make_unique<FileLogExporter>(filePath);
     processors.emplace_back(
@@ -186,7 +202,7 @@ TelemetryContext::TelemetryContext(
             std::move(logExporter)));
   }
 
-  if (!httpEndpoint.empty()) {
+  if (enabled && !httpEndpoint.empty()) {
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         oltpLogOptions;
