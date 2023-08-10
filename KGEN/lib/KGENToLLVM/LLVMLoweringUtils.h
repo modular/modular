@@ -176,6 +176,48 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// Interpreter Memory Conversion
+//===----------------------------------------------------------------------===//
+
+/// This is a utility class for deduplicating memory instantiations from the
+/// interpreter.
+class InterpreterMemoryConverter {
+public:
+  /// Create a converter instance. A single instance is held for an entire
+  /// module to ensure globals are deduplicated.
+  InterpreterMemoryConverter(SymbolTable &symtab, POPToLLVMTypeConverter &tc)
+      : symtab(symtab), tc(tc) {}
+
+  /// Convert a single memory reference.
+  Value convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
+
+private:
+  /// Each materialized blob will have a corresponding SSA value representing
+  /// the pointer to the beginning of the blob or an LLVM global for
+  /// `const_global` blobs.
+  using MaterializedBlobs = SmallVector<PointerUnion<Operation *, Value>>;
+
+  /// Ensure the blobs within the memory space have been materialized and
+  /// then return them.
+  MaterializedBlobs &getOrMaterialize(ImplicitLocOpBuilder &b,
+                                      MemorySpaceAttr space);
+  /// Get a pointer into the blob at the given offset.
+  static Value getBlobPointer(ImplicitLocOpBuilder &b, Type ptrType,
+                              MaterializedBlobs &materialized, int64_t index,
+                              int64_t offset);
+
+  /// The symbol table to use for globals.
+  SymbolTable &symtab;
+  /// The type converter to use.
+  POPToLLVMTypeConverter &tc;
+
+  /// Lazily materialized memory spaces.
+  DenseMap<MemorySpaceAttr, MaterializedBlobs> blobs;
+  /// Lazily materialized globals.
+  llvm::StringMap<Operation *> globals;
+};
+
+//===----------------------------------------------------------------------===//
 // Struct Conversion
 //===----------------------------------------------------------------------===//
 
@@ -192,7 +234,7 @@ Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 /// used to convert attribute values in `kgen.param.constant`.
 Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
                              POPToLLVMTypeConverter &tc, SymbolTable &symtab,
-                             TypedAttr attr);
+                             InterpreterMemoryConverter *imc, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter
