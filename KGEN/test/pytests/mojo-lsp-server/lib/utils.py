@@ -35,10 +35,9 @@ class Document:
 
     @staticmethod
     def from_file(file_name: str):
-        with open(
-            Path(__file__).parent.parent / "inputs" / file_name, "r"
-        ) as file:
-            return Document(file_name, file.read())
+        path = Path(__file__).parent.parent / "inputs" / file_name
+        with open(path, "r") as file:
+            return Document(str(path), file.read())
 
     def __init__(self, name: str, contents: str):
         self.uri = f"test:///{name}"

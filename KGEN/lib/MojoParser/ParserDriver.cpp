@@ -32,6 +32,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <filesystem>
@@ -54,8 +55,8 @@ void MojoParserListener::onArgumentDecl(MojoASTDeclRef declRef,
 void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
                                         SMLoc identifierLoc) {}
 void MojoParserListener::onImport(SMLoc importLoc) {}
-void MojoParserListener::onImport(MojoASTDeclRef packageDecl, SMLoc importLoc) {
-}
+void MojoParserListener::onImport(ResolveInputDeclFn getPackageDecl,
+                                  SMLoc importLoc) {}
 void MojoParserListener::onMemberLookup(MojoASTDeclRef decl, SMLoc loc) {}
 void MojoParserListener::onModuleImport(MojoASTDeclRef declRef,
                                         StringRef spelling, SMLoc importLoc) {}
@@ -442,15 +443,40 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
 
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
+  StringRef filepathStr = sourceBuf->getBufferIdentifier();
+  std::filesystem::path filepath(filepathStr.str());
 
-  StringRef filepath = sourceBuf->getBufferIdentifier();
-  auto fileLoc = FileLineColLoc::get(impl->sharedState.getContext(), filepath,
-                                     /*line=*/0, /*column=*/0);
-  std::string moduleName =
-      std::filesystem::path(filepath.data()).stem().string();
-  ASTDecl &moduleDecl =
-      impl->sharedState.createModule(moduleName, sourceBuf, fileLoc);
-  impl->sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+  // If the file is within a package, we create a decl for the outermost package
+  // and import this decl from there. This ensures we process relative imports
+  // and other package-level constructs correctly.
+  ASTDecl *moduleDecl = nullptr;
+  if (isMojoSourcePackagePath(filepath.parent_path())) {
+    // Collect all of the sub-package names and find the outer most package.
+    SmallVector<std::string, 4> packageNames;
+    while (isMojoSourcePackagePath(filepath.parent_path())) {
+      packageNames.emplace_back(filepath.stem().string());
+      filepath = filepath.parent_path();
+    }
+
+    // Create the package using the outermost name.
+    ASTDecl &packageDecl = impl->sharedState.createPackage(
+        filepath.string(), filepath.stem().string());
+
+    // Import the file from within the package.
+    std::reverse(packageNames.begin(), packageNames.end());
+    moduleDecl = &impl->sharedState.importModule(
+        "." + llvm::join(packageNames, "."), cast<PackageOp>(packageDecl),
+        SMLoc::getFromPointer(sourceBuf->getBufferStart()));
+
+    // Otherwise, create a decl specifically for the module.
+  } else {
+    auto fileLoc =
+        FileLineColLoc::get(impl->sharedState.getContext(), filepathStr,
+                            /*line=*/0, /*column=*/0);
+    moduleDecl = &impl->sharedState.createModule(filepath.stem().string(),
+                                                 sourceBuf, fileLoc);
+  }
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
 
   // Now that resolution is finished, cache the state of modules we have parsed.
   // TODO: We should be able to cache even in the presence of warnings and
@@ -458,5 +484,5 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   if (!impl->sharedState.diags.isDiagnosticEmitted())
     impl->sharedState.cacheParsedModules();
 
-  return MojoASTDeclRef(&moduleDecl);
+  return MojoASTDeclRef(moduleDecl);
 }

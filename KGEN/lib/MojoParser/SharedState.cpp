@@ -123,6 +123,10 @@ struct SharedState::Impl {
   /// generate dependency files.
   SmallVector<std::string> includedFiles;
 
+  /// The set of pre-existing source buffers within the source manager, used if
+  /// importing a module whose file is already in the source manager.
+  DenseMap<StringRef, int> existingSourceMgrBuffers;
+
   /// The cache used to store cached transformations within the parser.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
@@ -174,6 +178,13 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
   config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                               POP::POPDialect, LITDialect,
                               mlir::index::IndexDialect, KGENDialect>();
+
+  // Record any existing buffers in the source manager.
+  for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
+    int bufferId = i + 1;
+    impl->existingSourceMgrBuffers.try_emplace(
+        sourceMgr.getMemoryBuffer(bufferId)->getBufferIdentifier(), bufferId);
+  }
 
   // Tell the diagnostics machinery how to find the end of a token lazily when
   // it needs it.
@@ -707,20 +718,29 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
     return createBinaryPackageState(loc, declName, mangledName, *modulePath,
                                     *parentState);
 
-  // Open the module file within the source manager.
-  std::string fullPath;
-  unsigned fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
-  impl->includedFiles.push_back(fullPath);
+  // Open the module file within the source manager. Reuse an existing file if
+  // we've already opened it.
+  unsigned fileID = impl->existingSourceMgrBuffers.lookup(pathRef);
+  if (!fileID) {
+    std::string fullPath;
+    fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
+    impl->includedFiles.push_back(fullPath);
+  }
+
+  // Enable caching for the module if caching is enable and it's not the main
+  // file, or if we're caching all modules.
+  bool enableCaching = impl->moduleCachingLevel != MojoParserConfig::kCacheNone;
+  if (impl->moduleCachingLevel == MojoParserConfig::kCacheImports)
+    enableCaching = fileID != getSourceMgr().getMainFileID();
 
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
   // do so.
   const llvm::MemoryBuffer *moduleBuffer =
       getSourceMgr().getMemoryBuffer(fileID);
-  auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(fullPath, /*line=*/0,
-                                                       /*column=*/0);
-  return createModuleState(
-      declName, mangledName, moduleBuffer, *parentState, fileLoc,
-      impl->moduleCachingLevel != MojoParserConfig::kCacheNone);
+  auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
+      moduleBuffer->getBufferIdentifier(), /*line=*/0, /*column=*/0);
+  return createModuleState(declName, mangledName, moduleBuffer, *parentState,
+                           fileLoc, enableCaching);
 }
 
 SharedState::ModuleState &
@@ -1795,11 +1815,13 @@ void SharedState::notifyListenerOnImport(
     SMLoc importLoc, function_ref<ASTDecl &()> getPackageDecl) {
   if (!isListenerInterestedInLoc(parserListener, importLoc))
     return;
-  ASTDecl &packageDecl = getPackageDecl();
-  if (packageDecl.hasReferenceError)
-    return;
-  resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
-  parserListener->onImport(&packageDecl, importLoc);
+  parserListener->onImport(
+      [&]() -> MojoASTDeclRef {
+        ASTDecl &packageDecl = getPackageDecl();
+        resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
+        return &packageDecl;
+      },
+      importLoc);
 }
 
 void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {

@@ -100,6 +100,9 @@ class MojoParserListener {
 public:
   virtual ~MojoParserListener() = default;
 
+  /// A functor type used to resolve an input decl for a listener method.
+  using ResolveInputDeclFn = function_ref<MojoASTDeclRef()>;
+
   /// Returns true if the listener is interested in being notified for the given
   /// location.
   virtual bool isInterestedInLoc(llvm::SMLoc parserLoc);
@@ -126,7 +129,8 @@ public:
 
   /// Notify the listener that an import of a module within the given package is
   /// currently being resolved.
-  virtual void onImport(MojoASTDeclRef packageDecl, llvm::SMLoc importLoc);
+  virtual void onImport(ResolveInputDeclFn getPackageDecl,
+                        llvm::SMLoc importLoc);
 
   /// Notify the listener that a member within the given decl is being looked
   /// up.
