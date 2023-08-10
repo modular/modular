@@ -4,8 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Crashpad.h"
+#include "Support/CrashReporting.h"
 #include "Support/Configuration.h"
+#include "Support/ErrorOr.h"
 
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -13,6 +14,7 @@
 #include "client/crash_report_database.h"
 #include "client/crashpad_client.h"
 #include "client/settings.h"
+#include "client/simulate_crash.h"
 
 using namespace M;
 
@@ -21,43 +23,42 @@ static constexpr llvm::StringLiteral kHandlerProgramName =
 // TODO(#18360): Add a default crashpad upload URL here
 static constexpr llvm::StringLiteral kDefaultUploadURL = "";
 
-/// Pick a location to store crash data in.
-///
-/// Prefers a value from the "crash_reporting.database_path" configuration
-/// option, but will fall back to a "crashdb" directory inside of the modular
-/// home directory.
-static std::filesystem::path
-getDatabasePath(Config &config, const std::filesystem::path &modularHome) {
+std::filesystem::path
+M::getCrashDatabasePath(Config &config,
+                        const std::filesystem::path &modularHome) {
   StringRef fromConfig = config.getValue("crash_reporting.database_path");
   if (!fromConfig.empty())
     return std::string_view(fromConfig);
   return modularHome / "crashdb";
 }
 
-/// Attempt to locate the Crashpad handler executable.
-///
-/// If specified in the configuration, that takes precedence.  Otherwise, we
-/// look alongside the running executable, or failing that, anywhere on the
-/// PATH.
-static ErrorOr<std::filesystem::path> getHandlerPath(Config &config,
-                                                     const char *argv0) {
-  // Logic similar to printSymbolizedStackTrace inside LLVM
-  // Highest precedence: configuration value
+ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config &config,
+                                                         const char *argv0) {
+  // Logic similar to printSymbolizedStackTrace inside LLVM.
+  // Highest precedence: configuration value.
   // Note: Can't use StringRef here because need to keep value alive in
-  // findProgramByName cases
+  // findProgramByName cases.
   std::string program = config.getValue("crash_reporting.handler_path").str();
   // Next best: Handler living alongside current executable
   if (program.empty()) {
     StringRef parent = llvm::sys::path::parent_path(argv0);
-    if (!parent.empty())
-      UNWRAP_LLVM_ERROR_OR_SET(
-          program, llvm::sys::findProgramByName(kHandlerProgramName, parent));
+    if (!parent.empty()) {
+      // N.B.: Errors from findProgramByName are intentionally ignored.
+      // At least on Unix, the only error it ever returns is "file not found".
+      // Such an error should not prevent attempts of further alternatives.
+      if (auto programOr =
+              llvm::sys::findProgramByName(kHandlerProgramName, parent))
+        program = std::move(*programOr);
+    }
   }
-  // Next best: Handler anywhere on the path
-  if (program.empty())
-    UNWRAP_LLVM_ERROR_OR_SET(program,
-                             llvm::sys::findProgramByName(kHandlerProgramName));
-  // No luck
+  // Next best: Handler anywhere on the path.
+  if (program.empty()) {
+    // N.B.: Errors from findProgramByName are intentionally ignored for the
+    // same reason as above.
+    if (auto programOr = llvm::sys::findProgramByName(kHandlerProgramName))
+      program = std::move(*programOr);
+  }
+  // No luck.
   if (program.empty())
     return Error("unable to locate crashpad handler executable");
   return std::string_view(program);
@@ -80,8 +81,9 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
   //   - Crash database, to put the crashes in before they are sent off
   //   - URL to upload crash reports to
   std::filesystem::path modularHome = Config::getModularHomeDirPath();
-  std::filesystem::path databasePath = getDatabasePath(config, modularHome);
-  auto handlerPathOr = getHandlerPath(config, argv0);
+  std::filesystem::path databasePath =
+      getCrashDatabasePath(config, modularHome);
+  auto handlerPathOr = getCrashpadHandlerPath(config, argv0);
   if (handlerPathOr)
     return Error(llvm::Twine("while locating crashpad handler: ") +
                  handlerPathOr.getError());
@@ -102,10 +104,12 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
   return success();
 }
 
-void M::initCrashpad(const char *argv0) {
+void M::initCrashpadForProgram(const char *argv0) {
   if (auto error = tryInitCrashpad(argv0))
     llvm::errs() << "Failed to initialize Crashpad.  "
                     "Crash reporting will not be available.  "
                     "Cause: "
                  << error.getError() << "\n";
 }
+
+void M::generateNonFatalDump() { CRASHPAD_SIMULATE_CRASH(); }
