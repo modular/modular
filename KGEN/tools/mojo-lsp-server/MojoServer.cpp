@@ -398,12 +398,9 @@ private:
   /// Start a task that depends on the document being parsed.
   template <typename FnT>
   void startTaskAfterParsing(FnT &&fn) {
-    isDocumentParsed.andThenAsync([doc = LLCL::RCRef<MojoDocument>::copy(this),
-                                   fn = std::forward<FnT>(fn)]() mutable {
-      // If the document has been invalidated, there's nothing to do here.
-      if (!doc->isInvalidated)
-        fn(*doc);
-    });
+    isDocumentParsed.andThenAsync(
+        [doc = LLCL::RCRef<MojoDocument>::copy(this),
+         fn = std::forward<FnT>(fn)]() mutable { fn(*doc); });
   }
 
   //===--------------------------------------------------------------------===//
@@ -744,7 +741,10 @@ void MojoDocument::getCodeActions(
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions) {
   startTaskAfterParsing([pos, context, onActions = std::move(onActions)](
                             MojoDocument &doc) mutable {
-    onActions(doc.getCodeActionsSync(pos, context));
+    if (doc.isInvalidated)
+      onActions({});
+    else
+      onActions(doc.getCodeActionsSync(pos, context));
   });
 }
 
@@ -779,7 +779,10 @@ void MojoDocument::onCodeCompletion(
   startTaskAfterParsing(
       [completePos,
        onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
-        onCompletionFn(doc.onCodeCompletionSync(completePos));
+        if (doc.isInvalidated)
+          onCompletionFn({});
+        else
+          onCompletionFn(doc.onCodeCompletionSync(completePos));
       });
 }
 
@@ -845,7 +848,10 @@ void MojoDocument::onDefinition(
     OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
   startTaskAfterParsing([pos, onDefinitionFn = std::move(onDefinitionFn)](
                             MojoDocument &doc) mutable {
-    onDefinitionFn(doc.onDefinitionSync(pos));
+    if (doc.isInvalidated)
+      onDefinitionFn({});
+    else
+      onDefinitionFn(doc.onDefinitionSync(pos));
   });
 }
 
@@ -873,7 +879,10 @@ void MojoDocument::onHover(
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   startTaskAfterParsing(
       [pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
-        onHoverFn(doc.onHoverSync(pos));
+        if (doc.isInvalidated)
+          onHoverFn({});
+        else
+          onHoverFn(doc.onHoverSync(pos));
       });
 }
 
