@@ -381,17 +381,6 @@ LogicalResult MojoKernel::initialize(const char *mojoReplExe,
   if (failed(initializeTarget(mojoReplExe)))
     return failure();
 
-  // Create a breakpoint within the repl to act as an anchor for expression
-  // evaluation.
-  BreakpointSP mainBreakpoint = target->CreateBreakpoint(
-      /*all modules*/ nullptr, /*all sources*/ nullptr, "main",
-      eFunctionNameTypeAuto, eLanguageTypeUnknown,
-      /*offset=*/0,
-      /*skip_prologue=*/eLazyBoolCalculate,
-      /*internal=*/false, /*hardware=*/false);
-  if (!mainBreakpoint)
-    return reportKernelError("unable to create breakpoint for repl process");
-
   // Launch the mojo-repl-entry-point process.
   if (failed(launchReplProcess()))
     return failure();
