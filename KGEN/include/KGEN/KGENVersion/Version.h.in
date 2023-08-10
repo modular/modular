@@ -5,5 +5,5 @@
 //===----------------------------------------------------------------------===//
 
 #define KGEN_VERSION_STRING                                                    \
-  "${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}" \
+  "${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}${MODULAR_VERSION_LABEL}" \
   "-${KGEN_VERSION_REVISION}-${MODULAR_BUILD_TYPE_LOWER}"

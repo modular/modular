@@ -479,7 +479,7 @@ int main(int argc, char **argv) {
     ModularVersion version = getModularVersion();
     os << "KGEN compiler:\n  ";
     os << "Modular version: " << version.major << '.' << version.minor << '.'
-       << version.patch << "\n  ";
+       << version.patch << version.label << "\n  ";
     os << "Git SHA: " << version.revision << "\n  ";
     os << "Build config: " << version.buildType << "\n\n";
 
