@@ -204,7 +204,7 @@ M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
 
   // Add the object compiler layer.
   auto compiler =
-      ObjectCompiler::create(runtime, pm, ".kgen_cache", compilationOptions);
+      ObjectCompiler::create(runtime, pm, ".mojo_cache", compilationOptions);
   if (failed(compiler))
     return compiler.takeError();
 
@@ -219,13 +219,13 @@ M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   // Add the KGEN compiler layer.
   // First though, get the backend chains to pass into the compile layer.
   auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
+      runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
       KGEN_VERSION_STRING);
   if (transformCacheBackend.isError())
     return transformCacheBackend.takeError();
 
   auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
+      runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
       KGEN_VERSION_STRING);
   if (regionCacheBackend.isError())
     return regionCacheBackend.takeError();

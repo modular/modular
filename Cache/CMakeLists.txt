@@ -17,15 +17,15 @@ add_subdirectory(unittests)
 # stolen from KGEN/lib/ExecutionEngine):
 #
 # cache_files(cache_a_file
-#             BASE_DIR ${MODULAR_DERIVED_PATH}/.kgen_cache/orc
+#             BASE_DIR ${MODULAR_DERIVED_PATH}/.mojo_cache/orc
 #             HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
 #             INPUT_NAMES "kOrcRT" # Note that these must be globally unique - they're turned into C++ identifiers.
-#             RELATIVE_INSTALL_DIR ".kgen_cache/orc")
+#             RELATIVE_INSTALL_DIR ".mojo_cache/orc")
 function(cache_files target)
   cmake_parse_arguments(CACHE_MGR "" "BASE_DIR;HEADER_NAME;VERSION" "INPUTS;INPUT_NAMES;RELATIVE_INSTALL_DIR" ${ARGN})
 
   # For debugging, but default to always for now.
-  # This is the name of the directory used in `.derived/.kgen_cache`
+  # This is the name of the directory used in `.derived/.mojo_cache`
   # for where to store the relevant CAS artifacts.  Before filing a bug
   # report, please check the contents there.
   include(CMakePrintHelpers)

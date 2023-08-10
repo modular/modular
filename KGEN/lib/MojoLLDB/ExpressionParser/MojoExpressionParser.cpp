@@ -148,7 +148,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   // Create the compiler instance.
   auto compilerOr =
       ObjectCompiler::create(typeSystem->getRuntime(), *fullCompilationPM,
-                             ".kgen_cache", *compilationOptions);
+                             ".mojo_cache", *compilationOptions);
   if (failed(compilerOr))
     return;
   compiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));

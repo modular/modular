@@ -38,21 +38,21 @@ include(${CMAKE_SOURCE_DIR}/KGEN/include/KGEN/KGENVersion/GenerateVersion.cmake)
 set(VERSION_STRING "${MODULAR_VERSION_MAJOR}.${MODULAR_VERSION_MINOR}.${MODULAR_VERSION_PATCH}-${KGEN_VERSION_REVISION}-${MODULAR_BUILD_TYPE_LOWER}")
 
 cache_files(orc-rt-cas
-  BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
+  BASE_DIR ${MODULAR_DERIVED_DIR}/.mojo_cache/orc
   HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/ORCCASID.h
   INPUTS ${ORC_LIB}
   VERSION ${VERSION_STRING}
   INPUT_NAMES "kOrcRT"
-  RELATIVE_INSTALL_DIR ".kgen_cache/orc"
+  RELATIVE_INSTALL_DIR ".mojo_cache/orc"
 )
 
 cache_files(compiler-rt-cas
-  BASE_DIR ${MODULAR_DERIVED_DIR}/.kgen_cache/orc
+  BASE_DIR ${MODULAR_DERIVED_DIR}/.mojo_cache/orc
   HEADER_NAME ${MODULAR_BINARY_DIR}/KGEN/include/KGEN/ExecutionEngine/COMPILERRTCASID.h
   INPUTS $<TARGET_FILE:KGENCompilerRTShared>
   VERSION ${VERSION_STRING}
   INPUT_NAMES "kCompilerRT"
-  RELATIVE_INSTALL_DIR ".kgen_cache/orc"
+  RELATIVE_INSTALL_DIR ".mojo_cache/orc"
 )
 
 set(CAS_DEPENDS compiler-rt-cas orc-rt-cas)
