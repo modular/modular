@@ -35,7 +35,7 @@ from MatmulUtils import (
     MatmulOperandLayout,
     GemmShape,
     calculate_tile_n_k,
-    _get_tile_n_k_ND,
+    _get_tile_n_k,
     get_min_task_size,
     get_partitioned_matmul,
     PartitionHeuristic,
@@ -1419,6 +1419,7 @@ struct TiledMatmul[
         Args:
             b_packed(NDBuffer): B matrix in packed layout.
         """
+
         # Each tiled iteration on the k dimension.
         @always_inline
         @parameter
@@ -1465,6 +1466,44 @@ struct TiledMatmul[
             b_packed_ptr.address,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
         )
+
+
+@always_inline
+fn pack_matmul_b_shape_func[
+    type: DType, transpose_in_0: Bool, single_thread_blocking_override: Bool
+](b_input: NDBuffer[2, DimList.create_unknown[2](), type],) -> StaticIntTuple[
+    2
+]:
+    """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
+    argument.
+
+    If transpose_b is True, this returns the un-transposed shape, since pack_b
+    will un-transpose `b_ref` as part of the packing layout transformation."""
+
+    var output = StaticIntTuple[2]()
+
+    let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
+    var tile_n_k = StaticIntTuple[2]()
+
+    if is_critical_stride(k):
+        alias config = search_mm_config[type, True, True]()
+        tile_n_k = _get_tile_n_k[config, transpose_in_0, type](b_input)
+    else:
+        alias config2 = search_mm_config[type, True, False]()
+        tile_n_k = _get_tile_n_k[config2, transpose_in_0, type](b_input)
+
+    @parameter
+    if transpose_in_0:
+        output[0] = b_input.dim(1)
+        output[1] = b_input.dim(0)
+    else:
+        output[0] = b_input.dim(0)
+        output[1] = b_input.dim(1)
+
+    output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
+    output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
+
+    return output
 
 
 # TODO(16867): Merge this with pack_b_ndbuffer.
@@ -1610,7 +1649,7 @@ fn pack_b_ndbuffer_impl[
     # values used in the matmul algorithm consuming this packed b matrix
     if is_critical_stride(k):
         alias config = search_mm_config[type, True, True]()
-        let tile_n_k = _get_tile_n_k_ND[config, transposed, type](b_input)
+        let tile_n_k = _get_tile_n_k[config, transposed, type](b_input)
         pack_b[
             transposed,
             config.simd_size,
@@ -1626,7 +1665,7 @@ fn pack_b_ndbuffer_impl[
         )
     else:
         alias config2 = search_mm_config[type, True, False]()
-        let tile_n_k = _get_tile_n_k_ND[config2, transposed, type](b_input)
+        let tile_n_k = _get_tile_n_k[config2, transposed, type](b_input)
         pack_b[
             transposed,
             config2.simd_size,
@@ -1865,7 +1904,6 @@ fn small_matmul_sync[
     b: NDBuffer[2, DimList.create_unknown[2](), type],
     c: NDBuffer[2, DimList.create_unknown[2](), type],
 ):
-
     alias simd_width = simdwidthof[type]()
     alias unroll_factor = 2  # don't unroll too much since this is for tiny shapes
 
@@ -1875,7 +1913,6 @@ fn small_matmul_sync[
 
     @parameter
     if transpose_b:
-
         for m in range(M):
             for n in range(N):
                 var acc_vector = SIMD[type, simd_width]()

@@ -751,7 +751,7 @@ fn dispatch_is_critical_stride[
 
 # TODO(16425): Unify this with the rest of the matmul impl
 @always_inline
-fn _get_tile_n_k_ND[
+fn _get_tile_n_k[
     config: MatmulConfig, transpose_b: Bool, type: DType
 ](b: NDBuffer[2, DimList.create_unknown[2](), type]) -> StaticIntTuple[2]:
     @parameter
