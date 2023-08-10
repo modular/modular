@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from BuildInfo import is_relwithdebinfo_build, is_debug_build
+from BuildInfo import is_debug_build
 from Buffer import NDBuffer
 from List import DimList
 from DType import DType
@@ -242,7 +242,7 @@ fn get_conv_tile_size[type: DType]() -> Int:
 
     # See MatmulUtils for context on tile size for debug built and macos.
     @parameter
-    if is_relwithdebinfo_build() or is_debug_build():
+    if is_debug_build():
         return 4 * KB // sizeof[type]()
 
     @parameter
