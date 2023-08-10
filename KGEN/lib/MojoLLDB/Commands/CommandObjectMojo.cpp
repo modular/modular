@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CommandObjectMojo.h"
+#include "../REPL/MojoREPL.h"
 #include "../ScriptingBridge/SBClassUtils.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "lldb/Target/Target.h"
@@ -42,7 +43,7 @@ private:
 //===----------------------------------------------------------------------===//
 bool CommandHelp::DoExecute(SBDebugger debugger, char **command,
                             SBCommandReturnObject &result) {
-  result.Printf("To be filled.\n");
+  result.AppendMessage(MojoREPL::GetHelpPrologue());
   return true;
 }
 
