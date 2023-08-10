@@ -18,7 +18,7 @@ from TargetInfo import (
     simdwidthof,
     sizeof,
 )
-from BuildInfo import is_relwithdebinfo_build, is_debug_build
+from BuildInfo import is_debug_build
 from Buffer import NDBuffer, DynamicRankBuffer
 
 alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
@@ -584,7 +584,7 @@ fn get_pack_data_size[type: DType]() -> Int:
     alias KB = 1024
 
     @parameter
-    if is_relwithdebinfo_build() or is_debug_build():
+    if is_debug_build():
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
