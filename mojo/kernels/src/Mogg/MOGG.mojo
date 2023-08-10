@@ -1493,7 +1493,9 @@ fn gather[
 
 @always_inline
 fn matmul[
-    type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     transpose_in_1: Bool,  # matches name of MO attribute
     packed_in_1: Bool,
     single_thread_blocking_override: Bool,
@@ -1502,9 +1504,9 @@ fn matmul[
         StaticIntTuple[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    a: NDBuffer[2, DimList.create_unknown[2](), type],
-    b: NDBuffer[2, DimList.create_unknown[2](), type],
-    c: NDBuffer[2, DimList.create_unknown[2](), type],
+    a: NDBuffer[2, DimList.create_unknown[2](), a_type],
+    b: NDBuffer[2, DimList.create_unknown[2](), b_type],
+    c: NDBuffer[2, DimList.create_unknown[2](), c_type],
     out_chain: OutputChainPtr,
 ):
     alias transpose_a = False
@@ -1543,9 +1545,9 @@ fn matmul[
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
     matmul_parallel_sync[
-        type,  # a_type
-        type,  # b_type
-        type,  # c_type
+        a_type,
+        b_type,
+        c_type,
         transpose_a,
         transpose_b,
         b_packed,
