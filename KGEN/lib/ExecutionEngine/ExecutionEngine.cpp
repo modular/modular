@@ -321,7 +321,7 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
 
 static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   // Create a BlobCache ref.
-  std::filesystem::path base = ".kgen_cache";
+  std::filesystem::path base = ".mojo_cache";
   base /= "orc";
   RuntimeAndCache<ReadOnlyKey> runtimeAndCache(base.string());
   if (auto err = runtimeAndCache.setup(KGEN_VERSION_STRING))

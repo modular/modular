@@ -480,12 +480,12 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
 
   // Build the backends used for caching compilation.
   auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "transform").string(),
+      runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
       KGEN_VERSION_STRING);
   if (transformCacheBackend.isError())
     return transformCacheBackend.takeError();
   auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".kgen_cache") / "region").string(),
+      runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
       KGEN_VERSION_STRING);
   if (regionCacheBackend.isError())
     return regionCacheBackend.takeError();
@@ -569,7 +569,7 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
   // Now we can start to generate the archive.
   mlir::PassManager archivePM(ctx);
   auto objectCompiler = ObjectCompiler::create(
-      runtime, archivePM, ".kgen_cache", compilationOptions);
+      runtime, archivePM, ".mojo_cache", compilationOptions);
   if (failed(objectCompiler))
     return objectCompiler.takeError();
   ErrorOr<Cache::BufferRef> archiveOr =

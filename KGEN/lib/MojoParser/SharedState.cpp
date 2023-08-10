@@ -196,7 +196,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
   // Create a cache for use by the parser.
   if (config.moduleCachingLevel != MojoParserConfig::kCacheNone) {
     auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
-        runtime, (std::filesystem::path(".kgen_cache") / "mojo").string(),
+        runtime, (std::filesystem::path(".mojo_cache") / "mojo").string(),
         KGEN_VERSION_STRING);
     if (failed(transformCacheBackendOr))
       return;
