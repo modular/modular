@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from lit.llvm import llvm_config
-from lit.llvm.subst import ToolSubst, FindTool
 import platform
 
 config.name = "Support"
@@ -35,17 +34,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = [
-    "build-info",
-    ToolSubst("%crash-report-path-info", FindTool("crash-report-path-info")),
-    "crash-test-dummy",
-    "driver-tblgen",
-    ToolSubst(
-        "%modular-crashpad-handler", FindTool("modular-crashpad-handler")
-    ),
-    "support-dialect-opt",
-    "system-info",
-]
+tools = ["build-info", "support-dialect-opt", "system-info", "driver-tblgen"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
