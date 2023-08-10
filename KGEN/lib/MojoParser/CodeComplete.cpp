@@ -80,7 +80,8 @@ struct CodeCompletionListener : public MojoParserListener {
 
   /// Notify the listener that an import of a module within the given package is
   /// currently being resolved.
-  void onImport(MojoASTDeclRef packageDecl, SMLoc importLoc) override {
+  void onImport(ResolveInputDeclFn getPackageDecl, SMLoc importLoc) override {
+    MojoASTDeclRef packageDecl = getPackageDecl();
     for (MojoASTDeclRef::ChildEntry child : packageDecl.getChildren()) {
       StringRef name = child.getName();
       if (!showDeclDuringLookup(packageDecl, name, /*isModuleLookup=*/true))
