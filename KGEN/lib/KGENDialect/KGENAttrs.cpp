@@ -1929,6 +1929,31 @@ RegionAttr RegionAttr::get(StringAttr name, ArrayRef<TypedAttr> values,
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseIntLiteral(AsmParser &p, IPInt &result) {
+  APInt resultAP;
+  OptionalParseResult parseResult = p.parseInteger(resultAP);
+  if (!parseResult.has_value() || failed(*parseResult)) {
+    result = {};
+    return failure();
+  }
+  result = IPInt(resultAP);
+  return success();
+}
+
+static void printIntLiteral(AsmPrinter &p, const IPInt &value) {
+  p.getStream() << value.getAPInt();
+}
+
+Type IntLiteralAttr::getType() const {
+  return IntLiteralType::get(this->getContext());
+}
+
+bool IntLiteralAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

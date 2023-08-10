@@ -15,6 +15,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "Support/ErrorOr.h"
+#include "Support/IPInt.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace mlir {
