@@ -1470,6 +1470,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // These ops are handled by other passes.
+  target.addLegalOp<GlobalAllocOp>();
   target.addLegalOp<GlobalConstantOp>();
   target.addLegalOp<GlobalAddressOp>();
   target.addLegalOp<ExternalCallOp>();
@@ -1574,11 +1575,8 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
 //===----------------------------------------------------------------------===//
 
 /// Lower an external call. Add the callee to the symbol table.
-class ConvertPOPExternalCall : public ConvertPOPToLLVMPattern<ExternalCallOp> {
-public:
-  ConvertPOPExternalCall(SymbolTable &symtab,
-                         mlir::LLVMTypeConverter &typeConverter)
-      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab) {}
+struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
   LogicalResult
   matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
@@ -1639,10 +1637,6 @@ public:
     rewriter.replaceOp(op, call);
     return success();
   }
-
-private:
-  /// The symbol table.
-  SymbolTable &symtab;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1807,6 +1801,53 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPGlobalAlloc
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+
+  LogicalResult matchAndRewrite(GlobalAllocOp op, GlobalAllocOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+    auto func = op->getParentOfType<mlir::FunctionOpInterface>();
+    b.setInsertionPoint(func);
+
+    // Set the alignment if specified. Otherwise use the natural alignment.
+    auto ptrType = cast<LLVM::LLVMPointerType>(convertType(op.getType()));
+    unsigned alignment =
+        getAlignment(getTypeConverter(), ptrType, op.getAlignmentAttr());
+
+    // Set the address space if specified.
+    unsigned addrSpace = 0;
+    if (auto addrSpaceAttr =
+            dyn_cast_or_null<IntegerAttr>(op.getAddressSpaceAttr()))
+      addrSpace = addrSpaceAttr.getInt();
+
+    // Mangle the name according to the contained function.
+    std::string name = (func.getName() + "_global_alloc").str();
+
+    // Create the global.
+    auto global = b.create<LLVM::GlobalOp>(
+        op.getLoc(),
+        LLVM::LLVMArrayType::get(ptrType.getElementType(),
+                                 cast<IntegerAttr>(op.getCount()).getInt()),
+        /*isConstant=*/false, LLVM::Linkage::Internal, name,
+        /*value=*/Attribute(), alignment, addrSpace);
+    symtab.insert(global);
+
+    // Replace the alloc op with an `addressof`.
+    b.setInsertionPoint(op);
+    auto ptr = b.create<LLVM::AddressOfOp>(op.getLoc(), global);
+    b.replaceOpWithNewOp<LLVM::BitcastOp>(
+        op,
+        LLVM::LLVMPointerType::get(ptrType.getElementType(),
+                                   ptrType.getAddressSpace()),
+        ptr);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPGlobalConstant
 //===----------------------------------------------------------------------===//
 
@@ -1928,7 +1969,8 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Convert external calls.
   target.addIllegalOp<ExternalCallOp>();
-  patterns.insert<ConvertPOPExternalCall>(symtab, typeConverter);
+  patterns.insert<ConvertPOPGlobalAlloc, ConvertPOPExternalCall>(typeConverter,
+                                                                 symtab);
   patterns.insert<ConvertPOPAlignedAlloc>(symtab, allocFnName, typeConverter);
   patterns.insert<ConvertPOPAlignedFree>(symtab, freeFnName, typeConverter);
 

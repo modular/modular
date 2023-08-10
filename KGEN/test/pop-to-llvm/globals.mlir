@@ -45,6 +45,15 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     %2 = pop.global_constant: simd<2, si32> = <<2, 5>>
     kgen.return
   }
+
+  // CHECK-LABEL: llvm.mlir.global internal @global_alloc_global_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
+  // CHECK-LABEL: kgen.func @global_alloc
+  kgen.func @global_alloc() -> !pop.pointer<scalar<f32>, 3> {
+    // CHECK-NEXT: %0 = llvm.mlir.addressof @global_alloc_global_alloc : !llvm.ptr<array<2 x f32>, 3>
+    // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<array<2 x f32>, 3> to !llvm.ptr<f32, 3>
+    %0 = pop.global_alloc 2 x !pop.scalar<f32> align 4 address_space 3
+    kgen.return %0 : !pop.pointer<scalar<f32>, 3>
+  }
 }
 
 // -----

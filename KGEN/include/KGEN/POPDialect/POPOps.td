@@ -1451,7 +1451,6 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<Index>>:$address_space);
   let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
-  let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
@@ -1605,6 +1604,37 @@ def POP_GlobalAddressOp : POPOp<"global.address", [Pure,
   let results = (outs POP_PointerType:$result);
 
   let assemblyFormat = "$global attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalAllocOp
+//===----------------------------------------------------------------------===//
+
+def POP_GlobalAllocOp : POPOp<"global_alloc"> {
+  let summary = "allocate a variable in global memory";
+  let description = [{
+    The `pop.global_alloc` operation allocates a variable as a global. What
+    this means is the returned pointer refers to some global value. The
+    operation is not inherently thread-safe or re-entrant, but that depends on
+    the particular interpretation of the address space.
+
+    Example:
+
+
+    ```mlir
+    %ptr = pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<Index>:$count,
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       OptionalAttr<AttrOfType<Index>>:$address_space);
+  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
+
+  let assemblyFormat = [{
+    custom<IndexParamValue>($count) `x`
+    custom<PointerOf>(type($result), $alignment, $address_space) `` attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
