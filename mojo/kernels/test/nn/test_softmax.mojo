@@ -5,13 +5,63 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from Softmax import softmax_2_pass
-from Buffer import Buffer
-from List import Dim
+from Softmax import softmax_2_pass, logsoftmax
+from Buffer import Buffer, NDBuffer
+from List import Dim, DimList
 from IO import print
 from TargetInfo import simdwidthof
 from Range import range
 from DType import DType
+from LLCL import OwningOutputChainPtr, Runtime
+
+
+# CHECK-LABEL: test_logsoftmax
+fn test_logsoftmax():
+    print("== test_logsoftmax")
+    alias type = DType.float32
+    alias simd_width = simdwidthof[type]()
+
+    fn logsoftmax_test_nd[rank: Int, shape: DimList]():
+        let in_buf = NDBuffer[rank, shape, type].stack_allocation()
+        let out_buf = NDBuffer[rank, shape, type].stack_allocation()
+        let in_buf_flat = in_buf.flatten()
+        let out_buf_flat = out_buf.flatten()
+        out_buf.zero()
+        for i in range(in_buf_flat.__len__()):
+            in_buf_flat[i] = i
+
+        with Runtime() as rt:
+            let chain = OwningOutputChainPtr(rt)
+            logsoftmax[type, simd_width, rank, shape](
+                in_buf, out_buf, rank - 1, chain.borrow()
+            )
+            chain.wait()
+
+        for i in range(out_buf_flat.__len__()):
+            print(out_buf_flat[i])
+
+    logsoftmax_test_nd[1, DimList(5)]()
+
+    # CHECK: -4.45191{{[0-9]+}}
+    # CHECK-NEXT: -3.451914{{[0-9]+}}
+    # CHECK-NEXT: -2.451914{{[0-9]+}}
+    # CHECK-NEXT: -1.451914{{[0-9]+}}
+    # CHECK-NEXT: -0.451914{{[0-9]+}}
+
+    logsoftmax_test_nd[2, DimList(3, 4)]()
+
+    # CHECK: -3.440189{{[0-9]+}}
+    # CHECK-NEXT: -2.440189{{[0-9]+}}
+    # CHECK-NEXT: -1.440189{{[0-9]+}}
+    # CHECK-NEXT: -0.440189{{[0-9]+}}
+    # CHECK-NEXT: -3.440189{{[0-9]+}}
+    # CHECK-NEXT: -2.440189{{[0-9]+}}
+    # CHECK-NEXT: -1.440189{{[0-9]+}}
+    # CHECK-NEXT: -0.440189{{[0-9]+}}
+    # CHECK-NEXT: -3.440189{{[0-9]+}}
+    # CHECK-NEXT: -2.440189{{[0-9]+}}
+    # CHECK-NEXT: -1.440189{{[0-9]+}}
+    # CHECK-NEXT: -0.440189{{[0-9]+}}
 
 
 # CHECK-LABEL: test_softmax_2pass
@@ -40,4 +90,5 @@ fn test_softmax_2pass():
 
 
 fn main():
+    test_logsoftmax()
     test_softmax_2pass()
