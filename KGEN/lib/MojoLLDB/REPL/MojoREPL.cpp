@@ -186,6 +186,13 @@ MojoREPL::MojoREPL(Target &target)
     eventThreadFunction(stopEventThread,
                         [this]() { flushTypeSystemEventsAndProcessStreams(); });
   });
+
+  // Here we set the default expr eval options for all REPL expressions.
+  EvaluateExpressionOptions opts;
+  // Disable timeout because the evaluator could take a very long time.
+  opts.SetTimeout(Timeout<std::micro>(std::nullopt));
+  opts.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
+  SetEvaluateOptions(opts);
 }
 
 MojoREPL::~MojoREPL() {
