@@ -120,7 +120,9 @@ private:
 
 /// Canonicalize
 /// `(i < x ? x - i : 0) > 0` to `i < x`. or
-/// `(x > i ? x - i : 0) > 0` to `x > i`.
+/// `(x > i ? x - i : 0) > 0` to `x > i`. or
+/// `(x > 0 ? x : 0) > 0` to `x > 0`. or
+/// `(0 < x ? x : 0) > 0` to `0 < x`.
 /// This is a common pattern
 /// in for loop constructs.
 /// TODO: Generalize this pattern?
@@ -146,18 +148,30 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
       return b.notifyMatchFailure(op.getLoc(),
                                   "select condition is not a comparison.");
 
-    auto trueVal = select.getTrueValue().getDefiningOp<mlir::index::SubOp>();
+    auto falseValue = select.getFalseValue();
+    auto trueVal = select.getTrueValue();
+    auto trueValSub = trueVal.getDefiningOp<mlir::index::SubOp>();
+
+    IntegerAttr falseV;
+    if (!mlir::matchPattern(falseValue, mlir::m_Constant(&falseV)) ||
+        !falseV.getValue().isZero())
+      return b.notifyMatchFailure(op.getLoc(),
+                                  "Select's false value is not zero");
 
     if (indexCmp.getPred() == mlir::index::IndexCmpPredicate::SLT) {
-      if (!trueVal || trueVal.getLhs() != indexCmp.getRhs() ||
-          trueVal.getRhs() != indexCmp.getLhs())
-        return b.notifyMatchFailure(op.getLoc(),
-                                    "select true value is not `x - i`");
+      if (!(indexCmp.getLhs() == falseValue && indexCmp.getRhs() == trueVal)) {
+        if (!trueValSub || trueValSub.getLhs() != indexCmp.getRhs() ||
+            trueValSub.getRhs() != indexCmp.getLhs())
+          return b.notifyMatchFailure(op.getLoc(),
+                                      "select true value is not `x - i`");
+      }
     } else if (indexCmp.getPred() == mlir::index::IndexCmpPredicate::SGT) {
-      if (!trueVal || trueVal.getLhs() != indexCmp.getLhs() ||
-          trueVal.getRhs() != indexCmp.getRhs())
-        return b.notifyMatchFailure(op.getLoc(),
-                                    "select true value is not `x - i`");
+      if (!(indexCmp.getLhs() == trueVal && indexCmp.getRhs() == falseValue)) {
+        if (!trueValSub || trueValSub.getLhs() != indexCmp.getLhs() ||
+            trueValSub.getRhs() != indexCmp.getRhs())
+          return b.notifyMatchFailure(op.getLoc(),
+                                      "select true value is not `x - i`");
+      }
     } else {
       return b.notifyMatchFailure(
           op.getLoc(), "select condition is not `slt` or `sgt` comparison");
