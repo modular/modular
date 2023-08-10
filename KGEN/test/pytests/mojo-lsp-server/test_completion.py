@@ -66,6 +66,20 @@ import Builtin.
     )
 
 
+async def test_completion_relative_import(client: LanguageClient):
+    doc = Document.from_file("imports.mojo")
+    range = fail_if_none(doc.find_first_range("from .aliases"))
+
+    requests = Requests(client)
+    requests.open_document(doc)
+    items = fail_if_none(await requests.completion(doc, range.end))
+
+    assert any(
+        item.label == "aliases" and item.kind == CompletionItemKind.Module
+        for item in items
+    )
+
+
 async def test_completion_import_member(client: LanguageClient):
     doc = Document(
         "foo.mojo",
