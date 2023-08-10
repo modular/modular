@@ -142,6 +142,15 @@ void fillWithRandomDistribution(MutableArrayRef<EltType> buffer,
 template <typename EltType>
 void fillWithRandomFloats(MutableArrayRef<EltType> buffer, EltType lb,
                           EltType ub) {
+  // A micro-optimization to avoid calling the random number generator if the
+  // bounds are equal.
+  if (lb == ub) {
+    if (lb == 0)
+      memset(buffer.data(), 0, buffer.size() * sizeof(EltType));
+    else
+      std::fill(buffer.begin(), buffer.end(), lb);
+    return;
+  }
   fillWithRandomDistribution(buffer,
                              std::uniform_real_distribution<EltType>(lb, ub));
 }
@@ -159,6 +168,15 @@ template <
         EltType>>
 void fillWithRandomInts(MutableArrayRef<EltType> buffer, EltType lb,
                         EltType ub) {
+  // A micro-optimization to avoid calling the random number generator if the
+  // bounds are equal.
+  if (lb == ub) {
+    if (lb == 0)
+      memset(buffer.data(), 0, buffer.size() * sizeof(EltType));
+    else
+      std::fill(buffer.begin(), buffer.end(), lb);
+    return;
+  }
   fillWithRandomDistribution(
       buffer, std::uniform_int_distribution<DistributionT>(lb, ub));
 }
