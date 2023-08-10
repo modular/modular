@@ -291,6 +291,10 @@ static llvm::Error createReplBreakpoint(Target &target) {
 /// breakpoint to be hit.
 llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
                                               Debugger &debugger) {
+  // Create a breakpoint in the target to anchor the REPL.
+  if (llvm::Error error = createReplBreakpoint(target))
+    return error;
+
   // The following disables a warning that is thrown when the entry-point is
   // built with optimizations. This warning pollutes the output and is not
   // helpful because the entry point is actually an empty program.
@@ -382,10 +386,6 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   llvm::Expected<lldb::TargetSP> target = createMojoReplTarget(debugger);
   if (!target)
     return target.takeError();
-
-  // Create a breakpoint in the target to anchor the REPL.
-  if (llvm::Error error = createReplBreakpoint(**target))
-    return error;
 
   // Launch the repl process and wait for it to trigger the breakpoint.
   if (llvm::Error error = MojoREPL::launchEntryPointProcess(**target, debugger))
