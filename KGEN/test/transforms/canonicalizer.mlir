@@ -48,7 +48,8 @@ kgen.func @indexify_comparison(%arg0: index) -> i1 {
 }
 
 // CHECK-LABEL: @canonicalize_loop_range
-kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index) -> (i1, i1) {
+kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index, %arg2: index) -> (i1, i1, i1, i1) {
+  // CHECK:      [[IDX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[V0:%.*]] = index.cmp slt(%arg0, %arg1)
   %0 = index.cmp slt(%arg0, %arg1)
   %idx0 = index.constant 0
@@ -62,8 +63,18 @@ kgen.func @canonicalize_loop_range(%arg0: index, %arg1: index) -> (i1, i1) {
   %6 = pop.select %4, %5, %idx0 : index
   %7 = index.cmp sgt(%6, %idx0)
 
-  // CHECK-NEXT: return [[V0]], [[V1]]
-  kgen.return %3, %7 : i1, i1
+  // CHECK-NEXT: [[V2:%.*]] = index.cmp sgt(%arg2, [[IDX0]])
+  %8 = index.cmp sgt(%arg2, %idx0)
+  %9 = pop.select %8, %arg2, %idx0 : index
+  %10 = index.cmp sgt(%9, %idx0)
+
+  // CHECK-NEXT: [[V3:%.*]] = index.cmp slt([[IDX0]], %arg2)
+  %11 = index.cmp slt(%idx0, %arg2)
+  %12 = pop.select %11, %arg2, %idx0 : index
+  %13 = index.cmp sgt(%12, %idx0)
+
+  // CHECK-NEXT: return [[V0]], [[V1]], [[V2]], [[V3]]
+  kgen.return %3, %7, %10, %13 : i1, i1, i1, i1
 }
 
 // CHECK-LABEL: @condition_propagation
