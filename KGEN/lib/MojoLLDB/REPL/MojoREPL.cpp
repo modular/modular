@@ -417,7 +417,8 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   cleanupOnError.release();
 
   if (isatty(STDIN_FILENO))
-    printf("Welcome to Mojo.\nType :help for assistance.\n");
+    printf("Welcome to Mojo.\nExpressions are delimited by a blank line.\nType "
+           "`:mojo help` for further assistance.\n");
   return repl;
 }
 
@@ -454,6 +455,55 @@ void MojoREPL::Initialize() {
 
 void MojoREPL::Terminate() { PluginManager::UnregisterPlugin(createInstance); }
 
+const char *MojoREPL::GetHelpPrologue() {
+  // Let's try to keep this within 60 chars to make sure it fits nicely even in
+  // small terminals.
+  return R"(
+The Mojo REPL (Read-Eval-Print-Loop) acts like an
+interpreter of Mojo expressions, which are delimited by a
+blank line. These expressions can define top-level
+variables, functions, structs, and other declarations, which
+are persisted across expressions. For example:
+
+  1> let my_var = "Welcome to Mojo!"
+  2.
+  2> print(my_var)
+  3.
+  Welcome to Mojo!
+
+Besides that, it is possible to execute Python expressions
+using the %%python magic, which offers seamless interop with
+Mojo code, including exposing top-level python declarations
+in subsequent Mojo expressions. For example:
+
+  1> %%python
+  2> import sys
+  3> print("Python version from python:", sys.version)
+  4.
+  Python version from python: 3.11.4
+
+  5> print("Python version from Mojo:", sys.version)
+  6.
+  Python version from Mojo: 3.11.4
+
+As the Mojo REPL is based on LLDB, the complete set of LLDB
+debugging commands is also available as described below.
+
+  Commands must be prefixed with a colon at the REPL prompt
+  (:quit for example).
+  Typing just a colon followed by return will switch to the
+  LLDB prompt.
+
+Type "< path" to read in code from a text file "path".
+
+)";
+}
+
+const char *MojoREPL::IOHandlerGetHelpPrologue() {
+  // FIXME(18991): CommandInterpreter distorts the output returned by this
+  // function.
+  return GetHelpPrologue();
+}
 //===----------------------------------------------------------------------===//
 // Source Code Handling
 //===----------------------------------------------------------------------===//

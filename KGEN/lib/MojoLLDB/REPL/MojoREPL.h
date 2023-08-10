@@ -38,6 +38,10 @@ public:
   static llvm::Error launchEntryPointProcess(lldb_private::Target &target,
                                              lldb_private::Debugger &debugger);
 
+  /// Return the common help message to show in commands like `:help` or `:mojo
+  /// help`.
+  static const char *GetHelpPrologue();
+
 protected:
   lldb_private::Status DoInitialization() override { return {}; }
 
@@ -52,6 +56,8 @@ protected:
   lldb::LanguageType GetLanguage() override { return lldb::eLanguageTypeMojo; }
 
   std::shared_ptr<MojoTypeSystem> getTypeSystem() { return typeSystem; }
+
+  const char *IOHandlerGetHelpPrologue() override;
 
   //===--------------------------------------------------------------------===//
   // Source Code Handling
