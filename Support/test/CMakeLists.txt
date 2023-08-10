@@ -12,9 +12,6 @@ configure_lit_site_cfg(
 add_modular_testsuite(check-support
   TOOLS
   build-info
-  crash-report-path-info
-  crash-test-dummy
   driver-tblgen
-  modular-crashpad-handler
   support-dialect-opt
   system-info)

@@ -12,6 +12,7 @@ add_modular_tool(mojo
   Build/mojo-build.cpp
   Common/Compilation.cpp
   Common/Telemetry.cpp
+  Crashpad.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
   Format/mojo-format.cpp
@@ -37,7 +38,6 @@ add_modular_tool(mojo
   LLCLRuntimeGlobals
   LLCLRuntime
   MArchTarget
-  MCrashReporting
   MojoParser
   MSupportDriver
   MSupportGlobals
@@ -50,6 +50,8 @@ add_modular_tool(mojo
   MLIRBuiltinToLLVMIRTranslation
 
   LLVMOption
+
+  client  # Crashpad client library
   )
 
 # `mojo repl` calls out to `lldb` in a subprocess (for now). As such, it needs
