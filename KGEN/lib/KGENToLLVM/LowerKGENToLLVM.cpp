@@ -29,24 +29,6 @@ namespace LLVM = mlir::LLVM;
 namespace {
 
 //===----------------------------------------------------------------------===//
-// ConvertSymbolOpToLLVM
-//===----------------------------------------------------------------------===//
-
-/// This pattern is used to rewrite symbol operations while keeping the symbol
-/// table up-to-date.
-template <typename OpT>
-class ConvertSymbolOpToLLVM : public ConvertPOPToLLVMPattern<OpT> {
-public:
-  ConvertSymbolOpToLLVM(mlir::LLVMTypeConverter &typeConverter,
-                        SymbolTable &symtab)
-      : ConvertPOPToLLVMPattern<OpT>(typeConverter), symtab(symtab) {}
-
-protected:
-  /// The symbol table.
-  SymbolTable &symtab;
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENFunc
 //===----------------------------------------------------------------------===//
 

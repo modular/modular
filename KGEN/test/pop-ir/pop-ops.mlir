@@ -679,6 +679,13 @@ kgen.generator @global_constant() {
   kgen.return
 }
 
+// CHECK-LABEL: @global_alloc
+kgen.generator @global_alloc() {
+  // CHECK-NEXT: pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+  %0 = pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+  kgen.return
+}
+
 // CHECK-LABEL: @global_constant_aligned
 kgen.generator @global_constant_aligned() {
   // CHECK: pop.global_constant: i32 = <5> align 16
