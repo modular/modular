@@ -1587,9 +1587,13 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
 
     // Otherwise, this is importing from within a package.
     shared.notifyListenerOnImport(loc, [&]() -> ASTDecl & {
-      return shared.importModule(
-          llvm::join(moduleNames, "."),
-          curDeclScope->getIfOperation()->getParentOfType<PackageOp>(), loc);
+      std::string parentModuleName = llvm::join(moduleNames, ".");
+      auto curOp = curDeclScope->getIfOperation()->getParentOfType<PackageOp>();
+
+      // Handle single parent lookups.
+      if (parentModuleName.empty())
+        parentModuleName = ".";
+      return shared.importModule(parentModuleName, curOp, loc);
     });
   };
 

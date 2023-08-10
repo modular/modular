@@ -767,6 +767,10 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
       }
       parentDecl = parentDecl->parentDecl;
     }
+
+    // If the name is empty, we're grabbing the parent package.
+    if (name.empty())
+      return *impl->moduleStates[parentDecl];
   } else {
     // Otherwise, we're resolving relative to a top-level package.
     StringRef parentName;
