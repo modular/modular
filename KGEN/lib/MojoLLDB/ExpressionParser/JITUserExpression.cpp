@@ -101,8 +101,12 @@ char JitUserExpression::ID;
 
 lldb::ExpressionResults JitUserExpression::DoExecute(
     DiagnosticManager &diagnosticManager, ExecutionContext &exeCtx,
-    const EvaluateExpressionOptions &options,
+    const EvaluateExpressionOptions &opts,
     lldb::UserExpressionSP &sharedPtrToMe, lldb::ExpressionVariableSP &result) {
+  // Disable timeout because the expression could take a very long time.
+  auto options = opts;
+  options.SetTimeout(Timeout<std::micro>(std::nullopt));
+  options.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
   // The expression log is quite verbose, and if you're just tracking the
   // execution of the expression, it's quite convenient to have these logs come
   // out with the STEP log as well.

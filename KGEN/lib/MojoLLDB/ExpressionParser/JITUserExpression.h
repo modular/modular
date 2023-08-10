@@ -53,7 +53,7 @@ protected:
   lldb::ExpressionResults
   DoExecute(lldb_private::DiagnosticManager &diagnosticManager,
             lldb_private::ExecutionContext &exeCtx,
-            const lldb_private::EvaluateExpressionOptions &options,
+            const lldb_private::EvaluateExpressionOptions &opts,
             lldb::UserExpressionSP &sharedPtrToMe,
             lldb::ExpressionVariableSP &result) override;
 

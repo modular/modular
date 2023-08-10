@@ -607,12 +607,15 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
 
 UserExpression *MojoTypeSystem::GetUserExpression(
     StringRef expr, StringRef prefix, lldb::LanguageType language,
-    Expression::ResultType desiredType,
-    const EvaluateExpressionOptions &options, ValueObject *ctxObj) {
+    Expression::ResultType desiredType, const EvaluateExpressionOptions &opts,
+    ValueObject *ctxObj) {
   lldb::TargetSP target = impl->target.lock();
   if (!target || ctxObj)
     return nullptr;
-
+  auto options = opts;
+  // Disable timeout because the expression could take a very long time.
+  options.SetTimeout(Timeout<std::micro>(std::nullopt));
+  options.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
   return new MojoUserExpression(*target.get(), expr, prefix, language,
                                 desiredType, options);
 }

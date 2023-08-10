@@ -585,7 +585,7 @@ public:
   GetUserExpression(StringRef expr, StringRef prefix,
                     lldb::LanguageType language,
                     lldb_private::Expression::ResultType desiredType,
-                    const lldb_private::EvaluateExpressionOptions &options,
+                    const lldb_private::EvaluateExpressionOptions &opts,
                     lldb_private::ValueObject *ctxObj) override;
 
   /// Return a pointer to the persistent expression state for this type system.
