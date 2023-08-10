@@ -21,6 +21,7 @@
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include <optional>
 
 namespace lsp = mlir::lsp;
@@ -561,7 +562,30 @@ void MojoDocument::parseDocument() {
   };
   DiagHandlerContext handlerCtx;
   context->sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
-  context->parserContext->parseFile(context->sourceMgr.getMainFileID());
+
+  llvm::CrashRecoveryContext::Enable();
+  llvm::CrashRecoveryContext crc;
+  crc.DumpStackAndCleanupOnFailure = true;
+
+  if (!crc.RunSafelyOnThread([&]() {
+        context->parserContext->parseFile(context->sourceMgr.getMainFileID());
+      })) {
+    lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
+                       "POSIX: signal number + 128) = {0}",
+                       crc.RetCode);
+    isInvalidated = true;
+    lsp::PublishDiagnosticsParams diagParams(uri, version);
+    lsp::Diagnostic lspDiag;
+    lspDiag.source = "mojo";
+    lspDiag.severity = lsp::DiagnosticSeverity::Error;
+    lspDiag.message =
+        "A crash happened in the mojo parser with the current version of this "
+        "file. Please report this issue in "
+        "https://github.com/modularml/mojo/issues along with the corresponding "
+        "source code.";
+    diagParams.diagnostics.push_back(lspDiag);
+    sendDiagnosticsFn(diagParams);
+  }
 
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
