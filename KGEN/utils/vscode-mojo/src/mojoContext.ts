@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as fs from 'fs';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
 
@@ -111,7 +109,7 @@ export class MOJOContext implements vscode.Disposable {
 
     // Watch for configuration changes on this folder.
     if (workspaceFolder)
-      await configWatcher.activate(this, workspaceFolder, [ 'serverPath' ],
+      await configWatcher.activate(this, workspaceFolder, [ 'modularHomePath' ],
                                    [ serverPath ]);
     return server;
   }
@@ -129,30 +127,9 @@ export class MOJOContext implements vscode.Disposable {
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    var serverPath =
-        await this.resolveServerPath('serverPath', workspaceFolder);
-
-    // If the server path is empty, bail. We don't emit errors if the user
-    // hasn't explicitly configured the server.
-    if (serverPath === '') {
-      return [ undefined, serverPath ];
-    }
-
-    // Check that the file actually exists.
-    if (!fs.existsSync(serverPath)) {
-      vscode.window
-          .showErrorMessage(
-              `${clientTitle}: Unable to resolve path for 'serverPath', please ensure the path is correct`,
-              "Open Setting")
-          .then((value) => {
-            if (value === "Open Setting") {
-              vscode.commands.executeCommand(
-                  'workbench.action.openWorkspaceSettings',
-                  {openToSide : false, query : `mojo.serverPath`});
-            }
-          });
-      return [ undefined, serverPath ];
-    }
+    let mojoConfig = await this.sdk.resolveConfig(workspaceFolder);
+    if (!mojoConfig)
+      return [ undefined, "" ];
 
     let args = [];
     if (launchLanguageServerSuspended)
@@ -160,9 +137,10 @@ export class MOJOContext implements vscode.Disposable {
 
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
-      command : serverPath,
+      command : mojoConfig.mojoLanguageServerPath,
       args,
-      options : {env : {...process.env}}
+      options :
+          {env : {...process.env, MODULAR_HOME : mojoConfig.modularHomePath}}
     };
 
     // This setting is not exposed in package.json because it's internal.
@@ -228,55 +206,7 @@ export class MOJOContext implements vscode.Disposable {
     let languageClient = new vscodelc.LanguageClient(
         'mojo-lsp', clientTitle, serverOptions, clientOptions);
     languageClient.start();
-    return [ languageClient, serverPath ];
-  }
-
-  /**
-   * Try to resolve the given path, or the default path, with an optional
-   * workspace folder. If a path could not be resolved, just returns the
-   * input filePath.
-   */
-  async resolvePath(filePath: string, defaultPath: string,
-                    workspaceFolder: vscode.WorkspaceFolder|
-                    undefined): Promise<string> {
-    const configPath = filePath;
-
-    // If the path is already fully resolved, there is nothing to do.
-    if (path.isAbsolute(filePath)) {
-      return filePath;
-    }
-
-    // If a path hasn't been set, resolve the default path via the SDK.
-    if (filePath === '') {
-      return this.sdk.resolvePath(defaultPath, /*promptSDKInstall*/ true);
-    }
-
-    // Try to resolve the path relative to the workspace.
-    let filePattern: vscode.GlobPattern = '**/' + filePath;
-    if (workspaceFolder) {
-      filePattern = new vscode.RelativePattern(workspaceFolder, filePattern);
-    }
-    let foundUris = await vscode.workspace.findFiles(filePattern, null, 1);
-    if (foundUris.length === 0) {
-      // If we couldn't resolve it, just return the original path anyways. The
-      // file might not exist yet.
-      return configPath;
-    }
-    // Otherwise, return the resolved path.
-    return foundUris[0].fsPath;
-  }
-
-  /**
-   * Try to resolve the path for the given server setting, with an optional
-   * workspace folder.
-   */
-  async resolveServerPath(serverSettingName: string,
-                          workspaceFolder: vscode.WorkspaceFolder|
-                          undefined): Promise<string> {
-    const serverPath = config.get<string>(serverSettingName, workspaceFolder);
-    if (serverPath === undefined)
-      return "";
-    return this.resolvePath(serverPath, 'mojo-lsp-server', workspaceFolder);
+    return [ languageClient, mojoConfig.mojoLanguageServerPath ];
   }
 
   /**

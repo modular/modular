@@ -5,77 +5,94 @@
 //===----------------------------------------------------------------------===//
 
 import * as fs from 'fs';
+import * as ini from 'ini';
 import * as path from 'path';
 import * as vscode from 'vscode';
+
+import * as config from './config';
+
+/**
+ * This class represents a subset of the Modular config object used by extension
+ * for interacting with mojo.
+ */
+export class MOJOSDKConfig {
+  /**
+   * The MODULAR_HOME path containing the SDK.
+   */
+  modularHomePath: string = "";
+
+  /**
+   * The path to the mojo driver within the SDK installation.
+   */
+  mojoDriverPath: string = "";
+
+  /**
+   * The path the mojo language server within the SDK installation.
+   */
+  mojoLanguageServerPath: string = "";
+}
 
 /**
  *  This class manages interacting with and checking the status of the Mojo SDK.
  */
 export class MOJOSDK {
   /**
-   * The resolved Mojo SDK path, or empty if the SDK isn't installed.
+   * The resolved Modular config for a set of workspaces.
    */
-  private mojoSDKPath: string|undefined;
+  workspaceConfigs: Map<string, MOJOSDKConfig> = new Map();
 
   /**
-   * Construct a new MOJOSDK object.
-   */
-  public constructor() { this.resolveMojoSDKPath(); }
-
-  /**
-   * Resolve a file within the Mojo SDK. Returns an empty string if the SDK is
-   * not installed or in the case of error.
+   * Resolve the Modular config for the given workspace directory.
    *
-   * @param path The path to resolve within the SDK.
+   * @param workspaceFolder The current workspace folder, or undefined.
    * @param promptSDKInstall Whether to prompt the user to install the SDK
    *                            if it is missing.
    */
-  public async resolvePath(path: string,
-                           promptSDKInstall: boolean): Promise<string> {
-    // Try to resolve the SDK path again if we didn't find it before.
-    if (!this.mojoSDKPath) {
-      await this.resolveMojoSDKPath(promptSDKInstall);
-      if (!this.mojoSDKPath)
-        return "";
+  public async resolveConfig(workspaceFolder: vscode.WorkspaceFolder|
+                             undefined): Promise<MOJOSDKConfig|undefined> {
+    let workspaceFolderStr =
+        workspaceFolder ? workspaceFolder.uri.toString() : "";
+    let mojoConfig = this.workspaceConfigs.get(workspaceFolderStr);
+    if (mojoConfig)
+      return mojoConfig;
+
+    // Check to see if a path was specified in the config.
+    let modularPath = config.get<string>('modularHomePath', workspaceFolder);
+
+    // Otherwise, check to see if the environment variable is set.
+    if (!modularPath) {
+      modularPath = process.env.MODULAR_HOME;
+    } else {
+      let workspaceRoot = workspaceFolder ? workspaceFolder.uri.fsPath : "";
+      modularPath = modularPath.replace("${workspaceRoot}", workspaceRoot);
     }
 
-    // Resolve the path within the SDK.
-    let foundUris = await vscode.workspace.findFiles(
-        new vscode.RelativePattern(this.mojoSDKPath, '**/' + path), null, 1);
-    if (foundUris.length === 0)
-      return "";
-    return foundUris[0].fsPath;
-  }
-
-  /**
-   * Resolve the path of the Mojo SDK, prompting the user with how to install if
-   * the SDK is missing.
-   *
-   * @param promptSDKInstall Whether to prompt the user to install the SDK
-   *                            if it is missing.
-   */
-  private async resolveMojoSDKPath(promptSDKInstall: boolean = true) {
-    // Check for a development version of the SDK.
-    if (process.env.MODULAR_PATH) {
-      this.mojoSDKPath = process.env.MODULAR_PATH;
-      return;
+    // If we still don't have a path, prompt the user to install the SDK.
+    if (!modularPath) {
+      this.promptInstallSDK();
+      return undefined;
     }
 
-    // Check to see if Modular is installed at all.
-    if (!process.env.MODULAR_HOME) {
-      if (promptSDKInstall)
-        this.promptInstallSDK();
-      return;
+    // Read in the config file.
+    let configPath = vscode.Uri.from(
+        {scheme : 'file', path : path.join(modularPath, "modular.cfg")});
+    let configPathStat = await vscode.workspace.fs.stat(configPath);
+    if (!(configPathStat.type & vscode.FileType.File)) {
+      this.promptInstallSDK();
+      return undefined;
     }
-    const sdkPath = path.join(process.env.MODULAR_HOME, "pkg", "mojo");
-    fs.stat(sdkPath, (err, stats) => {
-      if (err || !stats.isDirectory()) {
-        if (promptSDKInstall)
-          this.promptInstallSDK();
-        return;
-      }
-      this.mojoSDKPath = sdkPath;
-    });
+    let modularConfig = ini.parse(new TextDecoder().decode(
+        await vscode.workspace.fs.readFile(configPath)));
+
+    // Extract out the pieces of the config that we care about.
+    mojoConfig = new MOJOSDKConfig();
+    mojoConfig.modularHomePath = modularPath;
+    mojoConfig.mojoDriverPath = modularConfig.mojo.driver_path;
+    mojoConfig.mojoLanguageServerPath = modularConfig.mojo.lsp_server_path;
+
+    // Cache the config for the workspace.
+    this.workspaceConfigs.set(workspaceFolderStr, mojoConfig);
+    return mojoConfig;
   }
 
   /**
@@ -84,12 +101,19 @@ export class MOJOSDK {
    */
   private async promptInstallSDK() {
     let value = await vscode.window.showInformationMessage(
-        "The Mojo🔥 development environment was not found. Would you like to install it?",
-        "install");
+        ("The Mojo🔥 development environment was not found. If the Mojo " +
+         "SDK is installed, please set the MODULAR_HOME environment variable to the " +
+         "appropriate path, or set the `mojo.modularHomePath` configuration. If you do " +
+         "not have it installed, would you like to install it?"),
+        "install", "open setting");
     if (value === "install") {
       // TODO: This should resolve to the actual mojo download link when
       // the user console is in place.
       vscode.env.openExternal(vscode.Uri.parse("https://www.modular.com/mojo"));
+    } else if (value === "open setting") {
+      vscode.commands.executeCommand(
+          'workbench.action.openWorkspaceSettings',
+          {openToSide : false, query : `mojo.modularHomePath`});
     }
   }
 }
