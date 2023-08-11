@@ -15,7 +15,7 @@ from Functional import (
     unroll,
 )
 from Pointer import Pointer
-from Bit import cttz
+from bit import cttz
 from Index import StaticIntTuple
 from List import DimList, Dim
 from LLCL import OutputChainPtr
