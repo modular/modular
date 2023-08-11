@@ -180,7 +180,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // later.
   ctx->allowUnregisteredDialects();
 
-  CompilationOptions compilationOptions = clOptions.getCompilationOptions();
+  CompilationOptions options = clOptions.getCompilationOptions();
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
 
@@ -217,13 +217,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    MojoParserConfig config(ctx, *runtime, compilationOptions);
+    MojoParserConfig config(ctx, *runtime, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);
-  } else if (compilationOptions.getDebugInfoLevelForInput() >
+  } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
     theModule = DebugInfo::parseSourceFileWithDebugInfo(
-        mgr, ctx, compilationOptions.getDIEmissionKind());
+        mgr, ctx, options.getDIEmissionKind());
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }
@@ -262,6 +262,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!target) {
     ErrorOr<TargetInfoAttr> targetOr = nullptr;
     if (!clOptions.march.empty() || !clOptions.mcpu.empty()) {
+      // Detect if the user accidentally specified any of the `--target-*`.
+      if (options.targetTriple != llvm::sys::getDefaultTargetTriple() ||
+          options.targetCpu != llvm::sys::getHostCPUName() ||
+          options.targetFeatures != getHostCPUFeatures())
+        return failure(clOptions.reportError(
+            "--target-triple, --target-cpu, or --target-features specified at "
+            "the same time as -march or -mcpu"));
+
       // Use `-march` to determine the feature set.
       targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu,
                                   clOptions.mtune);
@@ -281,7 +289,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
 
   // Now create the execution engine so we can JIT.
-  auto tmOr = createTargetMachine(compilationOptions,
+  auto tmOr = createTargetMachine(options,
                                   /*isJIT=*/clOptions.cmd == Command::kExecute);
   if (tmOr.isError())
     return failure(clOptions.reportError(tmOr.getError()));
@@ -289,15 +297,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
   auto engineOr = ExecutionEngine::createWithStandardLayers(
       {/*registerDebugPlugins=*/false,
-       /*sanitizers=*/compilationOptions.sanitizers},
+       /*sanitizers=*/options.sanitizers},
       **tmOr);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler =
-      ObjectCompiler::create(*runtime, pm, ".mojo_cache", compilationOptions);
+  auto compiler = ObjectCompiler::create(*runtime, pm, ".mojo_cache", options);
   if (failed(compiler)) {
     return failure(clOptions.reportError(
         Twine("could not create object compiler: ") + compiler.getError()));
@@ -325,7 +332,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
-    populateGenerateLibraryFilePasses(pm, *runtime, compilationOptions);
+    populateGenerateLibraryFilePasses(pm, *runtime, options);
     if (failed(pm.run(*theModule)))
       return failure(clOptions.reportError("compilation failed"));
     return emitModuleIR(*theModule, clOptions);
