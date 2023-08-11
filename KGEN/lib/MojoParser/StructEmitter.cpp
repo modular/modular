@@ -304,3 +304,38 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
   }
   return GeneratedStubs(destructorFunc, copyFunc, moveFunc);
 }
+
+LIT::FuncOp StructEmitter::findInitInStruct(StructDeclOp structOp,
+                                            ArrayRef<Type> operands) {
+  SpecialFunctionKind initKind;
+  unsigned expectedNumInputs;
+  if (structOp.isRegisterPassable()) {
+    initKind = SpecialFunctionKind::kInitReg;
+    expectedNumInputs = operands.size();
+  } else {
+    initKind = SpecialFunctionKind::kInit;
+    expectedNumInputs = operands.size() + 1;
+  }
+
+  for (auto candidate : structOp.getOps<LIT::FuncOp>()) {
+    SpecialFunctionKind kind =
+        (SpecialFunctionKind)candidate.getSpecialFnKind();
+    if (kind == initKind &&
+        candidate.getBody()->getArguments().size() == expectedNumInputs) {
+      bool isMatch = true;
+      for (auto [existing, proposed] :
+           llvm::zip(structOp.isRegisterPassable()
+                         ? candidate.getSignature().getValueInputs()
+                         : candidate.getSignature().getValueInputs().slice(1),
+                     operands)) {
+        if (existing != proposed) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (isMatch)
+        return candidate;
+    }
+  }
+  return {};
+}

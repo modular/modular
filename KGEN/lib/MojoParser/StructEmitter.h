@@ -61,7 +61,6 @@ public:
                                  ASTDecl &declScope, SMLoc location,
                                  bool isMove);
 
-private:
   /// Create a FuncOp within the scope of the given struct and add function
   /// terminators.
   LIT::FuncOp addVoidMethod(StructDeclOp selfStruct, StringRef prefix,
@@ -70,6 +69,11 @@ private:
                             ArrayRef<StringAttr> argNames,
                             SpecialFunctionKind kind, SMLoc loc);
 
+  /// Return the initializer method with the specified signature if it exists
+  /// and null otherwise. The operands type is not expected to include self.
+  LIT::FuncOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
+
+private:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
   LIT::FuncOp

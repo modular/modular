@@ -39,6 +39,12 @@ public:
                                            SignatureType closureImplSignature,
                                            unsigned captureCount);
 
+  /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
+  /// instance.
+  LIT::FuncOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
+                                        StructDeclOp closureImpl,
+                                        SMLoc location);
+
 private:
   FileModuleOp fileModuleOp;
   Type noneType;
