@@ -167,6 +167,14 @@ from String import String
 
 # CHECK-LABEL: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_${{.*}}_\22(,${{.*}}::String)\22"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_${{.*}}_\22(${{.*}}::String,${{.*}}::String,${{.*}}::String)\22"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
 
+# CHECK-NEXT: %[[V7:.*]] = lit.struct.gep %self[move]
+# CHECK-NEXT: %[[V8:.*]] = kgen.create_closure [{{.*}}]()
+# CHECK-NEXT: pop.store %[[V8]], %[[V7]]
+
+# CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT: %[[V10:.*]] = kgen.create_closure [{{.*}}]()
+# CHECK-NEXT: pop.store %[[V10]], %[[V9]]
+
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
 # CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !pop.pointer<!kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>>
@@ -194,6 +202,16 @@ from String import String
 # CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
+
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>> init_self, %existing: !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
+# CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %existing
+# CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__copyinit__{{.*}}(%[[W0]], %[[W1]])
+
+# CHECK: lit.func @"_CW_{{.*}}_moveinit__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>> init_self, %existing: !pop.pointer<array<0, i1>> owned_in_mem) -> !lit.none
+# CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
+# CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %existing
+# CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__moveinit__{{.*}}(%[[W0]], %[[W1]])
 fn materialize_escaping_closure(m: String, z:String):
    fn dummy(n:String) escaping -> String:
       return n + m + z

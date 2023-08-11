@@ -25,7 +25,9 @@ public:
                  SharedState &shared)
       : fileModuleOp(fileModuleOp), noneType(noneType), shared(shared),
         structEmitter(shared),
-        dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")) {}
+        dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
+        copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
+        moveFieldAttr(StringAttr::get(shared.getContext(), "move")) {}
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
@@ -52,6 +54,8 @@ private:
   SharedState &shared;
   StructEmitter structEmitter;
   StringAttr dtorFieldAttr;
+  StringAttr copyFieldAttr;
+  StringAttr moveFieldAttr;
 };
 } // namespace M::KGEN::LIT
 
