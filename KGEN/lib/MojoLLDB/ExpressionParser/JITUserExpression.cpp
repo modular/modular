@@ -7,7 +7,6 @@
 #include "JITUserExpression.h"
 #include "JITExecutionUnit.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/ExpressionVariable.h"

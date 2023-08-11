@@ -748,6 +748,10 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }
 
+MutableOperandRange CallOp::getArgOperandsMutable() {
+  return getOperandsMutable();
+}
+
 mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
   return getCalleeSymbol();
 }
