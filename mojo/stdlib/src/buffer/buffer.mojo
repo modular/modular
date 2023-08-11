@@ -12,7 +12,7 @@ from Index import StaticIntTuple, product as tuple_product
 from Intrinsics import PrefetchOptions, masked_load, masked_store
 from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr
-from Math import fma, min, max, iota
+from math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import Pointer, DTypePointer
 from Range import range
