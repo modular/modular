@@ -16,7 +16,7 @@ from Activations import (
 )
 from DType import DType
 from IO import print
-from Math import iota
+from math import iota
 from SIMD import Float32, Float64
 
 # CHECK-LABEL: test_elu

@@ -36,7 +36,7 @@ from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions, external_call
 from LLCL import OutputChainPtr, OwningOutputChainPtr
 from List import Dim, DimList, VariadicList
-from Math import min, max, fma, div_ceil
+from math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,

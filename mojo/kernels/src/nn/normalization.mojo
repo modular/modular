@@ -21,7 +21,7 @@ from Reductions import (
     _simd_sum,
     _simd_sum_elementwise,
 )
-from Math import sqrt
+from math import sqrt
 
 
 fn layer_norm[

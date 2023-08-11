@@ -19,8 +19,8 @@ from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
 from LLCL import OutputChainPtr
 from List import DimList, Dim
-from Math import div_ceil
-from Math import min
+from math import div_ceil
+from math import min
 from Range import range
 from SIMD import SIMD
 from TargetInfo import sizeof

@@ -11,7 +11,7 @@ from Functional import elementwise
 from Index import StaticIntTuple
 from LLCL import OutputChainPtr
 from List import Dim, DimList
-from Math import div_ceil
+from math import div_ceil
 from Range import range
 from TypeUtilities import rebind
 

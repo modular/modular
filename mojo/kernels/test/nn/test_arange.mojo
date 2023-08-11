@@ -14,7 +14,7 @@ from DType import DType
 from Range import range
 from DType import DType
 from Functional import elementwise
-from Math import mul
+from math import mul
 from Memory import stack_allocation
 from List import Dim, DimList
 from IO import print

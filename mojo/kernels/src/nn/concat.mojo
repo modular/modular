@@ -13,7 +13,7 @@ from Index import product, StaticIntTuple
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
 from LLCL import OutputChainPtr
-from Math import align_down, align_up, div_ceil, max, min
+from math import align_down, align_up, div_ceil, max, min
 from MOGG import simd_load, simd_store
 from Memory import memcpy
 from Pointer import DTypePointer

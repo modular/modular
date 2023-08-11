@@ -14,7 +14,7 @@ from Image import (
     Image2DLayout,
 )
 from Index import StaticIntTuple, Index
-from Math import min, max, clamp, sqrt, div_ceil
+from math import min, max, clamp, sqrt, div_ceil
 from MatmulUtils import partition_work
 from SIMD import SIMD, Float32
 from TargetInfo import (

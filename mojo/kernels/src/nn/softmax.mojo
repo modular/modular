@@ -10,7 +10,7 @@ from Functional import vectorize_unroll, async_parallelize
 from Index import product
 from List import Dim, DimList
 from LLCL import OutputChainPtr
-from Math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
+from math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
 from Limits import neginf
 from Range import range
 from Reductions import max

@@ -12,7 +12,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from LLCL import OutputChainPtr
 from List import DimList
-from Math import min, max, add, div_ceil
+from math import min, max, add, div_ceil
 from Limits import neginf
 from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim

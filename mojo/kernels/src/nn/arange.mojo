@@ -10,7 +10,7 @@ from Index import StaticIntTuple
 from Functional import _elementwise_impl
 from List import DimList
 from LLCL import OutputChainPtr
-from Math import abs, ceil, div_ceil, iota
+from math import abs, ceil, div_ceil, iota
 from SIMD import SIMD
 from TargetInfo import simdwidthof
 from TypeUtilities import rebind

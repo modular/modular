@@ -27,7 +27,7 @@ from Intrinsics import external_call
 from List import DimList
 from Pointer import DTypePointer
 from LLCL import Runtime, OwningOutputChainPtr
-from Math import abs, div_ceil, min
+from math import abs, div_ceil, min
 from Range import range
 from Random import rand
 from TargetInfo import simdwidthof
