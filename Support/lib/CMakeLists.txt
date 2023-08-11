@@ -7,6 +7,7 @@ add_modular_library(MSupport
   OBJECT # Always generate an obj.${name} target.
 
   AlignedAlloc.cpp
+  Base64.cpp
   BuildInfo.cpp
   CommonCLOptions.cpp
   Configuration.cpp
