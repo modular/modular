@@ -10,7 +10,7 @@ from Range import range
 from DType import DType
 from Memory import stack_allocation
 from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
-from Math import mul, min
+from math import mul, min
 from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple

@@ -17,7 +17,7 @@ from Functional import (
 from Index import StaticIntTuple
 from List import DimList, Dim
 from LLCL import OutputChainPtr
-from Math import (
+from math import (
     all_true as _all_true,
     any_true as _any_true,
     none_true as _none_true,

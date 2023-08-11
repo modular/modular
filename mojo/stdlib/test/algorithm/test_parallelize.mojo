@@ -11,7 +11,7 @@
 from Buffer import Buffer
 from DType import DType
 from Functional import async_parallelize, sync_parallelize, parallelize, map
-from Math import div_ceil, min
+from math import div_ceil, min
 from IO import print
 from LLCL import num_cores, Runtime, OwningOutputChainPtr
 from SIMD import SIMD

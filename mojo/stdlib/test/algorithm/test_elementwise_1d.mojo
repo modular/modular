@@ -9,7 +9,7 @@ from Buffer import Buffer
 from Range import range
 from DType import DType
 from Functional import elementwise
-from Math import erf, exp, tanh, div_ceil
+from math import erf, exp, tanh, div_ceil
 from Activations import gelu
 from List import Dim, DimList
 from IO import print
