@@ -580,14 +580,23 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
     if (blob.getKind() == MemoryKind::ConstGlobal) {
       OpBuilder::InsertionGuard guard(b);
       b.clearInsertionPoint();
-      // Create the global with the constant data stored in an `ElementsAttr`.
+
+      Attribute value;
+      if (blob.getHandle().getResource()->getKind() ==
+          DialectResourceManager::ResourceKind::String) {
+        // Create a string attribute for readability.
+        value = b.getStringAttr(
+            StringRef(mem->getData().data(), mem->getData().size()));
+      } else {
+        // Store the raw bytes into an elements attribute.
+        value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
+                                          IntegerType::Signless);
+      }
+
       auto global = b.create<LLVM::GlobalOp>(
           LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
           /*isConstant=*/true, LLVM::Linkage::Internal,
-          blob.getHandle().getKey(),
-          IntArrayElementsAttr::get(b.getContext(), mem->getData(),
-                                    IntegerType::Signless),
-          mem->getDataAlignment());
+          blob.getHandle().getKey(), value, mem->getDataAlignment());
       symtab.insert(global);
       materialized.emplace_back(global);
       continue;
