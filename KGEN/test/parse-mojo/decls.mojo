@@ -463,6 +463,11 @@ struct NoDebugInlineTest:
 fn testAlwaysInlineNoDebug():
     pass
 
+# CHECK-LABEL: lit.func @"testNoInline
+# CHECK-SAME: no_inline
+@no_inline
+fn testNoInline():
+    pass
 
 # CHECK-LABEL: lit.func @"math{{.*}} always_inline_no_debug
 @always_inline("nodebug")

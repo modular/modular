@@ -1366,25 +1366,29 @@ void KGEN::printOptionalDecorators(OpAsmPrinter &p, Operation *op,
 }
 
 /// Parse the always_inline related keywords if present.
-ParseResult KGEN::parseOptionalAlwaysInline(OpAsmParser &parser,
-                                            AlwaysInlineLevelAttr &attr) {
+ParseResult KGEN::parseOptionalInline(OpAsmParser &parser,
+                                      InlineLevelAttr &attr) {
   // Handle always_inline.
-  AlwaysInlineLevel alwaysInlineLevel;
+  InlineLevel inlineLevel;
   if (succeeded(parser.parseOptionalKeyword("always_inline")))
-    alwaysInlineLevel = AlwaysInlineLevel::Enabled;
+    inlineLevel = InlineLevel::Always;
   else if (succeeded(parser.parseOptionalKeyword("always_inline_no_debug")))
-    alwaysInlineLevel = AlwaysInlineLevel::EnabledNoDebug;
+    inlineLevel = InlineLevel::AlwaysNoDebug;
+  else if (succeeded(parser.parseOptionalKeyword("no_inline")))
+    inlineLevel = InlineLevel::Never;
   else
-    alwaysInlineLevel = AlwaysInlineLevel::Disabled;
-  attr = AlwaysInlineLevelAttr::get(parser.getContext(), alwaysInlineLevel);
+    inlineLevel = InlineLevel::Automatic;
+  attr = InlineLevelAttr::get(parser.getContext(), inlineLevel);
   return success();
 }
 
-void KGEN::printOptionalAlwaysInline(AsmPrinter &p, AlwaysInlineLevel level) {
-  if (level == AlwaysInlineLevel::Enabled)
+void KGEN::printOptionalInline(AsmPrinter &p, InlineLevel level) {
+  if (level == InlineLevel::Always)
     p << " always_inline";
-  else if (level == AlwaysInlineLevel::EnabledNoDebug)
+  else if (level == InlineLevel::AlwaysNoDebug)
     p << " always_inline_no_debug";
+  else if (level == InlineLevel::Never)
+    p << " no_inline";
 }
 
 ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
@@ -1430,10 +1434,10 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
                              functionType, signature))
     return failure();
 
-  AlwaysInlineLevelAttr alwaysInline;
-  if (parseOptionalAlwaysInline(parser, alwaysInline))
+  InlineLevelAttr inlineLevel;
+  if (parseOptionalInline(parser, inlineLevel))
     return failure();
-  result.addAttribute("alwaysInlineLevel", alwaysInline);
+  result.addAttribute("inlineLevel", inlineLevel);
 
   // Funcs cannot have constraint specifications.
   if (opKind != GeneratorOrFuncKind::func) {
@@ -1500,7 +1504,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
                          decl.getResultParams(), op.getFunctionType(),
                          op.getSignature());
 
-  printOptionalAlwaysInline(p, op.getAlwaysInlineLevel());
+  printOptionalInline(p, op.getInlineLevel());
 
   SmallVector<StringRef> ignoredAttrNames(
       GeneratorOp::getAttributeNames().begin(),

@@ -2107,7 +2107,7 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
       SignatureType::get(TypeArrayAttr::get(generator.getContext(), {}),
                          TypeArrayAttr::get(generator.getContext(), {}),
                          generator.getFunctionType(), generator.getMetadata()),
-      generator.getAlwaysInlineLevel(), generator.getExportKind());
+      generator.getInlineLevel(), generator.getExportKind());
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.

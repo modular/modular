@@ -960,7 +960,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
     return Error("failed to resolve function signature");
 
   auto func = cast<LIT::FuncOp>(*decl);
-  if (func.getAlwaysInlineLevel() == AlwaysInlineLevel::Disabled)
+  if (func.getInlineLevel() == InlineLevel::Automatic)
     return Error("function is not always_inline");
   SignatureType fullSig = func.getFullSignature();
   if (!fullSig.getInputParamTypes().empty() ||
@@ -2043,7 +2043,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
     else if (declRef->spelling == "staticmethod")
       funcOp.setIsStatic(true);
     else if (declRef->spelling == "always_inline")
-      funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::Enabled);
+      funcOp.setInlineLevel(InlineLevel::Always);
+    else if (declRef->spelling == "no_inline")
+      funcOp.setInlineLevel(InlineLevel::Never);
     else if (declRef->spelling == "adaptive")
       applyAdaptive(*declRef);
     else if (declRef->spelling == "parameter")
@@ -2063,7 +2065,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
       // @always_inline("nodebug")
       if (declRef->spelling == "always_inline" && callNode->args.size() == 1 &&
           callNode->args[0].isPositionalStringLiteral("nodebug"))
-        funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+        funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
       else if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
                     funcOp);
@@ -3252,7 +3254,7 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
   // @always_inline("nodebug").
   if (structOp.getRegisterPassable() ==
       StructDeclOp::RP_RegisterPassableTrivial)
-    funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   return {funcOp, funcDecl};
 }

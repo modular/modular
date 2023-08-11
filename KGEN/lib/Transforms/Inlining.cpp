@@ -378,8 +378,7 @@ static void recursivelyMangleDefs(IRMapping &map, Region *calleeRegion,
   }
 }
 
-void inlineGeneratorCall(CallOp call, GeneratorOp callee,
-                         AlwaysInlineLevel level,
+void inlineGeneratorCall(CallOp call, GeneratorOp callee, InlineLevel level,
                          ParameterUseDefGraph &topLevelGraph,
                          const ParameterUseDefGraph &calleeParams,
                          const llvm::SetVector<StringAttr> &calleeDecls,
@@ -546,7 +545,7 @@ void inlineGeneratorCall(CallOp call, GeneratorOp callee,
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
   }
 
-  bool stripDebugInfo = level == AlwaysInlineLevel::EnabledNoDebug;
+  bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug;
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
     if (stripDebugInfo && isa<DebugInfo::ValueOp>(op)) {
@@ -780,7 +779,7 @@ struct ParametricInliningGraphNode
     : public InliningGraphNodeBase<ParametricInliningGraphNode, GeneratorOp,
                                    CallOp> {
   explicit ParametricInliningGraphNode(GeneratorOp func)
-      : InliningGraphNodeBase(func), level(func.getAlwaysInlineLevel()),
+      : InliningGraphNodeBase(func), level(func.getInlineLevel()),
         calleeParamGraph(func.getBodyRegion()) {}
   ParametricInliningGraphNode(ParametricInliningGraphNode &&other)
       : InliningGraphNodeBase(other.func), level(other.level),
@@ -790,7 +789,7 @@ struct ParametricInliningGraphNode
   void calculateParams(ParameterCollector::Analysis &paramCache);
 
   /// The inlining level of the function.
-  AlwaysInlineLevel level;
+  InlineLevel level;
   /// In parametric inlining, each function has its parameter use-def graph
   /// computed twice: once as a caller, computed when the node is being
   /// processed, and once as a callee, when the fully processed node is called
@@ -803,8 +802,7 @@ struct ParametricInliningGraphNode
 struct ParametricInliningGraph
     : public InliningGraphBase<ParametricInliningGraph,
                                ParametricInliningGraphNode> {
-  explicit ParametricInliningGraph(AlwaysInlineLevel level,
-                                   LLCL::Runtime &runtime,
+  explicit ParametricInliningGraph(InlineLevel level, LLCL::Runtime &runtime,
                                    ParameterCollector::Analysis &paramCache)
       : InliningGraphBase(runtime), level(level),
         paramCaches(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
@@ -813,8 +811,8 @@ struct ParametricInliningGraph
 
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
-    assert(node->level == node->func.getAlwaysInlineLevel());
-    return node->level >= level;
+    assert(node->level == node->func.getInlineLevel());
+    return node->level >= level && node->level != InlineLevel::Never;
   }
   /// When a function is finished processing and will be inlined, compute is
   /// callee parameter graph.
@@ -823,7 +821,7 @@ struct ParametricInliningGraph
   void performInlining(ParametricInliningGraphNode *caller);
 
   /// The inlining level.
-  AlwaysInlineLevel level;
+  InlineLevel level;
   /// Base mangler cache instance. It is always empty.
   AttrTypeMangler::Cache baseManglerCache;
   /// Thread local parameter collector caches.
@@ -902,8 +900,8 @@ void AlwaysInlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  ParametricInliningGraph graph(nodebugOnly ? AlwaysInlineLevel::EnabledNoDebug
-                                            : AlwaysInlineLevel::Enabled,
+  ParametricInliningGraph graph(nodebugOnly ? InlineLevel::AlwaysNoDebug
+                                            : InlineLevel::Always,
                                 *rt, paramCache);
   graph.build(getOperation(), symtab);
   graph.process();
@@ -924,7 +922,7 @@ struct InliningGraphNode
   /// If the function will be inlined, removed it from the module so that it can
   /// later be erased in parallel. Ownership is passed to the node.
   explicit InliningGraphNode(FuncOp func)
-      : InliningGraphNodeBase(func), level(func.getAlwaysInlineLevel()),
+      : InliningGraphNodeBase(func), level(func.getInlineLevel()),
         signature(func.getSignature()) {
     if (shouldInline())
       func->remove();
@@ -940,7 +938,8 @@ struct InliningGraphNode
 
   /// Return true if the node should be inlined.
   bool shouldInline() {
-    return level != AlwaysInlineLevel::Disabled || signature.isCapturing();
+    return level == InlineLevel::Always ||
+           level == InlineLevel::AlwaysNoDebug || signature.isCapturing();
   }
 
   /// If an error occurred during inlining, nodes can end up owning the function
@@ -951,7 +950,7 @@ struct InliningGraphNode
   }
 
   /// The inlining level of the function.
-  AlwaysInlineLevel level;
+  InlineLevel level;
   /// The signature of the function.
   SignatureType signature;
   /// Track the number of times the function has been inlined. Once the counter
@@ -1032,8 +1031,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       // We don't know where the op will end up, so tag it with an attribute.
       // Encode information {singleExit, noDebug} as bits.
       uint8_t value =
-          singleExit |
-          ((callee->level == AlwaysInlineLevel::EnabledNoDebug) << 1);
+          singleExit | ((callee->level == InlineLevel::AlwaysNoDebug) << 1);
       scope->setAttr(updateAttrName,
                      OpBuilder(scope->getContext()).getI8IntegerAttr(value));
     } else if (singleExit) {

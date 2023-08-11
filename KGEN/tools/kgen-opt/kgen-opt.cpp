@@ -126,7 +126,7 @@ struct TestGeneratePreElaboratedBody
       OpBuilder fakeBuilder = OpBuilder::atBlockEnd(fakeModule->getBody());
       KGEN::FuncOp fakeCompiledBody = fakeBuilder.create<KGEN::FuncOp>(
           func.getLoc(), b.getStringAttr(func.getSymName() + "_precompiled"),
-          func.getSignature(), KGEN::AlwaysInlineLevel::Disabled);
+          func.getSignature(), KGEN::InlineLevel::Automatic);
 
       // Just clone the body in.
       mlir::IRMapping map;

@@ -69,7 +69,7 @@ def LIT_FuncOp : LITOp<"func", [
     UnitAttr:$isParametric,
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     KGEN_ExportKindAttr:$exportKind,
-    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+    KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
     // Used for binary packages, a reference to the symbol containing the
     // precompiled module that contains this function.

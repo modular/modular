@@ -128,7 +128,7 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
                        ParamDeclArrayAttr &inputParams,
                        ParamDeclArrayAttr &resultParams, TypeAttr &functionType,
                        TypeAttr &signature, ConstraintArrayAttr &constraints,
-                       AlwaysInlineLevelAttr &alwaysInlineLevel, Region &body) {
+                       InlineLevelAttr &inlineLevel, Region &body) {
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
@@ -137,7 +137,7 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   if (parseParamName(p, paramName) || p.parseEqual() ||
       parseFunctionSignature(p, args, inputParams, resultParams,
                              functionTypeValue, signatureType) ||
-      parseOptionalAlwaysInline(p, alwaysInlineLevel) ||
+      parseOptionalInline(p, inlineLevel) ||
       parseOptionalConstraints(p, constraints) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
@@ -152,18 +152,19 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   return success();
 }
 
-static void
-printRegionDeclaration(OpAsmPrinter &p, Operation *op, ParamDeclAttr paramDecl,
-                       ParamDeclArrayAttr inputParams,
-                       ParamDeclArrayAttr resultParams, TypeAttr functionType,
-                       TypeAttr signature, ConstraintArrayAttr constraints,
-                       AlwaysInlineLevelAttr alwaysInlineLevel, Region &body) {
+static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
+                                   ParamDeclAttr paramDecl,
+                                   ParamDeclArrayAttr inputParams,
+                                   ParamDeclArrayAttr resultParams,
+                                   TypeAttr functionType, TypeAttr signature,
+                                   ConstraintArrayAttr constraints,
+                                   InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
   printFunctionSignature(p, body, inputParams, resultParams,
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
-  printOptionalAlwaysInline(p, alwaysInlineLevel.getValue());
+  printOptionalInline(p, inlineLevel.getValue());
   printOptionalConstraints(p, op, constraints);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);

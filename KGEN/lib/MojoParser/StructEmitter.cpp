@@ -59,7 +59,7 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
   // @always_inline("nodebug").
   if (structOp.getRegisterPassable() ==
       StructDeclOp::RP_RegisterPassableTrivial)
-    funcOp.setAlwaysInlineLevel(AlwaysInlineLevel::EnabledNoDebug);
+    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   return funcOp;
 }
