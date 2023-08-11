@@ -908,6 +908,9 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
   ErrorOr<Region *> body = lookupFunctionBody(symbol);
   if (body.isError()) {
     // Swallow the error.
+    DEBUG_WITH_TYPE("lit-parameter-evaluator", llvm::errs()
+                                                   << "[ParserParamEvaluator] "
+                                                   << body.getError() << "\n");
     return failure();
   }
 
