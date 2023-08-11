@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Math import max, factorial, div_ceil, min
+from math import max, factorial, div_ceil, min
 from Time import now
 from Range import range
 from Index import StaticIntTuple

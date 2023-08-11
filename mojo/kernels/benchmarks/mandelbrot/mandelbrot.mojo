@@ -22,7 +22,7 @@ from Matrix import Matrix
 from List import Dim, DimList
 from LLCL import num_cores, Runtime, TaskGroup
 from Functional import parallelize
-from Math import iota
+from math import iota
 from Complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
