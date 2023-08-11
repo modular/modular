@@ -20,23 +20,25 @@ export function registerFormatter(outputChannel: vscode.OutputChannel,
       const formatter = get<string>('formatter', workspaceFolder);
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
+      // Grab the formatter, either a custom internal formatter, or the Mojo
+      // SDK.
       var command = "";
+      let env = process.env;
       if (formatter) {
         command = formatter;
       } else {
-        const mojoPath =
-            await mojoSDK.resolvePath('mojo', /*promptSDKInstall*/ true);
-        if (!mojoPath)
+        const mojoConfig = await mojoSDK.resolveConfig(workspaceFolder);
+        if (!mojoConfig)
           return [];
 
-        command = mojoPath + " format";
+        command = mojoConfig.mojoDriverPath + " format";
+        env['MODULAR_HOME'] = mojoConfig.modularHomePath;
       }
-
       command += " --quiet " + args.join(' ') + ' -';
 
       return new Promise<vscode.TextEdit[]>(function(resolve, reject) {
         const originalDocumentText = document.getText();
-        const process = exec(command, {cwd}, (error, stdout, stderr) => {
+        const process = exec(command, {cwd, env}, (error, stdout, stderr) => {
           // Process any errors/warnings during formatting. These aren't all
           // necessarily fatal, so this doesn't prevent edits from being
           // applied.

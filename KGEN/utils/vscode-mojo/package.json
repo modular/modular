@@ -28,6 +28,7 @@
   "devDependencies": {
     "@types/mocha": "^7.0.2",
     "@types/node": "^18.11.18",
+    "@types/ini": "~1.3.31",
     "@types/vscode": "~1.74.0",
     "@vscode/vsce": "^2.19.0",
     "typescript": "^4.6.4"
@@ -83,10 +84,10 @@
       "type": "object",
       "title": "Mojo",
       "properties": {
-        "mojo.serverPath": {
+        "mojo.modularHomePath": {
           "scope": "resource",
           "type": "string",
-          "description": "The file path of the mojo-lsp-server executable."
+          "description": "The path to the MODULAR_HOME containing the Mojo SDK installation."
         },
         "mojo.onSettingsChanged": {
           "type": "string",
