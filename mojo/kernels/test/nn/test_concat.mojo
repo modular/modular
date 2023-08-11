@@ -18,6 +18,7 @@ from LLCL import Runtime, OwningOutputChainPtr
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
+
 fn test_concat():
     print("== test_concat")
 
