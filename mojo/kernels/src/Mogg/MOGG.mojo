@@ -38,7 +38,7 @@ from IO import print
 from List import Dim, DimList, VariadicList
 from OptionalParam import OptionalParamInt
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
-from Math import (
+from math import (
     add,
     ceil,
     div,
