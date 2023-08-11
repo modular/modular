@@ -227,7 +227,7 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
       gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
       gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
       gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
-      gen.getAlwaysInlineLevelAttr(), gen.getExportKindAttr());
+      gen.getInlineLevelAttr(), gen.getExportKindAttr());
 
   // Move over the body.
   auto *bodyBlock = gen.getBody();

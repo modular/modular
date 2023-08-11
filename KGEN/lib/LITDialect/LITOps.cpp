@@ -401,9 +401,9 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "exportKind",  "isCExported",  "constraints",       "implements",
-    "signature",   "functionType", "sym_name",          "valueParamNames",
-    "evaluator",   "defaultImpl",  "alwaysInlineLevel", "paramDecl",
+    "exportKind",  "isCExported",  "constraints", "implements",
+    "signature",   "functionType", "sym_name",    "valueParamNames",
+    "evaluator",   "defaultImpl",  "inlineLevel", "paramDecl",
     "inputParams", "resultParams", "decorators"};
 
 /// Parses a LIT Generator.
@@ -432,15 +432,15 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   FunctionType functionType;
   SignatureType signature;
   ConstraintArrayAttr constraints;
-  AlwaysInlineLevelAttr alwaysInline;
+  InlineLevelAttr inlineLevel;
   DecoratorsAttr decorators;
   if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
                              functionType, signature) ||
-      parseOptionalAlwaysInline(parser, alwaysInline) ||
+      parseOptionalInline(parser, inlineLevel) ||
       parseOptionalConstraints(parser, constraints) ||
       parseOptionalDecorators(parser, decorators))
     return failure();
-  result.addAttribute(getAlwaysInlineLevelAttrName(result.name), alwaysInline);
+  result.addAttribute(getInlineLevelAttrName(result.name), inlineLevel);
   result.addAttribute(getConstraintsAttrName(result.name), constraints);
   result.addAttribute(getDecoratorsAttrName(result.name), decorators);
   result.addAttribute(getInputParamsAttrName(result.name), inputParams);
@@ -507,7 +507,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(getSymName());
   printFunctionSignature(p, getBodyRegion(), getInputParams(),
                          getResultParams(), getFunctionType(), getSignature());
-  printOptionalAlwaysInline(p, getAlwaysInlineLevel());
+  printOptionalInline(p, getInlineLevel());
 
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
@@ -629,9 +629,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       DecoratorsAttr::get(context, {}));
   result.addAttribute(getSpecialFnKindAttrName(result.name),
                       builder.getI8IntegerAttr(0));
-  result.addAttribute(
-      getAlwaysInlineLevelAttrName(result.name),
-      AlwaysInlineLevelAttr::get(context, AlwaysInlineLevel::Disabled));
+  result.addAttribute(getInlineLevelAttrName(result.name),
+                      InlineLevelAttr::get(context, InlineLevel::Automatic));
 
   result.addRegion()->push_back(new Block());
 }
@@ -651,7 +650,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
         /*isStatic=*/mlir::UnitAttr(), /*isAdaptive=*/mlir::UnitAttr(),
         /*isParameter=*/mlir::UnitAttr(), /*isDef=*/mlir::UnitAttr(),
         ExportKindAttr::get(ctx, ExportKind::NotExported),
-        AlwaysInlineLevelAttr::get(ctx, AlwaysInlineLevel::Disabled),
+        InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), DocStringAttr());
 

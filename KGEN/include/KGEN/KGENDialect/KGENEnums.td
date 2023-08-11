@@ -71,15 +71,16 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 ]>;
 
 //===----------------------------------------------------------------------===//
-// AlwaysInlineLevelAttr
+// InlineLevelAttr
 //===----------------------------------------------------------------------===//
 
 /// This defines the Input Generation Kind enum attribute.
-def KGEN_AlwaysInlineLevelAttr : I32EnumAttr<"AlwaysInlineLevel",
-          "Whether and how to always_inline this function", [
-  I32EnumAttrCase<"Disabled", 0, "disabled">,
-  I32EnumAttrCase<"Enabled", 1, "enabled">,
-  I32EnumAttrCase<"EnabledNoDebug", 2, "enabled_nodebug">,
+def KGEN_InlineLevelAttr : I32EnumAttr<"InlineLevel",
+          "Whether and how to inline this function", [
+  I32EnumAttrCase<"Automatic", 0, "automatic">,
+  I32EnumAttrCase<"Always", 1, "always">,
+  I32EnumAttrCase<"AlwaysNoDebug", 2, "always_nodebug">,
+  I32EnumAttrCase<"Never", 3, "never">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

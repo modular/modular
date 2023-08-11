@@ -113,7 +113,7 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     InterfaceMethod<[{
       Return whether the function should be always_inline'd, and whether it
       should maintain debug info when inlined.
-    }], "AlwaysInlineLevel", "getAlwaysInlineLevel", (ins)>,
+    }], "InlineLevel", "getInlineLevel", (ins)>,
     InterfaceMethod<[{
       Return the decorators attached to this function.
     }], "ArrayRef<TypedAttr>", "getDecorators", (ins), [{}], [{ return {}; }]>,

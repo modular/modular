@@ -18,8 +18,7 @@ class GeneratorOp;
 /// the parameter graph of the call's parent DeclInterface, inline the callee
 /// into the call's context. This will mangle input parameters as necessary to
 /// ensure that there are no conflicts.
-void inlineGeneratorCall(CallOp call, GeneratorOp callee,
-                         AlwaysInlineLevel level,
+void inlineGeneratorCall(CallOp call, GeneratorOp callee, InlineLevel level,
                          ParameterUseDefGraph &topLevelGraph,
                          const ParameterUseDefGraph &calleeParams,
                          const llvm::SetVector<StringAttr> &calleeDecls,

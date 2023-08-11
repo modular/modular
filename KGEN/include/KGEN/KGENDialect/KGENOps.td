@@ -73,7 +73,7 @@ def KGEN_FuncOp : KGENOp<"func", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        KGEN_DecoratorsAttr:$decorators,
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+                       KGEN_InlineLevelAttr:$inlineLevel,
                        KGEN_ExportKindAttr:$exportKind,
                        // If the body was precompiled, this will hold a
                        // reference to the link directive.
@@ -91,12 +91,12 @@ def KGEN_FuncOp : KGENOp<"func", [
   let builders = [
     // Builder to be used when there is no precompiled body.
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
-                   CArg<"AlwaysInlineLevel",
-                        "AlwaysInlineLevel::Disabled">:$alwaysInlineLevel,
+                   CArg<"InlineLevel",
+                        "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators), [{
       build($_builder, $_state, name, signature, decorators,
-            alwaysInlineLevel, exportKind, /*precompiledBodyRef=*/{});
+            inlineLevel, exportKind, /*precompiledBodyRef=*/{});
     }]>,
   ];
 
@@ -140,8 +140,8 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
     SignatureType getSignature() {
       return SignatureType::get(getFunctionType());
     }
-    AlwaysInlineLevel getAlwaysInlineLevel() {
-      return AlwaysInlineLevel::Disabled;
+    InlineLevel getInlineLevel() {
+      return InlineLevel::Never;
     }
   }];
 
@@ -189,7 +189,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                        KGEN_ParamDeclArrayAttr:$resultParams,
                        ConstraintArrayAttr:$constraints,
                        KGEN_DecoratorsAttr:$decorators,
-                       KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel,
+                       KGEN_InlineLevelAttr:$inlineLevel,
                        KGEN_ExportKindAttr:$exportKind);
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -204,7 +204,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "ArrayRef<ParamDeclAttr>":$resultParams), [{
       build($_builder, $_state, name, signature, functionType, inputParams,
             resultParams, /*constraints=*/{}, /*decorators=*/{},
-            AlwaysInlineLevel::Disabled, ExportKind::NotExported);
+            InlineLevel::Automatic, ExportKind::NotExported);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
                    "FunctionType":$functionType), [{
@@ -458,14 +458,14 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     KGEN_ParamDeclArrayAttr:$resultParams,
     ConstraintArrayAttr:$constraints,
     UnitAttr:$isolated,
-    KGEN_AlwaysInlineLevelAttr:$alwaysInlineLevel
+    KGEN_InlineLevelAttr:$inlineLevel
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
     custom<RegionDeclaration>($paramDecl, $inputParams, $resultParams,
                               $functionType, $signature, $constraints,
-                              $alwaysInlineLevel, $bodyRegion)
+                              $inlineLevel, $bodyRegion)
     attr-dict
   }];
 

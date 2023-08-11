@@ -137,7 +137,8 @@ private:
 /// Returns true if the given function can be externalized.
 static bool canExternalize(LIT::FuncOp func) {
   // If the function is marked as always inline, we can't externalize it.
-  if (func.getAlwaysInlineLevel() != AlwaysInlineLevel::Disabled)
+  if (func.getInlineLevel() == InlineLevel::Always ||
+      func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
     return false;
 
   // Check for parameters.
