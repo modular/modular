@@ -123,7 +123,7 @@ endmacro()
 # needs to pass in to Mojo and KGEN.
 macro(_setup_defines)
   if (MODULAR_PARANOID)
-    set(MOJO_DEFINES "-DMODULAR_PARANOID")
+    set(MOJO_DEFINES "-D" "MODULAR_PARANOID")
   endif()
 endmacro()
 
