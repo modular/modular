@@ -14,7 +14,7 @@
 from DType import DType
 from SIMD import Float32
 from SIMD import SIMD
-from IO import print, _printf
+from IO import print, print_no_newline, _printf
 from Range import range
 from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
@@ -28,25 +28,26 @@ from Benchmark import Benchmark
 from Assert import assert_param
 from Pointer import Pointer, DTypePointer
 from TargetInfo import simdwidthof
+from TypeUtilities import rebind
 
 alias float_type = DType.float64
 alias int_type = DType.int64
 
 
 fn draw_mandelbrot[h: Int, w: Int](out: Matrix[DimList(h, w), int_type, False]):
-    alias sr = ".,c8M@jawrpogOQEPGJ"
+    let sr = StringRef(".,c8M@jawrpogOQEPGJ")
     let charset = Buffer[Dim(), DType.int8](
-        DTypePointer[DType.int8](sr.data()), sr.__len__()
+        rebind[DTypePointer[DType.int8]](sr.data), sr.length
     )
     for row in range(h):
         for col in range(w):
             let v: Int = out[row, col].value
             if v > 0:
-                let p = charset[v % sr.__len__()]
-                print(p)
+                let p = charset[v % sr.length]
+                _printf("%c", p.value)
             else:
-                print("0")
-        print("\n")
+                print_no_newline("0")
+        print("")
 
 
 fn mandelbrot_kernel[
