@@ -2,7 +2,7 @@
   "name": "vscode-mojo",
   "displayName": "Mojo",
   "description": "Mojo language support",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
@@ -39,7 +39,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/modularml/modular.git"
+    "url": "https://github.com/modularml/mojo.git"
   },
   "contributes": {
     "languages": [
