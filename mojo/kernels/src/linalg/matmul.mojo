@@ -25,7 +25,7 @@ from Functional import (
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
 from LLCL import OutputChainPtr, OwningOutputChainPtr
-from Math import min, fma, div_ceil, align_down, align_up
+from math import min, fma, div_ceil, align_down, align_up
 from Memory import memset_zero, stack_allocation
 from MatmulUtils import (
     get_packB_unroll_factor,

@@ -7,7 +7,7 @@
 
 from List import DimList, Dim
 from Matmul import pack_b
-from Math import div_ceil
+from math import div_ceil
 from DType import DType
 from Range import range
 from Buffer import Buffer, NDBuffer

@@ -21,7 +21,7 @@ from Index import StaticIntTuple, StaticTuple
 from Intrinsics import strided_load, strided_store
 from List import DimList, VariadicList
 from LLCL import OutputChainPtr
-from Math import div_ceil, min
+from math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range

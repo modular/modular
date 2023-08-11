@@ -6,7 +6,7 @@
 
 from DType import DType
 from Index import StaticIntTuple, Index
-from Math import div_ceil, max, min, sqrt
+from math import div_ceil, max, min, sqrt
 from List import DimList
 from SIMD import SIMD, Float32
 from String import String

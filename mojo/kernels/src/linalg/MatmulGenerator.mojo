@@ -10,7 +10,7 @@ from Functional import tile, tile_and_unswitch, vectorize_unroll
 from IO import print
 from Index import Index, StaticIntTuple
 from List import VariadicList, Dim, DimList
-from Math import div_ceil, min, max
+from math import div_ceil, min, max
 from Matmul import (
     MatmulConfig,
     PackMatrixCols,

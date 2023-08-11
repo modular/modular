@@ -12,7 +12,7 @@ from Pointer import Pointer, DTypePointer
 from DType import DType
 from List import DimList
 from Index import Index
-from Math import iota
+from math import iota
 from Range import range
 from Vector import DynamicVector
 
