@@ -41,10 +41,11 @@ ErrorOrSuccess HTTPResponse::asError() {
     return success();
   case TransportError:
     assert(transportErrorMessage && "current error is not set");
-    return Error(llvm::formatv("http error: {0}", transportErrorMessage));
+    return Error("http error: " + *transportErrorMessage);
   case HTTPResponseError:
     assert(responseCode && "responseCode is not set");
-    return Error(llvm::formatv("http error: response code {0}", responseCode));
+    return Error(
+        llvm::formatv("http error: response code {0}", responseCode).str());
   }
 }
 

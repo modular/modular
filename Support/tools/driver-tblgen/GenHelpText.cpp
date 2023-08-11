@@ -100,10 +100,9 @@ static raw_ostream &writeWordWrapped(raw_ostream &os, Twine text,
 
 static void genNameSection(raw_ostream &os, const CommandDescription &cmd) {
   os << "NAME\n";
-  writeWordWrapped(os,
-                   llvm::formatv("{0} — {1}", cmd.getName(), cmd.getSummary()),
-                   /*indent=*/8)
-      << "\n\n";
+  std::string formatted =
+      llvm::formatv("{0} — {1}", cmd.getName(), cmd.getSummary());
+  writeWordWrapped(os, formatted, /*indent=*/8) << "\n\n";
 }
 
 static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd,
