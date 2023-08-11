@@ -29,6 +29,7 @@ add_modular_mlir_library(KGENEmitObject
 
   MCache
   MCompilerSupport
+  MTelemetry
 
   MLIRIndexToLLVM
   MLIRLLVMToLLVMIRTranslation

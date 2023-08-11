@@ -22,7 +22,6 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
 #include "LLCL/Support/GenericUniquePtr.h"
-#include "LLCL/Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -59,15 +58,11 @@ public:
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
 
   //===--------------------------------------------------------------------===//
-  // Profiling and Telemetry
+  // Profiling
   //===--------------------------------------------------------------------===//
 
   /// Return a reference to the profiler instance, if its been initialized.
   std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
-
-  /// Return a reference to this runtime's TelemetryContext instance. If
-  /// telemetry is disabled, this will return NOOP instruments.
-  RCRef<Telemetry::TelemetryContext> getTelemetryContext();
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -123,6 +118,26 @@ public:
     T &result = *genericPtr.template get<T>();
     contexts.insert({denseIndex, std::move(genericPtr)});
     return result;
+  }
+
+  /// Returns a reference to the global context object of type T held by the
+  /// runtime if it exists, or otherwise it emplaces a new global context
+  /// object and returns a reference to it. The returned reference is stable for
+  /// the life of the runtime. Thread safe, though the caller is responsible for
+  /// thread safe access to the context object itself.
+  template <typename T, typename... Args>
+  T &emplaceContextIfMissing(Args &&...args) {
+    std::lock_guard<std::mutex> lock(mu);
+    auto denseIndex = TypeID::get<T>().getDenseIndex();
+    auto itr = contexts.find(denseIndex);
+    if (itr == contexts.end()) {
+      auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
+      T &result = *genericPtr.template get<T>();
+      contexts.insert({denseIndex, std::move(genericPtr)});
+      return result;
+    } else {
+      return *(itr->second.template get<T>());
+    }
   }
 
   /// Returns a pointer to the global context object of type T held by the
@@ -183,10 +198,6 @@ private:
   /// An active profiler used for the runtime, or nullopt if profiling is
   /// disabled. This is only set when profileFilename is non-empty.
   std::optional<TimeTraceProfiler> profiler;
-
-  /// The TelemetryContext instance used by the runtime. It returns NOOP
-  /// instruments if telemetry is disabled.
-  RCRef<Telemetry::TelemetryContext> telemetryContext;
 
   /// This is the index # for the runtime object created.  This is held by the
   /// CompactRuntimePtr.

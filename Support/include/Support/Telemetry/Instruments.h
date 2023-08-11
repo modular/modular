@@ -7,13 +7,13 @@
 #ifndef SUPPORT_TELEMETRY_INSTRUMENTS_H
 #define SUPPORT_TELEMETRY_INSTRUMENTS_H
 
-#include "LLCL/Support/Telemetry/ForwardDecls.h"
+#include "Support/Telemetry/ForwardDecls.h"
 #include <chrono>
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/metrics/sync_instruments.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::LLCL::Telemetry {
+namespace M::Telemetry {
 
 // -------- Counter --------
 
@@ -130,6 +130,6 @@ private:
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
-} // namespace M::LLCL::Telemetry
+} // namespace M::Telemetry
 
 #endif // SUPPORT_TELEMETRY_INSTRUMENTS_H

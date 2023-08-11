@@ -12,20 +12,19 @@ if(MODULAR_ENABLE_TELEMETRY)
 
   include(AddOpenTelemetry)
 
-  add_modular_library(LLCLTelemetry
+  add_modular_library(MTelemetry
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp
 
     LINK_LIBS PUBLIC
-    LLCLSupport
     MSupport
     opentelemetry_metrics
     opentelemetry_logs
 
-    # It's important to keep OTLP PRIVATE. If not, it will leak our protobuf headers
-    # across the codebase given that LLCL links with MTelemetry, and stock TF headers
-    # will throw a build-time error because they were generated with an older protobuf.
+    # It's important to keep OTLP PRIVATE. If not, it can leak our protobuf headers
+    # across the codebase when linking with MTelemetry, and stock TF headers will
+    # throw a build-time error because they were generated with an older protobuf.
     LINK_LIBS PRIVATE
     opentelemetry_exporter_otlp_http
     opentelemetry_exporter_otlp_http_metric
@@ -38,7 +37,7 @@ if(MODULAR_ENABLE_TELEMETRY)
     )
 
 else()
-  add_modular_library(LLCLTelemetry
+  add_modular_library(MTelemetry
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp

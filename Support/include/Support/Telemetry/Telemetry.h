@@ -7,11 +7,9 @@
 #ifndef SUPPORT_TELEMETRY_H
 #define SUPPORT_TELEMETRY_H
 
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
-#include "LLCL/Support/Telemetry/Instruments.h"
-#include "LLCL/Support/Telemetry/Logs.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/Instruments.h"
+#include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include <variant>
@@ -22,7 +20,7 @@
 #include "opentelemetry/metrics/meter_provider.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::LLCL::Telemetry {
+namespace M::Telemetry {
 
 // TODO: Support some of these in config file.
 /// When the TelemetryContext is destroyed, it does a synchronous flush to
@@ -51,7 +49,7 @@ constexpr StringRef kTelemetryUrl = "https://telemetry.modular.com:443";
 /// attributes (e.g. CPU info, OS info, version of software components) without
 /// this information being passed to it explicitly through its API, but this is
 /// subject to change.
-class TelemetryContext : public LLCL::ReferenceCounted<TelemetryContext> {
+class TelemetryContext {
 public:
   /// This is just a copy of the OTel OwnedAttributeValue - we can use this to
   /// provide resources to the telemetry context. We don't support the lists
@@ -171,14 +169,14 @@ public:
   flush(std::chrono::microseconds timeout = std::chrono::microseconds::max());
 
   /// This struct provides an RAII-style way to flush telemetry at the end of a
-  /// scope.
+  /// scope. Note that the telemetry context pointer is not managed, and the
+  /// struct cannot outlive it.
   struct AutoFlush {
-    AutoFlush(LLCL::RCRef<TelemetryContext> ctx,
-              std::chrono::microseconds timeout)
-        : context(std::move(ctx)), timeout(timeout) {}
+    AutoFlush(TelemetryContext *ctx, std::chrono::microseconds timeout)
+        : context(ctx), timeout(timeout) {}
     ~AutoFlush() { context->flush(timeout); }
 
-    LLCL::RCRef<TelemetryContext> context;
+    TelemetryContext *context;
     std::chrono::microseconds timeout;
   };
 
@@ -187,9 +185,10 @@ public:
   /// whichever comes first. NOTE: TelemetryContext flushes periodically
   /// asynchronously. Flushing with scoped autoflush is not generally
   /// recommended.
+  /// Warning: the returned struct cannot outlive this telemetry context.
   AutoFlush autoFlush(
       std::chrono::microseconds timeout = std::chrono::microseconds::max()) {
-    return AutoFlush(LLCL::RCRef<TelemetryContext>::copy(this), timeout);
+    return AutoFlush(this, timeout);
   }
 
 private:
@@ -203,6 +202,6 @@ private:
 #endif
 };
 
-} // namespace M::LLCL::Telemetry
+} // namespace M::Telemetry
 
 #endif // SUPPORT_TELEMETRY_H

@@ -17,12 +17,12 @@
 #include "KGEN/MojoParser.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -175,8 +175,8 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
   if (!moduleExportsMain(moduleOp, symtab))
     return Error("could not find a 'main' function to execute");
   [[maybe_unused]] auto timeScope =
-      runtime.getTelemetryContext()
-          ->createUInt64Timer<std::chrono::milliseconds>("mojo.run.time");
+      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .createUInt64Timer<std::chrono::milliseconds>("mojo.run.time");
 
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -257,16 +257,13 @@ static int run(const State &state) {
   LLCL::Runtime runtime(LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue());
 
-  // Empty attr list, for some reason without this we get linker errors...
-  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
-  auto telemetryCtx = RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
+  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   initializeTelemetry(
-      telemetryCtx.copy(), state, args,
+      telemetryCtx, state, args,
       /*privateArgs=*/{options::OPT_D, options::OPT_I, options::OPT_L});
-  runtime.emplaceContext<decltype(telemetryCtx)>(std::move(telemetryCtx));
 
   // Lower the input file to an MLIR module.
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);

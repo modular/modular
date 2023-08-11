@@ -38,6 +38,7 @@ add_modular_conversion_library(MojoParser
   LLCLRuntime
   KGENDialect
   POPDialect
+  MTelemetry
 
   MLIRBytecodeReader
   MLIRBytecodeWriter

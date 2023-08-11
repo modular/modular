@@ -6,7 +6,7 @@
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 
-#include "LLCL/Support/Telemetry/Exporters/FileLogExporter.h"
+#include "Support/Telemetry/Exporters/FileMetricExporter.h"
 
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -15,18 +15,16 @@
 
 #define DEBUG_TYPE "telemetry-context"
 
-using namespace M::LLCL::Telemetry::Exporter;
+using namespace M::Telemetry::Exporter;
 
-opentelemetry::sdk::common::ExportResult
-FileLogExporter::Export(const opentelemetry::nostd::span<
-                        std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
-                            &records) noexcept {
+opentelemetry::sdk::common::ExportResult FileMetricExporter::Export(
+    const opentelemetry::sdk::metrics::ResourceMetrics &data) noexcept {
 
   if (filePath.empty())
     return opentelemetry::sdk::common::ExportResult::kSuccess;
 
-  // Export data to outputStream using OTel's OStreamLogRecordExporter.
-  ostreamExporter.Export(records);
+  // Export data to outputStream using OTel's OStreamMetricExporter.
+  ostreamExporter.Export(data);
 
   // If there is nothing to write, return.
   if (outputStream.tellp() == 0)

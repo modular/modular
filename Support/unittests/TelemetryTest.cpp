@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Support/Telemetry/Telemetry.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -13,7 +13,6 @@
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace LLCL;
 using namespace Telemetry;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -146,13 +145,13 @@ TEST(Telemetry, Counter) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("counter");
 
-  RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
+  TelemetryContext ctx;
 
-  auto counter = ctx->createUInt64Counter("basic.counter");
+  auto counter = ctx.createUInt64Counter("basic.counter");
   counter.add(32);
-  ctx->flush();
+  ctx.flush();
   counter.add(10);
-  ctx->flush();
+  ctx.flush();
 
   auto err = readFileUnderLock(
       tmpFile.getPath(), [&](const std::filesystem::path &path) {
@@ -190,12 +189,12 @@ TEST(Telemetry, Histogram) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram");
 
-  RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
+  TelemetryContext ctx;
 
-  auto hist = ctx->createUInt64Histogram("basic.histogram");
+  auto hist = ctx.createUInt64Histogram("basic.histogram");
   hist.record(32);
   hist.record(10);
-  ctx->flush();
+  ctx.flush();
 
   auto err = readFileUnderLock(
       tmpFile.getPath(), [&](const std::filesystem::path &path) {
@@ -241,14 +240,14 @@ TEST(Telemetry, Logger) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log");
 
-  RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create();
+  TelemetryContext ctx;
 
   StringRef logString = "hello\nthis is a string";
   StringRef escapedLogString = "hello\\nthis is a string";
 
-  auto logger = ctx->getLogger("basic.log");
+  auto logger = ctx.getLogger("basic.log");
   logger->getInfo("test") << logString;
-  ctx->flush();
+  ctx.flush();
 
   auto err = readFileUnderLock(
       tmpFile.getPath(), [&](const std::filesystem::path &path) {
@@ -282,11 +281,11 @@ TEST(Telemetry, Resources) {
   extras["aResource"] = resourceVal;
   extras["aNumber"] = 32;
 
-  RCRef<TelemetryContext> ctx = RCRef<TelemetryContext>::create(extras);
+  TelemetryContext ctx(extras);
 
-  auto logger = ctx->getLogger("basic.log");
+  auto logger = ctx.getLogger("basic.log");
   logger->getInfo("test") << StringRef("foo");
-  ctx->flush();
+  ctx.flush();
 
   auto err = readFileUnderLock(
       tmpFile.getPath(), [&](const std::filesystem::path &path) {

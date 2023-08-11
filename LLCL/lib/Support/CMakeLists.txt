@@ -33,5 +33,3 @@ add_modular_library(LLCLSupport
   UnknownLocationDecoder.cpp
   )
 target_link_libraries(LLCLSupport PUBLIC ${LIBS})
-
-add_subdirectory(Telemetry)

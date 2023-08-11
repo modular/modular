@@ -14,7 +14,6 @@
 #include "LLCL/Runtime/Globals/CompactRuntimeTable.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -72,22 +71,6 @@ Runtime::~Runtime() {
     if (auto E = profiler->write(profileFilename, "-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
-}
-
-RCRef<Telemetry::TelemetryContext> Runtime::getTelemetryContext() {
-  // Create a static mutex for the telemetry context. Because we emplace one if
-  // it didn't exist previously, we can't rely on the context lock.
-  static std::mutex telemetryCtx;
-
-  std::lock_guard<std::mutex> lock(telemetryCtx);
-  auto *ctx = getContext<RCRef<Telemetry::TelemetryContext>>();
-  if (ctx)
-    return ctx->copy();
-
-  // If the user didn't emplace their own context, create one.
-  return emplaceContext<RCRef<Telemetry::TelemetryContext>>(
-             RCRef<Telemetry::TelemetryContext>::create())
-      .copy();
 }
 
 /// Cancel the current MEF Execution. This transitions this Runtime to the
