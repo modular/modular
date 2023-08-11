@@ -3684,8 +3684,6 @@ fn pack_filter[
     let C = filter.dim[2]()
     let F = filter.dim[3]()
 
-    debug_assert(F % simd_size == 0, "F must be multiple of simd size.")
-
     @always_inline
     @parameter
     fn pack[f_tile_size: Int](f_tile_start: Int):
