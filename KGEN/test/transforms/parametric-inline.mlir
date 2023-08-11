@@ -1146,3 +1146,44 @@ kgen.generator @caller() -> index {
   %0 = kgen.call @dontinlineme() : () -> index
   kgen.return %0 : index
 }
+
+// -----
+
+// CHECK-LABEL: kgen.generator @foo
+kgen.generator @foo() {
+  // CHECK: kgen.param.declare.region SomeClosure = <DT: dtype, N>(%[[ARG:.*]]: !pop.simd<N, DT>
+  // CHECK-NEXT: kgen.param.declare A = <1> loc(#[[LOC:.*]])
+  // CHECK-NEXT: kgen.return %[[ARG]]
+  kgen.call @bar() : () -> ()
+  // CHECK: kgen.param.declare.region SomeClosure0 = <DT0: dtype, N0>(%[[ARG0:.*]]: !pop.simd<N0, DT0>
+  // CHECK-NEXT: kgen.param.declare A0 = <1> loc(#[[LOC0:.*]])
+  // CHECK-NEXT: kgen.return %[[ARG0]] : !pop.simd<N0, DT0> loc(#[[LOC0]])
+  kgen.call @bar() : () -> ()
+  kgen.return
+}
+kgen.generator @bar() always_inline {
+  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !pop.simd<N, DT>) capturing -> !pop.simd<N, DT> {
+    kgen.param.declare A = <1> loc(#loc)
+    kgen.return %arg0 : !pop.simd<N, DT> loc(#loc)
+  } loc(#loc)
+  kgen.return
+}
+
+// CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
+// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N0, DT0>>
+// CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"$SIMD::SIMD"(![[M]])>
+// CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"$SIMD::SIMD"(![[M0]])>
+// CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(![[STR]]) -> (![[STR]]): DW_CC_normal>
+// CHECK-DAG: ![[SR0:.*]] = !debuginfo.subroutine<(![[STR0]]) -> (![[STR0]]): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR]]
+// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR0]]
+
+!struct = !debuginfo.struct<"$SIMD::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>
+
+// CHECK-DAG: #[[LOC_ORI:.*]] = loc("foo.mlir":1317:13)
+// CHECK-DAG: #[[LOC]] = loc(fused<#[[SP]]>[#[[LOC_ORI]]])
+// CHECK-DAG: #[[LOC0]] = loc(fused<#[[SP0]]>[#[[LOC_ORI]]])
+#loc = loc(fused<#subprogram2>["foo.mlir":1317:13])

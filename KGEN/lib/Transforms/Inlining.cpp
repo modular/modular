@@ -76,8 +76,8 @@ public:
   /// Optionally mangle a declaration.
   ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
 
-  /// Mangle attributes, types, and locations in an operation.
-  void mangleElementsIn(Operation *op);
+  /// Mangle attributes, types, and optionally locations in an operation.
+  void mangleElementsIn(Operation *op, bool mangleLocs = true);
 
   /// Recursively mangle declarations in the nested scope.
   void recursivelyMangle(Region *scope, const ParameterUseDefGraph &graph);
@@ -236,12 +236,14 @@ ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,
   return ParamDeclAttr::get(decl.getName(), type);
 }
 
-void AttrTypeMangler::mangleElementsIn(Operation *op) {
+void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
   TimeTraceScope<> traceScope("AttrTypeMangler::mangleElementsIn");
 
   op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
-  op->setLoc(
-      cast<mlir::LocationAttr>(mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+  if (mangleLocs) {
+    op->setLoc(cast<mlir::LocationAttr>(
+        mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+  }
 
   for (OpResult result : op->getResults())
     result.setType(mangleRefsIn(result.getType()));
@@ -249,8 +251,10 @@ void AttrTypeMangler::mangleElementsIn(Operation *op) {
   for (Region &region : op->getRegions()) {
     for (Block &block : region) {
       for (BlockArgument arg : block.getArguments()) {
-        arg.setLoc(cast<mlir::LocationAttr>(
-            mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+        if (mangleLocs) {
+          arg.setLoc(cast<mlir::LocationAttr>(
+              mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+        }
         arg.setType(mangleRefsIn(arg.getType()));
       }
     }
@@ -267,12 +271,26 @@ void AttrTypeMangler::recursivelyMangle(Region *scope,
   for (Operation *op : uses.paramOps) {
     if (op == scope->getParentOp())
       continue;
-    mangleElementsIn(op);
+    mangleElementsIn(op, /*mangleLocs=*/false);
   }
   for (auto &[_, decl] : uses.decls) {
     if (!scope->getParentOp()->isProperAncestor(decl.declOp))
       continue;
-    mangleElementsIn(decl.declOp);
+    mangleElementsIn(decl.declOp, /*mangleLocs=*/false);
+  }
+
+  // We need to mangle location in all ops, not just parametric ones.
+  for (Operation &op : uses.scope->getOps()) {
+    op.setLoc(cast<mlir::LocationAttr>(
+        mangleRefsIn(mlir::LocationAttr(op.getLoc()))));
+    for (Region &region : op.getRegions()) {
+      for (Block &block : region) {
+        for (BlockArgument arg : block.getArguments()) {
+          arg.setLoc(cast<mlir::LocationAttr>(
+              mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+        }
+      }
+    }
   }
 
   for (Region *nestedScope : uses.nestedDecls)
