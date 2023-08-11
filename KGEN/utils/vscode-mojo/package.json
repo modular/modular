@@ -1,7 +1,7 @@
 {
   "name": "vscode-mojo",
   "displayName": "Mojo",
-  "description": "Mojo Language Extension",
+  "description": "Mojo language support",
   "version": "0.0.1",
   "icon": "icon.png",
   "engines": {
@@ -12,7 +12,8 @@
     "Formatters"
   ],
   "keywords": [
-    "MOJO"
+    "mojo",
+    "🔥"
   ],
   "activationEvents": [
     "onLanguage:mojo"
