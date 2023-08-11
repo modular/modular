@@ -252,10 +252,22 @@ bool MojoUserExpression::addArguments(ExecutionContext &exeCtx,
   return true;
 }
 
+static std::atomic_flag &getTraceDumpSignalRegisteredFlag() {
+  static std::atomic_flag traceDumpSignalRegistered = ATOMIC_FLAG_INIT;
+  return traceDumpSignalRegistered;
+}
+
 /// Signal handler that will dump the stack trace to the log. If we can't pull
 /// out the mojo type system, we simply return because the only purpose of this
 /// handler is to print a stack trace to the mojo log.
 static void dumpTraceOnSignal(void *cookie) {
+  // Signal handlers registered with llvm::sys::AddSignalHandler like this one
+  // run only once.  Clear the flag so we re-register this handler next time
+  // 'round.  (Note: We don't want to register the handler in here ourselves,
+  // since that may cause llvm::sys::RunSignalHandlers to run us again
+  // immediately without waiting for another signal.)
+  getTraceDumpSignalRegisteredFlag().clear();
+
   auto *debugger = (Debugger *)cookie;
 
   // Pull the type system out of the current target.
@@ -284,10 +296,15 @@ static void dumpTraceOnSignal(void *cookie) {
 
 /// Register the trace dumping signal handler exactly once.
 static void registerTraceDumpHandler(Debugger &debugger) {
-  static llvm::once_flag flag;
-  llvm::call_once(flag, [&]() {
+  // N.B.: This is not really thread safe.  If two threads come through here,
+  // one of them will register the signal handler, while the other one will see
+  // that the flag was set and continue without waiting for the registration to
+  // finish.  This is probably not a problem in practice --
+  // wrapTextAndParseExpression is usually called only from a single thread,
+  // and the worst case is execution continues without a trace-dump handler for
+  // a little bit.
+  if (!getTraceDumpSignalRegisteredFlag().test_and_set())
     llvm::sys::AddSignalHandler(dumpTraceOnSignal, (void *)&debugger);
-  });
 }
 
 LogicalResult MojoUserExpression::wrapTextAndParseExpression(
