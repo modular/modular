@@ -4,6 +4,13 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# This is a workaround/ fix to make python wheels packing work
+# without the following line cmake can't find python development in
+# modular_find_python3_development() macro.
+# Potentially it's a cmake issue or/and how we use it
+# (e.g. call find_package(Python3 ...) multiple times)
+find_package(Python3 COMPONENTS Development)
+
 include(AddPython)
 modular_find_python3_development()
 
