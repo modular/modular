@@ -24,13 +24,12 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
-    StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, Type resultType, StructDeclOp structOp,
-    SpecialFunctionKind specialFnID, SMLoc loc) {
-  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
-      structOp.getLoc(), &structOp.getFields().front());
+LIT::FuncOp
+StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
+                              ArrayRef<ValueInputConvention> argConventions,
+                              ArrayRef<StringAttr> argNames, Type resultType,
+                              SpecialFunctionKind specialFnID, SMLoc loc,
+                              ImplicitLocOpBuilder &builder) {
   // Get the signature for the function.
   auto fnType = builder.getFunctionType(argTypes, resultType);
 
@@ -43,7 +42,8 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
   // TODO: Should raise if anything we invoke raises.
   auto metadata = builder.getAttr<FnMetadataAttr>(
       argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
-  auto signature = SignatureType::get({}, {}, fnType, metadata);
+  auto none = TypeArrayAttr::get(builder.getContext(), {});
+  auto signature = SignatureType::get(none, none, fnType, metadata);
 
   // Create the empty function.
   StringAttr nameAttr =
@@ -54,6 +54,23 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
+  if (!funcOp.getBody())
+    funcOp.getBodyRegion().push_back(new Block);
+  for (Type param : argTypes)
+    funcOp.getBody()->addArgument(param, funcOp.getLoc());
+
+  return funcOp;
+}
+
+LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
+    StringRef name, ArrayRef<Type> argTypes,
+    ArrayRef<ValueInputConvention> argConventions,
+    ArrayRef<StringAttr> argNames, Type resultType, StructDeclOp structOp,
+    SpecialFunctionKind specialFnID, SMLoc loc) {
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      structOp.getLoc(), &structOp.getFields().front());
+  LIT::FuncOp funcOp = createFunction(name, argTypes, argConventions, argNames,
+                                      resultType, specialFnID, loc, builder);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
@@ -150,8 +167,6 @@ LIT::FuncOp StructEmitter::addVoidMethod(
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-  for (Type inputVal : func.getArgumentTypes())
-    body->addArgument(inputVal, selfStruct.getLoc());
 
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
@@ -280,10 +295,6 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
               {ValueInputConvention::BorrowedInReg}),
           SmallVector<StringAttr>({existingName}), selfType, declOp,
           SpecialFunctionKind::kCopyInitReg, loc);
-      if (!copyFunc.getBody())
-        copyFunc.addBlock();
-      for (Type argument : copyFunc.getSignature().getValueInputs())
-        copyFunc.getBody()->addArgument(argument, copyFunc.getLoc());
     }
     shared.declResolver->addFullyResolvedDecl(
         copyFunc.getOperation(), StringAttr::get(shared.getContext(), name),

@@ -24,7 +24,8 @@ public:
   ClosureEmitter(LIT::FileModuleOp fileModuleOp, Type noneType,
                  SharedState &shared)
       : fileModuleOp(fileModuleOp), noneType(noneType), shared(shared),
-        structEmitter(shared) {}
+        structEmitter(shared),
+        dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")) {}
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
@@ -50,6 +51,7 @@ private:
   Type noneType;
   SharedState &shared;
   StructEmitter structEmitter;
+  StringAttr dtorFieldAttr;
 };
 } // namespace M::KGEN::LIT
 
