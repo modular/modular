@@ -8,9 +8,10 @@ import {exec} from 'child_process';
 import * as vscode from 'vscode';
 
 import {get} from './config';
+import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
 
-export function registerFormatter(outputChannel: vscode.OutputChannel,
+export function registerFormatter(loggingService: LoggingService,
                                   mojoSDK: MOJOSDK) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
     async provideDocumentFormattingEdits(document, _options) {
@@ -43,7 +44,7 @@ export function registerFormatter(outputChannel: vscode.OutputChannel,
           // necessarily fatal, so this doesn't prevent edits from being
           // applied.
           if (error) {
-            outputChannel.appendLine(`Formatting error:\n${stderr}`);
+            loggingService.logError(`Formatting error:\n${stderr}`);
             reject(error);
             return;
           }

@@ -10,6 +10,7 @@ import * as vscodelc from 'vscode-languageclient/node';
 import * as config from './config';
 import * as configWatcher from './configWatcher';
 import {registerFormatter} from './formatter';
+import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
 
 /**
@@ -17,21 +18,22 @@ import {MOJOSDK} from './mojoSDK';
  *  client.
  */
 export class MOJOContext implements vscode.Disposable {
-  sdk: MOJOSDK = new MOJOSDK();
+  _sdk: MOJOSDK|undefined;
   subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
-  _outputChannel: vscode.OutputChannel|undefined;
+  _loggingService: LoggingService|undefined;
 
-  private getOutputChannel(): vscode.OutputChannel {
-    return this._outputChannel!;
-  }
+  private getLoggingService(): LoggingService { return this._loggingService!; }
+
+  private getSDK(): MOJOSDK { return this._sdk!; }
 
   /**
    *  Activate the Mojo context, and start the language clients.
    */
-  async activate(outputChannel: vscode.OutputChannel,
+  async activate(loggingService: LoggingService,
                  launchLanguageServerSuspended: boolean = false) {
-    this._outputChannel = outputChannel;
+    this._loggingService = loggingService;
+    this._sdk = new MOJOSDK(loggingService);
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
@@ -60,7 +62,8 @@ export class MOJOContext implements vscode.Disposable {
         }));
 
     // Initialize the formatter.
-    this.subscriptions.push(registerFormatter(outputChannel, this.sdk));
+    this.subscriptions.push(registerFormatter(loggingService, this.getSDK()));
+    loggingService.logInfo("MojoContext activated.");
   }
 
   /**
@@ -69,9 +72,12 @@ export class MOJOContext implements vscode.Disposable {
   async getOrActivateLanguageClient(uri: vscode.Uri,
                                     launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
+    this.getLoggingService().logInfo(
+        `Activating language client for URI '${uri}'`)
     // Check the scheme of the uri.
     let validSchemes = [ 'file' ];
     if (!validSchemes.includes(uri.scheme)) {
+      this.getLoggingService().logInfo(`Unsupported URI scheme '${uri.scheme}'`)
       return undefined;
     }
 
@@ -85,7 +91,7 @@ export class MOJOContext implements vscode.Disposable {
     let client = this.workspaceClients.get(workspaceFolderStr);
     if (!client) {
       client = await this.activateWorkspaceFolder(
-          workspaceFolder, this.getOutputChannel(),
+          workspaceFolder, this.getLoggingService(),
           launchLanguageServerSuspended);
       if (client) {
         this.workspaceClients.set(workspaceFolderStr, client);
@@ -100,12 +106,12 @@ export class MOJOContext implements vscode.Disposable {
    */
   async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder|
                                 undefined,
-                                outputChannel: vscode.OutputChannel,
+                                loggingService: LoggingService,
                                 launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
     // Try to activate the language client.
     const [server, serverPath] = await this.startLanguageClient(
-        workspaceFolder, outputChannel, launchLanguageServerSuspended);
+        workspaceFolder, loggingService, launchLanguageServerSuspended);
 
     // Watch for configuration changes on this folder.
     if (workspaceFolder)
@@ -120,14 +126,16 @@ export class MOJOContext implements vscode.Disposable {
    *  server path.
    */
   async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder|undefined,
-                            outputChannel: vscode.OutputChannel,
+                            loggingService: LoggingService,
                             launchLanguageServerSuspended: boolean):
       Promise<[ vscodelc.LanguageClient | undefined, string ]> {
+    loggingService.logInfo("Starting language client for workspace",
+                           workspaceFolder);
     const clientTitle = 'Mojo Language Client';
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    let mojoConfig = await this.sdk.resolveConfig(workspaceFolder);
+    let mojoConfig = await this.getSDK().resolveConfig(workspaceFolder);
     if (!mojoConfig)
       return [ undefined, "" ];
 
@@ -194,7 +202,7 @@ export class MOJOContext implements vscode.Disposable {
         // the workspace.
         fileEvents : vscode.workspace.createFileSystemWatcher(filePattern)
       },
-      outputChannel : outputChannel,
+      outputChannel : loggingService.outputChannel,
       workspaceFolder : workspaceFolder,
       middleware : middleware,
 

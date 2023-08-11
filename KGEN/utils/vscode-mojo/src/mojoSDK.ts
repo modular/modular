@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import * as config from './config';
+import {LoggingService} from './logging';
 
 /**
  * This class represents a subset of the Modular config object used by extension
@@ -41,6 +42,15 @@ export class MOJOSDK {
   workspaceConfigs: Map<string, MOJOSDKConfig> = new Map();
 
   /**
+   * A service that can be used to log message in the Mojo output channel.
+   */
+  private loggingService: LoggingService;
+
+  constructor(loggingService: LoggingService) {
+    this.loggingService = loggingService;
+  }
+
+  /**
    * Resolve the Modular config for the given workspace directory.
    *
    * @param workspaceFolder The current workspace folder, or undefined.
@@ -62,26 +72,35 @@ export class MOJOSDK {
     if (!modularPath) {
       modularPath = process.env.MODULAR_HOME;
     } else {
+      this.loggingService.logInfo("MODULAR_HOME found in VS Code settings.");
       let workspaceRoot = workspaceFolder ? workspaceFolder.uri.fsPath : "";
       modularPath = modularPath.replace("${workspaceRoot}", workspaceRoot);
     }
 
     // If we still don't have a path, prompt the user to install the SDK.
     if (!modularPath) {
+      this.loggingService.logInfo("MODULAR_HOME not found.");
       this.promptInstallSDK();
       return undefined;
     }
 
+    this.loggingService.logInfo(`MODULAR_HOME is ${modularPath}.`);
+
     // Read in the config file.
-    let configPath = vscode.Uri.from(
-        {scheme : 'file', path : path.join(modularPath, "modular.cfg")});
+    const modularCfg = path.join(modularPath, "modular.cfg");
+    let configPath = vscode.Uri.from({scheme : 'file', path : modularCfg});
     let configPathStat = await vscode.workspace.fs.stat(configPath);
     if (!(configPathStat.type & vscode.FileType.File)) {
+      this.loggingService.logInfo(
+          `Missing or invalid modular.cfg file: '${modularCfg}'.`);
       this.promptInstallSDK();
       return undefined;
     }
     let modularConfig = ini.parse(new TextDecoder().decode(
         await vscode.workspace.fs.readFile(configPath)));
+
+    this.loggingService.logInfo("modular.cfg file with contents",
+                                modularConfig);
 
     // Extract out the pieces of the config that we care about.
     mojoConfig = new MOJOSDKConfig();
@@ -99,6 +118,7 @@ export class MOJOSDK {
    * installation instructions.
    */
   private async promptInstallSDK() {
+    this.loggingService.logInfo("Prompting Install SDK.")
     let value = await vscode.window.showInformationMessage(
         ("The Mojo🔥 development environment was not found. If the Mojo " +
          "SDK is installed, please set the MODULAR_HOME environment variable to the " +

@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 
+import {LoggingService} from './logging';
 import {MOJOContext} from './mojoContext';
 
 /**
@@ -13,8 +14,9 @@ import {MOJOContext} from './mojoContext';
  *  activated the very first time a command is executed.
  */
 export function activate(context: vscode.ExtensionContext) {
-  const outputChannel = vscode.window.createOutputChannel('Mojo');
-  context.subscriptions.push(outputChannel);
+  const loggingService = new LoggingService('Mojo');
+  context.subscriptions.push(loggingService);
+  loggingService.logInfo("Initializing the Mojo extension.")
 
   // Initialize the Mojo context.
   const mojoContext = new MOJOContext();
@@ -25,14 +27,15 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('mojo.restart', async () => {
         // Dispose and reactivate the context.
         mojoContext.dispose();
-        await mojoContext.activate(outputChannel);
+        await mojoContext.activate(loggingService);
       }));
   context.subscriptions.push(
       vscode.commands.registerCommand('mojo.restart-suspended', async () => {
         // Dispose and reactivate the context.
         mojoContext.dispose();
-        await mojoContext.activate(outputChannel, /*launchSuspended=*/ true);
+        await mojoContext.activate(loggingService, /*launchSuspended=*/ true);
       }));
 
-  mojoContext.activate(outputChannel);
+  mojoContext.activate(loggingService);
+  loggingService.logInfo("Mojo extension initialized.")
 }
