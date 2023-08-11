@@ -65,8 +65,11 @@ kgen.func @pointer_to_pointer() {
 
 // CHECK-LABEL: llvm.func internal @string
 kgen.func @string() {
-  // CHECK-NEXT: llvm.mlir.addressof @mem_string
+  // CHECK: llvm.mlir.addressof @mem_string :
   %0 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, [])], 0, 0>>
+  // COM: Ensure `const_global` handle gets deduplicated.
+  // CHECK: llvm.mlir.addressof @mem_string :
+  %1 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, []), (mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 

@@ -578,26 +578,35 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
   for (const MemoryBlob &blob : space) {
     mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
     if (blob.getKind() == MemoryKind::ConstGlobal) {
-      OpBuilder::InsertionGuard guard(b);
-      b.clearInsertionPoint();
+      // Lookup an existing global for this handle.
+      auto global = cast_or_null<LLVM::GlobalOp>(
+          globals.lookup(blob.getHandle().getKey()));
 
-      Attribute value;
-      if (blob.getHandle().getResource()->getKind() ==
-          DialectResourceManager::ResourceKind::String) {
-        // Create a string attribute for readability.
-        value = b.getStringAttr(
-            StringRef(mem->getData().data(), mem->getData().size()));
-      } else {
-        // Store the raw bytes into an elements attribute.
-        value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
-                                          IntegerType::Signless);
+      // If not, create it.
+      if (!global) {
+        OpBuilder::InsertionGuard guard(b);
+        b.clearInsertionPoint();
+
+        Attribute value;
+        if (blob.getHandle().getResource()->getKind() ==
+            DialectResourceManager::ResourceKind::String) {
+          // Create a string attribute for readability.
+          value = b.getStringAttr(
+              StringRef(mem->getData().data(), mem->getData().size()));
+        } else {
+          // Store the raw bytes into an elements attribute.
+          value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
+                                            IntegerType::Signless);
+        }
+
+        global = b.create<LLVM::GlobalOp>(
+            LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
+            /*isConstant=*/true, LLVM::Linkage::Internal,
+            blob.getHandle().getKey(), value, mem->getDataAlignment());
+        symtab.insert(global);
+        globals.try_emplace(blob.getHandle().getKey(), global);
       }
 
-      auto global = b.create<LLVM::GlobalOp>(
-          LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
-          /*isConstant=*/true, LLVM::Linkage::Internal,
-          blob.getHandle().getKey(), value, mem->getDataAlignment());
-      symtab.insert(global);
       materialized.emplace_back(global);
       continue;
     }
