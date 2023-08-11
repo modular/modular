@@ -88,17 +88,17 @@ TelemetryContext::TelemetryContext(
   auto hostInfoOr = getHostMachineInfo();
   assert(!hostInfoOr.isError() && "could not get the host machine info");
   // Set the CPU and architecture.
-  attrs.SetAttribute("cpu", hostInfoOr->cpuModelName);
-  attrs.SetAttribute("arch", hostInfoOr->cpuArch);
+  attrs.SetAttribute("com.modular.cpu.description", hostInfoOr->cpuModelName);
+  attrs.SetAttribute("com.modular.cpu.arch", hostInfoOr->cpuArch);
   // Set the CPU features.
   std::vector<std::string_view> featuresView;
   for (auto &f : hostInfoOr->cpuFeatures)
     featuresView.emplace_back(f);
-  attrs.SetAttribute("features", featuresView);
+  attrs.SetAttribute("com.modular.cpu.features", featuresView);
   // Set some of the other useful features, like number of cores and operating
   // system.
-  attrs.SetAttribute("cores", hostInfoOr->numPhysicalCores);
-  attrs.SetAttribute("operating system", hostInfoOr->osName);
+  attrs.SetAttribute("com.modular.cpu.cores", hostInfoOr->numPhysicalCores);
+  attrs.SetAttribute("os.type", hostInfoOr->osName);
 
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
@@ -125,7 +125,7 @@ TelemetryContext::TelemetryContext(
   // Get the user ID out of the config.
   StringRef uuid = cfg.getValue("user.id");
   if (!uuid.empty())
-    attrs.SetAttribute("userid", uuid);
+    attrs.SetAttribute("enduser.id", uuid);
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
