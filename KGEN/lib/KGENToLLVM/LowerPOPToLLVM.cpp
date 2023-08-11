@@ -752,6 +752,9 @@ static unsigned getAlignment(POPToLLVMTypeConverter *tc, Type ptrType,
   if (alignmentAttr)
     return cast<IntegerAttr>(alignmentAttr).getInt();
 
+  if (isa<PointerType>(ptrType))
+    ptrType = tc->convertType(ptrType);
+
   return tc->getTypeABIAlign(
       cast<LLVM::LLVMPointerType>(ptrType).getElementType());
 }
@@ -766,10 +769,22 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
   LogicalResult
   matchAndRewrite(LoadOp op, LoadOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
-        op, adaptor.getPtr(),
-        getAlignment(getTypeConverter(), adaptor.getPtr().getType(),
-                     adaptor.getAlignmentAttr()));
+    auto ptrType = cast<PointerType>(op.getPtr().getType());
+    unsigned alignment =
+        getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
+    if (auto addressSpace =
+            dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
+        addressSpace && addressSpace.getInt() != 0) {
+      auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
+          op.getLoc(),
+          convertType(PointerType::get(ptrType.getElementAsType())),
+          adaptor.getPtr());
+      auto newOp =
+          rewriter.create<LLVM::LoadOp>(op.getLoc(), castOp, alignment);
+      rewriter.replaceOp(op, newOp);
+      return success();
+    }
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, adaptor.getPtr(), alignment);
     return success();
   }
 };
@@ -784,10 +799,26 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
   LogicalResult
   matchAndRewrite(StoreOp op, StoreOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+
+    auto ptrType = cast<PointerType>(op.getPtr().getType());
+    unsigned alignment =
+        getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
+    if (auto addressSpace =
+            dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
+        addressSpace && addressSpace.getInt() != 0) {
+      auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
+          op.getLoc(),
+          convertType(PointerType::get(ptrType.getElementAsType())),
+          adaptor.getPtr());
+      auto newOp = rewriter.create<LLVM::StoreOp>(
+          op.getLoc(), adaptor.getArg(), castOp, alignment,
+          /*isVolatile=*/false, adaptor.getNonTemporal());
+      rewriter.replaceOp(op, newOp);
+      return success();
+    }
+
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
-        op, adaptor.getArg(), adaptor.getPtr(),
-        getAlignment(getTypeConverter(), adaptor.getPtr().getType(),
-                     adaptor.getAlignmentAttr()),
+        op, adaptor.getArg(), adaptor.getPtr(), alignment,
         /*isVolatile=*/false, adaptor.getNonTemporal());
     return success();
   }
