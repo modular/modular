@@ -1946,7 +1946,7 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
 };
 
 /// Try extracting a short name from a mangled name.
-/// E.g. for the mangled name "$Math::log($SIMD::SIMD[type, simd_width])"
+/// E.g. for the mangled name "$math::log($SIMD::SIMD[type, simd_width])"
 /// we want to extract "log".
 /// This is the part before the opening brace and after the last ':' before it.
 static StringRef tryGettingShortName(StringRef s) {
