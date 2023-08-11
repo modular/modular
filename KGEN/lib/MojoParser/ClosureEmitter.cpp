@@ -97,8 +97,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   auto dtor = b.create<StructFieldOp>(
       declOp.getLoc(), dtorFieldAttr,
-      SignatureType::get(b.getContext(), TypeRange({opaquePointer}), noneType),
-      nullptr);
+      SignatureType::get(b.getContext(), opaquePointer, noneType), nullptr);
   SmallVector<Type> callInputTypes;
   callInputTypes.push_back(opaquePointer);
   llvm::append_range(callInputTypes, signatureType.getValueInputs());
@@ -113,15 +112,14 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     Type opaquePtrType = POP::PointerType::get(
         POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1)));
     SmallVector<Type> inputTypes({opaquePtrType, opaquePtrType});
-    std::string name = isCopy ? "copy" : "move";
+    StringAttr fieldName = isCopy ? copyFieldAttr : moveFieldAttr;
     SignatureType cpySignatureType = SignatureType::get(
         {}, {},
         FunctionType::get(signatureType.getContext(), inputTypes, noneType),
         b.getAttr<FnMetadataAttr>(inputConventions, ArrayRef<TypedAttr>(),
                                   FnEffects()));
-    return b.create<StructFieldOp>(declOp.getLoc(),
-                                   StringAttr::get(b.getContext(), name),
-                                   cpySignatureType, nullptr);
+    return b.create<StructFieldOp>(declOp.getLoc(), fieldName, cpySignatureType,
+                                   nullptr);
   };
   auto copy = createCopyOrMoveMember(true);
   auto move = createCopyOrMoveMember(false);
@@ -294,7 +292,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   ArrayRef<ParamDeclAttr> params;
   Value source = init.getBody()->getArgument(1);
   builder.create<CallOp>(
-      TypeRange(copySym.getType().getValueResults()), copySym,
+      copySym.getType().getValueResults(), copySym,
       ParamDeclArrayAttr::get(closureImpl.getContext(), params),
       ValueRange({target, source}));
 
@@ -305,15 +303,27 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   Value erasedType =
       builder.create<POP::PointerBitcastOp>(opaquePointer, target);
   builder.create<POP::StoreOp>(erasedType, ptrToImpl);
-  // TODO: https://github.com/modularml/modular/issues/18374
+  auto generateName = [&](StringRef prefix) {
+    return (closureWrapper.getDeclName().str() + prefix +
+            closureImpl.getDeclName().str())
+        .str();
+  };
+  auto setMember = [&](LIT::FuncOp topLevelFunc, StringAttr fieldName) {
+    builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
+    auto dtorMember = builder.create<StructGEPOp>(
+        POP::PointerType::get(topLevelFunc.getBoundReference().getType()),
+        fieldName, init.getBody()->getArgument(0));
+    auto funcSymbol = builder.create<CreateClosureOp>(
+        topLevelFunc.getBoundReference(), ValueRange());
+    builder.create<POP::StoreOp>(funcSymbol, dtorMember);
+  };
 
   // Create top level destructor.
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
+
   LIT::FuncOp topLevelDtor = structEmitter.createFunction(
-      (closureWrapper.getDeclName().str() + "_dtor_" +
-       closureImpl.getDeclName().str()),
-      ArrayRef<Type>{opaquePointer},
+      generateName("_dtor_"), ArrayRef<Type>{opaquePointer},
       ArrayRef<ValueInputConvention>{ValueInputConvention::OwnedInReg},
       ArrayRef<StringAttr>{selfName}, shared.getNoneType(),
       SpecialFunctionKind::kNormal, location, builder);
@@ -335,7 +345,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       auto dtorSym =
           cast<SymbolConstantAttr>(closureImpl.getDestructor().value());
       builder.create<CallOp>(
-          TypeRange(dtorSym.getType().getValueResults()), dtorSym,
+          dtorSym.getType().getValueResults(), dtorSym,
           ParamDeclArrayAttr::get(closureImpl.getContext(), params),
           ValueRange({implPtr}));
     }
@@ -350,13 +360,57 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   }
 
   // Set the member.
-  builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
-  auto dtorMember = builder.create<StructGEPOp>(
-      POP::PointerType::get(topLevelDtor.getBoundReference().getType()),
-      dtorFieldAttr, init.getBody()->getArgument(0));
-  auto funcSymbol = builder.create<CreateClosureOp>(
-      topLevelDtor.getBoundReference(), ValueRange());
-  builder.create<POP::StoreOp>(funcSymbol, dtorMember);
+  setMember(topLevelDtor, dtorFieldAttr);
+
+  // Create the copy constructors.
+  auto makeCopyMoveConstructor = [&](bool isMove) {
+    builder = ImplicitLocOpBuilder::atBlockEnd(
+        fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
+    StringRef prefix = isMove ? "_moveinit_" : "_copyinit_";
+    StringAttr existingName =
+        StringAttr::get(closureWrapper.getContext(), "existing");
+    LIT::FuncOp topLevelInit = structEmitter.createFunction(
+        generateName(prefix), ArrayRef<Type>{opaquePointer, opaquePointer},
+        ArrayRef<ValueInputConvention>{
+            ValueInputConvention::InitSelf,
+            isMove ? ValueInputConvention::OwnedInMem
+                   : ValueInputConvention::BorrowedInMem},
+        ArrayRef<StringAttr>{selfName, existingName}, shared.getNoneType(),
+        SpecialFunctionKind::kNormal, location, builder);
+    // Populate init body.
+    {
+      builder = ImplicitLocOpBuilder::atBlockEnd(topLevelInit.getLoc(),
+                                                 topLevelInit.getBody());
+      Block *body = topLevelInit.getBody();
+      DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+      if (DebugInfo::DIScopeAttr spAttr = topLevelInit.getLocScope())
+        diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+      Value selfPtr = builder.create<POP::PointerBitcastOp>(
+          ptrToClosureImplType, body->getArgument(0));
+      Value existingPtr = builder.create<POP::PointerBitcastOp>(
+          ptrToClosureImplType, body->getArgument(1));
+      TypedAttr symbol = isMove ? closureImpl.getMoveInitAttr()
+                                : closureImpl.getCopyInitAttr();
+      if (symbol) {
+        auto copySym = cast<SymbolConstantAttr>(symbol);
+        builder.create<CallOp>(
+            copySym.getType().getValueResults(), copySym,
+            ParamDeclArrayAttr::get(closureImpl.getContext(), params),
+            ValueRange({selfPtr, existingPtr}));
+      }
+      if (isMove)
+        builder.create<OwnershipMarkDestroyedOp>(existingPtr);
+      builder = ImplicitLocOpBuilder::atBlockEnd(topLevelInit.getLoc(), body);
+      ExprEmitter::emitNormalReturn(
+          builder,
+          builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
+          topLevelInit);
+      builder.create<LIT::EndFuncOp>();
+      setMember(topLevelInit, isMove ? moveFieldAttr : copyFieldAttr);
+    }
+  };
+  makeCopyMoveConstructor(false);
+  makeCopyMoveConstructor(true);
 
   return init;
 }
