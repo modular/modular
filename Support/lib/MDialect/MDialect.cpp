@@ -63,15 +63,23 @@ void DialectResourceManager::updateResourceWithBlob(
 
 void DialectResourceManager::updateResourceWithString(StringRef key,
                                                       StringRef value) {
-  resources.modify(
-      [key, value](llvm::StringMap<ResourceEntry> &resources) mutable {
+  mlir::AsmResourceBlob mem =
+      mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
+          {value.data(), value.size()}, /*align=*/16);
+
+  // Update the resource value.
+  ResourceEntry *entry =
+      resources.modify([key, mem = std::move(mem)](
+                           llvm::StringMap<ResourceEntry> &resources) mutable {
         auto it = resources.find(key);
         assert(it != resources.end() && "resource entry was not declared");
-        it->second.updateValue(
-            ResourceKind::String,
-            mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-                {value.data(), value.size()}, kPreferredMemoryAlignment));
+        it->second.updateValue(ResourceKind::String, std::move(mem));
+        return &it->second;
       });
+
+  // Add the entry to the string table.
+  stringTable.get().try_emplace(
+      value, MemoryHandle(entry, cast<MDialect>(getDialect())));
 }
 
 MemoryHandle DialectResourceManager::addBlobResource(StringRef baseName,
@@ -82,6 +90,17 @@ MemoryHandle DialectResourceManager::addBlobResource(StringRef baseName,
       ResourceKind::Blob, mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
                               {(char *)memory, size}, align));
   return hdl;
+}
+
+MemoryHandle DialectResourceManager::getOrAddStringResource(StringRef value) {
+  return stringTable.modify(
+      [this, value](llvm::StringMap<MemoryHandle> &table) {
+        if (auto it = table.find(value); it != table.end())
+          return it->second;
+        MemoryHandle hdl = declareResource("static_string");
+        updateResourceWithString(hdl.getKey(), value);
+        return hdl;
+      });
 }
 
 //===----------------------------------------------------------------------===//

@@ -87,12 +87,17 @@ public:
   /// is a conflict, the base name is automatically renamed.
   MemoryHandle addBlobResource(StringRef baseName, void *memory, size_t size,
                                size_t align);
+  /// Get or add a string resource with the provided data. String resources
+  /// are deduplicated based on content.
+  MemoryHandle getOrAddStringResource(StringRef value);
 
 private:
   /// The internal map of tracked blobs. StringMap stores entries in distinct
   /// allocations, so we can freely take references to the data without fear of
   /// invalidation during additional insertion/deletion.
   Shared<llvm::StringMap<ResourceEntry>> resources;
+  /// Content map of strings for deduplication.
+  Shared<llvm::StringMap<MemoryHandle>> stringTable;
 };
 
 //===----------------------------------------------------------------------===//
