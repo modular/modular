@@ -72,6 +72,9 @@ export class MOJOContext implements vscode.Disposable {
   async getOrActivateLanguageClient(uri: vscode.Uri,
                                     launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
+    if (!uri.fsPath.endsWith(".mojo") && !uri.fsPath.endsWith('🔥'))
+      return undefined;
+
     this.getLoggingService().logInfo(
         `Activating language client for URI '${uri}'`)
     // Check the scheme of the uri.
