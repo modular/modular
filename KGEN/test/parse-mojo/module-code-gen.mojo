@@ -29,12 +29,7 @@ struct String:
    fn __add__(self, existing: Int) -> String:
      return self
 
-##===----------------------------------------------------------------------===##
-# Runtime Closures
-##===----------------------------------------------------------------------===##
-
-# CHECK: lit.file_module @"$module-code-gen" {
-# CHECK-NEXT:    lit.struct.decl @"_CI_{{.*}}({{.*}}::String,{{.*}}::String)\22throws"
+# CHECK:    lit.struct.decl @"_CI_{{.*}}({{.*}}::String,{{.*}}::String)\22throws"
 # CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@{{.*}}::@String>
 
 # CHECK:    lit.struct.decl @"_CI_{{.*}}(__mlir_type.index,{{.*}}::Int,{{.*}}::String,{{.*}}::String)\22"
@@ -164,3 +159,38 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
    fn foo() escaping -> Int:
       return m + m
    return 43
+
+
+# // -----
+
+from String import String
+
+# CHECK-LABEL: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_${{.*}}_\22(,${{.*}}::String)\22"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_${{.*}}_\22(${{.*}}::String,${{.*}}::String,${{.*}}::String)\22"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
+
+# Allocate memory on heap
+# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(!kgen.declref<@[[CI_TYPE:.*]]>, current_target())>
+# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(!kgen.declref<@[[CI_TYPE]]>, current_target())>
+# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <@[[CI_TYPE]]>
+
+# Copy source (stack) into target (heap)
+# CHECK-NEXT:  %[[V1:.*]] = kgen.call @[[CI_TYPE]]::@"__moveinit__{{.*}}(%[[V0]], %impl)
+
+# Store heap pointer in ClosureWrapper field
+# CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <@{{.*}}::@"_CW_${{.*}}_\22(,${{.*}}::String)\22">
+# CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !pop.pointer<@[[CI_TYPE]]> to !pop.pointer<array<0, i1>>
+# CHECK-NEXT:  pop.store %[[V3]], %[[V2]] : !pop.pointer<pointer<array<0, i1>>>
+
+# CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:  lit.return %[[V4]] : !lit.none
+# CHECK-NEXT:  lit.end_func
+# CHECK-NEXT:  }
+
+# CHECK-LABEL: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_${{.*}}_\22(,${{.*}}::String)\22"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_${{.*}}
+fn materialize_escaping_closure(m: String, z:String):
+   fn dummy(n:String) escaping -> String:
+      return n + m + z
+   fn dupe(n: String) escaping -> String:
+      return z + n + m
+   fn unique(n: String) escaping -> String:
+      return m + n
+   let x = dummy

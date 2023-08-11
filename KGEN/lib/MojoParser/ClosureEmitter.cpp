@@ -223,3 +223,87 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
   declOp.setCopyInitAttr(copyCtr.getBoundReference());
   return declOp;
 }
+
+LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
+    StructDeclOp closureWrapper, StructDeclOp closureImpl, SMLoc location) {
+  auto ptrToClosureImplType =
+      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(closureImpl));
+  if (auto init =
+          structEmitter.findInitInStruct(closureWrapper, ptrToClosureImplType))
+    return init;
+
+  auto emptyList =
+      POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
+  auto opaquePointer = POP::PointerType::get(emptyList);
+
+  SmallVector<Type> argTypes;
+  SmallVector<ValueInputConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+
+  // Add the self to the closure init.
+  Type closureSelfType =
+      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(closureWrapper));
+  argTypes.push_back(closureSelfType);
+  argConventions.push_back(ValueInputConvention::InitSelf);
+  argNames.push_back(StringAttr::get(closureWrapper.getContext(), "self"));
+
+  // Add the injected ClosureImpl argument to the initializer.
+  argTypes.push_back(ptrToClosureImplType);
+  argConventions.push_back(ValueInputConvention::BorrowedInMem);
+  argNames.push_back(StringAttr::get(closureWrapper->getContext(), "impl"));
+  FuncOp init = structEmitter.addVoidMethod(
+      closureWrapper, "__init__", argTypes, argConventions, argNames,
+      SpecialFunctionKind::kInit, location);
+
+  ImplicitLocOpBuilder builder =
+      ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
+
+  // Allocate memory on heap and copy argument into allocated memory.
+  Type elementType = ptrToClosureImplType.getElementAsType();
+  Type indexType = builder.getIndexType();
+  Attribute targetAttr = ParamOperatorAttr::get(POC::CurrentTarget, {},
+                                                builder.getType<TargetType>());
+  Attribute sizeOfAttr =
+      ParamOperatorAttr::get(POC::GetSizeOf,
+                             {ParameterizedTypeConstantAttr::get(elementType),
+                              cast<TypedAttr>(targetAttr)},
+                             builder.getType<TargetType>());
+  Value sizeOf =
+      builder.create<ParamConstantOp>(indexType, cast<TypedAttr>(sizeOfAttr));
+  Attribute alignOfAttr = ParamOperatorAttr::get(
+      POC::GetAlignOf,
+      {cast<TypedAttr>(ParameterizedTypeConstantAttr::get(elementType)),
+       cast<TypedAttr>(targetAttr)},
+      indexType);
+  Value alignOf =
+      builder.create<ParamConstantOp>(indexType, cast<TypedAttr>(alignOfAttr));
+  Value target = builder.create<POP::AlignedAllocOp>(
+      ptrToClosureImplType, ArrayRef<Value>{alignOf, sizeOf});
+
+  // Copy the contents of the injected impl into the heap memory.
+  SymbolConstantAttr copySym;
+  if (closureImpl.getMoveInit().has_value()) {
+    copySym = cast<SymbolConstantAttr>(closureImpl.getMoveInit().value());
+  } else {
+    assert(closureImpl.getCopyInit().has_value() &&
+           "All closure Implementations should have a generated copy "
+           "constructor.");
+    copySym = cast<SymbolConstantAttr>(closureImpl.getCopyInit().value());
+  }
+  ArrayRef<ParamDeclAttr> params;
+  Value source = init.getBody()->getArgument(1);
+  builder.create<CallOp>(
+      TypeRange(copySym.getType().getValueResults()), copySym,
+      ParamDeclArrayAttr::get(closureImpl.getContext(), params),
+      ValueRange({target, source}));
+
+  StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
+  Value self = init.getBody()->getArgument(0);
+  Value ptrToImpl = builder.create<LIT::StructGEPOp>(
+      POP::PointerType::get(opaquePointer), implField.getNameAttr(), self);
+  Value erasedType =
+      builder.create<POP::PointerBitcastOp>(opaquePointer, target);
+  builder.create<POP::StoreOp>(erasedType, ptrToImpl);
+  // TODO: https://github.com/modularml/modular/issues/18374
+  return init;
+}

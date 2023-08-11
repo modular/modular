@@ -11,6 +11,7 @@
 #include "DeclResolver.h"
 #include "ASTDecl.h"
 #include "CallEmission.h"
+#include "ClosureEmitter.h"
 #include "DocString.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
@@ -2182,9 +2183,17 @@ static void emitClosureInstance(SignatureType closureSignature,
                         closureSignature.getValueResults()),
       FnMetadataAttr::get(shared.getContext(), conventions, {},
                           closureSignature.getFnEffects()));
-  shared.getOrGenerateClosureImplStruct(
-      location, closureImplSignature, captures.size(),
-      nestedFunction->getParentOfType<FileModuleOp>());
+  FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
+  StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
+      location, closureImplSignature, captures.size(), fileModuleOp);
+  TypedAttr signatureAttr = SymbolConstantAttr::get(
+      getFullyResolvedSymbolRef(nestedFunction), closureSignature);
+  closureImpl.setClosureSignatureAttr(signatureAttr);
+  auto closureWrapper = shared.getOrGenerateClosureWrapperStruct(
+      location, nestedFunction.getSignature(), fileModuleOp);
+  ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
+                         shared.getNoneType(), shared);
+  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
@@ -2480,6 +2489,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       // closure.
       if (signature.isEscaping())
         emitClosureInstance(signature, shared, funcOp, decl.getLoc());
+
       decl.irValue = SBValue(b.create<CreateClosureOp>(
           parent.getLoc(), funcOp.getSignature(),
           ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
