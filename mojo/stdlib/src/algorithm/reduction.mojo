@@ -25,71 +25,11 @@ from math import (
     none_true as _none_true,
     div_ceil,
     min as _min,
-    iota,
 )
 from Limits import max_or_inf, min_or_neginf
 from Range import range
-from SIMD import SIMD, Int8, Int16, Int32
-from TargetInfo import sizeof, simdwidthof, is_little_endian
-from TypeUtilities import rebind
-
-# ===----------------------------------------------------------------------===#
-# Utilities
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _index_of_first_one[width: Int](val: SIMD[DType.bool, width]) -> Int:
-    """Computes the index of the first one in the input value.
-
-    The input is assumed to contain at least one non-zero element.
-
-    Args:
-      val: The mask containing ones and zeros.
-
-    Returns:
-      The index of the first one in the input mask.
-    """
-
-    assert_param[is_little_endian(), "only correct on little endian systems"]()
-
-    @parameter
-    if width == 1:
-        return 0
-    elif width == 2:
-        return 0 if val[0] else 1
-    elif width == 4:
-        if val[0]:
-            return 0
-        if val[1]:
-            return 1
-        if val[2]:
-            return 2
-        return 3
-    elif width == 8:
-        # Cast to int8 and count the number of trailing zeros.
-        var local_val = val
-        let i8_ptr = Pointer.address_of(local_val).bitcast[Int8]()
-        return cttz(i8_ptr.load().to_int())
-    elif width == 16:
-        # Cast to int16 and count the number of trailing zeros.
-        var local_val = val
-        let i16_ptr = Pointer.address_of(local_val).bitcast[Int16]()
-        return cttz(i16_ptr.load().to_int())
-    elif width == 32:
-        # Cast to int32 and count the number of trailing zeros.
-        var local_val = val
-        let i32_ptr = Pointer.address_of(local_val).bitcast[Int32]()
-        return cttz(i32_ptr.load().to_int())
-    else:
-        alias half_width: Int = width // 2
-        let lhs = val.slice[half_width](0)
-        if lhs != 0:
-            return _index_of_first_one(lhs)
-
-        let rhs = val.slice[half_width](half_width)
-        return half_width + _index_of_first_one(rhs)
-
+from SIMD import SIMD
+from TargetInfo import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper
@@ -1471,43 +1411,6 @@ fn _argn[
     @always_inline
     @parameter
     fn task_func(task_id: Int):
-        @parameter
-        @always_inline
-        fn cmp[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
-            DType.bool, simd_width
-        ]:
-            @parameter
-            if is_max:
-                return a < b
-            else:
-                return a > b
-
-        @parameter
-        @always_inline
-        fn get_input[
-            type: DType, simd_width: Int
-        ](i: Int, j: Int) -> SIMD[type, simd_width]:
-            @parameter
-            if rank == 2:
-                return rebind[SIMD[type, simd_width]](
-                    input.simd_load[simd_width](i, j)
-                )
-            else:
-                return rebind[SIMD[type, simd_width]](
-                    input.simd_load[simd_width](j)
-                )
-
-        @parameter
-        @always_inline
-        fn get_input[type: DType](i: Int, j: Int) -> SIMD[type, 1]:
-            @parameter
-            if rank == 2:
-                return rebind[SIMD[type, 1]](input[i, j])
-            else:
-                return rebind[SIMD[type, 1]](input[j])
-
         for i in range(d0):
             var global_val: SIMD[type, 1]
 
@@ -1516,45 +1419,36 @@ fn _argn[
                 global_val = min_or_neginf[type]()
             else:
                 global_val = max_or_inf[type]()
+            var idx = 0
 
-            var idx = SIMD[out_type, 1](0)
-            if d1 < simd_width:
-                for j in range(d1):
-                    let elem = get_input[type](i, j)
-                    if cmp(global_val, elem):
-                        global_val = elem
-                        idx = j
-            else:
-                var global_values = get_input[type, simd_width](i, 0)
-                var indices = iota[out_type, simd_width]()
-                var global_indices = indices
-
-                let last_simd_index = (d1 // simd_width) * simd_width
-                for j in range(simd_width, last_simd_index, simd_width):
-                    let curr_values = get_input[type, simd_width](i, j)
-                    indices += simd_width
-
-                    let mask = cmp(curr_values, global_values)
-                    global_indices = mask.select(global_indices, indices)
-                    global_values = mask.select(global_values, curr_values)
-
-                var global_val: SIMD[type, 1]
+            @always_inline
+            @parameter
+            fn compute_row[simd_width: Int](j: Int):
+                let vec = input.simd_load[simd_width](
+                    i, j
+                ) if rank == 2 else input.simd_load[simd_width](j)
 
                 @parameter
                 if is_max:
-                    global_val = global_values.reduce_max()
+                    let curr_max = vec.reduce_max()
+                    if global_val < curr_max:
+                        global_val = curr_max
+
+                        for k in range(simd_width):
+                            if vec[k] == curr_max:
+                                idx = j + k
+                                return
                 else:
-                    global_val = global_values.reduce_min()
+                    let curr_min = vec.reduce_min()
+                    if global_val > curr_min:
+                        global_val = curr_min
 
-                idx = global_indices[
-                    _index_of_first_one(global_values == global_val)
-                ].to_int()
+                        for k in range(simd_width):
+                            if vec[k] == curr_min:
+                                idx = j + k
+                                return
 
-                for j in range(last_simd_index, d1, 1):
-                    let elem = get_input[type](i, j)
-                    if cmp(global_val, elem):
-                        global_val = elem
-                        idx = j
+            vectorize[simd_width, compute_row](d1)
 
             @parameter
             if rank == 1:
