@@ -39,8 +39,6 @@ if(MODULAR_ENABLE_TELEMETRY)
 
 else()
   add_modular_library(LLCLTelemetry
-    STATIC OBJECT # Always generate an obj.${name} target.
-
     TelemetryContext.cpp
     FileMetricExporter.cpp
     FileLogExporter.cpp

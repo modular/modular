@@ -29,13 +29,7 @@ set_source_files_properties("${version_inc}"
 
 add_custom_target(MVersionGeneratedHeader DEPENDS "${version_inc}")
 
-add_modular_library(MVersion
-  STATIC OBJECT # Always generate an obj.${name} target.
-
-  Version.cpp
-
-  DEPENDS MVersionGeneratedHeader
-)
+add_modular_library(MVersion Version.cpp DEPENDS MVersionGeneratedHeader)
 target_include_directories(MVersion PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 set_target_properties(MVersion PROPERTIES FOLDER Misc)
