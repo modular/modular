@@ -47,9 +47,9 @@ using OpaqueMojoKernel = void *;
 MODULAR_EXPORT OpaqueMojoKernel initMojoKernel(OutputFn outputFn,
                                                const char *mojoReplExe,
                                                const char *lldbInitFile);
-MODULAR_EXPORT void startMojoExecution(OpaqueMojoKernel kernel,
-                                       const char *cellId, const char *code,
-                                       int storeHistory);
+MODULAR_EXPORT int startMojoExecution(OpaqueMojoKernel kernel,
+                                      const char *cellId, const char *code,
+                                      int storeHistory);
 MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel);
 MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 
@@ -76,8 +76,8 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Start a new cell execution.
-  void startExecution(const char *cellId, const char *code) {
-    startMojoExecution(kernel, cellId, code, /*storeHistory=*/true);
+  int startExecution(const char *cellId, const char *code) {
+    return startMojoExecution(kernel, cellId, code, /*storeHistory=*/true);
   }
 
   /// Check if the current execution has finished.
@@ -144,9 +144,10 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
     if (!StringRef(line).rtrim().empty())
       continue;
 
-    kernel.startExecution(cellPrefix.c_str(), expression.c_str());
-    while (!kernel.hasExecutionFinished())
-      continue;
+    if (!kernel.startExecution(cellPrefix.c_str(), expression.c_str())) {
+      while (!kernel.hasExecutionFinished())
+        continue;
+    }
     expression.clear();
   }
 }
@@ -203,13 +204,11 @@ static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
 
     // Execute the cell code.
     std::string cellName = ("notebook_cell_" + Twine(index)).str();
-    kernel.startExecution(cellName.c_str(), code.c_str());
+    int finishState = kernel.startExecution(cellName.c_str(), code.c_str());
+
     // If we finish with an error and we're in debug mode, drop into REPL mode
     // in the current cell.
-    int finishState;
-    do {
-      finishState = kernel.hasExecutionFinished();
-
+    while (finishState != kFinishedSuccessfully) {
       // We hit an error, exit failure.
       if (finishState == kFinishedError) {
         // Drop into REPL mode if requested.
@@ -218,7 +217,9 @@ static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
 
         return failure();
       }
-    } while (finishState == kNotFinished);
+
+      finishState = kernel.hasExecutionFinished();
+    }
   }
   return success();
 }
