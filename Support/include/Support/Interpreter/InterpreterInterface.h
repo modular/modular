@@ -201,7 +201,7 @@ private:
     void *getMemory() const {
       if (isOwned())
         return getOwned();
-      return (void *)getHandle().getBlob()->getData().data();
+      return (void *)getHandle().getBlob()->getMutableData().data();
     }
 
     /// Return true if the memory has been freed.
