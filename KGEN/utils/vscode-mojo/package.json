@@ -21,14 +21,14 @@
   "main": "./out/extension",
   "scripts": {
     "vscode:prepublish": "tsc -p ./",
-    "compile": "tsc -watch -p ./",
+    "watch": "tsc -watch -p ./",
     "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
     "package": "vsce package --out ./out/vscode-mojo.vsix"
   },
   "devDependencies": {
+    "@types/ini": "~1.3.31",
     "@types/mocha": "^7.0.2",
     "@types/node": "^18.11.18",
-    "@types/ini": "~1.3.31",
     "@types/vscode": "~1.74.0",
     "@vscode/vsce": "^2.19.0",
     "typescript": "^4.6.4"

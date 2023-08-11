@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as fs from 'fs';
 import * as ini from 'ini';
 import * as path from 'path';
 import * as vscode from 'vscode';
