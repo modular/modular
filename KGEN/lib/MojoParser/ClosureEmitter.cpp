@@ -96,7 +96,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   auto dtor = b.create<StructFieldOp>(
-      declOp.getLoc(), StringAttr::get(b.getContext(), "dtor"),
+      declOp.getLoc(), dtorFieldAttr,
       SignatureType::get(b.getContext(), TypeRange({opaquePointer}), noneType),
       nullptr);
   SmallVector<Type> callInputTypes;
@@ -241,11 +241,12 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   SmallVector<StringAttr> argNames;
 
   // Add the self to the closure init.
+  StringAttr selfName = StringAttr::get(closureWrapper.getContext(), "self");
   Type closureSelfType =
       POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(closureWrapper));
   argTypes.push_back(closureSelfType);
   argConventions.push_back(ValueInputConvention::InitSelf);
-  argNames.push_back(StringAttr::get(closureWrapper.getContext(), "self"));
+  argNames.push_back(selfName);
 
   // Add the injected ClosureImpl argument to the initializer.
   argTypes.push_back(ptrToClosureImplType);
@@ -305,5 +306,57 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       builder.create<POP::PointerBitcastOp>(opaquePointer, target);
   builder.create<POP::StoreOp>(erasedType, ptrToImpl);
   // TODO: https://github.com/modularml/modular/issues/18374
+
+  // Create top level destructor.
+  builder = ImplicitLocOpBuilder::atBlockEnd(
+      fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
+  LIT::FuncOp topLevelDtor = structEmitter.createFunction(
+      (closureWrapper.getDeclName().str() + "_dtor_" +
+       closureImpl.getDeclName().str()),
+      ArrayRef<Type>{opaquePointer},
+      ArrayRef<ValueInputConvention>{ValueInputConvention::OwnedInReg},
+      ArrayRef<StringAttr>{selfName}, shared.getNoneType(),
+      SpecialFunctionKind::kNormal, location, builder);
+
+  // Populate destructor body.
+  {
+    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(),
+                                               topLevelDtor.getBody());
+    Block *body = topLevelDtor.getBody();
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (DebugInfo::DIScopeAttr spAttr = topLevelDtor.getLocScope())
+      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    // Cast the opaque pointer back to the closure impl type.
+    Value implPtr = builder.create<POP::PointerBitcastOp>(ptrToClosureImplType,
+                                                          body->getArgument(0));
+
+    // Call the destructor on the closure wrapper if it has one.
+    if (closureImpl.getDestructor().has_value()) {
+      auto dtorSym =
+          cast<SymbolConstantAttr>(closureImpl.getDestructor().value());
+      builder.create<CallOp>(
+          TypeRange(dtorSym.getType().getValueResults()), dtorSym,
+          ParamDeclArrayAttr::get(closureImpl.getContext(), params),
+          ValueRange({implPtr}));
+    }
+    // Free the memory we allocated on the heap to store the closure.
+    builder.create<POP::AlignedFreeOp>(implPtr);
+    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
+    ExprEmitter::emitNormalReturn(
+        builder,
+        builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
+        topLevelDtor);
+    builder.create<LIT::EndFuncOp>();
+  }
+
+  // Set the member.
+  builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
+  auto dtorMember = builder.create<StructGEPOp>(
+      POP::PointerType::get(topLevelDtor.getBoundReference().getType()),
+      dtorFieldAttr, init.getBody()->getArgument(0));
+  auto funcSymbol = builder.create<CreateClosureOp>(
+      topLevelDtor.getBoundReference(), ValueRange());
+  builder.create<POP::StoreOp>(funcSymbol, dtorMember);
+
   return init;
 }

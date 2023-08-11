@@ -73,6 +73,14 @@ public:
   /// and null otherwise. The operands type is not expected to include self.
   LIT::FuncOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
 
+  /// Emit an emtpy function stub at the specified location. The block arguments
+  /// are added to the body of the function but no ops are added to the cody.
+  LIT::FuncOp createFunction(StringRef name, ArrayRef<Type> argTypes,
+                             ArrayRef<ValueInputConvention> argConventions,
+                             ArrayRef<StringAttr> argNames, Type resultType,
+                             SpecialFunctionKind specialFnID, SMLoc loc,
+                             ImplicitLocOpBuilder &builder);
+
 private:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
