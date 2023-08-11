@@ -23,8 +23,6 @@ if (APPLE)
 endif ()
 
 add_modular_library(LLCLSupport
-  STATIC OBJECT # Always generate an obj.${name} target.
-
   FileLocationDecoder.cpp
   Location.cpp
   ReferenceCounted.cpp

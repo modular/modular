@@ -54,7 +54,6 @@ function (add_static_dep_lib target)
 endfunction()
 add_static_dep_lib(LLVMSupport)
 add_static_dep_lib(LLVMDemangle)
-add_static_dep_lib(LLVMTargetParser)
 file(GLOB StaticDepObjects ${CMAKE_CURRENT_BINARY_DIR}/static_deps/*)
 
 # Collect the various system libraries required by llvm support that we need to
@@ -77,13 +76,7 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
-  $<TARGET_OBJECTS:obj.MVersion>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
-  $<TARGET_OBJECTS:obj.LLCLSupport>
-
-  # TODO(#18996): This isn't set up to work when telemetry is actually enabled,
-  # this should be removed when telemetry isn't a required dep of LLCLRuntime.
-  $<TARGET_OBJECTS:obj.LLCLTelemetry>
   ${StaticDepObjects}
 )
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
