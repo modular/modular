@@ -4,13 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: nvptx_backend
-# RUN: kgen -debug-level full -mlir-print-debuginfo -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 %s | FileCheck %s
+# RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
 
 from Activations import gelu
 from Assert import assert_param
 from DType import DType
 from Functional import elementwise
-from Pointer import DTypePointer
 from Index import StaticIntTuple
 from IO import print
 from NvidiaGPU import (
@@ -21,6 +20,8 @@ from NvidiaGPU import (
     AddressSpace,
     stack_allocation,
     barrier,
+    DevicePointer,
+    DTypeDevicePointer,
 )
 from Memory import memset_zero
 from Pointer import DTypePointer
@@ -113,10 +114,12 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
 
 
 # CHECK-LABEL: test_shared_stack_allocation
-# CHECK-DAG: cvta.local.u64
+# CHECK: .shared .align 8 .b8 [[SHM0:.*]][999];
 @export
-fn test_shared_stack_allocation() -> DTypePointer[DType.float32]:
-    return stack_allocation[5, DType.float32, AddressSpace.SHARED]()
+fn test_shared_stack_allocation() -> DTypeDevicePointer[
+    DType.int8, AddressSpace.SHARED
+]:
+    return stack_allocation[999, DType.int8, 8, AddressSpace.SHARED]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -130,11 +133,14 @@ fn test_barrier():
     barrier()
 
 
-# ===----------------------------------------------------------------------===#
-# SGEMM with register coarsening
-# ===----------------------------------------------------------------------===#
+# # ===----------------------------------------------------------------------===#
+# # SGEMM with register coarsening
+# # ===----------------------------------------------------------------------===#
 
-
+# CHECK-LABEL: .globl	gemm
+# CHECK: .shared .align 1 .b8 [[SHM1:.*]][512];
+# CHECK: st.shared.u8
+# CHECK: ld.shared.u8
 @export
 fn gemm(
     c: DTypePointer[DType.float32],
