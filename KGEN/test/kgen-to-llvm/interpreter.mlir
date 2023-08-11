@@ -30,7 +30,7 @@ kgen.func @stack() {
 
 // CHECK-LABEL: llvm.func internal @global
 kgen.func @global() -> !pop.pointer<i8> {
-  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr<array<5 x i8>>
+  // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr<array<4 x i8>>
   // CHECK: %[[BASE_OPAQUE:.*]] = llvm.bitcast %[[BASE]]
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE_OPAQUE]][2]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
@@ -63,6 +63,16 @@ kgen.func @pointer_to_pointer() {
   kgen.return
 }
 
+// CHECK-LABEL: llvm.func internal @string
+kgen.func @string() {
+  // CHECK-NEXT: llvm.mlir.addressof @mem_string
+  %0 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, [])], 0, 0>>
+  kgen.return
+}
+
+// CHECK: llvm.mlir.global internal constant @mem_global(#M.dense_array<1, 2, 3, 4> : !M.array<4xi8>) {addr_space = 0 : i32, alignment = 32 : i64} : !llvm.array<4 x i8>
+// CHECK: llvm.mlir.global internal constant @mem_string("hello world")
+
 }
 
 {-#
@@ -70,7 +80,8 @@ kgen.func @pointer_to_pointer() {
     M: {
       mem_stack: "0x20000000ADDE",
       mem_heap: "0x20000000EFBE",
-      mem_global: "hello",
+      mem_global: "0x2000000001020304",
+      mem_string: "hello world",
       foo: "0x10000000000000000000000008",
       bar: "0x100000000000"
     }
