@@ -189,4 +189,46 @@ def KGEN_FnEffects : I16BitEnumAttr<"FnEffects", "Function effects", [
   let cppNamespace = "M::KGEN";
 }
 
+//===----------------------------------------------------------------------===//
+// IntLiteral support
+//===----------------------------------------------------------------------===//
+
+/// This encodes which specific comparison operation is to be performed
+/// for `kgen.int_literal.cmp` ops.
+def KGEN_IntLiteralCmpPred : I32EnumAttr<"IntLiteralCmpPred",
+  "operation specification for IntLiteral comparison", [
+  I32EnumAttrCase<"Eq", 0, "eq">,
+  I32EnumAttrCase<"Ne", 1, "ne">,
+  I32EnumAttrCase<"Lt", 2, "lt">,
+  I32EnumAttrCase<"Le", 3, "le">,
+  I32EnumAttrCase<"Gt", 4, "gt">,
+  I32EnumAttrCase<"Ge", 5, "ge">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_IntLiteralCmpPredAttr : EnumAttr<KGENDialect, KGEN_IntLiteralCmpPred, "int_literal.cmp_pred">;
+
+/// This encodes which specific operation is to be performed
+/// for `kgen.int_literal.binop` ops.
+def KGEN_IntLiteralBinopKind : I32EnumAttr<"IntLiteralBinopKind",
+  "operation specification for IntLiteral binary operations", [
+  I32EnumAttrCase<"Add", 0, "add">,
+  I32EnumAttrCase<"Sub", 1, "sub">,
+  I32EnumAttrCase<"Mul", 2, "mul">,
+  I32EnumAttrCase<"Div", 3, "div">,
+  I32EnumAttrCase<"Mod", 4, "mod">,
+  I32EnumAttrCase<"Lshift", 5, "lshift">,
+  I32EnumAttrCase<"Rshift", 6, "rshift">,
+  I32EnumAttrCase<"And", 7, "and">,
+  I32EnumAttrCase<"Or", 8, "or">,
+  I32EnumAttrCase<"Xor", 9, "xor">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_IntLiteralBinopKindAttr : EnumAttr<KGENDialect, KGEN_IntLiteralBinopKind, "int_literal.binop_kind">;
+
 #endif // KGENENUMS_TD

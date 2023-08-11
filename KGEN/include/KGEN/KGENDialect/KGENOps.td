@@ -1085,3 +1085,65 @@ def KGEN_LinkOp : KGENOp<"link", [Symbol]> {
   let assemblyFormat = "($linkPath^)? ($linkBytes^)? `as` $sym_name attr-dict";
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// IntLiteralCmp
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralCmp : KGENOp<"int_literal.cmp", [Pure]> {
+  let summary = "Comparison operator for int_literals.";
+  let description = [{
+    The `kgen.int_literal.cmp` operator does equality/inequality testing
+    for `!kgen.int_literal` values and returns a bool.
+  }];
+
+  let arguments = (ins
+    KGEN_IntLiteralCmpPredAttr:$pred,
+    KGEN_IntLiteralType:$lhs,
+    KGEN_IntLiteralType:$rhs
+    );
+  let results = (outs I1:$result);
+
+  let assemblyFormat = "$pred `(` $lhs `,` $rhs `)` attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralBinop
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralBinop : KGENOp<"int_literal.binop", [Pure]> {
+  let summary = "Binary operations for int_literals";
+  let description = [{
+    The `kgen.int_literal.binop` operator does standard arithmetic binary
+    operations on `!kgen.int_literal` values that return a `!kgen.int_literal`.
+  }];
+
+  let arguments = (ins
+    KGEN_IntLiteralBinopKindAttr:$oper,
+    KGEN_IntLiteralType:$lhs,
+    KGEN_IntLiteralType:$rhs);
+  let results = (outs KGEN_IntLiteralType:$result);
+
+  let assemblyFormat = "$oper `(` $lhs `,` $rhs `)` attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralCastOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
+  let summary = "Cast integer literal to int type usable at runtime.";
+  let description = [{
+    The `kgen.int_literal.cast` operator casts an infinite precision integer
+    literal to a fixed width integer type.
+  }];
+
+  let arguments = (ins KGEN_IntLiteralType:$input);
+  let results = (outs Index:$output);
+
+  let assemblyFormat = "`(` $input `)` attr-dict";
+  let hasFolder = 1;
+}
+

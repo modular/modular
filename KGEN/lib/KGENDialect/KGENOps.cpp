@@ -1151,6 +1151,101 @@ LogicalResult LinkOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralCmp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult IntLiteralCmp::fold(FoldAdaptor adaptor) {
+  IntLiteralAttr lAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getLhs());
+  IntLiteralAttr rAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getRhs());
+  IntLiteralCmpPred pred = adaptor.getPred();
+  if (!lAttr || !rAttr)
+    return {};
+  IPInt l = lAttr.getValue();
+  IPInt r = rAttr.getValue();
+
+  switch (pred) {
+  case IntLiteralCmpPred::Eq:
+    return BoolAttr::get(lAttr.getContext(), l == r);
+  case IntLiteralCmpPred::Ne:
+    return BoolAttr::get(lAttr.getContext(), l != r);
+  case IntLiteralCmpPred::Lt:
+    return BoolAttr::get(lAttr.getContext(), l < r);
+  case IntLiteralCmpPred::Le:
+    return BoolAttr::get(lAttr.getContext(), l <= r);
+  case IntLiteralCmpPred::Gt:
+    return BoolAttr::get(lAttr.getContext(), l > r);
+  case IntLiteralCmpPred::Ge:
+    return BoolAttr::get(lAttr.getContext(), l >= r);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralBinop
+//===----------------------------------------------------------------------===//
+
+OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
+  IntLiteralAttr lAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getLhs());
+  IntLiteralAttr rAttr = dyn_cast_or_null<IntLiteralAttr>(adaptor.getRhs());
+  IntLiteralBinopKind o = adaptor.getOper();
+  if (!lAttr || !rAttr)
+    return {};
+  IPInt l = lAttr.getValue();
+  IPInt r = rAttr.getValue();
+
+  IPInt result;
+  switch (o) {
+  case IntLiteralBinopKind::Add:
+    result = l + r;
+    break;
+  case IntLiteralBinopKind::Sub:
+    result = l - r;
+    break;
+  case IntLiteralBinopKind::Mul:
+    result = l * r;
+    break;
+  case IntLiteralBinopKind::Div:
+    result = l / r;
+    break;
+  case IntLiteralBinopKind::Mod:
+    result = l % r;
+    break;
+  case IntLiteralBinopKind::Lshift:
+    result = l << r;
+    break;
+  case IntLiteralBinopKind::Rshift:
+    result = l >> r;
+    break;
+  case IntLiteralBinopKind::And:
+    result = l & r;
+    break;
+  case IntLiteralBinopKind::Or:
+    result = l | r;
+    break;
+  case IntLiteralBinopKind::Xor:
+    result = l ^ r;
+    break;
+  }
+
+  return IntLiteralAttr::get(lAttr.getContext(), IPInt(result));
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralCastOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult IntLiteralCastOp::fold(FoldAdaptor adaptor) {
+  auto in = dyn_cast_if_present<IntLiteralAttr>(adaptor.getInput());
+  if (!in)
+    return {};
+  unsigned outWidth = 64;
+  APInt inval = in.getValue().getAPInt();
+  if (inval.getBitWidth() > outWidth)
+    return {};
+  return IntegerAttr::get(IndexType::get(in.getContext()),
+                          inval.sext(outWidth));
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

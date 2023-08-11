@@ -32,5 +32,5 @@ kgen.generator @return_one() -> index {
 // CHECK: #kgen.param.index.ref<0, false, 0> : index
 "some.op"() {ref = #kgen.param.index.ref<0, false, 0> : index} : () -> ()
 
-// CHECK #kgen.int_literal<5> : !kgen.int_literal
+// CHECK: #kgen.int_literal<5> : !kgen.int_literal
 "some.op"() {data = #kgen.int_literal<5> : !kgen.int_literal} : () -> ()
