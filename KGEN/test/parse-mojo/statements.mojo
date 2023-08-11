@@ -604,14 +604,14 @@ fn fail_register(str: StringRef) raises -> Int:
 
 
 fn fail_register_raises(str: StringRef) raises -> Int:
-  # CHECK: %[[VAR0:.*]] = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int>) -> !kgen.declref<{{.*}}@"$Int"::@Int> {
-  # CHECK:     %[[VAR1:.*]] = pop.variant.get %0 : !pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int> as !kgen.declref<{{.*}}@"$Int"::@Int>
-  # CHECK:     lit.yield %[[VAR1]] : !kgen.declref<{{.*}}@"$Int"::@Int>
-  # CHECK:   } else {
-  # CHECK:     %[[VAR2:.*]] = pop.variant.get %0 : !pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int> as !kgen.declref<{{.*}}@"$Error"::@Error>
-  # CHECK:     lit.raise %[[VAR2]] : <{{.*}}@"$Error"::@Error>
-  # CHECK:     kgen.unreachable
-  # CHECK:   }
+  # CHECK: %[[VAR0:.*]] = lit.handle_variant %0
+  # CHECK:   %[[VAR1:.*]] = pop.variant.get %0
+  # CHECK:   lit.yield %[[VAR1]]
+  # CHECK: } else {
+  # CHECK:   %[[VAR2:.*]] = pop.variant.get %0
+  # CHECK:   lit.raise %[[VAR2]]
+  # CHECK:   kgen.unreachable
+  # CHECK: }
   return fail_register(str)
 
 ##===----------------------------------------------------------------------===##
@@ -667,9 +667,9 @@ fn testWithRaising(a: ExampleCM) raises:
     noop(val)
 
     # CHECK-NEXT: %5 = kgen.call {{.*}}raise_string()
-    # CHECK-NEXT: %6 = lit.handle_variant %5 : (!pop.variant<{{.*}}@"$Error"::@Error, !lit.none>) -> !lit.none {
-    # CHECK-NEXT: %7 = pop.variant.get %5 : !pop.variant<{{.*}}@"$Error"::@Error, !lit.none> as !lit.none
-    # CHECK-NEXT: lit.yield %7 : !lit.none
+    # CHECK-NEXT: %6 = lit.handle_variant %5
+    # CHECK-NEXT:   %7 = pop.variant.get %5
+    # CHECK-NEXT:   lit.yield %7 : !lit.none
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   pop.variant.get
     # CHECK-NEXT:   lit.raise
