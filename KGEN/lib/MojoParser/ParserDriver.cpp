@@ -24,8 +24,8 @@
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -295,8 +295,9 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
   [[maybe_unused]] auto timeScope =
-      sharedState.runtime.getTelemetryContext()
-          ->createUInt64Timer<std::chrono::milliseconds>(
+      sharedState.runtime
+          .emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .createUInt64Timer<std::chrono::milliseconds>(
               "mojo.parser.compile.time");
 
   // This is the result module we are parsing into.

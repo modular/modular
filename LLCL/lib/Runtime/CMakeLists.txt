@@ -20,7 +20,6 @@ add_modular_library(LLCLRuntime
 
   LINK_LIBS PUBLIC
   LLCLSupport
-  LLCLTelemetry
   LLVMSupport
   MSupport
   Threads::Threads

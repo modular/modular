@@ -9,6 +9,7 @@
 
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"
 
@@ -65,12 +66,14 @@ static int demangle(const State &state) {
                       inputs[0], inputs[1]));
   }
 
+  // Initialize the LLCL runtime. We don't allow users to configure runtime
+  // options, such as the allocator or the work queue threading model.
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
   // Initialize telemetry.
-  // Empty attr list, for some reason without this we get linker errors...
-  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
-  auto telemetryCtx =
-      LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
-  initializeTelemetry(telemetryCtx.copy(), state, args);
+  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;

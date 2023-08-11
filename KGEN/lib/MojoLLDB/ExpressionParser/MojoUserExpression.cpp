@@ -7,12 +7,12 @@
 #include "MojoUserExpression.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "Logging.h"
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/IRExecutionUnit.h"
@@ -170,7 +170,9 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   // Do manual telemetry flush after each REPL cell.
   [[maybe_unused]] auto flushTelemetry =
-      impl->typeSystem.getRuntime().getTelemetryContext()->autoFlush();
+      impl->typeSystem.getRuntime()
+          .emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .autoFlush();
 
   // Initialize the persistent state.
   impl->resultDelegate.RegisterPersistentState(impl->persistentState);

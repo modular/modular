@@ -82,16 +82,12 @@ static int doc(const State &state) {
   LLCL::Runtime runtime(LLCL::createMallocAllocator(),
                         LLCL::createThreadPoolWorkQueue());
 
-  // Empty attr list, for some reason without this we get linker errors...
-  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
-  auto telemetryCtx = RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
+  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(telemetryCtx.copy(), state, args,
+  initializeTelemetry(telemetryCtx, state, args,
                       /*privateArgs=*/{options::OPT_I, options::OPT_o});
-  // Emplace our telemetry context.
-  runtime.emplaceContext<decltype(telemetryCtx)>(std::move(telemetryCtx));
 
   // Open the input file, or exit with an error.
   auto bufferOrErr =

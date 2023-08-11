@@ -7,8 +7,8 @@
 #ifndef SUPPORT_TELEMETRY_LOGS_H
 #define SUPPORT_TELEMETRY_LOGS_H
 
-#include "LLCL/Support/Telemetry/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -17,7 +17,7 @@
 #include "opentelemetry/logs/severity.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::LLCL::Telemetry::Logs {
+namespace M::Telemetry::Logs {
 
 /// Severity levels for logs.
 /// See
@@ -123,7 +123,7 @@ public:
   }
 
 private:
-  friend class M::LLCL::Telemetry::TelemetryContext;
+  friend class M::Telemetry::TelemetryContext;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
   Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger)
@@ -135,6 +135,6 @@ private:
 #endif // MODULAR_ENABLE_TELEMETRY
 };
 
-} // namespace M::LLCL::Telemetry::Logs
+} // namespace M::Telemetry::Logs
 
 #endif // SUPPORT_TELEMETRY_LOGS_H

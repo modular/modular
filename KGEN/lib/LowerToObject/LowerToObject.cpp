@@ -8,11 +8,11 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Host.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
@@ -127,8 +127,8 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
                                      LLCL::Runtime &runtime) {
   TimeTraceScope<> traceScope("llvm-optimize", module.getName());
   [[maybe_unused]] auto timeScope =
-      runtime.getTelemetryContext()
-          ->createUInt64Timer<std::chrono::milliseconds>(
+      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+          .createUInt64Timer<std::chrono::milliseconds>(
               "mojo.llvm.optimize.time");
   using namespace llvm;
 
@@ -183,9 +183,9 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
 static LogicalResult
 runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
              llvm::raw_pwrite_stream &os, llvm::CodeGenFileType fileType,
-             LLCL::RCRef<LLCL::Telemetry::TelemetryContext> telemetryCtx = {}) {
+             M::Telemetry::TelemetryContext *telemetryCtx = nullptr) {
   TimeTraceScope<> traceScope("llvm-codegen", module.getName());
-  std::optional<LLCL::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
+  std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
       timeScope;
   if (telemetryCtx)
     timeScope = telemetryCtx->createUInt64Timer<std::chrono::milliseconds>(
@@ -252,10 +252,10 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     outFile->keep();
   }
 
-  if (failed(runLlcPasses(module, targetMachine, objStream,
-                          emitAssembly ? llvm::CGFT_AssemblyFile
-                                       : llvm::CGFT_ObjectFile,
-                          runtime.getTelemetryContext())))
+  if (failed(runLlcPasses(
+          module, targetMachine, objStream,
+          emitAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile,
+          &runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>())))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {

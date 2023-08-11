@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "LLCL/Support/Telemetry/Telemetry.h"
+#include "Support/Telemetry/Telemetry.h"
 
-#include "LLCL/Support/Telemetry/Exporters/FileLogExporter.h"
-#include "LLCL/Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "Support/Configuration.h"
 #include "Support/Host.h"
+#include "Support/Telemetry/Exporters/FileLogExporter.h"
+#include "Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "llvm/Support/Threading.h"
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -35,7 +35,6 @@
 #define DEBUG_TYPE "telemetry-context"
 
 using namespace M;
-using namespace LLCL;
 using namespace Telemetry;
 using namespace Exporter;
 

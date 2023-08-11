@@ -13,7 +13,7 @@
 #include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
-namespace M::LLCL::Telemetry::Exporter {
+namespace M::Telemetry::Exporter {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
 
@@ -67,6 +67,6 @@ private:
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
-} // namespace M::LLCL::Telemetry::Exporter
+} // namespace M::Telemetry::Exporter
 
 #endif // SUPPORT_TELEMETRY_EXPORTERS_FILEMETRICEXPORTER_H

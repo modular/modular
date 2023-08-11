@@ -10,8 +10,8 @@
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/Telemetry/Telemetry.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -365,8 +365,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   // - we don't want that cost right now.
   {
     [[maybe_unused]] auto timeScope =
-        runtime.getTelemetryContext()
-            ->createUInt64Timer<std::chrono::milliseconds>(
+        runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+            .createUInt64Timer<std::chrono::milliseconds>(
                 "mojo.kgen.compile.time");
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(

@@ -16,7 +16,6 @@ add_modular_unittest(
   GenericUniquePtrTest.cpp
   ResourceTest.cpp
   RuntimeTest.cpp
-  TelemetryTest.cpp
   TypeIDTest.cpp
 
   LINK_LIBS PRIVATE

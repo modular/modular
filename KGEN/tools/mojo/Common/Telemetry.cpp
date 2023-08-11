@@ -9,21 +9,19 @@
 
 using namespace M;
 
-void M::initializeTelemetry(
-    LLCL::RCRef<LLCL::Telemetry::TelemetryContext> telemetryCtx,
-    const State &state, const llvm::opt::InputArgList &args,
-    ArrayRef<unsigned> privateArgs) {
-  if (!telemetryCtx)
-    return;
+void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
+                            const State &state,
+                            const llvm::opt::InputArgList &args,
+                            ArrayRef<unsigned> privateArgs) {
 
   // TODO: The API for adding resources when initializing a telemetry context is
   // not implemented yet. We should add the current mojo version as an attribute
   // when we can.
 
   // Notify an invocation event of the current subcommand and arguments.
-  LLCL::Telemetry::Logs::Logger::LogStream os =
-      telemetryCtx->getLogger("mojo")->getInfo("invoke." +
-                                               StringRef(state.subcommand));
+  M::Telemetry::Logs::Logger::LogStream os =
+      telemetryCtx.getLogger("mojo")->getInfo("invoke." +
+                                              StringRef(state.subcommand));
 
   // Extract the recordable arguments from the command line, and order them by
   // id to ensure a deterministic order.

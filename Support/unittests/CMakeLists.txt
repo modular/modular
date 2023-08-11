@@ -33,6 +33,7 @@ add_modular_unittest(
   MicroBenchmarkTest.cpp
   TensorShapeTest.cpp
   TensorSpecTest.cpp
+  TelemetryTest.cpp
   TimeProfilerTest.cpp
   URITest.cpp
   VersionTest.cpp
@@ -41,4 +42,5 @@ add_modular_unittest(
   MSupport
   MSupportML
   MSupportGlobals
+  MTelemetry
 )

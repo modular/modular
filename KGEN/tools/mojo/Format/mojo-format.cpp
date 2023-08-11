@@ -7,6 +7,7 @@
 #include "mojo-format.h"
 
 #include "../Common/Telemetry.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 
@@ -59,12 +60,14 @@ static int format(const State &state) {
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no inputs provided");
 
-  // Empty attr list, for some reason without this we get linker errors...
-  llvm::StringMap<LLCL::Telemetry::TelemetryContext::AttributeValue> attrs;
-  auto telemetryCtx =
-      LLCL::RCRef<LLCL::Telemetry::TelemetryContext>::create(attrs);
+  // Initialize the LLCL runtime. We don't allow users to configure runtime
+  // options, such as the allocator or the work queue threading model.
+  LLCL::Runtime runtime(LLCL::createMallocAllocator(),
+                        LLCL::createThreadPoolWorkQueue());
+
   // Initialize telemetry.
-  initializeTelemetry(telemetryCtx.copy(), state, args);
+  auto &telemetryCtx = runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, state, args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.
   std::error_code ec;
