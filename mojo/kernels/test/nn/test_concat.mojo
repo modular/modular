@@ -15,6 +15,8 @@ from Range import range
 from List import Dim, VariadicList, DimList
 from LLCL import Runtime, OwningOutputChainPtr
 
+# FIXME(#18257): Flaky LSAN crashes.
+# UNSUPPORTED: asan
 
 fn test_concat():
     print("== test_concat")
