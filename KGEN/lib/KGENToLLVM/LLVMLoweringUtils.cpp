@@ -564,6 +564,36 @@ Value InterpreterMemoryConverter::getBlobPointer(
                                LLVM::GEPArg(offset), /*inbounds=*/true);
 }
 
+Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
+                                                         MemoryHandle hdl) {
+  // Lookup an existing global for this handle.
+  if (Operation *global = globals.lookup(hdl.getKey()))
+    return global;
+
+  // If not, create it.
+  OpBuilder b(loc.getContext());
+  Attribute value;
+  mlir::AsmResourceBlob *mem = hdl.getBlob();
+  if (hdl.getResource()->getKind() ==
+      DialectResourceManager::ResourceKind::String) {
+    // Create a string attribute for readability.
+    value = b.getStringAttr(
+        StringRef(mem->getData().data(), mem->getData().size()));
+  } else {
+    // Store the raw bytes into an elements attribute.
+    value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
+                                      IntegerType::Signless);
+  }
+
+  auto global = b.create<LLVM::GlobalOp>(
+      loc, LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
+      /*isConstant=*/true, LLVM::Linkage::Internal, hdl.getKey(), value,
+      mem->getDataAlignment());
+  symtab.insert(global);
+  globals.try_emplace(hdl.getKey(), global);
+  return global;
+}
+
 InterpreterMemoryConverter::MaterializedBlobs &
 InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
                                              MemorySpaceAttr space) {
@@ -576,42 +606,14 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
 
   // First emit the allocations and the memcpy's.
   for (const MemoryBlob &blob : space) {
-    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
     if (blob.getKind() == MemoryKind::ConstGlobal) {
-      // Lookup an existing global for this handle.
-      auto global = cast_or_null<LLVM::GlobalOp>(
-          globals.lookup(blob.getHandle().getKey()));
-
-      // If not, create it.
-      if (!global) {
-        OpBuilder::InsertionGuard guard(b);
-        b.clearInsertionPoint();
-
-        Attribute value;
-        if (blob.getHandle().getResource()->getKind() ==
-            DialectResourceManager::ResourceKind::String) {
-          // Create a string attribute for readability.
-          value = b.getStringAttr(
-              StringRef(mem->getData().data(), mem->getData().size()));
-        } else {
-          // Store the raw bytes into an elements attribute.
-          value = IntArrayElementsAttr::get(b.getContext(), mem->getData(),
-                                            IntegerType::Signless);
-        }
-
-        global = b.create<LLVM::GlobalOp>(
-            LLVM::LLVMArrayType::get(b.getI8Type(), mem->getData().size()),
-            /*isConstant=*/true, LLVM::Linkage::Internal,
-            blob.getHandle().getKey(), value, mem->getDataAlignment());
-        symtab.insert(global);
-        globals.try_emplace(blob.getHandle().getKey(), global);
-      }
-
-      materialized.emplace_back(global);
+      materialized.emplace_back(
+          getOrCreateGlobal(b.getLoc(), blob.getHandle()));
       continue;
     }
     // Create the relevant allocation.
     Value popAlloc;
+    mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
     if (blob.getKind() == MemoryKind::Stack) {
       popAlloc = b.create<POP::StackAllocationOp>(
           POP::PointerType::get(b.getI8Type()), mem->getData().size(),
@@ -736,55 +738,13 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
       values)));
 }
 
-/// Copied from LLVM::createGlobalString but now takes a symbol table so the
-/// global is properly registered.
-static Value getOrCreateGlobalString(Location loc, OpBuilder &builder,
-                                     SymbolTable &symtab, StringRef name,
-                                     StringRef value, LLVM::Linkage linkage,
-                                     bool useOpaquePointers) {
-  assert(builder.getInsertionBlock() &&
-         builder.getInsertionBlock()->getParentOp() &&
-         "expected builder to point to a block constrained in an op");
-  auto module =
-      builder.getInsertionBlock()->getParentOp()->getParentOfType<ModuleOp>();
-  assert(module && "builder points to an op outside of a module");
-
-  // Create the global at the entry of the module.
-  MLIRContext *ctx = builder.getContext();
-  auto type = LLVM::LLVMArrayType::get(IntegerType::get(ctx, 8), value.size());
-  auto global = llvm::dyn_cast_if_present<LLVM::GlobalOp>(symtab.lookup(name));
-  if (!global) {
-    OpBuilder moduleBuilder(module.getBodyRegion(), builder.getListener());
-    global = moduleBuilder.create<LLVM::GlobalOp>(
-        loc, type, /*isConstant=*/true, linkage, name,
-        builder.getStringAttr(value), /*alignment=*/0);
-    // Insert the global into the symbol table.
-    symtab.insert(global, moduleBuilder.getInsertionPoint());
-  }
-
-  LLVM::LLVMPointerType resultType;
-  LLVM::LLVMPointerType charPtr;
-  if (!useOpaquePointers) {
-    resultType = LLVM::LLVMPointerType::get(type);
-    charPtr = LLVM::LLVMPointerType::get(IntegerType::get(ctx, 8));
-  } else {
-    resultType = charPtr = LLVM::LLVMPointerType::get(ctx);
-  }
-
-  // Get the pointer to the first character in the global string.
-  Value globalPtr = builder.create<LLVM::AddressOfOp>(loc, resultType,
-                                                      global.getSymNameAttr());
-  return builder.create<LLVM::GEPOp>(loc, charPtr, type, globalPtr,
-                                     ArrayRef<LLVM::GEPArg>{0, 0});
-}
-
 /// Lower the string to a pop.global_constant and create a llvm struct of type
 /// !llvm.struct<(ptr<i8>, i64)> holding the pointer to the global string and
 /// its size.
 static Value lowerStringToGlobalConstant(StringAttr strAttr,
                                          ImplicitLocOpBuilder &b,
-                                         SymbolTable &symtab,
-                                         Type strSizeType) {
+                                         POPToLLVMTypeConverter &tc,
+                                         InterpreterMemoryConverter &imc) {
   StringRef strAttrRef = strAttr.getValue();
   // This is safe because StringAttr always stores a null terminator. If the
   // string is empty, we won't use this anyway.
@@ -792,16 +752,21 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
   if (strAttrRef.empty())
     str = "\0";
 
-  Value llvmString = getOrCreateGlobalString(
-      b.getLoc(), b, symtab,
-      "_static_string_" + std::to_string(llvm::hash_value(strAttrRef)), str,
-      LLVM::Linkage::Internal,
-      /*useOpaquePointers=*/false);
+  // Add the string to the global string table.
+  DialectResourceManager &mgr =
+      MemoryHandle::getManagerInterface(strAttr.getContext());
+  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(b.getLoc(), hdl));
+
   // The actual string size does not include \0.
+  auto sizeType = cast<IntegerType>(tc.getIndexType());
   Value sizeVal = b.create<LLVM::ConstantOp>(
-      b.getLoc(), IntegerAttr::get(strSizeType, strAttr.size()));
+      b.getLoc(), IntegerAttr::get(sizeType, strAttr.size()));
   Value undefOp = b.create<LLVM::UndefOp>(
-      b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), strSizeType));
+      b.getLoc(), getLLVMTypeForKGENStringType(b.getContext(), sizeType));
+  Value llvmString =
+      b.create<LLVM::BitcastOp>(LLVM::LLVMPointerType::get(b.getI8Type()),
+                                b.create<LLVM::AddressOfOp>(global));
   Value structVal0 =
       b.create<LLVM::InsertValueOp>(b.getLoc(), undefOp, llvmString, 0);
   return b.create<LLVM::InsertValueOp>(b.getLoc(), structVal0, sizeVal, 1);
@@ -861,9 +826,8 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
 
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
-  if (auto stringAttr = dyn_cast<StringAttr>(attr))
-    return lowerStringToGlobalConstant(stringAttr, b, symtab,
-                                       tc.getIndexType());
+  if (auto strAttr = dyn_cast<StringAttr>(attr))
+    return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
 
   //===--------------------------------------------------------------------===//
   // POP

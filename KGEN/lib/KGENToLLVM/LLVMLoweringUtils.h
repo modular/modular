@@ -191,6 +191,9 @@ public:
   /// Convert a single memory reference.
   Value convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
 
+  /// Get or add a global for the handle. It must be a `const_global` region.
+  Operation *getOrCreateGlobal(Location loc, MemoryHandle hdl);
+
 private:
   /// Each materialized blob will have a corresponding SSA value representing
   /// the pointer to the beginning of the blob or an LLVM global for

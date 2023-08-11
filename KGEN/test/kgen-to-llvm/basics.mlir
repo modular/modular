@@ -1,7 +1,6 @@
-// RUN: kgen-opt -split-input-file -lower-kgen-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", cpu="skylake-avx512", features="+fma", data_layout="", simd_bit_width=128, tune_cpu="skylake-avx512">} {
-// CHECK-LABEL: llvm.mlir.global internal constant @_static_string_{{.*}}("AB\00") {addr_space = 0 : i32}
 
 // CHECK-LABEL: llvm.func internal @trivial
 // CHECK-SAME: (%[[ARG0:.*]]: i32)
@@ -63,10 +62,10 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
 }
 
 kgen.func @constant_str() -> !kgen.string {
-  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @_static_string_{{.*}} : !llvm.ptr<array<3 x i8>>
-  // CHECK: %[[GEP:.*]] = llvm.getelementptr %0[0, 0] : (!llvm.ptr<array<3 x i8>>) -> !llvm.ptr<i8>
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
   // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @static_string : !llvm.ptr<array<3 x i8>>
+  // CHECK: %[[GEP:.*]] = llvm.bitcast %[[GLOBAL_STR]] : !llvm.ptr<array<3 x i8>> to !llvm.ptr<i8>
   // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
   // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
   %0 = kgen.param.constant: string = <"AB">
@@ -75,14 +74,8 @@ kgen.func @constant_str() -> !kgen.string {
 }
 
 kgen.func @constant_str_2() -> !kgen.string {
-  // CHECK: %[[GLOBAL_STR:.*]] = llvm.mlir.addressof @_static_string_{{.*}} : !llvm.ptr<array<3 x i8>>
-  // CHECK: %[[GEP:.*]] = llvm.getelementptr %0[0, 0] : (!llvm.ptr<array<3 x i8>>) -> !llvm.ptr<i8>
-  // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
-  // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: %[[VAL0:.*]] = llvm.insertvalue %[[GEP]], %[[STRUCT]][0] : !llvm.struct<(ptr<i8>, i64)>
-  // CHECK: %[[VAL1:.*]] = llvm.insertvalue %[[LENGTH]], %[[VAL0]][1] : !llvm.struct<(ptr<i8>, i64)>
+  // CHECK: llvm.mlir.addressof @static_string : !llvm.ptr<array<3 x i8>>
   %0 = kgen.param.constant: string = <"AB">
-  // CHECK: llvm.return %[[VAL1]] : !llvm.struct<(ptr<i8>, i64)>
   kgen.return %0 : !kgen.string
 }
 
@@ -123,5 +116,7 @@ kgen.func @used_func() {
   kgen.call @used_internally() : () -> !pop.struct<i32, i32>
   kgen.return
 }
+
+// CHECK-LABEL: llvm.mlir.global internal constant @static_string("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
 
 }
