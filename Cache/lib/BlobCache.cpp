@@ -9,11 +9,11 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/Base64.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Base64.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
@@ -455,10 +455,7 @@ struct FilesystemBackend : public BlobCacheBackend {
   getAbsolutePathForKey(StringRef keyHash) const {
     std::error_code ec;
     std::filesystem::path filepath(basePath);
-    std::string encodedHash = llvm::encodeBase64(keyHash);
-    std::replace_if(
-        encodedHash.begin(), encodedHash.end(), [](char c) { return c == '/'; },
-        '_');
+    std::string encodedHash = encodeURLSafeBase64(keyHash);
     filepath /= encodedHash;
 
     std::filesystem::path absolute = std::filesystem::absolute(filepath, ec);

@@ -18,6 +18,7 @@ add_modular_unittest(
   SupportTests
 
   AlignedAllocTest.cpp
+  Base64Test.cpp
   BCastTest.cpp
   ConfigurationTest.cpp
   DTypeTest.cpp
