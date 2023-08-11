@@ -9,7 +9,7 @@
 from Activations import _erf
 from DType import DType
 from IO import print
-from Math import erf, round
+from math import erf, round
 from SIMD import SIMD, Float32, Float64
 
 

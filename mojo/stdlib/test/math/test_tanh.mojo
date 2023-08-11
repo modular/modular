@@ -7,7 +7,7 @@
 
 from DType import DType
 from IO import print
-from Math import tanh, iota
+from math import tanh, iota
 
 
 # CHECK-LABEL: test_tanh_float32

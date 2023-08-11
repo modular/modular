@@ -7,7 +7,7 @@
 
 from DType import DType
 from IO import print
-from Math import ldexp
+from math import ldexp
 from SIMD import SIMD, Float32, Float64
 
 
