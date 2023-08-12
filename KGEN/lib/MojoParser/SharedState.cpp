@@ -598,8 +598,34 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string> resolveModulePath(StringRef moduleName,
                                                     StringRef includeDir) {
+
+  // Gets the name of the file or directory in a case sensitive way. On non-case
+  // sensitive systems we cannot just do `path / moduleName` since the
+  // constructed path will not adhere to case sensitivity.
+  auto getFileName =
+      [moduleName = moduleName.str(),
+       includeDir =
+           includeDir.str()]() -> std::optional<std::filesystem::path> {
+    std::error_code ec;
+    auto iter = std::filesystem::directory_iterator(includeDir, ec);
+    if (ec)
+      return std::nullopt;
+    for (const auto &entry : iter)
+      if (entry.path().filename().stem().string() == moduleName)
+        return entry.path();
+
+    return std::nullopt;
+  };
+
+  // If we cannot find a file or directory with the case-sensitive name, then
+  // return early.
+  auto nameOr = getFileName();
+  if (!nameOr)
+    return std::nullopt;
+
+  std::filesystem::path name = *nameOr;
+
   // Check if we have a source package with this name.
-  auto name = std::filesystem::path(includeDir.str()) / moduleName.str();
   if (isMojoSourcePackagePath(name))
     return name.generic_string();
 
@@ -610,6 +636,7 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
       std::filesystem::exists(name.replace_extension("mojo"), ec) ||
       std::filesystem::exists(name.replace_extension("🔥"), ec))
     return name.string();
+
   return std::nullopt;
 }
 
