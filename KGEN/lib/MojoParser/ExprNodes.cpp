@@ -146,8 +146,8 @@ static PValue synthesizeMLIROpFromString(StringRef name, ExprEmitter &emitter) {
   auto *context = emitter.getContext();
   auto nameStr = StringAttr::get(context, name);
 
-  auto result = UnboundMLIROperationAttr::get(
-      context, nameStr.getType(), nameStr, DictionaryAttr::get(context));
+  auto result =
+      UnboundMLIROperationAttr::get(nameStr, DictionaryAttr::get(context));
   return PValue(result);
 }
 
@@ -231,8 +231,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Return it.
   auto attrs = DictionaryAttr::get(context, attrValues);
-  return UnboundMLIROperationAttr::get(context, unboundOp.getType(),
-                                       unboundOp.getName(), attrs);
+  return UnboundMLIROperationAttr::get(unboundOp.getName(), attrs);
 }
 
 /// Given a AliasDeclOp, return the value that should be used in a reference
