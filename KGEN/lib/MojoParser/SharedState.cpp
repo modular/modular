@@ -606,6 +606,10 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
       [moduleName = moduleName.str(),
        includeDir =
            includeDir.str()]() -> std::optional<std::filesystem::path> {
+  // The file system is always case-sensitive on linux.
+#ifdef __linux__
+    return std::filesystem::path(includeDir) / moduleName;
+#else  // !__linux__
     std::error_code ec;
     auto iter = std::filesystem::directory_iterator(includeDir, ec);
     if (ec)
@@ -615,6 +619,7 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
         return entry.path();
 
     return std::nullopt;
+#endif // __linux__
   };
 
   // If we cannot find a file or directory with the case-sensitive name, then
