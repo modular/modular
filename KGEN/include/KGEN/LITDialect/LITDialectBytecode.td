@@ -67,22 +67,17 @@ def DocStringAttr : DialectAttribute<(attr
 )>;
 
 def UnboundMLIROperationAttr : DialectAttribute<(attr
-  Type:$type,
   ConcreteAttribute<"StringAttr">:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs
 )>;
 
-def NoneAttr : DialectAttribute<(attr
-  ConcreteType<"NoneType">:$type
-)>;
+def NoneAttr : DialectAttribute<(attr)>;
 
 def ModuleAttr : DialectAttribute<(attr
   ConcreteType<"MetaTypeType">:$type
 )>;
 
-def LifetimeAttr : DialectAttribute<(attr
-  ConcreteType<"LifetimeType">:$type
-)>;
+def LifetimeAttr : DialectAttribute<(attr)>;
 
 def UnresolvedAliasValueAttr : DialectAttribute<(attr
   Type:$type

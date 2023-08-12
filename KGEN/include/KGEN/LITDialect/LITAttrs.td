@@ -70,9 +70,15 @@ def UnboundMLIROperationAttr
     value operands, it materializes into a specific MLIR operation instance
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type,
-                        "StringAttr":$name, "DictionaryAttr":$attrs);
-  let assemblyFormat = "$name $attrs $type";
+  let parameters = (ins "StringAttr":$name, "DictionaryAttr":$attrs);
+  let assemblyFormat = "$name $attrs";
+  let extraClassDeclaration = [{ Type getType() const; }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name, "DictionaryAttr":$attrs), [{
+      return $_get(name.getContext(), name, attrs);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -85,12 +91,8 @@ def NoneAttr : LITTypedAttr<"None", "none"> {
     This attribute represents None values.
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "LIT::NoneType">:$type);
   let assemblyFormat = "";
-
-  let builders = [AttrBuilder<(ins), [{
-    return get(context, LIT::NoneType::get(context));
-  }]>];
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -129,12 +131,8 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
     This attribute is a singleton used when lowering lifetimes.
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "LIT::LifetimeType">:$type);
   let assemblyFormat = "";
-
-  let builders = [AttrBuilder<(ins), [{
-    return get(context, LIT::LifetimeType::get(context));
-  }]>];
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 //===----------------------------------------------------------------------===//

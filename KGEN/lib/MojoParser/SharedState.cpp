@@ -289,9 +289,8 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   MLIRContext *context = getContext();
 
   // Add a declarations for builtin types.
-  NoneType noneType = LIT::NoneType::get(context);
-  impl->noneType = noneType;
-  impl->noneAttr = NoneAttr::get(context, noneType);
+  impl->noneType = LIT::NoneType::get(context);
+  impl->noneAttr = NoneAttr::get(context);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
