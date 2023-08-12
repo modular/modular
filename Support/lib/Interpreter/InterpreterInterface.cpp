@@ -30,7 +30,7 @@ static constexpr int64_t kStackBaseAddr = kHeapBaseAddr + kTableSize;
 static constexpr int64_t kConstGlobalBaseAddr = kStackBaseAddr + kTableSize;
 
 InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
-    : target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
+    : ctx(ctx), target(target), blobMgr(MemoryHandle::getManagerInterface(ctx)),
       heapMemory(MemoryKind::Heap, kHeapBaseAddr, kHeapBaseAddr + kTableSize),
       stackMemory(MemoryKind::Stack, kStackBaseAddr,
                   kStackBaseAddr + kTableSize),
@@ -158,6 +158,21 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
   // blob as freed.
   blob->free();
   return success();
+}
+
+ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandle hdl) {
+  // Look for an existing mapped blob for the handle.
+  for (const MemoryBlob &blob : constGlobalMemory.blobs)
+    if (blob.getHandle() == hdl)
+      return blob.baseAddr;
+
+  // Otherwise, try to map it in.
+  mlir::AsmResourceBlob *mem = hdl.getBlob();
+  ErrorOr<MemoryBlob &> blob = constGlobalMemory.addBlob(
+      mem->getData().size(), mem->getDataAlignment(), hdl);
+  if (blob.isError())
+    return blob.takeError();
+  return blob->baseAddr;
 }
 
 ErrorOr<std::pair<InterpreterState::MemoryBlob &, int64_t>>
@@ -337,7 +352,7 @@ InterpreterState::externalizeMemory(Region &entry,
         blobs.emplace_back(hdl, table->kind, std::move(pointerRegions));
       }
     }
-    interpreterMemorySpace = MemorySpaceAttr::get(target.getContext(), blobs);
+    interpreterMemorySpace = MemorySpaceAttr::get(ctx, blobs);
     return interpreterMemorySpace;
   };
 
