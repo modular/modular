@@ -16,11 +16,13 @@ namespace M {
 //       should not be necessary.
 
 /// Base-64 encode a string that conforms to RFC4648 Section 5 (URL and filename
-/// safe).
+/// safe). This implementation does not include the `=` padding at the end of
+/// the encoded bytes.
 std::string encodeURLSafeBase64(StringRef str);
 
 /// Base-64 decode a string that conforms to RFC4648 Section 5 (URL and filename
-/// safe).
+/// safe). This implementation does not include the `=` padding at the end of
+/// the encoded bytes.
 ErrorOr<std::string> decodeURLSafeBase64(StringRef str);
 } // namespace M
 
