@@ -529,6 +529,26 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_IntLiteralAttr : KGEN_ExprAttr<"IntLiteral", "int_literal"> {
+  let summary = "Attribute for holding infinite precision integer literals.";
+  let description = [{
+    The `#kgen.int_literal` represents an integer literal, storing its
+    data in an IPInt.
+  }];
+
+  let parameters = (ins "IPInt":$value);
+
+  let assemblyFormat = "`<` custom<IntLiteral>($value) `>`";
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SymbolConstantAttr
 //===----------------------------------------------------------------------===//
 
@@ -890,26 +910,6 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
   }];
 
   let assemblyFormat = "`<` $value `>`";
-}
-
-//===----------------------------------------------------------------------===//
-// IntLiteralAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_IntLiteralAttr : KGEN_ExprAttr<"IntLiteral", "int_literal"> {
-  let summary = "Attribute for holding infinite precision integer literals.";
-  let description = [{
-    The `#kgen.int_literal` represents an integer literal, storing its
-    data in an IPInt.
-  }];
-
-  let parameters = (ins "IPInt":$value);
-
-  let assemblyFormat = "`<` custom<IntLiteral>($value) `>`";
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

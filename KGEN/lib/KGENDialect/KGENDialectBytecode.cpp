@@ -132,51 +132,56 @@ enum AttributeCode {
   ///   }
   kDTypeConstantAttr = 17,
   ///
+  ///   IntLiteralAttr {
+  ///     value: varint
+  ///   }
+  kIntLiteralAttr = 18,
+  ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
   ///     paramValues: TypedAttr[]
   ///     type: SignatureType
   ///   }
-  kSymbolConstantAttr = 18,
+  kSymbolConstantAttr = 19,
   ///
   ///   TargetParamAttr {
   ///     target: TargetInfoAttr
   ///   }
-  kTargetParamAttr = 19,
+  kTargetParamAttr = 20,
   ///
   ///   BuildInfoParamAttr {
   ///     info: BuildInfoAttr
   ///   }
-  kBuildInfoParamAttr = 20,
+  kBuildInfoParamAttr = 21,
   ///
   ///  EnvAttr {
   ///    values: DictionaryAttr
   ///  }
-  kEnvAttr = 21,
+  kEnvAttr = 22,
   ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 22,
+  kParamOperatorAttr = 23,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 23,
+  kMLIROpAttr = 24,
   ///
   ///  DecoratorsAttr {
   ///    value: TypedAttr[]
   ///  }
-  kDecoratorsAttr = 24,
+  kDecoratorsAttr = 25,
   ///
   ///  ExportKindAttr {
   ///    value: varint
   ///  }
-  kExportKindAttr = 25,
+  kExportKindAttr = 26,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -262,6 +267,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   EnvAttr readEnvAttr(BytecodeReader &reader) const;
   ExportKindAttr readExportKindAttr(BytecodeReader &reader) const;
   FnMetadataAttr readFnMetadataAttr(BytecodeReader &reader) const;
+  IntLiteralAttr readIntLiteralAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
@@ -290,6 +296,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(EnvAttr attr, BytecodeWriter &writer) const;
   void write(ExportKindAttr attr, BytecodeWriter &writer) const;
   void write(FnMetadataAttr attr, BytecodeWriter &writer) const;
+  void write(IntLiteralAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
@@ -367,6 +374,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readParameterizedTypeConstantAttr(reader);
   case Encoding::kDTypeConstantAttr:
     return readDTypeConstantAttr(reader);
+  case Encoding::kIntLiteralAttr:
+    return readIntLiteralAttr(reader);
   case Encoding::kSymbolConstantAttr:
     return readSymbolConstantAttr(reader);
   case Encoding::kTargetParamAttr:
@@ -413,10 +422,10 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
             DTypeConstantAttr, EnvAttr, ExportKindAttr, FnMetadataAttr,
-            MLIROpAttr, ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr,
-            ParamIndexRefAttr, ParamOperatorAttr, ParameterizedTypeConstantAttr,
-            SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
-            VariadicAttr>([&](auto attr) {
+            IntLiteralAttr, MLIROpAttr, ParamBindAttr, ParamDeclAttr,
+            ParamDeclRefAttr, ParamIndexRefAttr, ParamOperatorAttr,
+            ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
+            UnboundAttr, UnknownAttr, VariadicAttr>([&](auto attr) {
         write(attr, writer);
         return success();
       })
@@ -605,6 +614,28 @@ void KGENBytecodeInterface::write(FnMetadataAttr attr,
   });
   writer.writeAttributes(attr.getDefaultArguments());
   writer.writeVarInt(static_cast<uint64_t>(attr.getFnEffects()));
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralAttr
+
+IntLiteralAttr
+KGENBytecodeInterface::readIntLiteralAttr(BytecodeReader &reader) const {
+  uint64_t width;
+  if (failed(reader.readVarInt(width)))
+    return {};
+  FailureOr<APInt> value = reader.readAPIntWithKnownWidth(width);
+  if (failed(value))
+    return {};
+  return IntLiteralAttr::get(getContext(), IPInt(std::move(*value)));
+}
+
+void KGENBytecodeInterface::write(IntLiteralAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kIntLiteralAttr);
+  uint64_t width = attr.getValue().getAPInt().getSignificantBits();
+  writer.writeVarInt(width);
+  writer.writeAPIntWithKnownWidth(attr.getValue().getAPInt().trunc(width));
 }
 
 //===----------------------------------------------------------------------===//
