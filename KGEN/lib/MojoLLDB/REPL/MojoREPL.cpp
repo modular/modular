@@ -189,8 +189,8 @@ MojoREPL::MojoREPL(Target &target)
 
   // Here we set the default expr eval options for all REPL expressions.
   EvaluateExpressionOptions opts;
-  // Disable timeout because the evaluator could take a very long time.
-  opts.SetTimeout(Timeout<std::micro>(std::nullopt));
+  // FIXME(19136): Set an infinite timeout.
+  opts.SetTimeout(Timeout<std::micro>(std::chrono::seconds(1000)));
   opts.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
   SetEvaluateOptions(opts);
 }
