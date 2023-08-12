@@ -371,17 +371,7 @@ bool ParameterizedTypeConstantAttr::isConstant() const { return false; }
 // DTypeConstantAttr
 //===----------------------------------------------------------------------===//
 
-DTypeConstantAttr DTypeConstantAttr::get(MLIRContext *ctx, KGENDType dtype) {
-  return get(ctx, dtype, DTypeType::get(ctx));
-}
-
-LogicalResult
-DTypeConstantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                          KGENDType dtype, Type type) {
-  if (!type || !type.isa<DTypeType>())
-    return emitError() << "kgen.dtype.constant requires !kgen.dtype type";
-  return success();
-}
+Type DTypeConstantAttr::getType() const { return DTypeType::get(getContext()); }
 
 bool DTypeConstantAttr::isConvertibleTo(Type type) {
   KGENDType dtype = getDType();
@@ -546,10 +536,12 @@ Attribute TargetParamAttr::parse(AsmParser &p, Type type) {
   TargetInfoAttr target;
   if (p.parseCustomAttributeWithFallback(target))
     return {};
-  return TargetParamAttr::get(target, targetType);
+  return TargetParamAttr::get(target);
 }
 
 void TargetParamAttr::print(AsmPrinter &p) const { getTarget().print(p); }
+
+Type TargetParamAttr::getType() const { return TargetType::get(getContext()); }
 
 /// Always a constant.
 bool TargetParamAttr::isConstant() const { return true; }
@@ -568,16 +560,20 @@ Attribute BuildInfoParamAttr::parse(AsmParser &p, Type type) {
   // Check for a special host attribute.
   if (succeeded(p.parseOptionalKeyword("host")))
     return BuildInfoParamAttr::get(
-        BuildInfoAttr::getForCurrentBuild(p.getContext()), buildType);
+        BuildInfoAttr::getForCurrentBuild(p.getContext()));
 
   // Otherwise, parse the whole build info attribute.
   BuildInfoAttr buildInfo;
   if (p.parseCustomAttributeWithFallback(buildInfo))
     return {};
-  return BuildInfoParamAttr::get(buildInfo, buildType);
+  return BuildInfoParamAttr::get(buildInfo);
 }
 
 void BuildInfoParamAttr::print(AsmPrinter &p) const { getBuildInfo().print(p); }
+
+Type BuildInfoParamAttr::getType() const {
+  return BuildInfoType::get(getContext());
+}
 
 /// Always a constant.
 bool BuildInfoParamAttr::isConstant() const { return true; }

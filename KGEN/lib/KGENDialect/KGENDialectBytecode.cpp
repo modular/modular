@@ -134,7 +134,7 @@ enum AttributeCode {
   ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
-  ///     paramValues: ParamBindArrayAttr
+  ///     paramValues: TypedAttr[]
   ///     type: SignatureType
   ///   }
   kSymbolConstantAttr = 18,
@@ -149,19 +149,24 @@ enum AttributeCode {
   ///   }
   kBuildInfoParamAttr = 20,
   ///
+  ///  EnvAttr {
+  ///    values: DictionaryAttr
+  ///  }
+  kEnvAttr = 21,
+  ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 21,
+  kParamOperatorAttr = 22,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 22,
+  kMLIROpAttr = 23,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -187,32 +192,36 @@ enum TypeCode {
   ///   }
   kStringType = 3,
   ///
+  ///   IntLiteralType {
+  ///   }
+  kIntLiteralType = 4,
+  ///
   ///   SignatureType {
   ///     inputParams: ParamDeclArrayAttr
   ///     resultParams: ParamDeclArrayAttr
   ///     values: FunctionType
   ///     metadata: FnMetadataAttr
   ///   }
-  kSignatureType = 4,
+  kSignatureType = 5,
   ///
   ///   DeclRefType {
   ///     symbol: SymbolRefAttr
   ///     paramValues: ParamBindArrayAttr
   ///   }
-  kDeclRefType = 5,
+  kDeclRefType = 6,
   ///
   ///   TargetType {
   ///   }
-  kTargetType = 6,
+  kTargetType = 7,
   ///
   ///   BuildInfoType {
   ///   }
-  kBuildInfoType = 7,
+  kBuildInfoType = 8,
   ///
   ///   VariadicType {
   ///     elementType: TypedAttr
   ///   }
-  kVariadicType = 8,
+  kVariadicType = 9,
 };
 
 } // namespace Encoding
@@ -244,6 +253,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
+  EnvAttr readEnvAttr(BytecodeReader &reader) const;
   Attribute readParamOperatorAttr(BytecodeReader &reader) const;
   Attribute readParameterizedTypeConstantAttr(BytecodeReader &reader) const;
   ParamDeclRefAttr readParamDeclRefAttr(BytecodeReader &reader) const;
@@ -272,6 +282,7 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclRefAttr attr, BytecodeWriter &writer) const;
   void write(ParamIndexRefAttr attr, BytecodeWriter &writer) const;
+  void write(EnvAttr attr, BytecodeWriter &writer) const;
   void write(ParamOperatorAttr attr, BytecodeWriter &writer) const;
   void write(ParameterizedTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(SymbolConstantAttr attr, BytecodeWriter &writer) const;
@@ -350,6 +361,8 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readTargetParamAttr(reader);
   case Encoding::kBuildInfoParamAttr:
     return readBuildInfoParamAttr(reader);
+  case Encoding::kEnvAttr:
+    return readEnvAttr(reader);
   case Encoding::kParamOperatorAttr:
     return readParamOperatorAttr(reader);
   case Encoding::kVariadicAttr:
@@ -383,8 +396,8 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
                                       BytecodeWriter &writer) const {
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
-            DTypeConstantAttr, FnMetadataAttr, MLIROpAttr, ParamBindAttr,
-            ParamDeclAttr, ParamDeclRefAttr, ParamIndexRefAttr,
+            DTypeConstantAttr, EnvAttr, FnMetadataAttr, MLIROpAttr,
+            ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr, ParamIndexRefAttr,
             ParamOperatorAttr, ParameterizedTypeConstantAttr,
             SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
             VariadicAttr>([&](auto attr) {
@@ -439,7 +452,7 @@ KGENBytecodeInterface::readBuildInfoParamAttr(BytecodeReader &reader) const {
   BuildInfoAttr info;
   if (failed(reader.readAttribute(info)))
     return BuildInfoParamAttr();
-  return BuildInfoParamAttr::get(info, BuildInfoType::get(getContext()));
+  return BuildInfoParamAttr::get(info);
 }
 
 void KGENBytecodeInterface::write(BuildInfoParamAttr attr,
@@ -646,6 +659,21 @@ void KGENBytecodeInterface::write(ParamIndexRefAttr attr,
 }
 
 //===----------------------------------------------------------------------===//
+// EnvAttr
+
+EnvAttr KGENBytecodeInterface::readEnvAttr(BytecodeReader &reader) const {
+  DictionaryAttr values;
+  if (failed(reader.readAttribute(values)))
+    return {};
+  return EnvAttr::get(values);
+}
+
+void KGENBytecodeInterface::write(EnvAttr attr, BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kEnvAttr);
+  writer.writeAttribute(attr.getValues());
+}
+
+//===----------------------------------------------------------------------===//
 // ParamOperatorAttr
 
 Attribute
@@ -716,7 +744,7 @@ KGENBytecodeInterface::readTargetParamAttr(BytecodeReader &reader) const {
   TargetInfoAttr target;
   if (failed(reader.readAttribute(target)))
     return TargetParamAttr();
-  return TargetParamAttr::get(target, TargetType::get(getContext()));
+  return TargetParamAttr::get(target);
 }
 
 void KGENBytecodeInterface::write(TargetParamAttr attr,
@@ -795,6 +823,8 @@ Type KGENBytecodeInterface::readType(BytecodeReader &reader) const {
     return DTypeType::get(getContext());
   case Encoding::kStringType:
     return StringType::get(getContext());
+  case Encoding::kIntLiteralType:
+    return IntLiteralType::get(getContext());
   case Encoding::kSignatureType:
     return readSignatureType(reader);
   case Encoding::kDeclRefType:
@@ -834,6 +864,10 @@ LogicalResult KGENBytecodeInterface::writeType(Type type,
       })
       .Case([&](StringType) {
         writer.writeVarInt(Encoding::kStringType);
+        return success();
+      })
+      .Case([&](IntLiteralType) {
+        writer.writeVarInt(Encoding::kIntLiteralType);
         return success();
       })
       .Case([&](TargetType) {

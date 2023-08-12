@@ -715,9 +715,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (type.isa<DTypeType>()) {
       auto dtype = KGENDType::getFromString(keyword);
       if (succeeded(dtype)) {
-        value = DTypeConstantAttr::getChecked(p.getEncodedSourceLoc(loc),
-                                              p.getContext(), *dtype, type);
-        return success(value != Attribute());
+        value = DTypeConstantAttr::get(p.getContext(), *dtype);
+        return success();
       }
     }
 

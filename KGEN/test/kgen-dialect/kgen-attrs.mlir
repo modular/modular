@@ -34,3 +34,6 @@ kgen.generator @return_one() -> index {
 
 // CHECK: #kgen.int_literal<5> : !kgen.int_literal
 "some.op"() {data = #kgen.int_literal<5> : !kgen.int_literal} : () -> ()
+
+// CHECK: #kgen.env<{bar = 1 : index, foo}>
+"some.op"() {env = #kgen.env<{bar = 1 : index, foo}>} : () -> ()

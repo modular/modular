@@ -160,6 +160,10 @@ def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// ParamBindArrayAttr
+//===----------------------------------------------------------------------===//
+
 /// An array of ParamBindAttr's.
 def ParamBindArrayAttr
     : KGEN_ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
@@ -197,6 +201,10 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
 
   let genVerifyDecl = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ConstraintArrayAttr
+//===----------------------------------------------------------------------===//
 
 /// An array of ConstraintAttr's.
 def ConstraintArrayAttr
@@ -506,19 +514,17 @@ def KGEN_DTypeConstantAttr : KGEN_ExprAttr<"DTypeConstant", "dtype.constant",
 
   /// The value of a DTypeConstantAttr is always signless i8 constant value
   /// and the type is always !kgen.dtype.
-  let parameters = (ins "KGENDType":$dType,
-                        AttributeSelfTypeParameter<"">:$type);
-
-  let builders = [AttrBuilder<(ins "KGENDType":$dtype)>];
+  let parameters = (ins "KGENDType":$dType);
 
   let assemblyFormat = "`<` $dType `>`";
-  let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
     /// Check if the DType is convertible to the MLIR type.
     bool isConvertibleTo(Type type);
     /// Check if the MLIR type can be converted from the DType.
     bool isConvertibleFrom(Type type);
+    /// Get the type of the attribute. It is always DTypeType.
+    Type getType() const;
   }];
 }
 
@@ -587,18 +593,19 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
     }
     ```
   }];
+  let parameters = (ins "TargetInfoAttr":$target);
+  let hasCustomAssemblyFormat = 1;
 
-  let parameters = (ins "TargetInfoAttr":$target,
-                         AttributeSelfTypeParameter<"", "TargetType">:$type);
-
-  let builders =[
-    AttrBuilderWithInferredContext<(ins "TargetInfoAttr":$target,
-                                        "TargetType":$type), [{
-      return get(type.getContext(), target, type);
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TargetInfoAttr":$target), [{
+      return $_get(target.getContext(), target);
     }]>
   ];
 
-  let hasCustomAssemblyFormat = 1;
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always TargetType.
+    Type getType() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -642,17 +649,19 @@ def KGEN_BuildInfoParamAttr : KGEN_ExprAttr<"BuildInfoParam", "build_info"> {
     ```
   }];
 
-  let parameters = (ins "BuildInfoAttr":$buildInfo,
-                        AttributeSelfTypeParameter<"", "BuildInfoType">:$type);
+  let parameters = (ins "BuildInfoAttr":$buildInfo);
+  let hasCustomAssemblyFormat = 1;
 
   let builders =[
-    AttrBuilderWithInferredContext<(ins "BuildInfoAttr":$buildInfo,
-                                        "BuildInfoType":$type), [{
-      return get(type.getContext(), buildInfo, type);
+    AttrBuilderWithInferredContext<(ins "BuildInfoAttr":$buildInfo), [{
+      return get(buildInfo.getContext(), buildInfo);
     }]>
   ];
 
-  let hasCustomAssemblyFormat = 1;
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is also BuildInfoType.
+    Type getType() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
