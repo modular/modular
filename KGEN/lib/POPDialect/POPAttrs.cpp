@@ -511,19 +511,18 @@ POP::StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr StructExtractAttr::get(TypedAttr structValue, IntegerAttr fieldNo) {
+TypedAttr StructExtractAttr::get(TypedAttr structValue, int64_t fieldNo) {
   auto structType = ::cast<StructType>(structValue.getType());
-  auto field = size_t(fieldNo.getInt());
-  assert(field < structType.getElementTypes().size() &&
+  assert(static_cast<size_t>(fieldNo) < structType.getElementTypes().size() &&
          "struct extract index out of range");
   return get(structValue.getContext(), structValue, fieldNo,
-             ParamRefType::get(structType.getElementTypes()[field]));
+             ParamRefType::get(structType.getElementTypes()[fieldNo]));
 }
 
 TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
-                                 IntegerAttr fieldNo, Type resultType) {
+                                 int64_t fieldNo, Type resultType) {
   if (auto value = dyn_cast_if_present<StructAttr>(structValue))
-    return value.getValues()[fieldNo.getInt()];
+    return value.getValues()[fieldNo];
 
   return Base::get(context, structValue, fieldNo, resultType);
 }

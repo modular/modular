@@ -119,7 +119,7 @@ lit.struct.decl @IndexField {
 
 // CHECK-LABEL: @structExtract
 kgen.generator @structExtract<p: !kgen.declref<@IndexField> -> res: index>() {
-  // CHECK: kgen.param.result_bind<#pop.struct.extract<:struct<index, index> p, 1 : index>>
+  // CHECK: kgen.param.result_bind<#pop.struct.extract<:struct<index, index> p, 1>>
   kgen.param.result_bind<#lit.struct.extract<:!kgen.declref<@IndexField> p, "second">>
   kgen.return
 }

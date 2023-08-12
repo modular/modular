@@ -7,7 +7,7 @@
 #ifndef MDIALECT_BYTECODE
 #define MDIALECT_BYTECODE
 
-include "mlir/IR/BytecodeBase.td"
+include "Support/Compiler/Bytecode.td"
 
 //===----------------------------------------------------------------------===//
 // MDialect Types
@@ -59,12 +59,6 @@ def AlignedBytesAttr : DialectAttribute<(attr
   VarInt:$align
 )>;
 
-def StringAttrArray :
-  WithParser<"succeeded($_reader.readAttributes($_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"$_writer.writeAttributes($_getter)",
-  WithType<"SmallVector<StringAttr>">>>>;
-
 def MultiLineStringAttr : DialectAttribute<(attr
   StringAttrArray:$value
 )>;
@@ -90,12 +84,6 @@ def MemRefAttr : DialectAttribute<(attr
   SignedVarInt:$offset,
   Type:$type
 )>;
-
-def String :
-  WithParser<"succeeded($_reader.readString($_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"$_writer.writeOwnedString($_getter)",
-  WithType<"StringRef">>>>;
 
 def LLVMTriple :
   WithParser<"succeeded(parseTriple($_reader, $_var))",
