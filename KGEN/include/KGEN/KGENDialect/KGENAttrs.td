@@ -867,39 +867,6 @@ def KGEN_DecoratorsAttr
 }
 
 //===----------------------------------------------------------------------===//
-// RegionAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_RegionAttr
-    : KGEN_ExprAttr<"Region", "param.region"> {
-  let summary = "region to be used as a local parameter";
-  let description = [{
-    This attribute stores the necessary attributes to allow a region to
-    participate in normal parameter resolution. A region referenced
-    by an attribute of this kind may have additional restrictions
-    based on whether or not it captures SSA values - the caller is
-    responsible for ensuring those restrictions are fulfilled.
-  }];
-  let parameters = (ins "StringAttr":$regionName,
-                        OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-                        "BoolAttr":$isolated,
-                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$decl, "bool":$isolated)>,
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "ArrayRef<TypedAttr>":$paramValues,
-                                        "BoolAttr":$isolated,
-                                        "SignatureType":$type)>,
-  ];
-
-  let assemblyFormat = [{
-    `<` $regionName `,` `[` custom<ParameterValues>($paramValues) `]` `,`
-    `isolated` `=` $isolated `>`
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // ExportKindAttr
 //===----------------------------------------------------------------------===//
 

@@ -22,13 +22,6 @@ kgen.generator @return_one() -> index {
   b = #kgen.parameterizedtype.constant<!pop.array<apply(:() -> index @return_one), i1>>
 } : () -> ()
 
-"some.op"() {
-  // CHECK: a = #kgen.param.region<"aRegion", [], isolated = true> : !kgen.signature<() -> ()>,
-  a = #kgen<param.region<"aRegion" , [<>], isolated = true>> : !kgen.signature<() -> ()>,
-  // CHECK-SAME: b = #kgen.param.region<"bRegion", [<1>], isolated = false> : !kgen.signature<(index) -> index>
-  b = #kgen<param.region<"bRegion" , [<1>], isolated = false>> : !kgen.signature<(index) -> (index)>
-} : () -> ()
-
 // CHECK: #kgen.param.index.ref<0, false, 0> : index
 "some.op"() {ref = #kgen.param.index.ref<0, false, 0> : index} : () -> ()
 

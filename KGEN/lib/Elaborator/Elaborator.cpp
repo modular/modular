@@ -500,23 +500,6 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// getMangledRegionParamName
-//===----------------------------------------------------------------------===//
-
-/// Mangles a region parameter's name with its func parent in order to get a
-/// unique name. This is necessary because we need to ensure we inline the
-/// region from the correct parent when we're doing inlining.
-static StringAttr getMangledRegionParamName(ParamDeclareRegionOp decl) {
-  auto parentFunc = decl->getParentOfType<FuncOp>();
-  assert(parentFunc && "The parent must be a FuncOp");
-  // Construct a name from the region's parameter decl and the parent func. This
-  // is required to ensure we get the right region when we resolve it.
-  std::string paramName = decl.getParamDecl().getName().getValue().str() + "_" +
-                          parentFunc.getNameAttr().getValue().str();
-  return StringAttr::get(decl.getContext(), paramName);
-}
-
-//===----------------------------------------------------------------------===//
 // collectOpsToProcess
 //===----------------------------------------------------------------------===//
 
@@ -663,12 +646,6 @@ private:
                                  ParamNode *calleeNode,
                                  std::vector<ImplNode *> &concrete);
 
-  /// Process a param.declare.region op by creating a generator with the correct
-  /// captures. We don't specialize the generator until the call-site because we
-  /// don't know what the actual input parameters are supposed to be until then.
-  LogicalResult processParamDeclareRegionOp(ImplNode *parent,
-                                            ParamDeclareRegionOp regionDecl);
-
   /// Process a param.if op by evaluating the condition and elaborating and
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
@@ -776,7 +753,6 @@ private:
 
   /// Remove parameter declare regions after generator elaboration.
   DenseMap<StringAttr, ParameterUseDefGraph *> knownRegions;
-  SmallVector<OwningOpRef<ParamDeclareRegionOp>> paramDeclareRegionOps;
 };
 } // namespace
 
@@ -1456,47 +1432,7 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
                                                GeneratorUserOpInterface call) {
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
-  if (auto sym = dyn_cast<SymbolConstantAttr>(symbol))
-    return processGeneratorUser(call, sym, parent);
-
-  auto decl = dyn_cast<RegionAttr>(symbol);
-  if (LLVM_UNLIKELY(!decl)) {
-    parent->setToError(ErrorTree(call.getLoc(),
-                                 "concrete parameter must be a symbol or a "
-                                 "region (compiler bug, please report!)"));
-    return ElaborationState::error();
-  }
-
-  // OK we found a region, put it into the machinery.
-  ParameterUseDefGraph *regionGraph = knownRegions.lookup(decl.getRegionName());
-  Region *region = regionGraph->scope;
-  LLVM_DEBUG(logger.logOp("Inlining call to parameter region:",
-                          region->getParentOp()));
-
-  // Delete the call operation now, so when the new frame consisting of the
-  // inlined operations has been processed, the elaborator can immediately
-  // continue on to the next operation.
-  assert(parent->stack.back().ops.back() == call);
-  parent->stack.back().ops.pop_back();
-
-  // Collect all the ops to process *in the region*.
-  std::vector<Operation *> opsToRewrite;
-  llvm::append_range(opsToRewrite, llvm::reverse(regionGraph->paramOps));
-  collectOpsToProcess(region, *regionGraph, opsToRewrite);
-
-  // Push a new work item.
-  ImplNode::WorkItem item{std::move(opsToRewrite), parent->getEvaluator(),
-                          [](ImplNode *) { return success(); }};
-
-  // Set any parameter bindings on the region in the evaluator context.
-  item.evaluator.clearCache();
-  for (auto [decl, value] : llvm::zip(
-           cast<ParamDeclareRegionOp>(region->getParentOp()).getInputParams(),
-           decl.getParamValues()))
-    item.evaluator.setOrOverwriteParameterValue(decl, value);
-
-  parent->stack.push_back(std::move(item));
-  return ElaborationState::skipFrame();
+  return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1548,44 +1484,6 @@ ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
   // Suspend elaboration. The actual search will be performed in isolation
   // later.
   return ElaborationState::skipNode();
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamDeclareRegionOp
-//===----------------------------------------------------------------------===//
-
-/// Process a param.declare.region by creating a generator for the contained
-/// region.
-LogicalResult
-ElaboratorImpl::processParamDeclareRegionOp(ImplNode *parent,
-                                            ParamDeclareRegionOp regionDecl) {
-  StringAttr regionName = getMangledRegionParamName(regionDecl);
-  // Set the region's parameter decl as the value for this name. That will
-  // signal to the call_param handler that it needs to inline the region it
-  // finds for that decl. The region attr itself holds onto a bit that knows if
-  // the region is isolated from above (in SSA-land) or not.
-  parent->getEvaluator().setOrOverwriteParameterValue(
-      regionDecl.getParamDecl().getName(),
-      RegionAttr::get(
-          regionName, {},
-          BoolAttr::get(regionDecl.getContext(),
-                        operationIsIsolatedFromAbove(regionDecl)),
-          cast<SignatureType>(regionDecl.getParamDecl().getType())));
-
-  // Save the known region parameter use-def graph.
-  auto found =
-      parent->paramGraph.nestedScopes.find(&regionDecl.getBodyRegion());
-  assert(found != parent->paramGraph.nestedScopes.end() &&
-         "must have a nested region");
-  LLVM_DEBUG(logger << "Storing known region: " << regionName << "\n");
-  knownRegions[regionName] = &found->getSecond();
-
-  // Transfer ownership to the elaborator.
-  regionDecl->remove();
-  paramDeclareRegionOps.push_back(
-      OwningOpRef<ParamDeclareRegionOp>(regionDecl));
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1881,9 +1779,6 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
   if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
     TimeTraceScope<EnableTracing> traceScope("processParamDeclareOp");
     return processParamDeclareOp(node, declare);
-  } else if (auto region = dyn_cast<ParamDeclareRegionOp>(op)) {
-    TimeTraceScope<EnableTracing> traceScope("processParamDeclareRegionOp");
-    return processParamDeclareRegionOp(node, region);
   } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
     TimeTraceScope<EnableTracing> traceScope("processParamResultBindOp");
     return processParamResultBindOp(node, bind);
