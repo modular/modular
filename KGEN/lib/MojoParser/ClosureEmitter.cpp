@@ -133,7 +133,8 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, parent.getLoc(), astDecl, /*forceGenerateDestructor*/ true);
+      declOp, parent.getLoc(), astDecl, /*generateFieldwiseInit*/ false,
+      /*forceGenerateDestructor*/ true);
   LIT::FuncOp destructor = stubs.getDestructor();
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
@@ -200,7 +201,7 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, astDecl.getLoc(), astDecl);
+      declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit*/ false);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();

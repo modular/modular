@@ -10,13 +10,16 @@
 
 #include "StructEmitter.h"
 #include "ASTDecl.h"
+#include "CallEmission.h"
 #include "DeclResolver.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
+#include "ParserBase.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+
 #include "llvm/ADT/StringExtras.h"
 #include <bitset>
 
@@ -36,7 +39,8 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
   FnEffects fnEffects = FnEffects();
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
-  if (!ASTType(resultType).isRegisterPassable(loc, shared))
+  if (ASTType(resultType).getRegisterPassability(loc, shared) !=
+      StructDeclOp::RP_RegisterPassableTrivial)
     fnEffects = fnEffects | FnEffects::OwnedResult;
 
   // TODO: Should raise if anything we invoke raises.
@@ -78,6 +82,113 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
       StructDeclOp::RP_RegisterPassableTrivial)
     funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
+  Type selfType = ASTDecl::computeSelfTypeForStruct(structOp);
+  ASTDecl &astDecl = shared.declResolver->getDeclForTypeSymbol(
+      cast<DeclRefType>(selfType).getSymbol());
+
+  ASTDecl &decl = shared.declResolver->addFullyResolvedDecl(
+      funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
+      &astDecl);
+
+  if (Operation *existing =
+          shared.declResolver->finalizeFuncSignature(funcOp, decl)) {
+    shared.emitError(loc,
+                     "Duplicate definition of " + funcOp.getSymName().str());
+    return cast<M::KGEN::LIT::FuncOp>(existing);
+  }
+  return funcOp;
+}
+
+/// This synthesizes an __init__ method that accepts values for every field of
+/// a struct, making it easy for external clients to initialize it.
+LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
+    SMLoc location, StructDeclOp structOp, ArrayRef<Type> argTypes,
+    ArrayRef<ValueInputConvention> argConventions,
+    ArrayRef<StringAttr> argNames) {
+  Type selfType = ASTDecl::computeSelfTypeForStruct(structOp);
+  Type resultType;
+  bool isMemoryOnly =
+      structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+
+  // Figure out the type of the 'self' argument/result.
+  if (isMemoryOnly)
+    resultType = shared.getNoneType();
+  else
+    resultType = selfType;
+
+  auto specialFnId =
+      isMemoryOnly ? SpecialFunctionKind::kInit : SpecialFunctionKind::kInitReg;
+
+  // Create the FuncOp and ASTDecl for the method.
+  LIT::FuncOp funcOp =
+      synthesizeMethodInStruct("__init__", argTypes, argConventions, argNames,
+                               resultType, structOp, specialFnId, location);
+
+  // Set up the body.
+  ImplicitLocOpBuilder builder =
+      ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
+  Block *body = funcOp.getBody();
+  builder.setInsertionPointToStart(body);
+  builder.setLoc(funcOp->getLoc());
+  ASTDecl *funcDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(funcOp.getBoundReference()).getSymbol());
+  ExprEmitter emitter(shared, *funcDecl, builder);
+
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  // For a memory-only initializer, we emit a bunch of stores to fields indexing
+  // self.
+  if (isMemoryOnly) {
+    BlockArgument selfArg = body->getArgument(0);
+    assert(selfArg.getType().isa<POP::PointerType>());
+    size_t idx = 1;
+    for (StructFieldOp field : structOp.getFieldDecls()) {
+      // Add the block argument, get it as an RValue since it is owned.
+      BlockArgument arg = body->getArgument(idx);
+      CValue argVal;
+      if (argConventions[idx] == ValueInputConvention::OwnedInReg)
+        argVal = SRValue(arg);
+      else if (argConventions[idx] == ValueInputConvention::BorrowedInReg)
+        argVal = SBValue(arg);
+      else
+        argVal = MRValue(arg);
+
+      // Project self to the right field and store the RValue.
+      auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);
+      DeclRefNode srcExpr(StringRef(location.getPointer(), 1));
+      emitter.emitStoreToLValue({argVal, &srcExpr}, SLValue(fieldPtr),
+                                EC_AttributeRefBase);
+      ++idx;
+    }
+
+    // Finish off the function with a return + lit.endfunc.
+    ExprEmitter::emitNormalReturn(
+        builder,
+        builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
+        funcOp);
+    builder.create<LIT::EndFuncOp>();
+    return funcOp;
+  }
+
+  funcOp.setIsStatic(true);
+
+  // Otherwise, emit all the values and finish with a struct create.  We know
+  // all the subfields must be register passable.
+  SmallVector<Value> fieldVals;
+  for (size_t idx = 0, e = argTypes.size(); idx != e; ++idx) {
+    // Add the block argument, get it as an RValue since it is owned.
+    BlockArgument arg = body->getArgument(idx);
+    fieldVals.push_back(arg);
+  }
+
+  auto result = SRValue(builder.create<StructCreateOp>(
+      selfType, fieldVals,
+      StringArrayAttr::get(emitter.getContext(), argNames)));
+
+  ExprEmitter::emitNormalReturn(builder, result, funcOp);
+  builder.create<LIT::EndFuncOp>();
   return funcOp;
 }
 
@@ -177,60 +288,108 @@ LIT::FuncOp StructEmitter::addVoidMethod(
 }
 
 struct ValueInfo {
-  enum FuncIndex { Destruct = 0, Move = 1, Copy = 2 };
+  enum FuncIndex { Destruct = 0, Move = 1, Copy = 2, FieldwiseInit = 3 };
 
   static ValueInfo createValueInfo(StructDeclOp structDeclOp,
                                    SharedState &shared) {
-    std::bitset<3> existingFunctions;
+    std::bitset<4> existingFunctions;
     existingFunctions.reset();
     Type selfType = ASTDecl::computeSelfTypeForStruct(structDeclOp);
     ASTDecl &astDecl = shared.declResolver->getDeclForTypeSymbol(
         cast<DeclRefType>(selfType).getSymbol());
-    for (auto &childDecl : astDecl.getDeclsInScope()) {
-      for (auto iter = childDecl.second.begin(); iter != childDecl.second.end();
-           iter++) {
-        ASTDecl *declaration = *iter;
-        // Resolving the signature will guarantee the special kind is set.
-        if (failed(shared.declResolver->resolveSignature(
-                *declaration, declaration->getLoc())))
-          return {};
 
-        auto func = dyn_cast<LIT::FuncOp>(**iter);
-        if (!func)
-          continue;
-        switch ((SpecialFunctionKind)func.getSpecialFnKind()) {
-        case SpecialFunctionKind::kDel:
-          existingFunctions[FuncIndex::Destruct].flip();
-          break;
-        case SpecialFunctionKind::kCopyInitReg:
-        case SpecialFunctionKind::kCopyInit:
-          existingFunctions[FuncIndex::Copy].flip();
-          break;
-        case SpecialFunctionKind::kMoveInit:
-          existingFunctions[FuncIndex::Move].flip();
-          break;
-        default:
+    auto setBit = [&](StringRef name, SpecialFunctionKind kind,
+                      unsigned index) -> LogicalResult {
+      LookupResult lookupResult =
+          shared.lookupAndResolveDecl(name, astDecl.getLoc(), astDecl,
+                                      /*searchParentScopes=*/false);
+      if (lookupResult.isSuccess()) {
+        if (lookupResult.getIfSuccess().size() > 1)
+          return failure();
+        else if (lookupResult.getIfSuccess().size() == 1) {
+          ASTDecl *result = lookupResult.getIfSuccess().front();
+          if (auto func = dyn_cast<LIT::FuncOp>(*result))
+            if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
+              existingFunctions[index].flip();
+        }
+      }
+      return success();
+    };
+    bool isMemoryOnly =
+        structDeclOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
+    if (failed(
+            setBit("__del__", SpecialFunctionKind::kDel, FuncIndex::Destruct)))
+      return {};
+    if (failed(setBit("__copyinit__",
+                      isMemoryOnly ? SpecialFunctionKind::kCopyInit
+                                   : SpecialFunctionKind::kCopyInitReg,
+                      FuncIndex::Copy)))
+      return {};
+    if (isMemoryOnly)
+      if (failed(setBit("__moveinit__", SpecialFunctionKind::kMoveInit,
+                        FuncIndex::Move)))
+        return {};
+    LookupResult inits =
+        shared.lookupAndResolveDecl("__init__", astDecl.getLoc(), astDecl,
+                                    /*searchParentScopes=*/false);
+    if (inits.isErroneous())
+      return {};
+
+    unsigned numFields = std::distance(structDeclOp.getFieldDecls().begin(),
+                                       structDeclOp.getFieldDecls().end());
+    for (ASTDecl *declaration : inits.getIfSuccess()) {
+      auto func = dyn_cast<LIT::FuncOp>(*declaration);
+      if (!func)
+        continue;
+      auto signature = func.getSignature();
+      ArrayRef<Type> inputTypes = signature.getValueInputs();
+      ArrayRef<ValueInputConvention> convs =
+          signature.getValueInputConventions();
+      if (isMemoryOnly) {
+        inputTypes = inputTypes.drop_front();
+        convs = convs.drop_front();
+      }
+      // TODO: Handle default arguments.
+      if (inputTypes.size() != numFields)
+        continue;
+
+      bool isMatch = true;
+      for (auto [type, conv, field] :
+           llvm::zip(inputTypes, convs, structDeclOp.getFieldDecls())) {
+        // Strip the pointer type if present.
+        Type argType = type;
+        if (conv != ValueInputConvention::OwnedInReg &&
+            conv != ValueInputConvention::BorrowedInReg)
+          argType = ASTType(argType).getPointerElementType();
+        StructFieldOp op = field;
+        if (argType != op.getType()) {
+          isMatch = false;
           break;
         }
       }
+      if (isMatch)
+        existingFunctions[FuncIndex::FieldwiseInit].flip();
     }
     return ValueInfo(existingFunctions);
   }
   bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
   bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
   bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
+  bool hasFieldwiseInit() const {
+    return existingFunctions[FuncIndex::FieldwiseInit];
+  }
   ValueInfo() : initialized(false) {}
   operator bool() const { return initialized; }
 
 private:
-  ValueInfo(std::bitset<3> const &existingFunctions)
+  ValueInfo(std::bitset<4> const &existingFunctions)
       : existingFunctions(existingFunctions), initialized(true) {}
-  std::bitset<3> existingFunctions;
+  std::bitset<4> existingFunctions;
   bool initialized;
 };
 
 GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
-    StructDeclOp declOp, SMLoc loc, ASTDecl &parent,
+    StructDeclOp declOp, SMLoc loc, ASTDecl &parent, bool generateFieldwiseInit,
     bool forceGenerateDestructor) {
   ValueInfo valueInfo = ValueInfo::createValueInfo(declOp, shared);
   if (!valueInfo)
@@ -243,7 +402,44 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
   StringAttr selfName = b.getStringAttr("self");
   StringAttr existingName = b.getStringAttr("existing");
   LIT::FuncOp destructorFunc;
-
+  LIT::FuncOp init;
+  if (!valueInfo.hasFieldwiseInit() && generateFieldwiseInit) {
+    SmallVector<Type> argTypes;
+    SmallVector<ValueInputConvention> argConventions;
+    SmallVector<StringAttr> argNames;
+    if (isMemoryOnly) {
+      argTypes.push_back(POP::PointerType::get(selfType));
+      argConventions.push_back(ValueInputConvention::InitSelf);
+      argNames.push_back(StringAttr::get(shared.getContext(), "self"));
+    }
+    // We declare all of the operands to the init constructor as owned.  This
+    // enables it to work with move-only fields, and, for copyable types, forces
+    // the copy into the caller, which can then be elided with a consume or
+    // RValue.
+    for (auto fieldOp : declOp.getFieldDecls()) {
+      ASTType fieldType = fieldOp.getType();
+      ValueInputConvention conv;
+      switch (fieldType.getRegisterPassability(loc, shared)) {
+      default:
+        llvm_unreachable("unknown case");
+      case StructDeclOp::RP_MemoryOnly:
+        fieldType = POP::PointerType::get(fieldType);
+        conv = ValueInputConvention::OwnedInMem;
+        break;
+      case StructDeclOp::RP_RegisterPassable:
+        conv = ValueInputConvention::OwnedInReg;
+        break;
+      case StructDeclOp::RP_RegisterPassableTrivial:
+        conv = ValueInputConvention::BorrowedInReg;
+        break;
+      }
+      argTypes.push_back(fieldType);
+      argConventions.push_back(conv);
+      argNames.push_back(fieldOp.getNameAttr());
+    }
+    init = synthesizeMemberwiseInit(loc, declOp, argTypes, argConventions,
+                                    argNames);
+  }
   if (!valueInfo.hasDestructor()) {
     ASTDecl &structDecl = shared.declResolver->getDeclForTypeSymbol(
         cast<DeclRefType>(selfType).getSymbol());
@@ -266,53 +462,44 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     }
 
     if (needsDtor) {
-      std::string name = "__del__";
       destructorFunc = addVoidMethod(
-          declOp, name, SmallVector<Type>({ptrToSelf}),
+          declOp, "__del__", SmallVector<Type>({ptrToSelf}),
           SmallVector<ValueInputConvention>({ValueInputConvention::OwnedInMem}),
           SmallVector<StringAttr>({selfName}), SpecialFunctionKind::kDel, loc);
-      shared.declResolver->addFullyResolvedDecl(
-          destructorFunc.getOperation(),
-          StringAttr::get(shared.getContext(), name), loc, &parent);
     }
   }
   LIT::FuncOp copyFunc;
   if (!valueInfo.hasCopy() && declOp.getRegisterPassable() !=
                                   StructDeclOp::RP_RegisterPassableTrivial) {
-    std::string name = "__copyinit__";
     if (isMemoryOnly) {
-      copyFunc =
-          addVoidMethod(declOp, name, SmallVector<Type>({ptrToSelf, ptrToSelf}),
-                        SmallVector<ValueInputConvention>(
-                            {ValueInputConvention::InitSelf,
-                             ValueInputConvention::BorrowedInMem}),
-                        SmallVector<StringAttr>({selfName, existingName}),
-                        SpecialFunctionKind::kCopyInit, loc);
+      copyFunc = addVoidMethod(
+          declOp, "__copyinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
+          SmallVector<ValueInputConvention>(
+              {ValueInputConvention::InitSelf,
+               ValueInputConvention::BorrowedInMem}),
+          SmallVector<StringAttr>({selfName, existingName}),
+          SpecialFunctionKind::kCopyInit, loc);
     } else {
       copyFunc = synthesizeMethodInStruct(
-          name, SmallVector<Type>({selfType}),
+          "__copyinit__", SmallVector<Type>({selfType}),
           SmallVector<ValueInputConvention>(
               {ValueInputConvention::BorrowedInReg}),
           SmallVector<StringAttr>({existingName}), selfType, declOp,
           SpecialFunctionKind::kCopyInitReg, loc);
     }
-    shared.declResolver->addFullyResolvedDecl(
-        copyFunc.getOperation(), StringAttr::get(shared.getContext(), name),
-        loc, &parent);
   }
   LIT::FuncOp moveFunc;
   if (!valueInfo.hasMove() && isMemoryOnly) {
-    std::string name = "__moveinit__";
     moveFunc = addVoidMethod(
-        declOp, name, SmallVector<Type>({ptrToSelf, ptrToSelf}),
+        declOp, "__moveinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
         SmallVector<ValueInputConvention>(
             {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem}),
         SmallVector<StringAttr>({selfName, existingName}),
         SpecialFunctionKind::kMoveInit, loc);
-    shared.declResolver->addFullyResolvedDecl(
-        moveFunc.getOperation(), StringAttr::get(shared.getContext(), name),
-        loc, &parent);
   }
+
+  if (init)
+    return GeneratedStubs(destructorFunc, copyFunc, moveFunc, init);
   return GeneratedStubs(destructorFunc, copyFunc, moveFunc);
 }
 
