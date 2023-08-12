@@ -549,9 +549,8 @@ fn rethrowsToRethrow():
 # Issue #12358
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
-   # CHECK-NEXT: %0 = kgen.param.constant: {{.*}}@"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "thing"}>>
-   # CHECK-NEXT: %1 = kgen.call {{.*}}@"$Error"::@Error::@"__init__({{.*}}$StringLiteral::StringLiteral)"(%0) : (!kgen.declref<{{.*}}@"$StringLiteral"::@StringLiteral> borrow) ownedresult -> !kgen.declref<{{.*}}@"$Error"::@Error>
-   # CHECK-NEXT: lit.raise %1 : <{{.*}}@"$Error"::@Error>
+   # CHECK-NEXT: %0 = kgen.param.constant: {{.*}}Error = <{{.*}}>
+   # CHECK-NEXT: lit.raise %0 : <{{.*}}@"$Error"::@Error>
    raise "thing"
 
 struct S:
@@ -573,23 +572,23 @@ fn fail(str: StringRef) raises -> S:
 
 fn call_raising():
   try:
-    # CHECK: %[[VAR0:.*]] = lit.handle_variant %3, %x : (!pop.variant<{{.*}}@"$Error"::@Error, !lit.none>, !pop.pointer<@"$statements"::@S>) -> !lit.none {
-    # CHECK:       %[[VAR1:.*]] = pop.variant.get %3 : !pop.variant<{{.*}}@"$Error"::@Error, !lit.none> as !lit.none
-    # CHECK:       lit.yield %[[VAR1]] : !lit.none
-    # CHECK:     } else {
-    # CHECK:      %[[VAR2:.*]] = pop.variant.get %3 : !pop.variant<{{.*}}@"$Error"::@Error, !lit.none> as !kgen.declref<{{.*}}@"$Error"::@Error>
-    # CHECK:       lit.raise %[[VAR2]] : <{{.*}}@"$Error"::@Error>
-    # CHECK:       kgen.unreachable
-    # CHECK:     }
+    # CHECK: %[[VAR0:.*]] = lit.handle_variant %[[ERR:.*]], %x
+    # CHECK:   %[[VAR1:.*]] = pop.variant.get %[[ERR]]
+    # CHECK:   lit.yield %[[VAR1]] : !lit.none
+    # CHECK: } else {
+    # CHECK:   %[[VAR2:.*]] = pop.variant.get %[[ERR]]
+    # CHECK:   lit.raise %[[VAR2]]
+    # CHECK:   kgen.unreachable
+    # CHECK: }
     let x = fail("hello world")
-    # CHECK:  %[[VAR1:.*]] = lit.handle_variant %5, %y : (!pop.variant<{{.*}}@"$Error"::@Error, !lit.none>, !pop.pointer<@"$statements"::@S>) -> !lit.none {
-    # CHECK:    %[[VAR2:.*]] = pop.variant.get %5 : !pop.variant<{{.*}}@"$Error"::@Error, !lit.none> as !lit.none
-    # CHECK:    lit.yield %[[VAR2]] : !lit.none
-    # CHECK:  } else {
-    # CHECK:    %[[VAR2:.*]] = pop.variant.get %5 : !pop.variant<{{.*}}@"$Error"::@Error, !lit.none> as !kgen.declref<{{.*}}@"$Error"::@Error>
-    # CHECK:    lit.raise %[[VAR2]] : <{{.*}}@"$Error"::@Error>
-    # CHECK:    kgen.unreachable
-    # CHECK:  }
+    # CHECK: %[[VAR1:.*]] = lit.handle_variant %[[ERR:.*]], %y
+    # CHECK:   %[[VAR2:.*]] = pop.variant.get %[[ERR]]
+    # CHECK:   lit.yield %[[VAR2]] : !lit.none
+    # CHECK: } else {
+    # CHECK:   %[[VAR2:.*]] = pop.variant.get %[[ERR]]
+    # CHECK:   lit.raise %[[VAR2]]
+    # CHECK:   kgen.unreachable
+    # CHECK: }
     let y = S()
   except e:
     pass

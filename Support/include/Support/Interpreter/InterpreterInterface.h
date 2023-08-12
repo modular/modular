@@ -56,6 +56,10 @@ public:
   /// Free heap-allocated memory from the interpreter.
   ErrorOrSuccess freeHeapMemory(int64_t addr);
 
+  /// Map a constant global memory handle into the interpreter if it hasn't been
+  /// added yet and return the address to the start of the blob.
+  ErrorOr<int64_t> mapConstGlobalMemory(MemoryHandle hdl);
+
   /// Get writable memory for the given address to interpreter memory.
   ///
   /// The `writePointer` flag must be set if the memory is being written to as a
@@ -168,6 +172,9 @@ private:
   /// Run the interpreter until completion, returning the final results of the
   /// operation.
   ErrorTreeOr<SmallVector<Attribute>> runInterpreter();
+
+  /// The MLIR context.
+  MLIRContext *ctx;
 
   /// The interpreter target configuration.
   TargetInfoAttr target;

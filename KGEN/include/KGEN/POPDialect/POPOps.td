@@ -2340,7 +2340,8 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
 // StringAddressOp
 //===----------------------------------------------------------------------===//
 
-def POP_StringAddressOp : POPOp<"string.address", [Pure]> {
+def POP_StringAddressOp : POPOp<"string.address", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Get the address of a string.";
   let description = [{
     The `pop.string.address` operation gets the pointer of the first byte of a

@@ -1435,6 +1435,28 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// StringAddressOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  DialectResourceManager &mgr = MemoryHandle::getManagerInterface(getContext());
+  // Ensure the string is null-terminated. This is safe because `StringAttr`
+  // always stores a null terminator.
+  auto value = cast<StringAttr>(operands.front());
+  StringRef str(value.data(), value.size() + 1);
+  if (value.getValue().empty())
+    str = "\0";
+
+  MemoryHandle hdl = mgr.getOrAddStringResource(str);
+  ErrorOr<int64_t> addr = state.mapConstGlobalMemory(hdl);
+  if (addr.isError())
+    return ErrorTree(getLoc(), addr.takeError());
+  state.mapResults(PointerAttr::get(getContext(), addr.takeValue(), getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StringSizeOp
 //===----------------------------------------------------------------------===//
 
