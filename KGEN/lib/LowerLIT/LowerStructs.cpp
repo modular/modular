@@ -241,9 +241,7 @@ Attribute StructOperationLowerer::replace(Attribute attr) {
       if (isa<Type>(substituteStructRef(litStructType)))
         return structValue;
 
-    return POP::StructExtractAttr::get(
-        cast<TypedAttr>(structValue),
-        IntegerAttr::get(IndexType::get(attr.getContext()), fieldNo));
+    return POP::StructExtractAttr::get(cast<TypedAttr>(structValue), fieldNo);
   };
 
   auto processSymbolConstantAttr = [&](SymbolConstantAttr attr) -> Attribute {

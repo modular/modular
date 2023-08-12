@@ -240,7 +240,7 @@ def POP_StructExtractAttr : POP_Attr<"StructExtract", "struct.extract",
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$structValue, "IntegerAttr":$fieldNo,
+  let parameters = (ins "TypedAttr":$structValue, "int64_t":$fieldNo,
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat =
     "`<` custom<ColonTypeParamValue>($structValue) `,` $fieldNo `>`";
@@ -251,9 +251,9 @@ def POP_StructExtractAttr : POP_Attr<"StructExtract", "struct.extract",
     // Override the default builder used by the generated parser.  This computes
     // the result type correctly and performs inline folding.
     AttrBuilderWithInferredContext<
-                (ins "TypedAttr":$structValue, "IntegerAttr":$fieldNO),
+                (ins "TypedAttr":$structValue, "int64_t":$fieldNo),
                      "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$structValue, "IntegerAttr":$fieldNo,
+    AttrBuilder<(ins "TypedAttr":$structValue, "int64_t":$fieldNo,
                      "Type":$resultType), "", "TypedAttr">
 
   ];

@@ -1,4 +1,5 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @simd_constants
 kgen.generator @simd_constants<N, value: !pop.simd<N, si32>>() {

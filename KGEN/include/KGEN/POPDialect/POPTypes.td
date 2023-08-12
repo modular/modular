@@ -496,7 +496,7 @@ def POP_ClosureType : POPType<"Closure", "closure"> {
     ```
   }];
 
-  let parameters = (ins "FunctionType": $func);
+  let parameters = (ins "FunctionType":$func);
   let assemblyFormat = "`<` $func `>`";
 }
 

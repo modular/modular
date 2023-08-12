@@ -19,3 +19,8 @@ mlir_tablegen(POPEnums.h.inc -gen-enum-decls)
 mlir_tablegen(POPEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(MLIRPOPEnumsIncGen)
 add_dependencies(MLIRPOPIncGen MLIRPOPEnumsIncGen)
+
+set(LLVM_TARGET_DEFINITIONS POPDialectBytecode.td)
+mlir_tablegen(POPDialectBytecode.cpp.inc -gen-bytecode -bytecode-dialect="pop")
+add_public_tablegen_target(MLIRPOPDialectBytecodeIncGen)
+add_dependencies(MLIRPOPIncGen MLIRPOPDialectBytecodeIncGen)

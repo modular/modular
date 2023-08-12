@@ -930,7 +930,8 @@ OpFoldResult StructCreateOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
   if (auto container = adaptor.getContainer())
-    return StructExtractAttr::get(cast<TypedAttr>(container), getIndexAttr());
+    return StructExtractAttr::get(cast<TypedAttr>(container),
+                                  getIndexAttr().getInt());
   if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
     return structCreate.getOperand(adaptor.getIndex().getSExtValue());
   return {};

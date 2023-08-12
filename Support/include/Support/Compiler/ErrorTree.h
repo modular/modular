@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_ELABORATOR_ERRORTREE_H
-#define KGEN_ELABORATOR_ERRORTREE_H
+#ifndef SUPPORT_COMPILER_ERRORTREE_H
+#define SUPPORT_COMPILER_ERRORTREE_H
 
 #include "Support/ADT/SmartVariant.h"
 #include "Support/Error.h"
@@ -171,4 +171,4 @@ public:
 
 } // namespace M
 
-#endif // KGEN_ELABORATOR_ERRORTREE_H
+#endif // SUPPORT_COMPILER_ERRORTREE_H
