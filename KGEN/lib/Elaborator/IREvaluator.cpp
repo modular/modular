@@ -61,8 +61,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // to emit an error during the evaluation attempt.
   if (op.getOpcode() == POC::CurrentTarget) {
     // Retrieve the contextual compilation target info.
-    return {TargetParamAttr::get(elaborator->getTarget(),
-                                 TargetType::get(op.getContext()))};
+    return {TargetParamAttr::get(elaborator->getTarget())};
   }
 
   if (op.getOpcode() == POC::GetAllImpls)
