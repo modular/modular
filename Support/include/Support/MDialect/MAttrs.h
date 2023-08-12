@@ -88,6 +88,9 @@ public:
   /// Convert the data layout to its specification string.
   StringRef toString() const { return dlSpecStr; }
 
+  /// Default constructor used during bytecode parsing.
+  DataLayout() {}
+
 private:
   DataLayout(StringRef dlSpecStr);
 
@@ -133,7 +136,7 @@ private:
 // MemoryBlob
 //===----------------------------------------------------------------------===//
 
-enum class MemoryKind { Stack, Heap, ConstGlobal };
+enum class MemoryKind : uint8_t { Stack, Heap, ConstGlobal };
 
 class MemoryBlob {
 public:

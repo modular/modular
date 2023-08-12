@@ -7,10 +7,13 @@
 #include "Support/MDialect/MDialect.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MAttrs.h"
+#include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 
@@ -178,6 +181,119 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// MDialectBytecodeInterface
+//===----------------------------------------------------------------------===//
+
+using mlir::DialectBytecodeReader;
+using mlir::DialectBytecodeWriter;
+using mlir::get;
+
+static LogicalResult readMemoryBlobs(DialectBytecodeReader &reader,
+                                     SmallVectorImpl<MemoryBlob> &blobs) {
+  uint64_t size;
+  if (failed(reader.readVarInt(size)))
+    return failure();
+  blobs.reserve(size);
+
+  auto readPointerRegion = [&](MemoryBlob::PointerRegion &region) {
+    int64_t offset, blobIndex, blobOffset;
+    if (failed(reader.readSignedVarInt(offset)) ||
+        failed(reader.readSignedVarInt(blobIndex)) ||
+        failed(reader.readSignedVarInt(blobOffset)))
+      return failure();
+    return LogicalResult::success();
+  };
+
+  for (unsigned i = 0; i < size; ++i) {
+    FailureOr<MemoryHandle> hdl = reader.readResourceHandle<MemoryHandle>();
+    uint64_t kind;
+    if (failed(hdl) || failed(reader.readVarInt(kind)))
+      return failure();
+    SmallVector<MemoryBlob::PointerRegion> regions;
+    if (failed(reader.readList(regions, readPointerRegion)))
+      return failure();
+    blobs.emplace_back(*hdl, static_cast<MemoryKind>(kind), std::move(regions));
+  }
+
+  return success();
+}
+
+static void writeMemoryBlobs(DialectBytecodeWriter &writer,
+                             ArrayRef<MemoryBlob> blobs) {
+  writer.writeVarInt(blobs.size());
+
+  auto writePointerRegion = [&](const MemoryBlob::PointerRegion &region) {
+    writer.writeSignedVarInt(region.offset);
+    writer.writeSignedVarInt(region.blobIndex);
+    writer.writeSignedVarInt(region.blobOffset);
+  };
+
+  for (const MemoryBlob &blob : blobs) {
+    writer.writeResourceHandle(blob.getHandle());
+    writer.writeVarInt(static_cast<uint64_t>(blob.getKind()));
+    writer.writeList(blob.getPointerRegions(), writePointerRegion);
+  }
+}
+
+static LogicalResult parseTriple(DialectBytecodeReader &reader,
+                                 llvm::Triple &triple) {
+  StringRef tripleStr;
+  if (failed(reader.readString(tripleStr)))
+    return failure();
+  triple = llvm::Triple(tripleStr);
+  return success();
+}
+
+static void printTriple(MLIRContext *ctx, DialectBytecodeWriter &writer,
+                        const llvm::Triple &triple) {
+  writer.writeOwnedString(StringAttr::get(ctx, triple.str()));
+}
+
+static LogicalResult parseDataLayout(DialectBytecodeReader &reader,
+                                     DataLayout &dl) {
+  StringRef dlStr;
+  if (failed(reader.readString(dlStr)))
+    return failure();
+  ErrorOr<DataLayout> dlOr = DataLayout::parse(dlStr);
+  if (dlOr.isError())
+    return reader.emitError(dlOr.getError());
+  dl = dlOr.takeValue();
+  return success();
+}
+
+static void printDataLayout(MLIRContext *ctx, DialectBytecodeWriter &writer,
+                            const DataLayout &dl) {
+  writer.writeOwnedString(dl.toString());
+}
+
+namespace {
+#include "Support/MDialect/MDialectBytecode.cpp.inc"
+
+struct MDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
+  MDialectBytecodeInterface(Dialect *dialect)
+      : BytecodeDialectInterface(dialect) {}
+
+  Attribute readAttribute(DialectBytecodeReader &reader) const override {
+    return ::readAttribute(getContext(), reader);
+  }
+
+  LogicalResult writeAttribute(Attribute attr,
+                               DialectBytecodeWriter &writer) const override {
+    return ::writeAttribute(attr, writer);
+  }
+
+  Type readType(DialectBytecodeReader &reader) const override {
+    return ::readType(getContext(), reader);
+  }
+
+  LogicalResult writeType(Type type,
+                          DialectBytecodeWriter &writer) const override {
+    return ::writeType(type, writer);
+  }
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // MDialect
 //===----------------------------------------------------------------------===//
 
@@ -189,6 +305,7 @@ void MDialect::initialize() {
 
   auto &blobMgr = addInterface<DialectResourceManager>();
   addInterface<MOpAsmDialectInterface>(blobMgr);
+  addInterface<MDialectBytecodeInterface>();
 }
 
 //===----------------------------------------------------------------------===//

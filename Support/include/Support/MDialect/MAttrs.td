@@ -21,7 +21,7 @@ class MAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 // PrimitivesArrayAttr
 //===----------------------------------------------------------------------===//
 
-def M_PrimitivesArrayData : ArrayRefParameter<"uint8_t",
+def M_PrimitiveArrayData : ArrayRefParameter<"uint8_t",
     "aligned storage for primitive elements"> {
   let allocator = [{
     $_dst = copyIntoAlignedBuffer($_allocator, $_self, elementType);
@@ -29,7 +29,7 @@ def M_PrimitivesArrayData : ArrayRefParameter<"uint8_t",
   let cppStorageType = "std::vector<uint8_t>";
 }
 
-def M_PrimitivesArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
+def M_PrimitiveArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
   let summary = "an array of primitive elements";
   let description = [{
     The `#M.primitives_array` attribute represents an array of primitive
@@ -52,7 +52,7 @@ def M_PrimitivesArrayAttr : MAttr<"PrimitiveArray", "primitives_array"> {
     ```
   }];
 
-  let parameters = (ins M_PrimitivesArrayData:$data, "Type":$elementType);
+  let parameters = (ins M_PrimitiveArrayData:$data, "Type":$elementType);
   let assemblyFormat = [{
     `<` $elementType `` custom<PrimitiveArray>($data, ref($elementType)) `>`
   }];
