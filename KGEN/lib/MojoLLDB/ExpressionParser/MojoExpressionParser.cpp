@@ -369,8 +369,8 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
       (void *)lldbEvaluateSpecializationsAddr);
 
   EvaluateExpressionOptions opts;
-  // Disable timeout because the evaluator could take a very long time.
-  opts.SetTimeout(Timeout<std::micro>(std::nullopt));
+  // FIXME(19136): Set an infinite timeout.
+  opts.SetTimeout(Timeout<std::micro>(std::chrono::seconds(1000)));
   opts.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
 
   // Create the thread plan to call `lldb_evaluate_specializations`.

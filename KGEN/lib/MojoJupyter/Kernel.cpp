@@ -87,9 +87,8 @@ struct MojoExpressionEvaluationOptions : public SBExpressionOptions {
     SetUnwindOnError(false);
     SetGenerateDebugInfo(true);
 
-    // Sets an infinite timeout so that users can run arbitrarily long
-    // computations.
-    SetTimeoutInMicroSeconds(0);
+    // FIXME(19136): Set an infinite timeout.
+    SetTimeoutInMicroSeconds(1000000000);
 
     ref().SetREPLEnabled(true);
     ref().SetColorizeErrors(true);
