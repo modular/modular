@@ -33,3 +33,8 @@ kgen.generator @return_one() -> index {
 
 // CHECK: #kgen<decorators[1 : i64]>
 "some.op"() {decorators = #kgen<decorators[1 : i64]>} : () -> ()
+
+// CHECK: #kgen.int_literal<1234>
+// CHECK-SAME: #kgen.int_literal<12345678901234567899012345678901234567890>
+"some.op"() {a = #kgen.int_literal<1234> : !kgen.int_literal,
+             b = #kgen.int_literal<12345678901234567899012345678901234567890> : !kgen.int_literal} : () -> ()
