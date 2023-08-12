@@ -30,3 +30,6 @@ kgen.generator @return_one() -> index {
 
 // CHECK: #kgen.env<{bar = 1 : index, foo}>
 "some.op"() {env = #kgen.env<{bar = 1 : index, foo}>} : () -> ()
+
+// CHECK: #kgen<decorators[1 : i64]>
+"some.op"() {decorators = #kgen<decorators[1 : i64]>} : () -> ()

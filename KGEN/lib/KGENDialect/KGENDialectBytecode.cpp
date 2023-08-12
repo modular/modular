@@ -167,6 +167,16 @@ enum AttributeCode {
   ///     type: SignatureType
   ///   }
   kMLIROpAttr = 23,
+  ///
+  ///  DecoratorsAttr {
+  ///    value: TypedAttr[]
+  ///  }
+  kDecoratorsAttr = 24,
+  ///
+  ///  ExportKindAttr {
+  ///    value: varint
+  ///  }
+  kExportKindAttr = 25,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -249,11 +259,12 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Attribute readConcreteTypeConstantAttr(BytecodeReader &reader) const;
   ConstraintAttr readConstraintAttr(BytecodeReader &reader) const;
   DTypeConstantAttr readDTypeConstantAttr(BytecodeReader &reader) const;
+  EnvAttr readEnvAttr(BytecodeReader &reader) const;
+  ExportKindAttr readExportKindAttr(BytecodeReader &reader) const;
   FnMetadataAttr readFnMetadataAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
   ParamDeclAttr readParamDeclAttr(BytecodeReader &reader) const;
-  EnvAttr readEnvAttr(BytecodeReader &reader) const;
   Attribute readParamOperatorAttr(BytecodeReader &reader) const;
   Attribute readParameterizedTypeConstantAttr(BytecodeReader &reader) const;
   ParamDeclRefAttr readParamDeclRefAttr(BytecodeReader &reader) const;
@@ -276,13 +287,14 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(ConcreteTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(ConstraintAttr attr, BytecodeWriter &writer) const;
   void write(DTypeConstantAttr attr, BytecodeWriter &writer) const;
+  void write(EnvAttr attr, BytecodeWriter &writer) const;
+  void write(ExportKindAttr attr, BytecodeWriter &writer) const;
   void write(FnMetadataAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclAttr attr, BytecodeWriter &writer) const;
   void write(ParamDeclRefAttr attr, BytecodeWriter &writer) const;
   void write(ParamIndexRefAttr attr, BytecodeWriter &writer) const;
-  void write(EnvAttr attr, BytecodeWriter &writer) const;
   void write(ParamOperatorAttr attr, BytecodeWriter &writer) const;
   void write(ParameterizedTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(SymbolConstantAttr attr, BytecodeWriter &writer) const;
@@ -369,6 +381,10 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readVariadicAttr(reader);
   case Encoding::kMLIROpAttr:
     return readMLIROpAttr(reader);
+  case Encoding::kDecoratorsAttr:
+    return readArrayOfAttrs<DecoratorsAttr>(reader);
+  case Encoding::kExportKindAttr:
+    return readExportKindAttr(reader);
   default:
     reader.emitError() << "unknown kgen attribute code: " << code;
     return Attribute();
@@ -396,9 +412,9 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
                                       BytecodeWriter &writer) const {
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
-            DTypeConstantAttr, EnvAttr, FnMetadataAttr, MLIROpAttr,
-            ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr, ParamIndexRefAttr,
-            ParamOperatorAttr, ParameterizedTypeConstantAttr,
+            DTypeConstantAttr, EnvAttr, ExportKindAttr, FnMetadataAttr,
+            MLIROpAttr, ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr,
+            ParamIndexRefAttr, ParamOperatorAttr, ParameterizedTypeConstantAttr,
             SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
             VariadicAttr>([&](auto attr) {
         write(attr, writer);
@@ -422,6 +438,9 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
       })
       .Case([&](TypeArrayAttr attr) {
         return writeArrayOfTypes(attr, Encoding::kTypeArrayAttr, writer);
+      })
+      .Case([&](DecoratorsAttr attr) {
+        return writeArrayOfAttrs(attr, Encoding::kDecoratorsAttr, writer);
       })
       .Default([&](Attribute) { return failure(); });
 }
@@ -519,8 +538,39 @@ void KGENBytecodeInterface::write(DTypeConstantAttr attr,
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetadataAttr
+// EnvAttr
+
+EnvAttr KGENBytecodeInterface::readEnvAttr(BytecodeReader &reader) const {
+  DictionaryAttr values;
+  if (failed(reader.readAttribute(values)))
+    return {};
+  return EnvAttr::get(values);
+}
+
+void KGENBytecodeInterface::write(EnvAttr attr, BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kEnvAttr);
+  writer.writeAttribute(attr.getValues());
+}
+
 //===----------------------------------------------------------------------===//
+// ExportKindAttr
+
+ExportKindAttr
+KGENBytecodeInterface::readExportKindAttr(BytecodeReader &reader) const {
+  uint64_t kind;
+  if (failed(reader.readVarInt(kind)))
+    return {};
+  return ExportKindAttr::get(getContext(), static_cast<ExportKind>(kind));
+}
+
+void KGENBytecodeInterface::write(ExportKindAttr attr,
+                                  BytecodeWriter &writer) const {
+  writer.writeVarInt(Encoding::kExportKindAttr);
+  writer.writeVarInt(static_cast<uint64_t>(attr.getValue()));
+}
+
+//===----------------------------------------------------------------------===//
+// FnMetadataAttr
 
 FnMetadataAttr
 KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
@@ -656,21 +706,6 @@ void KGENBytecodeInterface::write(ParamIndexRefAttr attr,
   writer.writeVarInt(attr.getIsResult());
   writer.writeVarInt(attr.getIndex());
   writer.writeType(attr.getType());
-}
-
-//===----------------------------------------------------------------------===//
-// EnvAttr
-
-EnvAttr KGENBytecodeInterface::readEnvAttr(BytecodeReader &reader) const {
-  DictionaryAttr values;
-  if (failed(reader.readAttribute(values)))
-    return {};
-  return EnvAttr::get(values);
-}
-
-void KGENBytecodeInterface::write(EnvAttr attr, BytecodeWriter &writer) const {
-  writer.writeVarInt(Encoding::kEnvAttr);
-  writer.writeAttribute(attr.getValues());
 }
 
 //===----------------------------------------------------------------------===//
