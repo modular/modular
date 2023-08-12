@@ -24,3 +24,8 @@ mlir_tablegen(MAttrInterfaces.h.inc -gen-attr-interface-decls)
 mlir_tablegen(MAttrInterfaces.cpp.inc -gen-attr-interface-defs)
 add_public_tablegen_target(MLIRMAttrInterfacesIncGen)
 add_dependencies(MLIRMIncGen MLIRMAttrInterfacesIncGen)
+
+set(LLVM_TARGET_DEFINITIONS MDialectBytecode.td)
+mlir_tablegen(MDialectBytecode.cpp.inc -gen-bytecode -bytecode-dialect="M")
+add_public_tablegen_target(MLIRMDialectBytecodeIncGen)
+add_dependencies(MLIRMIncGen MLIRMDialectBytecodeIncGen)
