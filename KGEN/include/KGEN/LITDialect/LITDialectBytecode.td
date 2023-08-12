@@ -1,0 +1,111 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LITDIALECT_BYTECODE
+#define LITDIALECT_BYTECODE
+
+include "Support/Compiler/Bytecode.td"
+
+//===----------------------------------------------------------------------===//
+// LITDialect Types
+//===----------------------------------------------------------------------===//
+
+def TypeCheckErrorType : DialectType<(type)>;
+
+def UnresolvedType : DialectType<(type)>;
+
+def NoneType : DialectType<(type)>;
+
+def MetaTypeType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  ConcreteAttribute<"ParamBindArrayAttr">:$paramValues
+)>;
+
+def LifetimeType : DialectType<(type)>;
+
+def RefType : DialectType<(type
+  EnumAttr<"bool">:$isMutable,
+  TypedAttr:$elementType,
+  TypedAttr:$lifetime
+)>;
+
+def REPLResultRefType : DialectType<(type
+  Type:$elementType
+)>;
+
+def MagicMLIRAttrType : DialectType<(type)>;
+
+def MagicMLIROpType : DialectType<(type)>;
+
+def MagicMLIRTypeType : DialectType<(type)>;
+
+def LITDialectTypes : DialectTypes<"lit"> {
+  let elems = [
+    TypeCheckErrorType,
+    UnresolvedType,
+    NoneType,
+    MetaTypeType,
+    LifetimeType,
+    RefType,
+    REPLResultRefType,
+    MagicMLIRAttrType,
+    MagicMLIROpType,
+    MagicMLIRTypeType
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// LITDialect Attributes
+//===----------------------------------------------------------------------===//
+
+def DocStringAttr : DialectAttribute<(attr
+  ConcreteAttribute<"StringAttr">:$string,
+  OptionalAttribute<"FileLineColLoc">:$location
+)>;
+
+def UnboundMLIROperationAttr : DialectAttribute<(attr
+  Type:$type,
+  ConcreteAttribute<"StringAttr">:$name,
+  ConcreteAttribute<"DictionaryAttr">:$attrs
+)>;
+
+def NoneAttr : DialectAttribute<(attr
+  ConcreteType<"NoneType">:$type
+)>;
+
+def ModuleAttr : DialectAttribute<(attr
+  ConcreteType<"MetaTypeType">:$type
+)>;
+
+def LifetimeAttr : DialectAttribute<(attr
+  ConcreteType<"LifetimeType">:$type
+)>;
+
+def UnresolvedAliasValueAttr : DialectAttribute<(attr
+  Type:$type
+)>;
+
+def StructAttr : DialectAttribute<(attr
+  WithParser<"succeeded(readStructValues($_reader, $_var))",
+  WithPrinter<"writeStructValues($_writer, $_getter)",
+  WithType<"SmallVector<std::tuple<StringAttr, TypedAttr>>">>>:$values,
+  ConcreteType<"DeclRefType">:$type
+)>;
+
+def LITDialectAttributes : DialectAttributes<"lit"> {
+  let elems = [
+    DocStringAttr,
+    UnboundMLIROperationAttr,
+    NoneAttr,
+    ModuleAttr,
+    LifetimeAttr,
+    UnresolvedAliasValueAttr,
+    StructAttr
+    /*StructExtractAttr*/
+  ];
+}
+
+#endif // LITDIALECT_BYTECODE
