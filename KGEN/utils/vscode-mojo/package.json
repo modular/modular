@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "chokidar": "3.5.2",
+    "ini": "4.1.1",
     "vscode-languageclient": "^8.0.2-next.5"
   },
   "repository": {
