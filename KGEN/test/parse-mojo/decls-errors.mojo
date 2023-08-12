@@ -624,7 +624,8 @@ struct CantSynthesize:
 
 @value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
 struct ResolveErrorIsBubbled:
-   fn failedSig(self) -> unknown: # expected-error {{use of unknown declaration 'unknown'}}
+   var x: Int
+   fn __init__(inout self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
       pass
 
 

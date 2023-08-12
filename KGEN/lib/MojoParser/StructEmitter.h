@@ -22,15 +22,21 @@ public:
   GeneratedStubs() : initialized(false) {}
   GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr)
       : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), initialized(true) {}
+  GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr,
+                 LIT::FuncOp init)
+      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), init(init),
+        initialized(true) {}
   operator bool() const { return initialized; }
   LIT::FuncOp getDestructor() const { return dtor; }
   LIT::FuncOp getCopyConstrucotr() const { return copyCtr; }
   LIT::FuncOp getMoveConstructor() const { return moveCtr; }
+  LIT::FuncOp getFieldwiseInit() const { return init; }
 
 private:
   LIT::FuncOp dtor;
   LIT::FuncOp copyCtr;
   LIT::FuncOp moveCtr;
+  LIT::FuncOp init;
   bool initialized;
 };
 
@@ -50,10 +56,9 @@ public:
   /// destructor but that struct has an init that allocates heap memory. In this
   /// case set the forceGenerateDestructor flag to true to force destructor
   /// generation.
-  GeneratedStubs
-  addMissingValueMemberStubsToStruct(StructDeclOp declOp, SMLoc loc,
-                                     ASTDecl &parent,
-                                     bool forceGenerateDestructor = false);
+  GeneratedStubs addMissingValueMemberStubsToStruct(
+      StructDeclOp declOp, SMLoc loc, ASTDecl &parent,
+      bool generateFieldwiseInit, bool forceGenerateDestructor = false);
 
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
@@ -81,6 +86,12 @@ public:
                              SpecialFunctionKind specialFnID, SMLoc loc,
                              ImplicitLocOpBuilder &builder);
 
+  LIT::FuncOp
+  synthesizeMemberwiseInit(SMLoc location, StructDeclOp structOp,
+                           ArrayRef<Type> argTypes,
+                           ArrayRef<ValueInputConvention> argConventions,
+                           ArrayRef<StringAttr> argNames);
+
 private:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
@@ -90,6 +101,7 @@ private:
                            ArrayRef<StringAttr> argNames, Type resultType,
                            StructDeclOp structOp,
                            SpecialFunctionKind specialFnID, SMLoc loc);
+
   SharedState &shared;
 };
 
