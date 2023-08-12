@@ -15,6 +15,8 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "Support/Compiler/Bytecode.h"
+#include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/Interfaces/FoldInterfaces.h"
@@ -46,13 +48,11 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
     return isa<DeclInterface>(parent);
   }
 };
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // LITOpAsmDialectInterface
 //===----------------------------------------------------------------------===//
 
-namespace {
 struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
   using mlir::OpAsmDialectInterface::OpAsmDialectInterface;
 
@@ -70,6 +70,88 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
         .Default([](Attribute) { return AliasResult::NoAlias; });
   }
 };
+
+//===----------------------------------------------------------------------===//
+// LITDialectBytecodeInterface
+//===----------------------------------------------------------------------===//
+
+using LIT::NoneType;
+using mlir::DialectBytecodeReader;
+using mlir::DialectBytecodeWriter;
+using mlir::get;
+
+static LogicalResult
+readStructValues(DialectBytecodeReader &reader,
+                 SmallVectorImpl<std::tuple<StringAttr, TypedAttr>> &values) {
+  return reader.readList(values, [&](std::tuple<StringAttr, TypedAttr> &value) {
+    if (failed(reader.readAttribute(std::get<0>(value))) ||
+        failed(reader.readAttribute(std::get<1>(value))))
+      return failure();
+    return LogicalResult::success();
+  });
+}
+
+static void
+writeStructValues(DialectBytecodeWriter &writer,
+                  ArrayRef<std::tuple<StringAttr, TypedAttr>> values) {
+  writer.writeList(values, [&](auto &value) {
+    writer.writeAttribute(std::get<0>(value));
+    writer.writeAttribute(std::get<1>(value));
+  });
+}
+
+#include "KGEN/LITDialect/LITDialectBytecode.cpp.inc"
+
+static TypedAttr readStructExtractAttr(DialectBytecodeReader &reader) {
+  TypedAttr structValue;
+  StringAttr field;
+  Type type;
+  if (failed(reader.readAttribute(structValue)) ||
+      failed(reader.readAttribute(field)) || failed(reader.readType(type)))
+    return {};
+  return StructExtractAttr::get(structValue, field, type);
+}
+
+static LogicalResult writeStructExtractAttr(StructExtractAttr attr,
+                                            DialectBytecodeWriter &writer) {
+  writer.writeAttribute(attr.getStructValue());
+  writer.writeAttribute(attr.getField());
+  writer.writeType(attr.getType());
+  return success();
+}
+
+struct LITDialectBytecodeInterface : public mlir::BytecodeDialectInterface {
+  LITDialectBytecodeInterface(Dialect *dialect)
+      : BytecodeDialectInterface(dialect) {}
+
+  Attribute readAttribute(DialectBytecodeReader &reader) const override {
+    FailureOr<APInt> isStructExtract = reader.readAPIntWithKnownWidth(1);
+    if (failed(isStructExtract))
+      return {};
+    if (isStructExtract->isOne())
+      return readStructExtractAttr(reader);
+    return ::readAttribute(getContext(), reader);
+  }
+
+  LogicalResult writeAttribute(Attribute attr,
+                               DialectBytecodeWriter &writer) const override {
+    auto structExtract = dyn_cast<StructExtractAttr>(attr);
+    writer.writeAPIntWithKnownWidth(APInt(1, static_cast<bool>(structExtract)));
+    if (structExtract)
+      return writeStructExtractAttr(structExtract, writer);
+    return ::writeAttribute(attr, writer);
+  }
+
+  Type readType(DialectBytecodeReader &reader) const override {
+    return ::readType(getContext(), reader);
+  }
+
+  LogicalResult writeType(Type type,
+                          DialectBytecodeWriter &writer) const override {
+    return ::writeType(type, writer);
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -103,6 +185,8 @@ void LITDialect::initialize() {
 #define GET_OP_LIST
 #include "KGEN/LITDialect/LIT.cpp.inc"
       >();
+
+  addInterface<LITDialectBytecodeInterface>();
 }
 
 Operation *LITDialect::materializeConstant(OpBuilder &b, Attribute value,
@@ -117,7 +201,7 @@ Operation *LITDialect::materializeConstant(OpBuilder &b, Attribute value,
 RefType RefType::get(bool isMutable, TypedAttr elementType,
                      TypedAttr lifetime) {
   auto *ctx = elementType.getContext();
-  return get(ctx, BoolAttr::get(ctx, isMutable), elementType, lifetime);
+  return get(ctx, isMutable, elementType, lifetime);
 }
 
 RefType RefType::get(bool isMutable, Type elementType, TypedAttr lifetime) {
@@ -148,13 +232,12 @@ static ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &value) {
 }
 
 /// Print/Parse the 'mut' keyword as 1, and its absence as 0.
-static void printMutFlag(AsmPrinter &p, BoolAttr value) {
-  if (value.getValue())
+static void printMutFlag(AsmPrinter &p, bool value) {
+  if (value)
     p << "mut ";
 }
-static ParseResult parseMutFlag(AsmParser &p, BoolAttr &value) {
-  value =
-      BoolAttr::get(p.getContext(), succeeded(p.parseOptionalKeyword("mut")));
+static ParseResult parseMutFlag(AsmParser &p, bool &value) {
+  value = succeeded(p.parseOptionalKeyword("mut"));
   return success();
 }
 

@@ -27,6 +27,17 @@ class ConcreteType<string type> :
   WithPrinter<"$_writer.writeType($_getter)",
   WithType<type>>>>;
 
+class ConcreteAttribute<string type> :
+  WithParser<"succeeded($_reader.readAttribute($_var))",
+  WithBuilder<"$_args",
+  WithPrinter<"$_writer.writeAttribute($_getter)",
+  WithType<type>>>>;
+
+class OptionalAttribute<string type> :
+  WithParser<"succeeded($_reader.readOptionalAttribute($_var))",
+  WithPrinter<"$_writer.writeOptionalAttribute($_getter)",
+  WithType<type>>>;
+
 class EnumAttr<string type> :
   WithParser<"succeeded(M::readEnum<" # type # ">($_reader, $_var))",
   WithPrinter<"$_writer.writeVarInt(static_cast<uint64_t>($_getter))",

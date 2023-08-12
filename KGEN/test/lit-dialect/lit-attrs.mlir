@@ -1,4 +1,5 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK: #lit.none : !lit.none
 "a"() {a = #lit.none : !lit.none} : () -> ()

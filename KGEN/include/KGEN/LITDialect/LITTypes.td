@@ -140,7 +140,7 @@ def LIT_RefType : LITType<"Ref", "ref"> {
     ```
   }];
 
-  let parameters = (ins "BoolAttr":$isMutable,
+  let parameters = (ins "bool":$isMutable,
                         "TypedAttr":$elementType, "TypedAttr":$lifetime);
   let assemblyFormat = [{
     `<` custom<MutFlag>($isMutable) `` custom<PrettyType>($elementType) `,`
@@ -180,12 +180,11 @@ def LIT_REPLResultRefType : LITType<"REPLResultRef", "replresultref"> {
     ```
   }];
 
-  let parameters = (ins "Type" : $elementType);
+  let parameters = (ins "Type":$elementType);
   let assemblyFormat = "`<` $elementType `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type"
-                                    : $elementType)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType)>,
   ];
 
   let extraClassDeclaration = [{
