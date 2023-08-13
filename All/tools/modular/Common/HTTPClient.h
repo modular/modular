@@ -99,7 +99,7 @@ struct HTTPResponse {
   // If we have CURL Error
   std::optional<std::string> transportErrorMessage;
 
-  bool isSuccess() { return kind != Kind::Success; }
+  bool isSuccess() { return kind == Kind::Success; }
   bool isError() { return kind != Kind::Success; }
   ErrorOrSuccess asError();
 };
