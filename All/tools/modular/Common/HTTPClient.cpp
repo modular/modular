@@ -35,17 +35,19 @@ HTTPContext::~HTTPContext() {
   curl_global_cleanup();
 }
 
-ErrorOrSuccess HTTPResponse::asError() {
+ErrorOrSuccess HTTPResponse::asError(StringRef extraContext) {
   switch (kind) {
   case Success:
     return success();
   case TransportError:
     assert(transportErrorMessage && "current error is not set");
-    return Error("http error: " + *transportErrorMessage);
+    return Error("http error: " + *transportErrorMessage + " - " +
+                 extraContext);
   case HTTPResponseError:
     assert(responseCode && "responseCode is not set");
-    return Error(
-        llvm::formatv("http error: response code {0}", responseCode).str());
+    return Error(llvm::formatv("http error: response code {0} - {1}",
+                               responseCode, extraContext)
+                     .str());
   }
 }
 
@@ -206,7 +208,9 @@ HTTPCASBackend::findImpl(StringRef keyHash,
     return std::nullopt;
 
   // Return the error we hit.
-  return response.asError().takeError();
+  std::string errorContextStr =
+      llvm::formatv("Looking for {0}", keyHashB64).str();
+  return response.asError(errorContextStr).takeError();
 }
 
 ErrorOrSuccess HTTPCASBackend::clearImpl() {

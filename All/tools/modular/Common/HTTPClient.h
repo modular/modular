@@ -101,7 +101,7 @@ struct HTTPResponse {
 
   bool isSuccess() { return kind == Kind::Success; }
   bool isError() { return kind != Kind::Success; }
-  ErrorOrSuccess asError();
+  ErrorOrSuccess asError(StringRef extraContext = "");
 };
 
 /// HTTPClient that wraps libcurl.
