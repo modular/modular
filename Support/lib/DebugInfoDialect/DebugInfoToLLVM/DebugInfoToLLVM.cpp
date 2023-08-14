@@ -444,8 +444,12 @@ static void convertDbgValueToAddr(Operation *op) {
                  LLVM::ConstantOp>(*insertPt))
         ++insertPt;
 
+      // Block arguments might not contain debuginfo scope (which can trip up
+      // verifiers later), so to keep it simple, we can just use the location of
+      // containing op.
       OpBuilder storeBuilder(&*insertPt);
-      storeBuilder.create<LLVM::StoreOp>(value.getLoc(), value, allocaOp);
+      storeBuilder.create<LLVM::StoreOp>(
+          value.getParentRegion()->getParentOp()->getLoc(), value, allocaOp);
     }
   });
 }
