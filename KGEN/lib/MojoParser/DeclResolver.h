@@ -135,9 +135,6 @@ public:
     return resolve(decl, DeclResolvedness::fully, loc);
   }
 
-  /// Fully resolve the declaration and everything in it.
-  LogicalResult recursivelyResolveFully(ASTDecl &decl, llvm::SMLoc loc);
-
   /// Given the symbol for a lit type declaration, return the ASTDecl that
   /// corresponds to it.  This doesn't allow null symbols, so it always
   /// succeeds.
