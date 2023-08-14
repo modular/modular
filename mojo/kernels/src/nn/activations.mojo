@@ -7,7 +7,7 @@
 """The module contains implementations of activation functions."""
 
 from Assert import assert_param
-from bit import _is_neg
+from math.bit import _is_neg
 from DType import DType
 from List import VariadicList
 from LLCL import OutputChainPtr
@@ -24,7 +24,7 @@ from math import (
     tanh,
     fma,
 )
-from polynomial import polynomial_evaluate
+from math.polynomial import polynomial_evaluate
 from SIMD import SIMD
 
 
