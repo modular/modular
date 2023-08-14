@@ -969,8 +969,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
     return Error("function is parametric");
 
   // Make sure to fully resolve the body and everything within it.
-  if (failed(resolver.resolveFully(*decl, decl->getLoc())) ||
-      failed(resolver.recursivelyResolveFully(*decl, decl->getLoc())))
+  if (failed(resolver.resolveFully(*decl, decl->getLoc())))
     return Error("failed to fully resolve function");
   return &func.getBodyRegion();
 }
@@ -2459,8 +2458,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     decl.resolvedness = DeclResolvedness::fully;
     if (failed(resolveBody(funcOp, lexer, decl)))
       return failure();
-    if (failed(recursivelyResolveFully(decl, decl.getLoc())))
-      return failure();
 
     // If the function doesn't actually capture anything, don't demote it to a
     // runtime value.
@@ -2763,27 +2760,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     });
   }
 
-  return success();
-}
-
-LogicalResult DeclResolver::recursivelyResolveFully(ASTDecl &decl,
-                                                    llvm::SMLoc loc) {
-  // Collect decls currently in scope.
-  std::vector<ASTDecl *> initialDecls;
-  for (auto &[name, decls] : decl.declsInScope)
-    for (ASTDecl *decl : decls)
-      initialDecls.push_back(decl);
-  // Start resolving the decls. If any more decls get added, keep resolving
-  // them and no more are added.
-  size_t start = parsedDeclList.size();
-  ArrayRef<ASTDecl *> declsToResolve = initialDecls;
-  while (!declsToResolve.empty()) {
-    for (ASTDecl *decl : declsToResolve)
-      if (failed(resolveFully(*decl, loc)))
-        return failure();
-    declsToResolve = ArrayRef(parsedDeclList).drop_front(start);
-    start = parsedDeclList.size();
-  }
   return success();
 }
 
