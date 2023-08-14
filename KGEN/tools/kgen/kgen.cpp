@@ -274,6 +274,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       targetOr = getMArchFeatures(ctx, clOptions.march, clOptions.mcpu,
                                   clOptions.mtune);
     } else {
+      // If the user provided the target triple without specifying a CPU,
+      // default to `generic`.
+      if (options.targetTriple != llvm::sys::getDefaultTargetTriple()) {
+        if (options.targetCpu == llvm::sys::getHostCPUName())
+          options.targetCpu = "generic";
+        if (options.targetFeatures == getHostCPUFeatures())
+          options.targetFeatures = "";
+      }
+
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.
       targetOr =

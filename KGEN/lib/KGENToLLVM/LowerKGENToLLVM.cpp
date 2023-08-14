@@ -544,6 +544,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   moduleAttrs.set(
       LLVM::LLVMDialect::getDataLayoutAttrName(),
       StringAttr::get(&getContext(), targetInfo.getDataLayout().toString()));
+  moduleAttrs.erase(EnvAttr::getEnvAttrName());
   theModule->setAttrs(moduleAttrs.getDictionary(&getContext()));
 
   // Populate patterns and run the conversion.
