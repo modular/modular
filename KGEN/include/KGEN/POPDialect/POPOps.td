@@ -1679,7 +1679,8 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 // CompilerGlobalLoadOp
 //===----------------------------------------------------------------------===//
 
-def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load"> {
+def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load the value of a global variable";
   let description = [{
     The `pop.compiler.global_load` operation loads a global variable by
@@ -1689,7 +1690,7 @@ def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load"> {
     Example:
 
     ```mlir
-    %0 = pop.global_load "foo" : !pop.scalar<ui32>
+    %0 = pop.compiler.global_load "foo" : !pop.scalar<ui32>
     ```
   }];
 
@@ -1703,7 +1704,8 @@ def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load"> {
 // CompilerGlobalStoreOp
 //===----------------------------------------------------------------------===//
 
-def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store"> {
+def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "store a value into a global variable";
   let description = [{
     The `pop.compiler.global_store` operation stores a value into a global
@@ -1714,7 +1716,7 @@ def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store"> {
 
     ```mlir
     %0 = pop.constant(0) : !pop.scalar<ui32>
-    pop.global_store @foo, %0 : !pop.scalar<ui32>
+    pop.compiler.global_store "foo", %0 : !pop.scalar<ui32>
     ```
   }];
 

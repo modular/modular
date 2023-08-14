@@ -145,6 +145,16 @@ public:
     return values;
   }
 
+  /// Set the value of a named global.
+  void setNamedGlobal(StringAttr name, Attribute value) {
+    namedGlobals[name] = value;
+  }
+
+  /// Get the value of a named global.
+  Attribute getNamedGlobal(StringAttr name) {
+    return namedGlobals.lookup(name);
+  }
+
   //===--------------------------------------------------------------------===//
   // Interpreter Value Management
 
@@ -302,6 +312,11 @@ private:
 
   /// An optional list of return values.
   std::optional<SmallVector<Attribute>> returnValues;
+
+  /// This map implements named global values. Named global values represent a
+  /// mechanism for storing SSA value captures at compile time.
+  /// FIXME(19175): This should live in `StackFrame`.
+  DenseMap<StringAttr, Attribute> namedGlobals;
 };
 } // namespace M
 
