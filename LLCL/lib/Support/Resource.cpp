@@ -6,16 +6,24 @@
 
 #include "LLCL/Support/Resource.h"
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
 using namespace M::LLCL;
 
+/// If true, uses will be printed to llvm::errs() as they begin and end.
+constexpr bool kTraceUsesToErrs = false;
+
 //===----------------------------------------------------------------------===//
 // Private utils
 //===----------------------------------------------------------------------===//
+
+/// Force llvm::errs() messages to be serialized.
+static std::mutex messageMutex;
 
 static bool isReferencing(ResourceUseType type) {
   return type == kReferencingResourceUse;
@@ -44,15 +52,14 @@ static const char *useTypeToString(ResourceUseType type) {
   }
 }
 
-/// Returns true if section overlaps without being exactly equal to
-/// any key in map.
-static bool
-hasOverlappingKey(const llvm::DenseMap<ResourceSection, size_t> &map,
-                  const ResourceSection &section) {
-  return llvm::any_of(
-      map, [&section](const std::pair<ResourceSection, size_t> &pair) {
-        return pair.first.intersects(section) && pair.first != section;
-      });
+static void printNames(const llvm::StringMap<size_t> &names,
+                       llvm::raw_ostream &os) {
+  llvm::interleaveComma(names, os,
+                        [&os](const llvm::StringMapEntry<size_t> &entry) {
+                          os << "'" << entry.first() << "'";
+                          if (entry.second > 1)
+                            os << "(" << entry.second << ")";
+                        });
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,46 +210,61 @@ ResourceUse Resource::beginUse(std::string useName, ResourceUseType useType,
                                ResourceSection section) {
   ResourceUse use(std::move(useName), RCRef<Resource>::copy(this), useType,
                   section);
+
+  if constexpr (kTraceUsesToErrs) {
+    std::lock_guard<std::mutex> innerGuard(messageMutex);
+    llvm::errs() << "begin ";
+    use.print(llvm::errs());
+    llvm::errs() << "\n";
+    llvm::errs().flush();
+  }
+
   std::lock_guard<std::mutex> guard(mu);
 
   // Run the gauntlet of tests.
   if (state == kFreed)
     fatal("attempting to use a freed resource", use);
   if (isReferencing(useType)) {
-    if (hasOverlappingKey(numReferencing, use.section))
-      fatal("attempting to reference overlapping sections of resource", use);
+    if (auto errOr = checkForOverlappingSections(
+            referencing, kContained,
+            /*existingUseType=*/kReferencingResourceUse, use.useType,
+            use.section))
+      fatal(errOr.getError(), use);
   }
   if (isReading(useType)) {
-    if (hasOverlappingKey(numReading, use.section))
-      fatal("attempting to read from overlapping sections of resource", use);
-    if (allWriting.overlapsSection(use.section))
-      fatal("attempting to read from (section of) resource which is also "
-            "being written",
-            use);
+    if (auto errOr = checkForOverlappingSections(
+            reading, kEqual, /*existingUseType=*/kReadingResourceUse,
+            use.useType, use.section))
+      fatal(errOr.getError(), use);
+    if (auto errOr = checkForOverlappingSections(
+            writing, kExclusive, /*existingUseType=*/kWritingResourceUse,
+            use.useType, use.section))
+      fatal(errOr.getError(), use);
     if (!initialized.containsSection(use.section))
       fatal("attempting to read from uninitialized (section of) resource", use);
   }
   if (isWriting(useType)) {
-    if (allReading.overlapsSection(use.section))
-      fatal("attempting to write to (section of) resource which is also being "
-            "read",
-            use);
-    if (allWriting.overlapsSection(use.section))
-      fatal("attempting to write to (section of) resource which is also being "
-            "written",
-            use);
+    if (auto errOr = checkForOverlappingSections(
+            reading, kExclusive, /*existingUseType=*/kReadingResourceUse,
+            use.useType, use.section))
+      fatal(errOr.getError(), use);
+    if (auto errOr = checkForOverlappingSections(
+            writing, kExclusive, /*existingUseType=*/kWritingResourceUse,
+            use.useType, use.section))
+      fatal(errOr.getError(), use);
   }
 
   // Make the state change.
-  addUse(use.name);
   if (isReferencing(useType))
-    addReferencing(use.section);
+    addUseToMap(referencing, use.section, use.name);
   if (isReading(useType)) {
-    addReading(use.section);
+    addUseToMap(reading, use.section, use.name);
     allReading.addSection(use.section);
   }
-  if (isWriting(useType))
+  if (isWriting(useType)) {
+    addUseToMap(writing, use.section, use.name);
     allWriting.addSection(use.section);
+  }
 
   return use;
 }
@@ -280,6 +302,15 @@ void Resource::markFreed() {
 
 void Resource::endUse(const ResourceUse &use) {
   assert(use);
+
+  if constexpr (kTraceUsesToErrs) {
+    std::lock_guard<std::mutex> innerGuard(messageMutex);
+    llvm::errs() << "end ";
+    use.print(llvm::errs());
+    llvm::errs() << "\n";
+    llvm::errs().flush();
+  }
+
   std::lock_guard<std::mutex> guard(mu);
 
   // Run the gauntlet of tests.
@@ -288,22 +319,23 @@ void Resource::endUse(const ResourceUse &use) {
           use);
 
   // Make the state change.
-  removeUse(use.name);
   if (isReferencing(use.useType))
-    removeReferencing(use.section);
+    (void)removeUseFromMap(referencing, use.section, use.name);
   if (isReading(use.useType)) {
-    if (removeReading(use.section))
+    if (removeUseFromMap(reading, use.section, use.name))
       allReading.removeSection(use.section);
   }
-  if (isWriting(use.useType))
-    allWriting.removeSection(use.section);
+  if (isWriting(use.useType)) {
+    if (removeUseFromMap(writing, use.section, use.name))
+      allWriting.removeSection(use.section);
+  }
 }
 
 void Resource::markFreedImpl() {
   // Run the gauntlet of tests.
   if (state == kFreed)
     fatal("attempting to free an already freed resource");
-  if (!numReferencing.empty())
+  if (!referencing.empty())
     fatal("attempting to free a resource while it still has references");
   if (!allReading.empty())
     fatal("attempting to free a resource while it still has readers");
@@ -329,31 +361,39 @@ void Resource::print(llvm::raw_ostream &os) const {
   os << "  state: " << stateToString(state) << "\n";
   os << "  initialized sections:\n";
   initialized.print(os);
-  os << "  in use by:\n";
-  for (const auto &pair : uses) {
-    if (pair.second)
-      os << "     '" << pair.first() << "' (" << pair.second << ")\n";
-  }
-  os << "  referencing by section:\n";
-  for (const auto &pair : numReferencing) {
+  os << "  sections being referenced:\n";
+  for (const auto &[section, names] : referencing) {
     os << "    ";
-    printResourceSection(os, pair.first);
-    os << " (" << pair.second << ")\n";
+    printResourceSection(os, section);
+    os << " {";
+    printNames(names, os);
+    os << "}\n";
   }
   os << "  sections being read:\n";
-  allReading.print(os);
-  os << "  reading by section:\n";
-  for (const auto &pair : numReading) {
+  for (const auto &[section, names] : reading) {
     os << "    ";
-    printResourceSection(os, pair.first);
-    os << " (" << pair.second << ")\n";
+    printResourceSection(os, section);
+    os << " {";
+    printNames(names, os);
+    os << "}\n";
   }
+  os << "  union being read:\n";
+  allReading.print(os);
   os << "  sections being written:\n";
+  for (const auto &[section, names] : writing) {
+    os << "    ";
+    printResourceSection(os, section);
+    os << " {";
+    printNames(names, os);
+    os << "}\n";
+  }
+  os << "  union being written:\n";
   allWriting.print(os);
   os << ")\n";
 }
 
 void Resource::fatal(StringRef message, const ResourceUse &use) {
+  std::lock_guard<std::mutex> guard(messageMutex);
   llvm::errs() << "invalid use of resource: " << message << "\n";
   llvm::errs() << "by use ";
   use.print(llvm::errs());
@@ -365,6 +405,7 @@ void Resource::fatal(StringRef message, const ResourceUse &use) {
 }
 
 void Resource::fatal(StringRef message) {
+  std::lock_guard<std::mutex> guard(messageMutex);
   llvm::errs() << "invalid use of resource: " << message << "\n";
   print(llvm::errs());
   llvm::errs().flush();
@@ -372,35 +413,57 @@ void Resource::fatal(StringRef message) {
          "invalid use of resource: see above error message for details");
 }
 
-void Resource::addUse(StringRef useName) { ++uses[useName]; }
-
-void Resource::removeUse(StringRef useName) {
-  size_t &n = uses[useName];
-  assert(n > 0 && "unbalanced addUse/removeUse calls");
-  if (--n == 0)
-    uses.erase(useName);
+void Resource::addUseToMap(UseMap &map, const ResourceSection &section,
+                           StringRef useName) {
+  ++map[section][useName];
 }
 
-void Resource::addReferencing(const ResourceSection &section) {
-  ++numReferencing[section];
+bool Resource::removeUseFromMap(UseMap &map, const ResourceSection &section,
+                                StringRef useName) {
+  llvm::StringMap<size_t> &names = map[section];
+  size_t &count = names[useName];
+  assert(count > 0 && "unbalanced addUseToMap/removeUseFromMap calls");
+  if (--count == 0)
+    names.erase(useName);
+  if (names.empty()) {
+    map.erase(section);
+    return true;
+  }
+  return false;
 }
 
-void Resource::removeReferencing(const ResourceSection &section) {
-  size_t &n = numReferencing[section];
-  assert(n > 0 && "unbalanced addReferencing/removeReferencing calls");
-  if (--n == 0)
-    numReferencing.erase(section);
-}
+ErrorOrSuccess Resource::checkForOverlappingSections(
+    const UseMap &map, UsageRule usageRule, ResourceUseType existingUseType,
+    ResourceUseType desiredUseType, const ResourceSection &section) {
+  for (auto &[existingSection, names] : map) {
+    if (existingSection.intersects(section)) {
+      switch (usageRule) {
+      case kContained:
+        // Ok provided section is a (possibly equal) sub-section of existing.
+        if (existingSection.contains(section))
+          continue;
+        break;
+      case kEqual:
+        // Ok provided equal.
+        if (existingSection == section)
+          continue;
+        break;
+      case kExclusive:
+        // No overlap is allowed.
+        break;
+      }
 
-void Resource::addReading(const ResourceSection &section) {
-  ++numReading[section];
-}
-
-bool Resource::removeReading(const ResourceSection &section) {
-  size_t &n = numReading[section];
-  assert(n > 0 && "unbalanced addReading/removeReading calls");
-  if (--n > 0)
-    return false;
-  numReading.erase(section);
-  return true;
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      os << "requested section for " << useTypeToString(desiredUseType)
+         << " overlaps with existing section ";
+      printResourceSection(os, existingSection);
+      os << " for " << useTypeToString(existingUseType)
+         << " with active uses {";
+      printNames(names, os);
+      os << "}";
+      return Error(str);
+    }
+  }
+  return success();
 }
