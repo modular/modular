@@ -163,6 +163,17 @@ ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
   return success();
 }
 
+ErrorOrSuccess Config::copyFrom(const Config &other) {
+  const llvm::StringMap<std::string> &otherContents = other.getAllValues();
+  for (const auto &mapEntry : otherContents) {
+    if (kv.contains(mapEntry.first()))
+      return Error(Twine("key ") + mapEntry.first() +
+                   " already exists in the map");
+    kv.insert({mapEntry.first(), mapEntry.second});
+  }
+  return success();
+}
+
 StringRef Config::getValue(StringRef key) {
   std::string upper = key.upper();
   std::replace_if(
@@ -293,69 +304,94 @@ ErrorOrSuccess Config::flush() {
   return success();
 }
 
+/// Get the list of search paths, in order of preference.
+static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths) {
+#ifndef _WIN32
+  // Add $HOME/.modular
+  auto homeDir = llvm::sys::Process::GetEnv("HOME");
+  if (homeDir)
+    paths.push_back(std::filesystem::path(*homeDir) / ".modular");
+
+  // Add /opt/modular
+  paths.push_back("/opt/modular");
+#else  // _WIN32
+  // Add $APPDATA\Local\Modular
+  auto defaultRoot = llvm::sys::Process::GetEnv("APPDATA");
+  assert(defaultRoot.has_value() && "Must have APPDATA");
+  paths.push_back(std::filesystem::path(*defaultRoot) / "Local" / "Modular");
+#endif // _WIN32
+}
+
 std::filesystem::path Config::getModularHomeDirPath() {
-  // If MODULAR_HOME is defined then pick it.
+  // If MODULAR_HOME is defined, use that.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
   if (modularHome)
     return *modularHome;
 
-  // If we cannot find the MODULAR_HOME then use the MODULAR_DERIVED_PATH as
-  // MODULAR_HOME.
-  modularHome = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
-  if (modularHome)
-    return *modularHome;
+  // If MODULAR_DERIVED_PATH is defined, use that.
+  auto derivedPath = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+  if (derivedPath)
+    return *derivedPath;
 
-#ifdef _WIN32
-  // On Windows we use the non-roaming AppData directory. The APPDATA env
-  // variable must always exist.
-  //
-  // For example: C:\path\to\AppData\Local\Modular
-  auto defaultRoot = llvm::sys::Process::GetEnv("APPDATA");
-  assert(defaultRoot.has_value() && "Must have APPDATA");
-  return std::filesystem::path(*defaultRoot) / "Local" / "Modular";
-#else
-  auto homeDir = llvm::sys::Process::GetEnv("HOME");
-  std::filesystem::path defaultRoot;
-  std::error_code ec;
-  // If HOME is set up, but nothing is there, then try to use /etc/modular.
-  if (homeDir) {
-    defaultRoot = *homeDir;
-    defaultRoot /= ".modular";
-    if (std::filesystem::exists(defaultRoot, ec) && !ec)
-      return defaultRoot;
-  }
+  // Get the list of search paths.
+  SmallVector<std::filesystem::path, 2> searchPaths;
+  getSearchPaths(searchPaths);
 
-  // OK - the home root didn't exist or there was nothing there, check
-  // /etc/modular.
-  defaultRoot = "/etc/modular";
-  if (std::filesystem::exists(defaultRoot, ec) && !ec)
-    return defaultRoot;
-
-  // /etc/modular did not exist, switch back to using home if it exists.
-  // This will be an empty dir.
-  if (homeDir) {
-    defaultRoot = *homeDir;
-    defaultRoot /= ".modular";
-    return defaultRoot;
-  }
-
-  // HOME was undefined, finally we can use /etc/modular.
-  return std::filesystem::path("/etc/modular");
-#endif
+  // Check each of the search paths for existence - if none of them exist return
+  // the first of the paths as MODULAR_HOME.
+  auto found =
+      llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
+        std::error_code ec;
+        bool exists = std::filesystem::exists(path, ec);
+        assert(!ec && "error checking for path existence");
+        return exists;
+      });
+  if (found == searchPaths.end())
+    return searchPaths.front();
+  return *found;
 }
 
 std::filesystem::path Config::getConfigFilePath() {
   constexpr llvm::StringLiteral kModularConfigFileName = "modular.cfg";
+  // If we found the config file this way, then return it.
+  auto configFile = findModularFile(kModularConfigFileName);
+  if (configFile)
+    return *configFile;
+
+  // Otherwise, return where it should be placed.
   return getModularHomeDirPath() / kModularConfigFileName.str();
 }
 
-ErrorOrSuccess Config::copyFrom(const Config &other) {
-  const llvm::StringMap<std::string> &otherContents = other.getAllValues();
-  for (const auto &mapEntry : otherContents) {
-    if (kv.contains(mapEntry.first()))
-      return Error(Twine("key ") + mapEntry.first() +
-                   " already exists in the map");
-    kv.insert({mapEntry.first(), mapEntry.second});
+std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
+  // First try and find it in the home dir if we can.
+  std::error_code ec;
+  if (std::filesystem::exists(Config::getModularHomeDirPath() / fileName.str(),
+                              ec)) {
+    assert(!ec && "error trying to check for file existence");
+    return Config::getModularHomeDirPath() / fileName.str();
   }
-  return success();
+
+  // Now we can use the search paths on the system, we didn't find it in the
+  // home dir.
+  SmallVector<std::filesystem::path, 3> searchPaths;
+  getSearchPaths(searchPaths);
+#ifndef _WIN32
+  // Append a path to the search paths on UNIX systems.
+  searchPaths.push_back(std::filesystem::path("/etc/modular"));
+#endif // _WIN32
+
+  // Try to find the file in the provided paths.
+  auto found =
+      llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
+        bool exists = std::filesystem::exists(path / fileName.str(), ec);
+        assert(!ec && "error checking for path existence");
+        return exists;
+      });
+
+  // Was not found, return nullopt.
+  if (found == searchPaths.end())
+    return std::nullopt;
+
+  // We did find it, return that path.
+  return *found;
 }
