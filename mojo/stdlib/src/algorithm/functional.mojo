@@ -16,7 +16,7 @@ from LLCL import (
     AsyncTaskGroupPtr,
 )
 from math import div_ceil, min, max
-from numerics import FlushDenormals
+from math.numerics import FlushDenormals
 from Range import range
 from TargetInfo import triple_is_nvidia_cuda
 
