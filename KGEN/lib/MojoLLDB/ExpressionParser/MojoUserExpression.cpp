@@ -394,8 +394,12 @@ def __lldb_python_extract_symbols():
       pass
 
 
-  __lldb_python_ast = ast.parse("{0}")
-  AssignmentVisitor().visit(__lldb_python_ast)
+  try:
+    __lldb_python_ast = ast.parse("{0}")
+    AssignmentVisitor().visit(__lldb_python_ast)
+  except SyntaxError:
+    import traceback
+    traceback.print_exc()
 
   return symbols
 
