@@ -9,11 +9,14 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace M;
 using namespace KGEN;
@@ -527,14 +530,61 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   }
 
   b.clearInsertionPoint();
-  if (auto newLoc = op.getLoc()->findInstanceOf<FileLineColLoc>())
-    b.setLoc(newLoc);
-  LLVMFuncOp suspendFn = b.createFunc(
-      (coro.asyncFn.getSymName() + ".suspend").str(),
-      LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), captureTypes),
-      Linkage::Internal);
+  MLIRContext *ctx = b.getContext();
+  LLVMFuncOp suspendFn =
+      b.createFunc((coro.asyncFn.getSymName() + ".suspend").str(),
+                   LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
+                   Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
   suspendFn.getBody().takeBody(op.getBody());
+
+  // If possible, we need to add a subprogram scope to the new function.
+  ErrorOr<DebugInfo::DIScopeAttr> scopeOr =
+      DebugInfo::getScopeWithinBody(op.getLoc());
+  auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
+  if (!scopeOr.isError() && *scopeOr) {
+    // Use unresolved types now for simplicity, these will get resolved during
+    // compilation.
+    auto mapUnresolvedType = [&](Type type) -> DebugInfo::DIType {
+      return DebugInfo::DIUnresolvedMLIRType::get(type);
+    };
+    auto spType = DebugInfo::DISubroutineType::get(
+        ctx, llvm::map_to_vector(captureTypes, mapUnresolvedType), {});
+
+    DebugInfo::DIBuilder dib(ctx);
+    DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
+
+    // TODO: "C" as the Dwarf language type is the best option for now.
+    dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+                              /*isOptimized=*/true,
+                              DebugInfo::EmissionKind::Full);
+    DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
+
+    // The insertion into the symtab might change the name, so we extract it.
+    StringAttr suspName = suspendFn.getSymNameAttr();
+    guard = dib.pushSubprogram(suspName, suspName, fileAttr, fileLoc.getLine(),
+                               fileLoc.getLine(),
+                               DebugInfo::SubprogramFlags::Definition, spType);
+    Location newLoc = dib.createScopedLoc(fileLoc);
+
+    // Okay, we can now overwrite the location with a scoped one. We also set
+    // the builder location so anything else we insert (e.g. return) is correct.
+    suspendFn->setLoc(newLoc);
+    b.setLoc(newLoc);
+
+    // We also need to ensure the ops in the body have matching scope. We can do
+    // this by treating them as if they were inlined.
+    suspendFn.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      DebugInfo::updateInlinedLoc(op, newLoc);
+      if (isa<DebugInfo::SubprogramScoped>(op))
+        return WalkResult::skip();
+      return WalkResult::advance();
+    });
+  } else if (fileLoc) {
+    suspendFn->setLoc(fileLoc);
+    b.setLoc(fileLoc);
+  }
+
   b.setInsertionPointToEnd(&suspendFn.getBody().front());
   b.create<ReturnOp>(ValueRange());
 
@@ -557,7 +607,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       b.create<AddressOfOp>(suspendFn)};
   llvm::append_range(suspendAsyncArgs, captures);
   auto suspendRetType = LLVMStructType::getLiteral(
-      b.getContext(), {cache.i8PtrType, cache.i8PtrType, cache.i8PtrType});
+      ctx, {cache.i8PtrType, cache.i8PtrType, cache.i8PtrType});
   // FIXME: For some reason, `call_intrinsic` fails to resolve the overload.
   b.create<POP::ExternalCallOp>(
       suspendRetType, "llvm.coro.suspend.async.sl_p0p0p0s", suspendAsyncArgs,
