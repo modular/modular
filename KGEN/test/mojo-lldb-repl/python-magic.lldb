@@ -35,3 +35,11 @@ x = 1
 %%python
 
 # CHECK: [User] error: `%%python` can only be at the beginning of an expression.
+
+%%python
+var a = Tensor[DType.float64](n)
+
+# CHECK: Traceback (most recent call last):
+# CHECK:     var a = Tensor[DType.float64](n)
+# CHECK:         ^
+# CHECK: SyntaxError: invalid syntax
