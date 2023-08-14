@@ -103,6 +103,11 @@ private:
   /// by its section.
   llvm::StringMap<std::string> kv;
 };
+
+/// Given a file name, find that file in one of the modular search paths. If the
+/// file does not exist in those paths, returns std::nullopt. If the file does
+/// exist, returns the full path to that file.
+std::optional<std::filesystem::path> findModularFile(StringRef fileName);
 } // namespace M
 
 #endif // SUPPORT_CONFIGURATION_H
