@@ -432,7 +432,7 @@ public:
 
   void
   onDefinition(const lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn);
+               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
 
   void onHover(const lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
@@ -481,7 +481,7 @@ private:
   lsp::CompletionList
   onCodeCompletionSync(const lsp::Position &completePos) const;
 
-  std::optional<lsp::Location> onDefinitionSync(const lsp::Position &pos) const;
+  std::vector<lsp::Location> onDefinitionSync(const lsp::Position &pos) const;
 
   std::optional<lsp::Hover> onHoverSync(const lsp::Position &pos) const;
 
@@ -898,7 +898,7 @@ MojoDocument::onCodeCompletionSync(const lsp::Position &completePos) const {
 
 void MojoDocument::onDefinition(
     const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
+    OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
   startTaskAfterParsing([pos, onDefinitionFn = std::move(onDefinitionFn)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
@@ -908,21 +908,23 @@ void MojoDocument::onDefinition(
   });
 }
 
-std::optional<lsp::Location>
+std::vector<lsp::Location>
 MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
-  if (auto symbolRef = context->symbolIndex.getSymbolAt(pos)) {
-    if (symbolRef->symbols.size() != 1)
-      return std::nullopt;
-    const Symbol &symbol = *symbolRef->symbols.front();
+  SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(pos);
+  if (!symbolRef)
+    return {};
+
+  std::vector<lsp::Location> locations;
+  for (const Symbol *symbol : symbolRef->symbols) {
     if (auto symbolUri =
-            getURIFromLoc(context->sourceMgr, symbol.identifierLoc, uri)) {
-      return lsp::Location(*symbolUri, getRangeForText(context->sourceMgr,
-                                                       symbol.identifierLoc,
-                                                       symbol.identifier));
+            getURIFromLoc(context->sourceMgr, symbol->identifierLoc, uri)) {
+      locations.emplace_back(*symbolUri, getRangeForText(context->sourceMgr,
+                                                         symbol->identifierLoc,
+                                                         symbol->identifier));
     }
   }
 
-  return std::nullopt;
+  return locations;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1153,7 +1155,7 @@ void MojoServer::onCodeCompletion(
 
 void MojoServer::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn) {
+    OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onDefinition(pos, std::move(onDefinitionFn));
 }

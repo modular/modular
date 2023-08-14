@@ -69,8 +69,10 @@ async def assert_hover_and_decl_location(requests, doc, arg_name: str):
     assert ref_hover == decl_hover
 
     definition = await requests.definition(doc, ref_range.start)
-    assert isinstance(definition, Location)
-    assert definition.range == decl_range
+    assert isinstance(definition, list)
+    assert len(definition) == 1
+    assert isinstance(definition[0], Location)
+    assert definition[0].range == decl_range
 
 
 async def test_argument_ref(client: LanguageClient):
@@ -159,3 +161,40 @@ async def test_refs(client: LanguageClient):
     requests.open_document(doc)
 
     await assert_all_refs("struct", requests, doc, "StructWithAlias", count=2)
+
+
+async def test_decl_multi_location(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn print(x: StringRef):
+    pass
+
+fn print(x: Bool):
+    pass
+
+fn function[type: AnyType](arg: type):
+    print(arg)
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    ref_range = fail_if_none(doc.find_first_range("print(arg"))
+    str_range = fail_if_none(doc.find_first_range("print(x: StringRef"))
+    bool_range = fail_if_none(doc.find_first_range("print(x: Bool"))
+
+    str_definition = await requests.definition(doc, str_range.start)
+    bool_definition = await requests.definition(doc, bool_range.start)
+
+    assert len(str_definition) == 1
+    assert len(bool_definition) == 1
+    assert isinstance(str_definition[0], Location)
+    assert isinstance(bool_definition[0], Location)
+
+    definition = await requests.definition(doc, ref_range.start)
+    assert isinstance(definition, list)
+    assert len(definition) == 2
+    assert isinstance(definition[0], Location)
+
+    assert definition == [str_definition[0], bool_definition[0]]

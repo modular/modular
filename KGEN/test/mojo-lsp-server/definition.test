@@ -19,8 +19,8 @@
 }}
 // CHECK-LABEL: "id": 2
 // CHECK-NEXT: "jsonrpc": "2.0"
-// CHECK-NEXT:   "result": {
-// CHECK-NEXT:     "range": {
+// CHECK-NEXT:   "result":
+// CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
 // CHECK-NEXT:         "line": 2
@@ -31,7 +31,6 @@
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"
-// CHECK-NEXT:   }
 // -----
 {"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
@@ -42,8 +41,8 @@
 }}
 // CHECK-LABEL: "id": 3
 // CHECK-NEXT: "jsonrpc": "2.0"
-// CHECK-NEXT:   "result": {
-// CHECK-NEXT:     "range": {
+// CHECK-NEXT:   "result":
+// CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
 // CHECK-NEXT:         "line": 3
@@ -54,7 +53,6 @@
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"
-// CHECK-NEXT:   }
 // -----
 {"jsonrpc":"2.0","id":4,"method":"shutdown"}
 // -----
