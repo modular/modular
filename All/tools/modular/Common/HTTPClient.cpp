@@ -175,7 +175,7 @@ HTTPCASBackend::findImpl(StringRef keyHash,
       /*verifyTLSPeer=*/true,
   };
 
-  // 5s timeout for requests.
+  // 60s timeout for requests.
   using namespace std::chrono_literals;
   constexpr std::chrono::milliseconds timeout = 60s;
   // Maximum of 512M per request.
