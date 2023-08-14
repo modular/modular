@@ -393,5 +393,5 @@ std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
     return std::nullopt;
 
   // We did find it, return that path.
-  return *found;
+  return *found / fileName.str();
 }
