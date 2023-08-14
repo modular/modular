@@ -12,6 +12,7 @@
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "REPL/MojoREPL.h"
+#include "Support/CrashReporting.h"
 #include "Support/SymbolExport.h"
 #include "TypeSystem/MojoTypeSystem.h"
 #include "lldb/API/SBCommandInterpreter.h"
@@ -31,6 +32,12 @@ using namespace M::KGEN::Mojo;
 /// enabled, initialization will go through `lldb::PluginInitialize`.
 
 MODULAR_EXPORT bool LLDBPluginInitialize() {
+  // initCrashpadForProgram should only really be used when we "own" the
+  // program, and that's not necessarily the case for LLDB... but we have no
+  // real better place to put this, since the only better place ('main'
+  // function of the LLDB driver) is upstream and hard to patch in our build.
+  initCrashpadForProgram("mojo-lldb");
+
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
