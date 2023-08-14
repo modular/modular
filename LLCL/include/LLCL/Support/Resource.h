@@ -13,6 +13,7 @@
 
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/AddressRanges.h"
 #include "llvm/ADT/DenseMap.h"
@@ -257,17 +258,30 @@ private:
   void fatal(StringRef message, const ResourceUse &use);
   void fatal(StringRef message);
 
-  /// Add/remove use names. Requires lock is held.
-  void addUse(StringRef useName);
-  void removeUse(StringRef useName);
+  /// Maps in-use sections to their bag of use names.
+  using UseMap = llvm::DenseMap<ResourceSection, llvm::StringMap<size_t>>;
 
-  /// Add/remove kReferencingResourceUse uses. Requires lock is held.
-  void addReferencing(const ResourceSection &section);
-  void removeReferencing(const ResourceSection &section);
+  /// Record section as being in use within map using useName.
+  static void addUseToMap(UseMap &map, const ResourceSection &section,
+                          StringRef useName);
 
-  /// Add/remove reading sections. Requires lock is held.
-  void addReading(const ResourceSection &section);
-  bool removeReading(const ResourceSection &section);
+  /// Record section as no longer being in use within map using useName.
+  /// Returns true if this was the last use of section in map.
+  static bool removeUseFromMap(UseMap &map, const ResourceSection &section,
+                               StringRef useName);
+  enum UsageRule {
+    /// Overlap is allowed provided contained by existing.
+    kContained,
+    /// Overlap is allowed provided exactly equal to existing.
+    kEqual,
+    /// No overlap with existing is allowed.
+    kExclusive,
+  };
+
+  /// Checks the map does not already contain a conflicting use of section.
+  static ErrorOrSuccess checkForOverlappingSections(
+      const UseMap &map, UsageRule usageRule, ResourceUseType existingUseType,
+      ResourceUseType desiredUseType, const ResourceSection &section);
 
   /// Name of resource, for debugging messages.
   std::string name;
@@ -283,14 +297,17 @@ private:
   ResourceState state = kAlive;
   /// Which sections of resource are 'initialized'.
   ResourceSections initialized;
-  /// Names of all active uses as a multi-set. The specific use type is ignored.
-  llvm::StringMap<size_t> uses;
-  /// Number of kReferencingResourceUse uses per section.
-  llvm::DenseMap<ResourceSection, size_t> numReferencing;
+  /// Active kReferencingResourceUse uses, indexed by the section they are
+  /// referencing.
+  UseMap referencing;
+  /// Active kReadingResourceUse/kMutatingResourceUse uses, indexed by the
+  /// section they are reading.
+  UseMap reading;
   /// Union of all kReadingResourceUse/kMutatingResourceUse use sections.
   ResourceSections allReading;
-  /// Number of kReadingResourceUse per section.
-  llvm::DenseMap<ResourceSection, size_t> numReading;
+  /// Active kWritingResourceUse/kMutatingResourceUse uses, indexed by the
+  /// section they are writing. Should only ever contain one key with one use!
+  UseMap writing;
   /// Union of all kWritingResourceUse/kMutatingResourceUse use sections.
   ResourceSections allWriting;
 

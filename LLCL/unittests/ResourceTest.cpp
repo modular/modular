@@ -20,6 +20,23 @@ TEST(Resource, Correct) {
   resource->markFreed();
 }
 
+TEST(Resource, NestedReferences) {
+  auto resource = Resource::allocate("test");
+  auto use1 = resource->beginUse("use1", kReferencingResourceUse,
+                                 ResourceSection(5, 15));
+  auto use2 = resource->beginUse("use2", kReferencingResourceUse,
+                                 ResourceSection(5, 15));
+  auto use3 = resource->beginUse("use3", kReferencingResourceUse,
+                                 ResourceSection(8, 12));
+  auto use4 = resource->beginUse("use3", kReferencingResourceUse,
+                                 ResourceSection(10, 12));
+  use1.reset();
+  use2.reset();
+  use3.reset();
+  use4.reset();
+  resource->markFreed();
+}
+
 TEST(Resource, UseAfterFreeInFlight_ExpectDeath) {
   auto resource = Resource::allocate("test");
   auto use1 = resource->beginUse("use1");
@@ -49,17 +66,19 @@ TEST(Resource, Uninitialized_ExpectDeath) {
 TEST(Resource, ReadWriteRace_ExpectDeath) {
   auto resource = Resource::allocate("test", /*isInitialized=*/true);
   auto use1 = resource->beginUse("read", kReadingResourceUse);
-  EXPECT_DEATH_IF_SUPPORTED(resource->beginUse("write", kWritingResourceUse),
-                            "attempting to write to \\(section of\\) resource "
-                            "which is also being read");
+  EXPECT_DEATH_IF_SUPPORTED(
+      resource->beginUse("write", kWritingResourceUse),
+      "requested section for writing overlaps with existing section all for "
+      "reading with active uses \\{'read'\\}");
 }
 
 TEST(Resource, WriteWriteRace_ExpectDeath) {
   auto resource = Resource::allocate("test", /*isInitialized=*/true);
   auto use1 = resource->beginUse("write1", kWritingResourceUse);
-  EXPECT_DEATH_IF_SUPPORTED(resource->beginUse("write2", kWritingResourceUse),
-                            "attempting to write to \\(section of\\) resource "
-                            "which is also being written");
+  EXPECT_DEATH_IF_SUPPORTED(
+      resource->beginUse("write2", kWritingResourceUse),
+      "requested section for writing overlaps with existing section all for "
+      "writing with active uses \\{'write1'\\}");
 }
 
 TEST(Resource, ReadAftenUninit_ExpectDeath) {
@@ -98,7 +117,9 @@ TEST(Resource, Resource_Overlapping_ExpectDeath) {
       resource->beginUse("read3", kReadingResourceUse, ResourceSection(10, 15));
   EXPECT_DEATH_IF_SUPPORTED(
       resource->beginUse("read4", kReadingResourceUse, ResourceSection(4, 6)),
-      "attempting to read from overlapping sections of resource");
+      "requested section for reading overlaps with existing section \\[5, "
+      "10\\) "
+      "for reading with active uses \\{'read1'\\}");
 }
 
 TEST(Resource, Resource_SectionReadWriteRace_ExpectDeath) {
@@ -107,6 +128,6 @@ TEST(Resource, Resource_SectionReadWriteRace_ExpectDeath) {
       resource->beginUse("read", kReadingResourceUse, ResourceSection(5, 10));
   EXPECT_DEATH_IF_SUPPORTED(
       resource->beginUse("write", kWritingResourceUse, ResourceSection(0, 20)),
-      "attempting to write to \\(section of\\) resource "
-      "which is also being read");
+      "requested section for writing overlaps with existing section "
+      "\\[5, 10\\) for reading with active uses \\{'read'\\}");
 }
