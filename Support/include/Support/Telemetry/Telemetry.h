@@ -29,7 +29,7 @@ namespace M::Telemetry {
 /// destructor returns.
 constexpr auto kShutdownFlushTimeout = std::chrono::milliseconds(500);
 /// Periodically export metrics every kExportInterval duration.
-constexpr auto kExportInterval = std::chrono::milliseconds(10000);
+constexpr auto kExportInterval = std::chrono::seconds(600);
 /// Timeout for periodic metric exports. Note that periodic exports happen
 /// asynchronously and this timeout is for the worker thread that does them
 /// (OTel-managed thread). NOTE: this value must be smaller than the export
