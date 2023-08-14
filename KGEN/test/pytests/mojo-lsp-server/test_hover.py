@@ -525,3 +525,47 @@ Implements the Builtin package.
 
 """,
     )
+
+
+async def test_function_call(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn print(x: StringRef):
+    pass
+
+fn print(x: Bool):
+    pass
+
+fn function[type: AnyType](arg: type):
+    print("string")
+    print(arg)
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_hover(func_name: str, expected: str):
+        range = fail_if_none(doc.find_first_range(func_name))
+        result = fail_if_none(await requests.hover(doc, range.start))
+        assert isinstance(result.contents, MarkupContent)
+        assert result.contents.value == expected
+
+    await assert_hover(
+        'print("',
+        """```mojo
+(function) fn print(x: StringRef)
+```""",
+    )
+
+    await assert_hover(
+        "print(arg",
+        """```mojo
+(function) fn print(x: StringRef)
+```
+---
+
+```mojo
+(function) fn print(x: Bool)
+```""",
+    )

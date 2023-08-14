@@ -1146,6 +1146,11 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
     oneFitness = eval;
   }
 
+  // Notify the listener of the updated decl references for the call now that
+  // invalid candidates have been filtered out.
+  if (!newFnDecls.empty())
+    emitter.shared.notifyListenerOnRef(newFnDecls, baseName, expr, syntax);
+
   // If we found exactly one viable candidate, or all the overloads are marked
   // as adaptive, then we succeed.
   auto allMarkedAdaptive = [&]() -> bool {
@@ -1278,6 +1283,11 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     if (isValidCandidate(candidateType))
       validCandidates.push_back(candidate);
   }
+
+  // Notify the listener of the updated decl references for the call now that
+  // invalid candidates have been filtered out.
+  if (!validCandidates.empty())
+    emitter.shared.notifyListenerOnRef(validCandidates, baseName, expr, syntax);
 
   // If we have exactly one viable candidate, then we succeed.
   auto allMarkedAdaptive = [&]() -> bool {

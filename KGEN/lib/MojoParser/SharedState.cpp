@@ -11,6 +11,7 @@
 #include "SharedState.h"
 #include "ASTDecl.h"
 #include "ASTType.h"
+#include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "DeclResolver.h"
 #include "ExprEmitter.h"
@@ -1911,25 +1912,59 @@ void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
     parserListener->onVariableDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
-                                      SMLoc loc) {
-  if (isListenerInterestedInLoc(parserListener, loc))
-    parserListener->onRef(&decl, spelling, loc);
+void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
+                                      StringRef spelling, SMLoc loc) {
+  if (isListenerInterestedInLoc(parserListener, loc)) {
+    auto declRefs = llvm::map_to_vector(
+        decls, [](ASTDecl *decl) { return MojoASTDeclRef(decl); });
+    parserListener->onRef(declRefs, spelling, loc);
+  }
 }
 
-void SharedState::notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
-                                      const ExprNode *expr) {
-  // In the case of a SubscriptNode, the type is being referenced at the
-  // location of its `base` member, and not at the location of the subscript,
-  // which is the opening bracket [.
-  if (auto subscript = dyn_cast<SubscriptNode>(expr)) {
-    notifyListenerOnRef(decl, spelling, subscript->base->getLoc());
+/// Return the location of the identifier in the given expression.
+static SMLoc getIdentifierLocFromExpr(const ExprNode *expr) {
+  if (auto attribute = dyn_cast<AttributeRefNode>(expr))
+    return attribute->getAttributeNameLoc();
 
-    // In the case of a AttributeRefNode, we want to start with the identifier,
-    // and not with the .
-  } else if (auto attribute = dyn_cast<AttributeRefNode>(expr)) {
-    notifyListenerOnRef(decl, spelling, attribute->getAttributeNameLoc());
-  } else {
-    notifyListenerOnRef(decl, spelling, expr->getLoc());
+  // For post-fix expression, ensure we get the location from the base, not the
+  // operator.
+  if (auto subscript = dyn_cast<SubscriptNode>(expr))
+    return getIdentifierLocFromExpr(subscript->base);
+  if (auto call = dyn_cast<CallNode>(expr))
+    return getIdentifierLocFromExpr(call->callee);
+  return expr->getLoc();
+}
+
+void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
+                                      StringRef spelling,
+                                      const ExprNode *expr) {
+  notifyListenerOnRef(decls, spelling, getIdentifierLocFromExpr(expr));
+}
+
+/// Returns if the parser listener should be notified on references for the
+/// given call syntax.
+static bool shouldNotifyListenerForCall(CallSyntax syntax) {
+  switch (syntax) {
+  case CallSyntax::kDirectCall:
+  case CallSyntax::kMethodCall:
+  case CallSyntax::kAttribute:
+    return true;
+  case CallSyntax::kIndirectCall:
+  case CallSyntax::kTypeCall:
+  case CallSyntax::kOperator:
+  case CallSyntax::kReversedOperator:
+  case CallSyntax::kSubscript:
+  case CallSyntax::kImplicitConvert:
+  case CallSyntax::kDestructor:
+  case CallSyntax::kTupleGetItem:
+    return false;
   }
+  llvm_unreachable("unknown call syntax");
+}
+
+void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
+                                      StringRef spelling, const ExprNode *expr,
+                                      CallSyntax syntax) {
+  if (shouldNotifyListenerForCall(syntax))
+    notifyListenerOnRef(decls, spelling, expr);
 }

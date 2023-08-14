@@ -166,8 +166,8 @@ public:
                               llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new reference has been resolved by the parser,
-  /// i.e. its declaration is known.
-  virtual void onRef(MojoASTDeclRef declRef, StringRef spelling,
+  /// i.e. its declarations are known.
+  virtual void onRef(ArrayRef<MojoASTDeclRef> declRefs, StringRef spelling,
                      llvm::SMLoc loc);
 };
 

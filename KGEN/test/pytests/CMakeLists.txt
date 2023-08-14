@@ -13,5 +13,5 @@ add_custom_target(check-kgen-python-tests
   COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R kgen-python-tests
   DEPENDS
     "${GENERATED_TESTS_BASE}"
-    mojo-lsp-server
+    mojo-sdk
 )
