@@ -143,6 +143,17 @@ kgen.generator @const_string(%arg0: !pop.pointer<i8>) -> !pop.struct<i8, pointer
   kgen.return %2 : !pop.struct<i8, pointer<i8>>
 }
 
+kgen.generator @parameter_closure() -> index {
+  %0 = pop.compiler.global_load "named_global" : index
+  kgen.return %0 : index
+}
+
+kgen.generator @region_parameter(%arg0: index) -> index {
+  pop.compiler.global_store "named_global", %arg0 : index
+  %0 = kgen.call @parameter_closure() : () -> index
+  kgen.return %0 : index
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -258,6 +269,9 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<i8, pointer<i8>> = <apply(
     :(!pop.pointer<i8>) -> !pop.struct<i8, pointer<i8>> @const_string,
     #M.memref<[(string, const_global, [])], 0, 2>)>
+
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>
 
   kgen.return
 }

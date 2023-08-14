@@ -719,6 +719,31 @@ LogicalResult GlobalConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CompilerGlobalLoadOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess CompilerGlobalLoadOp::interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+  Attribute value = state.getNamedGlobal(getNameAttr());
+  if (!value)
+    return ErrorTree(getLoc(), "internal error: missing named global '" +
+                                   getName() + "'");
+  state.mapResults(value);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CompilerGlobalStoreOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+CompilerGlobalStoreOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  state.setNamedGlobal(getNameAttr(), operands.front());
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // IndexToPointerOp
 //===----------------------------------------------------------------------===//
 
