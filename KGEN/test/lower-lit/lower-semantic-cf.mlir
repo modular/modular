@@ -688,10 +688,11 @@ lit.func @nested_try_finally() {
 }
 
 // CHECK-LABEL: lit.func @throwing_func
-lit.func @throwing_func() throws -> !pop.variant<@Error, !lit.none> {
-  %1 = lit.struct.create() : () -> !kgen.declref<@Error>
-  // CHECK: lit.error_return %1 : <@Error, !lit.none>
-  lit.raise %1 : <@Error>
+lit.func @throwing_func<T: type>() throws -> !pop.variant<@Error, T> {
+  %0 = lit.struct.create() : () -> !kgen.declref<@Error>
+  // CHECK: %1 = pop.variant.create %0 : !kgen.declref<@Error> -> !pop.variant<@Error, T>
+  // CHECK: lit.error_return %1 : <@Error, T>
+  lit.raise %0 : <@Error>
   lit.end_func
 }
 

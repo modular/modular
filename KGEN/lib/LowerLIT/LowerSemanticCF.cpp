@@ -326,7 +326,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
       auto b = handleSemanticTerminatorOp(op, "raise statement");
       if (!LIT::findTryBlock(b.getInsertionBlock())) {
         LIT::FuncOp funcOp = raiseOp->getParentOfType<LIT::FuncOp>();
-        Type failedType = funcOp.getSignature().getValueResults().front();
+        Type failedType = funcOp.getResultTypes().front();
         assert(isa<POP::VariantType>(failedType));
         b.create<LIT::ErrorReturnOp>(b.create<POP::VariantCreateOp>(
             raiseOp->getLoc(), failedType, raiseOp.getError()));
