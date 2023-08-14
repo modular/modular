@@ -117,11 +117,31 @@ struct Symbol {
 };
 } // namespace
 
+/// Return if the given view kind should be included in the markdown
+/// declaration.
+static bool shouldIncludeViewKindInMarkdown(DeclView::DeclViewKind kind) {
+  return kind != DeclView::DK_AliasDeclView &&
+         kind != DeclView::DK_StructDeclView;
+}
+
 std::string Symbol::getMarkdownDeclaration() const {
   auto processView = [&](const DeclView &view) -> std::string {
     std::string buff;
     llvm::raw_string_ostream os(buff);
-    os << formatv("### {0} `{1}`\n", view.getKindAsString(), identifier);
+    if (auto snippet = view.getDeclarationSnippet(); !snippet.empty()) {
+      // Add the decl prefix to the snippet, unless it's superfluous.
+      std::string declPrefix;
+      if (shouldIncludeViewKindInMarkdown(view.getKind()))
+        declPrefix = llvm::formatv("({0}) ", view.getKindAsString()).str();
+
+      os << llvm::formatv(R"(```mojo
+{0}{1}
+```)",
+                          declPrefix, snippet);
+    } else {
+      os << formatv("### {0} `{1}`\n", view.getKindAsString(), identifier);
+    }
+
     if (auto docString = view.getMarkdownDocString(); !docString.empty()) {
       os << llvm::formatv(R"(
 ---
@@ -130,17 +150,6 @@ std::string Symbol::getMarkdownDeclaration() const {
 {0}
 )",
                           docString);
-    }
-
-    if (auto snippet = view.getDeclarationSnippet(); !snippet.empty()) {
-      os << llvm::formatv(R"(
----
-
-###
-```mojo
-{0}
-```)",
-                          snippet);
     }
     return buff;
   };
