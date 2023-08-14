@@ -38,7 +38,8 @@ public:
   ~LogFileSetup() {
     cfg.setValue(filePathKey, filePathOriginalValue);
     cfg.setValue(httpUrlKey, httpUrlOriginalValue);
-    cfg.flush();
+    auto err = cfg.flush();
+    EXPECT_FALSE(err.isError()) << err.getError();
   }
 
   TempFile getLogFile(StringRef prefix) {
