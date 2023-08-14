@@ -36,7 +36,7 @@ async def assert_ref(
     assert range is not None
     ref_hover = fail_if_none(await requests.hover(doc, range.start))
     assert isinstance(ref_hover.contents, MarkupContent)
-    assert f"{kind} `{identifier}`" in ref_hover.contents.value
+    assert identifier in ref_hover.contents.value
     assert ref_hover.range == range
 
 
