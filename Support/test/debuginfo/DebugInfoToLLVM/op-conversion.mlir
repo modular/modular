@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm -allow-unregistered-dialect | FileCheck %s
+// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
@@ -40,18 +40,19 @@ func.func @simple() {
 // Test translation of dbg.value to dbg.addr.
 
 // CHECK-LABEL: func @value_to_addr_arg
-// CHECK-SAME: (%[[ARG:.*]]: i32)
+// CHECK-SAME: (%[[ARG:.*]]: i32 loc({{.*}}))
 func.func @value_to_addr_arg(%arg: i32) -> i32 {
   // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32
   // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr<i32>
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr<i32>
-  // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : !llvm.ptr<i32>
+  // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : !llvm.ptr<i32> loc(#[[LOC_STORE:.*]])
   // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr<i32>
   // CHECK: return %[[RESULT]] : i32
 
   debuginfo.value #local_variable = %arg : i32
   return %arg : i32
 }
+// CHECK-NEXT } loc(#[[LOC_STORE]])
 
 // CHECK-LABEL: func @value_to_addr_op
 func.func @value_to_addr_op() -> i32 {
