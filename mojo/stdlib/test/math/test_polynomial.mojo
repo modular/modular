@@ -8,7 +8,7 @@
 from DType import DType
 from IO import print
 from List import VariadicList
-from polynomial import (
+from math.polynomial import (
     polynomial_evaluate,
     _estrin_evaluate_2,
     _estrin_evaluate_4,
