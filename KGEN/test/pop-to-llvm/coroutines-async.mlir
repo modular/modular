@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-coroutines-async -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -lower-coroutines-async -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
 // CHECK: #[[SUSPEND_LOC:.*]] = loc("foo.mlir":10:5)
 
@@ -133,3 +133,60 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: llvm.return %arg0 : !llvm.ptr<i8>
 
 }
+
+// -----
+
+!basic = !debuginfo.basic<i64 {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_unsigned}>
+!member = !debuginfo.member<value: !basic>
+!struct = !debuginfo.struct<"$Builtin::$Int::Int"(!member)>
+!subroutine = !debuginfo.subroutine<() -> (!struct): DW_CC_normal>
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+
+// CHECK-DAG: #[[SP_AF:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af", linkageName = "foo_af", file = #file, line = 41, scopeLine = 41
+// CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":41:11)
+// CHECK-DAG: #[[LOC_AF:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC0]]])
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "foo", linkageName = "foo", file = #file, line = 41, scopeLine = 41, subprogramFlags = "Definition|Optimized"> : !subroutine
+#loc8 = loc(fused<#subprogram>["foo.mlir":41:11])
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+  llvm.func internal @foo() -> !llvm.ptr<i8> {
+    %0 = pop.coroutine.handle : <() -> index> loc(#loc8)
+    %1 = builtin.unrealized_conversion_cast %0 : !pop.coroutine<() -> index> to !llvm.ptr<i8> loc(#loc8)
+
+    // CHECK-LABEL: llvm.func internal @foo_af.suspend()
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
+    // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
+    // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
+    pop.coroutine.await {
+      %2 = llvm.mlir.constant(1 : i64) : i64 loc(#loc11)
+    } loc(#loc11)
+
+    // CHECK-LABEL: llvm.func internal @foo_af.suspend_0()
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
+    // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
+    // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
+    pop.coroutine.await {
+      %2 = llvm.mlir.constant(2 : i64) : i64 loc(#loc13)
+    } loc(#loc13)
+
+    llvm.return %1 : !llvm.ptr<i8> loc(#loc8)
+  } loc(#loc8)
+}
+
+// CHECK-DAG: ![[SUSP_TYPE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af.suspend", linkageName = "foo_af.suspend", file = #file, line = 44, scopeLine = 44, subprogramFlags = Definition> : ![[SUSP_TYPE]]
+// CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo_af.suspend_0", linkageName = "foo_af.suspend_0", file = #file, line = 42, scopeLine = 42, subprogramFlags = Definition> : ![[SUSP_TYPE]]
+
+// CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:38)
+// CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":42:41)
+// CHECK-DAG: #[[LOC_SUSP1]] = loc(fused<#[[SP1]]>[#[[LOC1]]])
+// CHECK-DAG: #[[LOC_SUSP2]] = loc(fused<#[[SP2]]>[#[[LOC2]]])
+// CHECK-DAG: #[[LOC_CALLEE1:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC1]]])
+// CHECK-DAG: #[[LOC_CALLEE2:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC2]]])
+// CHECK-DAG: #[[LOC1_INL]] = loc(callsite(#[[LOC_CALLEE1]] at #[[LOC_SUSP1]]))
+// CHECK-DAG: #[[LOC2_INL]] = loc(callsite(#[[LOC_CALLEE2]] at #[[LOC_SUSP2]]))
+
+#loc10 = loc(fused<#subprogram>["foo.mlir":42:16])
+#loc11 = loc(fused<#subprogram>["foo.mlir":44:38])
+#loc13 = loc(fused<#subprogram>["foo.mlir":42:41])
