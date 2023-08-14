@@ -256,9 +256,10 @@ std::unique_ptr<WorkQueue> createSingleThreadWorkQueue();
 ///
 /// If in a MODULAR_PARANOID build, the paranoid flag can be used to inject
 /// random delays into work items to attempt to tickle race conditions.
-std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(size_t numThreads = 0,
-                                                     bool mainWillDonate = true,
-                                                     bool paranoid = false);
+std::unique_ptr<WorkQueue>
+createThreadPoolWorkQueue(size_t numThreads = 0, bool mainWillDonate = true,
+                          bool paranoid = false,
+                          std::string_view poolName = "LLCL Thread ");
 
 } // namespace M::LLCL
 
