@@ -241,18 +241,32 @@ void OutlineClosuresPass::runOnOperation() {
           b.setLoc(FusedLoc::get(ctx, regionLoc, scope));
       }
 
+      // Set the insertion point to the regionDecl for the parameter
+      // declaration.
+      b.setInsertionPoint(regionDecl);
+
+      // Create the decl that replaces the regionDecl with its parameter being
+      // this new partial binding.
+      b.create<ParamDeclareOp>(regionDecl.getParamDecl(),
+                               cast<TypedAttr>(bindSignature));
+
       // Create a container for the struct with all the various captures.
       if (!isolated) {
         // We have to find the earliest possible insertion point, so we start
         // from the beginning of the generator itself.
         b.setInsertionPointToStart(generator.getBody());
         OpBuilder::InsertPoint insertPt = b.saveInsertionPoint();
+        Location insertLoc = generator.getLoc();
         // Helper to update the insertion point given a Value.
         auto updateInsertPt = [&](Value val) {
-          if (auto blockArg = dyn_cast<BlockArgument>(val))
+          if (auto blockArg = dyn_cast<BlockArgument>(val)) {
             b.setInsertionPointToStart(blockArg.getOwner());
-          else
-            b.setInsertionPointAfter(val.getDefiningOp());
+            insertLoc = blockArg.getParentRegion()->getParentOp()->getLoc();
+          } else {
+            Operation *op = val.getDefiningOp();
+            b.setInsertionPointAfter(op);
+            insertLoc = op->getLoc();
+          }
           insertPt = b.saveInsertionPoint();
         };
 
@@ -267,6 +281,7 @@ void OutlineClosuresPass::runOnOperation() {
         }
 
         b.restoreInsertionPoint(insertPt);
+        b.setLoc(insertLoc);
 
         assert(globalVar && structType &&
                "global variable name/type/struct was undefined?");
@@ -277,15 +292,6 @@ void OutlineClosuresPass::runOnOperation() {
         // Get a pointer to the global and store the container in it.
         b.create<POP::CompilerGlobalStoreOp>(globalVar, container);
       }
-
-      // Set the insertion point to the regionDecl for the parameter
-      // declaration.
-      b.setInsertionPoint(regionDecl);
-
-      // Create the decl that replaces the regionDecl with its parameter being
-      // this new partial binding.
-      b.create<ParamDeclareOp>(regionDecl.getParamDecl(),
-                               cast<TypedAttr>(bindSignature));
 
       // And we can drop the regionDecl now, we're done with it.
       regionDecl->erase();
