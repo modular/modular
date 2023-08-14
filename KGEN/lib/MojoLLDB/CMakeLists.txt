@@ -32,7 +32,6 @@ add_modular_library(MojoLLDB SHARED
   KGENCompiler
   KGENEmitObject
   LLCLRuntimeGlobals
-  MCrashReporting
   MSupportGlobals
   MVersion
   MojoParser
