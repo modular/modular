@@ -70,8 +70,8 @@ void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
                                            SMLoc identifierLoc) {}
 void MojoParserListener::onVariableDecl(MojoASTDeclRef declRef,
                                         SMLoc identifierLoc) {}
-void MojoParserListener::onRef(MojoASTDeclRef declRef, StringRef spelling,
-                               SMLoc loc) {}
+void MojoParserListener::onRef(ArrayRef<MojoASTDeclRef> declRefs,
+                               StringRef spelling, SMLoc loc) {}
 
 //===----------------------------------------------------------------------===//
 // MojoParserContext::Impl

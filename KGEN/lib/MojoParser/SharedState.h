@@ -47,6 +47,7 @@ class FuncOp;
 class FileModuleOp;
 class PackageOp;
 class ExprNode;
+enum class CallSyntax : uint8_t;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -286,13 +287,16 @@ public:
   void notifyListenerOnVariableDecl(ASTDecl &decl, SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, that a new reference has been
-  /// resolved by the parser, i.e. its declaration is known.
-  void notifyListenerOnRef(ASTDecl &decl, StringRef spelling, SMLoc loc);
+  /// resolved by the parser, i.e. its declarations are known.
+  void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                           SMLoc loc);
 
   /// Notify the parser listener, if present, that a new reference from an
   /// expression has been resolved.
-  void notifyListenerOnRef(ASTDecl &decl, StringRef spelling,
+  void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            const ExprNode *expr);
+  void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                           const ExprNode *expr, CallSyntax syntax);
 
   //===--------------------------------------------------------------------===//
   // Builtin Module

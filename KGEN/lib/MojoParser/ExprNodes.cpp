@@ -428,6 +428,8 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
                                   ArrayRef<ASTDecl *> decls,
                                   const ExprNode *expr, ValueDest &dest,
                                   Value &mlirValue) {
+  emitter.shared.notifyListenerOnRef(decls, spelling, expr);
+
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
     ParamBindArrayAttr paramBindings = {};
@@ -439,8 +441,6 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
-
-  emitter.shared.notifyListenerOnRef(decl, spelling, expr);
 
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
@@ -1026,6 +1026,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
         CallSyntax::kAttribute, lookupError, callArgs);
   }
+  emitter.shared.notifyListenerOnRef(memberDecls, attrSpelling, this);
 
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
@@ -1050,7 +1051,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
-  emitter.shared.notifyListenerOnRef(memberDecl, attrSpelling, getLoc());
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
