@@ -250,6 +250,8 @@ struct WorkQueueThread {
   /// Uses stack.
   SmallVector<ResourceUse> useStack;
 #endif
+  // The thread identifier prefix used to name the threads
+  std::string_view poolName;
 
   /// Create a WorkQueueThread representing the worker with workerID. If
   /// necessary, the underlying worker thread will be created and it will
@@ -258,10 +260,11 @@ struct WorkQueueThread {
                   LockFreeRingBuffer<WorkItem> &taskList,
                   std::mutex &overflowMutex,
                   SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
-                  size_t cpuID)
+                  size_t cpuID, std::string_view poolName)
       : sharedState(sharedState), affinityTaskList(kTaskListSlotsPerThread),
         taskList(taskList), overflowMutex(overflowMutex),
-        overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID) {
+        overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID),
+        poolName(poolName) {
     if (sharedState.mainWillDonate && workerID == 0) {
       // We can leave workerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
@@ -376,7 +379,7 @@ void WorkQueueThread::runOnThread() {
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
-  llvm::set_thread_name("LLCL Thread " + llvm::Twine(workerID));
+  llvm::set_thread_name(poolName + llvm::Twine(workerID));
 
   // On systems that support it, give the thread affinity for one CPU.
   LLCL::setThreadAffinity(cpuID);
@@ -573,7 +576,7 @@ public:
   /// destructor.
   ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
-                      bool paranoid);
+                      bool paranoid, std::string_view poolName);
 
   ~ThreadPoolWorkQueue() override;
 
@@ -664,14 +667,16 @@ private:
   /// Only used when the taskList is full.
   std::mutex overflowMutex; // protects overflowTaskList
   SmallVector<WorkItem> overflowTaskList;
+  std::string poolName;
 };
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                                          size_t taskListCapacity,
-                                         bool mainWillDonate, bool paranoid)
+                                         bool mainWillDonate, bool paranoid,
+                                         std::string_view poolName)
     : numWorkers(cpuIDs.size()), sharedState(mainWillDonate, paranoid),
-      taskList(taskListCapacity) {
+      taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
   // Initialize each thread with its required state.
   // Note that we're constructing the array manually since WorkQueueThreads have
@@ -682,7 +687,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
     new (workers + workerID)
         WorkQueueThread(sharedState, taskList, overflowMutex, overflowTaskList,
-                        workerID, cpuIDs[workerID]);
+                        workerID, cpuIDs[workerID], poolName);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
@@ -978,7 +983,7 @@ bool ThreadPoolWorkQueue::callerIsForeign() const {
 
 std::unique_ptr<WorkQueue>
 M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
-                                   bool paranoid) {
+                                   bool paranoid, std::string_view poolName) {
 #if MODULAR_PARANOID
 #ifdef NDEBUG
   llvm::dbgs() << "CAUTION: Asked for a MODULAR_PARANOID build with NDEBUG. "
@@ -1022,6 +1027,6 @@ M::LLCL::createThreadPoolWorkQueue(size_t numThreads, bool mainWillDonate,
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
 
-  return std::make_unique<ThreadPoolWorkQueue>(cpuIDs, taskListCapacity,
-                                               mainWillDonate, paranoid);
+  return std::make_unique<ThreadPoolWorkQueue>(
+      cpuIDs, taskListCapacity, mainWillDonate, paranoid, poolName);
 }
