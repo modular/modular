@@ -108,10 +108,18 @@ Attribute ParameterEvaluator::getReboundAttribute(Attribute attr) {
   Attribute result = attr;
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     result = paramValues[declRef.getName()];
+    // During elaboration, a missing parameter is an internal error and
+    // signifies a bug. In a signature resolution context, however, the
+    // evaluator does not have the context to know about captured parameters.
+    if (!result && inputParamValues.empty() && resultParamValues.empty()) {
+      llvm::report_fatal_error("internal error: missing parameter " +
+                               declRef.getName().getValue());
+    }
+    // If the referenced parameter is not bound, forward the reference.
     if (!result)
-      llvm::errs() << "MISSING PARAM: " << declRef.getName() << "\n";
-    assert(result && "Verifier should check that all parameters are defined");
-    result = upbindValue(result);
+      result = declRef;
+    else
+      result = upbindValue(result);
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
     result = upbindValue((indexRef.getIsResult()

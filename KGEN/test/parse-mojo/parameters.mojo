@@ -226,6 +226,17 @@ fn str_input_param():
   # CHECK: %0 = kgen.call @"$parameters"::@"meta_str{{.*}}"<:{{.*}}@StringLiteral {{.*}}"123"{{.*}}>() : () -> !lit.none
   meta_str["123"]()
 
+@value
+@register_passable
+struct TwoParams[a: Int, b: Int]:
+    pass
+
+# CHECK-LABEL: lit.func @"signature_capture
+# CHECK-SAME: {{.*}}a: {{.*}}Int, {{.*}}f: <{{.*}}Int>() ownedresult ->
+# CHECK-SAME: {{.*}}TwoParams<{{.*}}a: {{.*}}Int = {{.*}}a, {{.*}}b: {{.*}}Int = *(0,0)>
+fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
+    _ = f[2]()
+
 ##===----------------------------------------------------------------------===##
 # Result parameters
 ##===----------------------------------------------------------------------===##
