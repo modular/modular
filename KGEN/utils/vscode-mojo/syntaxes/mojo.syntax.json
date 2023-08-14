@@ -1014,7 +1014,7 @@
           "contentName": "meta.function.lambda.parameters.python",
           "patterns": [
             {
-              "name": "comment.typehint.type.notation.python",
+              "name": "storage.modifier",
               "match": "\\b(owned|borrowed|inout)\\b"
             },
             {
@@ -1179,7 +1179,7 @@
       },
       "patterns": [
         {
-          "name": "comment.typehint.type.notation.python",
+          "name": "storage.modifier",
           "match": "\\b(owned|borrowed|inout)\\b"
         },
         {
