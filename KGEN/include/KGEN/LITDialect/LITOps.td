@@ -26,6 +26,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/RegionKindInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1070,7 +1071,8 @@ def LIT_ReturnOp : LITOp<"return",
 // ErrorReturnOp
 //===----------------------------------------------------------------------===//
 
-def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator]> {
+def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let summary = "Represents an early return due to failure.";
   let description = [{
     The `lit.error_return` operation is a terminator version

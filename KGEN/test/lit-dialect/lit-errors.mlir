@@ -326,3 +326,12 @@ lit.func @declareWrongType() {
   "lit.alias.decl"() {paramDecl = #kgen<param.decl p1 : index>, value = 1 : i32} : () -> ()
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{see function here}}
+lit.func @wrong_error_return(%arg0: i32) -> !pop.variant<index> {
+  %var = pop.variant.create %arg0 : i32 -> !pop.variant<i32>
+  // expected-error @below {{'lit.error_return' op operand #0 type '!pop.variant<i32>' does not match expected result type '!pop.variant<index>'}}
+  lit.error_return %var : !pop.variant<i32>
+}

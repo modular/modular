@@ -105,7 +105,7 @@ static LogicalResult verifyReturnTypes(TypeRange lhs, TypeRange rhs,
 
 LogicalResult ControlFlowVerifier::verifyTerminator(ControlFlowTerminator op) {
   // Returns are modeled differently. Handle them here.
-  if (isa<KGEN::ReturnOp>(*op)) {
+  if (op->hasTrait<OpTrait::ReturnLike>()) {
     return verifyReturnTypes(op->getOperandTypes(), root.getResultTypes(), op,
                              root);
   }
@@ -176,9 +176,9 @@ LogicalResult HLCF::verifyControlFlowTerminator(ControlFlowTerminator op) {
 
   // Special case `kgen.return` and `kgen.unreachable`. These are the only
   // terminators allowed for a function-like.
-  if (isa<KGEN::ReturnOp, KGEN::UnreachableOp>(op) &&
+  if ((op->hasTrait<OpTrait::ReturnLike>() || isa<KGEN::UnreachableOp>(op)) &&
       isa<KGEN::FunctionLike>(parent)) {
-    if (!isa<KGEN::ReturnOp>(op))
+    if (isa<KGEN::UnreachableOp>(op))
       return success();
     // Verify return types.
     return verifyReturnTypes(op->getOperandTypes(),
