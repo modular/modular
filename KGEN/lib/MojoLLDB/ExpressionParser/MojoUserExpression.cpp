@@ -11,7 +11,6 @@
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"
-#include "Support/CrashReporting.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "lldb/Core/Debugger.h"
@@ -270,10 +269,6 @@ static void dumpTraceOnSignal(void *cookie) {
   getTraceDumpSignalRegisteredFlag().clear();
 
   auto *debugger = (Debugger *)cookie;
-
-  // First simulate a crash for Crashpad.  This does not rely on the type
-  // system and can report issues even if the other mechanisms below fail.
-  generateNonFatalDump();
 
   // Pull the type system out of the current target.
   lldb::TargetSP currentTarget = debugger->GetSelectedTarget();
