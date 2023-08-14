@@ -23,7 +23,10 @@ constexpr bool kTraceUsesToErrs = false;
 //===----------------------------------------------------------------------===//
 
 /// Force llvm::errs() messages to be serialized.
-static std::mutex messageMutex;
+static std::mutex &getMessageMutex() {
+  static std::mutex messageMutex;
+  return messageMutex;
+}
 
 static bool isReferencing(ResourceUseType type) {
   return type == kReferencingResourceUse;
@@ -212,7 +215,7 @@ ResourceUse Resource::beginUse(std::string useName, ResourceUseType useType,
                   section);
 
   if constexpr (kTraceUsesToErrs) {
-    std::lock_guard<std::mutex> innerGuard(messageMutex);
+    std::lock_guard<std::mutex> innerGuard(getMessageMutex());
     llvm::errs() << "begin ";
     use.print(llvm::errs());
     llvm::errs() << "\n";
@@ -304,7 +307,7 @@ void Resource::endUse(const ResourceUse &use) {
   assert(use);
 
   if constexpr (kTraceUsesToErrs) {
-    std::lock_guard<std::mutex> innerGuard(messageMutex);
+    std::lock_guard<std::mutex> innerGuard(getMessageMutex());
     llvm::errs() << "end ";
     use.print(llvm::errs());
     llvm::errs() << "\n";
@@ -393,7 +396,7 @@ void Resource::print(llvm::raw_ostream &os) const {
 }
 
 void Resource::fatal(StringRef message, const ResourceUse &use) {
-  std::lock_guard<std::mutex> guard(messageMutex);
+  std::lock_guard<std::mutex> guard(getMessageMutex());
   llvm::errs() << "invalid use of resource: " << message << "\n";
   llvm::errs() << "by use ";
   use.print(llvm::errs());
@@ -405,7 +408,7 @@ void Resource::fatal(StringRef message, const ResourceUse &use) {
 }
 
 void Resource::fatal(StringRef message) {
-  std::lock_guard<std::mutex> guard(messageMutex);
+  std::lock_guard<std::mutex> guard(getMessageMutex());
   llvm::errs() << "invalid use of resource: " << message << "\n";
   print(llvm::errs());
   llvm::errs().flush();
