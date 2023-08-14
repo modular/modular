@@ -59,11 +59,11 @@ public:
                         const mlir::lsp::Position &completePos,
                         OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
 
-  /// Get the location of identifier of the declaration of the symbol that
-  /// contains the given position.
+  /// Get the identifier location of the symbol declarations that contain the
+  /// given position.
   void
   onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Location>> onDefinitionFn);
+               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
 
   /// Get a `Hover` element corresponding to the given document position.
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,

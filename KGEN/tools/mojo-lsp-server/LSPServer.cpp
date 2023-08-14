@@ -184,8 +184,8 @@ void LSPServer::onDefinition(const TextDocumentPositionParams &params,
                              Callback<llvm::json::Value> reply) {
   server.onDefinition(params.textDocument.uri, params.position,
                       [reply = std::move(reply)](
-                          std::optional<mlir::lsp::Location> location) mutable {
-                        reply(std::move(location));
+                          std::vector<mlir::lsp::Location> locations) mutable {
+                        reply(std::move(locations));
                       });
 }
 
