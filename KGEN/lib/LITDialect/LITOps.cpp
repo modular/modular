@@ -1357,6 +1357,15 @@ LogicalResult ErrorReturnOp::verify() {
   return success();
 }
 
+bool ErrorReturnOp::isParentNode(Operation *op) { return isa<LIT::FuncOp>(op); }
+
+void ErrorReturnOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == 1);
+  targets.emplace_back(std::nullopt, getVariant());
+}
+
 //===----------------------------------------------------------------------===//
 // ExternFuncOp
 //===----------------------------------------------------------------------===//
