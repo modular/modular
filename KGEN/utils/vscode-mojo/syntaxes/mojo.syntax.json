@@ -1163,7 +1163,7 @@
           "patterns": [
             {
               "name": "comment.typehint.type.notation.python",
-              "match": "owned|borrowed|inout"
+              "match": "\\b(owned|borrowed|inout)\\b"
             },
             {
               "name": "keyword.operator.positional.parameter.python",
@@ -1328,7 +1328,7 @@
       "patterns": [
         {
           "name": "comment.typehint.type.notation.python",
-          "match": "owned|borrowed|inout"
+          "match": "\\b(owned|borrowed|inout)\\b"
         },
         {
           "name": "keyword.operator.positional.parameter.python",
