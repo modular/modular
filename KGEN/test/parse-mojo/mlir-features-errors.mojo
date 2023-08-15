@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from DType import DType
 from SIMD import Float32
 from Object import object
 

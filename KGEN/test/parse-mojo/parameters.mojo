@@ -8,14 +8,13 @@
 
 from Assert import assert_param
 from SIMD import SIMD
-from DType import DType
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @OurSIMD
-# CHECK-SAMEL <[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int, [[SIMDDT:.*]]: @"$DType"::@DType>
+# CHECK-SAMEL <[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int, [[SIMDDT:.*]]: @"$Builtin"::@"$DType"::@DType>
 # CHECK-SAME: attributes {registerPassable = 1 : i8} {
 @register_passable
 struct OurSIMD[size: Int, dt: DType]:
@@ -35,9 +34,9 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
   return a
 
 # CHECK-LABEL: lit.func @"fancy_signature
-# CHECK-SAME: <[[DT:.*]]: @"$DType"::@DType, [[SIZE:.*]]: @"$Builtin"::@"$Int"::@Int>
-# CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: @"$Builtin"::@"$Int"::@Int = [[SIZE]], [[SIMDDT:.*]]: @"$DType"::@DType = [[DT]]>> borrow,
-# CHECK-SAME: %exp: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: @"$Builtin"::@"$Int"::@Int = [[SIZE]], [[SIMDDT]]: @"$DType"::@DType = [[DT]]>> borrow) -> !kgen.declref<@"$Builtin"::@"$Int"::@Int>
+# CHECK-SAME: <[[DT:.*]]: @"$Builtin"::@"$DType"::@DType, [[SIZE:.*]]: @"$Builtin"::@"$Int"::@Int>
+# CHECK-SAME: (%x: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: @"$Builtin"::@"$Int"::@Int = [[SIZE]], [[SIMDDT:.*]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>> borrow,
+# CHECK-SAME: %exp: !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: @"$Builtin"::@"$Int"::@Int = [[SIZE]], [[SIMDDT]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>> borrow) -> !kgen.declref<@"$Builtin"::@"$Int"::@Int>
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
@@ -57,14 +56,14 @@ fn fancy_signature[dt: DType, size: Int]
 fn generic_fn[a: DType, b: Int, c: __mlir_type.`!kgen.mlirtype`](d : Int):
   pass
 
-# CHECK: lit.func @"call_generic{{.*}}"<[[DT:.*]]: @"$DType"::@DType>()
+# CHECK: lit.func @"call_generic{{.*}}"<[[DT:.*]]: @"$Builtin"::@"$DType"::@DType>()
 fn call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$DType"::@DType [[DT]], :{{.*}}@"$Int"::@Int {{.*}}42{{.*}}, :type !kgen.declref<@"$DType"::@DType>>(%[[C57]])
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$Builtin"::@"$DType"::@DType [[DT]], :{{.*}}@"$Int"::@Int {{.*}}42{{.*}}, :type !kgen.declref<@"$Builtin"::@"$DType"::@DType>>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[TMP:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$DType"::@DType [[DT]], :{{.*}}@"$Int"::@Int #lit.struct<{value = 13}>, :type !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int = #lit.struct<{value = 4}>, {{.*}}dt: @"$DType"::@DType = [[DT]]>>>(%2) : (!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !lit.none
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$Builtin"::@"$DType"::@DType [[DT]], :{{.*}}@"$Int"::@Int #lit.struct<{value = 13}>, :type !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int = #lit.struct<{value = 4}>, {{.*}}dt: @"$Builtin"::@"$DType"::@DType = [[DT]]>>>(%2) : (!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !lit.none
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -152,19 +151,19 @@ fn implConversion[a: StructWithIntParam[42]]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @Pair<
-# CHECK-SAME: [[DT:.*]]: @"$DType"::@DType>
+# CHECK-SAME: [[DT:.*]]: @"$Builtin"::@"$DType"::@DType>
 @register_passable
 struct Pair[dt: DType]:
- # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int = {{.*}}42{{.*}}, [[SIMDDT:.*]]: @"$DType"::@DType = [[DT]]>>
+ # CHECK: lit.struct.field a : !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$Int"::@Int = {{.*}}42{{.*}}, [[SIMDDT:.*]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>>
  # CHECK: lit.struct.field b : !kgen.declref<{{.*}}@"$Int"::@Int>
   var a : OurSIMD[42, dt]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: @"$DType"::@DType = [[DT]]>> attributes {{.*}} isStatic
+  # CHECK: lit.func @"__init__{{.*}} -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>> attributes {{.*}} isStatic
   fn __init__(a: OurSIMD[42, dt]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = kgen.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: {{.*}}@"$Int"::@Int {{.*}} 4
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: {{.*}}@"$Int"::@Int = #lit.struct<{value = 42}>, [[SIMDDT]]: @"$DType"::@DType = [[DT]]>>, !kgen.declref<{{.*}}@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: @"$DType"::@DType = [[DT]]>>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : (!kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE]]: {{.*}}@"$Int"::@Int = #lit.struct<{value = 42}>, [[SIMDDT]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>>, !kgen.declref<{{.*}}@"$Int"::@Int>) -> !kgen.declref<@"$parameters"::@Pair<[[DT]]: @"$Builtin"::@"$DType"::@DType = [[DT]]>>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
