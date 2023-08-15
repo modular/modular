@@ -10,7 +10,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
-from DType import DType
 from SIMD import Float32
 from IO import print
 from Pointer import DTypePointer

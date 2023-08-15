@@ -11,7 +11,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from DType import DType
 from SIMD import Float32
 from SIMD import SIMD
 from IO import print, print_no_newline, _printf
