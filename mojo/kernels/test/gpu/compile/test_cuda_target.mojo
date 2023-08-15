@@ -8,7 +8,6 @@
 
 from Activations import gelu
 from Assert import assert_param
-from DType import DType
 from Functional import elementwise
 from Index import StaticIntTuple
 from IO import print
