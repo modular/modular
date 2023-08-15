@@ -86,9 +86,10 @@ Lexer::Lexer(SharedState &shared, const LexerCursor &cursor)
 }
 
 /// Emit an error message and return a Token::error token.
-void Lexer::emitErrorAt(const char *loc, const Twine &message) {
-  shared.diags.emitError(SMLoc::getFromPointer(loc), message);
+InflightDiag Lexer::emitErrorAt(const char *loc, const Twine &message) {
+  auto diag = shared.diags.emitError(SMLoc::getFromPointer(loc), message);
   formToken(Token::error, loc, -1);
+  return diag;
 }
 
 /// This function point is the funnel point for all tokens that are lexed.  This
@@ -182,8 +183,8 @@ void Lexer::lexToken() {
         indentation = -1;
         continue;
       }
-      return emitErrorAt(tokStart,
-                         "unexpected '\\' character, isn't at end of line");
+      emitErrorAt(tokStart, "unexpected '\\' character, isn't at end of line");
+      return;
     }
 
     default:
@@ -197,7 +198,8 @@ void Lexer::lexToken() {
       }
 
       // Unknown character, emit an error.
-      return emitErrorAt(tokStart, "unexpected character");
+      emitErrorAt(tokStart, "unexpected character");
+      return;
 
     case '_':
       // Handle identifiers.
@@ -314,7 +316,8 @@ void Lexer::lexToken() {
     case '!':
       if (*curPtr == '=')
         return formToken(Token::exclaim_equal, 1);
-      return emitErrorAt(tokStart, "unexpected character");
+      emitErrorAt(tokStart, "unexpected character");
+      return;
 
     case '0':
     case '1':
@@ -375,12 +378,14 @@ void Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
     case '\v':
     case '\f':
       // Vertical whitespace within a ` is invalid is the end of the comment.
-      return emitErrorAt(tokStart, "unterminated backtick identifier");
+      emitErrorAt(tokStart, "unterminated backtick identifier");
+      return;
     case 0:
       // If this is the end of the buffer, end the comment.
       if (curPtr - 1 == curBuffer.end()) {
         --curPtr;
-        return emitErrorAt(tokStart, "unterminated backtick identifier");
+        emitErrorAt(tokStart, "unterminated backtick identifier");
+        return;
       }
       [[fallthrough]];
     default:
@@ -440,9 +445,10 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
     ++curPtr;
   }
 
-  if (*curPtr != '\'' && *curPtr != '"')
-    return emitErrorAt(tokStart,
-                       "expecting a string quoting character: `'` or `\"`");
+  if (*curPtr != '\'' && *curPtr != '"') {
+    emitErrorAt(tokStart, "expecting a string quoting character: `'` or `\"`");
+    return;
+  }
   char quoteChar = *curPtr;
   if ((curPtr[1] == quoteChar && curPtr[2] == quoteChar)) {
     isTripleQuote = true;
@@ -454,8 +460,10 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
     switch (*curPtr++) {
     case '\\':
       if (isRaw) {
-        if (curPtr == curBuffer.end())
-          return emitErrorAt(tokStart, "unterminated string");
+        if (curPtr == curBuffer.end()) {
+          emitErrorAt(tokStart, "unterminated string");
+          return;
+        }
         // Handle trailing windows style newline.
         if (*curPtr == '\r' && curPtr[1] == '\n')
           ++curPtr;
@@ -479,10 +487,12 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
           ++curPtr;
           i++;
         }
-        if (i != 2)
-          return emitErrorAt(
+        if (i != 2) {
+          emitErrorAt(
               tokStart,
               "invalid hex escape sequence: exactly two hex digits needed");
+          return;
+        }
       } else if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b',
                                       'f', 'n', 'r', 't', 'v'},
                                      *curPtr)) {
@@ -510,8 +520,10 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
     case '\n':
     case '\r':
       // newline isn't allowed in a short string.
-      if (!isTripleQuote)
-        return emitErrorAt(tokStart, "unterminated string");
+      if (!isTripleQuote) {
+        emitErrorAt(tokStart, "unterminated string");
+        return;
+      }
       // Skip newline.
       break;
     default:
@@ -520,7 +532,7 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
     }
   }
 
-  return emitErrorAt(tokStart, "unterminated string");
+  emitErrorAt(tokStart, "unterminated string");
 }
 
 /// Lex a integer number literal.
@@ -554,8 +566,10 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
         hasDigits |= *curPtr != '_';
         ++curPtr;
       }
-      if (!hasDigits)
-        return emitErrorAt(curPtr, "no digits specified for binary literal");
+      if (!hasDigits) {
+        emitErrorAt(curPtr, "no digits specified for binary literal");
+        return;
+      }
     } else if (*curPtr == 'o' || *curPtr == 'O') {
       ++curPtr;
       bool hasDigits = false;
@@ -563,8 +577,10 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
         hasDigits |= *curPtr != '_';
         ++curPtr;
       }
-      if (!hasDigits)
-        return emitErrorAt(curPtr, "no digits specified for octal literal");
+      if (!hasDigits) {
+        emitErrorAt(curPtr, "no digits specified for octal literal");
+        return;
+      }
     } else if (*curPtr == 'x' || *curPtr == 'X') {
       ++curPtr;
       bool hasDigits = false;
@@ -572,8 +588,10 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
         hasDigits |= *curPtr != '_';
         ++curPtr;
       }
-      if (!hasDigits)
-        return emitErrorAt(curPtr, "no digits specified for hex literal");
+      if (!hasDigits) {
+        emitErrorAt(curPtr, "no digits specified for hex literal");
+        return;
+      }
     } else if (*curPtr == '.' || *curPtr == 'e' || *curPtr == 'E' ||
                *curPtr == 'j' || *curPtr == 'J') {
       return lexFloat(tokStart, indentation);
@@ -584,11 +602,12 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
       do
         ++curPtr;
       while (*curPtr == '0' || *curPtr == '_');
-    } else if (llvm::isDigit(*curPtr))
+    } else if (llvm::isDigit(*curPtr)) {
       // ex. 0123
-      return emitErrorAt(curPtr,
-                         "leading zeros in decimal integer literals are not "
-                         "permitted; use an 0o prefix for octal integers");
+      emitErrorAt(curPtr, "leading zeros in decimal integer literals are not "
+                          "permitted; use an 0o prefix for octal integers");
+      return;
+    }
   } else {
     // nonzerodigit
     // Superset of Python's grammar, we allow consecutive and trailing `_`
@@ -636,8 +655,10 @@ void Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
     ++curPtr;
     if (*curPtr == '+' || *curPtr == '-')
       ++curPtr;
-    if (!llvm::isDigit(*curPtr))
-      return emitErrorAt(curPtr, "expecting a digit after the exponent");
+    if (!llvm::isDigit(*curPtr)) {
+      emitErrorAt(curPtr, "expecting a digit after the exponent");
+      return;
+    }
     while (llvm::isDigit(*curPtr) || *curPtr == '_')
       ++curPtr;
   }

@@ -127,8 +127,8 @@ public:
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);
 
-  void emitTokenError(const Twine &message) {
-    emitErrorAt(getToken().getSpelling().data(), message);
+  InflightDiag emitTokenError(const Twine &message) {
+    return emitErrorAt(getToken().getSpelling().data(), message);
   }
 
   /// Given a location that is at the start of a line, scan backwards to find
@@ -151,7 +151,7 @@ private:
   }
   void formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
                  size_t tokenStartOffset = 0);
-  void emitErrorAt(const char *loc, const Twine &message);
+  InflightDiag emitErrorAt(const char *loc, const Twine &message);
 
   // Lexer implementation methods.
   void lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation);
