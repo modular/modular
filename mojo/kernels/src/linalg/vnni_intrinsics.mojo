@@ -9,7 +9,6 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from DType import DType
 from SIMD import SIMD
 from Intrinsics import llvm_intrinsic
 from TypeUtilities import rebind

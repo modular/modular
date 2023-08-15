@@ -8,7 +8,6 @@
 from List import DimList, Dim
 from Matmul import pack_b
 from math import div_ceil
-from DType import DType
 from Range import range
 from Buffer import Buffer, NDBuffer
 from IO import print

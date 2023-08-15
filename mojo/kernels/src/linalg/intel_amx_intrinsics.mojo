@@ -9,7 +9,6 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from DType import DType
 from Intrinsics import llvm_intrinsic
 from List import DimList
 from Matmul import Matrix

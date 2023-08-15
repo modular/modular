@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer, Buffer
-from DType import DType
 from Functional import unroll
 from List import Dim, DimList
 from SIMD import SIMD

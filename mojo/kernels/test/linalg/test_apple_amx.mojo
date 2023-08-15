@@ -13,7 +13,6 @@
 
 from AppleAMX import amx_detail
 from Buffer import NDBuffer
-from DType import DType
 from SIMD import Float32
 from Index import StaticIntTuple
 from IO import print

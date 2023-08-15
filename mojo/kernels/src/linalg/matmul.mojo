@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from DType import DType
 from Buffer import (
     NDBuffer,
     Buffer,

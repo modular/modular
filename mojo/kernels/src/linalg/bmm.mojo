@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param
-from DType import DType
 from Buffer import NDBuffer
 from List import DimList
 from LLCL import OutputChainPtr, OwningOutputChainPtr

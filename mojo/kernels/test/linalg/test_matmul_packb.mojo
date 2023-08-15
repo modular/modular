@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from DType import DType
 from Buffer import NDBuffer
 from Index import Index
 from List import DimList

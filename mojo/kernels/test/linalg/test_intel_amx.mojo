@@ -10,7 +10,6 @@
 # REQUIRES: linux, intel_amx
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from DType import DType
 
 from SIMD import SIMD
 from Pointer import Pointer, DTypePointer

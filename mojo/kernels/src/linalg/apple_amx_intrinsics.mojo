@@ -12,7 +12,6 @@
 
 from Assert import assert_param
 from Buffer import NDBuffer
-from DType import DType
 from List import DimList
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer

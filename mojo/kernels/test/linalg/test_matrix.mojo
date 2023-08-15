@@ -9,7 +9,6 @@ from Matrix import Matrix
 from IO import print
 from Buffer import Buffer, NDBuffer
 from Pointer import Pointer, DTypePointer
-from DType import DType
 from List import DimList
 from Index import Index
 from math import iota

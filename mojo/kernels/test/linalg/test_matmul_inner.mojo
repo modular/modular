@@ -18,7 +18,6 @@ from MatmulUtils import (
 from Buffer import NDBuffer
 from TargetInfo import simdwidthof
 from Index import Index
-from DType import DType
 from List import DimList
 from IO import print
 

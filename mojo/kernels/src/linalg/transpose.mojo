@@ -7,7 +7,6 @@
 
 from Assert import assert_param
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Functional import (
     unroll,
     async_parallelize,

@@ -13,7 +13,6 @@
 
 from Range import range
 
-from DType import DType
 from Buffer import Buffer
 from SIMD import SIMD, Int32
 from VNNI import dot_i8_to_i32_AVX2, dot_i8_to_i32_x86

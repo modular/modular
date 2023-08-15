@@ -7,7 +7,6 @@
 
 from Assert import assert_param
 from Buffer import NDBuffer
-from DType import DType
 from Functional import _elementwise_impl
 from Index import Index
 from Index import StaticIntTuple
