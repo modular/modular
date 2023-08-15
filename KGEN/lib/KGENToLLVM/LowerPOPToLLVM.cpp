@@ -746,7 +746,7 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
 // getAlignment
 //===----------------------------------------------------------------------===//
 
-static unsigned getAlignment(POPToLLVMTypeConverter *tc, Type ptrType,
+static unsigned getAlignment(const POPToLLVMTypeConverter *tc, Type ptrType,
                              TypedAttr alignmentAttr = {}) {
   // If we have the alignment attribute, use it.
   if (alignmentAttr)
