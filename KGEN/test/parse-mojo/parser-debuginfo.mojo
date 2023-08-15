@@ -43,7 +43,7 @@ fn power(lhs: Int, rhs: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
-    # CHECK: %0 = hlcf.loop (%arg0 = %idx0 : index) -> index {
+    # CHECK: %0 = hlcf.loop (%arg0 loc({{.*}}) = %idx0 : index) -> index {
     __mlir_region loop_body(i: __mlir_type.index):
         # CHECK-NEXT: debuginfo.value #[[LOCAL_VAR_I]] = %arg0 : index
         # CHECK-NEXT: %idx1 = index.constant 1
@@ -76,9 +76,6 @@ from imported_module import VeryUniqueStruct
 
 fn caller():
     let y = VeryUniqueStruct.very_unique_func(0)
-
-# COM: need this because otherwise FileCheck cannot separate the DAGs.
-# CHECK: #-}
 
 # // -----
 
