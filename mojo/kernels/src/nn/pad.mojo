@@ -15,7 +15,6 @@ from Index import StaticIntTuple
 from List import Dim, DimList
 from Memory import memcpy
 from Pointer import DTypePointer
-from SIMD import SIMD
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides

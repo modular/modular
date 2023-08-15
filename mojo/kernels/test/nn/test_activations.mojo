@@ -16,7 +16,6 @@ from Activations import (
 )
 from IO import print
 from math import iota
-from SIMD import Float32, Float64
 
 # CHECK-LABEL: test_elu
 fn test_elu():

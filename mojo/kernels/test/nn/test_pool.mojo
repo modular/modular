@@ -27,8 +27,6 @@ from Pool import (
     max_pool_reduce_fn,
 )
 from Range import range
-from SIMD import Float32
-from SIMD import SIMD
 from LLCL import Runtime, OwningOutputChainPtr
 
 

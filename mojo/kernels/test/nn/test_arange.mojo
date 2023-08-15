@@ -19,7 +19,6 @@ from IO import print
 from Index import StaticIntTuple, Index
 from LLCL import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
-from SIMD import Float32, SIMD
 from Slice import slice_as_view, slice_as_copy
 
 

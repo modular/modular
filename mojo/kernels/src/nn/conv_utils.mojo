@@ -15,7 +15,6 @@ from Image import (
 from Index import StaticIntTuple, Index
 from math import min, max, clamp, sqrt, div_ceil
 from MatmulUtils import partition_work
-from SIMD import SIMD, Float32
 from TargetInfo import (
     has_avx512f,
     has_neon,

@@ -24,7 +24,6 @@ from math import (
     fma,
 )
 from math.polynomial import polynomial_evaluate
-from SIMD import SIMD
 
 
 @value

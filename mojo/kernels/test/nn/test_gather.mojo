@@ -12,14 +12,12 @@
 # if compiler generates proper SIMD instructions and unrolling.
 
 from Buffer import NDBuffer
-from SIMD import Float32
 from GatherScatter import gather
 from Index import StaticIntTuple
 from IO import print
 from List import DimList
 from LLCL import Runtime, OwningOutputChainPtr
 from Range import range
-from SIMD import SIMD
 from TargetInfo import simdwidthof
 
 

@@ -10,7 +10,6 @@ from Index import StaticIntTuple
 from IO import print
 from List import DimList
 from Pad import pad
-from SIMD import SIMD
 
 
 # CHECK-LABEL: test_pad_1d

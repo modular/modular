@@ -15,7 +15,6 @@ from math import min, max, add, div_ceil
 from Limits import neginf
 from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim
-from SIMD import SIMD
 from TargetInfo import simdwidthof
 
 # Pooling method.

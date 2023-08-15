@@ -9,7 +9,6 @@ from Functional import vectorize_unroll
 from List import Dim, DimList
 from Range import range
 from Functional import vectorize
-from SIMD import SIMD
 from Index import StaticIntTuple
 from StaticTuple import StaticTuple
 from TypeUtilities import rebind
