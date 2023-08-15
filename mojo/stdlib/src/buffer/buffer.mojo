@@ -15,7 +15,6 @@ from math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import Pointer, DTypePointer
 from Range import range
-from SIMD import SIMD
 from StaticTuple import StaticTuple
 from TargetInfo import sizeof, simdwidthof, alignof
 from TypeUtilities import rebind
