@@ -158,7 +158,11 @@ StructDeclOp
 ClosureEmitter::createClosureImplStructDecl(StringAttr name,
                                             SignatureType closureImplSignature,
                                             unsigned captureCount) {
-  SmallVector<Type> types;
+  unsigned initArgCount = captureCount + 1;
+  SmallVector<Type> fieldTypes;
+  SmallVector<Type> argumentTypes(initArgCount);
+  SmallVector<ValueInputConvention> conventions(initArgCount);
+  SmallVector<StringAttr> names(initArgCount);
   for (auto [i, type, convention] : llvm::enumerate(
            closureImplSignature.getValueInputs(),
            closureImplSignature.getMetadata().getInputConventions())) {
@@ -174,25 +178,29 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
     case ValueInputConvention::ByRef: {
       assert(isa<POP::PointerType>(type) &&
              "convention does not match type requirement.");
-      types.emplace_back(type);
+      fieldTypes.emplace_back(type);
       break;
     }
     case ValueInputConvention::OwnedInReg:
     case ValueInputConvention::BorrowedInReg:
-      types.emplace_back(type);
+      fieldTypes.emplace_back(type);
       break;
     case ValueInputConvention::OwnedInMem:
     case ValueInputConvention::BorrowedInMem: {
       POP::PointerType ptr = cast<POP::PointerType>(type);
-      types.emplace_back(ptr.getElementAsType());
+      fieldTypes.emplace_back(ptr.getElementAsType());
       break;
     }
     }
+    argumentTypes[i + 1] = type;
+    conventions[i + 1] = convention;
+    names[i + 1] =
+        StringAttr::get(shared.getContext(), "field" + std::to_string(i));
   }
   ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
       SymbolRefAttr::get(fileModuleOp.getDeclName()));
   StructDeclOp declOp =
-      createStruct(fileModuleOp, name, types, fileModuleOp.getLoc());
+      createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc());
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
       declOp.getOperation(), declOp.getDeclName(), parent.getLoc(), &parent);
 
@@ -200,8 +208,16 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
+  auto ptrToClosureImplType =
+      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
+  argumentTypes[0] = ptrToClosureImplType;
+  conventions[0] = ValueInputConvention::InitSelf;
+  names[0] = StringAttr::get(shared.getContext(), "self");
+
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
       declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit*/ false);
+  structEmitter.synthesizeMemberwiseInit(astDecl.getLoc(), declOp,
+                                         argumentTypes, conventions, names);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
