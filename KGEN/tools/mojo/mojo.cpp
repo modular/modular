@@ -46,6 +46,9 @@ int main(int argc, char **argv) {
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
   initCrashpadForProgram(argv[0]);
+  llvm::setBugReportMsg(
+      "PLEASE submit a bug report to https://github.com/modularml/mojo/issues "
+      "and include the crash backtrace.\n");
 
   // Store command line arguments and record the program name.
   SmallVector<const char *, 256> argvStorage(argv, argv + argc);
