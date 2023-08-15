@@ -173,7 +173,12 @@ public:
   /// When stopOnSemicolon is true this will stop at the first semicolon seen.
   /// This should only be used for statements that can share a line with other
   /// statements with ; separation.
-  void skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false);
+  ///
+  /// customStopPredicate (if non-null) is called on each token that isn't
+  /// surrounded by brackets, allowing the scan to stop early by returning true.
+  void
+  skipUntilIndentation(size_t minIndent, bool stopOnSemicolon = false,
+                       llvm::unique_function<bool()> customStopPredicate = {});
 
   //===--------------------------------------------------------------------===//
   // Integration with parsers for subsets of the grammar.

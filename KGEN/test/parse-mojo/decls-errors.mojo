@@ -463,6 +463,22 @@ def BadDecorator(): pass
 @staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
+struct DecoratorSameLine:
+  # expected-error @below {{decorators must be on their own line, not ahead of a statement}}
+  @staticmethod def StaticMethod(): pass
+
+# @parameter if causes confusing indentation error message
+# https://github.com/modularml/modular/issues/19163
+fn someFn():
+    # expected-error @below {{decorators must be on their own line, not ahead of a statement}}
+    @parameter if True:
+        pass
+
+fn someFn2():
+    # expected-error @below {{orphaned decorator not associated with a declaration or statement}}
+    @parameter
+  if True:
+    pass
 
 ##===----------------------------------------------------------------------===##
 # Structs
