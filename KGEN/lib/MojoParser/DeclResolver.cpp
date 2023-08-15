@@ -845,12 +845,19 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       if (!decl.isMatchingEndCursor(lexer.getCursor()) &&
           !decl.hasReferenceError) {
         if (lexer.getToken().isAny(Token::kw_def, Token::kw_struct,
-                                   Token::kw_class, Token::kw_var))
+                                   Token::kw_class, Token::kw_var)) {
           lexer.emitTokenError(
               "definition isn't on its own line at the correct "
               "indentation");
-        else
+        } else if (lexer.getToken().is(Token::eof)) {
+          lexer.emitTokenError(
+                   "internal error: decl parsing skipped beyond end "
+                   "of declaration")
+                  .attachNote(decl.getLoc())
+              << "declaration started here";
+        } else {
           lexer.emitTokenError("unknown tokens at the end of a declaration");
+        }
       }
     };
 

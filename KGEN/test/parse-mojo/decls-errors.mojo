@@ -463,6 +463,7 @@ def BadDecorator(): pass
 @staticmethod # expected-error @+1 {{only methods on structs may be declared static}}
 def StaticMethod(): pass
 
+
 ##===----------------------------------------------------------------------===##
 # Structs
 ##===----------------------------------------------------------------------===##
