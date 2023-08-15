@@ -11,7 +11,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from DType import DType
 from IO import print
 from Range import range
 from SIMD import SIMD, Float32

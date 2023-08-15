@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the Complex type."""
 
-from DType import DType
 from SIMD import SIMD
 
 
