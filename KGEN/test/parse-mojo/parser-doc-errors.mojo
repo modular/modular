@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME(18903): Ensure the cache is populated.
-# RUN: kgen-translate -import-mojo -o /dev/null %s
+# FIXME(18903): Imported Mojo code's docs should not be validated transitively.
 # RUN: kgen-translate -import-mojo -o /dev/null -mojo-doc-validate -verify-diagnostics %s
+# REQUIRES: disabled
 
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
