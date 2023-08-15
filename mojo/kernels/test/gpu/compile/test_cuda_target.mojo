@@ -27,7 +27,6 @@ from Pointer import DTypePointer
 from Range import range
 from TargetInfo import triple_is_nvidia_cuda, simdwidthof
 from LLCL import OutputChainPtr
-from SIMD import Float32
 
 
 # ===----------------------------------------------------------------------===#
