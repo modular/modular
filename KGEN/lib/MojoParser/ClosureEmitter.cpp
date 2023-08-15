@@ -16,10 +16,25 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
+                                                  FileModuleOp fileModuleOp,
+                                                  SignatureType signatureType) {
+  std::string base(prefix);
+  llvm::raw_string_ostream stream(base);
+  stream << fileModuleOp.getSymName() << "_";
+  stream << DeclResolver::getMangledName(
+      StringAttr::get(fileModuleOp.getContext(), ""), signatureType);
+  for (FnEffects effect : {FnEffects::Throws, FnEffects::Async})
+    if (bitEnumContainsAny(signatureType.getFnEffects(), effect))
+      stream << effect;
+  return StringAttr::get(signatureType.getContext(), stream.str());
+}
 
 static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
                                  ArrayRef<Type> fields, Location location) {
@@ -154,49 +169,81 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   return declOp;
 }
 
-StructDeclOp
-ClosureEmitter::createClosureImplStructDecl(StringAttr name,
-                                            SignatureType closureImplSignature,
-                                            unsigned captureCount) {
+StructDeclOp ClosureEmitter::createClosureImplStructDecl(FuncOp nestedFunction,
+                                                         ClosureCache &cache) {
+  // Get captures and create the init signature, the field types, and the
+  // closure impl signature, which is used to unique the closure struct.
+  llvm::SetVector<Value> captures;
+  mlir::getUsedValuesDefinedAbove(nestedFunction->getRegions(), captures);
+  SmallVector<Type> closureImplSigTypes;
+  SmallVector<ValueInputConvention> closureImplSigConventions;
+
+  unsigned captureCount = captures.size();
   unsigned initArgCount = captureCount + 1;
   SmallVector<Type> fieldTypes;
-  SmallVector<Type> argumentTypes(initArgCount);
-  SmallVector<ValueInputConvention> conventions(initArgCount);
-  SmallVector<StringAttr> names(initArgCount);
-  for (auto [i, type, convention] : llvm::enumerate(
-           closureImplSignature.getValueInputs(),
-           closureImplSignature.getMetadata().getInputConventions())) {
-    if (i >= captureCount)
-      break;
-    // The convention defines a map from the closureImplSignature parameter type
-    // to the field type. The parameter type in the ClosureImpl initializer that
-    // corresponds to this field will match the type in the closureImplSignature
-    // but the fieldType may differ.
-    switch (convention) {
-    case ValueInputConvention::InitSelf:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::ByRef: {
-      assert(isa<POP::PointerType>(type) &&
-             "convention does not match type requirement.");
-      fieldTypes.emplace_back(type);
-      break;
+  SmallVector<Type> initSigTypes(initArgCount);
+  SmallVector<ValueInputConvention> initSigConventions(initArgCount);
+  SmallVector<StringAttr> initSigNames(initArgCount);
+  // TODO: Enable expression of how to capture.
+  unsigned i = 0;
+  for (Value value : captures) {
+    Type initArgType;
+    ValueInputConvention initArgConvention;
+    if (auto declref = dyn_cast<DeclRefType>(value.getType())) {
+      ASTDecl &astDecl =
+          shared.declResolver->getDeclForTypeSymbol(declref.getSymbol());
+      if (auto structOp = dyn_cast<StructDeclOp>(astDecl)) {
+        if (structOp.isRegisterPassable()) {
+          initArgType = declref;
+          initArgConvention = ValueInputConvention::BorrowedInReg;
+          fieldTypes.emplace_back(declref);
+        } else {
+          initArgType = POP::PointerType::get(declref);
+          initArgConvention = ValueInputConvention::BorrowedInMem;
+          fieldTypes.emplace_back(declref);
+        }
+      } else {
+        llvm_unreachable("Encountered a declref that is not registered with "
+                         "the declResolver");
+      }
+    } else {
+      // If it's not a declref, then it must be an MLIR type.
+      initArgType = value.getType();
+      initArgConvention = ValueInputConvention::BorrowedInReg;
+      fieldTypes.push_back(value.getType());
     }
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::BorrowedInReg:
-      fieldTypes.emplace_back(type);
-      break;
-    case ValueInputConvention::OwnedInMem:
-    case ValueInputConvention::BorrowedInMem: {
-      POP::PointerType ptr = cast<POP::PointerType>(type);
-      fieldTypes.emplace_back(ptr.getElementAsType());
-      break;
-    }
-    }
-    argumentTypes[i + 1] = type;
-    conventions[i + 1] = convention;
-    names[i + 1] =
+    closureImplSigConventions.push_back(initArgConvention);
+    closureImplSigTypes.push_back(initArgType);
+    initSigTypes[i + 1] = initArgType;
+    initSigConventions[i + 1] = initArgConvention;
+    initSigNames[i + 1] =
         StringAttr::get(shared.getContext(), "field" + std::to_string(i));
+    i++;
   }
+  // Create the closure impl signature from the captures and the wrapper
+  // signature.
+  SignatureType closureWrapperSignature = nestedFunction.getSignature();
+  llvm::append_range(closureImplSigTypes,
+                     closureWrapperSignature.getValueInputs());
+  llvm::append_range(
+      closureImplSigConventions,
+      closureWrapperSignature.getMetadata().getInputConventions());
+  SignatureType closureImplSignature = SignatureType::get(
+      closureWrapperSignature.getInputParamTypes(),
+      closureWrapperSignature.getResultParamTypes(),
+      FunctionType::get(shared.getContext(), closureImplSigTypes,
+                        closureWrapperSignature.getValueResults()),
+      FnMetadataAttr::get(shared.getContext(), closureImplSigConventions, {},
+                          closureWrapperSignature.getFnEffects()));
+
+  std::pair<SignatureType, StringAttr> key(closureImplSignature,
+                                           fileModuleOp.getSymNameAttrName());
+  if (auto existing = cache.getExisting(key))
+    return existing;
+
+  StringAttr name =
+      getClosureNameFromType("_CI_", fileModuleOp, closureImplSignature);
+
   ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
       SymbolRefAttr::get(fileModuleOp.getDeclName()));
   StructDeclOp declOp =
@@ -210,14 +257,14 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
 
   auto ptrToClosureImplType =
       POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
-  argumentTypes[0] = ptrToClosureImplType;
-  conventions[0] = ValueInputConvention::InitSelf;
-  names[0] = StringAttr::get(shared.getContext(), "self");
+  initSigTypes[0] = ptrToClosureImplType;
+  initSigConventions[0] = ValueInputConvention::InitSelf;
+  initSigNames[0] = StringAttr::get(shared.getContext(), "self");
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
       declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit*/ false);
-  structEmitter.synthesizeMemberwiseInit(astDecl.getLoc(), declOp,
-                                         argumentTypes, conventions, names);
+  structEmitter.synthesizeMemberwiseInit(astDecl.getLoc(), declOp, initSigTypes,
+                                         initSigConventions, initSigNames);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
@@ -236,6 +283,7 @@ ClosureEmitter::createClosureImplStructDecl(StringAttr name,
     declOp.setMoveInitAttr(moveCtr.getBoundReference());
 
   declOp.setCopyInitAttr(copyCtr.getBoundReference());
+  cache.storeClosure(key, declOp);
   return declOp;
 }
 

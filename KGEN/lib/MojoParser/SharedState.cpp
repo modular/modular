@@ -81,10 +81,13 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
     paths.push_back(path.str());
 }
 
-struct SharedState::Impl {
+struct SharedState::Impl : public ClosureCache {
   Impl(MLIRContext *ctx, MojoParserConfig::CachingLevel moduleCachingLevel)
       : moduleCachingLevel(moduleCachingLevel),
         bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
+  virtual ~Impl() {}
+  StructDeclOp getExisting(ClosureHash key) override;
+  void storeClosure(ClosureHash key, StructDeclOp closure) override;
 
   SymbolTableCollection symbolTables;
 
@@ -161,6 +164,13 @@ struct SharedState::Impl {
   llvm::DenseMap<std::pair<SignatureType, StringAttr>, StructDeclOp>
       closureImpls;
 };
+
+StructDeclOp SharedState::Impl::getExisting(ClosureHash key) {
+  return closureImpls[key];
+}
+void SharedState::Impl::storeClosure(ClosureHash key, StructDeclOp closure) {
+  closureImpls[key] = closure;
+}
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
@@ -1745,20 +1755,6 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-static StringAttr getClosureNameFromType(StringRef prefix,
-                                         FileModuleOp fileModuleOp,
-                                         SignatureType signatureType) {
-  std::string base(prefix);
-  llvm::raw_string_ostream stream(base);
-  stream << fileModuleOp.getSymName() << "_";
-  stream << DeclResolver::getMangledName(
-      StringAttr::get(fileModuleOp.getContext(), ""), signatureType);
-  for (FnEffects effect : {FnEffects::Throws, FnEffects::Async})
-    if (bitEnumContainsAny(signatureType.getFnEffects(), effect))
-      stream << effect;
-  return StringAttr::get(signatureType.getContext(), stream.str());
-}
-
 LIT::StructDeclOp
 SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
                                                SignatureType signatureType,
@@ -1767,8 +1763,8 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
                                            fileModuleOp.getSymNameAttrName());
   StructDeclOp existing = impl->closureWrappers[key];
   if (!existing) {
-    StringAttr name =
-        getClosureNameFromType("_CW_", fileModuleOp, signatureType);
+    StringAttr name = ClosureEmitter::getClosureNameFromType(
+        "_CW_", fileModuleOp, signatureType);
     ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
     existing = emitter.createClosureWrapperStructDecl(name, signatureType);
     impl->closureWrappers[key] = existing;
@@ -1777,22 +1773,9 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
 }
 
 LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
-    llvm::SMLoc location, SignatureType signatureType, unsigned captureCount,
-    FileModuleOp fileModuleOp) {
-  assert(captureCount <= signatureType.getValueInputs().size() &&
-         "Cannot capture more values than inputs");
-  std::pair<SignatureType, StringAttr> key(signatureType,
-                                           fileModuleOp.getSymNameAttrName());
-  StructDeclOp existing = impl->closureImpls[key];
-  if (!existing) {
-    StringAttr name =
-        getClosureNameFromType("_CI_", fileModuleOp, signatureType);
-    ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-    existing =
-        emitter.createClosureImplStructDecl(name, signatureType, captureCount);
-    impl->closureImpls[key] = existing;
-  }
-  return existing;
+    llvm::SMLoc location, LIT::FuncOp nestedFunc, FileModuleOp fileModuleOp) {
+  ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
+  return emitter.createClosureImplStructDecl(nestedFunc, *this->impl);
 }
 
 //===----------------------------------------------------------------------===//

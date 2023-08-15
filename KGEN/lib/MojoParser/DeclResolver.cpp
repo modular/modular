@@ -2150,48 +2150,9 @@ void DeclResolver::setLocationDebugScope(
 static void emitClosureInstance(SignatureType closureSignature,
                                 SharedState &shared, LIT::FuncOp nestedFunction,
                                 SMLoc location) {
-  llvm::SetVector<Value> captures;
-  mlir::getUsedValuesDefinedAbove(nestedFunction->getRegions(), captures);
-  SmallVector<Type> inputTypes;
-  SmallVector<ValueInputConvention> conventions;
-  // TODO: Enable expression of how to capture.
-  for (Value value : captures) {
-    if (auto declref = dyn_cast<DeclRefType>(value.getType())) {
-      ASTDecl &astDecl =
-          shared.declResolver->getDeclForTypeSymbol(declref.getSymbol());
-      if (auto structOp = dyn_cast<StructDeclOp>(astDecl)) {
-        if (structOp.isRegisterPassable()) {
-          inputTypes.push_back(declref);
-          conventions.push_back(ValueInputConvention::BorrowedInReg);
-        } else {
-          inputTypes.push_back(POP::PointerType::get(declref));
-          conventions.push_back(ValueInputConvention::BorrowedInMem);
-        }
-      } else {
-        llvm_unreachable("Encountered a declref that is not registered with "
-                         "the declResolver");
-      }
-    } else {
-      // If it's not a declref, then it must be an MLIR type.
-      inputTypes.push_back(value.getType());
-      conventions.push_back(ValueInputConvention::BorrowedInReg);
-    }
-  }
-  // Create the closure impl signature from the captures and the wrapper
-  // signature.
-  llvm::append_range(inputTypes, closureSignature.getValueInputs());
-  llvm::append_range(conventions,
-                     closureSignature.getMetadata().getInputConventions());
-  SignatureType closureImplSignature = SignatureType::get(
-      closureSignature.getInputParamTypes(),
-      closureSignature.getResultParamTypes(),
-      FunctionType::get(shared.getContext(), inputTypes,
-                        closureSignature.getValueResults()),
-      FnMetadataAttr::get(shared.getContext(), conventions, {},
-                          closureSignature.getFnEffects()));
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
-      location, closureImplSignature, captures.size(), fileModuleOp);
+      location, nestedFunction, fileModuleOp);
   TypedAttr signatureAttr = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(nestedFunction), closureSignature);
   closureImpl.setClosureSignatureAttr(signatureAttr);
