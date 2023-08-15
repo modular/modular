@@ -8,7 +8,6 @@
 from Assert import assert_param
 from Intrinsics import llvm_intrinsic
 from Pointer import DTypePointer
-from SIMD import SIMD, Int32
 from math import is_power_of_2
 from Memory import stack_allocation as _generic_stack_allocation
 from TargetInfo import simdwidthof, alignof, sizeof
