@@ -17,7 +17,6 @@ from Conv import (
     ConvInfo,
     ConvInfoStatic,
 )
-from DType import DType
 from Functional import (
     _elementwise_impl,
     unroll,

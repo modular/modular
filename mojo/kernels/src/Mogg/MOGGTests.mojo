@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from DType import DType
 from Index import StaticIntTuple
 from List import DimList
 from LLCL import OutputChainPtr
