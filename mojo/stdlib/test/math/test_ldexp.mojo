@@ -7,7 +7,6 @@
 
 from IO import print
 from math import ldexp
-from SIMD import SIMD, Float32, Float64
 
 
 # CHECK-LABEL: test_ldexp

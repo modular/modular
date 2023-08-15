@@ -9,7 +9,6 @@
 from Activations import _erf
 from IO import print
 from math import erf, round
-from SIMD import SIMD, Float32, Float64
 
 
 # CHECK-LABEL: test_erf_float32

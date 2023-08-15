@@ -7,7 +7,6 @@
 
 from IO import print
 from math import exp
-from SIMD import Float32, Float64
 
 
 # CHECK-LABEL: test_exp_float32

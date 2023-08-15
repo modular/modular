@@ -8,7 +8,6 @@
 from math import factorial, sin, cos, nan, isnan
 from Limits import isfinite, isinf, inf, neginf
 from IO import print
-from SIMD import SIMD, Float32
 
 # CHECK-LABEL: test_inf
 fn test_inf():

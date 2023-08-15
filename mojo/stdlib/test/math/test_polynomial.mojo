@@ -13,7 +13,6 @@ from math.polynomial import (
     _estrin_evaluate_4,
     _horner_evaluate,
 )
-from SIMD import SIMD
 
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
