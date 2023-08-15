@@ -6,7 +6,6 @@
 """Implements the Buffer class."""
 
 from Assert import assert_param, debug_assert, assert_param
-from DType import DType
 from Functional import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
 from Intrinsics import PrefetchOptions, masked_load, masked_store
