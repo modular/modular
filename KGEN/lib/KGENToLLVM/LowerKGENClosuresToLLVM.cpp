@@ -37,7 +37,7 @@ public:
   CreateClosureTypes() {}
   static LogicalResult
   createClosureTypes(CreateClosureTypes &types, CreateClosureOp op,
-                     mlir::LLVMTypeConverter &typeConverter);
+                     const mlir::LLVMTypeConverter &typeConverter);
   SmallVector<Type> boundArgTypes;
   Type opaquePtrType;
   /// Two element struct where first element is void* to function
@@ -50,10 +50,9 @@ public:
   Type unpackingFunctionAndCapturesType;
 };
 
-LogicalResult
-CreateClosureTypes::createClosureTypes(CreateClosureTypes &types,
-                                       CreateClosureOp op,
-                                       mlir::LLVMTypeConverter &typeConverter) {
+LogicalResult CreateClosureTypes::createClosureTypes(
+    CreateClosureTypes &types, CreateClosureOp op,
+    const mlir::LLVMTypeConverter &typeConverter) {
   MLIRContext *context = op.getContext();
   types.opaquePtrType = LLVM::LLVMPointerType::get(context);
   types.boundArgTypes.reserve(op.getCaptures().size());

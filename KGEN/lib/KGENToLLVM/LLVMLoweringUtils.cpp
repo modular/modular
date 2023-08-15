@@ -672,7 +672,8 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
 
 /// Convert a SIMD vector constant.
 static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
-                             mlir::LLVMTypeConverter &tc, POP::SIMDAttr simd) {
+                             const mlir::LLVMTypeConverter &tc,
+                             POP::SIMDAttr simd) {
   KGENDType dtype = *simd.getType().getResolvedDType();
   auto asConst = [&](TypedAttr value) {
     return b.create<LLVM::ConstantOp>(value);
@@ -743,7 +744,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
 /// its size.
 static Value lowerStringToGlobalConstant(StringAttr strAttr,
                                          ImplicitLocOpBuilder &b,
-                                         POPToLLVMTypeConverter &tc,
+                                         const POPToLLVMTypeConverter &tc,
                                          InterpreterMemoryConverter &imc) {
   StringRef strAttrRef = strAttr.getValue();
   // This is safe because StringAttr always stores a null terminator. If the
@@ -781,7 +782,7 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 }
 
 Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                                   POPToLLVMTypeConverter &tc,
+                                   const POPToLLVMTypeConverter &tc,
                                    SymbolTable &symtab,
                                    InterpreterMemoryConverter *imc,
                                    TypedAttr attr) {

@@ -18,7 +18,7 @@ namespace M {
 template <typename SourceOp, typename TargetOp>
 ErrorOr<TargetOp> convertGraphOp(SourceOp op,
                                  ConversionPatternRewriter &rewriter,
-                                 TypeConverter *typeConverter) {
+                                 const TypeConverter *typeConverter) {
   auto fnType = op.getFunctionType();
 
   TypeConverter::SignatureConversion signatureConverter(fnType.getNumInputs());
