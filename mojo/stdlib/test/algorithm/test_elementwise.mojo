@@ -7,7 +7,6 @@
 
 from Buffer import NDBuffer, Buffer
 from Range import range
-from DType import DType
 from Memory import stack_allocation
 from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
 from math import mul, min

@@ -7,7 +7,6 @@
 
 from Buffer import Buffer
 from Range import range
-from DType import DType
 from Functional import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu

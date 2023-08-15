@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer
-from DType import DType
 from Functional import map
 from IO import print
 

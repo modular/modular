@@ -9,7 +9,6 @@
 # UNSUPPORTED: asan
 
 from Buffer import Buffer
-from DType import DType
 from Functional import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
 from IO import print

@@ -7,7 +7,6 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
-from DType import DType
 from Functional import (
     vectorize,
     _get_num_workers,

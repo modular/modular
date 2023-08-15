@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Index import Index, StaticIntTuple
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from IO import print
