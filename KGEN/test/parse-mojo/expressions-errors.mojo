@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from DType import DType
 from SIMD import Float32, SIMD
 from Object import object
 from String import String
@@ -61,7 +60,7 @@ fn test_func_type():
     alias float7: fn[T: AnyType](inout *T) capturing -> None = test_func_type
 
     alias type = DType.float32
-    # expected-error @below {{SIMD[DType(type.value), 32]}}
+    # expected-error @below {{SIMD[__init__(type.value), 32]}}
     alias value: SIMD[type.value, 32] = SIMD[DType.float32, 32]()
 
 fn hello_str() -> String:

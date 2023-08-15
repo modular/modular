@@ -9,7 +9,6 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # Check that we can properly define variables with large alignments.
-from DType import DType
 from SIMD import SIMD
 let bigValue = SIMD[DType.float32, 64]()
 print(bigValue)

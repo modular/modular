@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
 
-from DType import DType
 from SIMD import Float32, SIMD
 from Object import object
 from Pointer import Pointer

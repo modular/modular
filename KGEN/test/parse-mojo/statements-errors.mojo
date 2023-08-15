@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
 from Object import object
-from DType import DType
 from SIMD import Float32
 from IO import print
 from Range import range

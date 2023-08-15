@@ -23,6 +23,5 @@ let z = Bar()
 
 # CHECK: (DType) dtype =
 # CHECK: (dtype) dtype_value =
-from DType import DType
 var dtype = DType.bool
 var dtype_value = dtype.get_value()
