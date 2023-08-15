@@ -39,13 +39,30 @@ ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config &config,
   // Note: Can't use StringRef here because need to keep value alive in
   // findProgramByName cases.
   std::string program = config.getValue("crash_reporting.handler_path").str();
-  // Next best: Handler living alongside current executable
+  // Next best: Handler living alongside current executable as reported by
+  // argv[0]
   if (program.empty()) {
     StringRef parent = llvm::sys::path::parent_path(argv0);
     if (!parent.empty()) {
       // N.B.: Errors from findProgramByName are intentionally ignored.
       // At least on Unix, the only error it ever returns is "file not found".
       // Such an error should not prevent attempts of further alternatives.
+      if (auto programOr =
+              llvm::sys::findProgramByName(kHandlerProgramName, parent))
+        program = std::move(*programOr);
+    }
+  }
+  // Next best (not part of printSymbolizedStackTrace): Handler living
+  // alongside current executable as reported by getMainExecutable.  This is not
+  // a part of the printSymbolizedStackTrace, but is necessary in the mojo-lldb
+  // case.
+  if (program.empty()) {
+    std::string mainExecutable = llvm::sys::fs::getMainExecutable(
+        argv0, reinterpret_cast<void *>(initCrashpadForProgram));
+    StringRef parent = llvm::sys::path::parent_path(mainExecutable);
+    if (!parent.empty()) {
+      // N.B.: Errors from findProgramByName are intentionally ignored for the
+      // same reason as above.
       if (auto programOr =
               llvm::sys::findProgramByName(kHandlerProgramName, parent))
         program = std::move(*programOr);
