@@ -45,7 +45,6 @@ from Index import StaticIntTuple
 from Memory import memcpy
 from Pointer import Pointer, DTypePointer
 from Range import range
-from SIMD import SIMD, UInt8, Int32, Int16, Int32, Int8, Int64
 from StaticTuple import StaticTuple
 from String import String
 from TargetInfo import sizeof, is_little_endian
