@@ -10,7 +10,6 @@ from Range import range
 from IO import print, print_no_newline
 from Pointer import DTypePointer
 from List import Dim, DimList
-from SIMD import Float32
 from Buffer import Buffer, NDBuffer
 from Index import Index
 from Matrix import Matrix

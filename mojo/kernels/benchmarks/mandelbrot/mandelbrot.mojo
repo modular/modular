@@ -11,8 +11,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from SIMD import Float32
-from SIMD import SIMD
 from IO import print, print_no_newline, _printf
 from Range import range
 from Vector import DynamicVector

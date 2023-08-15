@@ -10,7 +10,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from SIMD import SIMD, Float64
 from StaticTuple import StaticTuple
 from Functional import unroll
 from IO import print

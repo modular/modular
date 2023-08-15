@@ -8,7 +8,6 @@ from Range import range
 from Object import object
 from Random import random_float64
 from IO import print
-from SIMD import Float64
 from Benchmark import Benchmark
 
 
