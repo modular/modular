@@ -14,13 +14,17 @@ using namespace M;
 using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
-// ForOp
+// parseLoop / printLoop
 //===----------------------------------------------------------------------===//
+
+/// arrow-type-list ::= `->` (`(` (type (`,` type)*)? `)`) | type
+/// loop-arg ::= value `=` value `:` type
+/// loop ::= (`(` (loop-arg (`,` loop-arg)*)? `)` arrow-type-list)? region
 static ParseResult
-parseFor(OpAsmParser &p,
-         SmallVectorImpl<OpAsmParser::UnresolvedOperand> &initArgs,
-         SmallVectorImpl<Type> &initArgsTypes,
-         SmallVectorImpl<Type> &resultTypes, Region &body) {
+parseLoop(OpAsmParser &p,
+          SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+          SmallVectorImpl<Type> &operandTypes,
+          SmallVectorImpl<Type> &resultTypes, Region &body) {
   SmallVector<OpAsmParser::Argument> loopArgs;
 
   // Parse the optional loop signature.
@@ -33,8 +37,8 @@ parseFor(OpAsmParser &p,
             p.parseColonType(arg.type))
           return failure();
         loopArgs.push_back(arg);
-        initArgs.push_back(operand);
-        initArgsTypes.push_back(arg.type);
+        operands.push_back(operand);
+        operandTypes.push_back(arg.type);
         return success();
       };
       if (p.parseCommaSeparatedList(parseEl) || p.parseRParen())
@@ -46,22 +50,25 @@ parseFor(OpAsmParser &p,
   return p.parseRegion(body, loopArgs);
 }
 
-static void printFor(OpAsmPrinter &p, Operation *op, ValueRange iterArgs,
-                     TypeRange iterArgsTypes, TypeRange resultTypes,
-                     Region &body) {
-  if (!iterArgs.empty() || !resultTypes.empty()) {
-    p << "(";
-    llvm::interleaveComma(llvm::enumerate(iterArgs), p, [&](auto it) {
+static void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
+                      TypeRange operandTypes, TypeRange resultTypes,
+                      Region &body) {
+  if (!operandTypes.empty() || !resultTypes.empty()) {
+    p << " (";
+    llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {
       auto [i, operand] = it;
-      p << body.getArgument(i) << " = " << operand << " : " << iterArgsTypes[i];
+      p << body.getArgument(i) << " = " << operand << " : " << operandTypes[i];
     });
     p << ")";
     p.printOptionalArrowTypeList(resultTypes);
   }
-
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
+
+//===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
 
 void ForOp::build(OpBuilder &builder, OperationState &state, TypeRange results,
                   Value lowerBound, Value upperBound, Value step,
@@ -192,55 +199,6 @@ std::optional<int64_t> ForOp::getUnrollFactorN() {
 //===----------------------------------------------------------------------===//
 // LoopOp
 //===----------------------------------------------------------------------===//
-
-/// arrow-type-list ::= `->` (`(` (type (`,` type)*)? `)`) | type
-/// loop-arg ::= value `=` value `:` type
-/// loop ::= (`(` (loop-arg (`,` loop-arg)*)? `)` arrow-type-list)? region
-static ParseResult
-parseLoop(OpAsmParser &p,
-          SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-          SmallVectorImpl<Type> &operandTypes,
-          SmallVectorImpl<Type> &resultTypes, Region &body) {
-  SmallVector<OpAsmParser::Argument> loopArgs;
-
-  // Parse the optional loop signature.
-  if (succeeded(p.parseOptionalLParen())) {
-    if (p.parseOptionalRParen()) {
-      OpAsmParser::Argument arg;
-      OpAsmParser::UnresolvedOperand operand;
-      auto parseEl = [&]() -> ParseResult {
-        if (p.parseArgument(arg) || p.parseEqual() || p.parseOperand(operand) ||
-            p.parseColonType(arg.type))
-          return failure();
-        loopArgs.push_back(arg);
-        operands.push_back(operand);
-        operandTypes.push_back(arg.type);
-        return success();
-      };
-      if (p.parseCommaSeparatedList(parseEl) || p.parseRParen())
-        return failure();
-    }
-    if (p.parseOptionalArrowTypeList(resultTypes))
-      return failure();
-  }
-  return p.parseRegion(body, loopArgs);
-}
-
-static void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
-                      TypeRange operandTypes, TypeRange resultTypes,
-                      Region &body) {
-  if (!operandTypes.empty() || !resultTypes.empty()) {
-    p << " (";
-    llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {
-      auto [i, operand] = it;
-      p << body.getArgument(i) << " = " << operand << " : " << operandTypes[i];
-    });
-    p << ")";
-    p.printOptionalArrowTypeList(resultTypes);
-  }
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
 
 LogicalResult LoopOp::verify() {
   if (getOperandTypes() != getBody().getArgumentTypes())
