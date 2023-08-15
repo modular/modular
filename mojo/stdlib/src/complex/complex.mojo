@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the Complex type."""
 
+from math import sqrt
+
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
@@ -60,8 +62,15 @@ struct ComplexSIMD[type: DType, size: Int]:
         """
         return ComplexSIMD(-self.re, -self.im)
 
-    # returns the squared magnitude
     fn norm(self) -> SIMD[type, size]:
+        """Returns the magnitude of the complex value.
+
+        Returns:
+            Value of `sqrt(re*re + im*im)`.
+        """
+        return sqrt(self.squared_norm())
+
+    fn squared_norm(self) -> SIMD[type, size]:
         """Returns the squared magnitude of the complex value.
 
         Returns:
@@ -89,7 +98,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         )
 
     # fma(self, self, c)
-    fn sq_add(self, c: Self) -> Self:
+    fn squared_add(self, c: Self) -> Self:
         """Computes Square-Add operation.
 
         Compute `Self * Self + C`.

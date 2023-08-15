@@ -38,7 +38,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     for i in range(10):
         iter += 1
         z = z * z + c
-        if z.norm() > 4:
+        if z.squared_norm() > 4:
             return iter
     return iter
 
@@ -63,7 +63,7 @@ fn test_mandelbrot_iter():
     let im = SIMD[DType.int32, 1].splat(4)
     let z = ComplexSIMD[DType.int32, 1](re, im)
     # CHECK: 25
-    print(z.norm().value)
+    print(z.squared_norm().value)
 
 
 fn main():
