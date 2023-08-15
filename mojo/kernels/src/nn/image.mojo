@@ -6,7 +6,6 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
-from DType import DType
 from Index import StaticIntTuple
 from List import DimList
 from SIMD import SIMD

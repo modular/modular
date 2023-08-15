@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from DType import DType
 from Index import StaticIntTuple
 from Functional import _elementwise_impl
 from List import DimList

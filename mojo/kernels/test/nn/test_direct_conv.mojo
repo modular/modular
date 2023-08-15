@@ -19,7 +19,6 @@ from Conv import (
     Naive2dConvolution,
     pack_filter,
 )
-from DType import DType
 from IO import print
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple

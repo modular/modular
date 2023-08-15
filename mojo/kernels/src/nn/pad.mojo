@@ -11,7 +11,6 @@
 
 from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Index import StaticIntTuple
 from List import Dim, DimList
 from Memory import memcpy

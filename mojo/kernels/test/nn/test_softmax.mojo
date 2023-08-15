@@ -11,7 +11,6 @@ from List import Dim, DimList
 from IO import print
 from TargetInfo import simdwidthof
 from Range import range
-from DType import DType
 from LLCL import OwningOutputChainPtr, Runtime
 
 

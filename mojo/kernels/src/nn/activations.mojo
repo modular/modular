@@ -8,7 +8,6 @@
 
 from Assert import assert_param
 from math.bit import _is_neg
-from DType import DType
 from List import VariadicList
 from LLCL import OutputChainPtr
 from math import (

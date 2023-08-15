@@ -6,7 +6,6 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, DynamicRankBuffer
-from DType import DType
 from Index import product
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList

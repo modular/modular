@@ -9,7 +9,6 @@
 # UNSUPPORTED: asan
 
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Index import StaticIntTuple
 from IO import print
 from List import DimList
@@ -18,7 +17,6 @@ from Image import (
     Image2DLayout,
     ImageShape,
 )
-from DType import DType
 from Pool import (
     Pool2d,
     avg_pool_init_fn,

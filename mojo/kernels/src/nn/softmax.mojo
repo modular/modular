@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Functional import vectorize_unroll, async_parallelize
 from Index import product
 from List import Dim, DimList

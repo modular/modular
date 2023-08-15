@@ -8,7 +8,6 @@ from Assert import assert_param, debug_assert
 from BuildInfo import is_debug_build
 from Buffer import NDBuffer
 from List import DimList
-from DType import DType
 from Image import (
     ImageData,
     Image2DLayout,

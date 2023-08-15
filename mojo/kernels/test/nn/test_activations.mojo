@@ -14,7 +14,6 @@ from Activations import (
     gelu_approximate,
     gelu_approximate_sigmoid,
 )
-from DType import DType
 from IO import print
 from math import iota
 from SIMD import Float32, Float64

@@ -10,9 +10,7 @@
 
 from Arange import arange, arange_shape
 from Buffer import NDBuffer, Buffer
-from DType import DType
 from Range import range
-from DType import DType
 from Functional import elementwise
 from math import mul
 from Memory import stack_allocation

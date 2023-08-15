@@ -22,7 +22,6 @@ from ConvUtils import (
     get_conv_num_partitions,
     get_conv2d_shape,
 )
-from DType import DType
 from Functional import (
     unroll,
     async_parallelize,

@@ -12,7 +12,6 @@
 # if compiler generates proper SIMD instructions and unrolling.
 
 from Buffer import NDBuffer
-from DType import DType
 from SIMD import Float32
 from GatherScatter import gather
 from Index import StaticIntTuple

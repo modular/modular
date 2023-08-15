@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from DType import DType
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from DType import DType
 from Functional import (
     vectorize_unroll,
     async_parallelize,

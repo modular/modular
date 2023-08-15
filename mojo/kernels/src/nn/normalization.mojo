@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Functional import vectorize_unroll
 from List import Dim, DimList
 from Range import range

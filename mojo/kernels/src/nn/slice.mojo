@@ -6,7 +6,6 @@
 
 from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
-from DType import DType
 from Functional import elementwise
 from Index import StaticIntTuple
 from LLCL import OutputChainPtr

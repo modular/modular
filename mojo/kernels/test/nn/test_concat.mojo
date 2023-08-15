@@ -8,7 +8,6 @@
 from Buffer import Buffer, NDBuffer, DynamicRankBuffer
 from IO import print
 from Concat import concat, _concat_parallel
-from DType import DType
 from Pointer import DTypePointer
 from Index import StaticIntTuple
 from Range import range
