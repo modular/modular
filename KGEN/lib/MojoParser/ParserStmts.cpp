@@ -1754,6 +1754,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     return failure();
 
   auto unresolvedType = UnresolvedType::get(getContext());
+  bool delayAddingName = false;
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa<StructDeclOp>(getParentDecl())) {
@@ -1777,6 +1778,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     auto varType = POP::PointerType::get(unresolvedType);
     declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
                                           /*isSynth=*/false);
+    delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
     declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType, isVar);
@@ -1785,9 +1787,20 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  ASTDecl &decl =
-      getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
-                                getLexer().getCursor(), stmtIndent);
+  // If the declaration is in a function body, we delay adding it until after
+  // resolving the RHS, so that the RHS can reference any identifiers that the
+  // decl is shadowing.
+  ASTDecl &decl = getDeclResolver().createUnlistedDecl(
+      declOp, smLoc, curDeclScope, startCursor, getLexer().getCursor(),
+      stmtIndent);
+  if (!delayAddingName) {
+    getDeclResolver().attachDeclToParentNameTable(&decl, name);
+  }
+  auto temporaryNameReplace = llvm::make_scope_exit([&]() {
+    if (delayAddingName) {
+      getDeclResolver().attachDeclToParentNameTable(&decl, name);
+    }
+  });
 
   auto varOp = dyn_cast<VarLetDeclOp>(decl);
   if (!varOp) {
