@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s | FileCheck %s
 
-from SIMD import Float32, SIMD
 
 # REFERENCE
 #   kgen.generator.interface @erf_scalar<type: dtype>(%in: !pop.scalar<type>) -> !pop.scalar<type>

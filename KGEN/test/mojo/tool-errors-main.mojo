@@ -6,7 +6,6 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from SIMD import Float32
 
 # CHECK: could not find a 'main' function to execute
 @export

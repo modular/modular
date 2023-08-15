@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate %s -verify-diagnostics -import-mojo | FileCheck %s
 
-from SIMD import Float32
 from Object import object
 from Range import range
 
@@ -317,7 +316,7 @@ fn callOverload(a: Int):
     # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$Int::Int)"]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$Int::Int) -> $SIMD::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$Int::Int)">()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$Int::Int) -> $Builtin::$SIMD::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$Int::Int)">()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -779,12 +778,12 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 
 
 # CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32
+# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<{{.*}}@"$Int"::@Int>
 fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>]>>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>>
     var b: MyTuple[Int, Float32, Int]
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>]>>
     let c = MyTuple[Int](1)
@@ -804,11 +803,11 @@ fn usePacks(x: Float32, y: Int):
     pack()
 
     # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK4]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK4]])
     pack((1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK5]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK5]])
     pack[Int, Float32, Int]((1).value, x, y)
 
     # CHECK: index.constant 1
@@ -816,7 +815,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed((1).value, x, y)
 
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$SIMD"::@SIMD{{.*}}f32{{.*}}>]>
+    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>]>
     variadicParameter[Int, Float32](1)
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype> []>
     variadicParameter((2).value)

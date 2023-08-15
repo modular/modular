@@ -8,7 +8,6 @@
 
 # CHECK: module {
 
-from SIMD import Float32, SIMD
 from Object import object
 
 fn noop(): pass
@@ -602,7 +601,7 @@ fn patterns():
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
   # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
-  # CHECK: {{%.*}} = kgen.call @"$SIMD"::@SIMD::@"__iadd__{{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: {{%.*}} = kgen.call @"$Builtin"::@"$SIMD"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
