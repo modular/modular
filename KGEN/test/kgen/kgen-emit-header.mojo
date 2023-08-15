@@ -6,8 +6,6 @@
 
 # RUN: kgen %s %mojo_cpu_build_arch -emit-header | FileCheck %s
 
-from SIMD import Float32
-
 
 @export("bar", ABI="C")
 # CHECK: extern float bar();

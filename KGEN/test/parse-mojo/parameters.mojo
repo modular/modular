@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
 from Assert import assert_param
-from SIMD import SIMD
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -125,9 +124,9 @@ fn testSIMD(a: SIMD[DType.float64, 1],
   # Test calls to methods and operators on parameterized type.
   _ = a.fma(a, a)
   _ = b.fma(b, b)
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<:{{.*}} dtype = f64{{.*}}, {{.*}} = 1{{.*}}>(%a, %a)
+  # CHECK: kgen.call @"$Builtin"::@"$SIMD"::@SIMD::@"__add__({{.*}}<:{{.*}} dtype = f64{{.*}}, {{.*}} = 1{{.*}}>(%a, %a)
   var x = a+a
-  # CHECK: kgen.call @"$SIMD"::@SIMD::@"__add__{{.*}}<:{{.*}} dtype = si32{{.*}}, {{.*}} = 1{{.*}}>(%b, %b)
+  # CHECK: kgen.call @"$Builtin"::@"$SIMD"::@SIMD::@"__add__({{.*}}<:{{.*}} dtype = si32{{.*}}, {{.*}} = 1{{.*}}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.

@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from SIMD import Float32, SIMD
 from Object import object
 from String import String
 

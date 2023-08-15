@@ -109,8 +109,7 @@ kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
 // -----
 
 kgen.generator @cast_simd_to_vector<size>(%arg0: !pop.simd<size, f32>) {
-  // expected-error @below {{cannot convert from SIMD dtype f32 to vector element 'i32'}}
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<size, f32> to vector<4xi32>
+  // expected-error @below {{cannot convert   %0 = pop.cast_to_builtin %arg0 : !pop.simd<size, f32> to vector<4xi32>
   kgen.return
 }
 
