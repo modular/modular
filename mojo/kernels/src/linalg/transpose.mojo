@@ -500,8 +500,8 @@ fn _convert_transpose_perms_to_static_int_tuple[
 fn parallel_memcpy[
     type: DType
 ](
-    src_ptr: DTypePointer[type],
     dst_ptr: DTypePointer[type],
+    src_ptr: DTypePointer[type],
     size: Int,
     task_size: Int,
     num_tasks: Int,
