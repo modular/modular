@@ -57,7 +57,9 @@ static void printLoop(OpAsmPrinter &p, Operation *op, ValueRange operands,
     p << " (";
     llvm::interleaveComma(llvm::enumerate(operands), p, [&](auto it) {
       auto [i, operand] = it;
-      p << body.getArgument(i) << " = " << operand << " : " << operandTypes[i];
+      p.printRegionArgument(body.getArgument(i), /*argAttrs=*/{},
+                            /*omitType=*/true);
+      p << " = " << operand << " : " << operandTypes[i];
     });
     p << ")";
     p.printOptionalArrowTypeList(resultTypes);
