@@ -83,6 +83,18 @@ struct String:
 # CHECK-NEXT:        lit.ownership.mark.destroyed %existing
 # CHECK-NEXT:        lit.return %9 : !lit.none
 # CHECK-NEXT:        lit.end_func
+# CHECK-NEXT: }
+
+# CHECK-NEXT: lit.func @"__init__
+# CHECK-NEXT: [[Q0:%.*]] = lit.struct.gep %self[field0] : <index>
+# CHECK-NEXT: pop.store %field0, [[Q0]] : !pop.pointer<index>
+# CHECK-NEXT: [[Q1:%.*]] = lit.struct.gep %self[field1]
+# CHECK-NEXT: pop.store %field1, [[Q1]]
+# CHECK-NEXT: [[Q2:%.*]] = lit.struct.gep %self[field2]
+# CHECK-NEXT: [[Q3:%.*]] = kgen.call @{{.*}}@String::@"__moveinit__{{.*}}"([[Q2]], %field2)
+# CHECK-NEXT: [[Q4:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.return [[Q4]] : !lit.none
+# CHECK-NEXT: lit.end_func
 
 # CHECK: lit.struct.decl @"_CW_{{.*}}(,{{.*}}::String)\22"
 # CHECK-NEXT:     lit.struct.field field0 : !pop.pointer<array<0, i1>>
