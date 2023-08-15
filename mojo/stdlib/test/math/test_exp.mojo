@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from DType import DType
 from IO import print
 from math import exp
 from SIMD import Float32, Float64

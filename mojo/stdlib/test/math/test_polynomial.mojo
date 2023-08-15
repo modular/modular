@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from DType import DType
 from IO import print
 from List import VariadicList
 from math.polynomial import (

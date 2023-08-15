@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from DType import DType
 from IO import print
 from math import tanh, iota
 
