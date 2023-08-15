@@ -44,7 +44,7 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
     "sorted", "staticmethod", "str", "sum", "super", "tuple", "type", "vars",
     "zip", "__import__", "NotImplemented", "Ellipsis", "__debug__",
 
-    // Mojo Builtins.
+    // Mojo builtins.
     "__mlir_attr", "__mlir_op", "__mlir_type"
   ];
   codeMirror.CodeMirror.registerHelper(

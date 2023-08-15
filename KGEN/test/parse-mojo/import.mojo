@@ -11,7 +11,7 @@
 from imported_module import *
 
 # CHECK-LABEL: lit.func @"import_of_import
-# CHECK-SAME: @"$Builtin"::@"$SIMD"::@SIMD<
+# CHECK-SAME: @"$builtin"::@"$SIMD"::@SIMD<
 fn import_of_import(arg: Float64):
   pass
 
@@ -23,9 +23,9 @@ fn import_of_import(arg: Float64):
 from test_package.module import function
 from test_package.test_nested_package.module import nested_function
 from test_package import *
-import Builtin
+import builtin
 
-# CHECK-LABEL: lit.func @"test_function_calls($Builtin::$Int::Int)"
+# CHECK-LABEL: lit.func @"test_function_calls($builtin::$Int::Int)"
 # CHECK:  kgen.call @"$test_package"::@"$module"::@"function()"
 # CHECK:  kgen.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
 # CHECK:  kgen.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
@@ -39,7 +39,7 @@ import Builtin
 # CHECK:    lit.file_module @"$module"
 # CHECK:      lit.func @"nested_function()"
 
-fn test_function_calls(arg: Builtin.Int.Int):
+fn test_function_calls(arg: builtin.Int.Int):
   function()
   nested_function()
   method_defined_in_init()

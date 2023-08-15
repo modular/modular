@@ -95,7 +95,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   [[I1:%.*]] = kgen.call @"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__($Builtin::$Bool::Bool)"(%a)
+    # CHECK-NEXT:   [[I1:%.*]] = kgen.call @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
@@ -126,7 +126,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     return a
 
 # CHECK-LABEL: lit.func @"param_if{{.*}})"<
-# CHECK-SAME: [[A:.*]]: i1, [[B:.*]]: @"$Builtin"::@"$Bool"::@Bool>()
+# CHECK-SAME: [[A:.*]]: i1, [[B:.*]]: @"$builtin"::@"$Bool"::@Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <[[A]]> {
   @parameter
@@ -134,7 +134,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: lit.varlet.decl "inside_1", var = true
     var inside_1: Int
   # CHECK: } else {
-  # CHECK:     kgen.param.if <apply{{.*}}@"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__{{.*}}[[B]])> {
+  # CHECK:     kgen.param.if <apply{{.*}}@"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__{{.*}}[[B]])> {
   elif b:
   # CHECK:     lit.varlet.decl "inside_2", var = true
     var inside_2: Int
@@ -159,12 +159,12 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     var w: Int
 
 
-# CHECK-LABEL: lit.func @"param_if_and[$Builtin::$Bool::Bool,$Builtin::$Bool::Bool]()"<
-# CHECK-SAME: [[A:.*]]: @"$Builtin"::@"$Bool"::@Bool, [[B:.*]]: @"$Builtin"::@"$Bool"::@Bool>()
+# CHECK-LABEL: lit.func @"param_if_and[$builtin::$Bool::Bool,$builtin::$Bool::Bool]()"<
+# CHECK-SAME: [[A:.*]]: @"$builtin"::@"$Bool"::@Bool, [[B:.*]]: @"$builtin"::@"$Bool"::@Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
-  # CHECK-SAME:   :<>(!kgen.declref<@"$Builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__($Builtin::$Bool::Bool)",
-  # CHECK-SAME:   cond(apply(:<>(!kgen.declref<@"$Builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$Builtin"::@"$Bool"::@Bool::@"__mlir_i1__($Builtin::$Bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME:   :<>(!kgen.declref<@"$builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)",
+  # CHECK-SAME:   cond(apply(:<>(!kgen.declref<@"$builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v", var = true

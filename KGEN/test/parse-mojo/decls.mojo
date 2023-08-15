@@ -316,7 +316,7 @@ fn callOverload(a: Int):
     # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$Int::Int)"]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$Int::Int) -> $Builtin::$SIMD::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$Int::Int)">()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$Int::Int) -> $builtin::$SIMD::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$Int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$Int::Int)">()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -392,7 +392,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$Int::Int,{{.*}}$Int::Int]()"
     paramOverload[a, b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$Builtin\22::_\22$Int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$Int\22::_Int>]()"
     paramOverload[a, b, c]()
 
     # CHECK: kgen.call @"$decls"::@"paramOverload({{.*}}$Int::Int)"
@@ -401,13 +401,13 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$Int::Int,AnyType]($1)"
     paramOverload[a](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$Builtin\22::_\22$Int\22::_Int>]({{.*}}$Int::Int)"
+    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$Int\22::_Int>]({{.*}}$Int::Int)"
     paramOverload[a, b](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$Builtin\22::_\22$Int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$Int\22::_Int>]()"
     paramOverload2[a]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$Builtin\22::_\22$Int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$Int\22::_Int>]()"
     paramOverload2[a, b]()
 
     # CHECK: kgen.call @"$decls"::@"paramOverload2[$decls::MyInt]()"
@@ -718,25 +718,25 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 
 # CHECK-LABEL: lit.func @"callVariadic{{.*}})"<
-# CHECK-SAME: [[P:.*]]: @"$Builtin"::@"$Int"::@Int>
+# CHECK-SAME: [[P:.*]]: @"$builtin"::@"$Int"::@Int>
 fn callVariadic[p: Int](x: Int):
-    # CHECK: %variadic = kgen.param.constant: variadic<@"$Builtin"::@"$Int"::@Int> = <[]>
-    # CHECK: call @"$decls"::@"variadics($Builtin::$Int::Int*)"(%variadic)
+    # CHECK: %variadic = kgen.param.constant: variadic<@"$builtin"::@"$Int"::@Int> = <[]>
+    # CHECK: call @"$decls"::@"variadics($builtin::$Int::Int*)"(%variadic)
     variadics()
-    # CHECK: %variadic_0 = kgen.param.constant: variadic<@"$Builtin"::@"$Int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
-    # CHECK: call @"$decls"::@"variadics($Builtin::$Int::Int*)"(%variadic_0)
+    # CHECK: %variadic_0 = kgen.param.constant: variadic<@"$builtin"::@"$Int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
+    # CHECK: call @"$decls"::@"variadics($builtin::$Int::Int*)"(%variadic_0)
     variadics(7, 11, 13)
     # CHECK: %[[VAR:.*]] = pop.variadic.create [%x]
-    # CHECK: call @"$decls"::@"variadics($Builtin::$Int::Int*)"(%[[VAR]])
+    # CHECK: call @"$decls"::@"variadics($builtin::$Int::Int*)"(%[[VAR]])
     variadics(x)
     # CHECK: %[[CST:.*]] = kgen.param.constant: {{.*}}@"$Int
     # CHECK: %[[VAR:.*]] = pop.variadic.create [%x, %[[CST]]]
-    # CHECK: call @"$decls"::@"variadics($Builtin::$Int::Int*)"(%[[VAR]])
+    # CHECK: call @"$decls"::@"variadics($builtin::$Int::Int*)"(%[[VAR]])
     variadics(x, 1)
 
-    # CHECK: @"variadics($Builtin::$Int::Int*)", []
+    # CHECK: @"variadics($builtin::$Int::Int*)", []
     alias EmptyVariadic = variadics()
-    # CHECK: @"variadics($Builtin::$Int::Int*)", [[[P]], {{.*}} = 1{{.*}}]
+    # CHECK: @"variadics($builtin::$Int::Int*)", [[[P]], {{.*}} = 1{{.*}}]
     alias NonEmptyVariadic = variadics(p, 1)
 
     # CHECK: @"parameterizedVariadic{{.*}}"<:type !kgen.declref<{{.*}}@"$Int"::@Int>>
@@ -778,12 +778,12 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 
 
 # CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32
+# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<{{.*}}@"$Int"::@Int>
 fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>]>>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>>
     var b: MyTuple[Int, Float32, Int]
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$Int"::@Int>]>>
     let c = MyTuple[Int](1)
@@ -803,11 +803,11 @@ fn usePacks(x: Float32, y: Int):
     pack()
 
     # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK4]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK4]])
     pack((1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: {{.*}}@"$Int"::@Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK5]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$Int"::@Int>]>(%[[PACK5]])
     pack[Int, Float32, Int]((1).value, x, y)
 
     # CHECK: index.constant 1
@@ -815,7 +815,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed((1).value, x, y)
 
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$Builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>]>
+    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>]>
     variadicParameter[Int, Float32](1)
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype> []>
     variadicParameter((2).value)

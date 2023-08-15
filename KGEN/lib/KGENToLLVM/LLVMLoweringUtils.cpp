@@ -786,7 +786,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
                                    InterpreterMemoryConverter *imc,
                                    TypedAttr attr) {
   //===--------------------------------------------------------------------===//
-  // Builtin
+  // builtin
 
   // Truncate index constants if required.
   if (isa<IndexType>(attr.getType())) {

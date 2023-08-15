@@ -41,7 +41,7 @@ import B
     )
 
     assert any(
-        item.label == "Builtin" and item.kind == CompletionItemKind.Folder
+        item.label == "builtin" and item.kind == CompletionItemKind.Folder
         for item in items
     )
 

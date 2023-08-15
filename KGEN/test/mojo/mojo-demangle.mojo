@@ -51,8 +51,8 @@
 # RUN: mojo demangle 'main($functions::SomeStruct[size, other_param]&)' | FileCheck -check-prefix=PARAMETRIZEDARG %s
 # PARAMETRIZEDARG: Mangled: "main($functions::SomeStruct[size, other_param]&)" - Modules: [], Structs: [], Symbol: "main", Identifier: "main", Signature: (none)
 
-# RUN: mojo demangle '$AModule::AStruct::print[$Builtin::$Int::Int,$DType::DType]($Builtin::$SIMD::SIMD[*(0,1), *(0,0)])' | FileCheck -check-prefix=PARAMETRIZEDARG2 %s
-# PARAMETRIZEDARG2: Mangled: "$AModule::AStruct::print[$Builtin::$Int::Int,$DType::DType]($Builtin::$SIMD::SIMD[*(0,1), *(0,0)])" - Modules: ["AModule"], Structs: ["AStruct"], Symbol: "print[$Builtin::$Int::Int,$DType::DType]", Identifier: "print", Signature: (none)
+# RUN: mojo demangle '$AModule::AStruct::print[$builtin::$Int::Int,$DType::DType]($builtin::$SIMD::SIMD[*(0,1), *(0,0)])' | FileCheck -check-prefix=PARAMETRIZEDARG2 %s
+# PARAMETRIZEDARG2: Mangled: "$AModule::AStruct::print[$builtin::$Int::Int,$DType::DType]($builtin::$SIMD::SIMD[*(0,1), *(0,0)])" - Modules: ["AModule"], Structs: ["AStruct"], Symbol: "print[$builtin::$Int::Int,$DType::DType]", Identifier: "print", Signature: (none)
 
 # Demangling failures are printed to stderr.
 # RUN: not mojo demangle '$aModule::AStruct::BStruct(!invalid.type)' 2>&1 | FileCheck -check-prefix="FAILURE" %s
