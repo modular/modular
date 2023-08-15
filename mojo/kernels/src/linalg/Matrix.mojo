@@ -9,7 +9,6 @@ from Buffer import NDBuffer
 from List import DimList
 from Index import StaticIntTuple
 from Pointer import Pointer, DTypePointer
-from SIMD import SIMD
 from TargetInfo import alignof
 
 

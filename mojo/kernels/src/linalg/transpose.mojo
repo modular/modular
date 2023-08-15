@@ -26,7 +26,6 @@ from Pointer import DTypePointer
 from Range import range
 from TargetInfo import sizeof, simdwidthof
 from TypeUtilities import rebind
-from SIMD import SIMD
 
 
 fn _transpose_inplace_4x4[

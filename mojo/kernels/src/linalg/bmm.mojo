@@ -9,7 +9,6 @@ from Buffer import NDBuffer
 from List import DimList
 from LLCL import OutputChainPtr, OwningOutputChainPtr
 from Index import StaticIntTuple, Index
-from SIMD import SIMD
 from math import max, min, div_ceil, gcd
 from MatmulUtils import (
     is_critical_stride,

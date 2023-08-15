@@ -7,7 +7,6 @@
 from Index import StaticIntTuple, Index
 from math import div_ceil, max, min, sqrt
 from List import DimList
-from SIMD import SIMD, Float32
 from String import String
 from TargetInfo import (
     has_avx512f,

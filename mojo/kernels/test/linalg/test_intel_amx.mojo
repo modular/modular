@@ -11,7 +11,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from SIMD import SIMD
 from Pointer import Pointer, DTypePointer
 from Buffer import Buffer, NDBuffer
 from Transpose import transpose, transpose_inplace

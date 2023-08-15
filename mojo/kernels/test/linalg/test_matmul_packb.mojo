@@ -9,7 +9,6 @@ from Buffer import NDBuffer
 from Index import Index
 from List import DimList
 from Matmul import PackMatrixCols
-from SIMD import SIMD
 from TargetInfo import simdwidthof
 from IO import print
 

@@ -13,7 +13,6 @@ from Index import StaticIntTuple
 from List import DimList
 from LLCL import OutputChainPtr
 from Range import range
-from SIMD import SIMD
 from Tracing import TraceLevel
 from TypeUtilities import rebind
 

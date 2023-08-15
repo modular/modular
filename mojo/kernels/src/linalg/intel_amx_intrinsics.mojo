@@ -14,7 +14,6 @@ from List import DimList
 from Matmul import Matrix
 from Pointer import DTypePointer
 from Range import range
-from SIMD import SIMD, Int8, Int32
 from StaticTuple import StaticTuple
 
 alias void = DType.invalid.value
