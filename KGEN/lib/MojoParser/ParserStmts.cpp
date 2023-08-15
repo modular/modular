@@ -318,6 +318,39 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
       << FixIt::insertBeforeToken(startLoc, "_ = ");
 }
 
+/// Return true if this token is the start of a statement that should not exist
+/// on the same line as a @decorator specification. This is used to improve
+/// error recovery.
+static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
+  switch (tokenKind) {
+  case Token::kw_if:
+  case Token::kw_for:
+  case Token::kw_while:
+  case Token::kw_try:
+  case Token::kw_with:
+  case Token::kw_async:
+  case Token::kw_def:
+  case Token::kw_fn:
+  case Token::kw_struct:
+  case Token::kw_class:
+  case Token::kw_from:
+  case Token::kw_import:
+  case Token::kw_pass:
+  case Token::kw_let:
+  case Token::kw_var:
+  case Token::kw_alias:
+  case Token::kw___mlir_region:
+  case Token::kw_return:
+  case Token::kw_param_return:
+  case Token::kw_raise:
+  case Token::kw_continue:
+  case Token::kw_break:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// When `onlySimpleStmt` is true, this parses the simple_stmt production,
 /// otherwise it parses the broader `statement` production that includes
 /// compound statements.  This sets `parsedCompound` to true if
@@ -387,8 +420,37 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   // Skip over any decorators that are present.  These will be reparsed during
   // signature resolution phase of a declaration.
-  while (consumeIf(Token::at))
-    skipUntilIndentation(stmtIndent);
+  while (consumeIf(Token::at)) {
+    auto stopOnStatement = [&]() -> bool {
+      return isStatementThatMightHaveDecorators(getToken().getKind());
+    };
+
+    skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/false,
+                         stopOnStatement);
+
+    // If the next token isn't indented, but is the start of a statement, then
+    // these decorators are incorrectly on the same line as the statement.
+    // Reject with a specific error message and ignore the whole thing.
+    if (!getToken().getIndentation() && stopOnStatement()) {
+      emitError(startCursor.getToken().getLoc())
+          << "decorators must be on their own line, not ahead of a statement";
+      // Skip the body of the statement entirely.
+      skipUntilIndentation(stmtIndent);
+      return success();
+    }
+
+    // If the next token is for a less indented declaration, then this is a
+    // floating decorator not necessarily attached to it.  Ignore the
+    // decorators and let the outer level of the parser keep finding stuff.
+    // This leads to better error recovery.
+    if (getToken().getIndentation() &&
+        *getToken().getIndentation() < stmtIndent) {
+      emitError(startCursor.getToken().getLoc())
+          << "orphaned decorator not associated with a declaration or "
+             "statement";
+      return success();
+    }
+  }
 
   switch (getToken().getKind()) {
     //===------------------------------------------------------------------===//

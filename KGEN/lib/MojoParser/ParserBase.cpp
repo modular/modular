@@ -103,7 +103,9 @@ ParseResult ParserBase::parseCommaSeparatedList(
 /// When stopOnSemicolon is true this will stop at the first semicolon seen.
 /// This should only be used for statements that can share a line with other
 /// statements with ; separation.
-void ParserBase::skipUntilIndentation(size_t minIndent, bool stopOnSemicolon) {
+void ParserBase::skipUntilIndentation(
+    size_t minIndent, bool stopOnSemicolon,
+    llvm::unique_function<bool()> customStopPredicate) {
   // This keeps track of open brackets we are inside of.
   SmallVector<Token> openBrackets;
 
@@ -125,10 +127,15 @@ void ParserBase::skipUntilIndentation(size_t minIndent, bool stopOnSemicolon) {
   // We scan until we find the specified indentation at the same expression
   // level as the current token.
   while (getToken().isNot(Token::eof)) {
-    // If we are outside a bracketed expression, check indentation.
-    if (auto indent = getToken().getIndentation())
-      if (*indent <= minIndent && openBrackets.empty())
+    // If we are outside a bracketed expression, check indentation and stop
+    // predicate.
+    if (openBrackets.empty()) {
+      if (auto indent = getToken().getIndentation())
+        if (*indent <= minIndent)
+          return;
+      if (customStopPredicate && customStopPredicate())
         return;
+    }
 
     // Check to see if this is a bracket that needs special handling.
     switch (getToken().getKind()) {
