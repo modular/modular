@@ -108,7 +108,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     `step` $step
     ``$cmpPredicateType
     ``$indVarComputeType`]`
-    custom<For>($iterArgs, type($iterArgs), type($results), $body) attr-dict
+    custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
 
   let builders =[
@@ -141,7 +141,6 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
 
   let hasVerifier = 1;
 }
-
 
 //===----------------------------------------------------------------------===//
 // LoopOp
