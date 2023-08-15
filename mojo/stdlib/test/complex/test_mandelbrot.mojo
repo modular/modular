@@ -13,7 +13,6 @@
 
 from IO import print
 from Range import range
-from SIMD import SIMD, Float32
 from Complex import ComplexSIMD, ComplexFloat32
 
 
