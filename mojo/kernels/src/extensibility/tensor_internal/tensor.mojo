@@ -9,7 +9,6 @@ Implements the TensorSpec, TensorShape, and Tensor type.
 Example:
 
 ```mojo
-from DType import DType
 from Tensor import Tensor, TensorSpec, TensorShape
 from Index import Index
 from Random import rand
@@ -41,7 +40,6 @@ print(gray_scale_image.shape().__str__())
 
 
 from Assert import assert_param, debug_assert
-from DType import DType
 from List import VariadicList
 from Index import StaticIntTuple
 from Memory import memcpy
