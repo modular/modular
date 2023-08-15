@@ -19,6 +19,17 @@
 
 namespace M::KGEN::LIT {
 
+typedef std::pair<SignatureType, StringAttr> ClosureHash;
+
+/// A ClosureCache stores previously generated closures to prevent duplicate
+/// definitions from being generated.
+class ClosureCache {
+public:
+  virtual ~ClosureCache() {}
+  virtual StructDeclOp getExisting(ClosureHash key) = 0;
+  virtual void storeClosure(ClosureHash key, StructDeclOp closure) = 0;
+};
+
 class ClosureEmitter {
 public:
   ClosureEmitter(LIT::FileModuleOp fileModuleOp, Type noneType,
@@ -38,15 +49,19 @@ public:
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
-  StructDeclOp createClosureImplStructDecl(StringAttr name,
-                                           SignatureType closureImplSignature,
-                                           unsigned captureCount);
+  StructDeclOp createClosureImplStructDecl(FuncOp nestedFunction,
+                                           ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
   LIT::FuncOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                         StructDeclOp closureImpl,
                                         SMLoc location);
+
+  /// Generate a unique name for a closure class.
+  static StringAttr getClosureNameFromType(StringRef prefix,
+                                           FileModuleOp fileModuleOp,
+                                           SignatureType signatureType);
 
 private:
   FileModuleOp fileModuleOp;

@@ -328,8 +328,7 @@ public:
 
   /// Emitters invoke this method to get a closure declaration.
   StructDeclOp getOrGenerateClosureImplStruct(llvm::SMLoc location,
-                                              SignatureType signatureType,
-                                              unsigned captureCount,
+                                              LIT::FuncOp nestedFunction,
                                               FileModuleOp fileModuleOp);
 
 private:
