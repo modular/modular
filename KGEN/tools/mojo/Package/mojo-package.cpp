@@ -94,9 +94,6 @@ public:
   attachCompiledArchiveBytes(ModuleOp theModule, Cache::BufferRef archive,
                              const CompilationOptions &compilationOptions);
 
-  /// Verify the package module.
-  LogicalResult verify() { return mlir::verify(*packageModule); }
-
   /// Write the package - this takes the ToolOutputFile because if we're
   /// printing to the stdout we want to print the full module (so the dialect
   /// resource is printed), but if we're printing to a file, we simply print
@@ -584,10 +581,6 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
   if (auto err = packageBuilder.attachCompiledArchiveBytes(
           theModule, std::move(archive), compilationOptions))
     return err.takeError();
-
-  // Verify the cloned module to ensure nothing has gone egregiously wrong.
-  if (failed(packageBuilder.verify()))
-    return Error("new package failed to verify");
 
   // Write the module to the output. We write the whole module because we have
   // to get the resources as well.
