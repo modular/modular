@@ -217,10 +217,11 @@ Operation *DeclResolver::finalizeFuncSignature(LIT::FuncOp funcOp,
   return shared.setResolvedDeclSymbol(funcOp);
 }
 
-/// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LexerCursor cursor,
-                               LexerCursor endCursor, ssize_t indentation) {
+ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
+                                          ASTDecl *parentDecl,
+                                          LexerCursor cursor,
+                                          LexerCursor endCursor,
+                                          ssize_t indentation) {
   ASTDecl *decl = shared.allocPersistent<ASTDecl>(
       irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
@@ -238,10 +239,19 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
       decl->hasReferenceError = true;
   }
 
-  // If this has a parent and a name, insert it into the parents name table so
-  // name lookup will resolve it.  If it does, then we're done.
-  if (!name)
-    return *decl;
+  return *decl;
+}
+ASTDecl &DeclResolver::createUnlistedDecl(Operation *declOp, SMLoc loc,
+                                          ASTDecl *parentDecl,
+                                          LexerCursor cursor,
+                                          LexerCursor endCursor,
+                                          ssize_t indentation) {
+  return createUnlistedDecl(DeclIRValue(declOp), loc, parentDecl, cursor,
+                            endCursor, indentation);
+}
+
+void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
+  ASTDecl *parentDecl = decl->getParentDecl();
   // Remember the named decl in the symbol table so it can be looked up.
   TinyPtrVector<ASTDecl *> &entries = parentDecl->declsInScope[name];
   if (entries.empty()) {
@@ -263,7 +273,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
       declForTypeSymbol[symbol] = decl;
     }
 
-    return *decl;
+    return;
   }
 
   // Function support method overloading on input arguments.  Variables and
@@ -283,13 +293,13 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
             << "cannot overload with this non-function definition";
         decl->hasReferenceError = true;
         previous->hasReferenceError = true;
-        return *decl;
+        return;
       }
     }
 
     // Otherwise, we're good, charge forwards.
     entries.push_back(decl);
-    return *decl;
+    return;
   }
 
   // Check if we are adding an identical unresolved import.
@@ -298,7 +308,7 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
     if (prevOp && import.getModuleNameAttr() == prevOp.getModuleNameAttr() &&
         import.getDeclNameAttr() == prevOp.getDeclNameAttr()) {
       entries.push_back(decl);
-      return *decl;
+      return;
     }
   }
 
@@ -311,7 +321,20 @@ ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
   decl->hasReferenceError = true;
   for (ASTDecl *previous : entries)
     previous->hasReferenceError = true;
-  return *decl;
+  return;
+}
+
+/// Add a new declaration that needs to be resolved.
+ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation) {
+  ASTDecl &decl = createUnlistedDecl(irValue, loc, parentDecl, cursor,
+                                     endCursor, indentation);
+  // If this has a parent and a name, insert it into the parents name table so
+  // name lookup will resolve it.  If it doesn't, then we're done.
+  if (name)
+    attachDeclToParentNameTable(&decl, name);
+  return decl;
 }
 
 void DeclResolver::moveDecls(ASTDecl &dst, ASTDecl &src) {

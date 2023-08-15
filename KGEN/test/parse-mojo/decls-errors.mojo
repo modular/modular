@@ -81,8 +81,7 @@ fn use_before_def():
 
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 fn self_reference():
-    # This is invalid code that shouldn't crash, the error is caught by check
-    # lifetimes, not the parser.
+    # expected-error @+1 {{use of unknown declaration 'num', 'fn' declarations require explicit variable declarations}}
     let num: Int = num + 2
 
 ##===----------------------------------------------------------------------===##

@@ -71,6 +71,19 @@ public:
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
 
+  /// Add a new declaration that needs to be resolved, but don't attach it to
+  /// parent's name table.  It needs to be added later.
+  ASTDecl &createUnlistedDecl(DeclIRValue decl, llvm::SMLoc loc,
+                              ASTDecl *parentDecl, LexerCursor cursor,
+                              LexerCursor endCursor, ssize_t indentation);
+  ASTDecl &createUnlistedDecl(Operation *decl, llvm::SMLoc loc,
+                              ASTDecl *parentDecl, LexerCursor cursor,
+                              LexerCursor endCursor, ssize_t indentation);
+
+  /// Attach a declaration to its parent's name table.  For use with
+  /// `makeUnlistedDecl`.
+  void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
+
   /// Add a pre-existing set of declarations as children of the specified
   /// context, using the provided alias name (which may differ from that of the
   /// decl).

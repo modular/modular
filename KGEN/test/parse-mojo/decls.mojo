@@ -37,6 +37,12 @@ fn test_var_let_scopes(cond: Bool):
         # CHECK: lit.letreg.decl "c"
         let c = 12
 
+# Issue #18157 and issue #18158, shadowing variables should be able to reference
+# the shadowed variable on the RHS.
+fn test_shadowing_reference_shadowed():
+    let num: Int = 1
+    if num == 1:
+        let num = num + 2
 
 ##===----------------------------------------------------------------------===##
 # closures
