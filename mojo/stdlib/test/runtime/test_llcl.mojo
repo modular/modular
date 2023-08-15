@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Atomic import Atomic
-from DType import DType
 from IO import print
 from LLCL import TaskGroup, Runtime, OwningOutputChainPtr, AsyncTaskGroupPtr
 from Pointer import Pointer

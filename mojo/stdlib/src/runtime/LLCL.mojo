@@ -7,7 +7,6 @@
 
 from Atomic import Atomic
 from Builtin.Coroutine import _coro_resume_fn
-from DType import DType
 from Intrinsics import external_call
 from ParamEnv import is_defined
 from Pointer import Pointer, DTypePointer
