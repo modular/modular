@@ -69,11 +69,9 @@ void KGEN::populateGenerateLibraryFilePasses(
   // We use the canonicalizer, but disable region simplifications, since it is
   // very CFG centric and we have region trees with a single block per region.
   if (options.optimizationLevel >= 1) {
-    mlir::GreedyRewriteConfig cannConfig;
-    cannConfig.enableRegionSimplification = false;
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
-    pm.addNestedPass<GeneratorOp>(mlir::createCanonicalizerPass(cannConfig));
+    pm.addNestedPass<GeneratorOp>(createCanonicalizer());
     pm.addNestedPass<GeneratorOp>(createConstraintReduction());
   }
 }
@@ -241,14 +239,12 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   else if (options.debugLevel == CompilationOptions::kNoDebug)
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
-  // Long-tail optimization passes.
-  // FIXME: This section needs to be trimmed down.
-  if (options.optimizationLevel >= 1) {
-    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
-    pm.addNestedPass<FuncOp>(createSROA());
-    pm.addNestedPass<FuncOp>(createMem2Reg());
-    pm.addNestedPass<FuncOp>(createCanonicalizer());
-  }
+  // Guaranteed optimizations.
+  pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
+  pm.addNestedPass<FuncOp>(createSROA());
+  pm.addNestedPass<FuncOp>(createMem2Reg());
+  pm.addNestedPass<FuncOp>(createCanonicalizer());
+
   if (options.optimizationLevel >= 2) {
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
@@ -261,10 +257,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Loop raising must happen after `hoist-trivial-invariants`.
   // FIXME: Move this earlier in the pipeline.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
-  // FIXME: Despite being a "must run" optimization, loop unrolling requires
-  // other optimization passes to run because it does not use SCEV.
-  if (options.optimizationLevel >= 1)
-    pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
+  pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
   pm.addNestedPass<FuncOp>(createLowerLoops());
 
   // At the end of the pipeline, externalize any functions that have been
