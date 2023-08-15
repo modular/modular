@@ -10,7 +10,6 @@ from List import DimList
 from LLCL import OutputChainPtr
 from Functional import vectorize
 from Range import range
-from SIMD import SIMD
 from MOGGDecorators import *
 
 # ===----------------------------------------------------------------------===#

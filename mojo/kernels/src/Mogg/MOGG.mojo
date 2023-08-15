@@ -87,7 +87,6 @@ from Pad import pad as _pad, pad_shape
 from Pointer import Pointer, DTypePointer
 from Pool import avg_pool, pool_shape, max_pool
 from Range import range
-from SIMD import SIMD
 from TargetInfo import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
