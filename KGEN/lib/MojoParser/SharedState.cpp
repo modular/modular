@@ -1008,7 +1008,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {
     ASTDecl &builtinsPackageDecl =
-        *importModuleState("Builtin", impl->topLevelDecl, moduleDecl.getLoc())
+        *importModuleState("builtin", impl->topLevelDecl, moduleDecl.getLoc())
              .decl;
     if (failed(declResolver->resolveFully(builtinsPackageDecl,
                                           moduleDecl.getLoc())))
@@ -1020,7 +1020,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
       if (!name.consume_front("$"))
         continue;
       impl->implicitBuiltinImports.emplace_back(
-          StringAttr::get(getContext(), "Builtin." + name));
+          StringAttr::get(getContext(), "builtin." + name));
     }
   }
 

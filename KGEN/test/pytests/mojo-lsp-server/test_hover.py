@@ -515,8 +515,8 @@ alias ExternalAlias = 0
     requests.open_document(doc)
 
     await assert_hover(
-        "Builtin",
-        """### package `Builtin`
+        "builtin",
+        """### package `builtin`
 
 ---
 

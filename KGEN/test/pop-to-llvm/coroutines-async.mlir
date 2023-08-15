@@ -138,7 +138,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 
 !basic = !debuginfo.basic<i64 {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_unsigned}>
 !member = !debuginfo.member<value: !basic>
-!struct = !debuginfo.struct<"$Builtin::$Int::Int"(!member)>
+!struct = !debuginfo.struct<"$builtin::$Int::Int"(!member)>
 !subroutine = !debuginfo.subroutine<() -> (!struct): DW_CC_normal>
 #file = #debuginfo.file<"foo.mlir" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>

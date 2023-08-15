@@ -5,7 +5,7 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"from Builtin.Int import Int\nfn foo():\n Int  {value: (42).value}\n"
+  "text":"from builtin.Int import Int\nfn foo():\n Int  {value: (42).value}\n"
 }}}
 // -----
 {"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
