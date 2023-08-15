@@ -15,8 +15,6 @@ from IO import print
 from Index import StaticIntTuple
 from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
 from TypeUtilities import rebind
-from SIMD import Float32
-from SIMD import SIMD
 
 
 fn test_elementwise[

@@ -27,7 +27,6 @@ from math import (
 )
 from Limits import max_or_inf, min_or_neginf
 from Range import range
-from SIMD import SIMD
 from TargetInfo import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
