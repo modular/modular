@@ -6,7 +6,7 @@
 """This module implements the low level concurrency library."""
 
 from Atomic import Atomic
-from Builtin.Coroutine import _coro_resume_fn
+from builtin.Coroutine import _coro_resume_fn
 from Intrinsics import external_call
 from ParamEnv import is_defined
 from Pointer import Pointer, DTypePointer
