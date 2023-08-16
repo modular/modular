@@ -78,6 +78,10 @@ struct MojoParserConfig {
   /// If true, use !lit.ref representation for full lifetimes support in Mojo.
   bool experimentalLifetimes = false;
 
+  /// If true, the inputs are parsed as if they belong to the Mojo standard
+  /// library.
+  bool parsingStandardLibrary = false;
+
   /// The level of module caching enabled in the parser.
   CachingLevel moduleCachingLevel = kCacheAll;
 
