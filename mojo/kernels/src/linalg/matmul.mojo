@@ -52,7 +52,6 @@ from Transpose import transpose_inplace
 from TypeUtilities import rebind
 from Intrinsics import PrefetchOptions, external_call
 from VNNI import dot_i8_to_i32_x86
-from IO import print
 
 
 @closure
