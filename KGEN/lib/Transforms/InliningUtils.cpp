@@ -124,7 +124,8 @@ void KGEN::foldTrivialLoop(Operation *op) {
 /// Starting from an inlining scope, update debug information as appropriate and
 /// fold the scope if requested. Recurse on nested scopes.
 static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
-                                     StringAttr updateAttrName) {
+                                     StringAttr updateAttrName,
+                                     bool stripValues) {
   // Unpack the bits.
   auto value = static_cast<uint8_t>(tag.getInt());
   auto singleExit = static_cast<bool>(value);
@@ -137,7 +138,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
   body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
-    if (noDebug && isa<DebugInfo::ValueOp>(op)) {
+    if ((noDebug || stripValues) && isa<DebugInfo::ValueOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }
@@ -149,12 +150,12 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
     // Recurse into the body if needed and allowed.
     if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
       if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
-        updateScopeDebugInfoFrom(op, tag, updateAttrName);
+        updateScopeDebugInfoFrom(op, tag, updateAttrName, stripValues);
         return WalkResult::skip();
       }
     } else if (isa<DebugInfo::SubprogramScoped>(op)) {
       updateScopeDebugInfoFrom(op, IntegerAttr::get(tag.getType(), 0),
-                               updateAttrName);
+                               updateAttrName, stripValues);
       return WalkResult::skip();
     }
     return WalkResult::advance();
@@ -174,7 +175,10 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
     auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
     if (!tag)
       return WalkResult::advance();
-    updateScopeDebugInfoFrom(op, tag, updateAttrName);
+    // If the surrounding function lacks debug info, then debug value operations
+    // have no anchor. Erase them.
+    updateScopeDebugInfoFrom(op, tag, updateAttrName,
+                             isa<FileLineColLoc>(func.getLoc()));
     return WalkResult::skip();
   });
 }
