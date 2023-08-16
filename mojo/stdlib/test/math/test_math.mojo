@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import abs, factorial, sin, cos, nan, isnan
 from Complex import ComplexFloat32
