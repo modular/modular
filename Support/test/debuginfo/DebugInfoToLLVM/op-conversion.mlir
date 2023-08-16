@@ -68,3 +68,12 @@ func.func @value_to_addr_op() -> i32 {
   debuginfo.value #local_variable = %value : i32
   return %value : i32
 }
+
+// CHECK-LABEL: @block_arguments
+llvm.func @block_arguments() {
+  %0 = llvm.mlir.constant(0 : i32) : i32
+  llvm.br ^bb1(%0 : i32)
+// CHECK: fused<#di_subprogram>
+^bb1(%arg0: i32 loc(fused<#subprogram>["foo.mlir":0:0])):
+  llvm.return
+}
