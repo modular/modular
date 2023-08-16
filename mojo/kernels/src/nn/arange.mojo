@@ -11,6 +11,7 @@ from List import DimList
 from LLCL import OutputChainPtr
 from math import abs, ceil, div_ceil, iota
 from MOGGDecorators import *
+from Range import range
 from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
@@ -22,13 +23,11 @@ from TypeUtilities import rebind
 fn _arange_get_numelems[
     type: DType
 ](start: SIMD[type, 1], stop: SIMD[type, 1], step: SIMD[type, 1]) -> Int:
-    let diff = abs(stop - start)
-
     @parameter
     if type.is_integral():
-        return div_ceil(diff.to_int(), abs(step).to_int())
+        return range(start.to_int(), stop.to_int(), step.to_int()).__len__()
     else:
-        return ceil(diff / abs(step)).to_int()
+        return ceil(abs(stop - start) / abs(step)).to_int()
 
 
 @mogg_register("mo.range")
