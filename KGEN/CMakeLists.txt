@@ -196,8 +196,12 @@ function(add_mojo_package target)
     set(KGEN_OPTIMIZATION_FLAG "-no-optimization")
   endif()
 
-  # If this is not standard library package, it should depend on the full-sdk.
-  if (NOT KGEN_STDLIB)
+  # If this is a standard library package, signal this to `mojo` when building
+  # the package. Otherwise, it should depend on the full-sdk.
+  set(MOJO_FRONTEND_FLAGS "")
+  if (KGEN_STDLIB)
+    set(MOJO_FRONTEND_FLAGS "--parsing-stdlib")
+  else ()
     list(APPEND KGEN_LIB_DEPENDS mojo-sdk)
   endif()
 
@@ -211,6 +215,7 @@ function(add_mojo_package target)
     ${KGEN_PACKAGE_DIR} --name ${KGEN_OUTPUT_NAME}
     -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
+    ${MOJO_FRONTEND_FLAGS}
     --debug-level ${KGEN_DEBUG_LEVEL}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}

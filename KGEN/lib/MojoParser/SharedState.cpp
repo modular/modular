@@ -178,6 +178,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener), runtime(config.runtime),
+      parsingStandardLibrary(config.parsingStandardLibrary),
       impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
   collectDefaultImportPaths(impl->autoImportDirs);
   impl->validateDocStrings = config.validateDocStrings;
@@ -607,9 +608,9 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
 
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
-static std::optional<std::string> resolveModulePath(StringRef moduleName,
-                                                    StringRef includeDir) {
-
+static std::optional<std::string>
+resolveModulePath(StringRef moduleName, StringRef includeDir,
+                  bool isParsingStandardLibrary) {
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
@@ -645,11 +646,18 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
   if (isMojoSourcePackagePath(name))
     return name.generic_string();
 
-  // Otherwise, check for a source module with this name.
+  // Check for a binary package with this name. We don't enable binary packages
+  // when parsing the standard library, as many packages are interdependent,
+  // which means we can't serialize their processing.
   std::error_code ec;
-  if (std::filesystem::exists(name.replace_extension("mojopkg"), ec) ||
-      std::filesystem::exists(name.replace_extension("📦"), ec) ||
-      std::filesystem::exists(name.replace_extension("mojo"), ec) ||
+  if (!isParsingStandardLibrary) {
+    if (std::filesystem::exists(name.replace_extension("mojopkg"), ec) ||
+        std::filesystem::exists(name.replace_extension("📦"), ec))
+      return name.string();
+  }
+
+  // Otherwise, check for a source module with this name.
+  if (std::filesystem::exists(name.replace_extension("mojo"), ec) ||
       std::filesystem::exists(name.replace_extension("🔥"), ec))
     return name.string();
 
@@ -658,9 +666,9 @@ static std::optional<std::string> resolveModulePath(StringRef moduleName,
 
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
-static std::optional<std::string> resolveModulePath(SharedState &sharedState,
-                                                    StringRef moduleName,
-                                                    llvm::SMLoc includeLoc) {
+static std::optional<std::string>
+resolveModulePath(SharedState &sharedState, StringRef moduleName,
+                  llvm::SMLoc includeLoc, bool isParsingStandardLibrary) {
   unsigned includeBufferId =
       sharedState.getSourceMgr().FindBufferContainingLoc(includeLoc);
 
@@ -673,7 +681,7 @@ static std::optional<std::string> resolveModulePath(SharedState &sharedState,
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(moduleName, dir)))
+    if ((result = resolveModulePath(moduleName, dir, isParsingStandardLibrary)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -731,14 +739,15 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
       return createErrorModuleState(loc, mangledName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
-    modulePath = resolveModulePath(name, *parentState->sourcePath);
+    modulePath = resolveModulePath(name, *parentState->sourcePath,
+                                   parsingStandardLibrary);
 
     // If the parent is a package, use the normal name for the decl. This allows
     // lookup into the package decl to correctly resolve using the simplified
     // name.
     declName = StringAttr::get(getContext(), name);
   } else {
-    modulePath = resolveModulePath(*this, name, loc);
+    modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
   }
   if (!modulePath) {
     return createErrorModuleState(loc, mangledName, *parentState->decl,

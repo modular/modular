@@ -658,6 +658,7 @@ static int package(const State &state) {
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_doc_validate, options::OPT_max_notes, options::OPT_D,
+      options::OPT_parsing_stdlib,
       [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
         // TODO: We allow naming the package but parser caching doesn't
         // currently take this into account.

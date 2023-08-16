@@ -82,6 +82,10 @@ def sanitize : Separate<["--", "-"], "sanitize">, Group<CompilationOptionGroup>,
     " behavior. The following checks are supported: `address`, `thread`."
   >;
 
+def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
+  Group<CompilationOptionGroup>, Index<11>,
+  HelpText<"Parse the input file(s) as the Mojo standard library.">;
+
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//

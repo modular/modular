@@ -394,6 +394,9 @@ private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
 
+  /// A flag indicating if we're currently parsing the standard library.
+  bool parsingStandardLibrary = false;
+
   std::unique_ptr<Impl> impl;
 };
 

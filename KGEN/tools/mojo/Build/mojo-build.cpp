@@ -321,7 +321,7 @@ static int build(const State &state) {
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &context, runtime, options::OPT_doc_validate,
-      options::OPT_max_notes, options::OPT_D,
+      options::OPT_max_notes, options::OPT_D, options::OPT_parsing_stdlib,
       [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
         return importMojoFile(sourceMgr, parserConfig, ts);
       });
