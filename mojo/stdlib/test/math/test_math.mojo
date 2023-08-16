@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import factorial, sin, cos, nan, isnan
+from math import abs, factorial, sin, cos, nan, isnan
+from Complex import ComplexFloat32
 from Limits import isfinite, isinf, inf, neginf
 from IO import print
 
@@ -111,6 +112,35 @@ fn test_cos():
     print(cos(Float32(1.0)))
 
 
+# CHECK-LABEL: test_abs
+fn test_abs():
+    print("== test_abs")
+
+    # CHECK: 1.0
+    print(abs(Float32(1.0)))
+
+    # CHECK: 1.0
+    print(abs(Float32(-1.0)))
+
+    # CHECK: 0.0
+    print(abs(Float32(0.0)))
+
+    # CHECK: 0.0
+    print(abs(ComplexFloat32 {re: 0, im: 0}))
+
+    # CHECK: 1.0
+    print(abs(ComplexFloat32 {re: 1, im: 0}))
+
+    # CHECK: 1.0
+    print(abs(ComplexFloat32 {re: 0, im: 1}))
+
+    # CHECK: 1.41421
+    print(abs(ComplexFloat32 {re: -1, im: -1}))
+
+    # CHECK: 95.801
+    print(abs(ComplexFloat32 {re: -93, im: -23}))
+
+
 # CHECK-LABEL: test_factorial
 fn test_factorial():
     print("== test_factorial")
@@ -133,4 +163,5 @@ fn main():
     test_nan()
     test_sin()
     test_cos()
+    test_abs()
     test_factorial()
