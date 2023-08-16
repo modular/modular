@@ -33,3 +33,11 @@ fn mogg_view_op():
     to return an NDBuffer with only the offset, strides, and/or shape changed.
     """
     return
+
+
+fn mogg_takes_indices():
+    """
+    Tells the compiler that this kernel takes elementwise indices as its last
+    argument.
+    """
+    return
