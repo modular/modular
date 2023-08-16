@@ -9,6 +9,7 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/ForwardDecls.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -16,6 +17,7 @@
 #include "opentelemetry/logs/event_logger.h"
 #include "opentelemetry/logs/severity.h"
 #endif // MODULAR_ENABLE_TELEMETRY
+#include <variant>
 
 namespace M::Telemetry::Logs {
 
@@ -26,6 +28,8 @@ namespace M::Telemetry::Logs {
 #ifdef MODULAR_ENABLE_TELEMETRY
 
 typedef opentelemetry::logs::Severity Severity;
+
+using AttributeValue = opentelemetry::common::AttributeValue;
 
 #else
 
@@ -42,6 +46,9 @@ enum class Severity : uint8_t {
   kFatal
 };
 
+using AttributeValue = std::variant<bool, int32_t, int64_t, uint32_t, double,
+                                    const char *, std::string, uint64_t>;
+
 #endif // MODULAR_ENABLE_TELEMETRY
 
 /// A Logger to emit logs. Logger's methods are thread-safe.
@@ -51,10 +58,18 @@ enum class Severity : uint8_t {
 /// - logger->emitEvent("billing", Severity::kInfo);
 class Logger : public std::enable_shared_from_this<Logger> {
 public:
-  void emitEvent(StringRef eventName, Severity severity, StringRef body = "") {
+  /// Emit event with given name, severity, body and attributes.
+  void emitEvent(StringRef eventName, Severity severity, StringRef body = "",
+                 const llvm::StringMap<AttributeValue> &attributes = {}) {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    logger->EmitEvent(
-        eventName, static_cast<opentelemetry::logs::Severity>(severity), body);
+    // Convert the attributes to unordered_map to pass to OTel.
+    std::unordered_map<std::string, AttributeValue> attrs;
+    for (auto &attr : attributes) {
+      std::visit([&](auto v) { attrs[attr.first().str()] = v; }, attr.second);
+    }
+    logger->EmitEvent(eventName,
+                      static_cast<opentelemetry::logs::Severity>(severity),
+                      body, attrs);
 #endif
   }
 
@@ -68,7 +83,9 @@ public:
   /// stream might outlive the logger.
   struct LogStream : public llvm::raw_string_ostream {
 
-    virtual ~LogStream() { logger->emitEvent(eventName, severity, body); }
+    virtual ~LogStream() {
+      logger->emitEvent(eventName, severity, body, attributes);
+    }
 
     /// Provide an explicit overload for strings that escapes special
     /// characters.
@@ -81,45 +98,65 @@ public:
     friend class Logger;
 
     LogStream(const Twine &eventName, Severity severity,
+              const llvm::StringMap<AttributeValue> &attrs,
               std::shared_ptr<Logger> logger)
         : raw_string_ostream(body), eventName(eventName.str()),
-          severity(severity), logger(logger) {}
+          severity(severity), logger(logger) {
+      for (auto &attr : attrs) {
+        std::visit([&](auto v) { attributes[attr.first().str()] = v; },
+                   attr.second);
+      }
+    }
 
     std::string body;
     std::string eventName;
     Severity severity;
+    // We convert the attributes to unordered_map to pass to OTel.
+    std::unordered_map<std::string, AttributeValue> attributes;
     // TODO: timestamp.
     std::shared_ptr<Logger> logger;
   };
 
   /// Get raw_ostream to write a log with a severity of trace.
-  LogStream getTrace(const Twine &eventName) {
-    return LogStream(eventName, Severity::kTrace, shared_from_this());
+  LogStream getTrace(const Twine &eventName,
+                     const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kTrace, attributes,
+                     shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of debug.
-  LogStream getDebug(const Twine &eventName) {
-    return LogStream(eventName, Severity::kDebug, shared_from_this());
+  LogStream getDebug(const Twine &eventName,
+                     const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kDebug, attributes,
+                     shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of info.
-  LogStream getInfo(const Twine &eventName) {
-    return LogStream(eventName, Severity::kInfo, shared_from_this());
+  LogStream getInfo(const Twine &eventName,
+                    const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kInfo, attributes,
+                     shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of warn.
-  LogStream getWarn(const Twine &eventName) {
-    return LogStream(eventName, Severity::kWarn, shared_from_this());
+  LogStream getWarn(const Twine &eventName,
+                    const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kWarn, attributes,
+                     shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of error.
-  LogStream getError(const Twine &eventName) {
-    return LogStream(eventName, Severity::kError, shared_from_this());
+  LogStream getError(const Twine &eventName,
+                     const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kError, attributes,
+                     shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of fatal.
-  LogStream getFatal(const Twine &eventName) {
-    return LogStream(eventName, Severity::kFatal, shared_from_this());
+  LogStream getFatal(const Twine &eventName,
+                     const llvm::StringMap<AttributeValue> &attributes = {}) {
+    return LogStream(eventName, Severity::kFatal, attributes,
+                     shared_from_this());
   }
 
 private:
@@ -133,6 +170,19 @@ private:
 #else
   Logger() {}
 #endif // MODULAR_ENABLE_TELEMETRY
+
+  /// Emit event with given name, severity, body and attributes. This method is
+  /// private and used only by LogStream to log the event with OTel without
+  /// additional copies or conversions of the attributes.
+  void
+  emitEvent(StringRef eventName, Severity severity, StringRef body,
+            const std::unordered_map<std::string, AttributeValue> &attributes) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    logger->EmitEvent(eventName,
+                      static_cast<opentelemetry::logs::Severity>(severity),
+                      body, attributes);
+#endif
+  }
 };
 
 } // namespace M::Telemetry::Logs
