@@ -612,6 +612,12 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
     // Resolve the decl.
     (void)resolveFully(*declIt, declIt->getLoc());
 
+    // When validating doc strings, we wish to only validate those defined on
+    // decl in the main container. As this point the main container decl has
+    // been fully resolved, so it's an opportune time to validate.
+    if (shared.shouldValidateDocStrings())
+      validateDocString(shared, *declIt);
+
     // If this is a package, resolve all of the modules within it as a pre-step.
     // Normally these get lazily resolved, but if we're forcing pulling them in,
     // we need to do it now.
@@ -913,10 +919,6 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             emitError(decl.getLoc(),
                       "do not know how to resolve the body of this decl!");
         });
-
-    // With the decl fully processed, validate the doc string.
-    if (shared.shouldValidateDocStrings())
-      validateDocString(shared, decl);
   }
 
   declsCurrentlyProcessing.erase(&decl);
