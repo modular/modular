@@ -247,7 +247,9 @@ TEST(Telemetry, Logger) {
   StringRef escapedLogString = "hello\\nthis is a string";
 
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test") << logString;
+  llvm::StringMap<M::Telemetry::Logs::AttributeValue> attributes = {
+      {"attr1", "hello"}, {"attr2", "world"}};
+  logger->getInfo("test", attributes) << logString;
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -269,6 +271,14 @@ TEST(Telemetry, Logger) {
         auto severityPos = mbuf->getBuffer().find("severity_text");
         StringRef severityLine = getLineStartingAt(severityPos);
         EXPECT_EQ(severityLine.split(':').second.trim(), "INFO");
+
+        auto attribute1Pos = mbuf->getBuffer().find("attr1");
+        StringRef attr1Line = getLineStartingAt(attribute1Pos);
+        EXPECT_EQ(attr1Line.split(':').second.trim(), "hello");
+
+        auto attribute2Pos = mbuf->getBuffer().find("attr2");
+        StringRef attr2Line = getLineStartingAt(attribute2Pos);
+        EXPECT_EQ(attr2Line.split(':').second.trim(), "world");
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
