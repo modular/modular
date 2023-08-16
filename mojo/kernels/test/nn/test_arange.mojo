@@ -90,11 +90,17 @@ fn test_arange[
     with Runtime(1) as runtime:
         let out_chain = OwningOutputChainPtr(runtime)
 
-        arange[dtype, False](
-            start_tensor,
-            stop_tensor,
-            step_tensor,
-            out_tensor,
+        @always_inline
+        @parameter
+        fn arange_lambda[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+            let index = rebind[StaticIntTuple[1]](idx)
+            let range_val = arange[dtype, simd_width](
+                start_tensor, stop_tensor, step_tensor, index
+            )
+            out_tensor.simd_store[simd_width](index, range_val)
+
+        elementwise[1, 1, arange_lambda](
+            rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),
             out_chain.borrow(),
         )
         out_chain.wait()
