@@ -3,9 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -elaborate %s -S -o - -O0 | FileCheck %s
+# RUN: kgen -elaborate %s -debug-level=full -S -o - -O0 | FileCheck %s
 
 # COM: Ensure loops can be unrolled at -O0.
+# COM: https://github.com/modularml/modular/issues/19008
 
 from Range import range
 

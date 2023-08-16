@@ -1,4 +1,4 @@
-// RUN: kgen-opt -sroa -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -sroa -allow-unregistered-dialect %s | FileCheck %s
 
 // Check sroa runs as expected along side mem-2-reg
 // RUN: kgen-opt -sroa -mem-2-reg -allow-unregistered-dialect %s | FileCheck -check-prefix="MEM2REG" %s
@@ -355,7 +355,7 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
   %1 = kgen.param.constant = <2>
   %2 = kgen.param.constant = <1>
   %3 = kgen.param.constant = <0>
-  %4 = pop.stack_allocation 1 x !pop.array<4, index> 
+  %4 = pop.stack_allocation 1 x !pop.array<4, index>
   pop.store %array, %4 : !pop.pointer<array<4, index>>
   %5 = pop.array.get %arg0[0] : !pop.array<4, index>
   %6 = pop.array.gep %4[%3] : <array<4, index>>
@@ -386,3 +386,28 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 // MEM2REG: %[[FOURTH:.*]] = pop.array.get %[[IN_ARRAY]][3] : !pop.array<4, index>
 // MEM2REG: %[[OUT:.*]] = pop.array.create [%[[FIRST]], %[[INDEX]], %[[THIRD]], %[[FOURTH]]] : !pop.array<4, index>
 // MEM2REG: kgen.return %[[OUT]] : !pop.array<4, index>
+
+// -----
+
+!subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
+!unresolved = !debuginfo.unresolved<!pop.pointer<struct<index, index>>>
+#file = #debuginfo.file<"/tmp/test.mojo" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "__next__", linkageName = "$Range::_ZeroStartingRange::__next__($Range::_ZeroStartingRange&)_concrete", file = #file, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : !subroutine
+#local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self", file = #file, line = 27, arg = 1> : !unresolved
+
+// CHECK: !unresolved = !debuginfo.unresolved<index>
+// CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0", {{.*}}> : !unresolved
+// CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1", {{.*}}> : !unresolved
+
+// CHECK-LABEL: @sroa_valueop
+kgen.func @sroa_valueop() {
+  // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
+  // CHECK-NEXT: %1 = pop.stack_allocation 1 x index
+  %0 = pop.stack_allocation 1 x !pop.struct<index, index>
+  // CHECK-NEXT: debuginfo.value #[[VAR0]] = %0 : !pop.pointer<index>
+  // CHECK-NEXT: debuginfo.value #[[VAR1]] = %1 : !pop.pointer<index>
+  debuginfo.value #local_variable = %0 : !pop.pointer<struct<index, index>>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
