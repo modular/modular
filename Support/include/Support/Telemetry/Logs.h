@@ -17,6 +17,7 @@
 #include "opentelemetry/logs/event_logger.h"
 #include "opentelemetry/logs/severity.h"
 #endif // MODULAR_ENABLE_TELEMETRY
+#include <unordered_map>
 #include <variant>
 
 namespace M::Telemetry::Logs {
