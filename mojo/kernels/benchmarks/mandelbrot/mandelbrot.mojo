@@ -59,7 +59,7 @@ fn mandelbrot_kernel[
 
     while (i != 0) and mask.reduce_or():
         mask = z.squared_norm() <= 4
-        z = z.sq_add(c)
+        z = z.squared_add(c)
         nv = mask.select(nv + 1, nv)
         i -= 1
     return nv
