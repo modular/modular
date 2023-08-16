@@ -1340,6 +1340,8 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
     Cache::WriteableBufferRef keyBuf = Cache::WriteableBuffer::get();
     keyBuf->write_impl((const char *)moduleState.contentHash.data(),
                        moduleState.contentHash.size());
+    options.print(*keyBuf << "mojoParser(");
+    *keyBuf << ")";
     auto output = cachedTransform(
         moduleDecl.getIfOperation(), impl->transformCache.copy(),
         LLCL::AsyncValueRef<Chain>::createReady(runtime), std::move(keyBuf),
