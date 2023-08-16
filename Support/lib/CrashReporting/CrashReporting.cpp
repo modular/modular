@@ -20,8 +20,6 @@ using namespace M;
 
 static constexpr llvm::StringLiteral kHandlerProgramName =
     "modular-crashpad-handler";
-static constexpr llvm::StringLiteral kDefaultUploadURL =
-    "https://crash-reporting.dev.modular.com/";
 
 std::filesystem::path
 M::getCrashDatabasePath(Config &config,
@@ -106,8 +104,6 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
                  handlerPathOr.getError());
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
   StringRef url = config.getValue("crash_reporting.url");
-  if (url.empty())
-    url = kDefaultUploadURL;
 
   // Launch Crashpad handler.
   crashpad::CrashpadClient client;
