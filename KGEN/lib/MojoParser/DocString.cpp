@@ -60,16 +60,24 @@ static bool isSpecialFunction(StringRef name) {
 /// string:
 /// 1. It's a "public" function, meaning its name does not start with an
 ///    underscore, unless it's a special function such as `__init__`.
-/// 2. It's defined at the top level of a module, or as a method on a struct
-///    that requires a doc string.
+/// 2. It's defined at the top level of a module, or as a (not-synthesized)
+///    method on a struct that itself requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
   if (op.getName().starts_with("_") && !isSpecialFunction(op.getName()))
     return false;
 
   Operation *parent = op->getParentOp();
+  if (isa<FileModuleOp>(parent))
+    return true;
+
   StructDeclOp parentStruct = dyn_cast<StructDeclOp>(parent);
-  return isa<FileModuleOp>(parent) ||
-         (parentStruct && requiresDocString(parentStruct));
+  if (!parentStruct)
+    return false;
+
+  // We rely on an assumption here that only synthesized methods have the same
+  // location as their parent struct.
+  return requiresDocString(parentStruct) &&
+         op.getLoc() != parentStruct.getLoc();
 }
 
 /// If a struct field matches all of the following conditions, it requires a doc
