@@ -25,6 +25,16 @@
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "caller",
+  linkageName = "caller",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 // CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "call_async", linkageName = "call_async", file = #file, line = 50, scopeLine = 50,
 #asyncCallerSp = #debuginfo.subprogram<
   compileUnit = #compile_unit,
@@ -48,9 +58,12 @@
 // CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
 
-// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc("bar.mlir":27:8)
-// CHECK-DAG: #[[INLINED_LOC:.*]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at #[[LOC_CALLSITE]]))
+// CHECK-DAG: #[[LOC_CALLSITE_FILE:.*]] = loc("bar.mlir":27:8)
 #locCallsite = loc("bar.mlir":27:8)
+
+// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<{{.*}}#[[LOC_CALLSITE_FILE]]
+#locCaller = loc(fused<#callerSp>[#locCallsite])
+// CHECK-DAG: #[[INLINED_LOC:.*]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at
 
 // -------------------------------------------------------------------------- //
 // Test nodebug behavior for debuginfo.value ops.
@@ -86,12 +99,12 @@ kgen.func @inline_me(%arg0: index) -> index always_inline {
 
 // CHECK-LABEL: kgen.func @call_inline_me
 kgen.func @call_inline_me() -> index {
-  %0 = index.constant 3
+  %0 = index.constant 3 loc(#locCaller)
   // CHECK: %idx3 = index.constant 3
   // CHECK-NEXT: debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE_INLINED:.*]])
-  %1 = kgen.call @inline_me(%0) : (index) -> index loc(#locCallsite)
-  kgen.return %1 : index
-}
+  %1 = kgen.call @inline_me(%0) : (index) -> index loc(#locCaller)
+  kgen.return %1 : index loc(#locCaller)
+} loc(#locCaller)
 
 // -------------------------------------------------------------------------- //
 // Test location handling of async closure staging.
@@ -128,9 +141,9 @@ kgen.func @call_async_indirect() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   lit.async.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE]])
   // CHECK-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
-  %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCallsite)
-  kgen.return %1 : !pop.coroutine<() -> (index)>
-}
+  %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCaller)
+  kgen.return %1 : !pop.coroutine<() -> (index)> loc(#locCaller)
+} loc(#locCaller)
 
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
 // CHECK-DAG: #[[LOC_ARG:loc[0-9]+]] = loc("foo.mlir":13:12)
