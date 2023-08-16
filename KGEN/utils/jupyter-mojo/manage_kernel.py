@@ -14,22 +14,53 @@ from pathlib import Path
 from jupyter_client.kernelspec import KernelSpecManager
 
 
-def main():
+def create_argparser() -> argparse.ArgumentParser:
+    """Helper for CL option definition and parsing logic."""
     parser = argparse.ArgumentParser()
+
+    # Stub argument used when invoked from the mojo SDK installer.
     parser.add_argument(
+        "-installer-outfile",
+        help="Stub argument used when invoked from the mojo SDK installer.",
+        type=str,
+    )
+
+    subparsers = parser.add_subparsers(help="sub-command help", dest="command")
+    common_parser = argparse.ArgumentParser(add_help=False)
+
+    parser_install = subparsers.add_parser(
+        "install",
+        help="Install the mojo jupyter kernel",
+        parents=[common_parser],
+    )
+    parser_install.add_argument(
         "--python",
         default=sys.executable,
         help="The python interpreter to use when launching the kernel.",
     )
-    parser.add_argument("--no-user", dest="user", action="store_false")
-    parser.set_defaults(user=True)
+    parser_install.add_argument(
+        "--no-user",
+        dest="user",
+        action="store_false",
+        help="Install kernel to system-wide location",
+    )
+    parser_install.set_defaults(user=True)
 
-    args = parser.parse_args()
+    subparsers.add_parser(
+        "uninstall",
+        help="Uninstall the mojo jupyter kernel",
+        parents=[common_parser],
+    )
 
+    return parser
+
+
+def install_kernel(python: str, user: bool):
+    """Install the kernel spec."""
     kernel_dir = Path(__file__).parent / "kernel"
     kernel_install_dir = Path(
         KernelSpecManager().install_kernel_spec(
-            str(kernel_dir), "mojo-jupyter-kernel", user=args.user
+            str(kernel_dir), "mojo-jupyter-kernel", user=user
         )
     )
 
@@ -44,7 +75,7 @@ def main():
     kernel_json = {
         "display_name": "Mojo",
         "argv": [
-            args.python,
+            python,
             str(kernel_install_dir / "mojokernel.py"),
             "-f",
             "{connection_file}",
@@ -66,6 +97,23 @@ def main():
     }
     kernel_json_path = kernel_install_dir / "kernel.json"
     kernel_json_path.write_text(json.dumps(kernel_json, indent=2))
+
+
+def uninstall_kernel():
+    """Uninstall the kernel spec."""
+    KernelSpecManager().remove_kernel_spec("mojo-jupyter-kernel")
+
+
+def main():
+    parser = create_argparser()
+    args = parser.parse_args()
+
+    if args.command == "install":
+        install_kernel(args.python, args.user)
+    elif args.command == "uninstall":
+        uninstall_kernel()
+    else:
+        raise Exception(f"Unknown command {args.command}")
 
 
 if __name__ == "__main__":
