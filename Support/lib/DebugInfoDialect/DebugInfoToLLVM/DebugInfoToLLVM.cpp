@@ -462,10 +462,16 @@ void DebugInfoToLLVMPass::runOnOperation() {
 
   // Unknown operations are legal if they don't have debug info attached.
   target.markUnknownOpDynamicallyLegal([](Operation *op) -> bool {
-    if (auto fusedLoc =
-            op->getLoc()
-                ->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIAttr>>())
+    auto hasDIAttr = [](Location loc) -> bool {
+      return !!loc->findInstanceOf<mlir::FusedLocWith<DebugInfo::DIAttr>>();
+    };
+    if (hasDIAttr(op->getLoc()))
       return false;
+    for (Region &region : op->getRegions())
+      for (Block &block : region)
+        for (BlockArgument arg : block.getArguments())
+          if (hasDIAttr(arg.getLoc()))
+            return false;
     return true;
   });
 
