@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Pass/Pass.h"
 
@@ -114,7 +115,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perfom the optimization.
       if (!isa<POP::StructGEPOp, POP::StructExtractOp, POP::StoreOp,
-               POP::LoadOp>(user))
+               POP::LoadOp, DebugInfo::ValueOp>(user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -179,6 +180,21 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
           toDelete.push_back(extract);
         }
       }
+    } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
+      // TODO: DWARF has support for splitting up aggregates but they are not
+      // mapped into MLIR. Just generate separate variables for now.
+      OpBuilder b(value);
+      DebugInfo::DILocalVariableAttr var = value.getValueInfo();
+      auto getElementVar = [&](unsigned i) {
+        auto ptrType = cast<POP::PointerType>(newAllocas[i].getType());
+        return DebugInfo::DILocalVariableAttr::get(
+            // FIXME(11743): We can do better with field names on the structs.
+            var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
+            var.getFile(), var.getLine(), /*arg=*/0, /*alignInBits=*/0,
+            DebugInfo::DIUnresolvedMLIRType::get(ptrType.getElementAsType()));
+      };
+      for (auto [i, alloc] : llvm::enumerate(newAllocas))
+        b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, getElementVar(i));
     }
   }
 
