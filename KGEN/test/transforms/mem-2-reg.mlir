@@ -1,4 +1,4 @@
-// RUN: kgen-opt -mem-2-reg -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -mem-2-reg -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @simple_add
 kgen.generator @simple_add(%arg0: index, %arg1: index) -> index {
@@ -283,5 +283,32 @@ kgen.generator @unknown_region_op() {
     kgen.return %0, %1 : index, index
   }
 
+  kgen.return
+}
+
+// -----
+
+#file = #debuginfo.file<"test.mlir" in "">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "MLIR", isOptimized = true, emissionKind = Full>
+
+#callerSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "mem2reg_valueop",
+  linkageName = "mem2reg_valueop",
+  file = #file,
+  line = 0,
+  scopeLine = 0,
+  subprogramFlags = "Definition"
+> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
+
+#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 0, arg = 0, alignInBits = 0> : !debuginfo.unresolved<index>
+
+// CHECK-LABEL: @mem2reg_valueop
+kgen.func @mem2reg_valueop(%arg0: index) {
+  // CHECK-NEXT: debuginfo.value #local_variable = %arg0 : index
+  %0 = pop.stack_allocation 1 x index
+  pop.store %arg0, %0 : !pop.pointer<index>
+  debuginfo.value #local_variable = %0 : !pop.pointer<index>
   kgen.return
 }

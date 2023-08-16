@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 
@@ -40,7 +41,7 @@ static Type getAllocType(StackAllocationOp alloc) {
 /// operation.
 static bool canPromote(StackAllocationOp alloc) {
   for (Operation *user : alloc->getUsers()) {
-    if (isa<LoadOp>(user)) {
+    if (isa<LoadOp, DebugInfo::ValueOp>(user)) {
       if (userCrossesFunctionCFG(alloc, user))
         return false;
       continue;
@@ -90,6 +91,19 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
           load.replaceAllUsesWith(valueOrUndef(alloc, load, it->second));
           load.erase();
           ++stats.numLoadsElided;
+        }
+      }
+      continue;
+    }
+    if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
+      // Replace the variable with its current value.
+      if (auto alloc = value.getValue().getDefiningOp<StackAllocationOp>()) {
+        if (auto it = state.find(alloc); it != state.end()) {
+          OpBuilder b(value);
+          b.create<DebugInfo::ValueOp>(value.getLoc(),
+                                       valueOrUndef(alloc, value, it->second),
+                                       value.getValueInfo());
+          value.erase();
         }
       }
       continue;
