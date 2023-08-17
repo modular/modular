@@ -103,7 +103,8 @@ static int doc(const State &state) {
   mlir::MLIRContext context;
   CompilationOptions compilationOptions;
   MojoParserConfig parserConfig(&context, runtime, compilationOptions);
-  parserConfig.validateDocStrings = args.hasArg(options::OPT_validate);
+  parserConfig.warnMissingDocStrings =
+      args.hasArg(options::OPT_warn_missing_dog_strings);
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;

@@ -743,8 +743,8 @@ def literals():
     c = False         # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = false}>>
     c = True          # CHECK: @Bool = <#lit.struct<{value: scalar<bool> = true}>>
 
-# CHECK-LABEL: lit.func @"strings
-fn strings():
+# CHECK-LABEL: lit.func @"_strings
+fn _strings():
    """
       Various tests on strings
    """

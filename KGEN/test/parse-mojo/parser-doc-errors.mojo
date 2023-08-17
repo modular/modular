@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate -import-mojo -o /dev/null -mojo-doc-validate -verify-diagnostics %s
+# RUN: kgen-translate -import-mojo -o /dev/null -mojo-warn-missing-doc-strings -verify-diagnostics %s
 
 
 from Object import object
@@ -98,7 +98,7 @@ fn _fn_private_no_doc_string():
 
 fn fn_poor_style():
     """this summary should be capitalized and end with a period"""
-    # expected-warning @above {{doc string summary should begin with a capital letter or '`', but this begins with 't'}}
+    # expected-warning @above {{doc string summary should begin with a capital letter or non-alpha character, but this begins with 't'}}
     # expected-warning @above {{doc string summary should end with a period '.', but this ends with 'd'}}
     pass
 
@@ -187,7 +187,7 @@ fn fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
         arg2: this should start with a capital letter.
     """
     # expected-warning @-3 {{'arg' description should end with a period '.', but this ends with 'd'}}
-    # expected-warning @-3 {{'arg2' description should begin with a capital letter or '`', but this begins with 't'}}
+    # expected-warning @-3 {{'arg2' description should begin with a capital letter or non-alpha character, but this begins with 't'}}
     pass
 
 
@@ -227,7 +227,7 @@ fn fn_returns_section_poor_style() -> Int:
     Returns:
         doesn't start with a capital letter, doesn't end with a period!
     """
-    # expected-warning @-2 {{section body should begin with a capital letter or '`', but this begins with 'd'}}
+    # expected-warning @-2 {{section body should begin with a capital letter or non-alpha character, but this begins with 'd'}}
     # expected-warning @-3 {{section body should end with a period '.', but this ends with '!'}}
     return 0
 

@@ -32,9 +32,9 @@ int main(int argc, char *argv[]) {
       cl::desc("Disable caching when parsing the input Mojo file."),
       cl::init(false)};
 
-  cl::opt<bool> validateDocStrings{
-      "mojo-doc-validate",
-      cl::desc("Validate doc strings in the input Mojo file."),
+  cl::opt<bool> warnMissingDocStrings{
+      "mojo-warn-missing-doc-strings",
+      cl::desc("Emit warnings for partial or missing doc strings."),
       cl::init(false)};
 
   cl::opt<bool> experimentalLifetimes{
@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
         KGEN::CompilationOptions options = clOptions.getCompilationOptions();
         MojoParserConfig config(context, *runtime, options);
         config.useMLIRDiagnostics = true;
-        config.validateDocStrings = validateDocStrings;
+        config.warnMissingDocStrings = warnMissingDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
         if (disableParserCaching)
           config.moduleCachingLevel = MojoParserConfig::kCacheNone;

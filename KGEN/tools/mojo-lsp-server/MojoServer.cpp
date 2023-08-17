@@ -503,7 +503,6 @@ private:
                                                      mainDoc.uri.file());
       sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
 
-      parserConfig.validateDocStrings = true;
       parserConfig.parserListener = &parserListener;
 
       // TODO: Enable full caching here when we can symbolize references from

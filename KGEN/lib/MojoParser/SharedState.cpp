@@ -140,8 +140,8 @@ struct SharedState::Impl : public ClosureCache {
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
 
-  /// Flag indicating if we should validate doc strings while parsing.
-  bool validateDocStrings = false;
+  /// Flag indicating if we should warn on missing doc strings while parsing.
+  bool warnMissingDocStrings = false;
 
   /// If true, use !lit.ref representation for full lifetimes support in Mojo.
   bool experimentalLifetimes = false;
@@ -181,7 +181,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
       parsingStandardLibrary(config.parsingStandardLibrary),
       impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
   collectDefaultImportPaths(impl->autoImportDirs);
-  impl->validateDocStrings = config.validateDocStrings;
+  impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
 
   DialectRegistry registry;
@@ -231,8 +231,8 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
 
 SharedState::~SharedState() { declResolver.reset(); }
 
-bool SharedState::shouldValidateDocStrings() const {
-  return impl->validateDocStrings;
+bool SharedState::shouldWarnMissingDocStrings() const {
+  return impl->warnMissingDocStrings;
 }
 
 bool SharedState::useExperimentalLifetimes() const {

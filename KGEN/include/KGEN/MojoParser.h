@@ -72,8 +72,8 @@ struct MojoParserConfig {
   /// SourceMgr to get ranges and fixit hints.
   bool useMLIRDiagnostics = false;
 
-  /// If true, this will process and validate the doc strings in the file.
-  bool validateDocStrings = false;
+  /// If true, this will warn on missing pieces of documentation strings.
+  bool warnMissingDocStrings = false;
 
   /// If true, use !lit.ref representation for full lifetimes support in Mojo.
   bool experimentalLifetimes = false;

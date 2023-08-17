@@ -54,7 +54,7 @@ ErrorOrSuccess parseCompilationOptions(
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docValidateId,
+    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier parsingStdlibId,
     function_ref<OwningOpRef<ModuleOp>(MojoParserConfig &, mlir::TimingScope &)>

@@ -34,19 +34,6 @@ fn testIndentation6291[index: __mlir_type.index](
             _type : __mlir_type.`!pop.scalar<index>`
 ](ptr)
 
-# Failed to parse doc strings.
-struct struct_issue_6526:
-    """
-    foo
-    """
-    pass
-
-fn fn_issue_6526():
-    """
-    foo
-    """
-    pass
-
 # This file contains parsing related bugs.
 
 fn bracketError1():
