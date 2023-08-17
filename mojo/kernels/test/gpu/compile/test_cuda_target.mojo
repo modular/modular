@@ -25,8 +25,8 @@ from NvidiaGPU import (
 from Memory import memset_zero
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import triple_is_nvidia_cuda, simdwidthof
-from LLCL import OutputChainPtr
+from sys.info import triple_is_nvidia_cuda, simdwidthof
+from runtime.llcl import OutputChainPtr
 
 
 # ===----------------------------------------------------------------------===#
