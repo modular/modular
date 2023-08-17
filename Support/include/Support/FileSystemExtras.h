@@ -70,11 +70,17 @@ public:
   /// Keep the tempfile after the destructor runs - useful for debugging.
   void keep() { keepFile = true; }
 
+  /// close closes the file. The path will still be available.
+  void close();
+
   /// Get the file descriptor as an integer. This file is open as of the
-  /// completion of the `create` call.
+  /// completion of the `create` call. Note that if the file has been closed,
+  /// an fd < 0 may be returned, which the caller should check for.
   int getFD() { return fd; }
+
   /// Return the path to the temp file. This path is absolute.
   const std::filesystem::path &getPath() const { return path; }
+
   /// Get the size of the temp file in bytes.
   ErrorOr<size_t> getSize();
 
