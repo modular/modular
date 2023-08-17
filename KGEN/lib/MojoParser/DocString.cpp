@@ -179,12 +179,14 @@ enum class ValidationKind {
 
 /// Return whether this character is valid as the first character in a doc
 /// string summary, section body, or argument description.
-static bool isValidFirstCharacter(char c) { return c == '`' || isupper(c); }
+static bool isValidFirstCharacter(char c) { return !llvm::isLower(c); }
 
 class DocStringValidator {
 public:
   DocStringValidator(SharedState &sharedState, ASTDecl &decl)
-      : sharedState(sharedState), docStr(decl.getParsedDocString()) {
+      : sharedState(sharedState),
+        warnMissingDocStrings(sharedState.shouldWarnMissingDocStrings()),
+        docStr(decl.getParsedDocString()) {
     // If the doc string isn't valid, there's nothing to do.
     if (!docStr || !docStr->getLoc())
       return;
@@ -226,7 +228,7 @@ public:
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
           if (!docStr) {
-            if (validation == ValidationKind::Strict)
+            if (validation == ValidationKind::Strict && warnMissingDocStrings)
               sharedState.emitWarning(op.getLoc(), "public symbol '")
                   << op.getName() << "' is missing a doc string";
             return;
@@ -241,8 +243,8 @@ public:
               if (!isValidFirstCharacter(summary.front()))
                 sharedState.emitWarning(docStr->getLoc(),
                                         "doc string summary should begin with "
-                                        "a capital letter or '`', but this "
-                                        "begins with '")
+                                        "a capital letter or non-alpha "
+                                        "character, but this begins with '")
                     << summary.front() << "'";
 
               if (!summary.ends_with("."))
@@ -302,10 +304,9 @@ private:
   /// 2. The last character is not a period.
   void validateStyle(StringRef name, const char *first, const char *last) {
     if (!isValidFirstCharacter(*first))
-      emitWarning(first, name)
-          << " should begin with a capital letter or '`', but this begins"
-             " with '"
-          << *first << "'";
+      emitWarning(first, name) << " should begin with a capital letter or "
+                                  "non-alpha character, but this begins with '"
+                               << *first << "'";
 
     if (*last != '.')
       emitWarning(last, name)
@@ -515,7 +516,7 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict) {
+    if (validation == ValidationKind::Strict && warnMissingDocStrings) {
       if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
         sharedState.emitWarning(
             funcOp.getLoc(),
@@ -552,7 +553,7 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict &&
+    if (validation == ValidationKind::Strict && warnMissingDocStrings &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
       sharedState.emitWarning(
           structOp.getLoc(),
@@ -590,6 +591,9 @@ private:
 
   /// Reference to the main shared state.
   SharedState &sharedState;
+
+  /// Flag indicating if we should warn on missing doc strings.
+  bool warnMissingDocStrings;
 
   /// The doc string currently being processed.
   std::optional<DocString> docStr;

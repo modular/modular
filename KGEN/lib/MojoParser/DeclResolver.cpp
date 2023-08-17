@@ -615,8 +615,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
     // When validating doc strings, we wish to only validate those defined on
     // decl in the main container. As this point the main container decl has
     // been fully resolved, so it's an opportune time to validate.
-    if (shared.shouldValidateDocStrings())
-      validateDocString(shared, *declIt);
+    validateDocString(shared, *declIt);
 
     // If this is a package, resolve all of the modules within it as a pre-step.
     // Normally these get lazily resolved, but if we're forcing pulling them in,

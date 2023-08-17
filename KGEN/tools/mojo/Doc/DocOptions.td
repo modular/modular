@@ -41,7 +41,6 @@ def ValidationOptionGroup :
     "output format, but these options can be used to enable or disable these "
     "and other validation warnings.">;
 
-def validate : Flag<["--", "-"], "validate">,
+def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<ValidationOptionGroup>, Index<0>,
-  HelpText<"Validate doc strings as they are parsed. When enabled, warning "
-           "diagnostics are emitted as invalid doc strings are parsed.">;
+  HelpText<"Emit warnings for missing or partial doc strings.">;

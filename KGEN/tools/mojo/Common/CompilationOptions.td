@@ -92,11 +92,9 @@ def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
 
 def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<2>;
 
-def doc_validate : Flag<["--", "-"], "doc-validate">,
+def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<DiagnosticOptionGroup>, Index<0>,
-  HelpText<"Validate doc strings as they are parsed during compilation. When "
-           "enabled, warning diagnostics are emitted as invalid doc strings "
-           "are parsed.">;
+  HelpText<"Emit warnings for missing or partial doc strings.">;
 
 def max_notes : Separate<["--", "-"], "max-notes-per-diagnostic">,
   Group<DiagnosticOptionGroup>, Index<1>, MetaVarName<"INTEGER">,
