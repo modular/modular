@@ -7,6 +7,9 @@
 # RUN: kgen-translate -import-mojo -o /dev/null -mojo-doc-validate -verify-diagnostics %s
 
 
+from Object import object
+
+
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
 struct ArgStruct:
     pass
@@ -258,17 +261,6 @@ fn fn_raises_with_return_type(x: Int) raises -> Int:
         `0`.
     """
     return 0
-
-
-struct object:
-    """This definition of `object` is required because the compiler performs a
-    lookup of an "object" type for `def` functions. We cannot
-    `from Object import object` because doing so would `-doc-validate` the
-    `Object.mojo` file and all its dependencies."""
-
-    def __init__(inout self):
-        """The constructor for our fake `object` type."""
-        pass
 
 
 def def_implicit_object_return_type(x: Int):
