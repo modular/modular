@@ -13,7 +13,7 @@ from Pointer import Pointer, DTypePointer
 from Range import range
 from StaticTuple import StaticTuple
 from String import String
-from TargetInfo import sizeof, is_little_endian
+from sys.info import sizeof, is_little_endian
 
 
 # These representation must be kept in sync with the TensorShape file in
