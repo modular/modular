@@ -231,3 +231,22 @@ kgen.func @func() {
   pop.global.address @global_var : <i64>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{see function here}}
+kgen.func @coroutine_handle() {
+  // expected-error @below {{'pop.coroutine.handle' op surrounding function must have 1 result}}
+  %hdl = pop.coroutine.handle : <() -> index>
+  kgen.return
+}
+
+// -----
+
+// expected-note @below {{surrounding function returns 'index'}}
+kgen.func @coroutine_handle() -> index {
+  // expected-error @below {{'pop.coroutine.handle' op surrounding function result type does not match coroutine handle type}}
+  %hdl = pop.coroutine.handle : <() -> index>
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}

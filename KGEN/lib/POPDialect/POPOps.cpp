@@ -837,6 +837,28 @@ LogicalResult CastFromBuiltinOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CoroutineHandleOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CoroutineHandleOp::verify() {
+  if (auto func = (*this)->getParentOfType<FuncOp>()) {
+    if (func.getNumResults() != 1) {
+      return emitOpError("surrounding function must have 1 result")
+                 .attachNote(func.getLoc())
+             << "see function here";
+    }
+    Type resultType = func.getResultTypes().front();
+    if (resultType != getType()) {
+      return emitOpError("surrounding function result type does not match "
+                         "coroutine handle type")
+                 .attachNote(func.getLoc())
+             << "surrounding function returns " << resultType;
+    }
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // CoroutinePromiseOp
 //===----------------------------------------------------------------------===//
 
