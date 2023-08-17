@@ -609,6 +609,23 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         return failure();
     return success();
   }
+  case (uint32_t)POC::ApplyResultSlot: {
+    auto sig = dyn_cast_or_null<SignatureType>(type);
+    if (!sig)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a signature type for 'apply_result_slot'");
+    if (parseParamValue(p, operands.emplace_back(), sig))
+      return failure();
+    if (sig.getNumInputs() < 1)
+      return p.emitError(
+          p.getCurrentLocation(),
+          "'apply_result_slot' callee must have at least one result");
+    // Parse each operand besides the result slot.
+    for (Type type : llvm::drop_begin(sig.getValueInputs()))
+      if (p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
+        return failure();
+    return success();
+  }
   case (uint32_t)POC::GetAllImpls: {
     auto varTy = dyn_cast_or_null<VariadicType>(type);
     if (!varTy)
@@ -862,6 +879,17 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
 
   case POC::Apply:
   case POC::BindSignature:
+    // Print the signature operand with a type. Print all other operands without
+    // types.
+    printColonTypeOrIndexPrefix(p, operands.front().getType());
+    printParamValue(p, operands.front());
+    for (TypedAttr operand : operands.drop_front()) {
+      p << ", ";
+      printParamValue(p, operand);
+    }
+    break;
+
+  case POC::ApplyResultSlot:
     // Print the signature operand with a type. Print all other operands without
     // types.
     printColonTypeOrIndexPrefix(p, operands.front().getType());
