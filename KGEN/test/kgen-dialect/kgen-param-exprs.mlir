@@ -736,3 +736,14 @@ kgen.generator @partial_bind_index<c>() {
     <bind_signature(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () callable, c, #kgen.unbound)>
   kgen.return
 }
+
+kgen.generator @result_slot(%arg0: !pop.pointer<index> byref_result, %arg1: index) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @apply_result_slot
+kgen.generator @apply_result_slot() {
+  // CHECK-NEXT: constant: pointer<index> = <apply_result_slot(:<>(!pop.pointer<index> byref_result, index) -> () @result_slot, 2)>
+  kgen.param.constant: pointer<index> = <apply_result_slot(:<>(!pop.pointer<index> byref_result, index) -> () @result_slot, 2)>
+  kgen.return
+}

@@ -673,36 +673,63 @@ static Type upbindApplyResult(Type resultType) {
   return replacer.replace(resultType);
 }
 
-static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
-                                 function_ref<InFlightDiagnostic()> emitError) {
+static LogicalResult
+verifyApplyLike(ArrayRef<TypedAttr> operands, Type type, StringRef prefix,
+                function_ref<InFlightDiagnostic()> emitError,
+                function_ref<FailureOr<Type>(FunctionType)> inferResultType) {
   if (operands.empty())
-    return emitError() << "'apply' expected a function parameter";
+    return emitError() << prefix << "expected a function parameter";
 
   auto signature = cast<SignatureType>(operands.front().getType());
   if (!signature.getResultParamTypes().empty() ||
       !signature.getInputParamTypes().empty())
-    return emitError() << "'apply' function cannot be parametric";
+    return emitError() << prefix << "function cannot be parametric";
 
-  FunctionType func = signature.getValues();
-  if (func.getNumResults() != 1)
-    return emitError() << "'apply' function must return one result";
-  Type expectedType = upbindApplyResult(func.getResult(0));
+  FailureOr<Type> resultType = inferResultType(signature.getValues());
+  if (failed(resultType))
+    return failure();
+  Type expectedType = upbindApplyResult(*resultType);
   if (type != expectedType)
-    return emitError() << "'apply' function result type must be " << type
+    return emitError() << prefix << "function result type must be " << type
                        << " but got " << expectedType;
 
   return success();
+}
+
+static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
+                                 function_ref<InFlightDiagnostic()> emitError) {
+  return verifyApplyLike(
+      operands, type, "'apply' ", emitError,
+      [&](FunctionType func) -> FailureOr<Type> {
+        if (func.getNumResults() != 1)
+          return emitError() << "'apply' function must return one result";
+        return func.getResult(0);
+      });
+}
+
+static LogicalResult
+verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
+                      function_ref<InFlightDiagnostic()> emitError) {
+  return verifyApplyLike(operands, type, "'apply_result_slot' ", emitError,
+                         [&](FunctionType func) -> FailureOr<Type> {
+                           if (func.getNumInputs() < 1)
+                             return emitError()
+                                    << "'apply_result_slot' signature must "
+                                       "have at least one argument";
+                           return func.getInput(0);
+                         });
 }
 
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
   // All the operand types must match except for 'bind_signature' and 'apply'.
-  if (!llvm::is_contained(
-          {POC::BindSignature, POC::Apply, POC::Rebind, POC::TargetHasFeature,
-           POC::TargetGetField, POC::BuildInfoGetField, POC::GetSizeOf,
-           POC::GetAlignOf, POC::VariadicGet, POC::Cond, POC::GetEnv},
-          opcode) &&
+  if (!llvm::is_contained({POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
+                           POC::Rebind, POC::TargetHasFeature,
+                           POC::TargetGetField, POC::BuildInfoGetField,
+                           POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet,
+                           POC::Cond, POC::GetEnv},
+                          opcode) &&
       !llvm::all_of(operands, [&](auto operand) {
         return operand.getType() == operands.front().getType();
       }))
@@ -820,6 +847,10 @@ LogicalResult ParamOperatorAttr::verify(
   }
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
+      return failure();
+    break;
+  case POC::ApplyResultSlot:
+    if (failed(verifyApplyResultSlot(operands, type, emitError)))
       return failure();
     break;
   case POC::Rebind:
@@ -1743,6 +1774,9 @@ static TypedAttr getParamOperator(MLIRContext *context, POC opcode,
   case POC::Apply:
     result = simplifyApply(operands, resultType);
     break;
+  case POC::ApplyResultSlot:
+    result = {};
+    break;
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
     break;
@@ -1790,13 +1824,14 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
-                             POC::TargetHasFeature, POC::TargetGetField,
-                             POC::BuildInfoGetField, POC::GetSizeOf,
-                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
+  assert(
+      llvm::is_contained({POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
+                          POC::TargetHasFeature, POC::TargetGetField,
+                          POC::BuildInfoGetField, POC::GetSizeOf,
+                          POC::GetAlignOf, POC::VariadicGet, POC::GetEnv},
+                         opcode) ||
+      llvm::all_of(operandsIn.drop_front(),
+                   [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);

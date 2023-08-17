@@ -57,17 +57,18 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Signature processing.
   I32EnumAttrCase<"BindSignature", 22, "bind_signature">,
   I32EnumAttrCase<"Apply", 23, "apply">,
-  I32EnumAttrCase<"Rebind", 24, "rebind">,
+  I32EnumAttrCase<"ApplyResultSlot", 24, "apply_result_slot">,
+  I32EnumAttrCase<"Rebind", 25, "rebind">,
 
   // Evaluator.
-  I32EnumAttrCase<"GetAllImpls", 25, "get_all_impls">,
-  I32EnumAttrCase<"VariadicGet", 26, "variadic_get">,
+  I32EnumAttrCase<"GetAllImpls", 26, "get_all_impls">,
+  I32EnumAttrCase<"VariadicGet", 27, "variadic_get">,
 
   // Conditional expression.
-  I32EnumAttrCase<"Cond", 27, "cond">,
+  I32EnumAttrCase<"Cond", 28, "cond">,
 
   // Environment variables.
-  I32EnumAttrCase<"GetEnv", 28, "get_env">
+  I32EnumAttrCase<"GetEnv", 29, "get_env">
 ]>;
 
 //===----------------------------------------------------------------------===//
