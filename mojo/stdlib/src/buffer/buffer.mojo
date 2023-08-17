@@ -10,13 +10,13 @@ from Functional import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
 from Intrinsics import PrefetchOptions, masked_load, masked_store
 from List import Dim, DimList, VariadicList
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from math import fma, min, max, iota
 from Memory import stack_allocation, memset_zero
 from Pointer import Pointer, DTypePointer
 from Range import range
 from StaticTuple import StaticTuple
-from TargetInfo import sizeof, simdwidthof, alignof
+from sys.info import sizeof, simdwidthof, alignof
 from TypeUtilities import rebind
 
 alias _MAX_RANK = 8
