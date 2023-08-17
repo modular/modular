@@ -442,6 +442,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   add_custom_command(
     OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
 
+    COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
     COMMAND $<TARGET_FILE:mojo> doc -validate
     -o /dev/null ${KGEN_INCLUDE_FLAGS} ${doc_filename}
     -I ${KERNELS_BINARY_DIR}/mojo/Python
