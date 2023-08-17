@@ -36,7 +36,7 @@ from Memory import memset_zero
 from IO import print
 from List import Dim, DimList, VariadicList
 from OptionalParam import OptionalParamInt
-from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from math import (
     add,
     ceil,
@@ -87,7 +87,7 @@ from Pad import pad as _pad, pad_shape
 from Pointer import Pointer, DTypePointer
 from Pool import avg_pool, pool_shape, max_pool
 from Range import range
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
 from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
