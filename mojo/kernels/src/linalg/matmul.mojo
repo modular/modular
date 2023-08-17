@@ -23,7 +23,7 @@ from Functional import (
 )
 from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
-from LLCL import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from math import min, fma, div_ceil, align_down, align_up
 from Memory import memset_zero, stack_allocation
 from MatmulUtils import (
@@ -47,7 +47,7 @@ from MatmulUtils import (
 from Matrix import Matrix
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import has_neon, alignof, simdwidthof, has_avx2
+from sys.info import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
 from TypeUtilities import rebind
 from Intrinsics import PrefetchOptions, external_call

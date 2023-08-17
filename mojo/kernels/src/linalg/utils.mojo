@@ -8,7 +8,7 @@ from Index import StaticIntTuple, Index
 from math import div_ceil, max, min, sqrt
 from List import DimList
 from String import String
-from TargetInfo import (
+from sys.info import (
     has_avx512f,
     has_avx2,
     has_neon,

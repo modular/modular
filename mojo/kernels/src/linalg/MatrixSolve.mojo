@@ -11,7 +11,7 @@ from Functional import _elementwise_impl
 from Index import Index
 from Index import StaticIntTuple
 from List import DimList
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from Range import range
 from Tracing import TraceLevel
 from TypeUtilities import rebind

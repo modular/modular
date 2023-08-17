@@ -15,7 +15,7 @@ from Pointer import Pointer, DTypePointer
 from Buffer import Buffer, NDBuffer
 from Transpose import transpose, transpose_inplace
 from IO import print
-from TargetInfo import os_is_linux, has_intel_amx
+from sys.info import os_is_linux, has_intel_amx
 from Matmul import Matrix
 from List import DimList, Dim
 from Memory import memcmp, memset_zero

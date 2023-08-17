@@ -16,7 +16,7 @@ from MatmulUtils import (
     get_matmul_prefetch_b_distance_k,
 )
 from Buffer import NDBuffer
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from Index import Index
 from List import DimList
 from IO import print

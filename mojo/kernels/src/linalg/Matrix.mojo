@@ -9,7 +9,7 @@ from Buffer import NDBuffer
 from List import DimList
 from Index import StaticIntTuple
 from Pointer import Pointer, DTypePointer
-from TargetInfo import alignof
+from sys.info import alignof
 
 
 @value

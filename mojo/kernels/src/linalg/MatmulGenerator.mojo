@@ -25,8 +25,8 @@ from Memory import stack_allocation
 from MatmulUtils import get_pack_data_size
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import simdwidthof
-from TargetInfo import simd_byte_width
+from sys.info import simdwidthof
+from sys.info import simd_byte_width
 
 
 @register_passable("trivial")

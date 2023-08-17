@@ -12,7 +12,7 @@
 from Intrinsics import llvm_intrinsic
 from TypeUtilities import rebind
 from Assert import assert_param
-from TargetInfo import has_avx512_vnni
+from sys.info import has_avx512_vnni
 
 # ===----------------------------------------------------------------------===#
 # vpdpwssd

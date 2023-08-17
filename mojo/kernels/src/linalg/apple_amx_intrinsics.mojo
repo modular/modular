@@ -16,7 +16,7 @@ from List import DimList
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import sizeof
+from sys.info import sizeof
 
 
 struct amx_detail:

@@ -17,7 +17,7 @@ from Index import StaticIntTuple
 from IO import print
 from List import DimList
 from Range import range
-from TargetInfo import is_apple_m1, sizeof
+from sys.info import is_apple_m1, sizeof
 
 
 fn fill_a(

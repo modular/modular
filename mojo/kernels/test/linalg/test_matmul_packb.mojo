@@ -9,7 +9,7 @@ from Buffer import NDBuffer
 from Index import Index
 from List import DimList
 from Matmul import PackMatrixCols
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from IO import print
 
 alias type = DType.float32

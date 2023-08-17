@@ -7,7 +7,7 @@
 from Assert import assert_param
 from Buffer import NDBuffer
 from List import DimList
-from LLCL import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Index import StaticIntTuple, Index
 from math import max, min, div_ceil, gcd
 from MatmulUtils import (
@@ -20,7 +20,7 @@ from MatmulUtils import (
 )
 from Matmul import _submatmul_sequential_sync
 from Memory import memset_zero
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from Functional import (
     sync_parallelize,
     _get_start_indices_of_nth_subvolume,
