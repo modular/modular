@@ -44,7 +44,10 @@ def create_argparser() -> argparse.ArgumentParser:
         action="store_false",
         help="Install kernel to system-wide location",
     )
-    parser_install.set_defaults(user=True)
+    parser_install.add_argument(
+        "--modular-home", type=str, help="Modular home path"
+    )
+    parser_install.set_defaults(user=True, modular_home="")
 
     subparsers.add_parser(
         "uninstall",
@@ -55,7 +58,7 @@ def create_argparser() -> argparse.ArgumentParser:
     return parser
 
 
-def install_kernel(python: str, user: bool):
+def install_kernel(python: str, user: bool, modular_home: str):
     """Install the kernel spec."""
     kernel_dir = Path(__file__).parent / "kernel"
     kernel_install_dir = Path(
@@ -64,12 +67,12 @@ def install_kernel(python: str, user: bool):
         )
     )
 
-    # Grab the value of MODULAR_HOME from the environment.
-    modular_home = os.environ.get("MODULAR_HOME")
-    if not modular_home:
-        modular_home = os.environ.get("MODULAR_DERIVED_PATH")
-    if not modular_home:
-        raise RuntimeError("unable to resolve MODULAR_HOME path")
+    if modular_home == "":
+        modular_home = os.environ.get("MODULAR_HOME")
+        if not modular_home:
+            modular_home = os.environ.get("MODULAR_DERIVED_PATH")
+        if not modular_home:
+            raise RuntimeError("unable to resolve MODULAR_HOME path")
 
     # Generate the kernel.json file.
     kernel_json = {
@@ -109,7 +112,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "install":
-        install_kernel(args.python, args.user)
+        install_kernel(args.python, args.user, args.modular_home)
     elif args.command == "uninstall":
         uninstall_kernel()
     else:
