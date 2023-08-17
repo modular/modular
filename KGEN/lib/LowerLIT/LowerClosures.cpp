@@ -98,13 +98,13 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
     ret.erase();
   });
 
-  // Move the body into a function.
+  // Move the body into a function. The function is not valid to inline.
   b.clearInsertionPoint();
   b.setLoc(op.getLoc());
   StringAttr name = b.getStringAttr(parent.getSymName() + "_async_closure");
   auto sig = SignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getType()));
-  auto lifted = b.create<FuncOp>(name, sig);
+  auto lifted = b.create<FuncOp>(name, sig, InlineLevel::Never);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -153,13 +153,13 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
                                       op.getResult().getType().getFnEffects());
   auto sig = SignatureType::get(none, none, functionType, metadata);
 
-  // Create the lifted function.
+  // Create the lifted function. Make sure it doesn't get inlined back.
   StringAttr name;
   if (auto nameMaybe = op->getAttrOfType<StringAttr>("name"))
     name = nameMaybe;
   else
     name = b.getStringAttr(parent.getSymName() + "_closure");
-  auto lifted = b.create<FuncOp>(op->getLoc(), name, sig);
+  auto lifted = b.create<FuncOp>(op->getLoc(), name, sig, InlineLevel::Never);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -205,6 +205,8 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     SignatureType origSig = func.getSignature();
     func.setSignature(SignatureType::get(
         b.getFunctionType(origSig.getValueInputs(), coroType)));
+    // It is no longer valid to inline this function.
+    func.setInlineLevel(InlineLevel::Never);
   }
 
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
