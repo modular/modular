@@ -2099,6 +2099,7 @@ def POP_CoroutineHandleOp : POPOp<"coroutine.handle"> {
 
   let results = (outs POP_CoroutineType:$coroutine);
   let assemblyFormat = "attr-dict `:` type($coroutine)";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
