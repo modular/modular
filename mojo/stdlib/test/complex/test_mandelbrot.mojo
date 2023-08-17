@@ -13,7 +13,7 @@
 
 from IO import print
 from Range import range
-from Complex import ComplexSIMD, ComplexFloat32
+from complex import ComplexSIMD, ComplexFloat32
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
