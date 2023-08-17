@@ -55,12 +55,12 @@ from VNNI import dot_i8_to_i32_x86
 
 
 @closure
-fn null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
+fn _null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
     pass
 
 
 @closure
-fn null_rowwise_epilogue(offset: Int, num_rows: Int):
+fn _null_rowwise_epilogue(offset: Int, num_rows: Int):
     pass
 
 
@@ -1167,8 +1167,8 @@ struct TiledMatmul[
             c,
             a,
             b,
-            null_elementwise_epilogue,
-            null_rowwise_epilogue,
+            _null_elementwise_epilogue,
+            _null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1187,7 +1187,7 @@ struct TiledMatmul[
             a,
             b,
             elementwise_epilogue_fn,
-            null_rowwise_epilogue,
+            _null_rowwise_epilogue,
             global_tile_shape,
             global_tile_offset,
         )
@@ -1611,7 +1611,7 @@ fn pack_b[
 
 # TODO(16867): Merge this with pack_b.
 @always_inline
-fn pack_b_ndbuffer_impl[
+fn _pack_b_ndbuffer_impl[
     type: DType,
     transposed: Bool,
 ](
@@ -1689,7 +1689,7 @@ fn pack_b_ndbuffer[
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
+    _pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
 
 
 @always_inline
@@ -1715,7 +1715,7 @@ fn pack_transposed_b_ndbuffer[
         output_buffer: Output buffer to store the packed weight.
         out_chain: The to signal when writes to output buffer have finished.
     """
-    pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
+    _pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
 
 
 @value
@@ -1876,7 +1876,7 @@ struct BTileGenerator[
 
 
 @always_inline
-fn small_matmul_sync[
+fn _small_matmul[
     type: DType,
     transpose_b: Bool,
     epilogue_wrapper: fn[type: DType, width: Int] (
@@ -1963,7 +1963,7 @@ fn small_matmul_sync[
 
 
 @always_inline
-fn matmul_parallel_sync[
+fn matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1988,7 +1988,7 @@ fn matmul_parallel_sync[
         and a_type == b_type
         and b_type == c_type
     ):
-        return small_matmul_sync[a_type, transpose_b, elementwise_lambda_fn](
+        return _small_matmul[a_type, transpose_b, elementwise_lambda_fn](
             a,
             rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](b),
             rebind[NDBuffer[2, DimList.create_unknown[2](), a_type]](c),
@@ -1999,7 +1999,7 @@ fn matmul_parallel_sync[
         # Any error thrown by this kernel will get swallowed by this chain.
         # (It doesn't presently have any mark_error's)
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
-        matmul_parallel_sync[
+        matmul[
             a_type,
             b_type,
             c_type,
@@ -2011,7 +2011,7 @@ fn matmul_parallel_sync[
         ](c, a, b, new_chain.borrow(), num_threads)
         new_chain.wait()
     else:
-        matmul_parallel_sync[
+        matmul[
             a_type,
             b_type,
             c_type,
@@ -2023,7 +2023,7 @@ fn matmul_parallel_sync[
         ](c, a, b, out_chain, num_threads)
 
 
-fn matmul_parallel_sync[
+fn matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2043,7 +2043,7 @@ fn matmul_parallel_sync[
     ](out_coords: StaticIntTuple[2], out_val: SIMD[val_type, width]):
         pass
 
-    matmul_parallel_sync[
+    matmul[
         a_type,
         b_type,
         c_type,
@@ -2055,7 +2055,7 @@ fn matmul_parallel_sync[
     ](c, a, b, out_chain, num_threads)
 
 
-fn matmul_parallel_sync[
+fn matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -2262,14 +2262,6 @@ fn _submatmul_sequential_sync[
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
-    @closure
-    @always_inline
-    fn null_rowwise_epilogue(
-        start_row: Int,
-        num_rows: Int,
-    ):
-        pass
-
     _submatmul_sequential_sync[
         a_type,
         b_type,
@@ -2280,4 +2272,4 @@ fn _submatmul_sequential_sync[
         elementwise_epilogue_enabled,
         elementwise_lambda_fn,
         False,
-    ](c, a, b, sub_matrix_shape, sub_matrix_offset, null_rowwise_epilogue)
+    ](c, a, b, sub_matrix_shape, sub_matrix_offset, _null_rowwise_epilogue)

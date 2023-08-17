@@ -16,7 +16,7 @@ from Index import Index, StaticIntTuple
 from Pointer import DTypePointer
 from Buffer import NDBuffer, DynamicRankBuffer
 from Matrix import Matrix
-from Matmul import matmul_parallel_sync, _submatmul_sequential_sync, pack_b
+from Matmul import matmul, _submatmul_sequential_sync, pack_b
 from MatmulUtils import (
     MatmulConfig,
     calculate_tile_n_k,

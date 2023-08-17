@@ -151,7 +151,7 @@ fn _small_batched_matmul[
 
 
 @always_inline
-fn batched_matmul_parallel_sync[
+fn batched_matmul[
     rank: Int,
     type: DType,
     adj_a: Bool,
@@ -193,7 +193,7 @@ fn batched_matmul_parallel_sync[
         # Any error thrown by this kernel will get swallowed by this chain.
         # (It doesn't presently have any mark_error's)
         let new_chain = OwningOutputChainPtr(out_chain.get_runtime())
-        batched_matmul_parallel_sync[
+        batched_matmul[
             rank,
             type,
             adj_a,
@@ -204,7 +204,7 @@ fn batched_matmul_parallel_sync[
         ](c_buf, a_buf, b_buf, null_rowwise_epilogue, new_chain.borrow())
         new_chain.wait()
     else:
-        batched_matmul_parallel_sync[
+        batched_matmul[
             rank,
             type,
             adj_a,
@@ -216,7 +216,7 @@ fn batched_matmul_parallel_sync[
 
 
 @always_inline
-fn batched_matmul_parallel_sync[
+fn batched_matmul[
     rank: Int,
     type: DType,
     adj_a: Bool,
@@ -242,7 +242,7 @@ fn batched_matmul_parallel_sync[
     ):
         pass
 
-    batched_matmul_parallel_sync[
+    batched_matmul[
         rank,
         type,
         adj_a,
@@ -254,7 +254,7 @@ fn batched_matmul_parallel_sync[
 
 
 @always_inline
-fn batched_matmul_parallel_sync[
+fn batched_matmul[
     rank: Int,
     type: DType,
     adj_a: Bool,
