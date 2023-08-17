@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from math import abs, factorial, sin, cos, nan, isnan
-from Complex import ComplexFloat32
+from complex import ComplexFloat32
 from Limits import isfinite, isinf, inf, neginf
 from IO import print
 
