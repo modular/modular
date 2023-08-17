@@ -73,7 +73,7 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
   HelpText<"Define a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "
            "that, when queried with the `ParamEnv` module from within the Mojo "
-           "program, would yield the value 42 at execution time.">;
+           "program, would yield the compile-time value `42`.">;
 
 def sanitize : Separate<["--", "-"], "sanitize">, Group<CompilationOptionGroup>,
   Index<10>, MetaVarName<"CHECK">,
