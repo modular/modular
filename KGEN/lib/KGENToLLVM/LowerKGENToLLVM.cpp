@@ -89,7 +89,7 @@ struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
 
     auto funcOp =
         createLLVMFunc(rewriter, getTypeConverter()->getTarget(), func.getLoc(),
-                       func.getNameAttr(), funcType, LLVM::Linkage::External);
+                       func.getNameAttr(), funcType, LLVM::Linkage::ExternWeak);
 
     // Remove the function.
     symtab.remove(func);
@@ -571,7 +571,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
     if (!func)
       continue;
     else if (!exportSymbol.isCExport)
-      func.setLinkage(LLVM::Linkage::External);
+      func.setLinkage(func.isExternal() ? LLVM::Linkage::External
+                                        : LLVM::Linkage::Weak);
     else
       processCExportedFunction(func, symbolUsers, symtab, targetInfo);
   }

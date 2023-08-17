@@ -397,9 +397,12 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
   llvm::orc::MangleAndInterner mangler(session, dataLayout);
   llvm::orc::SymbolFlagsMap symbols;
 
-  for (auto &[name, symbol] : exports)
-    symbols[mangler(name)] =
-        llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported;
+  for (auto &[name, symbol] : exports) {
+    symbols[mangler(name)] = llvm::JITSymbolFlags::Callable |
+                             llvm::JITSymbolFlags::Exported |
+                             (symbol.isCExport ? llvm::JITSymbolFlags::None
+                                               : llvm::JITSymbolFlags::Weak);
+  }
 
   return {std::move(symbols), /*InitSymbol=*/nullptr};
 }
