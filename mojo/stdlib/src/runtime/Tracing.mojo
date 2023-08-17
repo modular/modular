@@ -163,8 +163,8 @@ fn trace_range_push[
     LLCL Runtime ctor.
 
     Args:
-        name: name of the trace event (will be copied).
-        detail: additional details about the trace event (will be copied).
+        name: Name of the trace event (will be copied).
+        detail: Additional details about the trace event (will be copied).
 
     """
 
