@@ -21,6 +21,7 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
+#include <cmath>
 #define DEBUG_TYPE "llcl"
 
 using namespace M;
@@ -50,6 +51,8 @@ constexpr size_t kMinTaskListCapacity = 128;
 /// Number of task list slots per thread.
 constexpr size_t kTaskListSlotsPerThread = 16;
 
+/// Max number of worker threads.
+constexpr size_t kMaxWorkers = 1024;
 /// Amount of time to spend spinning while waiting for work before going to
 /// sleep on a semaphore.
 constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
@@ -74,31 +77,61 @@ static void randomSleep() {
 }
 #endif
 
-/// Bit index i is true if the thread with workedID i is suspended.
+/// Provides the state needed to synchronize the workers in the thread pool.
+/// We use a uint64_t bit-vec (SuspendedThreadsBitvec) to represent the
+/// suspended bit of each thread. This comes with a limitation that the system
+/// could have just 64 threads. However most modern server cpu's have more than
+/// 64 cores in a node. We implement scaling support through a simple
+/// multi-cast scheme where each bit of the bit-vec represents more
+/// than 1 thread, ie a `workerGroup` instead of a `worker`.
+/// For example for a 128 cpu machine, bit 0 represents {worker0, worker1}.
+/// If bit0 is set, it means either worker0 | worker1 is suspended.
+/// This results in ambiguity when we query the bit-vec for addTask()/await()
+/// to wakeup threads because the exact sleeping workerID is unknown to post
+/// the appropriate semaphore. We handle this in the following way,
+/// 1) when workerId is unknown, we will wakeup all the threads
+/// represented by the bit-vec bit. For example, 0 -> {worker0->post(),
+/// worker1->post()} This can be expensive, but hopefully, we do not have to
+/// sleep/wake up threads often during model execution.
+/// 2) when workerID is known, we always post the semaphore since bit-vec
+/// information may have interference from other threads. This can lead to
+/// spurious posts() but nonetheless ensures, the threads wake up to execute
+/// the task.
+
+/// Bit index i is true if any thread in the workedGroupID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
-constexpr size_t kMaxWorkers = sizeof(SuspendedThreadsBitvec) * 8;
-constexpr SuspendedThreadsBitvec getSuspendedThreadIdMask(size_t workerID) {
-  return UINT64_C(1) << workerID;
+constexpr size_t bitVectorWidth = sizeof(SuspendedThreadsBitvec) * 8;
+constexpr SuspendedThreadsBitvec
+getSuspendedThreadIdMask(size_t workerGroupID) {
+  return UINT64_C(1) << workerGroupID;
 }
 
-static constexpr auto printWorkerId(size_t workerID) {
-  return [workerID]() {
-    return Twine("(workerID:").concat(Twine(workerID)).concat(Twine(")")).str();
+static constexpr auto printWorkerId(size_t workerGroupID) {
+  return [workerGroupID]() {
+    return Twine("(workerGroupID:")
+        .concat(Twine(workerGroupID))
+        .concat(Twine(")"))
+        .str();
   };
 }
 
-/// Provides the state needed to synchronize the workers in the thread pool.
 struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
 
-  SharedThreadState(bool mainWillDonate, bool paranoid)
+  SharedThreadState(bool mainWillDonate, bool paranoid, size_t numWorkers)
       : mainWillDonate(mainWillDonate)
 #if MODULAR_PARANOID
         ,
         paranoid(paranoid)
 #endif
   {
+    // Keeping numWorkers in a workerGroup a power of 2 to simplify arithmetic.
+    multicastFactor =
+        numWorkers > bitVectorWidth
+            ? static_cast<size_t>(std::ceil(
+                  std::log2(numWorkers / static_cast<float>(bitVectorWidth))))
+            : 0;
   }
 
   /// If true, the 'main' thread which constructed the work queue is going to
@@ -123,7 +156,8 @@ struct SharedThreadState {
   /// This flag indicates when a worker thread should quit working and get
   /// ready to be joined.
   std::atomic<bool> doneFlag = false;
-
+  /// computed so that number of workers per groups is 2^multicastFactor.
+  size_t multicastFactor;
   /// This keeps a bitset of suspended threads, indexed by workerID.  This will
   /// thrash around a lot when the workqueue is close to empty and threads are
   /// starting and stopping themselves, but should stay zero and read-only when
@@ -135,27 +169,34 @@ struct SharedThreadState {
   AlignedAtomic<SuspendedThreadsBitvec> suspendedThreads = 0;
 
   /// When a worker is about to go to sleep, it calls this method so andThenSync
-  /// can know to wake it up when more work materializes.
+  /// can know to wake it up when more work materializes. We set the bit of the
+  /// corresponding workerGroupID
   void markSuspended(size_t workerID) {
-    // TODO: Does this need to be sequentially consistent?
-    suspendedThreads.fetch_or(getSuspendedThreadIdMask(workerID),
+    // number of workers per groups is 2^multicastFactor.
+    auto workerGroupID = workerID >> multicastFactor;
+    suspendedThreads.fetch_or(getSuspendedThreadIdMask(workerGroupID),
                               std::memory_order_seq_cst);
   }
 
   /// If the specified workerID is suspended, take its bit out of the
   /// suspendedThreads bitset and return true.  Otherwise return false.
+  /// NOTE: takeSuspended may unset even if some other threads in the
+  /// same workerGroup are suspended. This is fine since, we will always call
+  /// the workerID->sema.post().
   bool takeSuspendedThread(size_t workerID) {
-    SuspendedThreadsBitvec workerBit = getSuspendedThreadIdMask(workerID);
+    // number of workers per groups is 2^multicastFactor.
+    auto workerGroupID = workerID >> multicastFactor;
+    SuspendedThreadsBitvec workerBit = getSuspendedThreadIdMask(workerGroupID);
     auto oldValue =
         suspendedThreads.fetch_and(~workerBit, std::memory_order_seq_cst);
     return oldValue & workerBit;
   }
 
-  /// If there are any suspended workers, return a worker id for one of them.
-  /// Otherwise return -1.
+  /// If there are any workerGroup's with suspended threads, return the id for
+  /// one of them. Otherwise return -1. Since we do not know the workerID which
+  /// is suspeneded, we assume all worker's are suspended and hence will post
+  /// all the semaphores.
   int takeAnySuspendedThread() {
-    // TODO: Generalize this beyond 64 workers.
-    // TODO: Don't use memory_order_seq_cst
     SuspendedThreadsBitvec loadedSuspendedThreads =
         suspendedThreads.load(std::memory_order_seq_cst);
     if (loadedSuspendedThreads == 0)
@@ -534,14 +575,10 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     if (auto labelledTask = affinityTaskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(labelledTask));
-      sharedState.takeSuspendedThread(workerID);
       goto KeepRunning;
     }
-    // Double check the fast predicate after marking ourselves as suspended
-    // (which only matters for await()).  Await won't signal the waiter unless
-    // it sees it at the right time.
+
     if (earlyStopPredicate()) {
-      sharedState.takeSuspendedThread(workerID);
       return;
     }
 
@@ -667,6 +704,8 @@ private:
   /// Only used when the taskList is full.
   std::mutex overflowMutex; // protects overflowTaskList
   SmallVector<WorkItem> overflowTaskList;
+  /// Log2(number of threads per bit of SuspendedThreadsBitvec)
+  size_t multicastFactor = 0;
   std::string poolName;
 };
 } // namespace
@@ -675,9 +714,16 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
                                          size_t taskListCapacity,
                                          bool mainWillDonate, bool paranoid,
                                          std::string_view poolName)
-    : numWorkers(cpuIDs.size()), sharedState(mainWillDonate, paranoid),
+    : numWorkers(cpuIDs.size()),
+      sharedState(mainWillDonate, paranoid, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
+
+  // Keeping numWorkers in a workerGroup a power of 2 to simplify arithmetic.
+  multicastFactor = numWorkers > bitVectorWidth
+                        ? static_cast<size_t>(std::ceil(std::log2(
+                              numWorkers / static_cast<float>(bitVectorWidth))))
+                        : 0;
   // Initialize each thread with its required state.
   // Note that we're constructing the array manually since WorkQueueThreads have
   // non-moveable atomics.
@@ -773,12 +819,22 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     workItem.use = callerWorker->useStack.back().copy();
   }
 #endif
-
   if (taskId >= 0) {
     auto workThread = getWorkQueueThread(taskId);
     if (workThread->addAffinityTask(workItem)) {
-      if (sharedState.takeSuspendedThread(taskId))
+      // Wake up the thread just in case.
+      // NOTE: This may be a spurious post() because the thread may already be
+      // awake. It does not cause any harm because the worst that can happen
+      // is that the thread goes to sleep the next iteration of runItemsImpl
+      // rather than now.
+      if (multicastFactor == 0) {
+        if (sharedState.takeSuspendedThread(taskId))
+          workThread->sema.post();
+      } else {
+        // TODO: post() should be low overhead if thread is already awake.
+        // Nevertheless profile and check.
         workThread->sema.post();
+      }
       return;
     }
   }
@@ -787,8 +843,18 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     // If there are any suspended workers, kick one of them now to make sure
     // there's at least one worker still awake to pick up work.
     int workerIDToPoke = sharedState.takeAnySuspendedThread();
-    if (workerIDToPoke != -1)
-      getWorkQueueThread(static_cast<size_t>(workerIDToPoke))->sema.post();
+    if (workerIDToPoke != -1) {
+      if (multicastFactor == 0)
+        getWorkQueueThread(static_cast<size_t>(workerIDToPoke))->sema.post();
+      else {
+        size_t start = workerIDToPoke << multicastFactor;
+        size_t range = 1 << multicastFactor;
+        for (size_t i = start; i < start + range; i++) {
+          if (i < numWorkers)
+            getWorkQueueThread(i)->sema.post();
+        }
+      }
+    }
     return;
   }
 
@@ -874,42 +940,28 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     // we signal the semaphore for this worker to make sure to wake it up if it
     // fell asleep.
     for (auto &value : values) {
-      value.andThenSync([&numRemaining, awaitingWorker, this]() {
+      value.andThenSync([&numRemaining, awaitingWorker]() {
         // Decrement the count of async values that we're waiting on.
         // TODO: This can probably use more relaxed memory consistency!
         if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
           return;
-
 #if MODULAR_PARANOID
         // Exclude this waiter from any lifetime assertions before the awaiter
         // can continue.
         taskIsDone();
 #endif
 
-        // Get the thread ID of the thread running the andThenSync, for tracing.
-        size_t workerID = workerIDInTLS;
-        (void)workerID;
-
         // When it drops to zero, we're good to go and whatever thread is
         // waiting for this will exit out of its 'runItems' loop.  That said,
         // the thread may be suspended on a semaphore.  Check for this, and if
         // so, signal its semaphore so it wakes up and notes that it is done.
-        auto awaitingWorkerID = awaitingWorker->workerID;
-
         // If the worker doing the await() has suspended, make sure to wake it
         // up so it notices that it is done.
-        if (sharedState.takeSuspendedThread(awaitingWorkerID)) {
-          // NOTE: We may post without a corresponding wait in
-          // WorkQueueThread::runItems if the earlyStopPredicate &
-          // takeSuspendedThread path executes just after our
-          // takeSuspendedThread above. In that case a future wait will just go
-          // around the work loop again.
-          //
-          // NOTE: This wakes up exactly one sleeping thread. Since we only
-          // allow one foreign thread to be running a runItems loop at a time
-          // the semaphore should have at most one waiter.
-          awaitingWorker->sema.post();
-        }
+        // NOTE: This may be a spurious post() because the thread may already be
+        // awake. It does not cause any harm because the worst that can happen
+        // is that the thread goes to sleep the next iteration of runItemsImpl
+        // rather than now.
+        awaitingWorker->sema.post();
       });
     }
 
