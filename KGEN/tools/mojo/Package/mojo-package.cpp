@@ -567,12 +567,11 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
   // Now we can start to generate the archive.
   mlir::PassManager archivePM(ctx);
   auto objectCompiler = ObjectCompiler::create(
-      runtime, archivePM, ".mojo_cache", compilationOptions);
+      runtime, archivePM, ".mojo_cache", compilationOptions, /*isJIT=*/false);
   if (failed(objectCompiler))
     return objectCompiler.takeError();
   ErrorOr<Cache::BufferRef> archiveOr =
-      objectCompiler->produceStandaloneArchive(symtab, exportMap,
-                                               /*isJIT=*/false);
+      objectCompiler->produceStandaloneArchive(symtab, exportMap);
   if (failed(archiveOr))
     return Error(archiveOr.getError());
   Cache::BufferRef archive = std::move(*archiveOr);

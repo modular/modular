@@ -158,7 +158,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   // Generate an archive for the module.
   auto standaloneOr =
       objectCompilerLayer.getRawCompiler().produceStandaloneArchive(
-          symtab, getExportedSymbols(moduleOp), /*isJIT=*/false);
+          symtab, getExportedSymbols(moduleOp));
   if (failed(standaloneOr))
     return state.reportError("failed to produce an archive for the module: " +
                              Twine(standaloneOr.getError()));

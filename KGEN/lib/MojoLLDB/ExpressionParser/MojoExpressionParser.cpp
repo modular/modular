@@ -146,9 +146,9 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       compilationOptions);
 
   // Create the compiler instance.
-  auto compilerOr =
-      ObjectCompiler::create(typeSystem->getRuntime(), *fullCompilationPM,
-                             ".mojo_cache", *compilationOptions);
+  auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),
+                                           *fullCompilationPM, ".mojo_cache",
+                                           *compilationOptions, /*isJIT=*/true);
   if (failed(compilerOr))
     return;
   compiler = std::make_unique<KGEN::ObjectCompiler>(std::move(*compilerOr));
@@ -182,8 +182,9 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
   }
 
   // Lower everything to LLVM and run the optimizer.
-  auto module = compiler->lowerAllFuncsToLLVM(symtab, exports, *llvmContext,
-                                              /*isJIT=*/true);
+  compiler->setForSearch(true);
+  auto module = compiler->lowerAllFuncsToLLVM(symtab, exports, *llvmContext);
+  compiler->setForSearch(false);
   if (!module) {
     typeSystem->errorLog("[evaluateSpecializations] failed to lower to LLVM");
     return M::Error("failed to lower to LLVM");

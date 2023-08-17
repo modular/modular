@@ -37,10 +37,9 @@ namespace M::KGEN {
 class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
-  static ErrorOr<ObjectCompiler> create(LLCL::Runtime &runtime,
-                                        mlir::PassManager &mgr,
-                                        StringRef basePath,
-                                        CompilationOptions options);
+  static ErrorOr<ObjectCompiler>
+  create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
+         CompilationOptions options, bool isJIT, bool isSearch = false);
 
   /// Allow the user to update the pass manager. This is useful when you'd like
   /// to use the same ObjectCompiler instance with multiple PassManager objects.
@@ -55,14 +54,13 @@ public:
   /// success, and nullptr on failure.
   std::unique_ptr<llvm::Module>
   lowerAllFuncsToLLVM(const SymbolTable &symtab,
-                      const ExportMap &exportedSymbols, llvm::LLVMContext &ctx,
-                      bool isJIT = false);
+                      const ExportMap &exportedSymbols, llvm::LLVMContext &ctx);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
   ErrorOr<Cache::BufferRef>
   produceStandaloneArchive(const SymbolTable &symtab,
-                           const ExportMap &exportedSymbols, bool isJIT);
+                           const ExportMap &exportedSymbols);
 
   /// Produces a standalone archive as an ElementsAttr that can be used as an
   /// attribute on another operation. Using this function generally implies
@@ -71,7 +69,7 @@ public:
   ErrorOr<ElementsAttr>
   produceStandaloneArchiveAttr(const SymbolTable &symtab,
                                const ExportMap &exportedSymbols,
-                               TargetInfoAttr target, bool isJIT = true);
+                               TargetInfoAttr target);
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
@@ -84,11 +82,14 @@ public:
                                      const ExportMap &exportedSymbols,
                                      raw_ostream &os);
 
+  /// Configure the object compiler to be used for search.
+  void setForSearch(bool useForSearch) { isSearch = useForSearch; }
+
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
                  LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
-                 CompilationOptions options);
+                 CompilationOptions options, bool isJIT, bool isSearch);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
   /// provided exported ops.
@@ -98,12 +99,12 @@ private:
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
-  std::unique_ptr<llvm::Module>
-  lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module, bool isJIT);
+  std::unique_ptr<llvm::Module> lowerAllFuncsToLLVM(llvm::LLVMContext &ctx,
+                                                    ModuleOp module);
 
   /// Lower the given LLVM module to an object file.
   LLCL::AnyAsyncValueRef lowerLLVMModuleToObject(llvm::Module &module,
-                                                 Location loc, bool isJIT);
+                                                 Location loc);
 
   /// The caches needed for compilation.
   LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
@@ -116,6 +117,17 @@ private:
 
   /// The compilation options to use.
   CompilationOptions options;
+
+  /// This is a bit odd, but since we use this layer to generate code for cases
+  /// where we aren't going to immediately execute it, we need to be able to
+  /// change the codegen mode.
+  bool isJIT;
+
+  /// When the elaborator performs search, the IR coming reaching the
+  /// ObjectCompilerLayer is post-elaboration IR.
+  bool isSearch;
+
+  friend class ObjectCompilerLayer;
 };
 
 /// Setup the machine properties from the provided target.
@@ -170,11 +182,6 @@ public:
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
             const SymbolTable &symtab, const ExportMap &exports);
 
-  /// Notify the layer that this is not for immediate execution. Note that this
-  /// *will* cause strange issues if you then go on to try and execute the code
-  /// generated!
-  void notForImmediateExecution() { isJIT = false; }
-
   /// Provide access to the underlying ObjectCompiler so that users can call its
   /// methods directly if desired (for example, to emit asm or LLVM).
   ObjectCompiler &getRawCompiler() { return objectCompiler; }
@@ -194,10 +201,6 @@ private:
   ObjectCompiler objectCompiler;
   llvm::orc::ObjectLayer &baseLayer;
   DenseMap<ModuleOp, Cache::BufferRef> generatedArchives;
-  /// This is a bit odd, but since we use this layer to generate code for cases
-  /// where we aren't going to immediately execute it, we need to be able to
-  /// change the codegen mode.
-  bool isJIT = true;
 };
 } // namespace M::KGEN
 

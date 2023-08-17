@@ -47,23 +47,25 @@ using namespace KGEN;
 ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
                                                mlir::PassManager &mgr,
                                                StringRef basePath,
-                                               CompilationOptions options) {
+                                               CompilationOptions options,
+                                               bool isJIT, bool isSearch) {
   auto transformCache = Cache::getLocalDefaultBackendChain(
       runtime, (std::filesystem::path(basePath.str()) / "transform").string(),
       KGEN_VERSION_STRING);
   if (failed(transformCache))
     return transformCache.takeError();
   return ObjectCompiler(runtime, mgr, std::move(*transformCache),
-                        std::move(options));
+                        std::move(options), isJIT, isSearch);
 }
 
 ObjectCompiler::ObjectCompiler(
     LLCL::Runtime &runtime, mlir::PassManager &mgr,
     LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
-    CompilationOptions options)
+    CompilationOptions options, bool isJIT, bool isSearch)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
-      runtime(runtime), mgr(&mgr), options(std::move(options)) {}
+      runtime(runtime), mgr(&mgr), options(std::move(options)), isJIT(isJIT),
+      isSearch(isSearch) {}
 
 //===----------------------------------------------------------------------===//
 // Time Trace Instrumentation
@@ -389,10 +391,10 @@ void ObjectCompilerLayer::emit(
 
   ErrorOr<Cache::BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
-    bufOr = objectCompiler.produceStandaloneArchive(
-        symtab, getAllSymbols(theModule), isJIT);
+    bufOr = objectCompiler.produceStandaloneArchive(symtab,
+                                                    getAllSymbols(theModule));
   } else {
-    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports, isJIT);
+    bufOr = objectCompiler.produceStandaloneArchive(symtab, exports);
   }
 
   // No buffer - materialization fails.

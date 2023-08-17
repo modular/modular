@@ -478,8 +478,9 @@ static ErrorOrSuccess handleLinkBytesDirective(
 // produceStandaloneArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols, bool isJIT) {
+ErrorOr<BufferRef>
+ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
+                                         const ExportMap &exportedSymbols) {
   TimeTraceScope<> traceScope("produce-standalone-archive");
 
   // Slice out a standalone module for the exported symbols.
@@ -501,13 +502,12 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenSync([this, op, isJIT,
-                       linksAndUsers = std::move(linksAndUsers),
+    chain.andThenSync([this, op, linksAndUsers = std::move(linksAndUsers),
                        linkMgr = std::move(linkMgr), output = output.copy(),
                        buf = buf.copy()]() mutable {
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
-      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op), isJIT);
+      auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
       if (!llvmModule) {
         return std::move(output).setToError(LLCL::getMLIRDiagnostic(
             "failed to lower module to LLVM IR for archive compilation",
@@ -522,12 +522,12 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
       if (runtime.getWorkQueue()->getParallelismLevel() < 2 || savingTemps) {
         cacheResults.push_back(
-            lowerLLVMModuleToObject(*llvmModule, op->getLoc(), isJIT));
+            lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
       } else {
         LLVMModuleSplitter splitter(*llvmModule);
         splitter.split([&](llvm::Module &inputModule) {
           cacheResults.push_back(
-              lowerLLVMModuleToObject(inputModule, op->getLoc(), isJIT));
+              lowerLLVMModuleToObject(inputModule, op->getLoc()));
         });
       }
       andThenSyncMoving(
@@ -619,8 +619,7 @@ ErrorOr<BufferRef> ObjectCompiler::produceStandaloneArchive(
 }
 
 LLCL::AnyAsyncValueRef
-ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
-                                        bool isJIT) {
+ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "lowerLLVMModuleToObject(");
   *keyBuf << ")";
@@ -637,10 +636,10 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
   // This will enable some bare bones incremental compilation, as we will be
   // able to reuse object files for previously compiled slices.
   auto runTransformation =
-      [this, nonBitcodeKeySize, loc, isJIT, keyBuf = keyBuf.copy()](
+      [this, nonBitcodeKeySize, loc, keyBuf = keyBuf.copy()](
           WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) mutable {
         auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-        chain.andThenAsync([this, nonBitcodeKeySize, loc, isJIT,
+        chain.andThenAsync([this, nonBitcodeKeySize, loc,
                             output = output.copy(), keyBuf = std::move(keyBuf),
                             buf = buf.copy()]() mutable {
           // Extract out the bitcode from the key, as LLVM bitcode dies if the
@@ -688,10 +687,11 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
       std::move(runTransformation), onCacheHit);
 }
 
-ErrorOr<ElementsAttr> ObjectCompiler::produceStandaloneArchiveAttr(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols,
-    TargetInfoAttr target, bool isJIT) {
-  auto bufferOr = produceStandaloneArchive(symtab, exportedSymbols, isJIT);
+ErrorOr<ElementsAttr>
+ObjectCompiler::produceStandaloneArchiveAttr(const SymbolTable &symtab,
+                                             const ExportMap &exportedSymbols,
+                                             TargetInfoAttr target) {
+  auto bufferOr = produceStandaloneArchive(symtab, exportedSymbols);
   if (bufferOr.isError())
     return bufferOr.takeError();
   BufferRef buffer = bufferOr.takeValue();
@@ -742,7 +742,7 @@ ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
   OwningOpRef<ModuleOp> slicedModule =
       produceStandaloneModule(symtab, exportedSymbols);
   llvm::LLVMContext ctx;
-  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule, /*isJIT=*/false);
+  auto llvmModule = lowerAllFuncsToLLVM(ctx, *slicedModule);
   if (!llvmModule)
     return Error("failed to lower module to LLVM IR");
 
