@@ -204,7 +204,7 @@ private:
     Value envStruct = rewriter.create<LLVM::AllocaOp>(
         op.getLoc(), types.liftedFunctionCaptureTypePtrType, one);
     // TODO: When data layouts are propagated properly, extract the data
-    //  layout from sys.infoAttr
+    //  layout from TargetInfoAttr
     size_t envSize =
         getTypeConverter()->getTypeAllocSize(types.liftedFunctionCaptureType);
 
