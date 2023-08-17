@@ -55,21 +55,20 @@ static void attachXRayAttributes(llvm::Module &module,
 std::unique_ptr<llvm::Module>
 ObjectCompiler::lowerAllFuncsToLLVM(const SymbolTable &symtab,
                                     const ExportMap &exportedSymbols,
-                                    llvm::LLVMContext &ctx, bool isJIT) {
+                                    llvm::LLVMContext &ctx) {
   OwningOpRef<ModuleOp> module =
       produceStandaloneModule(symtab, exportedSymbols);
-  return lowerAllFuncsToLLVM(ctx, *module, isJIT);
+  return lowerAllFuncsToLLVM(ctx, *module);
 }
 
 std::unique_ptr<llvm::Module>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module,
-                                    bool isJIT) {
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   TimeTraceScope<> traceScope("lower-to-llvm");
   mgr->clear();
 
-  // We only need to run the post-elaboration passes if we are JITing. In
-  // non-JIT mode, we know the passes have already been run.
-  if (isJIT)
+  // We only need to run the post-elaboration passes if we are searching. In
+  // non-search mode, we know the passes have already been run.
+  if (isSearch)
     populatePostElaborationPasses(*mgr, runtime, options);
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),

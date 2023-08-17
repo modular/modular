@@ -206,18 +206,13 @@ M::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler =
-      ObjectCompiler::create(runtime, pm, ".mojo_cache", compilationOptions);
+  auto compiler = ObjectCompiler::create(runtime, pm, ".mojo_cache",
+                                         compilationOptions, isJIT);
   if (failed(compiler))
     return compiler.takeError();
 
   auto &objLayer = engine->addLayer<ObjectCompilerLayer>(
       std::move(*compiler), engine->getLinkingLayer());
-
-  // If we aren't jitting, notify the object layer that anything we build is not
-  // for immediate execution.
-  if (!isJIT)
-    objLayer.notForImmediateExecution();
 
   // Add the KGEN compiler layer.
   // First though, get the backend chains to pass into the compile layer.

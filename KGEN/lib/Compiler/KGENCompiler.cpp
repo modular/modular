@@ -96,8 +96,8 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
 
   // Create the object compiler so we can add its layer to the execution engine.
   mlir::PassManager mgr(target.getContext());
-  auto compilerOr =
-      ObjectCompiler::create(runtime, mgr, ".mojo_cache", options);
+  auto compilerOr = ObjectCompiler::create(runtime, mgr, ".mojo_cache", options,
+                                           /*isJIT=*/true, /*isSearch=*/true);
   if (failed(compilerOr))
     return compilerOr.takeError();
   engine->addLayer<ObjectCompilerLayer>(std::move(*compilerOr),

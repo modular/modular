@@ -313,7 +313,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler = ObjectCompiler::create(*runtime, pm, ".mojo_cache", options);
+  auto compiler = ObjectCompiler::create(*runtime, pm, ".mojo_cache", options,
+                                         clOptions.cmd == Command::kExecute);
   if (failed(compiler)) {
     return failure(clOptions.reportError(
         Twine("could not create object compiler: ") + compiler.getError()));
@@ -414,7 +415,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       return failure(clOptions.reportError("could not open .o output file"));
 
     auto standaloneOr = objLayer.getRawCompiler().produceStandaloneArchive(
-        symtab, exportedSymbols, /*isJIT=*/false);
+        symtab, exportedSymbols);
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
