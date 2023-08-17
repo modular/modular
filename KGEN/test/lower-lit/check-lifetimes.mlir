@@ -382,6 +382,20 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
 
 // -----
 
+// COM: Verify that we don't traverse external functions.
+
+lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !kgen.signature<(!pop.pointer<@MyStruct> owned_in_mem) -> !lit.none>} {
+  lit.struct.field a : index
+}
+
+// CHECK-LABEL: @external_func
+// CHECK-NEXT: lit.extern_func
+lit.func @external_func(%arg: !pop.pointer<@MyStruct> owned_in_mem) attributes {preCompiledModuleRef = @package} {
+  lit.extern_func
+}
+
+// -----
+
 // COM: debuginfo.value ops may reference values that are not initialized (e.g.
 // COM: init_self arguments in __init__ functions). We check here that this does
 // COM: not cause an error in the pass.

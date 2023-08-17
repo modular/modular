@@ -39,9 +39,14 @@ collectFunctionsAndTypes(Operation *module) {
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op)) {
-      funcList.push_back(funcOp);
-      if (auto fOp = dyn_cast<LIT::FuncOp>(op))
+      if (auto fOp = dyn_cast<LIT::FuncOp>(op)) {
         funcMap[getFullyResolvedSymbolRef(fOp)] = fOp;
+
+        // We don't process external functions. They don't have a body to check.
+        if (fOp.isExternal())
+          return;
+      }
+      funcList.push_back(funcOp);
     }
     // Collect structs.
     if (auto structOp = dyn_cast<LIT::StructDeclOp>(op))
