@@ -443,10 +443,9 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
     OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
 
     COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
-    COMMAND $<TARGET_FILE:mojo> doc -validate
-    -o /dev/null ${KGEN_INCLUDE_FLAGS} ${doc_filename}
-    -I ${KERNELS_BINARY_DIR}/mojo/Python
-    > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
+    COMMAND $<TARGET_FILE:mojo> doc --validate -o /dev/null
+      ${KGEN_INCLUDE_FLAGS} ${doc_filename} -I ${KERNELS_BINARY_DIR}/mojo/Python
+      > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
@@ -455,20 +454,13 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   # Add a `DocValidate` target that checks the `mojo doc -validate` output is
   # empty.
   get_filename_component(doc_filename_we ${doc_filename} NAME_WE)
-  string(CONCAT validate_comment
-    "Scanning \"${DOC_VALIDATE_WARNINGS_FILE}\" for warnings originating from "
-    "\"${doc_filename}\".")
-  string(CONCAT failure_message
-    "The following warnings were output when validating the doc strings in "
-    "\"${doc_filename}\":")
+  set(failure_message
+      "warnings were output when was run on '${doc_filename}'")
   add_custom_target("${doc_filename_we}DocValidate"
-    COMMENT "${validate_comment}"
-
-    COMMAND
-      ${CMAKE_COMMAND} -DPATH="${DOC_VALIDATE_WARNINGS_FILE}"
-      -DFAILURE_MESSAGE="${failure_message}"
-      -P ${MODULAR_SOURCE_DIR}/KGEN/CheckFileIsEmpty.cmake
-
+    COMMENT "Checking `mojo doc --validate '${doc_filename}'`..."
+    COMMAND "${Python3_EXECUTABLE}"
+      "${MODULAR_SOURCE_DIR}/KGEN/utils/check-file-is-empty.py"
+      "${DOC_VALIDATE_WARNINGS_FILE}"
     DEPENDS "${DOC_VALIDATE_WARNINGS_FILE}"
   )
 
