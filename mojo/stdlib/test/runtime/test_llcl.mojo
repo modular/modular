@@ -7,7 +7,12 @@
 
 from Atomic import Atomic
 from IO import print
-from LLCL import TaskGroup, Runtime, OwningOutputChainPtr, AsyncTaskGroupPtr
+from runtime.llcl import (
+    TaskGroup,
+    Runtime,
+    OwningOutputChainPtr,
+    AsyncTaskGroupPtr,
+)
 from Pointer import Pointer
 from Memory import stack_allocation
 from Range import range
