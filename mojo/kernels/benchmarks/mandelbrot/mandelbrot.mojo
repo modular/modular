@@ -20,7 +20,7 @@ from List import Dim, DimList
 from runtime.llcl import num_cores, Runtime, TaskGroup
 from Functional import parallelize
 from math import iota
-from Complex import ComplexSIMD
+from complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
 from Pointer import Pointer, DTypePointer
