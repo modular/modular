@@ -577,8 +577,10 @@ ObjectCompilerLayer::getInterface(const SymbolTable &symtab,
 
   auto addSymbols = [&](const ExportMap &exportedSymbols) {
     for (auto &[name, symbol] : exports) {
-      symbols[mangler(name)] =
-          llvm::JITSymbolFlags::Callable | llvm::JITSymbolFlags::Exported;
+      symbols[mangler(name)] = llvm::JITSymbolFlags::Callable |
+                               llvm::JITSymbolFlags::Exported |
+                               (symbol.isCExport ? llvm::JITSymbolFlags::None
+                                                 : llvm::JITSymbolFlags::Weak);
     }
   };
 

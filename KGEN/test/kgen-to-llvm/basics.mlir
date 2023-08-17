@@ -117,6 +117,10 @@ kgen.func @used_func() {
   kgen.return
 }
 
+// CHECK: llvm.func extern_weak @external_func()
+kgen.link "/path/to/libc.a" as @libc
+kgen.extern.func @external_func() -> () from @libc
+
 // CHECK-LABEL: llvm.mlir.global internal constant @static_string("AB\00") {addr_space = 0 : i32, alignment = 16 : i64}
 
 }
