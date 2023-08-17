@@ -84,9 +84,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
   std::optional<ErrorTreeOrSuccess> err = elaborator->getAllConcreteFunctions(
       parent, *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
       symbol.getParamValues(), funcs);
-  if (!err) {
+  if (!err)
     return TypedAttr();
-  }
   if (err->isError()) {
     emitError(err->takeError());
     return TypedAttr();

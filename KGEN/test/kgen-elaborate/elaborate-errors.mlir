@@ -288,3 +288,18 @@ kgen.generator export @multiversioned() {
   kgen.param.fork N = <[1, 2]>
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{no viable expansions found}}
+kgen.generator @no_impls() {
+// expected-note @below {{constraint failed}}
+  kgen.param.assert <0>, "none"
+  kgen.return
+}
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator export @get_all_impls_none() {
+  kgen.param.declare impls: variadic<!kgen.signature<() -> ()>> = <get_all_impls(@no_impls)>
+  kgen.return
+}
