@@ -940,7 +940,12 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
     // we signal the semaphore for this worker to make sure to wake it up if it
     // fell asleep.
     for (auto &value : values) {
-      value.andThenSync([&numRemaining, awaitingWorker, this]() {
+      value.andThenSync([&numRemaining, awaitingWorker
+#if MODULAR_PARANOID
+                         ,
+                         this
+#endif
+      ]() {
         // Decrement the count of async values that we're waiting on.
         // TODO: This can probably use more relaxed memory consistency!
         if (numRemaining.fetch_sub(1, std::memory_order_seq_cst) != 1)
