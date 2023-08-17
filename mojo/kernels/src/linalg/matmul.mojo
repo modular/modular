@@ -110,8 +110,6 @@ fn naive_matmul[
         c: Buffer with allocated output space.
         a: Buffer containing matrix operand A.
         b: Buffer containing matrix operand B.
-        transpose_a: indicates if a is transposed.
-        transpose_b: indicates if b is transposed.
     """
     let gemm_shape = GemmShape.get[
         transpose_a,
@@ -152,8 +150,8 @@ struct PackMatrixRows[
     row_inner_size: Int,
 ]:
     """Pack rows from a matrix into the mlas packed layout and
-    extract inner vectors of rows into the packed inner dimension.
-    e.g. extract tile [X, Y] and pack into [Xo][Y][Xi]
+    extract inner vectors of rows into the packed inner dimension,
+    e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
     """
 
     # packed matrix
@@ -391,8 +389,8 @@ struct PackMatrixCols[
     use_vnni: Bool,
 ]:
     """Pack columns from a matrix into the mlas packed layout and
-    extract inner vectors of columns into the packed inner dimension.
-    e.g. extracts [X, Y] and packs as [Yo][X][Yi]
+    extract inner vectors of columns into the packed inner dimension,
+    e.g. extracts [X, Y] and packs as [Yo][X][Yi].
     """
 
     # packed matrix
@@ -627,16 +625,15 @@ struct MatmulInnerLoopBPacked[
         tile_n_k: StaticIntTuple[2],
     ):
         """Interface function to run the packing routine.
+
         Args:
-            c(NDBuffer): pre-allocated buffer space for packed result.
-            a(NDBuffer): data buffer operand A.
-            b(NDBuffer): data buffer operand B in packed layout.
-            global_offset(StaticIntTuple): offset to use when indexing the
-                original matrix.
-            global_bound(StaticIntTuple): Tile upper boundary of the current
-            tile function call.
-            tile_n_k(StaticIntTuple): 2D dimension tuple describing the
-                size of the packed tile of B.
+            c: Pre-allocated buffer space for packed result.
+            a: Data buffer operand A.
+            b_packed: Data buffer operand B in packed layout.
+            global_offset: Offset to use when indexing the original matrix.
+            global_bound: Tile upper boundary of the current tile function call.
+            tile_n_k: 2D dimension tuple describing the size of the packed tile
+                of B.
         """
         let instance = Self(
             c,
@@ -660,9 +657,8 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Initializes a local c buffer with
         all zeros.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
         """
 
         @always_inline
@@ -692,11 +688,10 @@ struct MatmulInnerLoopBPacked[
         value stored in the output buffer space, given the indices within the
         tile being processed.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
-                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
-                    within the current processing tile.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
+            tile_idx: index tuple with (m,n) coordinates within the current
+                processing tile.
         """
         alias alignment = alignof[SIMD[c_type, simd_size]]()
         alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
@@ -764,11 +759,10 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Stores the value of a local c
         buffer to the corresponding position in the output buffer space.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
-                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
-                    within the current processing tile.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
+            tile_idx: index tuple with (m,n) coordinates within the current
+                processing tile.
         """
         alias alignment = alignof[SIMD[c_type, simd_size]]()
         alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
@@ -833,9 +827,8 @@ struct MatmulInnerLoopBPacked[
         local accumulation buffer while processing `a_col_size` columns of A.
 
         Args:
-            c_local(NDBuffer): pre-allocated local buffer for c partial
-                sums.
-            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
+            c_local: Pre-allocated local buffer for c partial sums.
+            tile_n_k_idx: Index tuple with (n, k)
                 coordinates within the current processing tile to index the
                 packed B matrix.
         """
@@ -909,11 +902,9 @@ struct MatmulInnerLoopBPacked[
         local accumulation buffer while processing a single column of A.
 
         Args:
-            c_local(NDBuffer): pre-allocated local buffer for c partial
-                sums.
-            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
-                coordinates within the current processing tile to index the
-                packed B matrix.
+            c_local: Pre-allocated local buffer for c partial sums.
+            tile_n_k_idx: Index tuple with (n, k) coordinates within the current
+                processing tile to index the packed B matrix.
         """
         assert_param[a_col_size == 1]()
         # Seek outer indices in packed layout.
@@ -975,11 +966,9 @@ struct MatmulInnerLoopBPacked[
         local accumulation buffer while processing a single column of A.
 
         Args:
-            c_local(NDBuffer): pre-allocated local buffer for c partial
-                sums.
-            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
-                coordinates within the current processing tile to index the
-                packed B matrix.
+            c_local: Pre-allocated local buffer for c partial sums.
+            tile_n_k_idx: Index tuple with (n, k) coordinates within the current
+                processing tile to index the packed B matrix.
         """
         assert_param[a_col_size == 0]()
         # Seek outer indices in packed layout.
@@ -1217,13 +1206,13 @@ struct TiledMatmul[
         """Interface function to run tiled matmul on a given sub-tile.
 
         Args:
-            c(NDBuffer): Pre-allocated buffer space for result.
-            a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the mamtul.
-            transpose_a: True if a is in transposed layout.
-            transpose_b: True if b is in transposed layout.
-            global_tile_offset(GemmShape): tile offset on the original buffer.
-            global_tile_shape(GemmShape): tile shape this call will process.
+            c: Pre-allocated buffer space for result.
+            a: Operand A of the matmul.
+            b: Operand B of the mamtul.
+            elementwise_epilogue_fn: The elementwise epilogue function.
+            rowwise_epilogue_fn: The row-wise epilogue function.
+            global_tile_shape: Tile shape this call will process.
+            global_tile_offset: Tile offset on the original buffer.
         """
 
         let tile_n_k = calculate_tile_n_k[
@@ -1266,14 +1255,16 @@ struct TiledMatmul[
         Helper function: Pack a subtile of B and iterate through all the rows
             of C.
 
-            Args:
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n(Int): Dynamic tile size to use on N dimension.
-                sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        Parameters:
+            last_n_tile: The last n tile.
+            last_k_tile: The last k tile.
+            m_loop_pack_inner_size: Inner dimension of the packed data layout.
+
+        Args:
+            global_offset: 3D global offset within the whole
+                matmul problem space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         # valid distance in each dimension from the current offset to the end of the matrix
         let knm_bounds = (
@@ -1354,10 +1345,9 @@ struct TiledMatmul[
         """Iterate on the N dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         let valid_col_count: Int = (
             self.global_tile_shape.N
@@ -1411,11 +1401,7 @@ struct TiledMatmul[
     fn _outer_k_loop(
         self,
     ):
-        """Iterate on the K dimension of the whole problem space.
-
-        Args:
-            b_packed(NDBuffer): B matrix in packed layout.
-        """
+        """Iterate on the K dimension of the whole problem space."""
 
         # Each tiled iteration on the k dimension.
         @always_inline
@@ -1452,12 +1438,12 @@ struct TiledMatmul[
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
-            Args:
-                b_packed(NDBuffer): B matrix in packed layout.
-                tile_n(Int): Dynamic tile size to use on N dimension.
-                tile_k(Int): Dynamic tile size to use on K dimension.
-                n_inner_size(Int): Inner dimension size to use for the packed
-                    data layout.
+        Args:
+            b_packed_ptr: B matrix in packed layout.
+            tile_n: Dynamic tile size to use on N dimension.
+            tile_k: Dynamic tile size to use on K dimension.
+            n_inner_size: Inner dimension size to use for the packed data
+                layout.
         """
         return NDBuffer[3, config.packed_shape, b_type](
             b_packed_ptr.address,
@@ -1696,12 +1682,12 @@ fn pack_b_ndbuffer[
     `output_buffer`.
 
     Parameters:
-        type: the data type of elements inside `b_input`
+        type: The data type of elements inside `b_input`.
 
     Args:
-        b_input: input buffer that contains the weight to be packed
-        output_buffer: output buffer to store the packed weight
-        out_chain: the to signal when writes to output buffer have finished
+        b_input: Input buffer that contains the weight to be packed.
+        output_buffer: Output buffer to store the packed weight.
+        out_chain: The to signal when writes to output buffer have finished.
     """
     pack_b_ndbuffer_impl[type, False](b_input, output_buffer, out_chain)
 
@@ -1722,12 +1708,12 @@ fn pack_transposed_b_ndbuffer[
     `output_buffer`. This also un-transposes `b_input`.
 
     Parameters:
-        type: the data type of elements inside `b_input`
+        type: The data type of elements inside `b_input`.
 
     Args:
-        b_input: input buffer that contains the transposed weight to be packed
-        output_buffer: output buffer to store the packed weight
-        out_chain: the to signal when writes to output buffer have finished
+        b_input: Input buffer that contains the transposed weight to be packed.
+        output_buffer: Output buffer to store the packed weight.
+        out_chain: The to signal when writes to output buffer have finished.
     """
     pack_b_ndbuffer_impl[type, True](b_input, output_buffer, out_chain)
 
@@ -1787,9 +1773,9 @@ struct BTileGenerator[
         """Get a packed matrix (B) tile.
 
         Args:
-            global_offset: offset in the global M, N, K dimensions.
-            tile_dim_nk: tile shape based on cache size and matrix dimensions.
-            valid_data_dim_nk: the upper bounds for N and K dimensions.
+            global_offset: Offset in the global M, N, K dimensions.
+            tile_dim_nk: Tile shape based on cache size and matrix dimensions.
+            valid_data_dim_nk: The upper bounds for N and K dimensions.
 
         valid_data_tile_nk is ignored for pre-packing, where the tile is padded
         to have shape of tile_dim_nk.

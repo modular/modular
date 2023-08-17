@@ -154,8 +154,8 @@ struct GemmSwitch:
         """Setter utility based on indices from `GemmIdentifiers.
 
         Args:
-            idx(Int): the identifier for the dimension to set.
-            value(Bool): the value to set to on the given dimension.
+            idx: The identifier for the dimension to set.
+            value: The value to set to on the given dimension.
 
         """
         if idx == GemmIdentifiers.DimM:
@@ -225,9 +225,9 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         offset and dynamic bound.
 
         Args:
-            dimension_idx(Int): Dimension identifiers for the dimension to be
-        updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
-            offset(Int): The offset value to apply.
+            dimension_idx: Dimension identifiers for the dimension to be
+                updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
+            offset: The offset value to apply.
 
         Returns (Self):
             The updated dynamic state.
@@ -255,9 +255,9 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
         smaller matmuls.
 
         Args:
-            dimension_idx(Int): Dimension identifiers for the dimension to be
-        updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
-            bound(Int): The bound value to use.
+            dimension_idx: Dimension identifiers for the dimension to be
+                updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
+            bound: The bound value to use.
 
         Returns (Self):
             The updated dynamic state.
@@ -282,16 +282,17 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     ) -> Self:
         """Construct a dynamic state from original gemm inputs.
 
+        Parameters:
+            matmul_config: Static config of the matmul algorithm.
+            data_layout: Data layout of the operand matrices.
+
         Args:
-            matmul_config (MatmulConfig): Static config of the matmul algorithm.
-            data_layout (MatmulOperandLayout): Data layout of the operand
-                matrices.
-            c (NDBuffer): Buffer allocated for result matrix C.
-            a (NDBuffer): Buffer allocated for input matrix A.
-            b (NDBuffer): Buffer allocated for input matrix B.
-            global_offset (GemmShape): Offset on the gemm space for this call.
-            valid_tile_bound (GemmShape): Size of the tile on the gemm space
-                that this call should process.
+            c: Buffer allocated for result matrix C.
+            a: Buffer allocated for input matrix A.
+            b: Buffer allocated for input matrix B.
+            global_offset: Offset on the gemm space for this call.
+            valid_tile_bound: Size of the tile on the gemm space that this call
+                should process.
         """
 
         # Read out the global gemm space size.
@@ -399,12 +400,14 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
 
         Creates buffer layout from [M][N] to [M/inner_size][N][inner_size]
 
+        Parameters:
+            operand_id: Indicates which operand to get, expect
+                GemmIdentifier.OperandA or GemmIdentifier.OperandB.
+            inner_size: The inner dimension size of the packed layout.
+
         Args:
-            operand_id (Int): Indicates which operand to get, expect
-        GemmIdentifier.OperandA or GemmIdentifier.OperandB.
-            inner_size (Int): The inner dimension size of the packed layout.
-            tile_dimension(StaticIntTuple): The size of the packed tile in
-        [M,N] as described above.
+            tile_dimension: The size of the packed tile in [M,N] as described
+                above.
         """
         let buffer_shape = Index(
             div_ceil(tile_dimension[0], inner_size),
@@ -479,9 +482,9 @@ struct MatmulStaticState:
         smaller matmuls.
 
         Args:
-            dimension_idx(Int): Dimension identifiers for the dimension to be
-        updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
-            tile_size(Int): The tile size to use.
+            dimension_idx: Dimension identifiers for the dimension to be
+                updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
+            tile_size: The tile size to use.
 
         Returns (Self):
             The updated static state.
@@ -494,9 +497,9 @@ struct MatmulStaticState:
         """Updates the static switch to the new value.
 
         Args:
-            dimension_idx(Int): Dimension identifiers for the dimension to be
-        updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
-            switch(Bool): The new switch value to use.
+            dimension_idx: Dimension identifiers for the dimension to be
+                updated, expected values are GemmIdentifiers.{DimM, DimN, DimK}.
+            switch: The new switch value to use.
 
         Returns (Self):
             The updated static state.
@@ -509,8 +512,8 @@ struct MatmulStaticState:
         """Set the packed status of the given operand.
 
         Args:
-            idx(Int): Operand identifiers for the dimension to be updated,
-        expected values are GemmIdentifier.{ResultC, OperandA, OperandB}.
+            idx: Operand identifiers for the dimension to be updated, expected
+                values are GemmIdentifier.{ResultC, OperandA, OperandB}.
 
         Returns (Self):
             The updated static state.
@@ -599,8 +602,8 @@ struct PackInterface[
         based on the action parameters.
 
         Args:
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
         """
 
         @parameter
@@ -615,8 +618,8 @@ struct PackInterface[
             routines.
 
         Args:
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
         """
         # Parameter checks on supported configuration so far.
 
@@ -725,8 +728,8 @@ struct MicroKernelInterface[
         based on the action parameters.
 
         Args:
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
         """
         # TODO:
         #  Statically dispatch micro kernels, once we have other kernels.
@@ -739,8 +742,8 @@ struct MicroKernelInterface[
         on AVX targets, but AVX not required.
 
         Args:
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
         """
         # This micro-kernel needs b to be packed, and a, c not packed.
         assert_param[static_state.b_packed]()
@@ -828,17 +831,18 @@ struct MatmulGenerator[
         """Main API of the matmul generator. Realizes matmul operation given the
         initial states and configurations.
 
+        Parameters:
+            static_state: The initial static state of the matmul space.
+            actions: The set of tiling actions for realizing the matmul
+                configuration.
+
         Args:
-            static_state(MatmulStaticState): The initial static state of the
-        matmul space.
-            actions(VariadicList[MatmulAction]): The set of tiling actions for
-        realizing the matmul configuration.
-            dynamic_state(MatmulDynamicState): The runtime arguments to the
-        matmul operator.
-            action_tile_shapes(VariadictList[TileShape]): The list of tile shapes
-        needed by matmul actions that use a dynamic tile size. The size of this
-        list needs to be equal to the number of matmul actions that use a dynamic
-        tile size. The order of the list must exactly match the `actions` parameter.
+            dynamic_state: The runtime arguments to the matmul operator.
+            action_tile_shapes: The list of tile shapes needed by matmul actions
+                that use a dynamic tile size. The size of this list needs to be
+                equal to the number of matmul actions that use a dynamic tile
+                size. The order of the list must exactly match the `actions`
+                parameter.
         """
 
         debug_assert(
@@ -862,13 +866,12 @@ struct MatmulGenerator[
     ):
         """Dispatching utility for each of the static tiling actions.
 
-        Args:
-            static_state(MatmulStaticState): The current static state before
-        applying the current action.
-            current_action_idx(Int): Index of the current action to apply on
-        the given list of actions.
-            actions(VariadicList[MatmulAction]): The list of actions of the
-        matmul generator.
+        Parameters:
+            static_state: The current static state before applying the current
+                action.
+            current_action_idx: Index of the current action to apply on the
+                given list of actions.
+            actions: The list of actions of the matmul generator.
         """
 
         @parameter
@@ -948,11 +951,13 @@ struct MatmulGenerator[
                 // (Tile1.do_epilog==True) will realize the epilog here.
             // (Tile0.do_epilog==True) will realize the epilog here.
 
+        Parameters:
+            action: The current tiling action to process.
+            static_state: The static tile state.
+
         Args:
-            action (MatmulAction): The current tiling action to process.
-            static_state(MatmulStaticState): The static tile state.
-            dynamic_state(MatmulDynamicState): The dynamic tile state, containing
-        the dynamic bounds of the current tile.
+            dynamic_state: The dynamic tile state, containing the dynamic bounds
+                of the current tile.
         """
 
         @parameter
@@ -971,15 +976,21 @@ struct MatmulGenerator[
     ):
         """Implementation of the static tile action.
 
+        Parameters:
+            static_state: The current static state before applying the current
+                action.
+            current_action_idx: Index of the current action to apply on the
+                given list of actions.
+            actions: The list of actions of the matmul generator.
+
         Args:
-            static_state(MatmulStaticState): The current static state before
-        applying the current action.
-            current_action_idx(Int): Index of the current action to apply on
-        the given list of actions.
-            actions(VariadicList[MatmulAction]): The list of actions of the
-        matmul generator.
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
+            action_tile_shapes: The list of tile shapes needed by matmul actions
+                that use a dynamic tile size. The size of this list needs to be
+                equal to the number of matmul actions that use a dynamic tile
+                size. The order of the list must exactly match the `actions`
+                parameter.
         """
         alias current_action = actions[current_action_idx]
 
@@ -1021,15 +1032,21 @@ struct MatmulGenerator[
     ):
         """Implementation of the dynamic tile action.
 
+        Parameters:
+            static_state: The current static state before applying the current
+                action.
+            current_action_idx: Index of the current action to apply on the
+                given list of actions.
+            actions: The list of actions of the matmul generator.
+
         Args:
-            static_state(MatmulStaticState): The current static state before
-        applying the current action.
-            current_action_idx(Int): Index of the current action to apply on
-        the given list of actions.
-            actions(VariadicList[MatmulAction]): The list of actions of the
-        matmul generator.
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
+            action_tile_shapes: The list of tile shapes needed by matmul actions
+                that use a dynamic tile size. The size of this list needs to be
+                equal to the number of matmul actions that use a dynamic tile
+                size. The order of the list must exactly match the `actions`
+                parameter.
         """
         alias current_action = actions[current_action_idx]
 
@@ -1077,15 +1094,21 @@ struct MatmulGenerator[
     ):
         """Implementation of the tile and unswitch action.
 
+        Parameters:
+            static_state: The current static state before applying the current
+                action.
+            current_action_idx: Index of the current action to apply on the
+                given list of actions.
+            actions: The list of actions of the matmul generator.
+
         Args:
-            static_state(MatmulStaticState): The current static state before
-        applying the current action.
-            current_action_idx(Int): Index of the current action to apply on
-        the given list of actions.
-            actions(VariadicList[MatmulAction]): The list of actions of the
-        matmul generator.
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state before applying the current action.
+            dynamic_state: The current dynamic state before applying the current
+                action.
+            action_tile_shapes: The list of tile shapes needed by matmul actions
+                that use a dynamic tile size. The size of this list needs to be
+                equal to the number of matmul actions that use a dynamic tile
+                size. The order of the list must exactly match the `actions`
+                parameter.
         """
         alias current_action = actions[current_action_idx]
 
@@ -1122,10 +1145,11 @@ struct MatmulGenerator[
     ](dynamic_state: MatmulDynamicState[data_type]):
         """Implementation of the print tile state utility.
 
-         Args:
-            static_state(MatmulStaticState): The current static state.
-            dynamic_state(MatmulDynamicState[data_type]): the current dynamic
-        state.
+        Parameters:
+            static_state: The current static state.
+
+        Args:
+            dynamic_state: the current dynamic state.
         """
         print("global offset:", dynamic_state.global_offset.as_index())
         print("dynamic tile bound:", dynamic_state.valid_tile_bound.as_index())
@@ -1175,11 +1199,11 @@ struct TiledMatmulGenerated[
         """Interface function to run tiled matmul on a given sub-tile.
 
         Args:
-            c(NDBuffer): Pre-allocated buffer space for result.
-            a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the matmul.
-            global_tile_offset(GemmShape): tile offset on the original buffer.
-            global_tile_shape(GemmShape): tile shape this call will process.
+            c: Pre-allocated buffer space for result.
+            a: Operand A of the matmul.
+            b: Operand B of the matmul.
+            global_tile_offset: Tile offset on the original buffer.
+            global_tile_shape: Tile shape this call will process.
         """
         # TODO: (once we have more) wrap these generators behind a common
         #  interface.
@@ -1281,11 +1305,12 @@ struct TiledMatmulBiasGenerated[
         """Interface function to run tiled matmul on a given sub-tile.
 
         Args:
-            c(NDBuffer): Pre-allocated buffer space for result.
-            a(NDBuffer): Operand A of the matmul.
-            b(NDBuffer): Operand B of the matmul.
-            global_tile_offset(GemmShape): tile offset on the original buffer.
-            global_tile_shape(GemmShape): tile shape this call will process.
+            c: Pre-allocated buffer space for result.
+            a: Operand A of the matmul.
+            b: Operand B of the matmul.
+            bias: The bias value.
+            global_tile_offset: Tile offset on the original buffer.
+            global_tile_shape: Tile shape this call will process.
         """
         # TODO: (once we have more) wrap these generators behind a common
         #  interface.

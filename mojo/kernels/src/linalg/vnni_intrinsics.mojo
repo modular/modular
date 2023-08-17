@@ -257,11 +257,14 @@ fn dot_i8_to_i32_AVX2[
 
     Parameters:
         width: Size of the output SIMD vector.
+        a_type: The DType for a.
+        b_type: The DType for b.
+        c_type: The DType for c.
 
     Args:
-        src: a int32 SIMD vector.
-        a: a uint8 SIMD vector.
-        b: a int8 SIMD vector.
+        src: A int32 SIMD vector.
+        a: A uint8 SIMD vector.
+        b: A int8 SIMD vector.
 
     Constraints:
         Requires AVX2.
@@ -313,11 +316,14 @@ fn dot_i8_to_i32_x86[
 
     Parameters:
         width: Size of the output SIMD vector.
+        a_type: The DType for a.
+        b_type: The DType for b.
+        c_type: The DType for c.
 
     Args:
-        src: a int32 SIMD vector.
-        a: a uint8 SIMD vector.
-        b: a int8 SIMD vector.
+        src: A int32 SIMD vector.
+        a: A uint8 SIMD vector.
+        b: A int8 SIMD vector.
 
     Constraints:
         Requires AVX512_VNNI or AVX2.

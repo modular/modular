@@ -973,12 +973,14 @@ fn _copy_with_strides[
     based on given strides.
 
     Args:
-        output: the output buffer
-        input: the input buffer
-        input_strides: the stride at each input axis
-        output_strides: the stride at each output axis
-        input_offset: The offset at which input data starts
-        output_offset: The offset at which output data starts
+        axis: The axis value.
+        output: The output buffer.
+        input: The input buffer.
+        input_strides: The stride at each input axis.
+        output_strides: The stride at each output axis.
+        input_offset: The offset at which input data starts.
+        output_offset: The offset at which output data starts.
+        out_chain: The output chain.
     """
     if axis + 1 > rank and out_chain:
         return out_chain.mark_error("out of range")

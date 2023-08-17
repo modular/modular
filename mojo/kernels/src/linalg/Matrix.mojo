@@ -29,9 +29,6 @@ struct Matrix[
 
         Args:
             dptr: The buffer containing the matrix data.
-
-        Returns:
-            The constructed matrix.
         """
         self.data = dptr
 
@@ -45,10 +42,6 @@ struct Matrix[
         Args:
             dptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
-
-        Returns:
-            The constructed matrix.
-
         """
         self = Self(NDBuffer[2, shape, type](dptr, dynamic_shape))
 
@@ -59,9 +52,6 @@ struct Matrix[
 
         Args:
             ptr: The buffer containing the matrix data.
-
-        Returns:
-            The constructed matrix.
         """
         let dptr = DTypePointer[type](ptr.address)
         self = Self(NDBuffer[2, shape, type](dptr))
@@ -76,10 +66,6 @@ struct Matrix[
         Args:
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 2 representing shapes.
-
-        Returns:
-            The constructed matrix.
-
         """
         let dptr = DTypePointer[type](ptr.address)
         self = Self(NDBuffer[2, shape, type](dptr, dynamic_shape))
@@ -92,7 +78,7 @@ struct Matrix[
         """Constructs a matrix instance backed by stack allocated memory space.
 
         Parameters:
-            alignment: address alignment requirement for the allocation.
+            alignment: Address alignment requirement for the allocation.
 
         Returns:
             Constructed matrix with the allocated space.
@@ -134,9 +120,6 @@ struct Matrix[
             x: The untransposed x coordinate.
             y: The untransposed y coordinate.
             val: The value to store.
-
-        Returns:
-            The value stored at the coordinate.
         """
         if transposed:
             self.data[StaticIntTuple[2](y, x)] = val

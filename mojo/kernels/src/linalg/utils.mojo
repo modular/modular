@@ -64,7 +64,7 @@ struct MatmulConfig:
 
 @register_passable("trivial")
 struct MatmulDataType:
-    """Record describing the data types of the matrices in a matmul"""
+    """Record describing the data types of the matrices in a matmul."""
 
     # The data type of the result (matrix C), and the accumulator.
     var accum_type: DType
@@ -199,7 +199,7 @@ struct GemmShape:
         """Constructor of a gemm shape record from a index tuple.
 
         Args:
-            index (StaticIntTuple): The int tuple containing the index(m,n,k).
+            index: The int tuple containing the index(m,n,k).
 
         Returns:
             The constructed shape record.
@@ -247,15 +247,15 @@ fn calculate_tile_n_k[
 ](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
-        Args:
-            pack_cache_size: Allocated space for packing elements, configuring as a
-                function of target cache size desired.
-            pack_inner_size: The desired inner dimension of the packed data
-                layout.
-            gemm_shape: The shape of the matmul problem size based on runtime
-                input.
-        Returns:
-            The calculated tile size to partition the matmul as (TileN, TileK)
+
+    Parameters:
+        pack_cache_size: Allocated space for packing elements, configuring as a
+            function of target cache size desired.
+        pack_inner_size: The desired inner dimension of the packed data
+            layout.
+
+    Returns:
+        The calculated tile size to partition the matmul as (TileN, TileK).
     """
 
     let least_tile_n: Int = pack_inner_size

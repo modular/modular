@@ -108,14 +108,14 @@ struct amx_detail:
     @staticmethod
     fn fma64(gpr: Int):
         """
-        float64 matrix multiply and add.
+        Float64 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`10:si32`](gpr)
 
     @staticmethod
     fn fsm64(gpr: Int):
         """
-        float64 matrix multiply and subtract.
+        Float64 matrix multiply and subtract.
         """
         Self._op_gpr[__mlir_attr.`11:si32`](gpr)
 
@@ -136,49 +136,49 @@ struct amx_detail:
     @staticmethod
     fn mac16(gpr: Int):
         """
-        si16 matrix multiply and add.
+        SI16 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`14:si32`](gpr)
 
     @staticmethod
     fn fma16(gpr: Int):
         """
-        float16 matrix multiply and subtract.
+        Float16 matrix multiply and subtract.
         """
         Self._op_gpr[__mlir_attr.`15:si32`](gpr)
 
     @staticmethod
     fn fms16(gpr: Int):
         """
-        float16 matrix multiply and add.
+        Float16 matrix multiply and add.
         """
         Self._op_gpr[__mlir_attr.`16:si32`](gpr)
 
     @staticmethod
     fn vecint(gpr: Int):
         """
-        horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`
+        Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
         """
         Self._op_gpr[__mlir_attr.`18:si32`](gpr)
 
     @staticmethod
     fn vecfp(gpr: Int):
         """
-        horizontal float16 multiply `z0[i] += x0[i] + y0[i]`
+        Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
         """
         Self._op_gpr[__mlir_attr.`19:si32`](gpr)
 
     @staticmethod
     fn matint(gpr: Int):
         """
-        ui16 matrix multiply
+        UI16 matrix multiply.
         """
         Self._op_gpr[__mlir_attr.`20:si32`](gpr)
 
     @staticmethod
     fn matfp(gpr: Int):
         """
-        float16 matrix multiply
+        Float16 matrix multiply.
         """
         Self._op_gpr[__mlir_attr.`21:si32`](gpr)
 
