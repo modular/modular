@@ -96,8 +96,8 @@ fn sign[
     """Compute the sign (0, 1) of the input value.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the sign operation on.
@@ -122,11 +122,11 @@ fn elu[
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
-        x : The value to compute the ELU operation on.
+        x: The value to compute the ELU operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the ELU operation.
@@ -146,8 +146,8 @@ fn relu[
     """Compute the Relu Op using the equation $max(0, x)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the RELU operation on.
@@ -170,11 +170,11 @@ fn relu6[
     """Compute the Relu6 Op using the equation $min(max(0,x),6)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
-        x : The value to compute the RELU6 operation on.
+        x: The value to compute the RELU6 operation on.
 
     Returns:
         SIMD[type, simd_width]: The result of the RELU6 operation.
@@ -194,11 +194,12 @@ fn prelu[
     """Compute the Prelu Op using the equation $max(x,0) + alpha * min(x,0)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
-        x : The value to compute the PRELU operation on.
+        x: The value to compute the PRELU operation on.
+        alpha: The alpha value.
 
     Returns:
         SIMD[type, simd_width]: The result of the PRELU operation.
@@ -218,8 +219,8 @@ fn relu_n1[
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the RELU N1 operation on.
@@ -273,17 +274,17 @@ fn gelu[
     $0.5 * x * (1 + erf(x / sqrt(2)))$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
-        x : The value to compute the GELU operation on.
+        x: The value to compute the GELU operation on.
 
     Returns:
         SIMD[type, size]: The result of the GELU operation.
 
     Constraints:
-        type must be a floating point type.
+        Type must be a floating point type.
     """
     alias inv_SQRT_2 = 0.70710678118654752440
     assert_param[
@@ -313,11 +314,11 @@ fn gelu_approximate[
         type: The `DType` used for the computation.
         simd_width: SIMD width used for the computation.
 
-    Constraints:
-        type must be a floating point type.
-
     Args:
-        x : The value to compute the GELU operation on.
+        x: The value to compute the GELU operation on.
+
+    Constraints:
+        Type must be a floating point type.
 
     Returns:
         SIMD[type, size]: The result of the approximate GELU operation.
@@ -339,8 +340,8 @@ fn gelu_approximate_sigmoid[
     $x*sigmoid(1.702x)$.
 
     Parameters:
+        type: DType used for the computation.
         simd_width: SIMD width used for the computation.
-        type: dtype used for the computation.
 
     Args:
         x : The value to compute the GELU operation on.
@@ -349,7 +350,7 @@ fn gelu_approximate_sigmoid[
         SIMD[type, size]: The result of the approximate GELU operation.
 
     Constraints:
-        type must be a floating point type.
+        Type must be a floating point type.
     """
     assert_param[
         type.is_floating_point(), "dtype must be a floating point type"
@@ -373,7 +374,7 @@ fn sigmoid[
         simd_width: SIMD width used for the computation.
 
     Args:
-        x : The value to compute the sigmoid operation on.
+        x: The value to compute the sigmoid operation on.
 
     Returns:
         SIMD[type, size]: The result of the sigmoid operation.

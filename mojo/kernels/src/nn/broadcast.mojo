@@ -32,8 +32,8 @@ fn _get_rightmost_broadcast_axis[
     shapes are equal).
 
     Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
+        output: the output buffer
+        input: the input buffer
     """
     # TODO: consider manually unrolling this loop
     for axis in range(rank - 1, -1, -1):
@@ -64,8 +64,8 @@ fn broadcast[
     entire axis to the corresponding axis in `output`.
 
     Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
+        output: The output buffer.
+        input: The input buffer.
     """
     # short-circuit if any dimension of the output is 0, this way we don't need
     # to worry about such cases in the kernel implementation.
@@ -122,13 +122,14 @@ fn broadcast_impl[
     entire axis to the corresponding axis in `output`.
 
     Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
-        input_prev_axis_stride(Int): the stride at axis `axis - 1` for input
-        output_prev_axis_stride(Int): the stride at axis `axis - 1` for output
-        input_offset(Int): the offset at which we start copying data from
-        output_offset(Int): the offset at which we start copying data to
-        rightmost_broadcast_axis(Int): the largest axis at which we need to duplicate `input` data.
+        axis: The axis value.
+        output: The output buffer.
+        input: The input buffer.
+        input_prev_axis_stride: The stride at axis `axis - 1` for input.
+        output_prev_axis_stride: The stride at axis `axis - 1` for output.
+        input_offset: The offset at which we start copying data from.
+        output_offset: The offset at which we start copying data to.
+        rightmost_broadcast_axis: The largest axis at which we need to duplicate `input` data.
     """
     if axis >= rank:
         return

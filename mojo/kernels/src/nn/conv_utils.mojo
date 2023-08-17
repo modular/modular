@@ -44,7 +44,7 @@ fn get_conv_pack_inner_size() -> Int:
 
 @register_passable("trivial")
 struct ConvShape:
-    """A shape struct describing the convolution dimensions"""
+    """A shape struct describing the convolution dimensions."""
 
     # Input dimensions.
     var n: Int  # Input batch size.

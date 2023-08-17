@@ -102,18 +102,18 @@ struct Naive2dConvolution[
         """Interface function to run a convolution op on the given input and
         filter tensor and stores the result in the give output tensor.
 
-            Args:
-                output(ImageData): Pre-allocated output tensor space.
-                input(ImageData): Batched image input to the conv2d operator.
-                filter(ImageData): Filters to apply in the conv2d operator.
-                pad_h(StaticIntTuple): Padding on the height dimension with
-                    assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                pad_w(StaticIntTuple): Padding on the width dimension with
-                    assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                stride(StaticIntTuple): Strides on height and width dimensions
-                    with assumed tuple def (StrideH, StrideW).
-                dilation(StaticIntTuple): Dilations on height and width
-                    dimensions with assumed tuple def (dilation_h, dilation_w).
+        Args:
+            output: Pre-allocated output tensor space.
+            input: Batched image input to the conv2d operator.
+            filter: Filters to apply in the conv2d operator.
+            pad_h: Padding on the height dimension with
+                assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
+            pad_w: Padding on the width dimension with
+                assumed tuple def (PadOnLowerIdx, PadOnHigherIdx).
+            stride: Strides on height and width dimensions
+                with assumed tuple def (StrideH, StrideW).
+            dilation: Dilations on height and width
+                dimensions with assumed tuple def (dilation_h, dilation_w).
         """
         # Create an instance of the convolution op.
         let naive2d_convolution = Naive2dConvolution[
@@ -141,21 +141,18 @@ struct Naive2dConvolution[
         """Constructor of a convolution op instance on the given input and
         filter tensor and stores the result in the give output tensor.
 
-            Args:
-                output(ImageData): Pre-allocated output tensor space.
-                input(ImageData): Batched image input to the conv2d operator.
-                filter(ImageData): Filters to apply in the conv2d operator.
-                pad_h(StaticIntTuple): Padding on the height dimension with assu-
-                    med tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                pad_w(StaticIntTuple): Padding on the width dimension with assum-
-                    ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
-                stride(StaticIntTuple): Strides on height and width dimensions
-                    with assumed tuple def (StrideH, StrideW).
-                dilation(StaticIntTuple): Dilations on height and width dimensi-
-                    ons with assumed tuple def (dilation_h, dilation_w).
-            Returns:
-                An instance of the convolution operator with the input and outp-
-                    ut buffers registered.
+        Args:
+            output: Pre-allocated output tensor space.
+            input: Batched image input to the conv2d operator.
+            filter: Filters to apply in the conv2d operator.
+            pad_h: Padding on the height dimension with assu-
+                med tuple def (PadOnLowerIdx, PadOnHigherIdx).
+            pad_w: Padding on the width dimension with assum-
+                ed tuple def (PadOnLowerIdx, PadOnHigherIdx).
+            stride: Strides on height and width dimensions
+                with assumed tuple def (StrideH, StrideW).
+            dilation: Dilations on height and width dimensi-
+                ons with assumed tuple def (dilation_h, dilation_w).
         """
         # Register input/output buffers and parameters.
         self.output = output
@@ -509,9 +506,10 @@ struct PackIm2ColNCHW[
     ):
         """Utility to write a simd vector into the corresponding position in
         packed layout.
-            Args:
-                nk_idx (StaticIntTuple): The output tile index in (n, k).
-                vec_data (SIMD): The data vector to store.
+
+        Args:
+            nk_idx: The output tile index in (n, k).
+            vec_data: The data vector to store.
         """
         # Calculate index in packed layout.
         let out_n_idx = nk_idx[0]
@@ -542,9 +540,6 @@ struct PackIm2ColNCHW[
             local_tile_nk_offset(StaticIntTuple): Output offset in (n, k).
             global_out_image_offset(StaticIntTuple): Global offset in
                 convolution output in (Ho, Wo).
-
-        Returns:
-            The next output index position in (ho, wo).
         """
         let vector = Buffer[
             simd_size,
@@ -624,7 +619,8 @@ struct PackIm2ColNCHW[
         """Map output n index to conv output index in (Ho, Wo).
 
         Args:
-            n_idx (Int): The n index in packed output.
+            n_idx: The n index in packed output.
+
         Returns:
             The output index in (Ho, Wo).
         """
@@ -635,8 +631,10 @@ struct PackIm2ColNCHW[
 
     fn _k_to_c_r_s(self, k_idx: Int) -> StaticIntTuple[3]:
         """Map the packed k index to conv input index in (c,r,s).
+
         Args:
-            k_idx (Int): The transformed k index.
+            k_idx: The transformed k index.
+
         Returns:
             The pre-transformed index in (c,r,s).
         """
@@ -862,9 +860,9 @@ struct ConvIm2ColNCHW[
         """Constructor of an instance of the im2col conv2d operator.
 
         Args:
-            out(NDBuffer): Pre-allocated output space.
-            input(NDBuffer): The input to the convolution op.
-            filter(NDBuffer): The filter to convolve the input with.
+            out: Pre-allocated output space.
+            input: The input to the convolution op.
+            filter: The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
         """
 
@@ -922,7 +920,7 @@ struct ConvIm2ColNCHW[
         """Iterate on the K dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
+            b_packed: B matrix in packed layout.
         """
         let tile_k = self.tile_n_k[1]
         let valid_k_count = self.gemm_shape.K
@@ -956,10 +954,10 @@ struct ConvIm2ColNCHW[
         """Iterate on the N dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         let valid_col_count: Int = self.gemm_shape.N - global_offset.N
         let tile_n: Int = self.tile_n_k[0]
@@ -1019,16 +1017,14 @@ struct ConvIm2ColNCHW[
             sub_tile_n without crossing valid boundary.
 
         Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
-            start_idx(Int): Starting index on N dimension.
-            valid_col_count(Int): Number of valid columns remaining on the
-                current processing tile.
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
+            start_idx: Starting index on N dimension.
+            valid_col_count: Number of valid columns remaining on the current
+                processing tile.
         """
         var col_idx = start_idx
         while col_idx <= (valid_col_count - sub_tile_n):
@@ -1054,13 +1050,11 @@ struct ConvIm2ColNCHW[
         of C.
 
         Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         let valid_col_count = self.c.dim[1]() - global_offset.N
 
@@ -1092,18 +1086,19 @@ struct ConvIm2ColNCHW[
     ):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
-            of C.
+        of C.
 
-            Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n(Int): Dynamic tile size to use on N dimension.
-                sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        Parameters:
+            skip_col_bound: Column dimension boundary check will be
+                statically skipped if true.
+            m_loop_pack_inner_size: Inner dimension of the packed data layout.
+
+        Args:
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         # pack B:
         PackIm2ColNCHW[
@@ -1171,20 +1166,21 @@ struct ConvIm2ColNCHW[
           RowBlock size until the given row block does not completely fit in
           valid operand bound.
 
-            Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                RowSize(index): Size of row blocks to proceed with on the tile.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n_k(StaticTuple): Dynamic tile size to use, in
-                    (TileN, TileK).
-                start_idx(Int): row idx to start from.
-                valid_row_count(Int): number of valid rows to process from the
-                    start_idx.
+        Parameters:
+            skip_col_bound: Column dimension boundary check will be
+                statically skipped if true.
+            m_loop_pack_inner_size: Inner dimension of the packed data
+                layout.
+            RowSize: Size of row blocks to proceed with on the tile.
+
+        Args:
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n_k: Dynamic tile size to use, in (TileN, TileK).
+            start_idx: row idx to start from.
+            valid_row_count: number of valid rows to process from the
+                start_idx.
         """
         alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
         var row_idx = start_idx
@@ -1248,12 +1244,12 @@ struct ConvIm2ColNCHW[
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
-            Args:
-                b_packed(NDBuffer): B matrix in packed layout.
-                tile_n(Int): Dynamic tile size to use on N dimension.
-                tile_k(Int): Dynamic tile size to use on K dimension.
-                n_inner_size(Int): Inner dimension size to use for the packed
-                    data layout.
+        Args:
+            b_packed: B matrix in packed layout.
+            tile_n: Dynamic tile size to use on N dimension.
+            tile_k: Dynamic tile size to use on K dimension.
+            n_inner_size: Inner dimension size to use for the packed data
+                layout.
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
@@ -1421,9 +1417,8 @@ struct ConvNHWCInnerLoopFilterPacked[
         """Utility funcion on the inner loop. Initializes a local c buffer with
         all zeros.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
         """
 
         @always_inline
@@ -1453,11 +1448,10 @@ struct ConvNHWCInnerLoopFilterPacked[
         value stored in the output buffer space, given the indices within the
         tile being processed.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
-                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
-                    within the current processing tile.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
+            tile_idx: index tuple with (m,n) coordinates within the current
+                processing tile.
         """
 
         @always_inline
@@ -1516,11 +1510,10 @@ struct ConvNHWCInnerLoopFilterPacked[
         """Utility funcion on the inner loop. Stores the value of a local c
         buffer to the corresponding position in the output buffer space.
 
-            Args:
-                c_local(NDBuffer): pre-allocated local buffer for c partial
-                    sums.
-                tile_idx(StaticIntTuple): index tuple with (m,n) coordinates
-                    within the current processing tile.
+        Args:
+            c_local: pre-allocated local buffer for c partial sums.
+            tile_idx: index tuple with (m,n) coordinates within the current
+                processing tile.
         """
 
         @always_inline
@@ -1602,11 +1595,11 @@ struct ConvNHWCInnerLoopFilterPacked[
         local accumulation buffer.
 
         Args:
-            c_local(NDBuffer): pre-allocated local buffer for c partial
-                sums.
-            tile_n_k_idx(StaticIntTuple): index tuple with (n, k)
-                coordinates within the current processing tile to index the
-                packed B matrix.
+            c_local: Pre-allocated local buffer for c partial sums.
+            segment_idx: The segment index.
+            tile_n_k_idx: Index tuple with (n, k) coordinates within the current
+                processing tile to index the packed B matrix.
+            contiguous_len: The contiguous length.
         """
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
@@ -1750,12 +1743,15 @@ fn get_partitioned_workload(
     task_idx: Int, number_of_tasks: Int, total_load: Int
 ) -> StaticIntTuple[2]:
     """Naive balanced implementation of load partition.
+
     Args:
         task_idx: Index of the assigned task.
         number_of_tasks: Total number of task to partition.
+        total_load: The total load.
+
     Returns:
         Partition result in (load_start_idx, load_amount), meaning the partition
-        is in [start_idx, start_idx+load_amount)
+        is in [start_idx, start_idx+load_amount).
     """
     var divided_load = total_load // number_of_tasks
     let residue_load = total_load % number_of_tasks
@@ -1905,10 +1901,14 @@ struct ConvIm2ColNHWC[
         """Constructor of an instance of the im2col conv2d operator.
 
         Args:
-            out(NDBuffer): Pre-allocated output space.
-            input(NDBuffer): The input to the convolution op.
-            filter(NDBuffer): The filter to convolve the input with.
+            out: Pre-allocated output space.
+            input: The input to the convolution op.
+            filter: The filter to convolve the input with.
             conv_shape: Struct describing the convolution dimensions.
+            gemm_shape: The gemm shape.
+            num_tasks: The number of tasks.
+            task_id: The task id.
+            elementwise_epilogue_fn: The elementwise epilogue function.
         """
 
         var tile_n_k = calculate_tile_n_k[pack_cache_size, pack_inner_size](
@@ -2025,7 +2025,7 @@ struct ConvIm2ColNHWC[
         """Iterate on the K dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
+            b_packed: B matrix in packed layout.
         """
         debug_assert(
             self.tile_n_k[1] >= self.conv_shape.c,
@@ -2063,7 +2063,7 @@ struct ConvIm2ColNHWC[
         """Iterate on the K dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
+            b_packed: B matrix in packed layout.
         """
         debug_assert(
             self.tile_n_k[1] < self.conv_shape.c,
@@ -2110,10 +2110,10 @@ struct ConvIm2ColNHWC[
         """Iterate on the N dimension of the whole problem space.
 
         Args:
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         let valid_col_end: Int = self.col_start_idx + self.total_col_count
         let tile_n: Int = self.tile_n_k[0]
@@ -2150,14 +2150,16 @@ struct ConvIm2ColNHWC[
         """Pack a subtile of B and iterate through all the rows
         of C.
 
+        Parameters:
+            last_k_tile: The last k tile.
+            m_loop_pack_inner_size: Inner dimension of the packed data layout.
+
         Args:
-            m_loop_pack_inner_size(index): Inner dimension of the packed data
-                layout.
-            b_packed(NDBuffer): B matrix in packed layout.
-            global_offset(GemmShape): 3D global offset within the whole
-                matmul problem space.
-            sub_tile_n(Int): Dynamic tile size to use on N dimension.
-            sub_tile_k(Int): Dynamic tile size to use on K dimension.
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         let valid_col_count = (
             self.col_start_idx + self.total_col_count - global_offset.N
@@ -2191,16 +2193,19 @@ struct ConvIm2ColNHWC[
         Helper function: Pack a subtile of B and iterate through all the rows
             of C.
 
-            Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n(Int): Dynamic tile size to use on N dimension.
-                sub_tile_k(Int): Dynamic tile size to use on K dimension.
+        Parameters:
+            last_k_tile: The last k tile.
+            skip_col_bound: Column dimension boundary check will be
+                statically skipped if true.
+            m_loop_pack_inner_size: Inner dimension of the packed data
+                layout.
+
+        Args:
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n: Dynamic tile size to use on N dimension.
+            sub_tile_k: Dynamic tile size to use on K dimension.
         """
         # pack B:
         if filter_layout == Image2DLayout.NHWC:
@@ -2323,20 +2328,20 @@ struct ConvIm2ColNHWC[
           RowBlock size until the given row block does not completely fit in
           valid operand bound.
 
-            Args:
-                skip_col_bound(i1): Column dimension boundary check will be
-                    statically skipped if true.
-                m_loop_pack_inner_size(index): Inner dimension of the packed data
-                    layout.
-                RowSize(index): Size of row blocks to proceed with on the tile.
-                b_packed(NDBuffer): B matrix in packed layout.
-                global_offset(GemmShape): 3D global offset within the whole
-                    matmul problem space.
-                sub_tile_n_k(StaticTuple): Dynamic tile size to use, in
-                    (TileN, TileK).
-                start_idx(Int): row idx to start from.
-                valid_row_count(Int): number of valid rows to process from the
-                    start_idx.
+        Parameters:
+            last_k_tile: The last k tile.
+            skip_col_bound: Column dimension boundary check will be statically
+                skipped if true.
+            m_loop_pack_inner_size: Inner dimension of the packed data layout.
+            RowSize: Size of row blocks to proceed with on the tile.
+
+        Args:
+            b_packed: B matrix in packed layout.
+            global_offset: 3D global offset within the whole matmul problem
+                space.
+            sub_tile_n_k: Dynamic tile size to use, in (TileN, TileK).
+            start_idx: row idx to start from.
+            valid_row_count: number of valid rows to process from the start_idx.
         """
         var row_idx = start_idx
 
@@ -2404,12 +2409,12 @@ struct ConvIm2ColNHWC[
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
-            Args:
-                b_packed(NDBuffer): B matrix in packed layout.
-                tile_n(Int): Dynamic tile size to use on N dimension.
-                tile_k(Int): Dynamic tile size to use on K dimension.
-                n_inner_size(Int): Inner dimension size to use for the packed
-                    data layout.
+        Args:
+            b_packed: B matrix in packed layout.
+            tile_n: Dynamic tile size to use on N dimension.
+            tile_k: Dynamic tile size to use on K dimension.
+            n_inner_size: Inner dimension size to use for the packed data
+                layout.
         """
         return NDBuffer[3, packed_shape, type](
             b_packed.address,
@@ -3588,7 +3593,10 @@ fn pack_filter_shape_impl[
     shape_ref should be allocated with size 5 outside this kernel.
 
     Args:
-        R, S, C, F - original filter dimensions
+        R: Original R filter dimension.
+        S: Original S filter dimension.
+        C: Original C filter dimension.
+        F: Original F filter dimension.
 
     Returns:
         The output shape.
@@ -3661,13 +3669,13 @@ fn pack_filter[
     packed_filter: NDBuffer[5, DimList.create_unknown[5](), type],
 ):
     """This packs the filter form RSCF to FRSCf.
+
     Args:
-        R, S, C, F - original filter dimensions
-        filter: filter in RSCF layout.
-        packed_filter: packed filter in FRScf layout. Here,
-            F       - the index of continuous segments in micro kernel
-            R, S, C - original R, S, C
-            f       - the index within a continuous segments
+        filter: Filter in RSCF layout.
+        packed_filter: Packed filter in FRScf layout. Here,
+            F       - the index of continuous segments in micro kernel.
+            R, S, C - original R, S, C.
+            f       - the index within a continuous segments.
 
     F is first broken down to segements of size micro_kernel_f_size, then the
     remainder is further divided by simd_size. The last residual elements if
@@ -3758,14 +3766,14 @@ fn pack_conv_filter[
     out_chain: OutputChainPtr,
 ):
     """This packs the filter form RSCF to FRSCf.
+
     Args:
-        R, S, C, F - original filter dimensions
-        filter: filter in RSCF layout.
-        packed_filter: packed filter in FRScf layout. Here,
-            F       - the index of continuous segments in micro kernel
-            R, S, C - original R, S, C
-            f       - the index within a continuous segments
-        out_chain: chain to signal when writes to `packed_filter` have finished
+        filter: Filter in RSCF layout.
+        packed_filter: Packed filter in FRScf layout. Here,
+            F       - the index of continuous segments in micro kernel.
+            R, S, C - original R, S, C.
+            f       - the index within a continuous segments.
+        out_chain: Chain to signal when writes to `packed_filter` have finished.
     """
     pack_filter(filter, packed_filter)
     out_chain.mark_ready()

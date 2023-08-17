@@ -140,8 +140,10 @@ fn softmax_2_pass[
     buffer_size: Dim,
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
-    """Performs an unbatched softmax on an input tensor using the two-pass online
-    algorithm. The unbatched two-pass online softmax is described in "Online
+    """Performs an unbatched softmax on an input tensor using the two-pass
+    online algorithm.
+
+    The unbatched two-pass online softmax is described in "Online
     normalizer calculation for softmax" (https://arxiv.org/abs/1805.02867) and
     "A full-stack search technique for domain optimized deep learning
     accelerators" (https://dl.acm.org/doi/abs/10.1145/3503222.3507767) and is
@@ -160,15 +162,14 @@ fn softmax_2_pass[
         Output[i] = exp(Input[i] - runningMax) / runningSum
       end for
 
-    Args:
-        simd_width (Int): The simd_width to use in vectorization.
-        buffer_size (Dim): The size of the input and output buffers.
-        type (DType): The type of the input and output buffers.
-        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
-        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+    Parameters:
+        simd_width: The simd_width to use in vectorization.
+        buffer_size: The size of the input and output buffers.
+        type: The type of the input and output buffers.
 
-    Returns:
-        None
+    Args:
+        output: The output buffer in which to store the softmax values.
+        input: The input buffer used to compute the softmax.
     """
 
     let running_info = _softmax_2_pass_step1[simd_width, buffer_size, type](
@@ -284,16 +285,18 @@ fn _softmax_3_pass_base[
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
-    Args:
-        simd_width (Int): The simd_width to use in vectorization.
-        buffer_size (Dim): The size of the input and output buffers.
-        type (DType): The type of the input and output buffers.
-        logsoftmax (Bool): Perform logsoftmax if True, regular softmax otherwise.
-        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
-        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+    Parameters:
+        simd_width: The simd_width to use in vectorization.
+        buffer_size: The size of the input and output buffers.
+        type: The type of the input and output buffers.
+        step2_pre_update_func: Pre update function.
+        step2_post_update_func: Post update function.
+        step3_accum_proc_func: Pre accumulation function.
+        step3_accum_apply_func: Post accumulation function.
 
-    Returns:
-        None
+    Args:
+        output: The output buffer in which to store the softmax values.
+        input: The input buffer used to compute the softmax.
     """
     # STEP 1
     let max_val = max(input)
@@ -326,7 +329,9 @@ fn softmax_3_pass[
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched softmax on an input tensor using the three-pass
-    algorithm. The unbatched three-pass softmax is defined as:
+    algorithm.
+
+    The unbatched three-pass softmax is defined as:
     procedure SoftmaxUnbatched(InputInput)
       maxVal = -∞
       denom = 0
@@ -344,15 +349,14 @@ fn softmax_3_pass[
         Output[b, i] /= denom
       end for
 
-    Args:
-        simd_width (Int): The simd_width to use in vectorization.
-        buffer_size (Dim): The size of the input and output buffers.
-        type (DType): The type of the input and output buffers.
-        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
-        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+    Parameters:
+        simd_width: The simd_width to use in vectorization.
+        buffer_size: The size of the input and output buffers.
+        type: The type of the input and output buffers.
 
-    Returns:
-        None
+    Args:
+        output: The output buffer in which to store the softmax values.
+        input: The input buffer used to compute the softmax.
     """
     _softmax_3_pass_base[
         simd_width, buffer_size, type, exp, identity, reciprocal, mul
@@ -370,7 +374,9 @@ fn logsoftmax[
     type: DType,
 ](output: Buffer[buffer_size, type], input: Buffer[buffer_size, type]):
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
-    algorithm. The unbatched three-pass softmax is defined as:
+    algorithm.
+
+    The unbatched three-pass softmax is defined as:
     procedure SoftmaxUnbatched(InputInput)
       maxVal = -∞
       denom = 0
@@ -388,15 +394,14 @@ fn logsoftmax[
         Output[b, i] -= log(accum)
       end for
 
-    Args:
-        simd_width (Int): The simd_width to use in vectorization.
-        buffer_size (Dim): The size of the input and output buffers.
-        type (DType): The type of the input and output buffers.
-        output (Buffer[buffer_size, type]): The output buffer in which to store the softmax values.
-        input (Buffer[buffer_size, type]): The input buffer used to compute the softmax.
+    Parameters:
+        simd_width: The simd_width to use in vectorization.
+        buffer_size: The size of the input and output buffers.
+        type: The type of the input and output buffers.
 
-    Returns:
-        None
+    Args:
+        output: The output buffer in which to store the softmax values.
+        input: The input buffer used to compute the softmax.
     """
     _softmax_3_pass_base[
         simd_width, buffer_size, type, identity, exp, log, sub

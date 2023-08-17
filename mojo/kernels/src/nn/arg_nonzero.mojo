@@ -36,7 +36,7 @@ fn where[
     the indices in the output_buffer.
 
     Parameters:
-        type: The element type
+        type: The element type.
         output_type: The integer type to store the indices in.
         rank: The rank of the tensor.
 
@@ -85,15 +85,15 @@ fn where_shape[
     non-zero elements in the input.
 
     Parameters:
-        type: The element type
-        output_type: The integer type to store the indices in.
-        single_thread_blocking_override: This op can block
+        type: The element type.
+        rank: The rank.
+        single_thread_blocking_override: This op can block.
 
     Args:
         input_buffer: The tensor to count the non-zeros in.
 
     Returns:
-        Shape of the where kernel for this input [NumNonZeros, InputRank]
+        Shape of the where kernel for this input [NumNonZeros, InputRank].
     """
 
     var shape = StaticIntTuple[2]()

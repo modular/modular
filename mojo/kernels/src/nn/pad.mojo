@@ -46,11 +46,10 @@ fn pad[
     based on `paddings`.
 
     Args:
-        output (NDBuffer): the output buffer
-        input (NDBuffer): the input buffer
-        paddings: (DTypePointer): ordered (before, after) padding sizes for each
-        axis
-        constant: (SIMD): the constant to pad output with
+        output: The output buffer.
+        input: The input buffer.
+        paddings: Ordered (before, after) padding sizes for each axis.
+        constant: The constant to pad output with.
 
     Example:
         let input_shape = (X, Y, Z)
@@ -105,16 +104,16 @@ fn _pad_impl[
     padded with `constant` based on `paddings`.
 
     Args:
-        axis (Int): the axis to operate on
-        output (NDBuffer): the output buffer
-        input (DTypePointer): the input buffer
-        paddings: (DTypePointer): the (before, after) padding sizes for each axis
-        constant: (SIMD): the constant to pad output with
-        output_strides (DTypePointer): the stride at each output axis
-        input_strides (DTypePointer): the stride at each input axis
-        output_offset (Int): The offset at which output data starts
-        input_offset (Int): The offset at which input data starts
-        pad_with_constant (Bool): whether to always pad remaining region with constant
+        axis: The axis to operate on.
+        output: The output buffer.
+        input: The input buffer.
+        paddings: The (before, after) padding sizes for each axis.
+        constant: the constant to pad output with.
+        output_strides: the stride at each output axis.
+        input_strides: the stride at each input axis.
+        output_offset: The offset at which output data starts.
+        input_offset: The offset at which input data starts.
+        pad_with_constant: whether to always pad remaining region with constant.
     """
 
     let axis_dim = output.dim(axis)

@@ -78,11 +78,13 @@ struct Pool2d[
             output: Pre-allocated output tensor space.
             input: Batched image input to the pool2d operator.
             pad_h: Padding on the height dimension with assumed tuple def
-              (pad_lower, pad_upper).
+                (pad_lower, pad_upper).
             pad_w: Padding on the width dimension with assumed tuple def
-              (pad_lower, pad_upper).
-            stride: Strides on height and width dimensions with assumed
-              tuple def (stride_h, stride_w).
+                (pad_lower, pad_upper).
+            filter_shape: Filter size on height and width dimensions with
+                assumed tuple def (filter_h, filter_w).
+            stride: Strides on height and width dimensions with assumed tuple
+                def (stride_h, stride_w).
             dilation: Dilations on height and width dimensions with assumed
               tuple def (dilation_h, dilation_w).
             out_chain: OutputChain.
@@ -444,14 +446,14 @@ fn max_pool[
     """Computes fp32 pooling.
 
     Args:
-        output: Pre-allocated output tensor space.
         input: Batched image input to the pool2d operator.
-        filter_shape(StaticIntTuple): Filter size on height and width
-          dimensions with assumed tuple def (filter_h, filter_w)
+        filter: Filter size on height and width dimensions with assumed tuple
+            def (filter_h, filter_w).
         strides: Strides on height and width dimensions with assumed
-          tuple def (stride_h, stride_w).
+            tuple def (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
-          tuple def (dilation_h, dilation_w).
+            tuple def (dilation_h, dilation_w).
+        output: Pre-allocated output tensor space.
         out_chain: OutputChain.
     """
 
@@ -478,14 +480,14 @@ fn avg_pool[
     """Computes fp32 pooling.
 
     Args:
-        output: Pre-allocated output tensor space.
         input: Batched image input to the pool2d operator.
-        filter_shape(StaticIntTuple): Filter size on height and width
-          dimensions with assumed tuple def (filter_h, filter_w)
+        filter: Filter size on height and width dimensions with assumed tuple
+            def (filter_h, filter_w).
         strides: Strides on height and width dimensions with assumed
-          tuple def (stride_h, stride_w).
+            tuple def (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
-          tuple def (dilation_h, dilation_w).
+            tuple def (dilation_h, dilation_w).
+        output: Pre-allocated output tensor space.
         out_chain: OutputChain.
     """
 
