@@ -352,13 +352,17 @@ static ErrorOrSuccess initializeCompilerRT(llvm::orc::ExecutionSession &session,
   if (compilerRTBuf.isError())
     return compilerRTBuf.takeError();
   std::optional<BufferRef> rtBuf = std::move(*compilerRTBuf);
+  std::optional<TempFile> rtFile;
   std::string compilerRTPath;
   // If we have rtBuf we can write it to a file and use that. Otherwise, attempt
   // to read it from the build dir.
   if (rtBuf) {
-    if (auto err = writeTempFile("compiler_rt-%%%%%%%.a", (*rtBuf)->getBuffer(),
-                                 compilerRTPath))
-      return err.takeError();
+    auto rtFileOr =
+        writeTempFile("compiler_rt-%%%%%%%.a", (*rtBuf)->getBuffer());
+    if (rtFileOr.isError())
+      return rtFileOr.takeError();
+    rtFile.emplace(std::move(*rtFileOr)); // Keep alive until below.
+    compilerRTPath = rtFile->getPath().string();
   } else {
     std::error_code ec;
     compilerRTPath = cfg.getValue("mojo.compilerrt_path").str();
