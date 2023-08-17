@@ -17,14 +17,14 @@ from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
 from List import Dim, DimList
-from LLCL import num_cores, Runtime, TaskGroup
+from runtime.llcl import num_cores, Runtime, TaskGroup
 from Functional import parallelize
 from math import iota
 from Complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
 from Pointer import Pointer, DTypePointer
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from TypeUtilities import rebind
 
 alias float_type = DType.float64

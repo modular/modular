@@ -10,7 +10,7 @@ from Range import range
 from Index import StaticIntTuple
 from IO import print
 from Functional import parallelize, async_parallelize
-from LLCL import num_cores, Runtime, OwningOutputChainPtr
+from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 from Vector import UnsafeFixedVector
 
 alias n = 12
