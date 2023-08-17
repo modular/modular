@@ -939,6 +939,8 @@ std::optional<ErrorTreeOrSuccess> ElaboratorImpl::getAllConcreteFunctions(
   if (result.shouldSkipNode())
     return std::nullopt;
   node->getAllConcreteFuncs(funcs);
+  if (funcs.empty())
+    return node->collectErrorsOrSuccess();
   return success();
 }
 
