@@ -65,14 +65,14 @@ from math import (
 )
 from Limits import isinf, min_or_neginf, max_or_inf
 from Matmul import (
-    matmul_parallel_sync,
+    matmul as _matmul,
     pack_b_ndbuffer,
-    pack_b_ndbuffer_impl,
+    _pack_b_ndbuffer_impl,
     pack_transposed_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
 from BatchedMatmul import (
-    batched_matmul_parallel_sync,
+    batched_matmul as _batched_matmul,
     get_trace_information as get_trace_information_batched_matmul,
 )
 from MatmulUtils import (
@@ -1542,7 +1542,7 @@ fn matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
 
-    matmul_parallel_sync[
+    _matmul[
         a_type,
         b_type,
         c_type,
@@ -1598,7 +1598,7 @@ fn batched_matmul[
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
 
-    return batched_matmul_parallel_sync[
+    return _batched_matmul[
         rank,
         type,
         adj_a,
