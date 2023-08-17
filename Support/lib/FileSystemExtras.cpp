@@ -170,6 +170,8 @@ ErrorOr<TempFile> M::writeTempFile(const Twine &model,
   llvm::raw_fd_ostream tmpOS(tmpFileOr->getFD(), /*shouldClose=*/false);
   writeFn(tmpOS);
   tmpOS.flush();
+  tmpFileOr->close();
+
   return std::move(*tmpFileOr);
 }
 
@@ -194,14 +196,19 @@ TempFile::TempFile(TempFile &&other)
 }
 
 TempFile::~TempFile() {
-  if (fd != -1) {
-    llvm::sys::fs::file_t nativeID = llvm::sys::fs::convertFDToNativeFile(fd);
-    llvm::sys::fs::closeFile(nativeID);
-  }
+  close();
 
   if (!keepFile) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
+  }
+}
+
+void TempFile::close() {
+  if (fd != -1) {
+    llvm::sys::fs::file_t nativeID = llvm::sys::fs::convertFDToNativeFile(fd);
+    llvm::sys::fs::closeFile(nativeID);
+    fd = -1;
   }
 }
 
