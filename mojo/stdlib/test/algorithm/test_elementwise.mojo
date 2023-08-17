@@ -13,7 +13,7 @@ from math import mul, min
 from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple
-from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from TypeUtilities import rebind
 
 

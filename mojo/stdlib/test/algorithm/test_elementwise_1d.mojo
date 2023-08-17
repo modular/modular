@@ -13,9 +13,9 @@ from Activations import gelu
 from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 from Vector import UnsafeFixedVector
-from TargetInfo import sizeof
+from sys.info import sizeof
 
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():

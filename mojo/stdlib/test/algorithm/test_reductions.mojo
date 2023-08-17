@@ -7,7 +7,7 @@
 
 from Buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
-from LLCL import Runtime, OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from IO import print
 from List import DimList
 from Range import range

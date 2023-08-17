@@ -8,7 +8,7 @@
 from Assert import assert_param
 from Index import StaticIntTuple
 from List import VariadicList
-from LLCL import (
+from runtime.llcl import (
     num_cores,
     Runtime,
     OutputChainPtr,
@@ -18,7 +18,7 @@ from LLCL import (
 from math import div_ceil, min, max
 from math.numerics import FlushDenormals
 from Range import range
-from TargetInfo import triple_is_nvidia_cuda
+from sys.info import triple_is_nvidia_cuda
 
 # ===----------------------------------------------------------------------===#
 # Map

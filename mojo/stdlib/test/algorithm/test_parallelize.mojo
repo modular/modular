@@ -12,7 +12,7 @@ from Buffer import Buffer
 from Functional import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
 from IO import print
-from LLCL import num_cores, Runtime, OwningOutputChainPtr
+from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 from Range import range
 
 # CHECK-LABEL: test_async_parallelize

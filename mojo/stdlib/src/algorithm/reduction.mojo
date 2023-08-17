@@ -17,7 +17,7 @@ from Pointer import Pointer
 from math.bit import cttz
 from Index import StaticIntTuple
 from List import DimList, Dim
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from math import (
     all_true as _all_true,
     any_true as _any_true,
@@ -27,7 +27,7 @@ from math import (
 )
 from Limits import max_or_inf, min_or_neginf
 from Range import range
-from TargetInfo import sizeof, simdwidthof
+from sys.info import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper
