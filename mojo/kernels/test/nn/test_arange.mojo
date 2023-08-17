@@ -17,7 +17,7 @@ from Memory import stack_allocation
 from List import Dim, DimList
 from IO import print
 from Index import StaticIntTuple, Index
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
 from Slice import slice_as_view, slice_as_copy
 

@@ -25,11 +25,11 @@ from Index import Index, StaticIntTuple
 from Intrinsics import external_call
 from List import DimList
 from Pointer import DTypePointer
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min
 from Range import range
 from Random import rand
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32

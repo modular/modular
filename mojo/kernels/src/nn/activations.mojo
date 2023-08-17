@@ -9,7 +9,7 @@
 from Assert import assert_param
 from math.bit import _is_neg
 from List import VariadicList
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from math import (
     abs,
     copysign,

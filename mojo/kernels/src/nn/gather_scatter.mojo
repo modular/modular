@@ -16,12 +16,12 @@ from Functional import (
 )
 from Index import StaticIntTuple
 from Intrinsics import PrefetchOptions
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from List import DimList, Dim
 from math import div_ceil
 from math import min
 from Range import range
-from TargetInfo import sizeof
+from sys.info import sizeof
 from TypeUtilities import rebind
 from Tracing import TraceLevel
 from OptionalParam import OptionalParamInt

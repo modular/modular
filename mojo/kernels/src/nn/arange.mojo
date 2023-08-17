@@ -8,8 +8,9 @@ from Buffer import NDBuffer
 from Index import StaticIntTuple
 from Functional import _elementwise_impl
 from List import DimList
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from math import abs, ceil, div_ceil, iota
+from sys.info import simdwidthof
 from MOGGDecorators import *
 from Range import range
 from TypeUtilities import rebind

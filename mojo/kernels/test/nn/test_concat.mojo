@@ -12,7 +12,7 @@ from Pointer import DTypePointer
 from Index import StaticIntTuple
 from Range import range
 from List import Dim, VariadicList, DimList
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan

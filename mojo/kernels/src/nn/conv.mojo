@@ -33,7 +33,7 @@ from Functional import (
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from Intrinsics import PrefetchOptions, external_call
-from LLCL import OutputChainPtr, OwningOutputChainPtr
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from List import Dim, DimList, VariadicList
 from math import min, max, fma, div_ceil
 from Matmul import (
@@ -56,7 +56,7 @@ from Memory import memset_zero, stack_allocation
 from Pointer import DTypePointer
 from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim
-from TargetInfo import simd_byte_width, simdwidthof, alignof
+from sys.info import simd_byte_width, simdwidthof, alignof
 from TypeUtilities import rebind
 from OptionalParam import OptionalParamInts
 

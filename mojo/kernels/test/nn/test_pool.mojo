@@ -27,7 +27,7 @@ from Pool import (
     max_pool_reduce_fn,
 )
 from Range import range
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 
 
 fn fill_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):

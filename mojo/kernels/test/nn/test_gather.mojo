@@ -16,9 +16,9 @@ from GatherScatter import gather
 from Index import StaticIntTuple
 from IO import print
 from List import DimList
-from LLCL import Runtime, OwningOutputChainPtr
+from runtime.llcl import Runtime, OwningOutputChainPtr
 from Range import range
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 
 
 # CHECK-LABEL: test_gather

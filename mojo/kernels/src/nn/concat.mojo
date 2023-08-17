@@ -11,13 +11,13 @@ from Functional import sync_parallelize, _elementwise_impl
 from Index import product, StaticIntTuple
 from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from math import align_down, align_up, div_ceil, max, min
 from MOGG import simd_load, simd_store
 from Memory import memcpy
 from Pointer import DTypePointer
 from Range import range
-from TargetInfo import sizeof, simdwidthof
+from sys.info import sizeof, simdwidthof
 from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#

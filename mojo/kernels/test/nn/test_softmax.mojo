@@ -9,9 +9,9 @@ from Softmax import softmax_2_pass, logsoftmax
 from Buffer import Buffer, NDBuffer
 from List import Dim, DimList
 from IO import print
-from TargetInfo import simdwidthof
+from sys.info import simdwidthof
 from Range import range
-from LLCL import OwningOutputChainPtr, Runtime
+from runtime.llcl import OwningOutputChainPtr, Runtime
 
 
 # CHECK-LABEL: test_logsoftmax

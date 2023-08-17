@@ -8,7 +8,7 @@ from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
 from Functional import elementwise
 from Index import StaticIntTuple
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from List import Dim, DimList
 from math import div_ceil
 from Range import range

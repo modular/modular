@@ -15,7 +15,7 @@ from Image import (
 from Index import StaticIntTuple, Index
 from math import min, max, clamp, sqrt, div_ceil
 from MatmulUtils import partition_work
-from TargetInfo import (
+from sys.info import (
     has_avx512f,
     has_neon,
     os_is_macos,

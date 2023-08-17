@@ -11,7 +11,7 @@ from Intrinsics import external_call
 from List import Dim, VariadicList, DimList
 from Memory import memcpy
 from Range import range
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 from Functional import sync_parallelize
 from Vector import InlinedFixedVector
 
