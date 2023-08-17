@@ -13,7 +13,7 @@
 # libraries.
 
 from IO import print
-from LLCL import Runtime
+from runtime.llcl import Runtime
 
 # CHECK-LABEL: test_runtime_task
 fn main():

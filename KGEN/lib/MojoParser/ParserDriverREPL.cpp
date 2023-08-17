@@ -230,8 +230,8 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
     exprOSIndented << "from IO import print\n"
                    << "from Len import len\n"
                    << "from Pointer import Pointer\n"
-                   << "from PythonInterface import Python\n"
-                   << "from PythonObject import PythonObject\n"
+                   << "from python.python import Python\n"
+                   << "from python.object import PythonObject\n"
                    << "from Object import object\n"
                    << "from Range import range\n";
   }

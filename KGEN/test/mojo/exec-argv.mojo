@@ -9,7 +9,7 @@
 
 from IO import print
 from Range import range
-from Sys import argv
+from sys import argv
 
 
 def main() -> None:

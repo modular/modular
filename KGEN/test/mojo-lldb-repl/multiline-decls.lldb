@@ -64,7 +64,7 @@ from Buffer import (
   DynamicRankBuffer
 )
 
-from LLCL import OutputChainPtr
+from runtime.llcl import OutputChainPtr
 
 alias unary_fn_type = __mlir_type[
     `(`,
