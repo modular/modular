@@ -9,7 +9,7 @@
 # RUN: %t --arg1 | FileCheck %s
 
 from IO import print
-from Sys import argv
+from sys import argv
 
 
 fn main():

@@ -10,8 +10,8 @@
 # RUN: %t | FileCheck %s
 
 from IO import print
-from PythonInterface import Python
-from Sys import argv
+from python import Python
+from sys import argv
 
 
 def main() -> None:

@@ -20,7 +20,7 @@
 # RUN: %mojo %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
 
 from IO import print
-from Sys import argv
+from sys import argv
 
 
 fn main() -> None:
