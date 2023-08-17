@@ -218,12 +218,13 @@ static int linkExecutable(const State &state,
   }
 
   // Write the archive to a temporary file.
-  std::string archivePath;
-  if (auto err = writeTempFile("mojo_archive-%%%%%%%" + libExt,
-                               archive->getBuffer(), archivePath)) {
+  auto archiveFileOr =
+      writeTempFile("mojo_archive-%%%%%%%" + libExt, archive->getBuffer());
+  if (archiveFileOr.isError()) {
     return state.reportError("unable to write temporary files for linking: " +
-                             Twine(err.getError()));
+                             Twine(archiveFileOr.getError()));
   }
+  std::string archivePath = archiveFileOr->getPath().string();
 
   // Invoke the linker command.
   SmallVector<StringRef> linkerArgs = {*linker, archivePath, compilerRTPath};
@@ -282,9 +283,6 @@ static int linkExecutable(const State &state,
     return state.reportError("failed to link executable" + errorMsg);
   }
 
-  // Drop the temporary archive file now that we're done with it. We don't
-  // really care if this fails, since it's just a temporary file.
-  std::filesystem::remove(archivePath, ec);
   return EXIT_SUCCESS;
 }
 
