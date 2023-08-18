@@ -12,7 +12,7 @@ from Buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from Functional import (
+from algorithm import (
     tile,
     unswitch,
     unroll,
@@ -49,7 +49,7 @@ from Pointer import DTypePointer
 from sys.info import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
 from TypeUtilities import rebind
-from Intrinsics import PrefetchOptions, external_call
+from sys.intrinsics import PrefetchOptions, external_call
 from VNNI import dot_i8_to_i32_x86
 
 

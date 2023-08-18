@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer, Buffer
-from Functional import unroll
+from algorithm import unroll
 from List import Dim, DimList
 from Index import Index
 

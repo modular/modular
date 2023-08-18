@@ -6,7 +6,7 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import NDBuffer
-from Functional import tile, tile_and_unswitch, vectorize_unroll
+from algorithm import tile, tile_and_unswitch, vectorize_unroll
 from Index import Index, StaticIntTuple
 from List import VariadicList, Dim, DimList
 from math import div_ceil, min, max

@@ -19,7 +19,7 @@ from Matmul import Matrix
 from List import DimList, Dim
 from Memory import memcmp, memset_zero
 from Matmul import naive_matmul
-from Functional import unroll
+from algorithm import unroll
 from IntelAMX import _tile_loadconfig, _tile_storeconfig, _tile_release
 from IntelAMX import _tile_zero, _tile_dpbssd, _tile_dpbssd_emulated
 from IntelAMX import _tile_loadd, _tile_stored

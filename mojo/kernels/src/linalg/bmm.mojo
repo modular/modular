@@ -21,12 +21,12 @@ from MatmulUtils import (
 from Matmul import _submatmul_sequential_sync
 from Memory import memset_zero
 from sys.info import simdwidthof
-from Functional import (
+from algorithm import (
     sync_parallelize,
-    _get_start_indices_of_nth_subvolume,
     vectorize_unroll,
 )
-from Reductions import _reduce_generator
+from algorithm.functional import _get_start_indices_of_nth_subvolume
+from algorithm.reduction import _reduce_generator
 from TypeUtilities import rebind
 
 

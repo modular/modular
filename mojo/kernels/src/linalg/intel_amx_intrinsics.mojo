@@ -9,7 +9,7 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Intrinsics import llvm_intrinsic
+from sys import llvm_intrinsic
 from List import DimList
 from Matmul import Matrix
 from Pointer import DTypePointer

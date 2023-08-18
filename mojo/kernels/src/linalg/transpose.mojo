@@ -7,7 +7,7 @@
 
 from Assert import assert_param
 from Buffer import Buffer, NDBuffer
-from Functional import (
+from algorithm import (
     unroll,
     async_parallelize,
     sync_parallelize,
@@ -17,7 +17,7 @@ from Functional import (
     unswitch,
 )
 from Index import StaticIntTuple, StaticTuple
-from Intrinsics import strided_load, strided_store
+from sys.intrinsics import strided_load, strided_store
 from List import DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import div_ceil, min
