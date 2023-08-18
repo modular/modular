@@ -754,3 +754,22 @@ fn main():
 @export("main")
 fn foo():
   return
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Top Level Code
+##===----------------------------------------------------------------------===##
+
+fn foo() raises:
+   pass
+
+# expected-error @below {{cannot call function that may raise in a context that cannot raise}}
+# expected-note @below {{try surrounding the call in a 'try' block}}
+let np = foo()
+
+# expected-error @below {{a 'try' statement must be contained in a function}}
+try:
+    let np2 = foo()
+except e:
+    print(e.value)
