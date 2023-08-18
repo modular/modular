@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from Atomic import Atomic
+from os.atomic import Atomic
 from builtin.Coroutine import _coro_resume_fn
-from Intrinsics import external_call
-from ParamEnv import is_defined
+from sys import external_call
+from sys.param_env import is_defined
 from Pointer import Pointer, DTypePointer
 from Tracing import TraceLevel, is_mojo_profiling_disabled
 

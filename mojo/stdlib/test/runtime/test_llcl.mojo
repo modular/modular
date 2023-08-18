@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Atomic import Atomic
+from os.atomic import Atomic
 from runtime.llcl import (
     TaskGroup,
     Runtime,

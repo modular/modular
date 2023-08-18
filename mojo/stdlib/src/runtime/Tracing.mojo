@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides tracing utilities."""
 
-from BuildInfo import build_info_llcl_max_profiling_level
+from sys.build import build_info_llcl_max_profiling_level
 
 
 # ===----------------------------------------------------------------------===#

@@ -10,7 +10,7 @@
 
 from runtime.llcl import Runtime
 from Tracing import Trace, TraceLevel
-from BuildInfo import build_info_llcl_max_profiling_level
+from sys.build import build_info_llcl_max_profiling_level
 
 
 @always_inline
