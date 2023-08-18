@@ -11,7 +11,6 @@ from Intrinsics import external_call
 from ParamEnv import is_defined
 from Pointer import Pointer, DTypePointer
 from Range import range
-from String import String
 from Tracing import TraceLevel, is_mojo_profiling_disabled
 
 # ===----------------------------------------------------------------------===#
