@@ -11,6 +11,7 @@
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
@@ -126,6 +127,17 @@ int State::printHelp(bool plainText, Twine helpText) const {
   // At this point we're certain the `man` invocation will succeed, so do it
   // again without any redirects.
   return llvm::sys::ExecuteAndWait(man.get(), args);
+}
+
+int State::rejectUnknownArguments(
+    llvm::opt::InputArgList &args,
+    llvm::opt::OptSpecifier unknownOptionID) const {
+  if (!args.hasArg(unknownOptionID))
+    return EXIT_SUCCESS;
+
+  for (llvm::opt::Arg *arg : args.filtered(unknownOptionID))
+    reportError("unrecognized argument '" + arg->getSpelling() + "'");
+  return EXIT_FAILURE;
 }
 
 //===----------------------------------------------------------------------===//

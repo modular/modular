@@ -17,7 +17,12 @@
 
 namespace llvm {
 class MemoryBuffer;
-}
+
+namespace opt {
+class InputArgList;
+class OptSpecifier;
+} // namespace opt
+} // namespace llvm
 
 namespace M {
 
@@ -50,6 +55,13 @@ struct State {
   /// command. Otherwise, we fall back to printing the given `helpText`. In
   /// either case, a successful exit code is returned.
   int printHelp(bool plainText, Twine helpText) const;
+
+  /// If `args` has any unknown arguments (as indicated by the
+  /// `unknownOptionID`, which is defined independently in each driver command),
+  /// report an error for each of them and return an unsuccessful exit code.
+  /// Otherwise, return a successful exit code.
+  int rejectUnknownArguments(llvm::opt::InputArgList &args,
+                             llvm::opt::OptSpecifier unknownOptionID) const;
 
   /// The name of the executable that the user invoked.
   /// This is used for error reporting.

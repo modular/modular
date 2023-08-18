@@ -124,13 +124,8 @@ static std::optional<int> parseArgs(const State &state,
 
   // Otherwise, within this subset of arguments that appear before the input,
   // unknown arguments are rejected.
-  if (args.hasArg(options::OPT_UNKNOWN)) {
-    int result = 1;
-    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
-      result = state.reportError("unrecognized argument '" +
-                                 arg->getSpelling() + "'\n");
+  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
-  }
 
   // Open the provided input file path, or exit with an error if it's not a
   // valid argument that can be opened.

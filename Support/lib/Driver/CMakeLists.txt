@@ -9,4 +9,5 @@ add_modular_library(MSupportDriver
 
   LINK_LIBS PRIVATE
   MSupport
+  LLVMOption
 )
