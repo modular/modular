@@ -306,6 +306,7 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
   for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
     // Attach a reference to the precompiled body to the KGEN::FuncOp.
     func.setPrecompiledBodyRefAttr(packageName);
+    func.setExported();
   }
 
   // Write the package bytecode to the given buffer. This will be attached to
@@ -329,8 +330,10 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
 
   for (auto [symName, exportSym] : exportedSymbols) {
     LIT::FuncOp hlFunc = flattenedNameToFunc.lookup(symName);
+
+    // We only care about functions in the package.
     if (!hlFunc)
-      return Error("could not find lit.func with name " + symName.getValue());
+      continue;
 
     // If the thing is parametric, then we don't care about it.
     if (!isa_and_nonnull<LIT::ExternFuncOp>(hlFunc.getBody()->getTerminator()))
