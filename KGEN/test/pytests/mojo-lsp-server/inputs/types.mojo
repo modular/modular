@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from String import String
 from Index import StaticIntTuple  # skip
 from StaticTuple import StaticTuple  # skip
 import DType

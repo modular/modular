@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
 from Object import object
-from String import String
 
 ##===----------------------------------------------------------------------===##
 # Conversions

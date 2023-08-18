@@ -461,8 +461,8 @@ async def test_hover_import(client: LanguageClient):
         assert result.contents.value == expected
 
     await assert_import(
-        "String",
-        """### module `String`
+        "string",
+        """### module `string`
 
 ---
 
