@@ -16,7 +16,6 @@ from GatherScatter import gather
 from Index import StaticIntTuple
 from List import DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr
-from Range import range
 from sys.info import simdwidthof
 
 

@@ -10,7 +10,6 @@
 
 from Arange import arange, arange_shape
 from Buffer import NDBuffer, Buffer
-from Range import range
 from Functional import elementwise
 from math import mul
 from Memory import stack_allocation

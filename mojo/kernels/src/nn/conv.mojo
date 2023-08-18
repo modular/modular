@@ -54,7 +54,6 @@ from MatmulUtils import (
 )
 from Memory import memset_zero, stack_allocation
 from Pointer import DTypePointer
-from Range import range
 from ShapeFuncUtils import get_sliding_window_out_dim
 from sys.info import simd_byte_width, simdwidthof, alignof
 from TypeUtilities import rebind

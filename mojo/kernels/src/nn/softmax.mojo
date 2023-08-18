@@ -11,7 +11,6 @@ from List import Dim, DimList
 from runtime.llcl import OutputChainPtr
 from math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
 from Limits import neginf
-from Range import range
 from Reductions import max
 from StaticTuple import StaticTuple
 from TypeUtilities import rebind

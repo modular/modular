@@ -20,7 +20,6 @@ from runtime.llcl import OutputChainPtr
 from List import DimList, Dim
 from math import div_ceil
 from math import min
-from Range import range
 from sys.info import sizeof
 from TypeUtilities import rebind
 from Tracing import TraceLevel

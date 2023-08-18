@@ -12,7 +12,6 @@ from runtime.llcl import OutputChainPtr
 from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof
 from MOGGDecorators import *
-from Range import range
 from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#

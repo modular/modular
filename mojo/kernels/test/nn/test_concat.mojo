@@ -9,7 +9,6 @@ from Buffer import Buffer, NDBuffer, DynamicRankBuffer
 from Concat import concat, _concat_parallel
 from Pointer import DTypePointer
 from Index import StaticIntTuple
-from Range import range
 from List import Dim, VariadicList, DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr
 

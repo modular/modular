@@ -26,7 +26,6 @@ from List import DimList
 from Pointer import DTypePointer
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min
-from Range import range
 from Random import rand
 from sys.info import simdwidthof
 

@@ -19,7 +19,6 @@ from Pointer import DTypePointer
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides
 from sys.info import sizeof
-from Range import range
 
 
 fn _fill[

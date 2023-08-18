@@ -16,7 +16,6 @@ from math import align_down, align_up, div_ceil, max, min
 from MOGG import simd_load, simd_store
 from Memory import memcpy
 from Pointer import DTypePointer
-from Range import range
 from sys.info import sizeof, simdwidthof
 from TypeUtilities import rebind
 

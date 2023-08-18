@@ -13,7 +13,6 @@ from Functional import (
 from Index import StaticIntTuple
 from List import Dim, DimList
 from runtime.llcl import OutputChainPtr
-from Range import range
 from Tracing import Trace, TraceLevel
 
 
