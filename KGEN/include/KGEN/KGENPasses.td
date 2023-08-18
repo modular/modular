@@ -123,9 +123,9 @@ def CheckLifetimes : Pass<"check-lifetimes"> {
 def CheckRecursiveStructs: Pass<"check-recursive-structs"> {
   let summary = "Check nested recursive structs and report error.";
   let description = [{
-    The `check-recursive-structs` checks if a struct contains illegal
-    nested recursive struct field and reports error to avoid infinite
-    recursion in lowering.
+    The `check-recursive-structs` checks if a struct contains illegal nested
+    recursive struct field and reports error to avoid infinite recursion in
+    lowering.
   }];
 }
 

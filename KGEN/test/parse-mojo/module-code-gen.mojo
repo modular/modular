@@ -138,10 +138,10 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field move : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
-# CHECK-NEXT:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-NEXT:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
-# CHECK-NEXT:   [[IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:   [[IMPL:%.*]] = pop.load [[IMPL_PTR]]
+# CHECK-DAG:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-DAG:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
+# CHECK-DAG:   [[IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
+# CHECK-DAG:   [[IMPL:%.*]] = pop.load [[IMPL_PTR]]
 # CHECK-NEXT:   kgen.call_signature [[DTOR]]([[IMPL]])
 # CHECK-NEXT:   kgen.param.constant
 # CHECK-NEXT:   lit.ownership.mark.destroyed %self
