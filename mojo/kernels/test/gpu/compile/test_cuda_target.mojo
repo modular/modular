@@ -8,7 +8,7 @@
 
 from Activations import gelu
 from Assert import assert_param
-from Functional import elementwise
+from algorithm import elementwise
 from Index import StaticIntTuple
 from NvidiaGPU import (
     ThreadIdx,
