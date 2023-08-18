@@ -9,7 +9,7 @@
 from Pointer import DTypePointer
 from List import Dim, DimList
 from Buffer import Buffer, NDBuffer
-from Intrinsics import PrefetchOptions
+from sys.intrinsics import PrefetchOptions
 
 alias mr = 6
 alias nr = 64

@@ -17,7 +17,7 @@ from Buffer import Buffer, NDBuffer
 from Matrix import Matrix
 from List import Dim, DimList
 from runtime.llcl import num_cores, Runtime, TaskGroup
-from Functional import parallelize
+from algorithm import parallelize
 from math import iota
 from complex import ComplexSIMD
 from Benchmark import Benchmark

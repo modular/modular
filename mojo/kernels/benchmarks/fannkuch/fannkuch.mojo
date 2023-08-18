@@ -7,7 +7,7 @@
 from math import max, factorial, div_ceil, min
 from Time import now
 from Index import StaticIntTuple
-from Functional import parallelize, async_parallelize
+from algorithm import parallelize, async_parallelize
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 from Vector import UnsafeFixedVector
 

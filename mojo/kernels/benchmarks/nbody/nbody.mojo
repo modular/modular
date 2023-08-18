@@ -11,7 +11,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from StaticTuple import StaticTuple
-from Functional import unroll
+from algorithm import unroll
 from math import sqrt
 from Benchmark import Benchmark
 

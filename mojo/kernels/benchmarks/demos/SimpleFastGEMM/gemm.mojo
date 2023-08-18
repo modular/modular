@@ -12,8 +12,8 @@ from Buffer import Buffer, NDBuffer
 from Index import Index
 from Matrix import Matrix
 from Benchmark import Benchmark
-from Intrinsics import PrefetchOptions
-from Functional import unroll
+from sys.intrinsics import PrefetchOptions
+from algorithm import unroll
 
 alias mr = 6
 alias nr = 64
