@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Benchmark import Benchmark
-from IO import print
 from Time import now, sleep
 from Range import range
 
