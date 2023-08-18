@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -40,7 +41,7 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   for (TypedAttr input : inputs)
     arguments.push_back(input);
   ErrorTreeOr<SmallVector<Attribute>> result =
-      startInterpreterAt(func.getBodyRegion(), arguments);
+      executeRegion(func.getBodyRegion(), arguments);
 
   // Report an error if evaluation fails.
   if (result.isError()) {
@@ -52,6 +53,29 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
   return cast<TypedAttr>(result.getValue().front());
 }
 
+ErrorTreeOr<TypedAttr>
+IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
+                                            ArrayRef<TypedAttr> inputs) {
+  // Evaluate the function body.
+  SmallVector<Attribute> arguments;
+  for (TypedAttr input : inputs)
+    arguments.push_back(input);
+  auto ptr = dyn_cast<POP::PointerType>(func.getArgument(0).getType());
+  if (!ptr)
+    return ErrorTree(func.getLoc(), "first argument is not a pointer");
+  ErrorTreeOr<MemRefAttr> result = executeRegionWithResultSlot(
+      ptr.getElementAsType(), func.getBodyRegion(), arguments);
+
+  // Report an error if evaluation fails.
+  if (result.isError()) {
+    return ErrorTree(*errorLoc, "failed to evaluate 'apply'",
+                     result.takeError());
+  }
+
+  // Apply operators only return one result.
+  return result.takeValue();
+}
+
 //===----------------------------------------------------------------------===//
 // Expression Evaluation
 //===----------------------------------------------------------------------===//
@@ -59,21 +83,21 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
-  if (op.getOpcode() == POC::CurrentTarget) {
+  switch (op.getOpcode()) {
+  case POC::CurrentTarget:
     // Retrieve the contextual compilation target info.
     return {TargetParamAttr::get(elaborator->getTarget())};
-  }
-
-  if (op.getOpcode() == POC::GetAllImpls)
+  case POC::GetAllImpls:
     return evaluateGetAllImpls(op);
-
-  if (op.getOpcode() == POC::Apply)
-    return evaluateApply(op);
-
-  if (op.getOpcode() == POC::GetEnv)
+  case POC::Apply:
+    return evaluateApplyLike(op, /*withResultSlot=*/false);
+  case POC::ApplyResultSlot:
+    return evaluateApplyLike(op, /*withResultSlot=*/true);
+  case POC::GetEnv:
     return evaluateGetEnv(op);
-
-  return failure();
+  default:
+    return failure();
+  }
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
@@ -100,7 +124,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
   return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
 }
 
-FailureOr<TypedAttr> IREvaluator::evaluateApply(ParamOperatorAttr op) {
+FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
+                                                    bool withResultSlot) {
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
   if (!symbol || !symbol.getType().getResultParamTypes().empty())
     return failure();
@@ -112,15 +137,16 @@ FailureOr<TypedAttr> IREvaluator::evaluateApply(ParamOperatorAttr op) {
   // Lookup the symbol reference and resolve it.
   std::optional<ErrorTreeOr<FuncOp>> func = elaborator->getConcreteFunction(
       parent, *errorLoc, ref, symbol.getParamValues());
-  if (!func) {
+  if (!func)
     return TypedAttr();
-  }
   if (func->isError()) {
     emitError(func->takeError());
     return TypedAttr();
   }
 
-  ErrorTreeOr<TypedAttr> result = evaluateFunction(**func, operands);
+  ErrorTreeOr<TypedAttr> result =
+      withResultSlot ? evaluateFunctionWithResultSlot(**func, operands)
+                     : evaluateFunction(**func, operands);
   if (TypedAttr value = result.tryGetValue())
     return value;
   emitError(result.takeError());

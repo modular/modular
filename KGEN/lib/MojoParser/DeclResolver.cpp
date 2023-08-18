@@ -947,7 +947,7 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
   }
 
   ErrorTreeOr<SmallVector<Attribute>> result =
-      startInterpreterAt(*body.takeValue(), arguments);
+      executeRegion(*body.takeValue(), arguments);
   if (result.isError()) {
     // Swallow the error.
     DEBUG_WITH_TYPE("lit-parameter-evaluator",

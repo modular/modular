@@ -524,7 +524,7 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
   return success();
 }
 
-ErrorTreeOr<SmallVector<Attribute>>
+ErrorTreeOrSuccess
 InterpreterState::startInterpreterAt(Region &region,
                                      ArrayRef<Attribute> arguments) {
   // Internal memory references.
@@ -535,14 +535,38 @@ InterpreterState::startInterpreterAt(Region &region,
   // Push an empty stack frame and map the region arguments.
   pushFrame(nullptr, region.getParentOp());
   transferControlFlowTo(&region.front(), args);
+  return success();
+}
+
+void InterpreterState::reset() {
+  pc = nullptr;
+  stack.clear();
+  heapMemory.reset();
+  stackMemory.reset();
+  returnValues.reset();
+}
+
+ErrorTree InterpreterState::addStackTrace(ErrorTree error) {
+  for (const StackFrame &frame : llvm::reverse(stack)) {
+    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
+    error = ErrorTree(frame.func->getLoc(),
+                      Error("failed to interpret function @" + funcName),
+                      std::move(error));
+    if (frame.origin)
+      error = ErrorTree(frame.origin->getLoc(),
+                        Error("failed to evaluate call"), std::move(error));
+  }
+  return error;
+}
+
+ErrorTreeOr<SmallVector<Attribute>>
+InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
+  if (ErrorTreeOrSuccess err = startInterpreterAt(region, arguments);
+      err.isError())
+    return err.takeError();
 
   // Reset the interpret to a clean state.
-  auto resetState = llvm::make_scope_exit([&] {
-    stack.clear();
-    heapMemory.reset();
-    stackMemory.reset();
-    returnValues.reset();
-  });
+  auto resetState = llvm::make_scope_exit([&] { reset(); });
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
@@ -555,17 +579,53 @@ InterpreterState::startInterpreterAt(Region &region,
   }
 
   // The interpreter ran into an error. Report an error using a stacktrace.
-  ErrorTree error = result.takeError();
-  for (const StackFrame &frame : llvm::reverse(stack)) {
-    StringRef funcName = cast<mlir::SymbolOpInterface>(frame.func).getName();
-    error = ErrorTree(frame.func->getLoc(),
-                      Error("failed to interpret function @" + funcName),
-                      std::move(error));
-    if (frame.origin)
-      error = ErrorTree(frame.origin->getLoc(),
-                        Error("failed to evaluate call"), std::move(error));
+  return addStackTrace(result.takeError());
+}
+
+ErrorTreeOr<MemRefAttr>
+InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
+                                              ArrayRef<Attribute> arguments) {
+  Location loc = region.getLoc();
+  if (region.getArguments().empty())
+    return ErrorTree(loc, "internal error: region has no arguments");
+
+  // Allocate the result slot.
+  std::optional<int64_t> resultSize =
+      DataLayoutInterface::getTypeAllocSize(getTarget(), resultType);
+  std::optional<int64_t> resultAlign =
+      DataLayoutInterface::getTypeABIAlign(getTarget(), resultType);
+  if (!resultSize || !resultAlign)
+    return ErrorTree(loc, "could not get result slot type size or alignment");
+
+  ErrorOr<MemoryBlob &> resultBlob =
+      stackMemory.addBlob(*resultSize, *resultAlign, /*hdl=*/{});
+  if (resultBlob.isError())
+    return ErrorTree(loc, resultBlob.takeError());
+  Attribute resultSlotAttr =
+      PointerAttr::get(resultBlob->baseAddr, region.getArgumentTypes().front());
+  SmallVector<Attribute> allArgs;
+  allArgs.push_back(resultSlotAttr);
+  llvm::append_range(allArgs, arguments);
+
+  if (ErrorTreeOrSuccess err = startInterpreterAt(region, allArgs);
+      err.isError())
+    return err.takeError();
+
+  // Reset the interpret to a clean state.
+  auto resetState = llvm::make_scope_exit([&] { reset(); });
+
+  // Run the interpreter.
+  ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
+  if (result) {
+    // Externalize the result slot and return it.
+    if (ErrorOrSuccess err = externalizeMemory(region, resultSlotAttr);
+        err.isError())
+      return ErrorTree(loc, err.takeError());
+    return cast<MemRefAttr>(resultSlotAttr);
   }
-  return std::move(error);
+
+  // The interpreter ran into an error. Report an error using a stacktrace.
+  return addStackTrace(result.takeError());
 }
 
 ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {

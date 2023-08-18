@@ -90,7 +90,15 @@ public:
   /// Run the interpreter starting from the first operation in the entry block
   /// of the provided region given the constant values of the region arguments.
   ErrorTreeOr<SmallVector<Attribute>>
-  startInterpreterAt(Region &region, ArrayRef<Attribute> arguments);
+  executeRegion(Region &region, ArrayRef<Attribute> arguments);
+
+  /// Run the interpreter starting from the provided region using a result slot
+  /// calling convention. The result of the function will be the materialized
+  /// memory for the result slot. The caller is required to provide the type of
+  /// the result slot.
+  ErrorTreeOr<MemRefAttr>
+  executeRegionWithResultSlot(Type resultType, Region &region,
+                              ArrayRef<Attribute> arguments);
 
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the
@@ -296,15 +304,26 @@ private:
   //===--------------------------------------------------------------------===//
   // Interpreter Execution
 
-  /// The current operation being interpreted. The interpreter exits when the
-  /// operation is null, in which case the required invariant be that the stack
-  /// frame is empty.
-  Operation *pc = nullptr;
-
   StackFrame &getCurrentFrame() {
     assert(!stack.empty() && "expected a stack frame");
     return stack.back();
   }
+
+  /// Process input arguments to the region and initialize the program counter.
+  ErrorTreeOrSuccess startInterpreterAt(Region &region,
+                                        ArrayRef<Attribute> arguments);
+
+  /// Reset all interpreter state.
+  void reset();
+
+  /// When the interpreter hits an error, construct an error tree given the
+  /// current stack frame.
+  ErrorTree addStackTrace(ErrorTree error);
+
+  /// The current operation being interpreted. The interpreter exits when the
+  /// operation is null, in which case the required invariant be that the stack
+  /// frame is empty.
+  Operation *pc = nullptr;
 
   /// A call stack. The values in the current frame are available to the
   /// operation being interpreted.
