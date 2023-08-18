@@ -230,8 +230,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
     exprOSIndented << "from Len import len\n"
                    << "from Pointer import Pointer\n"
                    << "from python.python import Python\n"
-                   << "from python.object import PythonObject\n"
-                   << "from Range import range\n";
+                   << "from python.object import PythonObject\n";
   }
 
   // Build the input struct, which contains each of the persistent variables.

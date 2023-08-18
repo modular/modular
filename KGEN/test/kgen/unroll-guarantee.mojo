@@ -8,8 +8,6 @@
 # COM: Ensure loops can be unrolled at -O0.
 # COM: https://github.com/modularml/modular/issues/19008
 
-from Range import range
-
 
 fn use(i: Int):
     pass

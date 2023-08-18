@@ -7,7 +7,6 @@
 # RUN: %mojo %s | FileCheck %s --check-prefix=NO_ARGS
 # RUN: %mojo %s --arg1 --arg2=10 --arg3="arg3" | FileCheck %s --check-prefix=ARGS
 
-from Range import range
 from sys import argv
 
 
