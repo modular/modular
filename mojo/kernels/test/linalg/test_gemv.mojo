@@ -8,7 +8,6 @@
 from Gemv import gemv
 from Buffer import Buffer, NDBuffer
 from List import Dim, DimList
-from IO import print
 from sys.info import simdwidthof
 from Range import range
 from runtime.llcl import OwningOutputChainPtr, Runtime

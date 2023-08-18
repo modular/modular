@@ -19,7 +19,6 @@ from Buffer import NDBuffer
 from sys.info import simdwidthof
 from Index import Index
 from List import DimList
-from IO import print
 
 alias a_type = DType.float32
 alias b_type = DType.float32

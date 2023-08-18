@@ -27,7 +27,6 @@ from MatmulUtils import (
     PartitionHeuristic,
 )
 from math import div_ceil, align_up, max, min
-from IO import print, print_no_newline
 
 alias alignment = 64
 

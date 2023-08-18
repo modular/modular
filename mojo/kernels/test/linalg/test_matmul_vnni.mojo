@@ -16,7 +16,6 @@ from Range import range
 from Buffer import Buffer
 from VNNI import dot_i8_to_i32_AVX2, dot_i8_to_i32_x86
 from Memory import memcmp
-from IO import print, print_no_newline
 
 
 fn gemm(

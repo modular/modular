@@ -10,7 +10,6 @@ from Index import Index
 from List import DimList
 from Matmul import PackMatrixCols
 from sys.info import simdwidthof
-from IO import print
 
 alias type = DType.float32
 alias simd_size: Int = simdwidthof[DType.float32]()

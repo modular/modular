@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Matrix import Matrix
-from IO import print
 from Buffer import Buffer, NDBuffer
 from Pointer import Pointer, DTypePointer
 from List import DimList

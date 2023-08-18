@@ -7,7 +7,6 @@
 
 from Buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
-from IO import print
 from List import DimList
 from Transpose import transpose, transpose_inplace, _simplify_transpose_perms
 from Range import range

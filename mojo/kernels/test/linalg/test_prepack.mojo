@@ -10,7 +10,6 @@ from Matmul import pack_b
 from math import div_ceil
 from Range import range
 from Buffer import Buffer, NDBuffer
-from IO import print
 from Index import StaticIntTuple
 
 
