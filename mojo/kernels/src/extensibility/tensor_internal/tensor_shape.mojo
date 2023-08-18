@@ -10,7 +10,6 @@ from List import VariadicList
 from Index import StaticIntTuple
 from Memory import memcpy
 from Pointer import Pointer, DTypePointer
-from Range import range
 from StaticTuple import StaticTuple
 from sys.info import sizeof, is_little_endian
 

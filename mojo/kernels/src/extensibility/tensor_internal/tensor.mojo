@@ -12,7 +12,6 @@ Example:
 from Tensor import Tensor, TensorSpec, TensorShape
 from Index import Index
 from Random import rand
-from Range import range
 
 let height = 256
 let width = 256
