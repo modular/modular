@@ -10,8 +10,6 @@
 
 # RUN: %mojo %s 2>&1 | FileCheck %s
 
-from IO import print
-
 
 fn main():
     # CHECK: hello world

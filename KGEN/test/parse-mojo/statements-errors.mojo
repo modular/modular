@@ -7,7 +7,6 @@
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
 from Object import object
-from IO import print
 from Range import range
 
 ##===----------------------------------------------------------------------===##

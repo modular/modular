@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from IO import print
-
 # Evaluates the exp function using 6th order taylor series expansion. This is
 # the same expansion used by MLAS internally. The expansion is:
 #

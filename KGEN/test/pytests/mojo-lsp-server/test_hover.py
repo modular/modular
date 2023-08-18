@@ -29,8 +29,6 @@ async def test_hover_letvar(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-from IO import print
-
 fn function():
   let foo: Int = 420
   var bar = 1 + foo

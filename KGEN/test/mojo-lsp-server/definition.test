@@ -7,13 +7,13 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"from IO import print\nfn function():\n  let foo: Int = 420\n  var bar = 1 + foo\n  print(bar)"
+  "text":"fn function():\n  let foo: Int = 420\n  var bar = 1 + foo\n  print(bar)"
 }}}
 // -----
 {"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
   "position":{
-    "line":3,
+    "line":2,
     "character":17
   }
 }}
@@ -23,11 +23,11 @@
 // CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
-// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:         "line": 1
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "start": {
 // CHECK-NEXT:         "character": 6,
-// CHECK-NEXT:         "line": 2
+// CHECK-NEXT:         "line": 1
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"
@@ -35,7 +35,7 @@
 {"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{
   "textDocument":{"uri":"test:///foo.mojo"},
   "position":{
-    "line":4,
+    "line":3,
     "character":8
   }
 }}
@@ -45,11 +45,11 @@
 // CHECK:          "range": {
 // CHECK-NEXT:       "end": {
 // CHECK-NEXT:         "character": 9,
-// CHECK-NEXT:         "line": 3
+// CHECK-NEXT:         "line": 2
 // CHECK-NEXT:       },
 // CHECK-NEXT:       "start": {
 // CHECK-NEXT:         "character": 6,
-// CHECK-NEXT:         "line": 3
+// CHECK-NEXT:         "line": 2
 // CHECK-NEXT:       }
 // CHECK-NEXT:     },
 // CHECK-NEXT:     "uri": "test:///foo.mojo"

@@ -19,7 +19,6 @@
 # RUN: mojo run %mojo_cpu_build_arch %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
 # RUN: %mojo %s --help-text | FileCheck %s --check-prefix CHECK-NOT-HELP
 
-from IO import print
 from sys import argv
 
 

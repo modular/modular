@@ -6,8 +6,6 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-from IO import print
-
 
 fn main() -> None:
     # CHECK: ok
