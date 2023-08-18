@@ -633,9 +633,9 @@ static int package(const State &state) {
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(
-      telemetryCtx, state, args, /*privateArgs=*/
-      {options::OPT_D, options::OPT_I, options::OPT_L, options::OPT_o});
+  initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
+                      {options::OPT_D, options::OPT_I, options::OPT_L,
+                       options::OPT_name, options::OPT_o});
 
   //===--------------------------------------------------------------------===//
   // Build the package

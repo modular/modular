@@ -36,8 +36,15 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
   });
   llvm::interleave(
       publicArgs, os,
-      [&](const auto *arg) {
+      [&](const llvm::opt::Arg *arg) {
         os << StringRef(args.getArgString(arg->getIndex()));
+        if (ArrayRef<const char *> values = arg->getValues(); !values.empty()) {
+          os << StringRef("=[");
+          llvm::interleave(
+              values, os, [&](const char *value) { os << StringRef(value); },
+              " ");
+          os << StringRef("]");
+        }
       },
       " ");
 }
