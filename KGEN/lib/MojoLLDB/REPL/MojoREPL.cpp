@@ -416,9 +416,10 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   // Disable the cleanup, since we have a valid repl session now.
   cleanupOnError.release();
 
-  if (isatty(STDIN_FILENO))
-    printf("Welcome to Mojo.\nExpressions are delimited by a blank line.\nType "
-           "`:mojo help` for further assistance.\n");
+  if (isatty(STDIN_FILENO)) {
+    printf("Welcome to Mojo! 🔥\nExpressions are delimited by a blank "
+           "line.\nType `:mojo help` for further assistance.\n");
+  }
   return repl;
 }
 
