@@ -7,7 +7,6 @@
 
 from Benchmark import Benchmark
 from Time import now, sleep
-from Range import range
 
 
 # CHECK-LABEL: test_benchmark

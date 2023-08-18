@@ -6,7 +6,6 @@
 """Implements the Benchmark class for runtime benchmarking."""
 
 from math import min, max
-from Range import range
 from Time import now
 
 
