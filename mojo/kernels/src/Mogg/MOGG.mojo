@@ -92,7 +92,6 @@ from Tracing import Trace, TraceLevel
 from TypeUtilities import rebind
 from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from Split import split as _split
-from String import String
 from Slice import slice_as_view, slice_shape
 from MatrixSolve import matrix_solve
 from MatrixBandPart import matrix_band_part
