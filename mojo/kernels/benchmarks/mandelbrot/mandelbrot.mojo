@@ -11,7 +11,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from IO import print, print_no_newline, _printf
+from builtin.io import _printf
 from Range import range
 from Vector import DynamicVector
 from Buffer import Buffer, NDBuffer

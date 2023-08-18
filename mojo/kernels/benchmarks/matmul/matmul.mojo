@@ -10,7 +10,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
-from IO import print
 from Pointer import DTypePointer
 from Range import range
 

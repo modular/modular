@@ -7,7 +7,6 @@
 # Meant to be run on an AVX512 system
 
 from Range import range
-from IO import print, print_no_newline
 from Pointer import DTypePointer
 from List import Dim, DimList
 from Buffer import Buffer, NDBuffer
