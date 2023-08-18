@@ -9,7 +9,6 @@ from Index import StaticIntTuple
 from List import DimList
 from runtime.llcl import OutputChainPtr
 from Functional import vectorize
-from Range import range
 from MOGGDecorators import *
 
 # ===----------------------------------------------------------------------===#
