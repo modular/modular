@@ -14,7 +14,6 @@ from Activations import (
     gelu_approximate,
     gelu_approximate_sigmoid,
 )
-from IO import print
 from math import iota
 
 # CHECK-LABEL: test_elu

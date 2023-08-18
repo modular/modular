@@ -7,7 +7,6 @@
 
 from Buffer import Buffer, NDBuffer
 from Index import StaticIntTuple
-from IO import print
 from List import DimList
 from Pad import pad
 

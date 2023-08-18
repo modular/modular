@@ -14,7 +14,6 @@
 from Buffer import NDBuffer
 from GatherScatter import gather
 from Index import StaticIntTuple
-from IO import print
 from List import DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from Range import range

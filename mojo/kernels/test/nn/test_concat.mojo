@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer, NDBuffer, DynamicRankBuffer
-from IO import print
 from Concat import concat, _concat_parallel
 from Pointer import DTypePointer
 from Index import StaticIntTuple

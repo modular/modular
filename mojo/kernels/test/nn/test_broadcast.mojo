@@ -8,7 +8,6 @@
 from Broadcast import broadcast
 from Buffer import NDBuffer
 from Index import StaticIntTuple
-from IO import print
 from List import DimList
 
 

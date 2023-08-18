@@ -15,7 +15,6 @@ from Functional import elementwise
 from math import mul
 from Memory import stack_allocation
 from List import Dim, DimList
-from IO import print
 from Index import StaticIntTuple, Index
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from TypeUtilities import rebind
