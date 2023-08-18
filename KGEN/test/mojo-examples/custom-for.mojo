@@ -8,7 +8,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Pointer import Pointer
-from IO import print
 
 
 struct my_iter:

@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from IO import print
-
 
 fn is_positive(a: Int) -> Bool:
     return a > 0

@@ -10,8 +10,6 @@
 # COM: This test will pass when https://reviews.llvm.org/D154802 lands.
 # XFAIL: system-linux
 
-from IO import print
-
 
 struct OwnedInt:
     var value: Int

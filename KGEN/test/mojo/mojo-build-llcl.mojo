@@ -12,7 +12,6 @@
 # Test that we can build executables that rely on LLCL and the runtime
 # libraries.
 
-from IO import print
 from runtime.llcl import Runtime
 
 # CHECK-LABEL: test_runtime_task

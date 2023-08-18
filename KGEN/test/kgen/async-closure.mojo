@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from IO import print
-
 
 @always_inline
 async fn just_call_it[func: async fn[a: Int] (Int) capturing -> Int]() -> Int:

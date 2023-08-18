@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from IO import print
-
 
 fn take_closure_and_print(g: fn (Int) capturing -> Int, x: Int):
     print(g(x))

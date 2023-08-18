@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from IO import print
-
 
 fn unsafe_factorial(next: Int, thusFar: Int) -> Int:
     if next > 1:

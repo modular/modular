@@ -7,8 +7,6 @@
 # RUN: %mojo %s 2>&1 | FileCheck %s
 # RUN: %mojo %s --debug-level full 2>&1 | FileCheck %s
 
-from IO import print
-
 
 def try_it(c0: Bool, c1: Bool) -> StringLiteral:
     try:

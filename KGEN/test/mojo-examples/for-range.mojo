@@ -8,7 +8,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Range import range
-from IO import print
 
 
 fn main():

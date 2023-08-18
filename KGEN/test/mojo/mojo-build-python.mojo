@@ -9,7 +9,6 @@
 # RUN: mojo build %mojo_cpu_build_arch %s -o %t
 # RUN: %t | FileCheck %s
 
-from IO import print
 from python import Python
 from sys import argv
 
