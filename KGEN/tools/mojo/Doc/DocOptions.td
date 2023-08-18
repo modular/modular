@@ -28,6 +28,10 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
   HelpText<"Append the given path to the list of directories to search for "
            "included Mojo files.">;
 
+def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
+  Group<CompilationOptionGroup>, Index<2>,
+  HelpText<"Parse the input file(s) as the Mojo standard library.">;
+
 //===----------------------------------------------------------------------===//
 // Validation Options
 //===----------------------------------------------------------------------===//

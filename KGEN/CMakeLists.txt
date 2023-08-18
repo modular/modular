@@ -174,13 +174,25 @@ function(add_mojo_package target)
   # Process the sources to generate documentation as necessary.
   set(KGEN_SOURCE_FILES "")
   foreach(file ${KGEN_PRIVATE})
-    add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
-                ${file} Kernels/docs/${target}/)
+    if (KGEN_STDLIB)
+      add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
+        ${file} Kernels/docs/${target}/ STDLIB)
+    else()
+      add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
+        ${file} Kernels/docs/${target}/)
+    endif()
+
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
   foreach(file ${KGEN_PUBLIC})
-    add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-                ${file} Kernels/docs/${target}/)
+    if (KGEN_STDLIB)
+      add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
+        ${file} Kernels/docs/${target}/ STDLIB)
+    else()
+      add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
+        ${file} Kernels/docs/${target}/)
+    endif()
+
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
 
@@ -390,10 +402,18 @@ function(add_kgen_kernel target)
 endfunction()
 
 function(add_mojo_doc target visibility doc_filename output_file output_directory)
+  cmake_parse_arguments(KGEN "STDLIB" "" "LINK_LIBS;LINK_DIRS" ${ARGN})
+
   _setup_libs()
 
   set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
   set(GEN_DOC_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.md)
+
+  # Check if we're parsing the standard library.
+  set(MOJO_FRONTEND_FLAGS "")
+  if (KGEN_STDLIB)
+    set(MOJO_FRONTEND_FLAGS "--parsing-stdlib")
+  endif()
 
   # Generate the JSON file containing the documentation description.
   add_custom_command(
@@ -401,7 +421,7 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
 
     COMMAND $<TARGET_FILE:mojo> doc
     -o ${GEN_DOC_JSON_FILE} ${KGEN_INCLUDE_FLAGS} ${doc_filename}
-    -I ${KERNELS_BINARY_DIR}/mojo/Python
+    -I ${KERNELS_BINARY_DIR}/mojo/Python ${MOJO_FRONTEND_FLAGS}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
@@ -443,8 +463,8 @@ function(add_mojo_doc target visibility doc_filename output_file output_director
 
     COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
     COMMAND $<TARGET_FILE:mojo> doc -warn-missing-doc-strings -o /dev/null
-      ${KGEN_INCLUDE_FLAGS} ${doc_filename} -I ${KERNELS_BINARY_DIR}/mojo/Python
-      > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
+      ${KGEN_INCLUDE_FLAGS} ${MOJO_FRONTEND_FLAGS} ${doc_filename}
+      -I ${KERNELS_BINARY_DIR}/mojo/Python > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo-sdk ${doc_filename} ${KGEN_LIB_DEPENDS}
