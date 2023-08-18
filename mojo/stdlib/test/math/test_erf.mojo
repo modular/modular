@@ -7,7 +7,6 @@
 
 
 from Activations import _erf
-from IO import print
 from math import erf, round
 
 

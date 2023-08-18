@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from IO import print
 from List import VariadicList
 from math.polynomial import (
     polynomial_evaluate,

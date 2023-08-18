@@ -8,7 +8,6 @@
 from math import abs, factorial, sin, cos, nan, isnan
 from complex import ComplexFloat32
 from Limits import isfinite, isinf, inf, neginf
-from IO import print
 
 # CHECK-LABEL: test_inf
 fn test_inf():
