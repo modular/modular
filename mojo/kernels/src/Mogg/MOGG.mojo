@@ -33,7 +33,6 @@ from Reductions import (
 from Intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from Memory import memset_zero
-from IO import print
 from List import Dim, DimList, VariadicList
 from OptionalParam import OptionalParamInt
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
