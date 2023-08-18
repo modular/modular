@@ -11,7 +11,6 @@ from Memory import stack_allocation
 from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
 from math import mul, min
 from List import Dim, DimList
-from IO import print
 from Index import StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from TypeUtilities import rebind

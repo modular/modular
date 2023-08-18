@@ -7,7 +7,6 @@
 
 from Buffer import Buffer
 from Functional import map
-from IO import print
 
 # CHECK-LABEL: test_map
 fn test_map():

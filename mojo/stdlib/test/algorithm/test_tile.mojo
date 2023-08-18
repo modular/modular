@@ -7,7 +7,6 @@
 
 from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
-from IO import print
 from Index import Index, StaticIntTuple
 from Range import range
 

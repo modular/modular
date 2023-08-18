@@ -11,7 +11,6 @@ from Functional import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu
 from List import Dim, DimList
-from IO import print
 from Index import StaticIntTuple
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from Vector import UnsafeFixedVector

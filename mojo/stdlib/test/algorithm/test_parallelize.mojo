@@ -11,7 +11,6 @@
 from Buffer import Buffer
 from Functional import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
-from IO import print
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 from Range import range
 

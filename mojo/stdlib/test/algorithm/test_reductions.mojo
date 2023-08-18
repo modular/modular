@@ -8,7 +8,6 @@
 from Buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from IO import print
 from List import DimList
 from Range import range
 from TypeUtilities import rebind

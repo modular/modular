@@ -7,7 +7,6 @@
 
 from Buffer import Buffer
 from Functional import vectorize, vectorize_unroll
-from IO import print
 from Memory import memcmp
 from Range import range
 
