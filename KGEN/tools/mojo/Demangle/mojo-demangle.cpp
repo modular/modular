@@ -50,13 +50,8 @@ static int demangle(const State &state) {
     );
   }
 
-  if (args.hasArg(options::OPT_UNKNOWN)) {
-    int result = 1;
-    for (llvm::opt::Arg *arg : args.filtered(options::OPT_UNKNOWN))
-      result = state.reportError("unrecognized argument '" +
-                                 arg->getSpelling() + "'\n");
+  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
-  }
 
   if (args.hasMultipleArgs(options::OPT_INPUT)) {
     std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
