@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import NDBuffer
-from Functional import (
+from algorithm import (
     vectorize_unroll,
     async_parallelize,
-    _get_start_indices_of_nth_subvolume,
 )
+from algorithm.functional import _get_start_indices_of_nth_subvolume
 from Index import StaticIntTuple
 from List import Dim, DimList
 from runtime.llcl import OutputChainPtr

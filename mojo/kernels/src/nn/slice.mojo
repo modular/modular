@@ -6,7 +6,7 @@
 
 from Assert import debug_assert
 from Buffer import Buffer, NDBuffer
-from Functional import elementwise
+from algorithm import elementwise
 from Index import StaticIntTuple
 from runtime.llcl import OutputChainPtr
 from List import Dim, DimList

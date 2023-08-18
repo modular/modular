@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from Functional import vectorize_unroll, async_parallelize
+from algorithm import vectorize_unroll, async_parallelize
 from Index import product
 from List import Dim, DimList
 from runtime.llcl import OutputChainPtr
 from math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
-from Limits import neginf
-from Reductions import max
+from math.limit import neginf
+from algorithm.reduction import max
 from StaticTuple import StaticTuple
 from TypeUtilities import rebind
 

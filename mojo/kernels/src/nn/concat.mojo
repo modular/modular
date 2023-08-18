@@ -6,10 +6,11 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer
-from BuildInfo import is_kernels_debug_build
-from Functional import sync_parallelize, _elementwise_impl
+from sys.build import is_kernels_debug_build
+from algorithm import sync_parallelize
+from algorithm.functional import _elementwise_impl
 from Index import product, StaticIntTuple
-from Intrinsics import external_call
+from sys import external_call
 from List import Dim, VariadicList, DimList
 from runtime.llcl import OutputChainPtr
 from math import align_down, align_up, div_ceil, max, min

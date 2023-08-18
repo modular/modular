@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 from Softmax import softmax_2_pass, logsoftmax
 from Buffer import Buffer, NDBuffer

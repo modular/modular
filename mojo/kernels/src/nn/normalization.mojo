@@ -5,16 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from Buffer import Buffer, NDBuffer
-from Functional import vectorize_unroll
+from algorithm import vectorize_unroll
 from List import Dim, DimList
-from Functional import vectorize
+from algorithm import vectorize
 from Index import StaticIntTuple
 from StaticTuple import StaticTuple
 from TypeUtilities import rebind
-from Reductions import (
-    mean,
-    variance,
-    map_reduce,
+from algorithm import mean, variance, map_reduce
+from algorithm.reduction import (
     _simd_sum,
     _simd_sum_elementwise,
 )

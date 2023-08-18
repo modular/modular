@@ -6,13 +6,13 @@
 
 from Assert import debug_assert, assert_param
 from Buffer import NDBuffer
-from Functional import async_parallelize, vectorize_unroll
+from algorithm import async_parallelize, vectorize_unroll
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from runtime.llcl import OutputChainPtr
 from List import DimList
 from math import min, max, add, div_ceil
-from Limits import neginf
+from math.limit import neginf
 from ShapeFuncUtils import get_sliding_window_out_dim
 from sys.info import simdwidthof
 

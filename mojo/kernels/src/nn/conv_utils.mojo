@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from BuildInfo import is_debug_build
+from sys.build import is_debug_build
 from Buffer import NDBuffer
 from List import DimList
 from Image import (

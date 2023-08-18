@@ -22,7 +22,7 @@ from ConvUtils import (
     get_conv_num_partitions,
     get_conv2d_shape,
 )
-from Functional import (
+from algorithm import (
     unroll,
     async_parallelize,
     sync_parallelize,
@@ -32,7 +32,7 @@ from Functional import (
 )
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
-from Intrinsics import PrefetchOptions, external_call
+from sys.intrinsics import PrefetchOptions, external_call
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from List import Dim, DimList, VariadicList
 from math import min, max, fma, div_ceil

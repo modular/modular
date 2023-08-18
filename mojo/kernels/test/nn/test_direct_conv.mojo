@@ -21,7 +21,7 @@ from Conv import (
 )
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
-from Intrinsics import external_call
+from sys import external_call
 from List import DimList
 from Pointer import DTypePointer
 from runtime.llcl import Runtime, OwningOutputChainPtr

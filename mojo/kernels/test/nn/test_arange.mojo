@@ -3,14 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
 from Arange import arange, arange_shape
 from Buffer import NDBuffer, Buffer
-from Functional import elementwise
+from algorithm import elementwise
 from math import mul
 from Memory import stack_allocation
 from List import Dim, DimList

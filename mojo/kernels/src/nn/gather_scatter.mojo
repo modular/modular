@@ -6,16 +6,16 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
-from Functional import (
+from algorithm import (
     vectorize,
     vectorize_unroll,
     async_parallelize,
     unroll,
     elementwise,
-    _elementwise_impl,
 )
+from algorithm.functional import _elementwise_impl
 from Index import StaticIntTuple
-from Intrinsics import PrefetchOptions
+from sys.intrinsics import PrefetchOptions
 from runtime.llcl import OutputChainPtr
 from List import DimList, Dim
 from math import div_ceil
