@@ -32,7 +32,7 @@ def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
 def debug_level : Separate<["--", "-"], "debug-level">,
   Group<CompilationOptionGroup>, Index<1>, MetaVarName<"LEVEL">,
   HelpText<"The level of debug info to use during compilation. The value must "
-           "be one of: `none` (the default value), `line-tables`, `full`">;
+           "be one of: `none` (the default value), `line-tables`, or `full`.">;
 
 def target_triple : Separate<["--", "-"], "target-triple">,
   Group<CompilationOptionGroup>, Index<2>, MetaVarName<"TRIPLE">,

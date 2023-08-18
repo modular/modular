@@ -16,13 +16,15 @@ def : CommandDescription<
 
 def FunOptionGroup : OptionGroup<"Fun Options">;
 
-// CHECK: error: help text for publicly visible option 'chute' should not be empty
+// CHECK: error: help text for option 'chute' should not be empty
 // CHECK: error: option 'chute' takes a value, but does not define a metavar name for that value
 def chute : Separate<["-"], "chute">, Group<FunOptionGroup>, Index<0>;
 
+// CHECK: error: help text for option 'ladder' should begin with a capital letter
+// CHECK: error: help text for option 'ladder' should end with a period or quotation mark
 // CHECK: error: option 'ladder' metavar name should not be empty
 def ladder : Joined<["--"], "ladder">, Group<FunOptionGroup>, Index<1>,
-  HelpText<"The ladder to use.">, MetaVarName<"">;
+  HelpText<"the ladder to use">, MetaVarName<"">;
 def stool : Flag<["--"], "stool">, Group<FunOptionGroup>, Index<2>,
   HelpText<"Whether to use a stool.">;
 // CHECK: error: alias 's' has no index

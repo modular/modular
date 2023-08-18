@@ -15,7 +15,7 @@ def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
 def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
   MetaVarName<"PATH">, HelpText<"The path to which an output file "
-  "will be written. If not provided, output is written to stdout">;
+  "will be written. If not provided, output is written to stdout.">;
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
