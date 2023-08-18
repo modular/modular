@@ -11,6 +11,7 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Threading.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 using namespace KGEN;
@@ -139,7 +140,9 @@ struct LowerPreElaboratedLITPass
           StringRef(bytecode.begin(), bytecode.size()), "");
 
       // Start lazy loading the bytecode for the function bodies.
-      mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/true);
+      auto sourceMgr = std::make_shared<llvm::SourceMgr>();
+      mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/true,
+                                  sourceMgr);
       Block block;
       if (failed(reader.readTopLevel(&block)))
         return signalPassFailure();
