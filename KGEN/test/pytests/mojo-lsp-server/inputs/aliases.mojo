@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from String import String
 from Activations import ActivationType
 
 alias IntAlias = 12

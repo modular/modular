@@ -10,8 +10,6 @@
 # Duplicates
 ##===----------------------------------------------------------------------===##
 
-from String import String
-
 fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
    return x
 
@@ -122,8 +120,6 @@ fn makes_escaping_closure(m: String, z:String, y:Bool):
 # Nested Function Signature Multiple Effects
 ##===----------------------------------------------------------------------===##
 
-from String import String
-
 # CHECK:    lit.struct.decl @"_CI_{{.*}}throws"
 # CHECK-NEXT:      lit.struct.field field0 : !kgen.declref<@{{.*}}::@String>
 fn makes_escaping_closure(m: String):
@@ -135,8 +131,6 @@ fn makes_escaping_closure(m: String):
 ##===----------------------------------------------------------------------===##
 # Escaping Return Type
 ##===----------------------------------------------------------------------===##
-
-from String import String
 
 # CHECK: lit.struct.decl @"_CW_{{.*}}(,{{.*}}::String)\22"
 # CHECK-NEXT:     lit.struct.field field0 : !pop.pointer<array<0, i1>>
@@ -212,8 +206,6 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 ##===----------------------------------------------------------------------===##
 # Closure Wrapper Initializer
 ##===----------------------------------------------------------------------===##
-
-from String import String
 
 # CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
 

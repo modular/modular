@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import SIMD as _simd
-import String
+import builtin.string
 from .aliases import sizeof
 
 

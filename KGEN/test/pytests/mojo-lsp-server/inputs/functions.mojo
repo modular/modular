@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from String import String
-
 
 struct SomeStruct[size: Int, other_param: Bool]:
     """Docstring for SomeStruct.
