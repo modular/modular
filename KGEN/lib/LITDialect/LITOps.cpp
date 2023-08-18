@@ -76,7 +76,8 @@ LIT::getUnboundSpecializedSignature(SignatureType type,
 }
 
 bool LIT::findTryBlock(Block *currentBlock) {
-  while (Operation *parentOp = currentBlock->getParentOp()) {
+  Operation *parentOp;
+  while (currentBlock && (parentOp = currentBlock->getParentOp())) {
     if (isa<LIT::FuncOp>(parentOp))
       break;
     TryOp tryOp = dyn_cast<TryOp>(parentOp);

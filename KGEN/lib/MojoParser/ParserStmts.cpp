@@ -418,6 +418,13 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                      << "' statement must be on its own line";
   };
 
+  auto emitTopLevelViolationError = [&]() {
+    Operation *parent = parentDecl.getIfOperation();
+    if (!parent || !dyn_cast<LIT::FuncOp>(parent))
+      emitTokenError() << "a '" << getToken().getSpelling()
+                       << "' statement must be contained in a function";
+  };
+
   // Skip over any decorators that are present.  These will be reparsed during
   // signature resolution phase of a declaration.
   while (consumeIf(Token::at)) {
@@ -468,6 +475,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
+    emitTopLevelViolationError();
     return parseTryStmt(stmtIndent);
   case Token::kw_with:
     rejectDecorator(); // Decorators not allowed.
