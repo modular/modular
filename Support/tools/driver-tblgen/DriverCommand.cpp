@@ -288,9 +288,14 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
   // validation.
   StringRef name = option->getValueAsString("Name");
   StringRef helpText = result.getHelpText();
-  bool invalid = failed(validateCapitalized(
-      helpText, option->getLoc(),
-      llvm::formatv("help text for publicly visible option '{0}'", name)));
+  bool invalid = failed(
+      validateCapitalized(helpText, option->getLoc(),
+                          llvm::formatv("help text for option '{0}'", name)));
+  if (!helpText.ends_with(".") && !helpText.ends_with("\""))
+    invalid |= printError(option->getLoc(),
+                          llvm::formatv("help text for option '{0}' should end "
+                                        "with a period or quotation mark",
+                                        name));
 
   if (std::optional<StringRef> metaVarName = result.getMetaVarName()) {
     if (metaVarName->empty())
