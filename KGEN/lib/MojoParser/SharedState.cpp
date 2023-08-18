@@ -1731,8 +1731,8 @@ void SharedState::traverseImportDirectories(
   }
 
   // Check the working directory.
-  if (const auto *includeBuffer =
-          sourceMgr.getMemoryBuffer(importBufferFileId)) {
+  if (importBufferFileId) {
+    const auto *includeBuffer = sourceMgr.getMemoryBuffer(importBufferFileId);
     auto includerPath =
         std::filesystem::path(includeBuffer->getBufferIdentifier().str());
     if (callback(includerPath.parent_path().string()).wasInterrupted())
