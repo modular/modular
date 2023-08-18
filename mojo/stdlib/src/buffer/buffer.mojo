@@ -6,9 +6,9 @@
 """Implements the Buffer class."""
 
 from Assert import assert_param, debug_assert, assert_param
-from Functional import unroll, vectorize
+from algorithm import unroll, vectorize
 from Index import StaticIntTuple, product as tuple_product
-from Intrinsics import PrefetchOptions, masked_load, masked_store
+from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 from List import Dim, DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import fma, min, max, iota
