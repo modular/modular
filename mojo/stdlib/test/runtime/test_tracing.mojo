@@ -8,7 +8,6 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from IO import print
 from runtime.llcl import Runtime
 from Tracing import Trace, TraceLevel
 from BuildInfo import build_info_llcl_max_profiling_level
