@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer
-from Functional import vectorize, vectorize_unroll
+from algorithm import vectorize, vectorize_unroll
 from Memory import memcmp
 
 

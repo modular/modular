@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer
-from Functional import map
+from algorithm import map
 
 # CHECK-LABEL: test_map
 fn test_map():

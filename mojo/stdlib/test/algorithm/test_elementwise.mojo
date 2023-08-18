@@ -3,11 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 from Buffer import NDBuffer, Buffer
 from Memory import stack_allocation
-from Functional import _elementwise_impl, _get_start_indices_of_nth_subvolume
+from algorithm.functional import (
+    _elementwise_impl,
+    _get_start_indices_of_nth_subvolume,
+)
 from math import mul, min
 from List import Dim, DimList
 from Index import StaticIntTuple

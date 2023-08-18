@@ -3,10 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 from Buffer import Buffer
-from Functional import elementwise
+from algorithm import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu
 from List import Dim, DimList

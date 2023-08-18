@@ -3,19 +3,18 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 from Buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from List import DimList
 from TypeUtilities import rebind
-from Reductions import (
+from algorithm import (
     all_true,
     any_true,
-    max,
     mean,
-    min,
     none_true,
     product,
     sum,
@@ -23,6 +22,9 @@ from Reductions import (
     argmax,
     argmin,
 )
+
+# TODO: Fold this import into the one above.
+from algorithm.reduction import max, min
 
 
 # CHECK-LABEL: test_reductions

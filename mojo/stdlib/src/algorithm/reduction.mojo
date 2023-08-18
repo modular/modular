@@ -7,12 +7,12 @@
 
 from Assert import assert_param, debug_assert
 from Buffer import Buffer, NDBuffer, prod_dims
-from Functional import (
+from algorithm import (
     vectorize,
-    _get_num_workers,
     async_parallelize,
     unroll,
 )
+from algorithm.functional import _get_num_workers
 from Pointer import Pointer
 from math.bit import cttz
 from Index import StaticIntTuple
@@ -25,7 +25,7 @@ from math import (
     div_ceil,
     min as _min,
 )
-from Limits import max_or_inf, min_or_neginf
+from math.limit import max_or_inf, min_or_neginf
 from sys.info import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#

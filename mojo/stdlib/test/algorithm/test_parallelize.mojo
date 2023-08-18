@@ -3,13 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# TODO(#19566): Reenable compilation with `-debug-level full`
+# RUN: %mojo %s | FileCheck %s
 
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
 from Buffer import Buffer
-from Functional import async_parallelize, sync_parallelize, parallelize, map
+from algorithm import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
 

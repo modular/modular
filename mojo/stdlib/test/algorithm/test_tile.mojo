@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Functional import tile, unswitch, tile_and_unswitch
+from algorithm import tile, unswitch, tile_and_unswitch
 from List import VariadicList
 from Index import Index, StaticIntTuple
 
