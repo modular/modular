@@ -11,7 +11,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from IO import print
 from Range import range
 from complex import ComplexSIMD, ComplexFloat32
 
