@@ -139,11 +139,10 @@ static std::optional<int> parseArgs(const State &state,
 
   if (ErrorOrSuccess err = parseCompilationOptions(
           state, args, compilationOptions, sourceManager, ctx, target,
-          options::OPT_I, options::OPT_L, options::OPT_target_triple,
-          options::OPT_target_cpu, options::OPT_target_features,
-          options::OPT_march, options::OPT_mcpu, options::OPT_mtune,
-          options::OPT_no_optimization, options::OPT_debug_level,
-          options::OPT_sanitize)) {
+          options::OPT_I, options::OPT_target_triple, options::OPT_target_cpu,
+          options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
+          options::OPT_mtune, options::OPT_no_optimization,
+          options::OPT_debug_level, options::OPT_sanitize)) {
     return state.reportError(err.getError());
   }
   return {};
@@ -256,9 +255,8 @@ static int run(const State &state) {
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(
-      telemetryCtx, state, args,
-      /*privateArgs=*/{options::OPT_D, options::OPT_I, options::OPT_L});
+  initializeTelemetry(telemetryCtx, state, args,
+                      /*privateArgs=*/{options::OPT_D, options::OPT_I});
 
   // Lower the input file to an MLIR module.
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);

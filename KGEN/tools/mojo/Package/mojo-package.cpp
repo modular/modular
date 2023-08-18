@@ -457,10 +457,9 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // of truth.
   return parseCompilationOptions(
       state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-      pkgArgs.target, options::OPT_I, options::OPT_L,
-      options::OPT_target_triple, options::OPT_target_cpu,
-      options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
-      options::OPT_mtune, options::OPT_no_optimization,
+      pkgArgs.target, options::OPT_I, options::OPT_target_triple,
+      options::OPT_target_cpu, options::OPT_target_features, options::OPT_march,
+      options::OPT_mcpu, options::OPT_mtune, options::OPT_no_optimization,
       options::OPT_debug_level, options::OPT_sanitize);
 }
 
@@ -633,9 +632,9 @@ static int package(const State &state) {
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
-                      {options::OPT_D, options::OPT_I, options::OPT_L,
-                       options::OPT_name, options::OPT_o});
+  initializeTelemetry(
+      telemetryCtx, state, args, /*privateArgs=*/
+      {options::OPT_D, options::OPT_I, options::OPT_name, options::OPT_o});
 
   //===--------------------------------------------------------------------===//
   // Build the package

@@ -29,11 +29,10 @@ ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
     CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
     MLIRContext &ctx, TargetInfoAttr &target,
-    llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier linkDirsId,
-    llvm::opt::OptSpecifier tripleId, llvm::opt::OptSpecifier cpuId,
-    llvm::opt::OptSpecifier featuresId, llvm::opt::OptSpecifier marchId,
-    llvm::opt::OptSpecifier mcpuId, llvm::opt::OptSpecifier mtuneId,
-    llvm::opt::OptSpecifier noOptimizationId,
+    llvm::opt::OptSpecifier includeDirsId, llvm::opt::OptSpecifier tripleId,
+    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
+    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
+    llvm::opt::OptSpecifier mtuneId, llvm::opt::OptSpecifier noOptimizationId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
@@ -102,7 +101,6 @@ ErrorOrSuccess M::parseCompilationOptions(
           .Case("full", CompilationOptions::kFullDebugInfo);
 
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
-  compilationOptions.linkDirs = args.getAllArgValues(linkDirsId);
 
   // Initialize the MLIR context.
   DialectRegistry registry;
