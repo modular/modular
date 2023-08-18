@@ -8,8 +8,6 @@
 
 # CHECK: module {
 
-from Object import object
-
 fn noop(): pass
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyInt
@@ -632,7 +630,7 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = (5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<@"$Object"::@object> owned_in_mem)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<@"$builtin"::@"$object"::@object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: [[B:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[B]], %a_0

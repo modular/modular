@@ -174,12 +174,12 @@ function(add_mojo_package target)
   # Process the sources to generate documentation as necessary.
   set(KGEN_SOURCE_FILES "")
   foreach(file ${KGEN_PRIVATE})
-    add_mojo_doc(PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
+    add_mojo_doc("${target}${file}" PRIVATE ${KGEN_PACKAGE_DIR}/${file}.mojo
                 ${file} Kernels/docs/${target}/)
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
   foreach(file ${KGEN_PUBLIC})
-    add_mojo_doc(PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
+    add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
                 ${file} Kernels/docs/${target}/)
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
@@ -389,7 +389,7 @@ function(add_kgen_kernel target)
   )
 endfunction()
 
-function(add_mojo_doc visibility doc_filename output_file output_directory)
+function(add_mojo_doc target visibility doc_filename output_file output_directory)
   _setup_libs()
 
   set(GEN_DOC_JSON_FILE ${MODULAR_BINARY_DIR}/docs/${output_directory}${output_file}.mojodoc.json)
@@ -423,16 +423,16 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
 
-  add_custom_target(${output_file}DocGen DEPENDS ${GEN_DOC_FILE})
+  add_custom_target(${target}DocGen DEPENDS ${GEN_DOC_FILE})
   set(is_public FALSE)
   if("${visibility}" STREQUAL "PUBLIC")
     set(is_public TRUE)
   endif()
 
   if (is_public)
-    add_dependencies(modular-doc ${output_file}DocGen)
+    add_dependencies(modular-doc ${target}DocGen)
   else()
-    add_dependencies(modular-internal-doc ${output_file}DocGen)
+    add_dependencies(modular-internal-doc ${target}DocGen)
   endif()
 
   # Invoke `mojo --warn-missing-doc-strings` on the given file and pipe any
@@ -455,7 +455,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   get_filename_component(doc_filename_we ${doc_filename} NAME_WE)
   set(failure_message
       "warnings were output when was run on '${doc_filename}'")
-  add_custom_target("${doc_filename_we}DocValidate"
+  add_custom_target("${target}DocValidate"
     COMMENT "Checking `mojo doc -warn-missing-doc-strings '${doc_filename}'`..."
     COMMAND "${Python3_EXECUTABLE}"
       "${MODULAR_SOURCE_DIR}/KGEN/utils/check-file-is-empty.py"
@@ -467,7 +467,7 @@ function(add_mojo_doc visibility doc_filename output_file output_directory)
   # This ensures that `modular-doc-validate` only fails when our public
   # libraries are legitimately missing documentation.
   if (is_public)
-    add_dependencies(modular-doc-validate "${doc_filename_we}DocValidate")
+    add_dependencies(modular-doc-validate "${target}DocValidate")
   endif()
 endfunction()
 

@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate %s -import-mojo -verify-diagnostics | FileCheck %s
 
-from Object import object
 from Range import range
 
 ##===----------------------------------------------------------------------===##

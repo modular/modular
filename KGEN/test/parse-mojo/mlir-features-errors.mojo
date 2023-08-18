@@ -6,8 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from Object import object
-
 fn testMLIR():
   var a : __mlir_type
 
