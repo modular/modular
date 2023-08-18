@@ -14,7 +14,6 @@ from runtime.llcl import (
 )
 from Pointer import Pointer
 from Memory import stack_allocation
-from Range import range
 
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
