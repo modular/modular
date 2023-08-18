@@ -63,11 +63,16 @@ public:
   ErrorTreeOr<TypedAttr> evaluateFunction(FuncOp func,
                                           ArrayRef<TypedAttr> inputs);
 
+  /// Evaluate the result slot function with the provided constant inputs.
+  ErrorTreeOr<TypedAttr>
+  evaluateFunctionWithResultSlot(FuncOp func, ArrayRef<TypedAttr> inputs);
+
 private:
+  /// Evaluate an apply-like operator.
+  FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
+                                         bool withResultSlot);
   /// Evaluate a `get_all_impls` operator.
   FailureOr<TypedAttr> evaluateGetAllImpls(ParamOperatorAttr op);
-  /// Evaluate an `apply` operator.
-  FailureOr<TypedAttr> evaluateApply(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
 
