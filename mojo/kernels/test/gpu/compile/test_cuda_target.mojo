@@ -10,7 +10,6 @@ from Activations import gelu
 from Assert import assert_param
 from Functional import elementwise
 from Index import StaticIntTuple
-from IO import print
 from NvidiaGPU import (
     ThreadIdx,
     BlockIdx,
