@@ -12,7 +12,6 @@
 
 from StaticTuple import StaticTuple
 from Functional import unroll
-from Range import range
 from math import sqrt
 from Benchmark import Benchmark
 

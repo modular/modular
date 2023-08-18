@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Range import range
 from Random import random_float64
 from Benchmark import Benchmark
 

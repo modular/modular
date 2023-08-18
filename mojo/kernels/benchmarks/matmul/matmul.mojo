@@ -11,7 +11,6 @@
 
 from Benchmark import Benchmark
 from Pointer import DTypePointer
-from Range import range
 
 
 alias M = 128
