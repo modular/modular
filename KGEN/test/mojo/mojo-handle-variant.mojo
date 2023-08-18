@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Len import len
-
 
 struct S:
     var v: Int

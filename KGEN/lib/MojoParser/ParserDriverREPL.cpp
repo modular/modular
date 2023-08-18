@@ -227,8 +227,7 @@ wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOSIndented << "from Len import len\n"
-                   << "from Pointer import Pointer\n"
+    exprOSIndented << "from Pointer import Pointer\n"
                    << "from python.python import Python\n"
                    << "from python.object import PythonObject\n";
   }
