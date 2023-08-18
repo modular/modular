@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from Range import range
-from Object import object
 from Random import random_float64
 from Benchmark import Benchmark
 
