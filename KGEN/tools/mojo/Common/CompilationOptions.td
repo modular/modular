@@ -63,11 +63,6 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   HelpText<"Append the given path to the list of directories to search for "
            "included Mojo files.">;
 
-def L : JoinedOrSeparate<["-"], "L">, Group<CompilationOptionGroup>, Index<8>,
-  MetaVarName<"PATH">,
-  HelpText<"Append the given path to the list of directories to search for "
-           "linked libraries.">;
-
 def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Define a named value that can be used from within the Mojo source "
