@@ -6,7 +6,7 @@
 """This module includes intrinsics for NVIDIA GPUs."""
 
 from Assert import assert_param
-from Intrinsics import llvm_intrinsic
+from sys import llvm_intrinsic
 from Pointer import DTypePointer
 from math import is_power_of_2
 from Memory import stack_allocation as _generic_stack_allocation
