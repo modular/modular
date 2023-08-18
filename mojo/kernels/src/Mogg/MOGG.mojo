@@ -17,20 +17,18 @@ from Conv import (
     ConvInfo,
     ConvInfoStatic,
 )
-from Functional import (
-    _elementwise_impl,
+from algorithm import (
     unroll,
     vectorize,
     vectorize_unroll,
     async_parallelize,
-)
-from Reductions import (
     argmax as _argmax,
     argmin as _argmin,
-    _reduce_generator,
     reduce_shape,
 )
-from Intrinsics import strided_load
+from algorithm.functional import _elementwise_impl
+from algorithm.reduction import _reduce_generator
+from sys.intrinsics import strided_load
 from Index import Index, StaticIntTuple
 from Memory import memset_zero
 from List import Dim, DimList, VariadicList
@@ -62,7 +60,7 @@ from math import (
     abs,
     log1p,
 )
-from Limits import isinf, min_or_neginf, max_or_inf
+from math.limit import isinf, min_or_neginf, max_or_inf
 from Matmul import (
     matmul as _matmul,
     pack_b_ndbuffer,

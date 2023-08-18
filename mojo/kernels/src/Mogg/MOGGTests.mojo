@@ -8,7 +8,7 @@ from Buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
 from runtime.llcl import OutputChainPtr
-from Functional import vectorize
+from algorithm import vectorize
 from MOGGDecorators import *
 
 # ===----------------------------------------------------------------------===#
