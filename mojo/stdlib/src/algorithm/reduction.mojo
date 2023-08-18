@@ -26,7 +26,6 @@ from math import (
     min as _min,
 )
 from Limits import max_or_inf, min_or_neginf
-from Range import range
 from sys.info import sizeof, simdwidthof
 
 # ===----------------------------------------------------------------------===#

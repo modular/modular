@@ -12,7 +12,6 @@ from Buffer import Buffer
 from Functional import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
-from Range import range
 
 # CHECK-LABEL: test_async_parallelize
 fn test_async_parallelize():

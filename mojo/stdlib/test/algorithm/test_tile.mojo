@@ -8,7 +8,6 @@
 from Functional import tile, unswitch, tile_and_unswitch
 from List import VariadicList
 from Index import Index, StaticIntTuple
-from Range import range
 
 # Helper workgroup function to test dynamic workgroup tiling.
 @always_inline

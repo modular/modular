@@ -6,7 +6,6 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Buffer import Buffer
-from Range import range
 from Functional import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu

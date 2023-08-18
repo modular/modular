@@ -17,7 +17,6 @@ from runtime.llcl import (
 )
 from math import div_ceil, min, max
 from math.numerics import FlushDenormals
-from Range import range
 from sys.info import triple_is_nvidia_cuda
 
 # ===----------------------------------------------------------------------===#

@@ -8,7 +8,6 @@
 from Buffer import Buffer
 from Functional import vectorize, vectorize_unroll
 from Memory import memcmp
-from Range import range
 
 
 # CHECK-LABEL: test_vectorize
