@@ -26,7 +26,6 @@ from Functional import (
     _get_start_indices_of_nth_subvolume,
     vectorize_unroll,
 )
-from String import String
 from Range import range
 from Reductions import _reduce_generator
 from TypeUtilities import rebind
