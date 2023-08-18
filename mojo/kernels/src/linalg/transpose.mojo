@@ -23,7 +23,6 @@ from runtime.llcl import OutputChainPtr
 from math import div_ceil, min
 from Memory import memcpy
 from Pointer import DTypePointer
-from Range import range
 from sys.info import sizeof, simdwidthof
 from TypeUtilities import rebind
 

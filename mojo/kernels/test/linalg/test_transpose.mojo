@@ -9,7 +9,6 @@ from Buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
 from List import DimList
 from Transpose import transpose, transpose_inplace, _simplify_transpose_perms
-from Range import range
 
 
 # CHECK-LABEL: test_transpose_4x4

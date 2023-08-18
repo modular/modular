@@ -10,7 +10,6 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Range import range
 from List import DimList
 from Index import Index, StaticIntTuple
 from Pointer import DTypePointer

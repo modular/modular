@@ -15,7 +15,6 @@ from Buffer import NDBuffer
 from List import DimList
 from Memory import memset_zero, memcpy
 from Pointer import DTypePointer
-from Range import range
 from sys.info import sizeof
 
 

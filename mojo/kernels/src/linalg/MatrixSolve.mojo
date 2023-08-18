@@ -12,7 +12,6 @@ from Index import Index
 from Index import StaticIntTuple
 from List import DimList
 from runtime.llcl import OutputChainPtr
-from Range import range
 from Tracing import TraceLevel
 from TypeUtilities import rebind
 

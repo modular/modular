@@ -11,7 +11,6 @@ from Pointer import Pointer, DTypePointer
 from List import DimList
 from Index import Index
 from math import iota
-from Range import range
 from Vector import DynamicVector
 
 

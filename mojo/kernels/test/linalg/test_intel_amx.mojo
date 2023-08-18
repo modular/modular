@@ -24,7 +24,6 @@ from IntelAMX import _tile_loadconfig, _tile_storeconfig, _tile_release
 from IntelAMX import _tile_zero, _tile_dpbssd, _tile_dpbssd_emulated
 from IntelAMX import _tile_loadd, _tile_stored
 from IntelAMX import init_intel_amx, tileconfig
-from Range import range
 
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`

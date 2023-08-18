@@ -46,7 +46,6 @@ from MatmulUtils import (
 )
 from Matrix import Matrix
 from Pointer import DTypePointer
-from Range import range
 from sys.info import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
 from TypeUtilities import rebind

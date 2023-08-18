@@ -15,7 +15,6 @@ from AppleAMX import amx_detail
 from Buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
-from Range import range
 from sys.info import is_apple_m1, sizeof
 
 

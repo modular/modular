@@ -8,7 +8,6 @@
 from List import DimList, Dim
 from Matmul import pack_b
 from math import div_ceil
-from Range import range
 from Buffer import Buffer, NDBuffer
 from Index import StaticIntTuple
 
