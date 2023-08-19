@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements higher-order functions."""
 
-from Assert import assert_param
 from Index import StaticIntTuple
 from List import VariadicList
 from runtime.llcl import (
@@ -155,7 +154,7 @@ fn vectorize[
     Args:
         size: The total loop count.
     """
-    assert_param[simd_width > 0, "simd width must be > 0"]()
+    constrained[simd_width > 0, "simd width must be > 0"]()
     vectorize_unroll[simd_width, 1, func](size)
 
 
@@ -183,8 +182,8 @@ fn vectorize_unroll[
     Args:
         size: The total loop count.
     """
-    assert_param[simd_width > 0, "simd width must be > 0"]()
-    assert_param[unroll_factor > 0, "unroll factor must be > 0"]()
+    constrained[simd_width > 0, "simd width must be > 0"]()
+    constrained[unroll_factor > 0, "unroll factor must be > 0"]()
 
     alias unrolled_simd_width = simd_width * unroll_factor
     let vector_end_unrolled_simd = (
@@ -918,11 +917,11 @@ fn _get_start_indices_of_nth_subvolume[
         Constructed ND-index.
     """
 
-    assert_param[
+    constrained[
         subvolume_rank <= rank,
         "subvolume rank cannot be greater than indices rank",
     ]()
-    assert_param[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
+    constrained[subvolume_rank >= 0, "subvolume rank must be non-negative"]()
 
     # fast impls for common cases
     @parameter
@@ -1006,7 +1005,7 @@ fn _elementwise_impl[
         shape: The shape of the buffer.
         out_chain: The our chain to attach results to.
     """
-    assert_param[rank == 1, "Specialization for 1D"]()
+    constrained[rank == 1, "Specialization for 1D"]()
 
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1076,7 +1075,7 @@ fn _elementwise_impl[
         out_chain: The our chain to attach results to.
     """
 
-    assert_param[rank > 1, "Specialization for ND where N > 1"]()
+    constrained[rank > 1, "Specialization for ND where N > 1"]()
 
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 

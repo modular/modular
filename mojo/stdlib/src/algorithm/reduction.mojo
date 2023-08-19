@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements SIMD reductions."""
 
-from Assert import assert_param, debug_assert
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from algorithm import (
     vectorize,
@@ -316,7 +315,7 @@ fn _reduce_3D[
     fn get_unroll_factor[simd_width: Int, dtype_size: Int]() -> Int:
         alias cache_line_size = 64
         alias unroll_factor = cache_line_size // (simd_width * dtype_size)
-        assert_param[unroll_factor > 0, "unroll_factor must be > 0"]()
+        constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
     alias unroll_factor = get_unroll_factor[simd_width, sizeof[type]()]()
@@ -1489,7 +1488,7 @@ fn argmax[
         out_chain: The chain to attach results to.
     """
 
-    assert_param[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     _argn[type, out_type, rank, True](input, axis, output, out_chain)
 
@@ -1523,7 +1522,7 @@ fn argmax[
         out_chain: The chain to attach results to.
     """
 
-    assert_param[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     argmax(input, axis_buf[0].to_int(), output, out_chain)
 
@@ -1559,7 +1558,7 @@ fn argmin[
         out_chain: The chain to attach results to.
     """
 
-    assert_param[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     _argn[type, out_type, rank, False](input, axis, output, out_chain)
 
@@ -1593,7 +1592,7 @@ fn argmin[
         out_chain: The chain to attach results to.
     """
 
-    assert_param[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
+    constrained[rank <= 2, "ArgMax: rank other than 2 not supported yet"]()
 
     argmin(input, axis_buf[0].to_int(), output, out_chain)
 
