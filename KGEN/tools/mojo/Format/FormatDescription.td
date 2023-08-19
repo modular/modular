@@ -7,6 +7,6 @@
 include "DescriptionBase.td"
 
 def FormatDescription : MojoCommandDescription<
-  "format", "Formats Mojo source file.",
+  "format", "Formats Mojo source files.",
   "Format the given set of Mojo sources.",
   [UsageInfo<"options", "sources", /*variadicInput=*/true>]>, Index<4>;
