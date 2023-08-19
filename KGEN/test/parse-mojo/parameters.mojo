@@ -6,7 +6,6 @@
 
 # RUN: kgen-translate -import-mojo %s -verify-diagnostics | kgen-opt -verify-parameters | FileCheck %s
 
-from Assert import assert_param
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -26,8 +25,8 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.func @"paramArith{{.*}}"<{{.*}}x: {{.*}}@Int>() -> !lit.none
 fn paramArith[x: Int]():
-  # CHECK: kgen.call @"$Assert"::@"assert_param[{{.*}}$Bool::Bool]()"<{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>()
-  assert_param[x == -100 + 1]()
+  # CHECK: kgen.call @"$builtin"::@"$constrained"::@"constrained[{{.*}}$Bool::Bool]()"<{{.*}}apply({{.*}}__eq__{{.*}}, {{.*}}x, {{.*}}-99{{.*}})>()
+  constrained[x == -100 + 1]()
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
   return a
@@ -381,9 +380,9 @@ fn passFunctionParam2():
   # CHECK-SAME: :<dtype>() -> !lit.none @"$parameters"::@"callableWithParam{{.*}}">()
   takeCallable2[callableWithParam]()
 
-# CHECK-LABEL: lit.func @"my_assert_param{{.*}}()"
+# CHECK-LABEL: lit.func @"my_constrained{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: {{.*}}@"$Bool"::@Bool, [[MESSAGE:.*]]: {{.*}}@StringLiteral>
-fn my_assert_param[cond: Bool, message: StringLiteral]():
+fn my_constrained[cond: Bool, message: StringLiteral]():
     # CHECK: kgen.param.assert <apply({{.*}}__mlir_i1__{{.*}}, [[COND]])>, #lit.struct.extract<{{.*}}[[MESSAGE]], "value">
     __mlir_op.`kgen.param.assert`[cond:cond.__mlir_i1__(), message:message.value]()
     return
@@ -391,8 +390,8 @@ fn my_assert_param[cond: Bool, message: StringLiteral]():
 
 # CHECK-LABEL: lit.func @"pass_str_param
 fn pass_str_param():
-    # CHECK: kgen.call {{.+}}my_assert_param{{.*}}"<{{.*}}true{{.*}}, :{{.*}}@StringLiteral {{.*}}"foo"{{.*}}>()
-    my_assert_param[1==1, "foo"]()
+    # CHECK: kgen.call {{.+}}my_constrained{{.*}}"<{{.*}}true{{.*}}, :{{.*}}@StringLiteral {{.*}}"foo"{{.*}}>()
+    my_constrained[1==1, "foo"]()
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution
@@ -442,7 +441,7 @@ struct MyVector[size: Int, dtype: MyDType]:
 fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
                             b: MyVector[4, dt]):
 
-   assert_param[dt == MyDType.float64]()
+   constrained[dt == MyDType.float64]()
 
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup
