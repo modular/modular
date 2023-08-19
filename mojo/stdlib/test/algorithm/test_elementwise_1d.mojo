@@ -6,7 +6,7 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from Buffer import Buffer
+from memory.buffer import Buffer
 from algorithm import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu

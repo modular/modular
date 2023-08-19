@@ -6,14 +6,14 @@
 """Implements SIMD reductions."""
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, NDBuffer, prod_dims
+from memory.buffer import Buffer, NDBuffer, prod_dims
 from algorithm import (
     vectorize,
     async_parallelize,
     unroll,
 )
 from algorithm.functional import _get_num_workers
-from Pointer import Pointer
+from memory.unsafe import Pointer
 from math.bit import cttz
 from Index import StaticIntTuple
 from List import DimList, Dim

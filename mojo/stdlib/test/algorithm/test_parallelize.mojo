@@ -9,7 +9,7 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from Buffer import Buffer
+from memory.buffer import Buffer
 from algorithm import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
