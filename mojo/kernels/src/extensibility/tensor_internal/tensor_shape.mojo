@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from Assert import assert_param, debug_assert
 from List import VariadicList
 from Index import StaticIntTuple
 from memory import memcpy
@@ -290,7 +289,7 @@ struct _RepOutOfLine:
     @always_inline
     fn __init__() -> Self:
         """Default initializes the _RepOutOfLine type."""
-        assert_param[
+        constrained[
             is_little_endian(),
             (
                 "the out of line representation is only implemetned on little"
