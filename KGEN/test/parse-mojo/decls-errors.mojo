@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics -split-input-file %s
 
-from Pointer import Pointer
+from memory.unsafe import Pointer
 
 
 ##===----------------------------------------------------------------------===##
@@ -689,7 +689,7 @@ def func_overloaded(x: Bool):
 
 
 # Issue #12090
-from Pointer import DTypePointer # expected-note {{previous definition here}}
+from memory.unsafe import DTypePointer # expected-note {{previous definition here}}
 struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
     pass
 
