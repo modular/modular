@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Matrix Solve functions."""
 
-from Assert import assert_param
 from memory.buffer import NDBuffer
 from algorithm.functional import _elementwise_impl
 from Index import Index
@@ -24,9 +23,9 @@ fn matrix_solve_tiny[
     B: NDBuffer[2, DimList(M, N), type],
 ):
     """Solve A*X = B, where A is a 3x3 matrix, B and X are 3x2."""
-    assert_param[M == 3]()
-    assert_param[N == 2]()
-    assert_param[K == 3]()
+    constrained[M == 3]()
+    constrained[N == 2]()
+    constrained[K == 3]()
 
     # A matrix
     let A00 = A[0, 0]
@@ -89,8 +88,8 @@ fn matrix_solve[
     A specialized matrix solver for batch_sizex3x3 matrix LHS
     and batch_sizex3x2 RHS.
     """
-    assert_param[a_rank == b_rank]()
-    assert_param[a_rank == x_rank]()
+    constrained[a_rank == b_rank]()
+    constrained[a_rank == x_rank]()
 
     out_chain.trace[TraceLevel.OP]("mojo.matrix_solve")
 

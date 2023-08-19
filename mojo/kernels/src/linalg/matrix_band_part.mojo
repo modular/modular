@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from Assert import assert_param
 from memory.buffer import NDBuffer
 from algorithm.functional import _elementwise_impl
 from Index import Index
@@ -35,7 +34,7 @@ fn matrix_band_part[
     let upper_diagonal_index = num_upper[0].to_int()
     let exclude = exclude_buf[0] != 0
 
-    assert_param[rank >= 2, "Matrix band only supports rank >=2"]()
+    constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
     @parameter
     @always_inline

@@ -10,7 +10,6 @@
 #
 # ===----------------------------------------------------------------------===#
 
-from Assert import assert_param
 from memory.buffer import NDBuffer
 from List import DimList
 from memory import memset_zero, memcpy
@@ -288,7 +287,7 @@ struct amx_detail:
         #    z_row_suboffset needs to be 0-4.
 
         # The destination must be either "X" or "Y".
-        assert_param[
+        constrained[
             __mlir_attr[
                 `#kgen.param.expr<in,`,
                 destination,
@@ -300,7 +299,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be Float32.
-        assert_param[type == DType.float32]()
+        constrained[type == DType.float32]()
 
         # make the y offset field
         #  shift left by 6 to make this an offset in rows,
@@ -345,7 +344,7 @@ struct amx_detail:
         #  x_row_index, y_row_index : always in [0, 8).
 
         # The mode must be either "TILE" or "ROW".
-        assert_param[
+        constrained[
             __mlir_attr[
                 `#kgen.param.expr<in,`,
                 mode,
@@ -357,7 +356,7 @@ struct amx_detail:
             ]
         ]()
         # The type must be Float32.
-        assert_param[type == DType.float32]()
+        constrained[type == DType.float32]()
 
         let is_row_mode = __mlir_attr[
             `#kgen.param.expr<eq,`,

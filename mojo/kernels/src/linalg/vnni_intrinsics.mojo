@@ -10,7 +10,6 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from Assert import assert_param
 from sys.info import has_avx512_vnni
 
 # ===----------------------------------------------------------------------===#
@@ -144,7 +143,7 @@ fn vpdpbusd[
             )
         )
     else:
-        assert_param[width == 4]()
+        constrained[width == 4]()
         return rebind[SIMD[c_type, width]](
             vpdpbusd_4(
                 rebind[SIMD[DType.int32, 4]](src),
@@ -293,7 +292,7 @@ fn dot_i8_to_i32_AVX2[
             )
         )
     else:
-        assert_param[width == 4]()
+        constrained[width == 4]()
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_4(
                 rebind[SIMD[DType.int32, 4]](src),

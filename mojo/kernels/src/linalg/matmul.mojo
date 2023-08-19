@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import (
     NDBuffer,
     Buffer,
@@ -190,7 +189,7 @@ struct PackMatrixRows[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param[row_inner_size % simd_size == 0]()
+        constrained[row_inner_size % simd_size == 0]()
 
         let instance = Self(
             packed_matrix,
@@ -426,7 +425,7 @@ struct PackMatrixCols[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        assert_param[column_inner_size % simd_size == 0]()
+        constrained[column_inner_size % simd_size == 0]()
         debug_assert(
             pack_tile_dim[1] % column_inner_size == 0,
             "Unimplemented tile pattern.",
@@ -513,7 +512,7 @@ struct PackMatrixCols[
     @adaptive
     fn _pack(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI."""
-        assert_param[use_vnni]()
+        constrained[use_vnni]()
         let kc = self.valid_data_dim[0]
         let nc = self.valid_data_dim[1]
         let nr = column_inner_size
@@ -538,7 +537,7 @@ struct PackMatrixCols[
     fn _pack(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
-        assert_param[not use_vnni]()
+        constrained[not use_vnni]()
         let valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
         alias unroll_factor = get_packB_unroll_factor()
 
@@ -830,7 +829,7 @@ struct MatmulInnerLoopBPacked[
                 coordinates within the current processing tile to index the
                 packed B matrix.
         """
-        assert_param[a_col_size > 1]()
+        constrained[a_col_size > 1]()
 
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
@@ -904,7 +903,7 @@ struct MatmulInnerLoopBPacked[
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        assert_param[a_col_size == 1]()
+        constrained[a_col_size == 1]()
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
@@ -968,7 +967,7 @@ struct MatmulInnerLoopBPacked[
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        assert_param[a_col_size == 0]()
+        constrained[a_col_size == 0]()
         # Seek outer indices in packed layout.
         let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
@@ -1019,7 +1018,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[Self.use_vnni]()
+        constrained[Self.use_vnni]()
         debug_assert(
             self.tile_n_k[1] % 0 == 0, "K dimension must be a multipel of 4"
         )
@@ -1053,9 +1052,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[
-            not Self.use_vnni and (not has_neon() or critical_stride)
-        ]()
+        constrained[not Self.use_vnni and (not has_neon() or critical_stride)]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -1084,7 +1081,7 @@ struct MatmulInnerLoopBPacked[
         """Utility funcion on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        assert_param[has_neon() and not critical_stride]()
+        constrained[has_neon() and not critical_stride]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -2069,7 +2066,7 @@ fn matmul[
     out_chain: OutputChainPtr,
     num_threads: Int = -1,
 ):
-    assert_param[not transpose_a, "transpose_a not yet supported"]()
+    constrained[not transpose_a, "transpose_a not yet supported"]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
     let m = shape.M
@@ -2139,7 +2136,7 @@ fn _submatmul_sequential_sync[
     sub_matrix_offset: GemmShape,
     rowwise_epilogue_fn: fn (Int, Int) capturing -> None,
 ):
-    assert_param[not transpose_a, "transpose_a not yet supported"]()
+    constrained[not transpose_a, "transpose_a not yet supported"]()
 
     let shape = GemmShape.get[False, transpose_b](c, a, b)
     let k = shape.K

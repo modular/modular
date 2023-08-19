@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
 from memory.buffer import NDBuffer
 from List import DimList
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
@@ -45,7 +44,7 @@ fn _small_batched_matmul[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    assert_param[
+    constrained[
         rank == 3 and not adj_a and not adj_b,
         "_small_batched_matmul only supports rank 3 non-transposed inputs",
     ]()
@@ -273,8 +272,8 @@ fn batched_matmul[
     # fmt: on
     out_chain: OutputChainPtr,
 ):
-    assert_param[not adj_a, "batched matmul does not support adj_a yet"]()
-    assert_param[rank < 5, "max rank for batched matmul is currently 4"]()
+    constrained[not adj_a, "batched matmul does not support adj_a yet"]()
+    constrained[rank < 5, "max rank for batched matmul is currently 4"]()
     var batch_size: Int = c_buf.dim[0]()
     if c_buf.get_rank() == 4:
         batch_size *= c_buf.dim(1)

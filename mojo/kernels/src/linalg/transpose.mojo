@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from Assert import assert_param
 from memory.buffer import Buffer, NDBuffer
 from algorithm import (
     unroll,
@@ -31,8 +30,8 @@ fn _transpose_inplace_4x4[
     cols: Int,
     type: DType,
 ](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
-    assert_param[rows == 4]()
-    assert_param[cols == 4]()
+    constrained[rows == 4]()
+    constrained[cols == 4]()
     let buf = rebind[
         NDBuffer[
             2,
@@ -67,8 +66,8 @@ fn _transpose_inplace_8x8[
     cols: Int,
     type: DType,
 ](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
-    assert_param[rows == 8]()
-    assert_param[cols == 8]()
+    constrained[rows == 8]()
+    constrained[cols == 8]()
     let buf = rebind[
         NDBuffer[
             2,
@@ -137,8 +136,8 @@ fn _transpose_inplace_16x16[
     cols: Int,
     type: DType,
 ](bufloat0: NDBuffer[2, DimList(rows, cols), type]):
-    assert_param[rows == 16]()
-    assert_param[cols == 16]()
+    constrained[rows == 16]()
+    constrained[cols == 16]()
     let buf = rebind[
         NDBuffer[
             2,
@@ -293,7 +292,7 @@ fn transpose_inplace[
     type: DType,
 ](buf: NDBuffer[2, DimList(rows, cols), type]):
     # Reject sizes covered by specialized implementations
-    assert_param[rows == cols]()
+    constrained[rows == cols]()
 
     @parameter
     if rows == 4:
@@ -353,7 +352,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    assert_param[rank > 0]()
+    constrained[rank > 0]()
     strides[rank - 1] = 1
 
     @always_inline

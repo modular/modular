@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param
 from memory.buffer import NDBuffer
 from List import DimList
 from Index import StaticIntTuple
@@ -127,11 +126,11 @@ struct Matrix[
             self.data[StaticIntTuple[2](x, y)] = val
 
     fn simd_load[width: Int](self, idxi: Int, idxj: Int) -> SIMD[type, width]:
-        assert_param[not transposed]()
+        constrained[not transposed]()
         return self.data.simd_load[width](StaticIntTuple[2](idxi, idxj))
 
     fn simd_store[
         width: Int
     ](self, idxi: Int, idxj: Int, val: SIMD[type, width]):
-        assert_param[not transposed]()
+        constrained[not transposed]()
         return self.data.simd_store[width](StaticIntTuple[2](idxi, idxj), val)
