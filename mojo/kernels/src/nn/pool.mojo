@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import debug_assert, assert_param
 from memory.buffer import NDBuffer
 from algorithm import async_parallelize, vectorize_unroll
 from Image import ImageData, Image2DLayout, ImageShape
@@ -400,7 +399,7 @@ fn _pool_dispatcher[
     let pad_h = StaticIntTuple[2](0, 0)
     let pad_w = StaticIntTuple[2](0, 0)
 
-    assert_param[
+    constrained[
         type.is_floating_point(),
         "Pool input / output type must be floating point",
     ]()

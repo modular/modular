@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from sys.build import is_debug_build
 from memory.buffer import NDBuffer
 from List import DimList
@@ -82,8 +81,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Image2DLayout.NCHW]()
-    assert_param[filter_layout == Image2DLayout.NCHW]()
+    constrained[data_layout == Image2DLayout.NCHW]()
+    constrained[filter_layout == Image2DLayout.NCHW]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -119,8 +118,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Image2DLayout.NHWC]()
-    assert_param[filter_layout == Image2DLayout.NHWC]()
+    constrained[data_layout == Image2DLayout.NHWC]()
+    constrained[filter_layout == Image2DLayout.NHWC]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -156,8 +155,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Image2DLayout.NHWC]()
-    assert_param[filter_layout == Image2DLayout.RSCF]()
+    constrained[data_layout == Image2DLayout.NHWC]()
+    constrained[filter_layout == Image2DLayout.RSCF]()
 
     return ConvShape {
         n: input.dim[0](),
@@ -193,8 +192,8 @@ fn get_conv2d_shape[
     stride: StaticIntTuple[2],
     dilation: StaticIntTuple[2],
 ) -> ConvShape:
-    assert_param[data_layout == Image2DLayout.NHWC]()
-    assert_param[
+    constrained[data_layout == Image2DLayout.NHWC]()
+    constrained[
         (filter_rank == 4 and filter_layout == Image2DLayout.RSCF)
         or (filter_rank == 5 and filter_layout == Image2DLayout.FRSCf)
     ]()

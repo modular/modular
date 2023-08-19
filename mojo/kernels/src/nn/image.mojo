@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
@@ -68,11 +67,11 @@ struct ImageData[
         Returns:
             An ImageData instance.
         """
-        assert_param[static_layout == Image2DLayout.UNKNOWN]()
+        constrained[static_layout == Image2DLayout.UNKNOWN]()
         return Self {data: data, dynamic_layout: layout}
 
     fn __init__(data: NDBuffer[4, shape, type]) -> Self:
-        assert_param[static_layout != Image2DLayout.UNKNOWN]()
+        constrained[static_layout != Image2DLayout.UNKNOWN]()
         return Self {data: data, dynamic_layout: static_layout}
 
     fn to_static_layout[
@@ -84,7 +83,7 @@ struct ImageData[
         Returns:
             The image data with static data layout.
         """
-        assert_param[static_layout == Image2DLayout.UNKNOWN]()
+        constrained[static_layout == Image2DLayout.UNKNOWN]()
         return ImageData[shape, type, new_static_layout](self.data)
 
     fn get_layout(self) -> Image2DLayout:

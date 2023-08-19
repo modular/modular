@@ -108,7 +108,7 @@ fn broadcast_impl[
     output: NDBuffer[rank, output_shape, type],
     input: NDBuffer[rank, input_shape, type],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
-    # dim[axis+1](), which requires more `assert_param` to keep in bound
+    # dim[axis+1](), which requires more `constrained` to keep in bound
     input_prev_axis_stride: Int,
     output_prev_axis_stride: Int,
     input_offset: Int,

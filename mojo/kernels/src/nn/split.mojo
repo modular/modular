@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
 from Index import product
 from sys import external_call
@@ -121,7 +120,7 @@ fn _split_inner[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     outputs: _NDBufferVector[rank, type],
 ):
-    assert_param[axis == 0, "_split_inner only supports axis 0"]()
+    constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(outputs.__len__()):
         let output_buf = outputs[i].flatten()

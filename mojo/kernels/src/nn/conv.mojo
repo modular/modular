@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import (
     NDBuffer,
     Buffer,
@@ -458,7 +457,7 @@ struct PackIm2ColNCHW[
         # Makes sure the block size is vector compatible.
 
         # TODO: add this.
-        # assert_param[is_divisible_by[block_size, simd_size]()]
+        # constrained[is_divisible_by[block_size, simd_size]()]
 
         # Convert output index to input index.
         let global_in_image_offset = self._output_to_input(
@@ -2872,7 +2871,7 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         n_ho_wo: Int,
     ):
-        assert_param[
+        constrained[
             not has_residual or (has_residual and micro_kernel_width == 1),
             "Use Height x 1 kernel for residual in F.",
         ]()
@@ -3458,12 +3457,12 @@ struct ConvDirectNHWC[
         """Inner loop computation with padding
         Given input (ho, wo), this kernel accumulates over the stencil RxS.
         """
-        assert_param[
+        constrained[
             not has_residual or (has_residual and micro_kernel_width == 1),
             "Use Height x 1 kernel for residual in F.",
         ]()
 
-        assert_param[
+        constrained[
             not w_padding_impact
             or (w_padding_impact and micro_kernel_height == 1),
             "USE 1 x width kernel on boundary",
@@ -3918,11 +3917,11 @@ fn conv_2d_nhwc_direct[
     conv_info: ConvInfo[conv_info_static],
     out_chain: OutputChainPtr,
 ):
-    assert_param[
+    constrained[
         input_type == filter_type and input_type == output_type,
         "conv input/output/filter types must be the same",
     ]()
-    assert_param[
+    constrained[
         (filter_packed and filter_rank == 5)
         or (not filter_packed and filter_rank == 4),
         "unexpected filter rank for filter layout",

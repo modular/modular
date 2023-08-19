@@ -6,7 +6,6 @@
 
 """The module contains implementations of activation functions."""
 
-from Assert import assert_param
 from math.bit import _is_neg
 from List import VariadicList
 from runtime.llcl import OutputChainPtr
@@ -68,7 +67,7 @@ fn dispatch_activation_fn[
     elif activation == ActivationType.GELU:
         return gelu(val)
     else:
-        assert_param[False, "unsupported activation"]()
+        constrained[False, "unsupported activation"]()
 
     return val
 
@@ -244,7 +243,7 @@ fn _erf[
     `Abramowitz and Stegun from "Handbook of Mathematical Functions"`.
     This version is used in oneDNN.
     """
-    assert_param[type.is_floating_point(), "must be a floating point value"]()
+    constrained[type.is_floating_point(), "must be a floating point value"]()
     let x_abs = abs(x)
     # t = 1 / (1 + p * abs(x))
     let t = 1 / x_abs.fma(0.3275911, 1)
@@ -287,7 +286,7 @@ fn gelu[
         Type must be a floating point type.
     """
     alias inv_SQRT_2 = 0.70710678118654752440
-    assert_param[
+    constrained[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
@@ -324,7 +323,7 @@ fn gelu_approximate[
         SIMD[type, size]: The result of the approximate GELU operation.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
-    assert_param[
+    constrained[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
@@ -352,7 +351,7 @@ fn gelu_approximate_sigmoid[
     Constraints:
         Type must be a floating point type.
     """
-    assert_param[
+    constrained[
         type.is_floating_point(), "dtype must be a floating point type"
     ]()
     return x * sigmoid(x * 1.702)

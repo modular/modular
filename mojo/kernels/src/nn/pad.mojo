@@ -9,7 +9,6 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
-from Assert import debug_assert
 from memory.buffer import Buffer, NDBuffer
 from Index import StaticIntTuple
 from List import Dim, DimList

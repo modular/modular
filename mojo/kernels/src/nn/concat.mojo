@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import Buffer, NDBuffer
 from sys.build import is_kernels_debug_build
 from algorithm import sync_parallelize
@@ -256,7 +255,7 @@ fn _concat_inner[
     output: NDBuffer[rank, DimList.create_unknown[rank](), type],
     inputs: VariadicList[NDBuffer[rank, DimList.create_unknown[rank](), type]],
 ):
-    assert_param[axis == 0, "_concat_inner only supports axis 0"]()
+    constrained[axis == 0, "_concat_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(inputs.__len__()):
         let buffer_len = inputs[i].size()

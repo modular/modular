@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Assert import assert_param, debug_assert
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from algorithm import (
     vectorize,
@@ -59,10 +58,10 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    assert_param[input_rank == 2]()
-    assert_param[indices_rank == 2]()
-    assert_param[gather_axis == 0]()
-    assert_param[reduce_axis == 1]()
+    constrained[input_rank == 2]()
+    constrained[indices_rank == 2]()
+    constrained[gather_axis == 0]()
+    constrained[reduce_axis == 1]()
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -451,14 +450,14 @@ fn scatter_nd[
     """A specialized scatter for updates[i0][i1][i2][i3], indices[i0][i1][1],
     output[o0][i2][i3]. TODO(#15445): Make this general."""
 
-    assert_param[type.is_float64(), "scatter_nd only supports F64 currently"]()
-    assert_param[
+    constrained[type.is_float64(), "scatter_nd only supports F64 currently"]()
+    constrained[
         updates_rank == 4, "scatter_nd updates rank must be 4 currently"
     ]()
-    assert_param[
+    constrained[
         indices_rank == 3, "scatter_nd indices rank must be 3 currently"
     ]()
-    assert_param[
+    constrained[
         output_rank == 3, "scatter_nd output rank must be 3 currently"
     ]()
 
@@ -540,7 +539,7 @@ fn gather_shape[
         The output shape.
     """
 
-    assert_param[
+    constrained[
         output_rank == input_rank + indices_rank - 1,
         "output rank must equal (input_rank + indices_rank - 1)",
     ]()
