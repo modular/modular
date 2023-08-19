@@ -7,7 +7,7 @@
 from Arange import arange, arange_shape
 from Activations import relu, gelu, sigmoid
 from Assert import assert_param, debug_assert
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from Concat import concat_shape, concat as _concat
 from Conv import (
     conv_shape,
@@ -30,7 +30,7 @@ from algorithm.functional import _elementwise_impl
 from algorithm.reduction import _reduce_generator
 from sys.intrinsics import strided_load
 from Index import Index, StaticIntTuple
-from Memory import memset_zero
+from memory import memset_zero
 from List import Dim, DimList, VariadicList
 from OptionalParam import OptionalParamInt
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
@@ -81,7 +81,7 @@ from MatmulUtils import (
 )
 from MOGGDecorators import *
 from Pad import pad as _pad, pad_shape
-from Pointer import Pointer, DTypePointer
+from memory.unsafe import Pointer, DTypePointer
 from Pool import avg_pool, pool_shape, max_pool
 from sys.info import simdwidthof
 from Tracing import Trace, TraceLevel
