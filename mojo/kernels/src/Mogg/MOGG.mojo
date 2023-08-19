@@ -6,7 +6,6 @@
 
 from Arange import arange, arange_shape
 from Activations import relu, gelu, sigmoid
-from Assert import assert_param, debug_assert
 from memory.buffer import NDBuffer
 from Concat import concat_shape, concat as _concat
 from Conv import (
@@ -1505,7 +1504,7 @@ fn matmul[
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
 
-    assert_param[
+    constrained[
         not (b_packed and transpose_b),
         (
             "transpose_b and b_packed cannot both be true because pre-packing"
@@ -1749,7 +1748,7 @@ fn conv[
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
     but eventually they will be StaticIntTuple parameters (along with padding).
     """
-    assert_param[
+    constrained[
         strides_type.is_integral() and dilation_type.is_integral(),
         "stride and dilation must have integral type",
     ]()
