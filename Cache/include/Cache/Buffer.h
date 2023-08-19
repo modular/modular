@@ -43,8 +43,10 @@ public:
   /// Map in a file and use it as the backing storage for the BufferRef. If size
   /// and offset are provided, then a sub-range of the file is mapped in. This
   /// file is mapped read-only.
-  static ErrorOr<BufferRef> getFile(const std::filesystem::path &filepath,
-                                    size_t size = 0, size_t offset = 0);
+  static ErrorOr<BufferRef>
+  getFile(const std::filesystem::path &filepath,
+          std::optional<size_t> size = std::nullopt,
+          std::optional<size_t> offset = std::nullopt);
 
   /// Take ownership of an `llvm::MemoryBuffer` and use that as the backing
   /// storage for the BufferRef.

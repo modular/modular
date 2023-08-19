@@ -55,7 +55,8 @@ openFile(const std::filesystem::path &filepath, bool readOnly) {
 }
 
 ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
-                                   size_t size, size_t offset) {
+                                   std::optional<size_t> size,
+                                   std::optional<size_t> offset) {
   auto fdOr = openFile(filepath, /*readOnly=*/true);
   if (fdOr.isError())
     return fdOr.takeError();
@@ -63,17 +64,18 @@ ErrorOr<BufferRef> Buffer::getFile(const std::filesystem::path &filepath,
   llvm::sys::fs::file_status status = fdOr->second;
 
   // If no size was provided, use the file's size.
-  if (size == 0)
+  if (!size)
     size = status.getSize();
 
-  // If the size is still zero, then we have an empty buffer. Since Buffer is
+  // If the size is zero, then we have an empty buffer. Since Buffer is
   // read-only, we can simply return an empty string.
   if (size == 0)
     return BufferRef::create("");
 
   std::error_code ec;
   llvm::sys::fs::mapped_file_region mappedFile(
-      fd, llvm::sys::fs::mapped_file_region::readonly, size, offset, ec);
+      fd, llvm::sys::fs::mapped_file_region::readonly, *size,
+      offset.value_or(0), ec);
   if (ec)
     return Error(ec.message());
 
