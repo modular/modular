@@ -7,9 +7,9 @@
 
 from Assert import assert_param
 from sys import llvm_intrinsic
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from math import is_power_of_2
-from Memory import stack_allocation as _generic_stack_allocation
+from memory import stack_allocation as _generic_stack_allocation
 from sys.info import simdwidthof, alignof, sizeof
 
 
