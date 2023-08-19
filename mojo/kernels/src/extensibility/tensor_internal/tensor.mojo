@@ -11,7 +11,7 @@ Example:
 ```mojo
 from Tensor import Tensor, TensorSpec, TensorShape
 from Index import Index
-from Random import rand
+from random import rand
 
 let height = 256
 let width = 256
