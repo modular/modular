@@ -12,8 +12,8 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 from List import Dim, DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import fma, min, max, iota
-from Memory import stack_allocation, memset_zero
-from Pointer import Pointer, DTypePointer
+from .memory import stack_allocation
+from .unsafe import Pointer, DTypePointer
 from StaticTuple import StaticTuple
 from sys.info import sizeof, simdwidthof, alignof
 from TypeUtilities import rebind
@@ -309,7 +309,12 @@ struct Buffer[size: Dim, type: DType]:
     @always_inline
     fn zero(self):
         """Sets all bytes of the Buffer to 0."""
-        memset_zero(self.data, self.__len__())
+        llvm_intrinsic["llvm.memset", NoneType](
+            self.data.address,
+            UInt8(0).value,
+            self.bytecount().value,
+            (False).__mlir_i1__(),
+        )
 
     fn simd_fill[simd_width: Int](self, val: SIMD[type, 1]):
         """Assigns val to all elements in chunks of size simd_width.

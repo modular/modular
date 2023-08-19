@@ -7,7 +7,7 @@
 
 from Assert import assert_param
 from TypeUtilities import rebind
-from Pointer import Pointer
+from memory.unsafe import Pointer
 
 # ===----------------------------------------------------------------------===#
 # Dim
