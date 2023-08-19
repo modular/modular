@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides utilities for working with static and variadic lists."""
 
-from Assert import assert_param
 from memory.unsafe import Pointer
 
 # ===----------------------------------------------------------------------===#
@@ -202,7 +201,7 @@ struct DimList:
         Returns:
             The dimension at the specified index.
         """
-        assert_param[i >= 0, "negative index"]()
+        constrained[i >= 0, "negative index"]()
         return self.value[i]
 
     @always_inline
@@ -292,7 +291,7 @@ struct DimList:
         Returns:
             A list of all dynamic dimension values.
         """
-        assert_param[length > 0, "length must be positive"]()
+        constrained[length > 0, "length must be positive"]()
         alias u = Dim()
 
         @parameter
@@ -514,7 +513,7 @@ fn _convert_int_to_index_variadic_list[
             l[13].value,
             l[14].value,
         )
-    assert_param[sz == 16]()
+    constrained[sz == 16]()
     return VariadicList[__mlir_type.`index`](
         l[0].value,
         l[1].value,
