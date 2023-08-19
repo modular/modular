@@ -21,8 +21,8 @@ from NvidiaGPU import (
     DevicePointer,
     DTypeDevicePointer,
 )
-from Memory import memset_zero
-from Pointer import DTypePointer
+from memory import memset_zero
+from memory.unsafe import DTypePointer
 from sys.info import triple_is_nvidia_cuda, simdwidthof
 from runtime.llcl import OutputChainPtr
 
