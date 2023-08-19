@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Random import random_float64
+from random import random_float64
 from Benchmark import Benchmark
 
 

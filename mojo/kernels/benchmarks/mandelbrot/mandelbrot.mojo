@@ -24,7 +24,6 @@ from Benchmark import Benchmark
 from Assert import assert_param
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
-from TypeUtilities import rebind
 from math import abs
 
 alias float_type = DType.float64

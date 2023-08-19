@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import max, factorial, div_ceil, min
-from Time import now
+from time import now
 from Index import StaticIntTuple
 from algorithm import parallelize, async_parallelize
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
