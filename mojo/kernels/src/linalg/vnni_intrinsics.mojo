@@ -10,7 +10,6 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from TypeUtilities import rebind
 from Assert import assert_param
 from sys.info import has_avx512_vnni
 

@@ -48,7 +48,6 @@ from Matrix import Matrix
 from memory.unsafe import DTypePointer
 from sys.info import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
-from TypeUtilities import rebind
 from sys.intrinsics import PrefetchOptions, external_call
 from VNNI import dot_i8_to_i32_x86
 

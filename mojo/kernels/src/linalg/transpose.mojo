@@ -24,7 +24,6 @@ from math import div_ceil, min
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from sys.info import sizeof, simdwidthof
-from TypeUtilities import rebind
 
 
 fn _transpose_inplace_4x4[

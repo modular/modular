@@ -13,7 +13,6 @@ from Index import StaticIntTuple
 from List import DimList
 from runtime.llcl import OutputChainPtr
 from Tracing import TraceLevel
-from TypeUtilities import rebind
 
 
 @always_inline
