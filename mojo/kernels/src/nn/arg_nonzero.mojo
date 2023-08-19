@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from algorithm import (
     vectorize_unroll,
     async_parallelize,

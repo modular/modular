@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, NDBuffer, DynamicRankBuffer
+from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
 from Index import product
 from sys import external_call
 from List import Dim, VariadicList, DimList
-from Memory import memcpy
+from memory import memcpy
 from runtime.llcl import OutputChainPtr
 from algorithm import sync_parallelize
 from Vector import InlinedFixedVector

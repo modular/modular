@@ -9,10 +9,10 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from Buffer import NDBuffer, Buffer
+from memory.buffer import NDBuffer, Buffer
 from algorithm import elementwise
 from math import mul
-from Memory import stack_allocation
+from memory import stack_allocation
 from List import Dim, DimList
 from Index import StaticIntTuple, Index
 from runtime.llcl import Runtime, OwningOutputChainPtr

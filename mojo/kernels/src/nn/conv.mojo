@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import (
+from memory.buffer import (
     NDBuffer,
     Buffer,
     DynamicRankBuffer,
@@ -52,8 +52,8 @@ from MatmulUtils import (
     PartitionHeuristic,
     partition_work,
 )
-from Memory import memset_zero, stack_allocation
-from Pointer import DTypePointer
+from memory import memset_zero, stack_allocation
+from memory.unsafe import DTypePointer
 from ShapeFuncUtils import get_sliding_window_out_dim
 from sys.info import simd_byte_width, simdwidthof, alignof
 from TypeUtilities import rebind

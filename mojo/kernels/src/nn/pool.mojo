@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import debug_assert, assert_param
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from algorithm import async_parallelize, vectorize_unroll
 from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple

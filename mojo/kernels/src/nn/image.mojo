@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
 

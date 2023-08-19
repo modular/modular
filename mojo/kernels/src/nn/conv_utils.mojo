@@ -6,7 +6,7 @@
 
 from Assert import assert_param, debug_assert
 from sys.build import is_debug_build
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from List import DimList
 from Image import (
     ImageData,

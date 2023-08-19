@@ -10,11 +10,11 @@
 # ===----------------------------------------------------------------------===#
 
 from Assert import debug_assert
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from Index import StaticIntTuple
 from List import Dim, DimList
-from Memory import memcpy
-from Pointer import DTypePointer
+from memory import memcpy
+from memory.unsafe import DTypePointer
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides

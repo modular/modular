@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, NDBuffer, prod_dims
+from memory.buffer import Buffer, NDBuffer, prod_dims
 from algorithm import (
     vectorize,
     vectorize_unroll,

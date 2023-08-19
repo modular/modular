@@ -9,7 +9,7 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from Index import StaticIntTuple
 from List import DimList
 from Image import (

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from Index import StaticIntTuple
 from algorithm.functional import _elementwise_impl
 from List import DimList

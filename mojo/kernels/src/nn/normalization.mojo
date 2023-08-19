@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from algorithm import vectorize_unroll
 from List import Dim, DimList
 from algorithm import vectorize

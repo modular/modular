@@ -12,7 +12,7 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from GatherScatter import gather
 from Index import StaticIntTuple
 from List import DimList

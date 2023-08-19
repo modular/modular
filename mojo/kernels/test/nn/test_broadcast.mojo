@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Broadcast import broadcast
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
 

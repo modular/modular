@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Softmax import softmax_2_pass, logsoftmax
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from List import Dim, DimList
 from sys.info import simdwidthof
 from runtime.llcl import OwningOutputChainPtr, Runtime

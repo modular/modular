@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import debug_assert
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from algorithm import elementwise
 from Index import StaticIntTuple
 from runtime.llcl import OutputChainPtr

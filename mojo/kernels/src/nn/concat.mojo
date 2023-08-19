@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from sys.build import is_kernels_debug_build
 from algorithm import sync_parallelize
 from algorithm.functional import _elementwise_impl
@@ -15,8 +15,8 @@ from List import Dim, VariadicList, DimList
 from runtime.llcl import OutputChainPtr
 from math import align_down, align_up, div_ceil, max, min
 from MOGG import simd_load, simd_store
-from Memory import memcpy
-from Pointer import DTypePointer
+from memory import memcpy
+from memory.unsafe import DTypePointer
 from sys.info import sizeof, simdwidthof
 from TypeUtilities import rebind
 

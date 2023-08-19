@@ -6,9 +6,9 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from Buffer import Buffer, NDBuffer, DynamicRankBuffer
+from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
 from Concat import concat, _concat_parallel
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from Index import StaticIntTuple
 from List import Dim, VariadicList, DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr

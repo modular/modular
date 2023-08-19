@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
@@ -23,7 +23,7 @@ from Image import ImageData, Image2DLayout, ImageShape
 from Index import Index, StaticIntTuple
 from sys import external_call
 from List import DimList
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min
 from Random import rand
