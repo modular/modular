@@ -72,23 +72,24 @@ class KGENCommonOptions : public LLCL::RuntimeWorkQueueCLOptions {
 public:
   cl::opt<CompilationOptions::DebugInfoLevel> debugInfoLevel{
       "debug-level",
-      cl::desc("The level of debug info to use during compilation"),
-      cl::values(clEnumValN(CompilationOptions::kNoDebug, "none",
-                            "Disable all debug info."),
-                 clEnumValN(CompilationOptions::kSynthetic, "synthetic",
-                            "Generate synthetic debug info."),
-                 clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
-                            "Only generate debug info for line number tables."),
-                 clEnumValN(CompilationOptions::kFullDebugInfo, "full",
-                            "Generate full debug info.")),
+      cl::desc("The level of debug information to use during compilation"),
+      cl::values(
+          clEnumValN(CompilationOptions::kNoDebug, "none",
+                     "Disable all debug information."),
+          clEnumValN(CompilationOptions::kSynthetic, "synthetic",
+                     "Generate synthetic debug information."),
+          clEnumValN(CompilationOptions::kLineTablesOnly, "line-tables",
+                     "Only generate debug information for line number tables."),
+          clEnumValN(CompilationOptions::kFullDebugInfo, "full",
+                     "Generate full debug information.")),
       cl::init(CompilationOptions::kNoDebug)};
 
   cl::opt<CompilationOptions::DebugAtLevel> debugAtLevel{
       "debug-at",
-      cl::desc("Generate debug info for the giving abstraction, instead of the "
-               "input"),
+      cl::desc("Generate debug information for the giving abstraction, instead "
+               "of the input"),
       cl::values(clEnumValN(CompilationOptions::kDebugAtLLVM, "llvm",
-                            "Generate debug info for the LLVM level."))};
+                            "Generate debug information for the LLVM level."))};
 
   cl::opt<bool> enableXRayInstrumentation{
       "xray-instrument",
