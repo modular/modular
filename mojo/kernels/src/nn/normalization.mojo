@@ -10,7 +10,6 @@ from List import Dim, DimList
 from algorithm import vectorize
 from Index import StaticIntTuple
 from StaticTuple import StaticTuple
-from TypeUtilities import rebind
 from algorithm import mean, variance, map_reduce
 from algorithm.reduction import (
     _simd_sum,

@@ -13,7 +13,6 @@ from math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
 from math.limit import neginf
 from algorithm.reduction import max
 from StaticTuple import StaticTuple
-from TypeUtilities import rebind
 
 
 # ===----------------------------------------------------------------------===#

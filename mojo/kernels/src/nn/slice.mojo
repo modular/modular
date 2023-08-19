@@ -11,7 +11,6 @@ from Index import StaticIntTuple
 from runtime.llcl import OutputChainPtr
 from List import Dim, DimList
 from math import div_ceil
-from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view

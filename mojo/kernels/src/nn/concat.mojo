@@ -18,7 +18,6 @@ from MOGG import simd_load, simd_store
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from sys.info import sizeof, simdwidthof
-from TypeUtilities import rebind
 
 # ===----------------------------------------------------------------------===#
 # concat

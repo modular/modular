@@ -26,7 +26,7 @@ from List import DimList
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min
-from Random import rand
+from random import rand
 from sys.info import simdwidthof
 
 alias simd_size: Int = simdwidthof[DType.float32]()
