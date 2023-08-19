@@ -3,4 +3,4 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the modular package."""
+"""Implements the runtime package."""
