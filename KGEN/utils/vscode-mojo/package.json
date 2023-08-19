@@ -3,6 +3,7 @@
   "displayName": "Mojo",
   "description": "Mojo language support",
   "version": "0.2.0",
+  "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
