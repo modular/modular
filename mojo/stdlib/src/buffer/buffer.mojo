@@ -16,7 +16,6 @@ from .memory import stack_allocation
 from .unsafe import Pointer, DTypePointer
 from StaticTuple import StaticTuple
 from sys.info import sizeof, simdwidthof, alignof
-from TypeUtilities import rebind
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.

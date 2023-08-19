@@ -6,7 +6,6 @@
 """Provides utilities for working with static and variadic lists."""
 
 from Assert import assert_param
-from TypeUtilities import rebind
 from memory.unsafe import Pointer
 
 # ===----------------------------------------------------------------------===#
