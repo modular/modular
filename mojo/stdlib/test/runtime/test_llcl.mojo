@@ -12,8 +12,8 @@ from runtime.llcl import (
     OwningOutputChainPtr,
     AsyncTaskGroupPtr,
 )
-from Pointer import Pointer
-from Memory import stack_allocation
+from memory.unsafe import Pointer
+from memory import stack_allocation
 
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
