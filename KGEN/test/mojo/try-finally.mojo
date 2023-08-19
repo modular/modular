@@ -81,7 +81,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
     print("normal")
 
 
-def main() -> None:
+def main():
     # CHECK-LABEL: == try-finally
     print("== try-finally")
     # CHECK-NEXT: try

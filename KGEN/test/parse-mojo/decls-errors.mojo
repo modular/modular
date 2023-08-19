@@ -730,6 +730,18 @@ fn main(arg: Int):
 
 # // -----
 
+# expected-error @below {{expected 'main' function to have no arguments}}
+def main(arg: Int):
+  return
+
+# // -----
+
+# expected-error @below {{expected 'main' function returning object to be raising}}
+fn main() -> object:
+  return
+
+# // -----
+
 # expected-error @below {{expected 'main' function to return 'None'}}
 fn main() -> Int:
   return 10
