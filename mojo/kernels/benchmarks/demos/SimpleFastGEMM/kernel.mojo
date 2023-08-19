@@ -6,9 +6,9 @@
 
 # Meant to be run on an AVX512 system
 
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from List import Dim, DimList
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from sys.intrinsics import PrefetchOptions
 
 alias mr = 6

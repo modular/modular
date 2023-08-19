@@ -13,7 +13,7 @@
 
 from builtin.io import _printf
 from Vector import DynamicVector
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from Matrix import Matrix
 from List import Dim, DimList
 from runtime.llcl import num_cores, Runtime, TaskGroup
@@ -22,7 +22,7 @@ from math import iota
 from complex import ComplexSIMD
 from Benchmark import Benchmark
 from Assert import assert_param
-from Pointer import Pointer, DTypePointer
+from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from TypeUtilities import rebind
 from math import abs

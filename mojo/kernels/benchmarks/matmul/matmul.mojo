@@ -10,7 +10,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from Benchmark import Benchmark
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 
 
 alias M = 128
