@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs."""
 
-from Assert import assert_param
 from sys import llvm_intrinsic
 from memory.unsafe import DTypePointer
 from math import is_power_of_2
@@ -1007,7 +1006,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
             `True` if the pointer is at least `alignment`-aligned or `False`
             otherwise.
         """
-        assert_param[
+        constrained[
             is_power_of_2(alignment), "alignment must be a power of 2."
         ]()
         return self.__as_index() % alignment == 0
