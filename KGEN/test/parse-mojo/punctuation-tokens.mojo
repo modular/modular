@@ -9,7 +9,9 @@
 # CHECK: module {
 # CHECK-NEXT: }
 
-%     # expected-error {{unexpected token in expression}}
+# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+# expected-error @below {{unexpected token in expression}}
+%
 &
 (
 )

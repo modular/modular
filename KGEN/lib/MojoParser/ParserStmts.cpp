@@ -420,9 +420,12 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   auto emitTopLevelViolationError = [&]() {
     Operation *parent = parentDecl.getIfOperation();
-    if (!parent || !dyn_cast<LIT::FuncOp>(parent))
-      emitTokenError() << "a '" << getToken().getSpelling()
-                       << "' statement must be contained in a function";
+    if (!parent)
+      return;
+    if (isa<LIT::FileModuleOp>(parent))
+      emitTokenError() << "'" << getToken().getSpelling()
+                       << "' must be contained in a function but is contained "
+                          "in a file scope.";
   };
 
   // Skip over any decorators that are present.  These will be reparsed during
@@ -543,6 +546,11 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // Parse a single expression, an assignment stmt, or augmented assignment
   // statement.
   ExprNode *expr = nullptr;
+  Operation *parent = parentDecl.getIfOperation();
+  // TODO: Top level expressions will be supported in the future.
+  if (parent && isa<LIT::FileModuleOp>(parent))
+    emitTokenError()
+        << "TODO: expressions are not yet supported at the file scope level";
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
 
