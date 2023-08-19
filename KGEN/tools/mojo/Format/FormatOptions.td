@@ -26,5 +26,5 @@ def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<0>,
 def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<1>;
 
 def quiet : Flag<["--"], "quiet">, Group<DiagnosticOptionGroup>,
-  Index<0>, HelpText<"Don't emit non-error messages to stderr.">;
+  Index<0>, HelpText<"Don't emit non-error messages.">;
 def : Flag<["-"], "q">, Group<DiagnosticOptionGroup>, Index<0>, Alias<quiet>;

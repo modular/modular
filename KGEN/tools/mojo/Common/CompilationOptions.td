@@ -61,7 +61,7 @@ def mtune : Separate<["-", "--"], "mtune">, Group<CompilationOptionGroup>,
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   MetaVarName<"PATH">,
   HelpText<"Append the given path to the list of directories to search for "
-           "included Mojo files.">;
+           "imported Mojo files.">;
 
 def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
   MetaVarName<"KEY=VALUE">,
@@ -73,8 +73,8 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<9>,
 def sanitize : Separate<["--", "-"], "sanitize">, Group<CompilationOptionGroup>,
   Index<10>, MetaVarName<"CHECK">,
   HelpText<
-    "Turn on runtime checks for various forms of undefined or suspicious"
-    " behavior. The following checks are supported: `address`, `thread`."
+    "Turn on runtime checks. The following values are supported: `address` "
+    "(detects memory issues), and `thread` (detects multi-threading issues)."
   >;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,

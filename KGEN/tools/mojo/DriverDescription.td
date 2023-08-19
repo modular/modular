@@ -20,7 +20,7 @@ def : MojoDriverDescription<
   "commands appears below, and you may invoke each of them with the `--help` "
   "option to learn more about them.\n"
   "\n"
-  "Alternatively, you may provide the path to a Mojo source file, in order to "
+  "Alternatively, you may provide a path to a Mojo source file, in order to "
   "build and execute that file. This behavior is equivalent to the `mojo run` "
   "command; please run `mojo run --help` to learn more.\n"
   "\n"

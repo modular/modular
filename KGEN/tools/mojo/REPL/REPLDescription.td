@@ -8,7 +8,7 @@ include "DescriptionBase.td"
 
 def REPLDescription : MojoCommandDescription<
   "repl", "Launches the REPL.",
-  "Launch a Mojo read-evaluate-print loop that allows for interactive "
+  "Launch a Mojo read-evaluate-print loop (REPL) that allows for interactive "
   "development.\n"
   "\n"
   "Any number of options and arguments may be specified on the command line. "
