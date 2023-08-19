@@ -11,6 +11,6 @@
 from test_binary_package.inner1.myfile import print10
 
 
-def main() -> None:
+def main():
     # CHECK: 10
     print10()

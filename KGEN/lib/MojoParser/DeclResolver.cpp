@@ -689,7 +689,19 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
 void DeclResolver::exportMain(ASTDecl &funcDecl) {
   LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
   SignatureType userMainSignature = userMainFn.getSignature();
+  ASTDecl *containingDecl = funcDecl.getParentDecl();
   Location loc = userMainFn.getLoc();
+
+  // The type of main function described by the given func decl.
+  enum MainKind {
+    // A non-raising function that returns None.
+    kNonRaisingNoneMain,
+    // A raising function that returns None.
+    kRaisingNoneMain,
+    // A raising function that returns object.
+    kRaisingObjectMain,
+  };
+  MainKind mainKind = kNonRaisingNoneMain;
 
   // Validate that main has the expected signature.
   if (!userMainSignature.getInputParamTypes().empty() ||
@@ -697,12 +709,35 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     shared.emitError(loc, "expected 'main' function to have no parameters");
     return;
   }
-  if (!userMainSignature.getValueInputs().empty()) {
-    shared.emitError(loc, "expected 'main' function to have no arguments");
+  ASTType userResultType(userMainFn.getUserResultType());
+  ArrayRef<Type> valueInputs = userMainSignature.getValueInputs();
+
+  // Process a main returning none.
+  if (userResultType.isNoneType()) {
+    if (userMainSignature.isThrows())
+      mainKind = kRaisingNoneMain;
+
+    // Process a main returning object.
+  } else if (userResultType.isEqualCanon(
+                 shared.lookupObjectType(funcDecl.getLoc(), *containingDecl))) {
+    // Check that the function is raising, e.g. the `def main()` mode.
+    if (!userMainSignature.isThrows()) {
+      shared.emitError(
+          loc, "expected 'main' function returning object to be raising");
+      return;
+    }
+    mainKind = kRaisingObjectMain;
+
+    // Drop the result type from the value inputs.
+    valueInputs = valueInputs.drop_front();
+
+    // Otherwise, this is an unrecognized main.
+  } else {
+    shared.emitError(loc, "expected 'main' function to return 'None'");
     return;
   }
-  if (!ASTType(userMainFn.getUserResultType()).isNoneType()) {
-    shared.emitError(loc, "expected 'main' function to return 'None'");
+  if (!valueInputs.empty()) {
+    shared.emitError(loc, "expected 'main' function to have no arguments");
     return;
   }
 
@@ -714,9 +749,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);
     if (result.getIfSuccess().empty()) {
       if (result.isFailure()) {
-        shared.emitError(
-            funcDecl.getLoc(),
-            "unable to resolve `Builtin.Startup` module when exporting 'main'");
+        shared.emitError(funcDecl.getLoc(),
+                         "unable to resolve `Builtin.Startup` module when "
+                         "exporting 'main'");
       }
       return nullptr;
     }
@@ -729,7 +764,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // Generate a shim for main that handles parsing command line arguments,
   // capturing uncaught exceptions, and returning the exit code. The shim
   // defines a C-ABI compatible function that sets up the mojo runtime.
-  ASTDecl *containingDecl = funcDecl.getParentDecl();
   OpBuilder builder = containingDecl->getDeclEndBuilder();
 
   // The Startup module provides a stubbed out shim for us to use, so pull that
@@ -752,13 +786,21 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   shimMainFn.setPreCompiledModuleRef(std::nullopt);
 
   // Populate the body of the shim. For this we designate the internal
-  // implementation to either `__wrap_and_execute_main` or
-  // `__wrap_and_execute_raising_main` in the Startup module, depending on
-  // how the user specified their main function.
-  bool isRaisingMain = userMainSignature.isThrows();
-  ASTDecl *mainWrapperDecl =
-      resolveStartDecl(isRaisingMain ? "__wrap_and_execute_raising_main"
-                                     : "__wrap_and_execute_main");
+  // implementation to one of the wrapper helpers in the Startup module,
+  // depending on how the user specified their main function.
+  StringRef mainWrapperName;
+  switch (mainKind) {
+  case kNonRaisingNoneMain:
+    mainWrapperName = "__wrap_and_execute_main";
+    break;
+  case kRaisingNoneMain:
+    mainWrapperName = "__wrap_and_execute_raising_main";
+    break;
+  case kRaisingObjectMain:
+    mainWrapperName = "__wrap_and_execute_object_raising_main";
+    break;
+  }
+  ASTDecl *mainWrapperDecl = resolveStartDecl(mainWrapperName);
   if (!mainWrapperDecl)
     return;
   FuncOp mainWrapperFn = cast<FuncOp>(*mainWrapperDecl);
