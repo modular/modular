@@ -21,7 +21,6 @@ from algorithm import parallelize
 from math import iota
 from complex import ComplexSIMD
 from Benchmark import Benchmark
-from Assert import assert_param
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from math import abs
@@ -32,7 +31,7 @@ alias int_type = DType.index
 
 alias width = 4096
 # using simd_width=16
-assert_param[width % 16 == 0, "must be a multiple of 16"]()
+constrained[width % 16 == 0, "must be a multiple of 16"]()
 alias height = 4096
 alias MAX_ITERS = 1000
 
