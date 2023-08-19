@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Pointer import Pointer
+from memory.unsafe import Pointer
 
 
 struct my_iter:

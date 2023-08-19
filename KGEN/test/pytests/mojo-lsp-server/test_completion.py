@@ -84,7 +84,7 @@ async def test_completion_import_member(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-from Pointer import P
+from memory.unsafe import P
 """,
     )
     requests = Requests(client)
