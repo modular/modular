@@ -185,9 +185,10 @@ function(add_mojo_package target)
     list(APPEND KGEN_SOURCE_FILES "${KGEN_PACKAGE_DIR}/${file}.mojo")
   endforeach()
   foreach(file ${KGEN_PUBLIC})
+    string(REGEX REPLACE ".*/([^/]*)$" "\\1" PACKAGE_NAME "${KGEN_PACKAGE_DIR}")
     if (KGEN_STDLIB)
       add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
-        ${file} Kernels/docs/${target}/ STDLIB)
+        ${file} Kernels/docs/stdlib/${PACKAGE_NAME}/ STDLIB)
     else()
       add_mojo_doc("${target}${file}" PUBLIC ${KGEN_PACKAGE_DIR}/${file}.mojo
         ${file} Kernels/docs/${target}/)
