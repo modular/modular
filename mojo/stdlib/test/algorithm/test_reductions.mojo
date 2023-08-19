@@ -14,7 +14,6 @@ from memory.buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from List import DimList
-from TypeUtilities import rebind
 from algorithm import (
     all_true,
     any_true,

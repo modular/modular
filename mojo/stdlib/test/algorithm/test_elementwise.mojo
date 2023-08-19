@@ -16,7 +16,6 @@ from math import mul, min
 from List import Dim, DimList
 from Index import StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from TypeUtilities import rebind
 
 
 fn test_elementwise[
