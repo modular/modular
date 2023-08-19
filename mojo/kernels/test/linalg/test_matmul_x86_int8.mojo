@@ -12,8 +12,8 @@
 
 from List import DimList
 from Index import Index, StaticIntTuple
-from Pointer import DTypePointer
-from Buffer import NDBuffer, DynamicRankBuffer
+from memory.unsafe import DTypePointer
+from memory.buffer import NDBuffer, DynamicRankBuffer
 from Matrix import Matrix
 from Matmul import matmul, _submatmul_sequential_sync, pack_b
 from MatmulUtils import (

@@ -6,7 +6,7 @@
 """The module implements Transpose functions."""
 
 from Assert import assert_param
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from algorithm import (
     unroll,
     async_parallelize,
@@ -21,8 +21,8 @@ from sys.intrinsics import strided_load, strided_store
 from List import DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import div_ceil, min
-from Memory import memcpy
-from Pointer import DTypePointer
+from memory import memcpy
+from memory.unsafe import DTypePointer
 from sys.info import sizeof, simdwidthof
 from TypeUtilities import rebind
 

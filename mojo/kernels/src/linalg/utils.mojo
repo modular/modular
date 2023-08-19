@@ -16,7 +16,7 @@ from sys.info import (
     sizeof,
 )
 from sys.build import is_debug_build
-from Buffer import NDBuffer, DynamicRankBuffer
+from memory.buffer import NDBuffer, DynamicRankBuffer
 
 alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]

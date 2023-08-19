@@ -6,7 +6,7 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from Buffer import Buffer, NDBuffer
+from memory.buffer import Buffer, NDBuffer
 from Index import Index, StaticIntTuple
 from List import DimList
 from Transpose import transpose, transpose_inplace, _simplify_transpose_perms

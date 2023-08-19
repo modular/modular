@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from List import DimList
 from Index import StaticIntTuple
-from Pointer import Pointer, DTypePointer
+from memory.unsafe import Pointer, DTypePointer
 from sys.info import alignof
 
 

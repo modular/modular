@@ -12,7 +12,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from AppleAMX import amx_detail
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from Index import StaticIntTuple
 from List import DimList
 from sys.info import is_apple_m1, sizeof

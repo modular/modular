@@ -15,7 +15,7 @@ from MatmulUtils import (
     get_matmul_pack_inner_size,
     get_matmul_prefetch_b_distance_k,
 )
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from sys.info import simdwidthof
 from Index import Index
 from List import DimList

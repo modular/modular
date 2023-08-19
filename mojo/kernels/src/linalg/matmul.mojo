@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import (
+from memory.buffer import (
     NDBuffer,
     Buffer,
     DynamicRankBuffer,
@@ -25,7 +25,7 @@ from Index import Index, StaticIntTuple
 from List import Dim, DimList, VariadicList
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from math import min, fma, div_ceil, align_down, align_up
-from Memory import memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from MatmulUtils import (
     get_packB_unroll_factor,
     MatmulConfig,
@@ -45,7 +45,7 @@ from MatmulUtils import (
     use_vnni_fn,
 )
 from Matrix import Matrix
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from sys.info import has_neon, alignof, simdwidthof, has_avx2
 from Transpose import transpose_inplace
 from TypeUtilities import rebind

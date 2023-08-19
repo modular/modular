@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param, debug_assert
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from algorithm import tile, tile_and_unswitch, vectorize_unroll
 from Index import Index, StaticIntTuple
 from List import VariadicList, Dim, DimList
@@ -20,9 +20,9 @@ from Matmul import (
     MatmulOperandLayout,
     calculate_tile_n_k,
 )
-from Memory import stack_allocation
+from memory import stack_allocation
 from MatmulUtils import get_pack_data_size
-from Pointer import DTypePointer
+from memory.unsafe import DTypePointer
 from sys.info import simdwidthof
 from sys.info import simd_byte_width
 

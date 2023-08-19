@@ -6,8 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Matrix import Matrix
-from Buffer import Buffer, NDBuffer
-from Pointer import Pointer, DTypePointer
+from memory.buffer import Buffer, NDBuffer
+from memory.unsafe import Pointer, DTypePointer
 from List import DimList
 from Index import Index
 from math import iota

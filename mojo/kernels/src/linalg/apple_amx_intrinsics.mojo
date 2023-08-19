@@ -11,10 +11,10 @@
 # ===----------------------------------------------------------------------===#
 
 from Assert import assert_param
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from List import DimList
-from Memory import memset_zero, memcpy
-from Pointer import DTypePointer
+from memory import memset_zero, memcpy
+from memory.unsafe import DTypePointer
 from sys.info import sizeof
 
 

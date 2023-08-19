@@ -6,7 +6,7 @@
 """The module implements Matrix Solve functions."""
 
 from Assert import assert_param
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from algorithm.functional import _elementwise_impl
 from Index import Index
 from Index import StaticIntTuple

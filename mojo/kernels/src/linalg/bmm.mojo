@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from Assert import assert_param
-from Buffer import NDBuffer
+from memory.buffer import NDBuffer
 from List import DimList
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Index import StaticIntTuple, Index
@@ -19,7 +19,7 @@ from MatmulUtils import (
     partition_work,
 )
 from Matmul import _submatmul_sequential_sync
-from Memory import memset_zero
+from memory import memset_zero
 from sys.info import simdwidthof
 from algorithm import (
     sync_parallelize,
