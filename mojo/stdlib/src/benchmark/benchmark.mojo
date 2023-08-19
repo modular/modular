@@ -6,7 +6,7 @@
 """Implements the Benchmark class for runtime benchmarking."""
 
 from math import min, max
-from Time import now
+from time import now
 
 
 @value
