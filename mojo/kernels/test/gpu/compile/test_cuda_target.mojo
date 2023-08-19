@@ -7,7 +7,6 @@
 # RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
 
 from Activations import gelu
-from Assert import assert_param
 from algorithm import elementwise
 from Index import StaticIntTuple
 from NvidiaGPU import (
@@ -38,14 +37,14 @@ from runtime.llcl import OutputChainPtr
 @adaptive
 @always_inline
 fn parameterized_on_cuda_impl() -> Int:
-    assert_param[triple_is_nvidia_cuda()]()
+    constrained[triple_is_nvidia_cuda()]()
     return 42
 
 
 @adaptive
 @always_inline
 fn parameterized_on_cuda_impl() -> Int:
-    assert_param[not triple_is_nvidia_cuda()]()
+    constrained[not triple_is_nvidia_cuda()]()
     return -1
 
 
