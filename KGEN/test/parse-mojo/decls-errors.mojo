@@ -788,7 +788,7 @@ except e:
 
 alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-assert_param[a == 10]()
+constrained[a == 10]()
 
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
