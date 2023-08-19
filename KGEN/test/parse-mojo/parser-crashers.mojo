@@ -25,7 +25,8 @@ struct Float32:
 # // -----
 # Crashed at top level.
 
-# expected-error @below {{MLIR attribute is not a TypedAttr}}
+# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+# expected-error @below {{MLIR attribute is not a TypedAttr: #index<cmp_predicate eq>}}
 __mlir_attr.`#index<cmp_predicate eq>`
 
 # // -----

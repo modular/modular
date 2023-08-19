@@ -779,8 +779,17 @@ fn foo() raises:
 # expected-note @below {{try surrounding the call in a 'try' block}}
 let np = foo()
 
-# expected-error @below {{a 'try' statement must be contained in a function}}
+# expected-error @below {{'try' must be contained in a function}}
 try:
     let np2 = foo()
 except e:
+    # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
     print(e.value)
+
+alias a = 100
+# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+assert_param[a == 10]()
+
+var y = 7
+# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+y += 1
