@@ -8,8 +8,8 @@
 from Assert import assert_param, debug_assert
 from List import VariadicList
 from Index import StaticIntTuple
-from Memory import memcpy
-from Pointer import Pointer, DTypePointer
+from memory import memcpy
+from memory.unsafe import Pointer, DTypePointer
 from StaticTuple import StaticTuple
 from sys.info import sizeof, is_little_endian
 
