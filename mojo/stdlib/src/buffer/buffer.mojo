@@ -5,16 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the Buffer class."""
 
-from algorithm import unroll, vectorize
-from utils.index import StaticIntTuple, product as tuple_product
+from math import fma, iota, max, min
+from sys.info import alignof, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
-from utils.list import Dim, DimList, VariadicList
+
+from algorithm import unroll, vectorize
 from runtime.llcl import OutputChainPtr
-from math import fma, min, max, iota
-from .memory import stack_allocation
-from .unsafe import Pointer, DTypePointer
+
+from utils.index import StaticIntTuple
+from utils.index import product as tuple_product
+from utils.list import Dim, DimList, VariadicList
 from utils.static_tuple import StaticTuple
-from sys.info import sizeof, simdwidthof, alignof
+
+from .memory import stack_allocation
+from .unsafe import DTypePointer, Pointer
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
