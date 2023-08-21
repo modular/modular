@@ -6,8 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from algorithm import tile, unswitch, tile_and_unswitch
-from List import VariadicList
-from Index import Index, StaticIntTuple
+from utils.list import VariadicList
+from utils.index import Index, StaticIntTuple
 
 # Helper workgroup function to test dynamic workgroup tiling.
 @always_inline

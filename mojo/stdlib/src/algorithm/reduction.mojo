@@ -14,8 +14,8 @@ from algorithm import (
 from algorithm.functional import _get_num_workers
 from memory.unsafe import Pointer
 from math.bit import cttz
-from Index import StaticIntTuple
-from List import DimList, Dim
+from utils.index import StaticIntTuple
+from utils.list import DimList, Dim
 from runtime.llcl import OutputChainPtr
 from math import (
     all_true as _all_true,

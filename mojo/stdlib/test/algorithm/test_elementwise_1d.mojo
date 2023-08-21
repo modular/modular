@@ -10,10 +10,10 @@ from memory.buffer import Buffer
 from algorithm import elementwise
 from math import erf, exp, tanh, div_ceil
 from Activations import gelu
-from List import Dim, DimList
-from Index import StaticIntTuple
+from utils.list import Dim, DimList
+from utils.index import StaticIntTuple
 from runtime.llcl import Runtime, OwningOutputChainPtr
-from Vector import UnsafeFixedVector
+from utils.vector import UnsafeFixedVector
 from sys.info import sizeof
 
 # CHECK-LABEL: test_elementwise_1d

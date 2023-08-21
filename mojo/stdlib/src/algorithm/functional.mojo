@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements higher-order functions."""
 
-from Index import StaticIntTuple
-from List import VariadicList
+from utils.index import StaticIntTuple
+from utils.list import VariadicList
 from runtime.llcl import (
     num_cores,
     Runtime,

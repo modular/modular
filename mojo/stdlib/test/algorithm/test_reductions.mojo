@@ -11,9 +11,9 @@
 # RUN: %mojo %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from Index import Index, StaticIntTuple
+from utils.index import Index, StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from List import DimList
+from utils.list import DimList
 from algorithm import (
     all_true,
     any_true,

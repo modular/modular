@@ -13,8 +13,8 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
 )
 from math import mul, min
-from List import Dim, DimList
-from Index import StaticIntTuple
+from utils.list import Dim, DimList
+from utils.index import StaticIntTuple
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 
 
