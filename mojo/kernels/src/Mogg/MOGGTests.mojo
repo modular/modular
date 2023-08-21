@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import StaticIntTuple
+from utils.list import DimList
 from runtime.llcl import OutputChainPtr
 from algorithm import vectorize
 from MOGGDecorators import *

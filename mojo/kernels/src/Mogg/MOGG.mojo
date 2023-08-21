@@ -28,10 +28,10 @@ from algorithm import (
 from algorithm.functional import _elementwise_impl
 from algorithm.reduction import _reduce_generator
 from sys.intrinsics import strided_load
-from Index import Index, StaticIntTuple
+from utils.index import Index, StaticIntTuple
 from memory import memset_zero
-from List import Dim, DimList, VariadicList
-from OptionalParam import OptionalParamInt
+from utils.list import Dim, DimList, VariadicList
+from utils.optional_param import OptionalParamInt
 from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
 from math import (
     add,
@@ -83,7 +83,7 @@ from Pad import pad as _pad, pad_shape
 from memory.unsafe import Pointer, DTypePointer
 from Pool import avg_pool, pool_shape, max_pool
 from sys.info import simdwidthof
-from Tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel
 from Softmax import softmax as _softmax, logsoftmax as _logsoftmax
 from Split import split as _split
 from Slice import slice_as_view, slice_shape
@@ -94,7 +94,7 @@ from MOGGTests import (
     _test_one_rank_many_tensor,
     _test_3D_in_out_lambda,
 )
-from Index import Index
+from utils.index import Index
 from GatherScatter import (
     scatter_nd as _scatter_nd,
     gather_shape,
