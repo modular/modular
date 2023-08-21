@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Index import StaticIntTuple, Index
+from utils.index import StaticIntTuple, Index
 from math import div_ceil, max, min, sqrt
-from List import DimList
+from utils.list import DimList
 from sys.info import (
     has_avx512f,
     has_avx2,

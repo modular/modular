@@ -15,9 +15,9 @@ from algorithm import (
     tile,
     unswitch,
 )
-from Index import StaticIntTuple, StaticTuple
+from utils.index import StaticIntTuple, StaticTuple
 from sys.intrinsics import strided_load, strided_store
-from List import DimList, VariadicList
+from utils.list import DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import div_ceil, min
 from memory import memcpy

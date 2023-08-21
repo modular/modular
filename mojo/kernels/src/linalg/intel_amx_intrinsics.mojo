@@ -10,10 +10,10 @@
 # ===----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from List import DimList
+from utils.list import DimList
 from Matmul import Matrix
 from memory.unsafe import DTypePointer
-from StaticTuple import StaticTuple
+from utils.static_tuple import StaticTuple
 
 alias void = DType.invalid.value
 

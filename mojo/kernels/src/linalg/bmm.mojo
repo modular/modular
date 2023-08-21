@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from List import DimList
+from utils.list import DimList
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from Index import StaticIntTuple, Index
+from utils.index import StaticIntTuple, Index
 from math import max, min, div_ceil, gcd
 from MatmulUtils import (
     is_critical_stride,

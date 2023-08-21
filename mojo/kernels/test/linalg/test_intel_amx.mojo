@@ -16,7 +16,7 @@ from memory.buffer import Buffer, NDBuffer
 from Transpose import transpose, transpose_inplace
 from sys.info import os_is_linux, has_intel_amx
 from Matmul import Matrix
-from List import DimList, Dim
+from utils.list import DimList, Dim
 from memory import memcmp, memset_zero
 from Matmul import naive_matmul
 from algorithm import unroll

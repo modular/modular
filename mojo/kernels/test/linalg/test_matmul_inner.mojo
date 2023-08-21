@@ -17,8 +17,8 @@ from MatmulUtils import (
 )
 from memory.buffer import NDBuffer
 from sys.info import simdwidthof
-from Index import Index
-from List import DimList
+from utils.index import Index
+from utils.list import DimList
 
 alias a_type = DType.float32
 alias b_type = DType.float32

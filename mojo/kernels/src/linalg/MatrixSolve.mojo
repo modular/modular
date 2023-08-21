@@ -7,11 +7,11 @@
 
 from memory.buffer import NDBuffer
 from algorithm.functional import _elementwise_impl
-from Index import Index
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import Index
+from utils.index import StaticIntTuple
+from utils.list import DimList
 from runtime.llcl import OutputChainPtr
-from Tracing import TraceLevel
+from runtime.tracing import TraceLevel
 
 
 @always_inline

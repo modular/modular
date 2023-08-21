@@ -6,8 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import NDBuffer
-from Index import Index
-from List import DimList
+from utils.index import Index
+from utils.list import DimList
 from Matmul import PackMatrixCols
 from sys.info import simdwidthof
 

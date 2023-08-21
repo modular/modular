@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from List import DimList
-from Index import StaticIntTuple
+from utils.list import DimList
+from utils.index import StaticIntTuple
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import alignof
 

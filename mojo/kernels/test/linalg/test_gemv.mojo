@@ -7,7 +7,7 @@
 
 from Gemv import gemv
 from memory.buffer import Buffer, NDBuffer
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from sys.info import simdwidthof
 from runtime.llcl import OwningOutputChainPtr, Runtime
 

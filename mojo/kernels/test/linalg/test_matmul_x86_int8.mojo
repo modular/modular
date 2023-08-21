@@ -10,8 +10,8 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from List import DimList
-from Index import Index, StaticIntTuple
+from utils.list import DimList
+from utils.index import Index, StaticIntTuple
 from memory.unsafe import DTypePointer
 from memory.buffer import NDBuffer, DynamicRankBuffer
 from Matrix import Matrix

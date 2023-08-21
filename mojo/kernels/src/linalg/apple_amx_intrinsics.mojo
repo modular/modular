@@ -11,7 +11,7 @@
 # ===----------------------------------------------------------------------===#
 
 from memory.buffer import NDBuffer
-from List import DimList
+from utils.list import DimList
 from memory import memset_zero, memcpy
 from memory.unsafe import DTypePointer
 from sys.info import sizeof

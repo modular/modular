@@ -6,8 +6,8 @@
 
 from memory.buffer import NDBuffer
 from algorithm import tile, tile_and_unswitch, vectorize_unroll
-from Index import Index, StaticIntTuple
-from List import VariadicList, Dim, DimList
+from utils.index import Index, StaticIntTuple
+from utils.list import VariadicList, Dim, DimList
 from math import div_ceil, min, max
 from Matmul import (
     MatmulConfig,

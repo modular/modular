@@ -8,10 +8,10 @@
 from Matrix import Matrix
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import Pointer, DTypePointer
-from List import DimList
-from Index import Index
+from utils.list import DimList
+from utils.index import Index
 from math import iota
-from Vector import DynamicVector
+from utils.vector import DynamicVector
 
 
 fn test(m: Matrix[DimList(4, 4), DType.int32, False]):

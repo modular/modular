@@ -13,8 +13,8 @@
 
 from AppleAMX import amx_detail
 from memory.buffer import NDBuffer
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import StaticIntTuple
+from utils.list import DimList
 from sys.info import is_apple_m1, sizeof
 
 

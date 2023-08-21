@@ -20,8 +20,8 @@ from algorithm import (
     vectorize_unroll,
     sync_parallelize,
 )
-from Index import Index, StaticIntTuple
-from List import Dim, DimList, VariadicList
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from math import min, fma, div_ceil, align_down, align_up
 from memory import memset_zero, stack_allocation

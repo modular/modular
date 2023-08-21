@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from List import DimList, Dim
+from utils.list import DimList, Dim
 from Matmul import pack_b
 from math import div_ceil
 from memory.buffer import Buffer, NDBuffer
-from Index import StaticIntTuple
+from utils.index import StaticIntTuple
 
 
 # CHECK-LABEL: test_prepack
