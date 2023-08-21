@@ -353,7 +353,7 @@ fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
     raise Error("TypeError: cannot invert values of this type")
 
 # CHECK-LABEL: lit.struct.decl @Parameterized
-# CHECK-SAME: <{{.*}}level: {{.*}}@"$Int"::@Int>
+# CHECK-SAME: <{{.*}}level: {{.*}}@"$int"::@Int>
 struct Parameterized[level: Int]:
     fn __init__(inout self): pass
 
@@ -364,7 +364,7 @@ struct Parameterized[level: Int]:
 fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
-  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:{{.*}}@"$Int"::@Int #lit.struct<{value = 4}>>(%x)
+  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:{{.*}}@"$int"::@Int #lit.struct<{value = 4}>>(%x)
 
 struct Complicated:
   var a: MemExample

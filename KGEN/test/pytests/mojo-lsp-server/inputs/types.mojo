@@ -11,7 +11,7 @@ import builtin
 
 
 fn functionWithNestedType(x: DType.DType):
-    let y: builtin.Int.Int = 12
+    let y: builtin.int.Int = 12
     pass
 
 

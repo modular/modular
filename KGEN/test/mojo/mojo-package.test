@@ -15,7 +15,7 @@
 // CHECK:       lit.func @"foo{{.*}}"{{.*}} preCompiledModuleRef = {{.*}}
 // CHECK-NEXT:    lit.extern_func
 
-// CHECK: lit.struct.decl @ParametricStruct<{{.*}}: {{.*}}@"$Int"::@Int>
+// CHECK: lit.struct.decl @ParametricStruct<{{.*}}: {{.*}}@"$int"::@Int>
 // CHECK:       lit.func @"foo(
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return

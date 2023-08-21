@@ -134,7 +134,7 @@ async def test_refs(client: LanguageClient):
         requests,
         doc,
         "Int",
-        doc.find_last_range("Int", in_line_with="builtin.Int.Int"),
+        doc.find_last_range("Int", in_line_with="builtin.int.Int"),
     )
     await assert_ref(
         "struct",
@@ -148,7 +148,7 @@ async def test_refs(client: LanguageClient):
         requests,
         doc,
         "Int",
-        doc.find_first_range("Int", in_line_with="builtin.Int.Int"),
+        doc.find_first_range("Int", in_line_with="builtin.int.Int"),
     )
 
     doc = Document.from_file("struct_fields.mojo")

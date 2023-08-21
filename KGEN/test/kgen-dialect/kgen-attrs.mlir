@@ -7,8 +7,8 @@
 // CHECK: #kgen.fn_metadata<[], [], none>
 "some.op"() {metadata = #kgen.fn_metadata<[], [], none>} : () -> ()
 
-// CHECK: *"mangled_fn{{.*}}$Int
-"some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$Int\22::_Int>])" : index>} : () -> ()
+// CHECK: *"mangled_fn{{.*}}$int
+"some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$int\22::_Int>])" : index>} : () -> ()
 
 kgen.generator @return_one() -> index {
   %0 = index.constant 1

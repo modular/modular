@@ -25,7 +25,7 @@ from test_package.test_nested_package.module import nested_function
 from test_package import *
 import builtin
 
-# CHECK-LABEL: lit.func @"test_function_calls($builtin::$Int::Int)"
+# CHECK-LABEL: lit.func @"test_function_calls($builtin::$int::Int)"
 # CHECK:  kgen.call @"$test_package"::@"$module"::@"function()"
 # CHECK:  kgen.call @"$test_package"::@"$test_nested_package"::@"$module"::@"nested_function()"
 # CHECK:  kgen.call @"$test_package"::@"$__init__"::@"method_defined_in_init()"()
@@ -39,7 +39,7 @@ import builtin
 # CHECK:    lit.file_module @"$module"
 # CHECK:      lit.func @"nested_function()"
 
-fn test_function_calls(arg: builtin.Int.Int):
+fn test_function_calls(arg: builtin.int.Int):
   function()
   nested_function()
   method_defined_in_init()
