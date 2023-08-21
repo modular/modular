@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from List import VariadicList
-from Index import StaticIntTuple
+from utils.list import VariadicList
+from utils.index import StaticIntTuple
 from memory import memcpy
 from memory.unsafe import Pointer, DTypePointer
-from StaticTuple import StaticTuple
+from utils.static_tuple import StaticTuple
 from sys.info import sizeof, is_little_endian
 
 

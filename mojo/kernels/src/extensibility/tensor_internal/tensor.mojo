@@ -10,7 +10,7 @@ Example:
 
 ```mojo
 from Tensor import Tensor, TensorSpec, TensorShape
-from Index import Index
+from utils.index import Index
 from random import rand
 
 let height = 256
