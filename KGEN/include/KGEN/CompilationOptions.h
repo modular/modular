@@ -101,7 +101,9 @@ public:
        << ", optimizationLevel: " << optimizationLevel;
     if (debugLevel != kNoDebug) {
       os << ", debugLevel: "
-         << (debugLevel == kLineTablesOnly ? "line-tables" : "full");
+         << (debugLevel == kLineTablesOnly ? "line-tables"
+             : debugLevel == kSynthetic    ? "synthetic"
+                                           : "full");
     }
     if (debugAtLevel) {
       os << ", debugAtLevel: ";
