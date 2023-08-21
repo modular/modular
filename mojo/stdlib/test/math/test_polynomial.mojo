@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from List import VariadicList
+from utils.list import VariadicList
 from math.polynomial import (
     polynomial_evaluate,
     _estrin_evaluate_2,
