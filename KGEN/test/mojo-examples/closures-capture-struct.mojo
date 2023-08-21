@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Vector import DynamicVector
+from utils.vector import DynamicVector
 
 
 fn take_closure_and_print(

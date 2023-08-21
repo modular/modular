@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from Index import StaticIntTuple  # skip
-from StaticTuple import StaticTuple  # skip
+from utils.index import StaticIntTuple  # skip
+from utils.static_tuple import StaticTuple  # skip
 import DType
 import builtin
 
