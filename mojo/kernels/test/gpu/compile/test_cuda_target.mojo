@@ -8,8 +8,8 @@
 
 from Activations import gelu
 from algorithm import elementwise
-from Index import StaticIntTuple
-from NvidiaGPU import (
+from utils.index import StaticIntTuple
+from gpu import (
     ThreadIdx,
     BlockIdx,
     BlockDim,
