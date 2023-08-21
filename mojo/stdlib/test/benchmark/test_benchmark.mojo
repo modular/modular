@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Benchmark import Benchmark
+from benchmark import Benchmark
 from time import now, sleep
 
 
