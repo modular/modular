@@ -18,8 +18,8 @@ namespace {
 namespace options {
 enum ID {
   OPT_INVALID = 0,
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
-                VISIBILITY, PARAM, HELPTEXT, METAVAR, VALUES)                  \
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
   OPT_##ID,
 #include DRIVER_OPTIONS_PATH
 #undef OPTION
@@ -48,10 +48,9 @@ static constexpr const llvm::StringLiteral PrefixTable_init[] =
 static constexpr const llvm::ArrayRef<llvm::StringLiteral>
     PrefixTable(PrefixTable_init, std::size(PrefixTable_init) - 1);
 
-using namespace llvm::opt;
 static constexpr llvm::opt::OptTable::Info InfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
-              VISIBILITY, PARAM, HELPTEXT, METAVAR, VALUES)                    \
+#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM,  \
+               HELPTEXT, METAVAR, VALUES)                                      \
   {PREFIX,                                                                     \
    NAME,                                                                       \
    HELPTEXT,                                                                   \
@@ -60,7 +59,6 @@ static constexpr llvm::opt::OptTable::Info InfoTable[] = {
    llvm::opt::Option::KIND##Class,                                             \
    PARAM,                                                                      \
    FLAGS,                                                                      \
-   VISIBILITY,                                                                 \
    options::OPT_##GROUP,                                                       \
    options::OPT_##ALIAS,                                                       \
    ALIASARGS,                                                                  \
