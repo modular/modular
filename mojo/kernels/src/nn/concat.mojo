@@ -4,19 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer
+from math import align_down, align_up, div_ceil, max, min
+from sys import external_call
 from sys.build import is_kernels_debug_build
+from sys.info import simdwidthof, sizeof
+
 from algorithm import sync_parallelize
 from algorithm.functional import _elementwise_impl
-from utils.index import product, StaticIntTuple
-from sys import external_call
-from utils.list import Dim, VariadicList, DimList
-from runtime.llcl import OutputChainPtr
-from math import align_down, align_up, div_ceil, max, min
-from MOGG import simd_load, simd_store
 from memory import memcpy
+from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
-from sys.info import sizeof, simdwidthof
+from MOGG import simd_load, simd_store
+from runtime.llcl import OutputChainPtr
+
+from utils.index import StaticIntTuple, product
+from utils.list import Dim, DimList, VariadicList
 
 # ===----------------------------------------------------------------------===#
 # concat

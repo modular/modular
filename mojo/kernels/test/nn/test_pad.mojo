@@ -6,10 +6,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
-from utils.index import StaticIntTuple
-from utils.list import DimList
 from Pad import pad
 
+from utils.index import StaticIntTuple
+from utils.list import DimList
 
 # CHECK-LABEL: test_pad_1d
 fn test_pad_1d():

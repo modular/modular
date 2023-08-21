@@ -5,29 +5,27 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from memory.buffer import NDBuffer
-from ConvUtils import (
-    ConvShape,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_width,
-    get_direct_conv_micro_kernel_height,
-    get_conv_num_tasks,
-    get_conv_num_partitions,
-)
-from Conv import (
-    ConvDirectNHWC,
-    Naive2dConvolution,
-    pack_filter,
-)
-from Image import ImageData, Image2DLayout, ImageShape
-from utils.index import Index, StaticIntTuple
-from sys import external_call
-from utils.list import DimList
-from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min
 from random import rand
+from sys import external_call
 from sys.info import simdwidthof
+
+from Conv import ConvDirectNHWC, Naive2dConvolution, pack_filter
+from ConvUtils import (
+    ConvShape,
+    get_conv_num_partitions,
+    get_conv_num_tasks,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+)
+from Image import Image2DLayout, ImageData, ImageShape
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32

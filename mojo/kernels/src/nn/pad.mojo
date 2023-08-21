@@ -9,15 +9,17 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
-from memory.buffer import Buffer, NDBuffer
-from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from sys.info import sizeof
+
 from memory import memcpy
+from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from Transpose import _fill_strides
-from sys.info import sizeof
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 
 
 fn _fill[

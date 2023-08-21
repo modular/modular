@@ -4,23 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import clamp, div_ceil, max, min, sqrt
 from sys.build import is_debug_build
-from memory.buffer import NDBuffer
-from utils.list import DimList
-from Image import (
-    ImageData,
-    Image2DLayout,
-)
-from utils.index import StaticIntTuple, Index
-from math import min, max, clamp, sqrt, div_ceil
+from sys.info import has_avx512f, has_neon, os_is_macos, simdwidthof, sizeof
+
+from Image import Image2DLayout, ImageData
 from MatmulUtils import partition_work
-from sys.info import (
-    has_avx512f,
-    has_neon,
-    os_is_macos,
-    simdwidthof,
-    sizeof,
-)
+from memory.buffer import NDBuffer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 # conv uses a different kernel than matmul
 fn get_conv_a_row_size() -> Int:

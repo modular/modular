@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
-from memory import memcpy
-from memory.unsafe import DTypePointer
-from utils.list import DimList
 from sys.info import sizeof
 
+from memory import memcpy
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer
+
+from utils.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis

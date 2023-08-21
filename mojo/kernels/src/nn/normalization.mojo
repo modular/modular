@@ -4,18 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer
-from algorithm import vectorize_unroll
-from utils.list import Dim, DimList
-from algorithm import vectorize
-from utils.index import StaticIntTuple
-from utils.static_tuple import StaticTuple
-from algorithm import mean, variance, map_reduce
-from algorithm.reduction import (
-    _simd_sum,
-    _simd_sum_elementwise,
-)
 from math import sqrt
+
+from algorithm import map_reduce, mean, variance, vectorize, vectorize_unroll
+from algorithm.reduction import _simd_sum, _simd_sum_elementwise
+from memory.buffer import Buffer, NDBuffer
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
+from utils.static_tuple import StaticTuple
 
 
 fn layer_norm[

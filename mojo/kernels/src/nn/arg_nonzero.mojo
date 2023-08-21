@@ -4,17 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
-from algorithm import (
-    vectorize_unroll,
-    async_parallelize,
-)
+from algorithm import async_parallelize, vectorize_unroll
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import Trace, TraceLevel
 
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # where

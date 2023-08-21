@@ -9,15 +9,17 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from Arange import arange, arange_shape
-from memory.buffer import NDBuffer, Buffer
-from algorithm import elementwise
 from math import mul
+
+from algorithm import elementwise
+from Arange import arange, arange_shape
 from memory import stack_allocation
+from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+from Slice import slice_as_copy, slice_as_view
+
+from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
-from utils.index import StaticIntTuple, Index
-from runtime.llcl import Runtime, OwningOutputChainPtr
-from Slice import slice_as_view, slice_as_copy
 
 
 fn print_elements[

@@ -12,13 +12,14 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from memory.buffer import NDBuffer
-from GatherScatter import gather
-from utils.index import StaticIntTuple
-from utils.list import DimList
-from runtime.llcl import Runtime, OwningOutputChainPtr
 from sys.info import simdwidthof
 
+from GatherScatter import gather
+from memory.buffer import NDBuffer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
+from utils.index import StaticIntTuple
+from utils.list import DimList
 
 # CHECK-LABEL: test_gather
 fn test_gather():

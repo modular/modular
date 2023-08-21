@@ -9,24 +9,21 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
+from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
-from utils.index import StaticIntTuple
-from utils.list import DimList
-from Image import (
-    ImageData,
-    Image2DLayout,
-    ImageShape,
-)
 from Pool import (
     Pool2d,
     avg_pool_init_fn,
-    avg_pool_update_fn,
     avg_pool_reduce_fn,
+    avg_pool_update_fn,
     max_pool_init_fn,
-    max_pool_update_fn,
     max_pool_reduce_fn,
+    max_pool_update_fn,
 )
-from runtime.llcl import Runtime, OwningOutputChainPtr
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
+from utils.index import StaticIntTuple
+from utils.list import DimList
 
 
 fn fill_buffer[shape: DimList](buf: NDBuffer[4, shape, DType.float32]):

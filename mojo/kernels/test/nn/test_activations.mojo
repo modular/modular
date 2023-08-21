@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from math import iota
+
 from Activations import (
     elu,
-    relu,
-    relu_n1,
-    prelu,
     gelu,
     gelu_approximate,
     gelu_approximate_sigmoid,
+    prelu,
+    relu,
+    relu_n1,
 )
-from math import iota
 
 # CHECK-LABEL: test_elu
 fn test_elu():

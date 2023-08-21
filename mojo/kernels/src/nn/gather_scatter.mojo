@@ -4,24 +4,26 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer, prod_dims
+from math import div_ceil, min
+from sys.info import sizeof
+from sys.intrinsics import PrefetchOptions
+
 from algorithm import (
+    async_parallelize,
+    elementwise,
+    unroll,
     vectorize,
     vectorize_unroll,
-    async_parallelize,
-    unroll,
-    elementwise,
 )
 from algorithm.functional import _elementwise_impl
-from utils.index import StaticIntTuple
-from sys.intrinsics import PrefetchOptions
+from memory.buffer import Buffer, NDBuffer, prod_dims
 from runtime.llcl import OutputChainPtr
-from utils.list import DimList, Dim
-from math import div_ceil
-from math import min
-from sys.info import sizeof
 from runtime.tracing import TraceLevel
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
+
 
 ## gather_reduce_2D_axis_1
 @adaptive

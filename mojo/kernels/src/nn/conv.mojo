@@ -4,59 +4,60 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import (
-    NDBuffer,
-    Buffer,
-    DynamicRankBuffer,
-    partial_simd_load,
-    partial_simd_store,
-    _compute_ndbuffer_offset,
-)
-from ConvUtils import (
-    ConvShape,
-    get_conv_tile_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-    get_conv_num_tasks,
-    get_conv_num_partitions,
-    get_conv2d_shape,
-)
+from math import div_ceil, fma, max, min
+from sys.info import alignof, simd_byte_width, simdwidthof
+from sys.intrinsics import PrefetchOptions, external_call
+
 from algorithm import (
-    unroll,
     async_parallelize,
     sync_parallelize,
     tile,
+    unroll,
     unswitch,
     vectorize_unroll,
 )
-from Image import ImageData, Image2DLayout, ImageShape
-from utils.index import Index, StaticIntTuple
-from sys.intrinsics import PrefetchOptions, external_call
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from utils.list import Dim, DimList, VariadicList
-from math import min, max, fma, div_ceil
+from ConvUtils import (
+    ConvShape,
+    get_conv2d_shape,
+    get_conv_num_partitions,
+    get_conv_num_tasks,
+    get_conv_tile_shape,
+    get_direct_conv_micro_kernel_height,
+    get_direct_conv_micro_kernel_width,
+)
+from Image import Image2DLayout, ImageData, ImageShape
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
-    calculate_tile_n_k,
     PackMatrixCols,
     PackMatrixRows,
     _null_elementwise_epilogue,
+    calculate_tile_n_k,
 )
 from MatmulUtils import (
+    PartitionHeuristic,
     get_matmul_prefetch_b_distance_k,
+    get_min_task_size,
     get_partitioned_matmul,
     get_partitioned_matmul_im2col,
-    get_min_task_size,
-    PartitionHeuristic,
     partition_work,
 )
 from memory import memset_zero, stack_allocation
+from memory.buffer import (
+    Buffer,
+    DynamicRankBuffer,
+    NDBuffer,
+    _compute_ndbuffer_offset,
+    partial_simd_load,
+    partial_simd_store,
+)
 from memory.unsafe import DTypePointer
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from ShapeFuncUtils import get_sliding_window_out_dim
-from sys.info import simd_byte_width, simdwidthof, alignof
-from utils.optional_param import OptionalParamInts
 
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
+from utils.optional_param import OptionalParamInts
 
 alias MAX_NUM_CHANNELS_TILE = 384
 

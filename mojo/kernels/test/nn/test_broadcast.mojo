@@ -7,9 +7,9 @@
 
 from Broadcast import broadcast
 from memory.buffer import NDBuffer
+
 from utils.index import StaticIntTuple
 from utils.list import DimList
-
 
 # CHECK-LABEL: test_broadcast_empty_shape
 fn test_broadcast_empty_shape():

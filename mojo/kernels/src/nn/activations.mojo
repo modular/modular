@@ -6,23 +6,25 @@
 
 """The module contains implementations of activation functions."""
 
-from math.bit import _is_neg
-from utils.list import VariadicList
-from runtime.llcl import OutputChainPtr
 from math import (
     abs,
+    clamp,
     copysign,
     erf,
     exp,
     expm1,
-    clamp,
+    fma,
+    identity,
     max,
     min,
-    identity,
     tanh,
-    fma,
 )
+from math.bit import _is_neg
 from math.polynomial import polynomial_evaluate
+
+from runtime.llcl import OutputChainPtr
+
+from utils.list import VariadicList
 
 
 @value

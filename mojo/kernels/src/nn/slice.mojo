@@ -4,12 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer
-from algorithm import elementwise
-from utils.index import StaticIntTuple
-from runtime.llcl import OutputChainPtr
-from utils.list import Dim, DimList
 from math import div_ceil
+
+from algorithm import elementwise
+from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import OutputChainPtr
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view

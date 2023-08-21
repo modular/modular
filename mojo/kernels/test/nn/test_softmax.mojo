@@ -6,12 +6,13 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from Softmax import softmax_2_pass, logsoftmax
-from memory.buffer import Buffer, NDBuffer
-from utils.list import Dim, DimList
 from sys.info import simdwidthof
-from runtime.llcl import OwningOutputChainPtr, Runtime
 
+from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+from Softmax import logsoftmax, softmax_2_pass
+
+from utils.list import Dim, DimList
 
 # CHECK-LABEL: test_logsoftmax
 fn test_logsoftmax():

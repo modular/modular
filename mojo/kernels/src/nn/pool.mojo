@@ -4,16 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
-from algorithm import async_parallelize, vectorize_unroll
-from Image import ImageData, Image2DLayout, ImageShape
-from utils.index import Index, StaticIntTuple
-from runtime.llcl import OutputChainPtr
-from utils.list import DimList
-from math import min, max, add, div_ceil
+from math import add, div_ceil, max, min
 from math.limit import neginf
-from ShapeFuncUtils import get_sliding_window_out_dim
 from sys.info import simdwidthof
+
+from algorithm import async_parallelize, vectorize_unroll
+from Image import Image2DLayout, ImageData, ImageShape
+from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr
+from ShapeFuncUtils import get_sliding_window_out_dim
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
+
 
 # Pooling method.
 @value

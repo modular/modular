@@ -4,13 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
-from utils.index import product
 from sys import external_call
-from utils.list import Dim, VariadicList, DimList
-from memory import memcpy
-from runtime.llcl import OutputChainPtr
+
 from algorithm import sync_parallelize
+from memory import memcpy
+from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
+from runtime.llcl import OutputChainPtr
+
+from utils.index import product
+from utils.list import Dim, DimList, VariadicList
 from utils.vector import InlinedFixedVector
 
 

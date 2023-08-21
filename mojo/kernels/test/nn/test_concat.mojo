@@ -6,12 +6,13 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
-from Concat import concat, _concat_parallel
+from Concat import _concat_parallel, concat
+from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 from memory.unsafe import DTypePointer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
 from utils.index import StaticIntTuple
-from utils.list import Dim, VariadicList, DimList
-from runtime.llcl import Runtime, OwningOutputChainPtr
+from utils.list import Dim, DimList, VariadicList
 
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
