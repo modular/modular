@@ -5,12 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from math import iota
+
 from Matrix import Matrix
 from memory.buffer import Buffer, NDBuffer
-from memory.unsafe import Pointer, DTypePointer
-from utils.list import DimList
+from memory.unsafe import DTypePointer, Pointer
+
 from utils.index import Index
-from math import iota
+from utils.list import DimList
 from utils.vector import DynamicVector
 
 

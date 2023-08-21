@@ -5,11 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from sys.info import simdwidthof
+
+from Matmul import PackMatrixCols
 from memory.buffer import NDBuffer
+
 from utils.index import Index
 from utils.list import DimList
-from Matmul import PackMatrixCols
-from sys.info import simdwidthof
 
 alias type = DType.float32
 alias simd_size: Int = simdwidthof[DType.float32]()

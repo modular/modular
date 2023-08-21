@@ -4,28 +4,27 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
-from utils.list import DimList
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from utils.index import StaticIntTuple, Index
-from math import max, min, div_ceil, gcd
+from math import div_ceil, gcd, max, min
+from sys.info import simdwidthof
+
+from algorithm import sync_parallelize, vectorize_unroll
+from algorithm.functional import _get_start_indices_of_nth_subvolume
+from algorithm.reduction import _reduce_generator
+from Matmul import _submatmul_sequential_sync
 from MatmulUtils import (
-    is_critical_stride,
+    PartitionHeuristic,
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,
-    PartitionHeuristic,
+    is_critical_stride,
     partition_work,
 )
-from Matmul import _submatmul_sequential_sync
 from memory import memset_zero
-from sys.info import simdwidthof
-from algorithm import (
-    sync_parallelize,
-    vectorize_unroll,
-)
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from algorithm.reduction import _reduce_generator
+from memory.buffer import NDBuffer
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 
 @always_inline

@@ -11,9 +11,9 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from memory import memcmp
 from memory.buffer import Buffer
 from VNNI import dot_i8_to_i32_AVX2, dot_i8_to_i32_x86
-from memory import memcmp
 
 
 fn gemm(

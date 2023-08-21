@@ -11,11 +11,13 @@
 # REQUIRES: apple-m1
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from sys.info import is_apple_m1, sizeof
+
 from AppleAMX import amx_detail
 from memory.buffer import NDBuffer
+
 from utils.index import StaticIntTuple
 from utils.list import DimList
-from sys.info import is_apple_m1, sizeof
 
 
 fn fill_a(

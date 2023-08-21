@@ -11,19 +11,28 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from memory.unsafe import Pointer, DTypePointer
-from memory.buffer import Buffer, NDBuffer
-from Transpose import transpose, transpose_inplace
-from sys.info import os_is_linux, has_intel_amx
-from Matmul import Matrix
-from utils.list import DimList, Dim
-from memory import memcmp, memset_zero
-from Matmul import naive_matmul
+from sys.info import has_intel_amx, os_is_linux
+
 from algorithm import unroll
-from IntelAMX import _tile_loadconfig, _tile_storeconfig, _tile_release
-from IntelAMX import _tile_zero, _tile_dpbssd, _tile_dpbssd_emulated
-from IntelAMX import _tile_loadd, _tile_stored
-from IntelAMX import init_intel_amx, tileconfig
+from IntelAMX import (
+    _tile_dpbssd,
+    _tile_dpbssd_emulated,
+    _tile_loadconfig,
+    _tile_loadd,
+    _tile_release,
+    _tile_storeconfig,
+    _tile_stored,
+    _tile_zero,
+    init_intel_amx,
+    tileconfig,
+)
+from Matmul import Matrix, naive_matmul
+from memory import memcmp, memset_zero
+from memory.buffer import Buffer, NDBuffer
+from memory.unsafe import DTypePointer, Pointer
+from Transpose import transpose, transpose_inplace
+
+from utils.list import Dim, DimList
 
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`

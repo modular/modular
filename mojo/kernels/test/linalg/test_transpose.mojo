@@ -7,10 +7,10 @@
 # RUN: %mojo %s | FileCheck %s
 
 from memory.buffer import Buffer, NDBuffer
+from Transpose import _simplify_transpose_perms, transpose, transpose_inplace
+
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
-from Transpose import transpose, transpose_inplace, _simplify_transpose_perms
-
 
 # CHECK-LABEL: test_transpose_4x4
 fn test_transpose_4x4():

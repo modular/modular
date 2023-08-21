@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer, Buffer
 from algorithm import unroll
-from utils.list import Dim, DimList
+from memory.buffer import Buffer, NDBuffer
+
 from utils.index import Index
+from utils.list import Dim, DimList
 
 
 fn gemv[

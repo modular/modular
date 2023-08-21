@@ -5,12 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from sys.info import simdwidthof
+
 from Gemv import gemv
 from memory.buffer import Buffer, NDBuffer
-from utils.list import Dim, DimList
-from sys.info import simdwidthof
 from runtime.llcl import OwningOutputChainPtr, Runtime
 
+from utils.list import Dim, DimList
 
 # CHECK-LABEL: test_gemv
 fn test_gemv():

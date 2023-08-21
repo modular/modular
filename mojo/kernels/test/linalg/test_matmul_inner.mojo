@@ -5,18 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from Matmul import (
-    MatmulInnerLoopBPacked,
-    GemmShape,
-    MatmulConfig,
-)
+from sys.info import simdwidthof
+
+from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
     get_matmul_a_row_size,
     get_matmul_pack_inner_size,
     get_matmul_prefetch_b_distance_k,
 )
 from memory.buffer import NDBuffer
-from sys.info import simdwidthof
+
 from utils.index import Index
 from utils.list import DimList
 

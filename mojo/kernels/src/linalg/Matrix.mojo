@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
-from utils.list import DimList
-from utils.index import StaticIntTuple
-from memory.unsafe import Pointer, DTypePointer
 from sys.info import alignof
+
+from memory.buffer import NDBuffer
+from memory.unsafe import DTypePointer, Pointer
+
+from utils.index import StaticIntTuple
+from utils.list import DimList
 
 
 @value

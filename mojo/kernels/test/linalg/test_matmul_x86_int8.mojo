@@ -10,22 +10,24 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils.list import DimList
-from utils.index import Index, StaticIntTuple
-from memory.unsafe import DTypePointer
-from memory.buffer import NDBuffer, DynamicRankBuffer
-from Matrix import Matrix
-from Matmul import matmul, _submatmul_sequential_sync, pack_b
+from math import align_up, div_ceil, max, min
+
+from Matmul import _submatmul_sequential_sync, matmul, pack_b
 from MatmulUtils import (
     MatmulConfig,
-    calculate_tile_n_k,
-    get_partitioned_matmul,
-    get_matmul_config,
-    search_mm_config,
-    is_critical_stride,
     PartitionHeuristic,
+    calculate_tile_n_k,
+    get_matmul_config,
+    get_partitioned_matmul,
+    is_critical_stride,
+    search_mm_config,
 )
-from math import div_ceil, align_up, max, min
+from Matrix import Matrix
+from memory.buffer import DynamicRankBuffer, NDBuffer
+from memory.unsafe import DTypePointer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 alias alignment = 64
 

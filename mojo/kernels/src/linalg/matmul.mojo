@@ -4,51 +4,52 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import (
-    NDBuffer,
-    Buffer,
-    DynamicRankBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
+from math import align_down, align_up, div_ceil, fma, min
+from sys.info import alignof, has_avx2, has_neon, simdwidthof
+from sys.intrinsics import PrefetchOptions, external_call
+
 from algorithm import (
+    sync_parallelize,
     tile,
+    unroll,
     unswitch,
-    unroll,
-    unroll,
     vectorize,
     vectorize_unroll,
-    sync_parallelize,
 )
-from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList, VariadicList
-from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from math import min, fma, div_ceil, align_down, align_up
-from memory import memset_zero, stack_allocation
 from MatmulUtils import (
-    get_packB_unroll_factor,
+    GemmShape,
     MatmulConfig,
-    SubMatmulConfig,
     MatmulDataType,
     MatmulOperandLayout,
-    GemmShape,
-    calculate_tile_n_k,
-    _get_tile_n_k,
-    get_min_task_size,
-    get_partitioned_matmul,
     PartitionHeuristic,
-    search_mm_config,
-    elementwise_lambda_fn_sig_type,
+    SubMatmulConfig,
+    _get_tile_n_k,
+    calculate_tile_n_k,
     dispatch_is_critical_stride,
+    elementwise_lambda_fn_sig_type,
+    get_min_task_size,
+    get_packB_unroll_factor,
+    get_partitioned_matmul,
     is_critical_stride,
+    search_mm_config,
     use_vnni_fn,
 )
 from Matrix import Matrix
+from memory import memset_zero, stack_allocation
+from memory.buffer import (
+    Buffer,
+    DynamicRankBuffer,
+    NDBuffer,
+    partial_simd_load,
+    partial_simd_store,
+)
 from memory.unsafe import DTypePointer
-from sys.info import has_neon, alignof, simdwidthof, has_avx2
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
-from sys.intrinsics import PrefetchOptions, external_call
 from VNNI import dot_i8_to_i32_x86
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
 
 
 @closure

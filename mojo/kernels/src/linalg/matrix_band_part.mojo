@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from memory.buffer import NDBuffer
 from algorithm.functional import _elementwise_impl
-from utils.index import Index
-from utils.index import StaticIntTuple
-from utils.list import DimList
+from memory.buffer import NDBuffer
 from runtime.llcl import OutputChainPtr
 from runtime.tracing import TraceLevel
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 
 @always_inline

@@ -4,26 +4,27 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.buffer import NDBuffer
+from math import div_ceil, max, min
+from sys.info import simd_byte_width, simdwidthof
+
 from algorithm import tile, tile_and_unswitch, vectorize_unroll
-from utils.index import Index, StaticIntTuple
-from utils.list import VariadicList, Dim, DimList
-from math import div_ceil, min, max
 from Matmul import (
+    GemmShape,
     MatmulConfig,
+    MatmulDataType,
+    MatmulInnerLoopBPacked,
+    MatmulOperandLayout,
     PackMatrixCols,
     PackMatrixRows,
-    MatmulInnerLoopBPacked,
-    GemmShape,
-    MatmulDataType,
-    MatmulOperandLayout,
     calculate_tile_n_k,
 )
-from memory import stack_allocation
 from MatmulUtils import get_pack_data_size
+from memory import stack_allocation
+from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
-from sys.info import simdwidthof
-from sys.info import simd_byte_width
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList, VariadicList
 
 
 @register_passable("trivial")

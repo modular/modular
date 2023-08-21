@@ -5,24 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from memory.buffer import Buffer, NDBuffer
+from math import div_ceil, min
+from sys.info import simdwidthof, sizeof
+from sys.intrinsics import strided_load, strided_store
+
 from algorithm import (
-    unroll,
     async_parallelize,
     sync_parallelize,
-    vectorize,
-    unroll,
     tile,
+    unroll,
     unswitch,
+    vectorize,
 )
-from utils.index import StaticIntTuple, StaticTuple
-from sys.intrinsics import strided_load, strided_store
-from utils.list import DimList, VariadicList
-from runtime.llcl import OutputChainPtr
-from math import div_ceil, min
 from memory import memcpy
+from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
-from sys.info import sizeof, simdwidthof
+from runtime.llcl import OutputChainPtr
+
+from utils.index import StaticIntTuple, StaticTuple
+from utils.list import DimList, VariadicList
 
 
 fn _transpose_inplace_4x4[

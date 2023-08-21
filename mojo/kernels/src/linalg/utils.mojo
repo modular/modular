@@ -4,19 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils.index import StaticIntTuple, Index
 from math import div_ceil, max, min, sqrt
-from utils.list import DimList
+from sys.build import is_debug_build
 from sys.info import (
-    has_avx512f,
     has_avx2,
+    has_avx512f,
     has_neon,
     os_is_macos,
     simdwidthof,
     sizeof,
 )
-from sys.build import is_debug_build
-from memory.buffer import NDBuffer, DynamicRankBuffer
+
+from memory.buffer import DynamicRankBuffer, NDBuffer
+
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
