@@ -24,13 +24,13 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 
 # Check single file debug info generation.
 
-# CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<{{.*}}@"$Int"::@Int>>
-# CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.declref<{{.*}}@"$Int"::@Int>, !kgen.declref<{{.*}}@"$Int"::@Int>) -> (!kgen.declref<{{.*}}@"$Int"::@Int>): DW_CC_normal>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$Int::Int,{{.*}}$Int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
+# CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<{{.*}}@"$int"::@Int>>
+# CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$int"::@Int>) -> (!kgen.declref<{{.*}}@"$int"::@Int>): DW_CC_normal>
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$int::Int,{{.*}}$int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
 
-# CHECK-LABEL: lit.func @"power({{.*}}$Int::Int,{{.*}}$Int::Int)"(
+# CHECK-LABEL: lit.func @"power({{.*}}$int::Int,{{.*}}$int::Int)"(
 fn power(lhs: Int, rhs: Int) -> Int:
     # CHECK: debuginfo.value #[[LHS_VAR]] = %lhs
     # CHECK: debuginfo.value #[[RHS_VAR]] = %rhs
@@ -67,8 +67,8 @@ from imported_module import VeryUniqueStruct
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func($builtin::$Int::Int)"(%very_unique_arg: !kgen.declref<@"$builtin"::@"$Int"::@Int> loc("[[FILENAME]]"
-# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !kgen.declref<@"$builtin"::@"$Int"::@Int> loc(#[[VALUE_LOC:loc[0-9]+]])
+# CHECK-DAG: lit.func @"very_unique_func($builtin::$int::Int)"(%very_unique_arg: !kgen.declref<@"$builtin"::@"$int"::@Int> loc("[[FILENAME]]"
+# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !kgen.declref<@"$builtin"::@"$int"::@Int> loc(#[[VALUE_LOC:loc[0-9]+]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 # CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC:loc[0-9]+]]])

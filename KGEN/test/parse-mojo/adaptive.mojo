@@ -41,20 +41,20 @@ struct TrivialStuff[*size: Int]:
 
 
 @adaptive
-# CHECK: lit.func @"foobar{{.*}}"<[[WIDTH:.*]]: {{.*}}@"$Int"::@Int>() ->
-# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$Int"::@Int> = [[[WIDTH]]]>> attributes {isAdaptive,
+# CHECK: lit.func @"foobar{{.*}}"<[[WIDTH:.*]]: {{.*}}@"$int"::@Int>() ->
+# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$int"::@Int> = [[[WIDTH]]]>> attributes {isAdaptive,
 fn foobar[width: Int]() -> TrivialStuff[width]:
     pass
 
 
 @adaptive
-# CHECK: lit.func @"foobar{{.*}}"<[[W:.*]]: {{.*}}@"$Int"::@Int>() ->
-# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$Int"::@Int> = [[[W]]]>> attributes {isAdaptive,
+# CHECK: lit.func @"foobar{{.*}}"<[[W:.*]]: {{.*}}@"$int"::@Int>() ->
+# CHECK-SAME: !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$int"::@Int> = [[[W]]]>> attributes {isAdaptive,
 fn foobar[w: Int]() -> TrivialStuff[w]:
     pass
 
 
-# CHECK: lit.func @"main_func[{{.*}}$Int::Int]()"<[[X:.*]]: {{.*}}@"$Int"::@Int
+# CHECK: lit.func @"main_func[{{.*}}$int::Int]()"<[[X:.*]]: {{.*}}@"$int"::@Int
 fn main_func[x: Int]():
     # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": () -> !lit.none = <[@{{.*}}::@"foo()", @{{.*}}::@"foo()_0"]>
     # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S0]]"]()
@@ -67,9 +67,9 @@ fn main_func[x: Int]():
     # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)bar{{.*}}"]()
     bar()
 
-    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": () -> !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$Int"::@Int> = [[[X]]]>>
-    # CHECK-SAME: = <[@{{.*}}::@"foobar[{{.*}}$Int::Int]()"<:{{.*}}@"$Int"::@Int [[X]]>, @{{.*}}::@"foobar[{{.*}}$Int::Int]()_0"<:{{.*}}@"$Int"::@Int [[X]]>]>
-    # CHECK-NEXT: call_param[() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<[[S]]: variadic<{{.*}}@"$Int"::@Int> = [[[X]]]>>: *"(adaptive)foobar{{.*}}]()
+    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": () -> !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<{{.*}}@"$int"::@Int> = [[[X]]]>>
+    # CHECK-SAME: = <[@{{.*}}::@"foobar[{{.*}}$int::Int]()"<:{{.*}}@"$int"::@Int [[X]]>, @{{.*}}::@"foobar[{{.*}}$int::Int]()_0"<:{{.*}}@"$int"::@Int [[X]]>]>
+    # CHECK-NEXT: call_param[() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<[[S]]: variadic<{{.*}}@"$int"::@Int> = [[[X]]]>>: *"(adaptive)foobar{{.*}}]()
     _ = foobar[x]()
 
     return

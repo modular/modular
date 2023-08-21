@@ -188,7 +188,7 @@ variables that were created by the expression as shown below:
   1> let a_number = 12345
   2. let a_string = "Mojo"
   3.
-($Int::Int) a_number =
+($int::Int) a_number =
 ($StringLiteral::StringLiteral) a_string =
 ```
 

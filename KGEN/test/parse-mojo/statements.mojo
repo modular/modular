@@ -38,7 +38,7 @@ fn return_new_line() -> Int:
 fn return_impl_convert_raises() raises -> Int:
     # CHECK: %0 = kgen{{.*}}= 4}
     # CHECK: %1 = pop.variant.create %0
-    # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$Int"::@Int>
+    # CHECK: lit.return %1 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
     return 4  # Implicit conversion from literal to Int
 
 
@@ -91,7 +91,7 @@ fn test_if(a: Bool, b: Bool, c: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_if_nested
 fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
-    # CHECK-NEXT:   [[I1:%.*]] = kgen.call @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)"(%a)
+    # CHECK-NEXT:   [[I1:%.*]] = kgen.call @"$builtin"::@"$bool"::@Bool::@"__mlir_i1__($builtin::$bool::Bool)"(%a)
     # CHECK-NEXT:              hlcf.if [[I1]]
     if a:
         # CHECK-NEXT: %inside_a = lit.varlet.decl "inside_a", var = true
@@ -122,7 +122,7 @@ fn test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     return a
 
 # CHECK-LABEL: lit.func @"param_if{{.*}})"<
-# CHECK-SAME: [[A:.*]]: i1, [[B:.*]]: @"$builtin"::@"$Bool"::@Bool>()
+# CHECK-SAME: [[A:.*]]: i1, [[B:.*]]: @"$builtin"::@"$bool"::@Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
   # CHECK: kgen.param.if <[[A]]> {
   @parameter
@@ -130,7 +130,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: lit.varlet.decl "inside_1", var = true
     var inside_1: Int
   # CHECK: } else {
-  # CHECK:     kgen.param.if <apply{{.*}}@"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__{{.*}}[[B]])> {
+  # CHECK:     kgen.param.if <apply{{.*}}@"$builtin"::@"$bool"::@Bool::@"__mlir_i1__{{.*}}[[B]])> {
   elif b:
   # CHECK:     lit.varlet.decl "inside_2", var = true
     var inside_2: Int
@@ -155,12 +155,12 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     var w: Int
 
 
-# CHECK-LABEL: lit.func @"param_if_and[$builtin::$Bool::Bool,$builtin::$Bool::Bool]()"<
-# CHECK-SAME: [[A:.*]]: @"$builtin"::@"$Bool"::@Bool, [[B:.*]]: @"$builtin"::@"$Bool"::@Bool>()
+# CHECK-LABEL: lit.func @"param_if_and[$builtin::$bool::Bool,$builtin::$bool::Bool]()"<
+# CHECK-SAME: [[A:.*]]: @"$builtin"::@"$bool"::@Bool, [[B:.*]]: @"$builtin"::@"$bool"::@Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
-  # CHECK-SAME:   :<>(!kgen.declref<@"$builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)",
-  # CHECK-SAME:   cond(apply(:<>(!kgen.declref<@"$builtin"::@"$Bool"::@Bool> borrow) -> i1 @"$builtin"::@"$Bool"::@Bool::@"__mlir_i1__($builtin::$Bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME:   :<>(!kgen.declref<@"$builtin"::@"$bool"::@Bool> borrow) -> i1 @"$builtin"::@"$bool"::@Bool::@"__mlir_i1__($builtin::$bool::Bool)",
+  # CHECK-SAME:   cond(apply(:<>(!kgen.declref<@"$builtin"::@"$bool"::@Bool> borrow) -> i1 @"$builtin"::@"$bool"::@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v", var = true
@@ -447,12 +447,12 @@ def maybeRaises() -> Int:
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
-    # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int>) -> !kgen.declref<{{.*}}@"$Int"::@Int>
+    # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK: {
-    # CHECK:    [[VAR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$Int"::@Int> as !kgen.declref<{{.*}}@"$Int"::@Int>
-    # CHECK:    lit.yield [[VAR]] : !kgen.declref<{{.*}}@"$Int"::@Int>
+    # CHECK:    [[VAR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int> as !kgen.declref<{{.*}}@"$int"::@Int>
+    # CHECK:    lit.yield [[VAR]] : !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK: } else {
-    # CHECK:    [[ERR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$Int"::@Int> as !kgen.declref<@{{.*}}::@Error>
+    # CHECK:    [[ERR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int> as !kgen.declref<@{{.*}}::@Error>
     # CHECK:    lit.raise [[ERR]] : <@{{.*}}::@Error>
     # CHECK:    kgen.unreachable
     # CHECK:  }
@@ -462,13 +462,13 @@ def propagateErrorInDef():
 
 # CHECK-LABEL: lit.func @"propagateErrorInRaisingFn
 fn propagateErrorInRaisingFn() raises:
-    # CHECK:  %a = lit.varlet.decl {{.*}} : <{{.*}}@"$Int"::@Int>
+    # CHECK:  %a = lit.varlet.decl {{.*}} : <{{.*}}@"$int"::@Int>
     var a: Int
-    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$Int"::@Int>
-    # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int>) -> !kgen.declref<{{.*}}@"$Int"::@Int>
+    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
+    # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK:  {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
-    # CHECK:    lit.yield [[ERR]] : !kgen.declref<{{.*}}@"$Int"::@Int>
+    # CHECK:    lit.yield [[ERR]] : !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK:  } else {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
     # CHECK:    lit.raise [[ERR]] : <{{.*}}@"$Error"::@Error>
@@ -482,8 +482,8 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$Int"::@Int>
-        # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$Int"::@Int>) -> !kgen.declref<{{.*}}@"$Int"::@Int>
+        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
+        # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
         # CHECK: {
         # CHECK: } else {
         # CHECK:   [[ERR:%.*]] = pop.variant.get %1
