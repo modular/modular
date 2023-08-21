@@ -6,25 +6,26 @@
 # REQUIRES: nvptx_backend
 # RUN: kgen -emit-asm --target-triple=nvptx64-nvidia-cuda --target-cpu=sm_75 --target-features="" %s | FileCheck %s
 
+from sys.info import simdwidthof, triple_is_nvidia_cuda
+
 from Activations import gelu
 from algorithm import elementwise
-from utils.index import StaticIntTuple
 from gpu import (
-    ThreadIdx,
-    BlockIdx,
-    BlockDim,
-    GridDim,
     AddressSpace,
-    stack_allocation,
-    barrier,
+    BlockDim,
+    BlockIdx,
     DevicePointer,
     DTypeDevicePointer,
+    GridDim,
+    ThreadIdx,
+    barrier,
+    stack_allocation,
 )
 from memory import memset_zero
 from memory.unsafe import DTypePointer
-from sys.info import triple_is_nvidia_cuda, simdwidthof
 from runtime.llcl import OutputChainPtr
 
+from utils.index import StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
 # Check parameterization
