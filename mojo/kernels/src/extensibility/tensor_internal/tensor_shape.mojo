@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from utils.list import VariadicList
-from utils.index import StaticIntTuple
-from memory import memcpy
-from memory.unsafe import Pointer, DTypePointer
-from utils.static_tuple import StaticTuple
-from sys.info import sizeof, is_little_endian
+from sys.info import is_little_endian, sizeof
 
+from memory import memcpy
+from memory.unsafe import DTypePointer, Pointer
+
+from utils.index import StaticIntTuple
+from utils.list import VariadicList
+from utils.static_tuple import StaticTuple
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
