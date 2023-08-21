@@ -6,10 +6,11 @@
 """This module implements the low level concurrency library."""
 
 from os.atomic import Atomic
-from builtin.Coroutine import _coro_resume_fn
 from sys import external_call
 from sys.param_env import is_defined
-from memory.unsafe import Pointer, DTypePointer
+
+from builtin.Coroutine import _coro_resume_fn
+from memory.unsafe import DTypePointer, Pointer
 from runtime.tracing import TraceLevel, is_mojo_profiling_disabled
 
 # ===----------------------------------------------------------------------===#

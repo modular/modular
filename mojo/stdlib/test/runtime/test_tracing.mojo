@@ -8,9 +8,10 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
+from sys.build import build_info_llcl_max_profiling_level
+
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
-from sys.build import build_info_llcl_max_profiling_level
 
 
 @always_inline

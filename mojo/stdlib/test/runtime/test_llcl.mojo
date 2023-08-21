@@ -6,14 +6,15 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from os.atomic import Atomic
-from runtime.llcl import (
-    TaskGroup,
-    Runtime,
-    OwningOutputChainPtr,
-    AsyncTaskGroupPtr,
-)
-from memory.unsafe import Pointer
+
 from memory import stack_allocation
+from memory.unsafe import Pointer
+from runtime.llcl import (
+    AsyncTaskGroupPtr,
+    OwningOutputChainPtr,
+    Runtime,
+    TaskGroup,
+)
 
 # CHECK-LABEL: test_sync_coro
 fn test_sync_coro():
