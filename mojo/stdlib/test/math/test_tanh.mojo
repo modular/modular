@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import tanh, iota
-
+from math import iota, tanh
 
 # CHECK-LABEL: test_tanh_float32
 fn test_tanh_float32():

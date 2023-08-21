@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils.list import VariadicList
 from math.polynomial import (
-    polynomial_evaluate,
     _estrin_evaluate_2,
     _estrin_evaluate_4,
     _horner_evaluate,
+    polynomial_evaluate,
 )
 
+from utils.list import VariadicList
 
 # CHECK-LABEL: test_polynomial_evaluate_degree3
 fn test_polynomial_evaluate_degree3():

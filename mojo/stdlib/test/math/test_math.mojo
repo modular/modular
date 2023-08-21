@@ -7,19 +7,19 @@
 
 from math import (
     abs,
-    factorial,
-    sin,
     cos,
-    nan,
+    factorial,
     isnan,
-    rotate_left,
-    rotate_right,
+    nan,
     rotate_bits_left,
     rotate_bits_right,
+    rotate_left,
+    rotate_right,
+    sin,
 )
-from complex import ComplexFloat32
-from math.limit import isfinite, isinf, inf, neginf
+from math.limit import inf, isfinite, isinf, neginf
 
+from complex import ComplexFloat32
 
 # CHECK-LABEL: test_inf
 fn test_inf():
