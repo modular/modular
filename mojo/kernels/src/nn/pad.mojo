@@ -10,8 +10,8 @@
 # ===----------------------------------------------------------------------===#
 
 from memory.buffer import Buffer, NDBuffer
-from Index import StaticIntTuple
-from List import Dim, DimList
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
 

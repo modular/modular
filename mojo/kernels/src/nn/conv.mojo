@@ -30,10 +30,10 @@ from algorithm import (
     vectorize_unroll,
 )
 from Image import ImageData, Image2DLayout, ImageShape
-from Index import Index, StaticIntTuple
+from utils.index import Index, StaticIntTuple
 from sys.intrinsics import PrefetchOptions, external_call
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
-from List import Dim, DimList, VariadicList
+from utils.list import Dim, DimList, VariadicList
 from math import min, max, fma, div_ceil
 from Matmul import (
     GemmShape,
@@ -55,7 +55,7 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from ShapeFuncUtils import get_sliding_window_out_dim
 from sys.info import simd_byte_width, simdwidthof, alignof
-from OptionalParam import OptionalParamInts
+from utils.optional_param import OptionalParamInts
 
 
 alias MAX_NUM_CHANNELS_TILE = 384

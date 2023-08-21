@@ -10,10 +10,10 @@ from algorithm import (
     async_parallelize,
 )
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from Index import StaticIntTuple
-from List import Dim, DimList
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 from runtime.llcl import OutputChainPtr
-from Tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel
 
 
 # ===----------------------------------------------------------------------===#

@@ -8,7 +8,7 @@
 
 from Softmax import softmax_2_pass, logsoftmax
 from memory.buffer import Buffer, NDBuffer
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from sys.info import simdwidthof
 from runtime.llcl import OwningOutputChainPtr, Runtime
 

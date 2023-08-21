@@ -6,12 +6,12 @@
 
 from sys.build import is_debug_build
 from memory.buffer import NDBuffer
-from List import DimList
+from utils.list import DimList
 from Image import (
     ImageData,
     Image2DLayout,
 )
-from Index import StaticIntTuple, Index
+from utils.index import StaticIntTuple, Index
 from math import min, max, clamp, sqrt, div_ceil
 from MatmulUtils import partition_work
 from sys.info import (

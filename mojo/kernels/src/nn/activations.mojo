@@ -7,7 +7,7 @@
 """The module contains implementations of activation functions."""
 
 from math.bit import _is_neg
-from List import VariadicList
+from utils.list import VariadicList
 from runtime.llcl import OutputChainPtr
 from math import (
     abs,

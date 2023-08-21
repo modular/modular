@@ -10,8 +10,8 @@
 # UNSUPPORTED: asan
 
 from memory.buffer import Buffer, NDBuffer
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import StaticIntTuple
+from utils.list import DimList
 from Image import (
     ImageData,
     Image2DLayout,

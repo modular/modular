@@ -14,8 +14,8 @@ from memory.buffer import NDBuffer, Buffer
 from algorithm import elementwise
 from math import mul
 from memory import stack_allocation
-from List import Dim, DimList
-from Index import StaticIntTuple, Index
+from utils.list import Dim, DimList
+from utils.index import StaticIntTuple, Index
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from Slice import slice_as_view, slice_as_copy
 

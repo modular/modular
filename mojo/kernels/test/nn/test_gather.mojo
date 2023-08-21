@@ -14,8 +14,8 @@
 
 from memory.buffer import NDBuffer
 from GatherScatter import gather
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import StaticIntTuple
+from utils.list import DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from sys.info import simdwidthof
 

@@ -6,10 +6,10 @@
 
 from memory.buffer import Buffer, NDBuffer
 from algorithm import vectorize_unroll
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from algorithm import vectorize
-from Index import StaticIntTuple
-from StaticTuple import StaticTuple
+from utils.index import StaticIntTuple
+from utils.static_tuple import StaticTuple
 from algorithm import mean, variance, map_reduce
 from algorithm.reduction import (
     _simd_sum,

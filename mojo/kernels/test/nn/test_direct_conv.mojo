@@ -20,9 +20,9 @@ from Conv import (
     pack_filter,
 )
 from Image import ImageData, Image2DLayout, ImageShape
-from Index import Index, StaticIntTuple
+from utils.index import Index, StaticIntTuple
 from sys import external_call
-from List import DimList
+from utils.list import DimList
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import abs, div_ceil, min

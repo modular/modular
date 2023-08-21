@@ -13,15 +13,15 @@ from algorithm import (
     elementwise,
 )
 from algorithm.functional import _elementwise_impl
-from Index import StaticIntTuple
+from utils.index import StaticIntTuple
 from sys.intrinsics import PrefetchOptions
 from runtime.llcl import OutputChainPtr
-from List import DimList, Dim
+from utils.list import DimList, Dim
 from math import div_ceil
 from math import min
 from sys.info import sizeof
-from Tracing import TraceLevel
-from OptionalParam import OptionalParamInt
+from runtime.tracing import TraceLevel
+from utils.optional_param import OptionalParamInt
 
 ## gather_reduce_2D_axis_1
 @adaptive

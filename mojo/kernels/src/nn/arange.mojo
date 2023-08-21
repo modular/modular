@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.buffer import NDBuffer
-from Index import StaticIntTuple
+from utils.index import StaticIntTuple
 from algorithm.functional import _elementwise_impl
-from List import DimList
+from utils.list import DimList
 from runtime.llcl import OutputChainPtr
 from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof

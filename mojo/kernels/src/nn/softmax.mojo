@@ -6,13 +6,13 @@
 
 from memory.buffer import Buffer, NDBuffer
 from algorithm import vectorize_unroll, async_parallelize
-from Index import product
-from List import Dim, DimList
+from utils.index import product
+from utils.list import Dim, DimList
 from runtime.llcl import OutputChainPtr
 from math import exp, identity, log, mul, reciprocal, sub, min, div_ceil
 from math.limit import neginf
 from algorithm.reduction import max
-from StaticTuple import StaticTuple
+from utils.static_tuple import StaticTuple
 
 
 # ===----------------------------------------------------------------------===#

@@ -7,8 +7,8 @@
 
 from Broadcast import broadcast
 from memory.buffer import NDBuffer
-from Index import StaticIntTuple
-from List import DimList
+from utils.index import StaticIntTuple
+from utils.list import DimList
 
 
 # CHECK-LABEL: test_broadcast_empty_shape

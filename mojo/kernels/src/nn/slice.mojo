@@ -6,9 +6,9 @@
 
 from memory.buffer import Buffer, NDBuffer
 from algorithm import elementwise
-from Index import StaticIntTuple
+from utils.index import StaticIntTuple
 from runtime.llcl import OutputChainPtr
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from math import div_ceil
 
 # ===----------------------------------------------------------------------===#

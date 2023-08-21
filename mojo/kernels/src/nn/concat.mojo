@@ -8,9 +8,9 @@ from memory.buffer import Buffer, NDBuffer
 from sys.build import is_kernels_debug_build
 from algorithm import sync_parallelize
 from algorithm.functional import _elementwise_impl
-from Index import product, StaticIntTuple
+from utils.index import product, StaticIntTuple
 from sys import external_call
-from List import Dim, VariadicList, DimList
+from utils.list import Dim, VariadicList, DimList
 from runtime.llcl import OutputChainPtr
 from math import align_down, align_up, div_ceil, max, min
 from MOGG import simd_load, simd_store

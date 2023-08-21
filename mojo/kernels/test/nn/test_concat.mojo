@@ -9,8 +9,8 @@
 from memory.buffer import Buffer, NDBuffer, DynamicRankBuffer
 from Concat import concat, _concat_parallel
 from memory.unsafe import DTypePointer
-from Index import StaticIntTuple
-from List import Dim, VariadicList, DimList
+from utils.index import StaticIntTuple
+from utils.list import Dim, VariadicList, DimList
 from runtime.llcl import Runtime, OwningOutputChainPtr
 
 # FIXME(#18257): Flaky LSAN crashes.
