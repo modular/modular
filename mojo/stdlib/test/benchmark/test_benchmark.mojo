@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from benchmark import Benchmark
 from time import now, sleep
 
+from benchmark import Benchmark
 
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
