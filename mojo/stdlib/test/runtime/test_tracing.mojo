@@ -9,7 +9,7 @@
 # UNSUPPORTED: asan
 
 from runtime.llcl import Runtime
-from Tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel
 from sys.build import build_info_llcl_max_profiling_level
 
 
