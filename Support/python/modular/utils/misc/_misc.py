@@ -72,7 +72,7 @@ def create_symlink(
         destination (Path): the symlink to be created
         src (Path): the source ("true") to link to
     """
-    if destination.exists():
+    if destination.exists() or destination.is_symlink():
         if destination.is_symlink() or not destination.is_dir():
             destination.unlink()
         else:
