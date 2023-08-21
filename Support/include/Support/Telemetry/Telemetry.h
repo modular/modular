@@ -8,6 +8,7 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Logs.h"
 #include "llvm/ADT/StringMap.h"
@@ -70,8 +71,14 @@ public:
   // or not. For Otel, the Counter struct will basically just contain a pointer
   // to the Otel counter, and so returning the struct seems appropiate.
 
+  /// Returns true if an instrument will be enabled based on its level and the
+  /// configured telemetry level.
+  bool isInstrumentEnabled(Level instrumentLevel) const {
+    return instrumentLevel <= telemetryLevel;
+  }
+
   /// Create a Counter<uint64_t>.
-  Counter<uint64_t> createUInt64Counter(StringRef name,
+  Counter<uint64_t> createUInt64Counter(StringRef name, Level instrumentLevel,
                                         StringRef description = "",
                                         StringRef unit = "") {
     // TODO: If the name is invalid, it looks like OTel logs the error and
@@ -79,20 +86,28 @@ public:
     // the name is valid or that the returned counter is not NOOP. Same for
     // other instruments.
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Counter<uint64_t>(meter->CreateUInt64Counter(
-        name.data(), description.data(), unit.data()));
+    if (isInstrumentEnabled(instrumentLevel))
+      return Counter<uint64_t>(meter->CreateUInt64Counter(
+          name.data(), description.data(), unit.data()));
+    else
+      return Counter<uint64_t>(noopMeter->CreateUInt64Counter(
+          name.data(), description.data(), unit.data()));
 #else
     return Counter<uint64_t>();
 #endif
   }
 
   /// Create a Counter<double>.
-  Counter<double> createDoubleCounter(StringRef name,
+  Counter<double> createDoubleCounter(StringRef name, Level instrumentLevel,
                                       StringRef description = "",
                                       StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Counter<double>(meter->CreateDoubleCounter(
-        name.data(), description.data(), unit.data()));
+    if (isInstrumentEnabled(instrumentLevel))
+      return Counter<double>(meter->CreateDoubleCounter(
+          name.data(), description.data(), unit.data()));
+    else
+      return Counter<double>(noopMeter->CreateDoubleCounter(
+          name.data(), description.data(), unit.data()));
 #else
     return Counter<double>();
 #endif
@@ -100,23 +115,32 @@ public:
 
   /// Create a Histogram<uint64_t>.
   Histogram<uint64_t> createUInt64Histogram(StringRef name,
+                                            Level instrumentLevel,
                                             StringRef description = "",
                                             StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Histogram<uint64_t>(meter->CreateUInt64Histogram(
-        name.data(), description.data(), unit.data()));
+    if (isInstrumentEnabled(instrumentLevel))
+      return Histogram<uint64_t>(meter->CreateUInt64Histogram(
+          name.data(), description.data(), unit.data()));
+    else
+      return Histogram<uint64_t>(noopMeter->CreateUInt64Histogram(
+          name.data(), description.data(), unit.data()));
 #else
     return Histogram<uint64_t>();
 #endif
   }
 
   /// Create a Histogram<double>.
-  Histogram<double> createDoubleHistogram(StringRef name,
+  Histogram<double> createDoubleHistogram(StringRef name, Level instrumentLevel,
                                           StringRef description = "",
                                           StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    return Histogram<double>(
-        meter->CreateDoubleHistogram(name, description, unit));
+    if (isInstrumentEnabled(instrumentLevel))
+      return Histogram<double>(
+          meter->CreateDoubleHistogram(name, description, unit));
+    else
+      return Histogram<double>(
+          noopMeter->CreateDoubleHistogram(name, description, unit));
 #else
     return Histogram<double>();
 #endif
@@ -126,9 +150,9 @@ public:
   /// it to one of {"ns", "us", "ms", "s"} based on the DurationT template
   /// parameter (e.g. std::chrono::microseconds).
   template <typename DurationT>
-  Timer<uint64_t, DurationT> createUInt64Timer(StringRef name,
-                                               StringRef description = "",
-                                               StringRef unit = "") {
+  Timer<uint64_t, DurationT>
+  createUInt64Timer(StringRef name, Level instrumentLevel,
+                    StringRef description = "", StringRef unit = "") {
 #ifdef MODULAR_ENABLE_TELEMETRY
     if (unit.empty()) {
       if constexpr (std::is_same_v<DurationT, std::chrono::nanoseconds>)
@@ -140,8 +164,12 @@ public:
       else if constexpr (std::is_same_v<DurationT, std::chrono::seconds>)
         unit = "s";
     }
-    return Timer<uint64_t, DurationT>(
-        meter->CreateUInt64Histogram(name, description, unit));
+    if (isInstrumentEnabled(instrumentLevel))
+      return Timer<uint64_t, DurationT>(
+          meter->CreateUInt64Histogram(name, description, unit));
+    else
+      return Timer<uint64_t, DurationT>(
+          noopMeter->CreateUInt64Histogram(name, description, unit));
 #else
     return Timer<uint64_t, DurationT>();
 #endif
@@ -154,7 +182,8 @@ public:
     auto otelLogger = loggerProvider->GetLogger("modular_logger");
     auto otelEventLogger =
         eventLoggerProvider->CreateEventLogger(otelLogger, eventDomain);
-    return std::shared_ptr<Logs::Logger>(new Logs::Logger(otelEventLogger));
+    return std::shared_ptr<Logs::Logger>(
+        new Logs::Logger(otelEventLogger, telemetryLevel));
 #else
     return std::shared_ptr<Logs::Logger>(new Logs::Logger());
 #endif
@@ -192,10 +221,14 @@ public:
   }
 
 private:
+  /// Configured telemetry level for this telemetry context.
+  Level telemetryLevel;
 #ifdef MODULAR_ENABLE_TELEMETRY
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> metricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> meter;
+  std::unique_ptr<opentelemetry::metrics::MeterProvider> noopMetricsProvider;
+  std::shared_ptr<opentelemetry::metrics::Meter> noopMeter;
   //  Logs.
   std::shared_ptr<opentelemetry::logs::LoggerProvider> loggerProvider;
   std::shared_ptr<opentelemetry::logs::EventLoggerProvider> eventLoggerProvider;

@@ -170,7 +170,8 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
     return Error("could not find a 'main' function to execute");
   [[maybe_unused]] auto timeScope =
       runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
-          .createUInt64Timer<std::chrono::milliseconds>("mojo.run.time");
+          .createUInt64Timer<std::chrono::milliseconds>(
+              "mojo.run.time", M::Telemetry::Level::L2);
 
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
