@@ -12,15 +12,15 @@
 
 
 from builtin.io import _printf
-from Vector import DynamicVector
+from utils.vector import DynamicVector
 from memory.buffer import Buffer, NDBuffer
 from Matrix import Matrix
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from runtime.llcl import num_cores, Runtime, TaskGroup
 from algorithm import parallelize
 from math import iota
 from complex import ComplexSIMD
-from Benchmark import Benchmark
+from benchmark import Benchmark
 from memory.unsafe import Pointer, DTypePointer
 from sys.info import simdwidthof
 from math import abs

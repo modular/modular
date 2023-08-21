@@ -6,10 +6,10 @@
 
 from math import max, factorial, div_ceil, min
 from time import now
-from Index import StaticIntTuple
+from utils.index import StaticIntTuple
 from algorithm import parallelize, async_parallelize
 from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
-from Vector import UnsafeFixedVector
+from utils.vector import UnsafeFixedVector
 
 alias n = 12
 

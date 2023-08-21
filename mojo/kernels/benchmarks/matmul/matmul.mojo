@@ -9,7 +9,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from Benchmark import Benchmark
+from benchmark import Benchmark
 from memory.unsafe import DTypePointer
 
 

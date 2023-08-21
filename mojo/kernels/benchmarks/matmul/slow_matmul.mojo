@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import random_float64
-from Benchmark import Benchmark
+from benchmark import Benchmark
 
 
 def main():

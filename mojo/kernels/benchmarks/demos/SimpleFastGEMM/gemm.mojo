@@ -7,11 +7,11 @@
 # Meant to be run on an AVX512 system
 
 from memory.unsafe import DTypePointer
-from List import Dim, DimList
+from utils.list import Dim, DimList
 from memory.buffer import Buffer, NDBuffer
-from Index import Index
+from utils.index import Index
 from Matrix import Matrix
-from Benchmark import Benchmark
+from benchmark import Benchmark
 from sys.intrinsics import PrefetchOptions
 from algorithm import unroll
 

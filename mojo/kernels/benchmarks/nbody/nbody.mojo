@@ -10,10 +10,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from StaticTuple import StaticTuple
+from utils.static_tuple import StaticTuple
 from algorithm import unroll
 from math import sqrt
-from Benchmark import Benchmark
+from benchmark import Benchmark
 
 alias PI = 3.141592653589793
 alias SOLAR_MASS = 4 * PI * PI
