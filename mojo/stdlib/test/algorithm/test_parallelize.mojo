@@ -9,10 +9,11 @@
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
 
-from memory.buffer import Buffer
-from algorithm import async_parallelize, sync_parallelize, parallelize, map
 from math import div_ceil, min
-from runtime.llcl import num_cores, Runtime, OwningOutputChainPtr
+
+from algorithm import async_parallelize, map, parallelize, sync_parallelize
+from memory.buffer import Buffer
+from runtime.llcl import OwningOutputChainPtr, Runtime, num_cores
 
 # CHECK-LABEL: test_async_parallelize
 fn test_async_parallelize():

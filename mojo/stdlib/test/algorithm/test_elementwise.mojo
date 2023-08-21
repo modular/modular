@@ -6,16 +6,18 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from memory.buffer import NDBuffer, Buffer
-from memory import stack_allocation
+from math import min, mul
+
 from algorithm.functional import (
     _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
 )
-from math import mul, min
-from utils.list import Dim, DimList
+from memory import stack_allocation
+from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
+
 from utils.index import StaticIntTuple
-from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
+from utils.list import Dim, DimList
 
 
 fn test_elementwise[

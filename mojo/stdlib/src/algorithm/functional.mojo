@@ -5,18 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 """Implements higher-order functions."""
 
-from utils.index import StaticIntTuple
-from utils.list import VariadicList
-from runtime.llcl import (
-    num_cores,
-    Runtime,
-    OutputChainPtr,
-    OwningOutputChainPtr,
-    AsyncTaskGroupPtr,
-)
-from math import div_ceil, min, max
+from math import div_ceil, max, min
 from math.numerics import FlushDenormals
 from sys.info import triple_is_nvidia_cuda
+
+from runtime.llcl import (
+    AsyncTaskGroupPtr,
+    OutputChainPtr,
+    OwningOutputChainPtr,
+    Runtime,
+    num_cores,
+)
+
+from utils.index import StaticIntTuple
+from utils.list import VariadicList
 
 # ===----------------------------------------------------------------------===#
 # Map

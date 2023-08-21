@@ -6,15 +6,17 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from memory.buffer import Buffer
-from algorithm import elementwise
-from math import erf, exp, tanh, div_ceil
-from Activations import gelu
-from utils.list import Dim, DimList
-from utils.index import StaticIntTuple
-from runtime.llcl import Runtime, OwningOutputChainPtr
-from utils.vector import UnsafeFixedVector
+from math import div_ceil, erf, exp, tanh
 from sys.info import sizeof
+
+from Activations import gelu
+from algorithm import elementwise
+from memory.buffer import Buffer
+from runtime.llcl import OwningOutputChainPtr, Runtime
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
+from utils.vector import UnsafeFixedVector
 
 # CHECK-LABEL: test_elementwise_1d
 fn test_elementwise_1d():

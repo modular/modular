@@ -10,25 +10,25 @@
 # TODO(#19566): Reenable compilation with `-debug-level full`
 # RUN: %mojo %s | FileCheck %s
 
-from memory.buffer import Buffer, NDBuffer
-from utils.index import Index, StaticIntTuple
-from runtime.llcl import Runtime, OutputChainPtr, OwningOutputChainPtr
-from utils.list import DimList
 from algorithm import (
     all_true,
     any_true,
+    argmax,
+    argmin,
     mean,
     none_true,
     product,
     sum,
     variance,
-    argmax,
-    argmin,
 )
 
 # TODO: Fold this import into the one above.
 from algorithm.reduction import max, min
+from memory.buffer import Buffer, NDBuffer
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
+from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 # CHECK-LABEL: test_reductions
 fn test_reductions():

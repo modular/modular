@@ -5,27 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 """Implements SIMD reductions."""
 
-from memory.buffer import Buffer, NDBuffer, prod_dims
-from algorithm import (
-    vectorize,
-    async_parallelize,
-    unroll,
-)
-from algorithm.functional import _get_num_workers
-from memory.unsafe import Pointer
+from math import all_true as _all_true
+from math import any_true as _any_true
+from math import div_ceil
+from math import min as _min
+from math import none_true as _none_true
 from math.bit import cttz
-from utils.index import StaticIntTuple
-from utils.list import DimList, Dim
-from runtime.llcl import OutputChainPtr
-from math import (
-    all_true as _all_true,
-    any_true as _any_true,
-    none_true as _none_true,
-    div_ceil,
-    min as _min,
-)
 from math.limit import max_or_inf, min_or_neginf
-from sys.info import sizeof, simdwidthof
+from sys.info import simdwidthof, sizeof
+
+from algorithm import async_parallelize, unroll, vectorize
+from algorithm.functional import _get_num_workers
+from memory.buffer import Buffer, NDBuffer, prod_dims
+from memory.unsafe import Pointer
+from runtime.llcl import OutputChainPtr
+
+from utils.index import StaticIntTuple
+from utils.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # ND indexing helper
