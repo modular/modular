@@ -9,10 +9,14 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "LLVMLoweringUtils.h"
+#include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 
 using namespace M;
 using namespace KGEN;
@@ -121,9 +125,42 @@ private:
     for (Type argTy : wrapperFnArgTypes)
       wrapperFnBody->addArgument(argTy, op.getLoc());
     rewriter.clearInsertionPoint();
+
     LLVM::LLVMFuncOp wrapperFn = createLLVMFunc(
         rewriter, getTypeConverter()->getTarget(), op.getLoc(),
         "closure_wrapper_fn", wrapperFnType, LLVM::Linkage::Internal);
+
+    // If possible, we need to add a subprogram scope to the new function.
+    ErrorOr<DebugInfo::DIScopeAttr> scopeOr =
+        DebugInfo::getScopeWithinBody(op.getLoc());
+    if (!scopeOr.isError() && isa<mlir::CallSiteLoc>(op.getLoc())) {
+      // Use unresolved types now for simplicity, these will get resolved during
+      // compilation.
+      auto mapUnresolvedType = [&](Type type) -> DebugInfo::DIType {
+        return DebugInfo::DIUnresolvedMLIRType::get(type);
+      };
+      auto spType = DebugInfo::DISubroutineType::get(
+          op->getContext(), map_to_vector(wrapperFnArgTypes, mapUnresolvedType),
+          map_to_vector(wrapperFnType.getReturnTypes(), mapUnresolvedType));
+
+      auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
+      DebugInfo::DIBuilder dib(op->getContext());
+      DebugInfo::DIFileAttr fileAttr = dib.createFile(fileLoc);
+
+      // TODO: "C" as the Dwarf language type is the best option for now.
+      dib.initializeCompileUnit(llvm::dwarf::DW_LANG_C, fileAttr, "kgen",
+                                /*isOptimized=*/true,
+                                DebugInfo::EmissionKind::Full);
+      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushScopeGuard(fileAttr);
+
+      StringAttr wrapperName = wrapperFn.getSymNameAttr();
+      guard = dib.pushSubprogram(
+          wrapperName, wrapperName, fileAttr, fileLoc.getLine(),
+          fileLoc.getLine(), DebugInfo::SubprogramFlags::Definition, spType);
+
+      wrapperFn->setLoc(dib.createScopedLoc(fileLoc));
+    }
+
     wrapperFn.getBody().push_back(wrapperFnBody);
     return wrapperFn;
   }
@@ -138,7 +175,7 @@ private:
     Block &wrapperFnBody = wrapperFn.getBody().front();
     rewriter.setInsertionPointToStart(&wrapperFnBody);
     Value envStructPtr = rewriter.create<LLVM::BitcastOp>(
-        op.getLoc(), types.liftedFunctionCaptureTypePtrType,
+        wrapperFn.getLoc(), types.liftedFunctionCaptureTypePtrType,
         wrapperFnBody.getArgument(0));
 
     Type envCalleeType = adaptor.getCallee().getType();
@@ -162,10 +199,10 @@ private:
       LLVM::LLVMPointerType boundArgPtrType =
           LLVM::LLVMPointerType::get(capturedArgType);
       Value boundArgPtr = rewriter.create<LLVM::GEPOp>(
-          op.getLoc(), boundArgPtrType, envStructPtr,
+          wrapperFn.getLoc(), boundArgPtrType, envStructPtr,
           ArrayRef<LLVM::GEPArg>({0, i}));
       Value boundArg = rewriter.create<LLVM::LoadOp>(
-          op.getLoc(), capturedArgType, boundArgPtr);
+          wrapperFn.getLoc(), capturedArgType, boundArgPtr);
       liftedNestedFunctionCallArgs[i] = boundArg;
     }
     size_t numCaptures = op.getCaptures().size();
@@ -177,8 +214,8 @@ private:
 
     ValueRange valueRange(liftedNestedFunctionCallArgs);
     LLVM::CallOp callLiftedFunction =
-        createLLVMCall(rewriter, op.getLoc(), func, valueRange);
-    rewriter.create<LLVM::ReturnOp>(op.getLoc(),
+        createLLVMCall(rewriter, wrapperFn.getLoc(), func, valueRange);
+    rewriter.create<LLVM::ReturnOp>(wrapperFn.getLoc(),
                                     callLiftedFunction.getResults());
     return success();
   }
