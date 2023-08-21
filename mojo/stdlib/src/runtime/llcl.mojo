@@ -9,7 +9,7 @@ from os.atomic import Atomic
 from sys import external_call
 from sys.param_env import is_defined
 
-from builtin.Coroutine import _coro_resume_fn
+from builtin.coroutine import _coro_resume_fn
 from memory.unsafe import DTypePointer, Pointer
 from runtime.tracing import TraceLevel, is_mojo_profiling_disabled
 
