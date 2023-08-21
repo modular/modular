@@ -11,7 +11,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-from complex import ComplexSIMD, ComplexFloat32
+from complex import ComplexFloat32, ComplexSIMD
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
