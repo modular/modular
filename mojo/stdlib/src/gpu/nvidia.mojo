@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs."""
 
-from sys import llvm_intrinsic
-from memory.unsafe import DTypePointer
 from math import is_power_of_2
-from memory import stack_allocation as _generic_stack_allocation
-from sys.info import simdwidthof, alignof, sizeof
+from sys import llvm_intrinsic
+from sys.info import alignof, simdwidthof, sizeof
 
+from memory import stack_allocation as _generic_stack_allocation
+from memory.unsafe import DTypePointer
 
 # ===----------------------------------------------------------------------===#
 # Address Space
