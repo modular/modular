@@ -6,14 +6,14 @@
 """Implements the Buffer class."""
 
 from algorithm import unroll, vectorize
-from Index import StaticIntTuple, product as tuple_product
+from utils.index import StaticIntTuple, product as tuple_product
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
-from List import Dim, DimList, VariadicList
+from utils.list import Dim, DimList, VariadicList
 from runtime.llcl import OutputChainPtr
 from math import fma, min, max, iota
 from .memory import stack_allocation
 from .unsafe import Pointer, DTypePointer
-from StaticTuple import StaticTuple
+from utils.static_tuple import StaticTuple
 from sys.info import sizeof, simdwidthof, alignof
 
 alias _MAX_RANK = 8
