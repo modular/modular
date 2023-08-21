@@ -38,6 +38,20 @@ using namespace M;
 using namespace Telemetry;
 using namespace Exporter;
 
+static Level levelFromString(StringRef levelStr) {
+  int level;
+  if (levelStr.getAsInteger(10, level))
+    assert(false && "Non-integer telemetry level specified");
+  assert((level >= 0 && level < 3) && "Telemetry level outside [0,2] range");
+  if (level == 0)
+    return Level::L0;
+  if (level == 1)
+    return Level::L1;
+  if (level == 2)
+    return Level::L2;
+  llvm_unreachable("unknown telemetry level");
+}
+
 #ifdef MODULAR_ENABLE_TELEMETRY
 static void configureInternalLogging(Config &cfg) {
   // OTel internal logging (e.g. warnings and errors related to OTel's
@@ -118,6 +132,13 @@ TelemetryContext::TelemetryContext(
   if (cfg.getValue("telemetry.enabled").equals_insensitive("false"))
     enabled = false;
 
+  // Get telemetry level.
+  StringRef cfgLevel = cfg.getValue("telemetry.level");
+  if (cfgLevel == "")
+    telemetryLevel = Level::L0;
+  else
+    telemetryLevel = levelFromString(cfgLevel);
+
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() { configureInternalLogging(cfg); });
@@ -145,9 +166,8 @@ TelemetryContext::TelemetryContext(
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       cfg.getValue("telemetry.exporters.metrics.file_path").str();
-  if (enabled && httpEndpoint.empty() && filePath.empty()) {
-    // If telemetry is enabled and no config is provided, export to our default
-    // URL.
+  if (httpEndpoint.empty() && filePath.empty()) {
+    // If no config is provided, export to our default URL.
     httpEndpoint = kTelemetryUrl;
   }
 
@@ -179,13 +199,16 @@ TelemetryContext::TelemetryContext(
       provider.release());
   meter = metricsProvider->GetMeter("modular");
 
+  noopMetricsProvider =
+      std::make_unique<opentelemetry::metrics::NoopMeterProvider>();
+  noopMeter = noopMetricsProvider->GetMeter("modular");
+
   // -------- Logs --------
   // Get logs exporter config.
   httpEndpoint = cfg.getValue("telemetry.exporters.logs.http_endpoint");
   filePath = cfg.getValue("telemetry.exporters.logs.file_path").str();
-  if (enabled && httpEndpoint.empty() && filePath.empty()) {
-    // If telemetry is enabled and no config is provided, export to our default
-    // URL.
+  if (httpEndpoint.empty() && filePath.empty()) {
+    // If no config is provided, export to our default URL.
     httpEndpoint = kTelemetryUrl;
   }
 

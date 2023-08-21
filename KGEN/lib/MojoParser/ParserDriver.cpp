@@ -298,7 +298,7 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
       sharedState.runtime
           .emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.parser.compile.time");
+              "mojo.parser.compile.time", M::Telemetry::Level::L2);
 
   // This is the result module we are parsing into.
   auto fileLoc = FileLineColLoc::get(context, moduleIdentifier, /*line=*/0,

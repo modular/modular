@@ -360,7 +360,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
     [[maybe_unused]] auto timeScope =
         runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
             .createUInt64Timer<std::chrono::milliseconds>(
-                "mojo.kgen.compile.time");
+                "mojo.kgen.compile.time", M::Telemetry::Level::L2);
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, regionCache.copy(), transformCache.copy(),

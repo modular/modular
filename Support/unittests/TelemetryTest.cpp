@@ -42,7 +42,8 @@ public:
     EXPECT_FALSE(err.isError()) << err.getError();
   }
 
-  TempFile getLogFile(StringRef prefix) {
+  TempFile getLogFile(StringRef prefix, StringRef level) {
+    EXPECT_THAT(level.str(), testing::AnyOf("0", "1", "2"));
     auto tmpOr =
         TempFile::create((prefix + "-test-telemetry-%%%%%%%.log").str());
     EXPECT_FALSE(tmpOr.isError()) << tmpOr.getError();
@@ -51,6 +52,9 @@ public:
     cfg.setValue(filePathKey, tmpOr->getPath().string());
     // These tests don't need to send to any HTTP endpoint.
     cfg.setValue(httpUrlKey, "");
+
+    // Set telemetry level.
+    cfg.setValue("telemetry.level", level);
 
     // Flush the config to the file so we can read it from the context.
     auto err = cfg.flush();
@@ -144,11 +148,11 @@ static void iterateMessages(StringRef log,
 /// values we expect in the log file, in the order we expect.
 TEST(Telemetry, Counter) {
   LogFileSetup logFileSetup("metrics");
-  TempFile tmpFile = logFileSetup.getLogFile("counter");
+  TempFile tmpFile = logFileSetup.getLogFile("counter", "0");
 
   TelemetryContext ctx;
 
-  auto counter = ctx.createUInt64Counter("basic.counter");
+  auto counter = ctx.createUInt64Counter("basic.counter", Level::L0);
   counter.add(32);
   ctx.flush();
   counter.add(10);
@@ -188,11 +192,11 @@ TEST(Telemetry, Counter) {
 /// the values we expect in the log file.
 TEST(Telemetry, Histogram) {
   LogFileSetup logFileSetup("metrics");
-  TempFile tmpFile = logFileSetup.getLogFile("histogram");
+  TempFile tmpFile = logFileSetup.getLogFile("histogram", "1");
 
   TelemetryContext ctx;
 
-  auto hist = ctx.createUInt64Histogram("basic.histogram");
+  auto hist = ctx.createUInt64Histogram("basic.histogram", Level::L0);
   hist.record(32);
   hist.record(10);
   ctx.flush();
@@ -235,11 +239,37 @@ TEST(Telemetry, Histogram) {
   EXPECT_FALSE(err.isError()) << err.getError();
 }
 
+/// This test checks that measurements for L1 instruments are not emitted
+/// when the telemetry level is L0.
+TEST(Telemetry, HistogramL1) {
+  LogFileSetup logFileSetup("metrics");
+  TempFile tmpFile = logFileSetup.getLogFile("histogram", "0");
+
+  TelemetryContext ctx;
+
+  auto hist = ctx.createUInt64Histogram("optional.histogram", Level::L1);
+  hist.record(32);
+  hist.record(10);
+  ctx.flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        // Memory buffer must be empty.
+        EXPECT_TRUE(mbuf->getBufferSize() == 0);
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
+
 /// This test checks that logs are properly flushed to the log file, escapes and
 /// all.
 TEST(Telemetry, Logger) {
   LogFileSetup logFileSetup("logs");
-  TempFile tmpFile = logFileSetup.getLogFile("log");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "1");
 
   TelemetryContext ctx;
 
@@ -249,7 +279,7 @@ TEST(Telemetry, Logger) {
   auto logger = ctx.getLogger("basic.log");
   llvm::StringMap<M::Telemetry::Logs::AttributeValue> attributes = {
       {"attr1", "hello"}, {"attr2", "world"}};
-  logger->getInfo("test", attributes) << logString;
+  logger->getInfo("test", Level::L1, attributes) << logString;
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -283,9 +313,37 @@ TEST(Telemetry, Logger) {
   EXPECT_FALSE(err.isError()) << err.getError();
 }
 
+/// This test checks that L2 events are not emitted when telemetry
+/// level is L1.
+TEST(Telemetry, LoggerL2) {
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "1");
+
+  TelemetryContext ctx;
+
+  StringRef logString = "hello\nthis is a string";
+  StringRef escapedLogString = "hello\\nthis is a string";
+
+  auto logger = ctx.getLogger("basic.log");
+  logger->getInfo("test", Level::L2) << logString;
+  ctx.flush();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        // Memory buffer must be empty.
+        EXPECT_TRUE(mbuf->getBufferSize() == 0);
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
+}
+
 TEST(Telemetry, Resources) {
   LogFileSetup logFileSetup("logs");
-  TempFile tmpFile = logFileSetup.getLogFile("log");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "1");
 
   llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
   StringRef resourceVal = "aResource value here";
@@ -295,7 +353,7 @@ TEST(Telemetry, Resources) {
   TelemetryContext ctx(extras);
 
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test") << StringRef("foo");
+  logger->getInfo("test", Level::L0) << StringRef("foo");
   ctx.flush();
 
   auto err = readFileUnderLock(

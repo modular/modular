@@ -20,8 +20,8 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
 
   // Notify an invocation event of the current subcommand and arguments.
   M::Telemetry::Logs::Logger::LogStream os =
-      telemetryCtx.getLogger("mojo")->getInfo("invoke." +
-                                              StringRef(state.subcommand));
+      telemetryCtx.getLogger("mojo")->getInfo(
+          "invoke." + StringRef(state.subcommand), M::Telemetry::Level::L1);
 
   // Extract the recordable arguments from the command line, and order them by
   // id to ensure a deterministic order.

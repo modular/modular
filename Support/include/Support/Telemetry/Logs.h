@@ -8,6 +8,7 @@
 #define SUPPORT_TELEMETRY_LOGS_H
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/ForwardDecls.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -60,18 +61,27 @@ using AttributeValue = std::variant<bool, int32_t, int64_t, uint32_t, double,
 class Logger : public std::enable_shared_from_this<Logger> {
 public:
   /// Emit event with given name, severity, body and attributes.
-  void emitEvent(StringRef eventName, Severity severity, StringRef body = "",
+  void emitEvent(StringRef eventName, Severity severity,
+                 M::Telemetry::Level level, StringRef body = "",
                  const llvm::StringMap<AttributeValue> &attributes = {}) {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    // Convert the attributes to unordered_map to pass to OTel.
-    std::unordered_map<std::string, AttributeValue> attrs;
-    for (auto &attr : attributes) {
-      std::visit([&](auto v) { attrs[attr.first().str()] = v; }, attr.second);
+    if (eventEnabled(level)) {
+      // Convert the attributes to unordered_map to pass to OTel.
+      std::unordered_map<std::string, AttributeValue> attrs;
+      for (auto &attr : attributes) {
+        std::visit([&](auto v) { attrs[attr.first().str()] = v; }, attr.second);
+      }
+      logger->EmitEvent(eventName,
+                        static_cast<opentelemetry::logs::Severity>(severity),
+                        body, attrs);
     }
-    logger->EmitEvent(eventName,
-                      static_cast<opentelemetry::logs::Severity>(severity),
-                      body, attrs);
 #endif
+  }
+
+  /// Returns true if an event will be emitted based on its level and the
+  /// configured telemetry level.
+  bool eventEnabled(Level eventLevel) const {
+    return eventLevel <= telemetryLevel;
   }
 
   /// LogStream is a llvm::raw_ostream wrapper around Logger::emitEvent().
@@ -85,7 +95,7 @@ public:
   struct LogStream : public llvm::raw_string_ostream {
 
     virtual ~LogStream() {
-      logger->emitEvent(eventName, severity, body, attributes);
+      logger->emitEvent(eventName, severity, level, body, attributes);
     }
 
     /// Provide an explicit overload for strings that escapes special
@@ -99,10 +109,11 @@ public:
     friend class Logger;
 
     LogStream(const Twine &eventName, Severity severity,
+              M::Telemetry::Level level,
               const llvm::StringMap<AttributeValue> &attrs,
               std::shared_ptr<Logger> logger)
         : raw_string_ostream(body), eventName(eventName.str()),
-          severity(severity), logger(logger) {
+          severity(severity), level(level), logger(logger) {
       for (auto &attr : attrs) {
         std::visit([&](auto v) { attributes[attr.first().str()] = v; },
                    attr.second);
@@ -112,6 +123,7 @@ public:
     std::string body;
     std::string eventName;
     Severity severity;
+    M::Telemetry::Level level;
     // We convert the attributes to unordered_map to pass to OTel.
     std::unordered_map<std::string, AttributeValue> attributes;
     // TODO: timestamp.
@@ -119,44 +131,44 @@ public:
   };
 
   /// Get raw_ostream to write a log with a severity of trace.
-  LogStream getTrace(const Twine &eventName,
+  LogStream getTrace(const Twine &eventName, M::Telemetry::Level level,
                      const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kTrace, attributes,
+    return LogStream(eventName, Severity::kTrace, level, attributes,
                      shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of debug.
-  LogStream getDebug(const Twine &eventName,
+  LogStream getDebug(const Twine &eventName, M::Telemetry::Level level,
                      const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kDebug, attributes,
+    return LogStream(eventName, Severity::kDebug, level, attributes,
                      shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of info.
-  LogStream getInfo(const Twine &eventName,
+  LogStream getInfo(const Twine &eventName, M::Telemetry::Level level,
                     const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kInfo, attributes,
+    return LogStream(eventName, Severity::kInfo, level, attributes,
                      shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of warn.
-  LogStream getWarn(const Twine &eventName,
+  LogStream getWarn(const Twine &eventName, M::Telemetry::Level level,
                     const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kWarn, attributes,
+    return LogStream(eventName, Severity::kWarn, level, attributes,
                      shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of error.
-  LogStream getError(const Twine &eventName,
+  LogStream getError(const Twine &eventName, M::Telemetry::Level level,
                      const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kError, attributes,
+    return LogStream(eventName, Severity::kError, level, attributes,
                      shared_from_this());
   }
 
   /// Get raw_ostream to write a log with a severity of fatal.
-  LogStream getFatal(const Twine &eventName,
+  LogStream getFatal(const Twine &eventName, M::Telemetry::Level level,
                      const llvm::StringMap<AttributeValue> &attributes = {}) {
-    return LogStream(eventName, Severity::kFatal, attributes,
+    return LogStream(eventName, Severity::kFatal, level, attributes,
                      shared_from_this());
   }
 
@@ -164,24 +176,30 @@ private:
   friend class M::Telemetry::TelemetryContext;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-  Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger)
-      : logger(logger) {}
+  Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger,
+         M::Telemetry::Level level)
+      : logger(logger), telemetryLevel(level) {}
 
   std::shared_ptr<opentelemetry::logs::EventLogger> logger;
 #else
   Logger() {}
 #endif // MODULAR_ENABLE_TELEMETRY
 
+  // Configured level for Telemetry.
+  M::Telemetry::Level telemetryLevel;
+
   /// Emit event with given name, severity, body and attributes. This method is
   /// private and used only by LogStream to log the event with OTel without
   /// additional copies or conversions of the attributes.
   void
-  emitEvent(StringRef eventName, Severity severity, StringRef body,
+  emitEvent(StringRef eventName, Severity severity, M::Telemetry::Level level,
+            StringRef body,
             const std::unordered_map<std::string, AttributeValue> &attributes) {
 #ifdef MODULAR_ENABLE_TELEMETRY
-    logger->EmitEvent(eventName,
-                      static_cast<opentelemetry::logs::Severity>(severity),
-                      body, attributes);
+    if (eventEnabled(level))
+      logger->EmitEvent(eventName,
+                        static_cast<opentelemetry::logs::Severity>(severity),
+                        body, attributes);
 #endif
   }
 };

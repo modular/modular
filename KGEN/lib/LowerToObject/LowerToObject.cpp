@@ -131,7 +131,7 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
   [[maybe_unused]] auto timeScope =
       runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
-              "mojo.llvm.optimize.time");
+              "mojo.llvm.optimize.time", M::Telemetry::Level::L2);
   using namespace llvm;
 
   LoopAnalysisManager loopAnalysisMgr;
@@ -191,7 +191,7 @@ runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
       timeScope;
   if (telemetryCtx)
     timeScope = telemetryCtx->createUInt64Timer<std::chrono::milliseconds>(
-        "mojo.llvm.optimize.time");
+        "mojo.llvm.optimize.time", M::Telemetry::Level::L2);
   using namespace llvm;
 
   // Build up all of the passes that we want to do to the module.
