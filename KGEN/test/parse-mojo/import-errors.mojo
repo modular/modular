@@ -83,8 +83,10 @@ fn test_import():
   # expected-error @below {{use of unknown declaration '_ignored_wildcard_fn'}}
   _ignored_wildcard_fn()
 
-# expected-error @below {{module 'imported_module' does not contain 'there_cant_be_a_decl_named_this'}}
-from imported_module import there_cant_be_a_decl_named_this
+from imported_module import (
+  # expected-error @below {{module 'imported_module' does not contain 'there_cant_be_a_decl_named_this'}}
+  there_cant_be_a_decl_named_this
+)
 
 # expected-error @below {{unable to locate module 'there_cant_be_a_module_named_this'}}
 from there_cant_be_a_module_named_this import there_cant_be_another_decl_named_this

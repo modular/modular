@@ -1378,6 +1378,16 @@ LogicalResult LIT::ExternFuncOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnresolvedImportOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult LIT::UnresolvedImportOp::verify() {
+  if (getDeclNameLoc().has_value() && !getDeclName().has_value())
+    return emitOpError("specified `declNameLoc` without `declName`");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
