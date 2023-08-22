@@ -63,7 +63,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   auto ptr = dyn_cast<POP::PointerType>(func.getArgument(0).getType());
   if (!ptr)
     return ErrorTree(func.getLoc(), "first argument is not a pointer");
-  ErrorTreeOr<MemRefAttr> result = executeRegionWithResultSlot(
+  ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
       ptr.getElementAsType(), func.getBodyRegion(), arguments);
 
   // Report an error if evaluation fails.

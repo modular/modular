@@ -577,29 +577,28 @@ kgen.generator export @constexpr_fma() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @init_self(%arg0: !pop.pointer<i32>, %arg1: i32) {
-  pop.store %arg1, %arg0 : !pop.pointer<i32>
+kgen.generator @init_self(%arg0: !pop.pointer<index>, %arg1: index) {
+  %idx1 = index.constant 1
+  %0 = index.add %idx1, %arg1
+  pop.store %0, %arg0 : !pop.pointer<index>
   kgen.return
 }
 
-kgen.generator @byref_result(%arg0: !pop.pointer<i32>, %arg1: !pop.pointer<i32>) {
-  %0 = pop.load %arg1 : !pop.pointer<i32>
-  pop.store %0, %arg0 : !pop.pointer<i32>
+kgen.generator @byref_result(%arg0: !pop.pointer<index>, %arg1: !pop.pointer<index>) {
+  %0 = pop.load %arg1 : !pop.pointer<index>
+  %idx2 = index.constant 2
+  %1 = index.mul %idx2, %0
+  pop.store %1, %arg0 : !pop.pointer<index>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
-  // CHECK-NEXT: kgen.param.constant: pointer<i32> =
-  // CHECK-SAME: <#M.memref<[(byref_result_concrete_mem, stack, []),
-  // CHECK-SAME:             (byref_result_concrete_mem_1, stack, [])], 0, 0>>
-  kgen.param.declare value: pointer<i32> = <apply_result_slot(:(!pop.pointer<i32>, i32) -> () @init_self, 0xdeadbeef)>
-  kgen.param.constant: pointer<i32> = <apply_result_slot(:(!pop.pointer<i32>, !pop.pointer<i32>) -> () @byref_result, value)>
+  // CHECK-NEXT: kgen.param.constant = <2048>
+  kgen.param.declare value = <apply_result_slot(:(!pop.pointer<index>, index) -> () @init_self, 1023)>
+  kgen.param.constant = <apply_result_slot(:(!pop.pointer<index>, !pop.pointer<index>) -> () @byref_result, #M.store_to_mem<#kgen.param.decl.ref<"value"> : index>)>
   kgen.return
 }
-
-// CHECK: byref_result_concrete_mem: "0x04000000EFBEADDE"
-// CHECK: byref_result_concrete_mem_1: "0x04000000EFBEADDE"
 
 // -----
 
