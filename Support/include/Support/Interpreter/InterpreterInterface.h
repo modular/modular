@@ -96,7 +96,7 @@ public:
   /// calling convention. The result of the function will be the materialized
   /// memory for the result slot. The caller is required to provide the type of
   /// the result slot.
-  ErrorTreeOr<MemRefAttr>
+  ErrorTreeOr<TypedAttr>
   executeRegionWithResultSlot(Type resultType, Region &region,
                               ArrayRef<Attribute> arguments);
 

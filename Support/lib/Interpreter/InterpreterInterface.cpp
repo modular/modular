@@ -609,7 +609,7 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
   return addStackTrace(result.takeError());
 }
 
-ErrorTreeOr<MemRefAttr>
+ErrorTreeOr<TypedAttr>
 InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
                                               ArrayRef<Attribute> arguments) {
   Location loc = region.getLoc();
@@ -622,7 +622,7 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
   if (resultSlotAttrOr.isError())
     return ErrorTree(loc, resultSlotAttrOr.takeError());
   SmallVector<Attribute> allArgs;
-  Attribute resultSlotAttr = resultSlotAttrOr.takeValue();
+  PointerAttr resultSlotAttr = resultSlotAttrOr.takeValue();
   allArgs.push_back(resultSlotAttr);
   llvm::append_range(allArgs, arguments);
 
@@ -636,11 +636,11 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
   if (result) {
-    // Externalize the result slot and return it.
-    if (ErrorOrSuccess err = externalizeMemory(region, resultSlotAttr);
-        err.isError())
-      return ErrorTree(loc, err.takeError());
-    return cast<MemRefAttr>(resultSlotAttr);
+    ErrorOr<TypedAttr> result =
+        readAttributeFromMemory(resultSlotAttr.getAddr(), resultType);
+    if (result.isError())
+      return ErrorTree(loc, result.takeError());
+    return result.takeValue();
   }
 
   // The interpreter ran into an error. Report an error using a stacktrace.

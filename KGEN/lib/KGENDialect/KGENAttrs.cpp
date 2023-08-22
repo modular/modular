@@ -675,8 +675,7 @@ static Type upbindApplyResult(Type resultType) {
 
 static LogicalResult
 verifyApplyLike(ArrayRef<TypedAttr> operands, Type type, StringRef prefix,
-                function_ref<InFlightDiagnostic()> emitError,
-                function_ref<FailureOr<Type>(FunctionType)> inferResultType) {
+                function_ref<InFlightDiagnostic()> emitError) {
   if (operands.empty())
     return emitError() << prefix << "expected a function parameter";
 
@@ -684,40 +683,27 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, Type type, StringRef prefix,
   if (!signature.getResultParamTypes().empty() ||
       !signature.getInputParamTypes().empty())
     return emitError() << prefix << "function cannot be parametric";
-
-  FailureOr<Type> resultType = inferResultType(signature.getValues());
-  if (failed(resultType))
-    return failure();
-  Type expectedType = upbindApplyResult(*resultType);
-  if (type != expectedType)
-    return emitError() << prefix << "function result type must be " << type
-                       << " but got " << expectedType;
-
   return success();
 }
 
 static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
                                  function_ref<InFlightDiagnostic()> emitError) {
-  return verifyApplyLike(
-      operands, type, "'apply' ", emitError,
-      [&](FunctionType func) -> FailureOr<Type> {
-        if (func.getNumResults() != 1)
-          return emitError() << "'apply' function must return one result";
-        return func.getResult(0);
-      });
+  if (failed(verifyApplyLike(operands, type, "'apply' ", emitError)))
+    return failure();
+  auto sig = cast<SignatureType>(operands.front().getType());
+  if (sig.getValueResults().size() != 1)
+    return emitError() << "'apply' function must return one result";
+  Type resultType = upbindApplyResult(sig.getValueResults().front());
+  if (type != resultType)
+    return emitError() << "'apply' function result type must be " << type
+                       << " but got " << resultType;
+  return success();
 }
 
 static LogicalResult
 verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
                       function_ref<InFlightDiagnostic()> emitError) {
-  return verifyApplyLike(operands, type, "'apply_result_slot' ", emitError,
-                         [&](FunctionType func) -> FailureOr<Type> {
-                           if (func.getNumInputs() < 1)
-                             return emitError()
-                                    << "'apply_result_slot' signature must "
-                                       "have at least one argument";
-                           return func.getInput(0);
-                         });
+  return verifyApplyLike(operands, type, "'apply_result_slot' ", emitError);
 }
 
 LogicalResult ParamOperatorAttr::verify(
