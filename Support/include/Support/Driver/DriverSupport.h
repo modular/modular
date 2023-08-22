@@ -50,11 +50,8 @@ struct State {
   /// Write the given error message to stderr and return a non-zero exit code.
   int reportError(Twine errorMessage) const;
 
-  /// If `plainText` is false and the `man` executable is available, this
-  /// invokes that executable in order to display man pages for the given
-  /// command. Otherwise, we fall back to printing the given `helpText`. In
-  /// either case, a successful exit code is returned.
-  int printHelp(bool plainText, Twine helpText) const;
+  /// Print the given `helpText` to stdout and return a successful exit code.
+  int printHelp(Twine helpText) const;
 
   /// If `args` has any unknown arguments (as indicated by the
   /// `unknownOptionID`, which is defined independently in each driver command),

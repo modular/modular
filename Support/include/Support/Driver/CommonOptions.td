@@ -24,7 +24,4 @@ def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<0>,
   HelpText<"Displays help information.">;
 def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>, Index<0>;
 
-def help_text : Flag<["--", "-"], "help-text">, Group<CommonOptionGroup>,
-  Index<1>, HelpText<"Prints help information as plain text.">;
-
 #endif // SUPPORT_DRIVER_COMMONOPTIONS_TD

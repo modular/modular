@@ -12,6 +12,6 @@
 # RUN: not mojo domangle 2>&1 | FileCheck %s --check-prefix CHECK-TYPO
 # CHECK-TYPO: mojo{{.*}}: error: no such command 'domangle'. Did you mean 'demangle'?
 
-# Invoking the driver with `--help-text` prints the driver's help text.
-# RUN: mojo --help-text | FileCheck %s --check-prefix CHECK-HELP
+# Invoking the driver with `--help` prints the driver's help text.
+# RUN: mojo --help | FileCheck %s --check-prefix CHECK-HELP
 # CHECK-HELP: The Mojo{{.*}} command line interface
