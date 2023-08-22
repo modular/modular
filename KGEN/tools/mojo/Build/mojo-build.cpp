@@ -76,8 +76,8 @@ static std::optional<int> parseArgs(const State &state,
 
   // If those arguments include `--help`, print help before checking any other
   // arguments.
-  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
-    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
+  if (args.hasArg(options::OPT_help)) {
+    return state.printHelp(
 #include "Build/BuildOptionsHelpText.inc"
     );
   }

@@ -97,12 +97,9 @@ int main(int argc, char **argv) {
     return 0;
   }
   case options::OPT_help:
-  case options::OPT_help_text:
     // Print the top level driver help text and exit.
     return State(programName, ArrayRef(arguments).slice(1))
         .printHelp(
-            /*plainText=*/firstArg->getOption().getID() ==
-                options::OPT_help_text,
 #include "DriverOptionsHelpText.inc"
         );
   case options::OPT_INPUT: {

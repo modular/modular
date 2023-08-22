@@ -60,8 +60,8 @@ static int repl(const State &state) {
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, unused, unused);
 
-  if (args.hasArg(options::OPT_help, options::OPT_help_text)) {
-    return state.printHelp(/*plainText=*/args.hasArg(options::OPT_help_text),
+  if (args.hasArg(options::OPT_help)) {
+    return state.printHelp(
 #include "REPL/REPLOptionsHelpText.inc"
     );
   }
