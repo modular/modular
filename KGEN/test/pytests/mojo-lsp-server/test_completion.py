@@ -30,7 +30,7 @@ async def test_completion_import(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-import B
+import b
 """,
     )
     requests = Requests(client)
@@ -50,7 +50,7 @@ async def test_completion_nested_import(client: LanguageClient):
     doc = Document(
         "foo.mojo",
         """
-import Builtin.
+import builtin.
 """,
     )
     requests = Requests(client)
@@ -61,7 +61,7 @@ import Builtin.
     )
 
     assert any(
-        item.label == "Bool" and item.kind == CompletionItemKind.Module
+        item.label == "bool" and item.kind == CompletionItemKind.Module
         for item in items
     )
 
@@ -91,7 +91,7 @@ from memory.unsafe import P
     requests.open_document(doc)
 
     items = fail_if_none(
-        await requests.completion(doc, Position(line=1, character=21))
+        await requests.completion(doc, Position(line=1, character=27))
     )
 
     assert any(

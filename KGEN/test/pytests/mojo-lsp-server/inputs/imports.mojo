@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import SIMD as _simd
+import builtin.simd as _simd
 import builtin.string
 from .aliases import sizeof
 
