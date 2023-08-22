@@ -4,10 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Threading.h"
 #include "llvm/Support/MemoryBufferRef.h"
