@@ -158,7 +158,15 @@ def LowerPreElaboratedLIT : Pass<"lower-preelaborated-lit", "mlir::ModuleOp"> {
     from "lit" to "kgen" and diagnoses any errors that are found along the way.
   }];
 
-  let dependentDialects = ["KGENDialect"];
+  // FIXME(#15949): Should not require all these dialects to be loaded.
+  let dependentDialects = [
+    "KGENDialect",
+    "DebugInfo::DebugInfoDialect",
+    "HLCF::HLCFDialect",
+    "MDialect",
+    "mlir::LLVM::LLVMDialect",
+    "mlir::index::IndexDialect",
+  ];
 }
 
 //===----------------------------------------------------------------------===//
