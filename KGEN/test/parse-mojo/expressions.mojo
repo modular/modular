@@ -517,7 +517,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK: lit.alias.decl [[I_ALIAS:.*]]: {{.*}}@"$int"::@Int = <cond(apply(:<>(!kgen.declref<{{.*}}@"$bool"::@Bool> borrow) -> i1 {{.*}}@"$bool"::@Bool::@"__mlir_i1__({{.*}}$bool::Bool)", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl {{.*}}j: {{.*}}@"$FloatLiteral"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<{{.*}}@"$bool"::@Bool> borrow) -> i1 {{.*}}@"$bool"::@Bool::@"__mlir_i1__({{.*}}$bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl {{.*}}j: {{.*}}@"$float_literal"::@FloatLiteral = <cond(apply(:<>(!kgen.declref<{{.*}}@"$bool"::@Bool> borrow) -> i1 {{.*}}@"$bool"::@Bool::@"__mlir_i1__({{.*}}$bool::Bool)", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: {{.*}}@"$int"::@Int = <[[I_ALIAS]]>
@@ -599,7 +599,7 @@ fn patterns():
 
   # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
   # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
-  # CHECK: {{%.*}} = kgen.call @"$builtin"::@"$SIMD"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
+  # CHECK: {{%.*}} = kgen.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
@@ -1199,14 +1199,14 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %float2: {{.*}}(!kgen.declref<@"$expressions"::@RegType>) ownedresult -> !kgen.declref<@"$expressions"::@RegType>
 # CHECK-SAME: %float3: {{.*}}(!pop.pointer<@"$expressions"::@MemoryType> owned_in_mem) -> !lit.none
 # CHECK-SAME: %float4: {{.*}}(!pop.pointer<{{.*}}@"$int"::@Int> byref) -> !lit.none
-# CHECK-SAME: %float5: {{.*}}(!kgen.declref<{{.*}}@"$int"::@Int> borrow) throws -> !pop.variant<@"$builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$builtin"::@"$int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$builtin"::@"$int"::@Int>) throws|vararg -> !pop.variant<@"$builtin"::@"$Error"::@Error, !lit.none>
+# CHECK-SAME: %float5: {{.*}}(!kgen.declref<{{.*}}@"$int"::@Int> borrow) throws -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
+# CHECK-SAME: %float6: {{.*}}(!kgen.declref<@"$builtin"::@"$int"::@Int> borrow) throws|async|capturing -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
+# CHECK-SAME: %float7: {{.*}}(!kgen.variadic<@"$builtin"::@"$int"::@Int>) throws|vararg -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
 # CHECK-SAME: %float8: {{.*}}<{{.*}}@"$int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: {{.*}}@"$int"::@Int = *(0,0)>> borrow) -> !lit.none
 # CHECK-SAME: %float9: {{.*}}<[] -> {{.*}}@"$int"::@Int>() -> !lit.none
-# CHECK-SAME: %float10: {{.*}}<<{{.*}}@"$int"::@Int, @"$expressions"::@ParamType<[[A]]: {{.*}}@"$int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<@"$builtin"::@"$Error"::@Error, !lit.none>
-# CHECK-SAME: %float12: {{.*}}<(!kgen.declref<{{.*}}@"$int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<{{.*}}@"$StringLiteral"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
+# CHECK-SAME: %float10: {{.*}}<<{{.*}}@"$int"::@Int, @"$expressions"::@ParamType<[[A]]: {{.*}}@"$int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
+# CHECK-SAME: %float12: {{.*}}<(!kgen.declref<{{.*}}@"$int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<{{.*}}@"$string_literal"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
   float0: fn(Int) -> Int,
   float1: fn(MemoryType) -> MemoryType,

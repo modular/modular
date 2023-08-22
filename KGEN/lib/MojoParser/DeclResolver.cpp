@@ -743,7 +743,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // Utility for resolving a decl within the Startup module.
   ASTDecl &startupModule = shared.importModule(
-      "builtin.Startup", /*currentPackage=*/nullptr, funcDecl.getLoc());
+      "builtin._startup", /*currentPackage=*/nullptr, funcDecl.getLoc());
   auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);

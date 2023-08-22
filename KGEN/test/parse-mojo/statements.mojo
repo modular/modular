@@ -447,7 +447,7 @@ def maybeRaises() -> Int:
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
     # CHECK: %[[VALUE:.*]] = kgen.call @"{{.*}}"::@"maybeRaises
-    # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
+    # CHECK: %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK: {
     # CHECK:    [[VAR:%.*]] = pop.variant.get %0 : !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int> as !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK:    lit.yield [[VAR]] : !kgen.declref<{{.*}}@"$int"::@Int>
@@ -465,13 +465,13 @@ fn propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.varlet.decl {{.*}} : <{{.*}}@"$int"::@Int>
     var a: Int
     # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
-    # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
+    # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<{{.*}}@"$error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK:  {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
     # CHECK:    lit.yield [[ERR]] : !kgen.declref<{{.*}}@"$int"::@Int>
     # CHECK:  } else {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
-    # CHECK:    lit.raise [[ERR]] : <{{.*}}@"$Error"::@Error>
+    # CHECK:    lit.raise [[ERR]] : <{{.*}}@"$error"::@Error>
     # CHECK:    kgen.unreachable
     # CHECK:  }
     # CHECK:  pop.store %1, %a
@@ -483,7 +483,7 @@ fn propagateErrorInTry():
     # CHECK: lit.try
     try:
         # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
-        # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<{{.*}}@"$Error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
+        # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<{{.*}}@"$error"::@Error, {{.*}}@"$int"::@Int>) -> !kgen.declref<{{.*}}@"$int"::@Int>
         # CHECK: {
         # CHECK: } else {
         # CHECK:   [[ERR:%.*]] = pop.variant.get %1
@@ -518,7 +518,7 @@ fn raiseErrorInTry(err: Error):
     # CHECK: lit.try {
     try:
         # CHECK-NEXT: = kgen.call {{.*}}@Error::@"__copyinit__
-        # CHECK-NEXT: lit.raise {{.*}} : <{{.*}}@"$Error"::@Error>
+        # CHECK-NEXT: lit.raise {{.*}} : <{{.*}}@"$error"::@Error>
         raise err
     except:
         pass
@@ -546,7 +546,7 @@ fn rethrowsToRethrow():
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
    # CHECK-NEXT: %0 = kgen.param.constant: {{.*}}Error = <{{.*}}>
-   # CHECK-NEXT: lit.raise %0 : <{{.*}}@"$Error"::@Error>
+   # CHECK-NEXT: lit.raise %0 : <{{.*}}@"$error"::@Error>
    raise "thing"
 
 struct S:
@@ -672,7 +672,7 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: }
     raise_string()
     # CHECK-NEXT: lit.try.yield
-  # CHECK-NEXT: } except (%arg0: !kgen.declref<{{.*}}@"$Error"::@Error>) {
+  # CHECK-NEXT: } except (%arg0: !kgen.declref<{{.*}}@"$error"::@Error>) {
   # CHECK:        pop.store %false, %__with_exc__
   # CHECK-NEXT:   %3 = kgen.call {{.*}}__exit__{{.*}}(%a, %arg0)
   # CHECK-NEXT:   %4 = kgen.call {{.*}}__mlir_i1__{{.*}}(%3)

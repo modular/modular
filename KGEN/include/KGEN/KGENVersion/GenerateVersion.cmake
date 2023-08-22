@@ -30,6 +30,9 @@ set(KGEN_DEPENDENCIES
   ${MODULAR_SOURCE_DIR}/Support/lib/Interpreter
   ${MODULAR_SOURCE_DIR}/Support/lib/MDialect
 
+  # Changes to the builtin module will change the mojo ir being generated.
+  ${MODULAR_SOURCE_DIR}/Kernels/mojo/builtin
+
   ${MODULAR_SOURCE_DIR}/third-party/llvm-project
 )
 
