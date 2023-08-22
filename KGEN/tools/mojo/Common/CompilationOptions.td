@@ -23,51 +23,52 @@ def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<1>;
 
 def no_optimization : Flag<["--", "-"], "no-optimization">,
   Group<CompilationOptionGroup>, Index<0>,
-  HelpText<"Whether to disable compiler optimizations. This may reduce the "
-           "amount of time it takes to compile the Mojo source file. It may "
+  HelpText<"Disables compiler optimizations. This might reduce the "
+           "amount of time it takes to compile the Mojo source file. It might "
            "also reduce the runtime performance of the compiled executable.">;
 def : Flag<["-"], "O0">, Group<CompilationOptionGroup>, Index<0>,
   Alias<no_optimization>;
 
 def target_triple : Separate<["--", "-"], "target-triple">,
   Group<CompilationOptionGroup>, Index<1>, MetaVarName<"TRIPLE">,
-  HelpText<"Compilation target triple. Defaults to the host target.">;
+  HelpText<"Sets the compilation target triple. Defaults to the host target.">;
 
 def target_cpu : Separate<["--", "-"], "target-cpu">,
   Group<CompilationOptionGroup>, Index<2>, MetaVarName<"CPU">,
-  HelpText<"Compilation target CPU. Defaults to the host CPU.">;
+  HelpText<"Sets the compilation target CPU. Defaults to the host CPU.">;
 
 def target_features : Separate<["--", "-"], "target-features">,
   Group<CompilationOptionGroup>, Index<3>, MetaVarName<"FEATURES">,
-  HelpText<"Compilation target CPU features. Defaults to the host features.">;
+  HelpText<"Sets the compilation target CPU features. Defaults to the host "
+           "features.">;
 
 def march : Separate<["-", "--"], "march">, Group<CompilationOptionGroup>,
   Index<4>, MetaVarName<"ARCHITECTURE">,
-  HelpText<"Architecture to generate code for.">;
+  HelpText<"Sets the architecture to generate code for.">;
 
 def mcpu : Separate<["-", "--"], "mcpu">, Group<CompilationOptionGroup>,
   Index<5>, MetaVarName<"CPU">,
-  HelpText<"CPU to generate code for.">;
+  HelpText<"Sets the CPU to generate code for.">;
 
 def mtune : Separate<["-", "--"], "mtune">, Group<CompilationOptionGroup>,
   Index<6>, MetaVarName<"TUNE">,
-  HelpText<"CPU to tune code for.">;
+  HelpText<"Sets the CPU to tune code for.">;
 
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<7>,
   MetaVarName<"PATH">,
-  HelpText<"Append the given path to the list of directories to search for "
+  HelpText<"Appends the given path to the list of directories to search for "
            "imported Mojo files.">;
 
 def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<8>,
   MetaVarName<"KEY=VALUE">,
-  HelpText<"Define a named value that can be used from within the Mojo source "
+  HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "
            "that, when queried with the `ParamEnv` module from within the Mojo "
            "program, would yield the compile-time value `42`.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
   Group<CompilationOptionGroup>, Index<9>,
-  HelpText<"Parse the input file(s) as the Mojo standard library.">;
+  HelpText<"Parses the input file(s) as the Mojo standard library.">;
 
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
@@ -77,7 +78,7 @@ def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<2>;
 
 def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<DiagnosticOptionGroup>, Index<0>,
-  HelpText<"Emit warnings for missing or partial doc strings.">;
+  HelpText<"Emits warnings for missing or partial docstrings.">;
 
 def max_notes : Separate<["--", "-"], "max-notes-per-diagnostic">,
   Group<DiagnosticOptionGroup>, Index<1>, MetaVarName<"INTEGER">,
@@ -95,7 +96,7 @@ def ExperimentalCompilationOptionGroup :
 
 def debug_level : Separate<["--", "-"], "debug-level">,
   Group<ExperimentalCompilationOptionGroup>, Index<0>, MetaVarName<"LEVEL">,
-  HelpText<"The level of debug info to use during compilation. The value must "
+  HelpText<"Sets the level of debug info to use at compilation. The value must "
            "be one of: `none` (the default value), `line-tables`, or `full`. "
            "Please note that there are issues when generating debug info for "
            "some Mojo programs that have yet to be addressed.">;
@@ -103,7 +104,7 @@ def debug_level : Separate<["--", "-"], "debug-level">,
 def sanitize : Separate<["--", "-"], "sanitize">,
   Group<ExperimentalCompilationOptionGroup>, Index<1>, MetaVarName<"CHECK">,
   HelpText<
-    "Turn on runtime checks. The following values are supported: `address` "
+    "Turns on runtime checks. The following values are supported: `address` "
     "(detects memory issues), and `thread` (detects multi-threading issues). "
     "Please note that these checks are not currently supported when executing "
     "Mojo programs."

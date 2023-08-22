@@ -14,8 +14,8 @@ include "Support/Driver/CommonOptions.td"
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
 def o : JoinedOrSeparate<["-"], "o">, Group<OutputOptionGroup>, Index<0>,
-  MetaVarName<"PATH">, HelpText<"The path to which an output file "
-  "will be written. If not provided, output is written to stdout.">;
+  MetaVarName<"PATH">, HelpText<"Sets the path and filename for the JSON "
+  "output. If not provided, output is written to stdout.">;
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
@@ -25,12 +25,15 @@ def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<1>;
 
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
   MetaVarName<"PATH">,
-  HelpText<"Append the given path to the list of directories to search for "
-           "included Mojo files.">;
+  HelpText<"Appends the given path to the list of directories that Mojo will "
+           "search for any package/module dependencies. That is, if the file "
+           "you pass to `mojo doc` imports any packages that do not reside in "
+           "the local path and are not part of the Mojo standard library, use "
+           "this to specify the path where Mojo can find those packages.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
   Group<CompilationOptionGroup>, Index<2>,
-  HelpText<"Parse the input file(s) as the Mojo standard library.">;
+  HelpText<"For internal use only.">;
 
 //===----------------------------------------------------------------------===//
 // Validation Options
@@ -39,12 +42,11 @@ def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
 def ValidationOptionGroup :
   OptionGroup<"Validation options">, Index<2>,
   HelpText<
-    "During translation of doc strings, this tool may emit warnings if those "
-    "doc strings do not meet certain criteria. By default, warnings are "
-    "emitted if the doc strings contain errors that prevent translation to the "
-    "output format, but these options can be used to enable or disable these "
-    "and other validation warnings.">;
+    "The following validation options help ensure that your docstrings use "
+    "valid structure and meet other style criteria. By default, warnings are "
+    "emitted only if the docstrings contain errors that prevent translation to "
+    "the output format. (More options coming later.)">;
 
 def warn_missing_dog_strings : Flag<["--", "-"], "warn-missing-doc-strings">,
   Group<ValidationOptionGroup>, Index<0>,
-  HelpText<"Emit warnings for missing or partial doc strings.">;
+  HelpText<"Emits warnings for missing or partial docstrings.">;
