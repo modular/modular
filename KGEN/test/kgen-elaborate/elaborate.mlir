@@ -1903,3 +1903,17 @@ module attributes {kgen.env = #kgen.env<{unit_value, int_value = 42 : index, str
     kgen.return
   }
 }
+
+// -----
+
+kgen.func @already_concrete() -> index {
+  %idx0 = index.constant 0
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func export @interpret_concrete
+kgen.generator export @interpret_concrete() {
+  // CHECK-NEXT: = <0>
+  kgen.param.constant = <apply(:() -> index @already_concrete)>
+  kgen.return
+}
