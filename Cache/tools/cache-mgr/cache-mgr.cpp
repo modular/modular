@@ -45,10 +45,10 @@ public:
 
   cl::opt<std::string> target{
       "target",
-      cl::desc(
-          "Augment key with information specific to a target hardware (optional). \
-           Accepted values: host, host-static, or a custom target of the format \
-           arch:feature. e.g. x86_64:avx2 or x86_64:avx512f"),
+      cl::desc("Augment key with information specific to a target hardware "
+               "(optional). Accepted values: host, host-static, or a custom "
+               "target of the format arch:feature. e.g. x86_64:avx2 or "
+               "x86_64:avx512f"),
       cl::init("none")};
 
   cl::opt<std::string> backendVersion{
