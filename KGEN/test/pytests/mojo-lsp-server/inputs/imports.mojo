@@ -6,7 +6,7 @@
 
 import builtin.simd as _simd
 import builtin.string
-from .aliases import sizeof
+from .aliases import function, StructWithAlias
 
 
 fn main():

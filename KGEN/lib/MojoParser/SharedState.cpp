@@ -1878,8 +1878,32 @@ void SharedState::notifyListenerOnModuleDecl(ASTDecl &decl,
 
 void SharedState::notifyListenerOnModuleImport(ASTDecl &decl,
                                                StringRef spelling, SMLoc loc) {
-  if (isListenerInterestedInLoc(parserListener, loc))
-    parserListener->onModuleImport(&decl, spelling, loc);
+  if (!isListenerInterestedInLoc(parserListener, loc))
+    return;
+  // Grab the names of each of the referenced modules.
+  SmallVector<StringRef> moduleNames;
+  spelling.split(moduleNames, '.', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  // Skip over relative module markers in the location.
+  const char *locPtr = loc.getPointer();
+  while (*locPtr == '.')
+    ++locPtr;
+  loc = SMLoc::getFromPointer(locPtr);
+
+  // Grab the decls for each of the referenced modules.
+  SmallVector<ASTDecl *> decls;
+  ASTDecl *declIt = &decl;
+  for (int i = 0, e = moduleNames.size(); i < e; ++i) {
+    decls.push_back(declIt);
+    declIt = declIt->getParentDecl();
+  }
+
+  // Notify the listener of each module import starting from the parent, so we
+  // can skip past the position within the location.
+  for (auto [name, decl] : llvm::zip(moduleNames, llvm::reverse(decls))) {
+    parserListener->onModuleImport(decl, name, loc);
+    loc = SMLoc::getFromPointer(loc.getPointer() + name.size() + 1);
+  }
 }
 
 void SharedState::notifyListenerOnParameterDecl(ASTDecl &decl,
