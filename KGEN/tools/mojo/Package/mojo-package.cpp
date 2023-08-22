@@ -429,19 +429,12 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   if (args.hasMultipleArgs(options::OPT_INPUT))
     return Error("too many inputs, expected exactly one");
 
-  if (!args.hasArg(options::OPT_name))
-    return Error("must provide a package name");
-  if (args.hasMultipleArgs(options::OPT_name))
-    return Error("too many package names, expected exactly one");
-
   pkgArgs.ctx.loadDialect<KGENDialect>();
   ErrorOr<EnvAttr> envOrErr =
       EnvAttr::parseDefines(&pkgArgs.ctx, args.getAllArgValues(options::OPT_D));
   if (failed(envOrErr))
     return envOrErr.takeError();
   pkgArgs.env = envOrErr.takeValue();
-
-  pkgArgs.name = args.getLastArgValue(options::OPT_name);
 
   // Reject input files that do not appear to be mojo package directories (this
   // includes stdin "-").
@@ -452,6 +445,18 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   }
 
   pkgArgs.outputPath = args.getLastArgValue(options::OPT_o, "-");
+  if (pkgArgs.outputPath == "-") {
+    // If we're outputting to stdout, use the input directory name as the
+    // package name.
+    pkgArgs.name = std::filesystem::path(pkgArgs.inputPath).filename().string();
+  } else {
+    std::filesystem::path outputPath(pkgArgs.outputPath);
+    if (outputPath.extension() != ".mojopkg" && outputPath.extension() != ".📦")
+      return Error("output path must have a '.mojopkg' or '.📦' extension");
+
+    // Otherwise, infer from the output path.
+    pkgArgs.name = outputPath.stem().string();
+  }
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
@@ -632,9 +637,8 @@ static int package(const State &state) {
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(
-      telemetryCtx, state, args, /*privateArgs=*/
-      {options::OPT_D, options::OPT_I, options::OPT_name, options::OPT_o});
+  initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
+                      {options::OPT_D, options::OPT_I, options::OPT_o});
 
   //===--------------------------------------------------------------------===//
   // Build the package
