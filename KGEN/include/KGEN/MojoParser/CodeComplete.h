@@ -15,15 +15,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/MemoryBufferRef.h"
 #include <string>
-
-namespace M::KGEN {
-class CompilationOptions;
-} // namespace M::KGEN
-namespace M::LLCL {
-class Runtime;
-} // namespace M::LLCL
 
 namespace M::KGEN::Mojo {
 /// This class represents a code completion result.
@@ -51,12 +43,6 @@ struct CodeCompletionResult {
   Kind kind = Kind::kUnknown;
 };
 
-/// Returns the code completion results for the given buffer at the given
-/// completion position.
-std::vector<CodeCompletionResult>
-codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-             MLIRContext *context, LLCL::Runtime &runtime,
-             const KGEN::CompilationOptions &options);
 } // namespace M::KGEN::Mojo
 
 #endif // KGEN_MOJOPARSER_CODECOMPLETE_H

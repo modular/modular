@@ -103,6 +103,7 @@ private:
 /// This implements a lexer for .mojo files.
 class Lexer : public SharedStateUser {
 public:
+  Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr);
   Lexer(SharedState &sharedState, const llvm::MemoryBuffer *buffer);
   Lexer(SharedState &sharedState, const LexerCursor &cursor);
 
@@ -162,8 +163,6 @@ private:
   void skipComment();
 
 private:
-  Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr);
-
   /// This is the overall memory buffer that we are lexing from.
   StringRef curBuffer;
   /// This the start of the next byte to lex.
