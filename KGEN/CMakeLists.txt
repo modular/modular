@@ -225,8 +225,7 @@ function(add_mojo_package target)
     COMMAND $<TARGET_FILE:mojo> package
     ${MOJO_ARCH_FLAGS}
     ${MOJO_DEFINES}
-    ${KGEN_PACKAGE_DIR} --name ${KGEN_OUTPUT_NAME}
-    -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
+    ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
     ${MOJO_FRONTEND_FLAGS}
     --debug-level ${KGEN_DEBUG_LEVEL}
