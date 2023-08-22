@@ -693,13 +693,6 @@ ExecutionEngine::~ExecutionEngine() {
     executionSession->reportError(std::move(Err));
 }
 
-ExecutionEngine::ExecutionEngine(ExecutionEngine &&other) = default;
-
-bool ExecutionEngine::libraryExists(llvm::StringRef libName) {
-  llvm::orc::JITDylib *dylib = executionSession->getJITDylibByName(libName);
-  return dylib != nullptr;
-}
-
 ErrorOr<CompiledFunc> ExecutionEngine::lookup(StringRef symbol) {
   return lookupWithSearchOrder(searchOrder, symbol);
 }
