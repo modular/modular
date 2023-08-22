@@ -92,3 +92,17 @@ kgen.func @condition_propagation(%cond: i1) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @donnot_crash_canonicalize_if_parent_no_terminator
+kgen.func @donnot_crash_canonicalize_if_parent_no_terminator(%cond: i1) {
+  // CHECK: pop.coroutine.await {
+  pop.coroutine.await {
+    // CHECK-NO: hlcf.if
+    hlcf.if %cond {
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+  }
+  kgen.return
+}
