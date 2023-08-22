@@ -118,7 +118,7 @@ public:
       sanitizers.print(os);
     }
     if (enableXRayInstrumentation)
-      os << ", XRayInstrumentation: on";
+      os << ", enableXRayInstrumentation";
 
     os << ", linkDirs: [";
     llvm::interleaveComma(linkDirs, os);
