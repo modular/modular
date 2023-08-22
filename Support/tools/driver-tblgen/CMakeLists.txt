@@ -71,7 +71,8 @@ macro(add_driver_option_tablegen prefix input)
   add_public_tablegen_target("${prefix}${name}HelpText")
   add_dependencies(${target} "${prefix}${name}HelpText")
 
-  # 3. Manual page
+  # 3. Manual page: the 'GenerateManPage' target generates the man page file
+  # itself, and the 'ManPage' target copies it to the 'share' directory.
   if (ARG_MANUAL_NAME)
     set(manual_name "${ARG_MANUAL_NAME}.1")
   else()
@@ -80,14 +81,16 @@ macro(add_driver_option_tablegen prefix input)
   set(LLVM_TARGET_DEFINITIONS "${input}")
   tablegen(DRIVER "${manual_name}" -gen-man-page
     EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
-  add_public_tablegen_target("${prefix}${name}ManPage")
+  add_public_tablegen_target("${prefix}${name}GenerateManPage")
 
-  add_custom_command(TARGET "${prefix}${name}ManPage"
+  add_custom_command(OUTPUT "${MODULAR_SHARE_DIR}/man/man1/${manual_name}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${MODULAR_SHARE_DIR}/man/man1"
-    COMMAND ${CMAKE_COMMAND} -E copy
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${CMAKE_CURRENT_BINARY_DIR}/${manual_name}"
       "${MODULAR_SHARE_DIR}/man/man1/${manual_name}"
-    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${manual_name}")
+    DEPENDS "${prefix}${name}GenerateManPage")
+  add_custom_target("${prefix}${name}ManPage"
+    DEPENDS "${MODULAR_SHARE_DIR}/man/man1/${manual_name}")
 
   add_dependencies(${target} "${prefix}${name}ManPage")
 
