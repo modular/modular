@@ -95,6 +95,14 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateApplyLike(op, /*withResultSlot=*/true);
   case POC::GetEnv:
     return evaluateGetEnv(op);
+  case POC::Rebind:
+    // Catch unfolded rebinds to emit a nicer error message.
+    emitError(ErrorTree(
+        *errorLoc, "error: rebind input type '" +
+                       mlir::debugString(op.getOperands().front().getType()) +
+                       "' does not match result type '" +
+                       mlir::debugString(op.getType()) + "'"));
+    return failure();
   default:
     return failure();
   }
