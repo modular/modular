@@ -231,7 +231,7 @@ def var_decls() -> None:
     # CHECK: pop.store [[ADD]], %y : !pop.pointer<{{.*}}@"$int"::@Int>
     y = y + 1
 
-    # CHECK: kgen.param.constant: {{.*}}@"$StringLiteral"::@StringLiteral = <#lit.struct<{value: string = "hello"}>>
+    # CHECK: kgen.param.constant: {{.*}}@"$string_literal"::@StringLiteral = <#lit.struct<{value: string = "hello"}>>
     let const_str = "hello"
 
     # CHECK: %str = lit.varlet.decl {{.*}} : <{{.*}}@StringLiteral>
@@ -319,7 +319,7 @@ fn callOverload(a: Int):
     # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$int::Int)"]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$SIMD::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)">()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)">()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -781,12 +781,12 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 
 
 # CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32
+# CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32
 # CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<{{.*}}@"$int"::@Int>
 fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>>
     var b: MyTuple[Int, Float32, Int]
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
     let c = MyTuple[Int](1)
@@ -806,11 +806,11 @@ fn usePacks(x: Float32, y: Int):
     pack()
 
     # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>(%[[PACK4]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>(%[[PACK4]])
     pack((1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: {{.*}}@"$int"::@Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>(%[[PACK5]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}>, !kgen.declref<{{.*}}@"$int"::@Int>]>(%[[PACK5]])
     pack[Int, Float32, Int]((1).value, x, y)
 
     # CHECK: index.constant 1
@@ -818,7 +818,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed((1).value, x, y)
 
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$SIMD"::@SIMD{{.*}}f32{{.*}}>]>
+    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype>  [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}>]>
     variadicParameter[Int, Float32](1)
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<!kgen.mlirtype> []>
     variadicParameter((2).value)
@@ -1216,7 +1216,7 @@ struct SomeParamStruct[c_param: Int]:
 # FIXME: Empty tuple `Tuple[]` cannot be spelled.
 
 # CHECK-LABEL: lit.func @"returnTup0
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = []>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = []>>
 fn returnTup0() -> Tuple:
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
@@ -1225,7 +1225,7 @@ fn returnTup0() -> Tuple:
   return ()
 
 # CHECK-LABEL: lit.func @"returnTup0a
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = []>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = []>>
 fn returnTup0a() -> ():
   # FIXME: Why isn't this a kgen.param.constant for the whole call?
   # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[]> = <<>>
@@ -1234,7 +1234,7 @@ fn returnTup0a() -> ():
   return ()
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
 fn returnTup1() -> Tuple[Int]:
   # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[!kgen.declref<{{.*}}@"$int"::@Int>]>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
@@ -1242,7 +1242,7 @@ fn returnTup1() -> Tuple[Int]:
   return (4,)
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>]>>
 fn returnTup1a() -> (Int,):
   return (4,)
 
@@ -1250,15 +1250,15 @@ fn returnTup1b() -> (Int,):
   return 4,
 
 # CHECK-LABEL: lit.func @"returnTup2
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$FloatLiteral"::@FloatLiteral>]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$float_literal"::@FloatLiteral>]>>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$FloatLiteral"::@FloatLiteral>]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$float_literal"::@FloatLiteral>]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (4, 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$Tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$FloatLiteral"::@FloatLiteral>]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<!kgen.mlirtype> = [!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$float_literal"::@FloatLiteral>]>>
 fn returnTup2a() -> (Int, FloatLiteral):
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$FloatLiteral"::@FloatLiteral>]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$float_literal"::@FloatLiteral>]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (4, 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2b

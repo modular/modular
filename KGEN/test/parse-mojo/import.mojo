@@ -11,7 +11,7 @@
 from imported_module import *
 
 # CHECK-LABEL: lit.func @"import_of_import
-# CHECK-SAME: @"$builtin"::@"$SIMD"::@SIMD<
+# CHECK-SAME: @"$builtin"::@"$simd"::@SIMD<
 fn import_of_import(arg: Float64):
   pass
 
