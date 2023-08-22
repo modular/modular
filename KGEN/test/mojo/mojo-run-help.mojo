@@ -12,7 +12,7 @@
 # RUN: mojo run --help | FileCheck %s
 # RUN: mojo run %mojo_cpu_build_arch --help %s | FileCheck %s
 
-# CHECK: Builds and executes a Mojo file
+# CHECK: mojo-run
 
 # Check that passing the `--help` option after the input argument passes it
 # along to the underlying Mojo program.
