@@ -460,8 +460,35 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
     arg = replacer.replace(arg);
     if (err)
       return std::move(*err);
+    if (auto store = dyn_cast<StoreToMemAttr>(arg)) {
+      Type valueType = store.getValue().getType();
+      ErrorOr<PointerAttr> ptr =
+          allocateInternalStackFor(valueType, store.getType());
+      if (ptr.isError())
+        return ptr.takeError();
+      if (ErrorOrSuccess err =
+              writeAttributeToMemory(ptr->getAddr(), store.getValue());
+          err.isError())
+        return err.takeError();
+      arg = ptr.takeValue();
+    }
   }
   return success();
+}
+
+ErrorOr<PointerAttr> InterpreterState::allocateInternalStackFor(Type type,
+                                                                Type ptrType) {
+  std::optional<int64_t> size =
+      DataLayoutInterface::getTypeAllocSize(getTarget(), type);
+  std::optional<int64_t> align =
+      DataLayoutInterface::getTypeABIAlign(getTarget(), type);
+  if (!size || !align)
+    return Error("could not get result slot type size or alignment");
+
+  ErrorOr<MemoryBlob &> blob = stackMemory.addBlob(*size, *align, /*hdl=*/{});
+  if (blob.isError())
+    return blob.takeError();
+  return PointerAttr::get(blob->baseAddr, ptrType);
 }
 
 //===----------------------------------------------------------------------===//
@@ -590,20 +617,12 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
     return ErrorTree(loc, "internal error: region has no arguments");
 
   // Allocate the result slot.
-  std::optional<int64_t> resultSize =
-      DataLayoutInterface::getTypeAllocSize(getTarget(), resultType);
-  std::optional<int64_t> resultAlign =
-      DataLayoutInterface::getTypeABIAlign(getTarget(), resultType);
-  if (!resultSize || !resultAlign)
-    return ErrorTree(loc, "could not get result slot type size or alignment");
-
-  ErrorOr<MemoryBlob &> resultBlob =
-      stackMemory.addBlob(*resultSize, *resultAlign, /*hdl=*/{});
-  if (resultBlob.isError())
-    return ErrorTree(loc, resultBlob.takeError());
-  Attribute resultSlotAttr =
-      PointerAttr::get(resultBlob->baseAddr, region.getArgumentTypes().front());
+  ErrorOr<PointerAttr> resultSlotAttrOr =
+      allocateInternalStackFor(resultType, region.getArgumentTypes().front());
+  if (resultSlotAttrOr.isError())
+    return ErrorTree(loc, resultSlotAttrOr.takeError());
   SmallVector<Attribute> allArgs;
+  Attribute resultSlotAttr = resultSlotAttrOr.takeValue();
   allArgs.push_back(resultSlotAttr);
   llvm::append_range(allArgs, arguments);
 
