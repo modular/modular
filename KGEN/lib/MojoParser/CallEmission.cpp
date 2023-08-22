@@ -2072,13 +2072,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // into this, but we need information about each argument being emitted
     // before we can do that.  As such, we just use a var decl and replace it
     // opportunistically later if we can.
-    if (convention == ValueInputConvention::ByRefResult) {
-      if (!builder) {
-        // TODO: Support memory-primary results in parameter expressions
-        emitError(callExpr->getLoc(), "TODO: memory-primary results are not "
-                                      "supported in parameter expressions.");
-        return {};
-      }
+    if (convention == ValueInputConvention::ByRefResult && builder) {
       assert(idx == 0 && calleeSig.hasMemoryOnlyResult());
       auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
@@ -2086,6 +2080,12 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       argumentValues.push_back({SLValue(resultTmp), callExpr});
       continue;
     }
+    // Memory-primary result slots are allocated automatically by the apply
+    // operator.
+    if (!builder && llvm::is_contained({ValueInputConvention::ByRefResult,
+                                        ValueInputConvention::InitSelf},
+                                       convention))
+      continue;
 
     // If we ran out of operands, fulfill this with a default value, empty
     // variadic list, or empty pack.
@@ -2274,7 +2274,15 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       operands.push_back(arg);
     }
 
-    TypedAttr result = ParamOperatorAttr::get(POC::Apply, operands);
+    bool hasResultSlot =
+        calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+    Type resultType = hasResultSlot
+                          ? ASTType(calleeSig.getValueInputs().front())
+                                .getPointerElementType()
+                          : ASTType(calleeSig.getValueResults().front());
+    TypedAttr result = ParamOperatorAttr::get(
+        hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands,
+        resultType);
     return emitCResult(result, callExpr, dest);
   }
 

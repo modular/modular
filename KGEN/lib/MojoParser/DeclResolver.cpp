@@ -1049,6 +1049,11 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
       !fullSig.getResultParamTypes().empty())
     return Error("function is parametric");
 
+  // Use of the interpreter's memory model requires a target specification,
+  // which the parser does not have.
+  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfResult())
+    return Error("function has memory-primary result");
+
   // Make sure to fully resolve the body and everything within it.
   if (failed(resolver.resolveFully(*decl, decl->getLoc())))
     return Error("failed to fully resolve function");
@@ -1487,8 +1492,9 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
 void ParsedArgument::computeArgumentConventions(
     SharedState &shared, MutableArrayRef<ParsedArgument> args,
-    MutableArrayRef<Type> argTypes) {
-  for (auto [arg, argType] : llvm::zip(args, argTypes)) {
+    MutableArrayRef<Type> argTypes, MutableArrayRef<TypedAttr> defaults) {
+  size_t defaultOffset = args.size() - defaults.size();
+  for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
       llvm_unreachable("should be resolved above");
@@ -1521,8 +1527,14 @@ void ParsedArgument::computeArgumentConventions(
 
     // Adjust the MLIR type if needed.
     if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
-        arg.kgenConvention != ValueInputConvention::BorrowedInReg)
+        arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
       argType = POP::PointerType::get(argType);
+      if (i >= defaultOffset) {
+        // Add the PValue to LValue conversion in the default value.
+        size_t index = i - defaultOffset;
+        defaults[index] = StoreToMemAttr::get(defaults[index], argType);
+      }
+    }
     if (arg.vararg == VarArgKind::VarArg)
       argType = KGEN::VariadicType::get(argType);
   }
@@ -1805,12 +1817,11 @@ void Decorators::applyBodyDecorators(
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static void
-verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
-                          SmallVector<ParsedArgument> &args,
-                          MutableArrayRef<Type> argTypes, ASTType &resultType,
-                          const FnEffects &effects, SharedState &shared,
-                          SpecialFunctionInfo fnInfo) {
+static void verifyFunctionNameBinding(
+    ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
+    SmallVector<ParsedArgument> &args, MutableArrayRef<Type> argTypes,
+    MutableArrayRef<TypedAttr> defaults, ASTType &resultType,
+    const FnEffects &effects, SharedState &shared, SpecialFunctionInfo fnInfo) {
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -2022,7 +2033,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
 
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.
-  ParsedArgument::computeArgumentConventions(shared, args, argTypes);
+  ParsedArgument::computeArgumentConventions(shared, args, argTypes, defaults);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.
@@ -2366,8 +2377,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
-                            effects, shared, fnInfo);
+  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, defaults,
+                            resultType, effects, shared, fnInfo);
 
   // Finally now that the full signature has been resolved, build our IR.
 

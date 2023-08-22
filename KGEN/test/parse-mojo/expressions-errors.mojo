@@ -59,12 +59,6 @@ fn test_func_type():
     # expected-error @below {{SIMD[__init__(type.value), 32]}}
     alias value: SIMD[type.value, 32] = SIMD[DType.float32, 32]()
 
-fn hello_str() -> String:
-    return "hello"
-
-# expected-error @below {{TODO: memory-primary results are not supported in parameter expressions.}}
-alias x = hello_str()
-
 ##===----------------------------------------------------------------------===##
 # LValue and RValues
 ##===----------------------------------------------------------------------===##

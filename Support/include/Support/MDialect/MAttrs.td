@@ -281,6 +281,12 @@ def StoreToMemAttr : MAttr<"StoreToMem", "store_to_mem", [TypedAttrInterface]> {
   let parameters = (ins "TypedAttr":$value,
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "`<` $value `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "Type":$type), [{
+      return $_get(value.getContext(), value, type);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

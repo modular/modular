@@ -198,18 +198,6 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in default argument}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
-# expected-error @below {{cannot synthesize lvalue of non-register-passable type object in default argument}}
-def defaultArgumentUntyped(a = 1): pass
-
-struct NonRegisterPassableStruct:
-    var value: Int
-
-    fn __init__(inout self, value: Int):
-        self.value = value
-
-# expected-error @below {{cannot synthesize lvalue of non-register-passable type NonRegisterPassableStruct in default argument}}
-fn defaultArgumentNonRegisterType(a: NonRegisterPassableStruct = 1): pass
-
 # expected-error @+1 {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 

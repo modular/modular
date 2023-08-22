@@ -673,6 +673,19 @@ fn callDefaultArgument(x: Int) -> Int:
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
+# CHECK-LABEL: lit.func @"defaultArgumentUntyped
+# CHECK-SAME: owned_in_mem = #M.store_to_mem<{{.*}}apply_result_slot, {{.*}}@object::@"__init__
+def defaultArgumentUntyped(a = 1): pass
+
+struct NonRegisterPassableStruct:
+    var value: Int
+
+    fn __init__(inout self, value: Int):
+        self.value = value
+
+# CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
+# CHECK-SAME: borrow_in_mem = #M.store_to_mem<{{.*}}apply_result_slot, {{.*}}__init__
+fn defaultArgumentNonRegisterType(a: NonRegisterPassableStruct = 1): pass
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
