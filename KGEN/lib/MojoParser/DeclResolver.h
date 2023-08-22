@@ -359,7 +359,8 @@ struct ParsedArgument {
   /// conventions of the arguments.
   static void computeArgumentConventions(SharedState &shared,
                                          MutableArrayRef<ParsedArgument> args,
-                                         MutableArrayRef<Type> argTypes);
+                                         MutableArrayRef<Type> argTypes,
+                                         MutableArrayRef<TypedAttr> defaults);
 };
 
 } // namespace M::KGEN::LIT

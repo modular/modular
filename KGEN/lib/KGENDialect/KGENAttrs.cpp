@@ -690,6 +690,8 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
                                  function_ref<InFlightDiagnostic()> emitError) {
   if (failed(verifyApplyLike(operands, type, "'apply' ", emitError)))
     return failure();
+
+  // Verify the result.
   auto sig = cast<SignatureType>(operands.front().getType());
   if (sig.getValueResults().size() != 1)
     return emitError() << "'apply' function must return one result";
@@ -697,6 +699,22 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   if (type != resultType)
     return emitError() << "'apply' function result type must be " << type
                        << " but got " << resultType;
+
+  // Verify the inputs.
+  operands = operands.drop_front();
+  if (operands.size() != sig.getNumInputs()) {
+    return emitError() << "'apply' function expected " << sig.getNumInputs()
+                       << " inputs but got " << operands.size() << "\n";
+  }
+  for (auto [i, operand, type] :
+       llvm::enumerate(operands, sig.getValueInputs())) {
+    if (operand.getType() != type) {
+      return emitError() << "'apply' operand #" << i << " type "
+                         << operand.getType()
+                         << " does not match expected type " << type;
+    }
+  }
+
   return success();
 }
 

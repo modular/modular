@@ -205,12 +205,16 @@ bool SignatureType::isKWVararg(size_t index) {
   return index + 1 == getNumInputs();
 }
 
-/// Return true if this signature has a first argument is a result from the
-/// function returned through memory.
 bool SignatureType::hasMemoryOnlyResult() {
   auto conventions = getValueInputConventions();
   return conventions.size() >= 1 &&
          conventions[0] == ValueInputConvention::ByRefResult;
+}
+
+bool SignatureType::hasInitSelfResult() {
+  auto conventions = getValueInputConventions();
+  return conventions.size() >= 1 &&
+         conventions[0] == ValueInputConvention::InitSelf;
 }
 
 /// Return a signature with the specified parameter bindings substituted

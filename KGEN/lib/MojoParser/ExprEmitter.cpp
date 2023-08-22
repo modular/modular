@@ -1394,9 +1394,14 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   }
 
   // If we successfully resolve the overload set, we know the call will succeed,
-  // do it.
+  // do it. Register-passable and parameter constructor calls do not require
+  // result slot allocation.
   if (!isMemoryOnly)
     return emitCallUnchecked(calleeFn, args, {}, dest, expr);
+  if (!builder) {
+    args = args.drop_front();
+    return emitCallUnchecked(calleeFn, args, {}, dest, expr);
+  }
 
   // We need to invoke memory-only constructors specially since the buffer is
   // exposed.

@@ -2719,7 +2719,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!resultType)
     return {};
 
-  ParsedArgument::computeArgumentConventions(emitter.shared, args, argTypes);
+  ParsedArgument::computeArgumentConventions(emitter.shared, args, argTypes,
+                                             defaults);
 
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
