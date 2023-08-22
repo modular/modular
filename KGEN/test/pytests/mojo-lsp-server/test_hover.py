@@ -39,7 +39,7 @@ fn function():
     requests.open_document(doc)
 
     result = fail_if_none(
-        await requests.hover(doc, Position(line=5, character=17))
+        await requests.hover(doc, Position(line=3, character=17))
     )
     assert isinstance(result.contents, MarkupContent)
     assert (
@@ -49,12 +49,12 @@ fn function():
 ```"""
     )
     assert result.range == Range(
-        start=Position(line=5, character=16), end=Position(line=5, character=19)
+        start=Position(line=3, character=16), end=Position(line=3, character=19)
     )
 
     result = await client.text_document_hover_async(
         params=HoverParams(
-            position=Position(line=6, character=8),
+            position=Position(line=4, character=8),
             text_document=doc.identifier,
         )
     )
@@ -67,7 +67,7 @@ fn function():
 ```"""
     )
     assert result.range == Range(
-        start=Position(line=6, character=8), end=Position(line=6, character=11)
+        start=Position(line=4, character=8), end=Position(line=4, character=11)
     )
 
 
@@ -471,8 +471,8 @@ Implements basic object methods for working with strings.
     )
 
     await assert_import(
-        "SIMD",
-        """### module `SIMD`
+        "simd",
+        """### module `simd`
 
 ---
 
@@ -519,7 +519,7 @@ alias ExternalAlias = 0
 ---
 
 ###
-Implements the Builtin package.
+Implements the builtin package.
 
 """,
     )

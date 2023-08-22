@@ -6,11 +6,11 @@
 
 from utils.index import StaticIntTuple  # skip
 from utils.static_tuple import StaticTuple  # skip
-import DType
 import builtin
+import builtin.dtype
 
 
-fn functionWithNestedType(x: DType.DType):
+fn functionWithNestedType(x: dtype.DType):
     let y: builtin.int.Int = 12
     pass
 
