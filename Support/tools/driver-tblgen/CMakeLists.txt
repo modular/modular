@@ -115,22 +115,28 @@ macro(add_driver_option_tablegen prefix input)
     set_target_properties(${target}
       PROPERTIES DRIVER_MARKDOWN_PATHS "${markdown_path}")
   endif()
-
-  add_dependencies(${target} "${prefix}${name}Markdown")
 endmacro()
 
-# Given a target name "BarTarget", adds a custom command target that when built
-# copies all items in list property named "DRIVER_MARKDOWN_PATHS" that's
-# associated with that target. This list property is defined by the
-# `add_driver_option_tablegen` macro.
+# Given a target name "BarTarget", adds a dependency between "BarTarget" and a
+# custom target. This custom target, when built, copies all items in the list
+# property named "DRIVER_MARKDOWN_PATHS" associated with "BarTarget", to a
+# directory named "markdown". The "DRIVER_MARKDOWN_PATHS" list property is
+# defined and populated by the `add_driver_option_tablegen` macro.
 macro(collect_driver_markdown target)
   get_property(markdown_paths TARGET ${target} PROPERTY DRIVER_MARKDOWN_PATHS)
   foreach(path ${markdown_paths})
-    add_custom_command(TARGET ${target}
+    get_filename_component(filename "${path}" NAME)
+    add_custom_command(
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/markdown/${filename}"
       COMMAND ${CMAKE_COMMAND} -E make_directory
         "${CMAKE_CURRENT_BINARY_DIR}/markdown"
-      COMMAND ${CMAKE_COMMAND} -E copy
-        ${path} "${CMAKE_CURRENT_BINARY_DIR}/markdown"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${path} "${CMAKE_CURRENT_BINARY_DIR}/markdown/${filename}"
       DEPENDS ${path})
+
+    add_custom_target("${target}CopyMarkdown-${filename}"
+      DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/markdown/${filename}")
+
+    add_dependencies(${target} "${target}CopyMarkdown-${filename}")
   endforeach()
 endmacro()
