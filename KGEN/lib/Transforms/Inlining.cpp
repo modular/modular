@@ -1209,10 +1209,13 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
     }
     // Otherwise, convert the pipeline functor to a string so that reproducer
     // generation has the nested passes.
-    mlir::OpPassManager pipeline(FuncOp::getOperationName());
+    mlir::OpPassManager pipeline;
     buildFuncPasses(pipeline);
     llvm::raw_string_ostream os(funcPipelineStr);
     pipeline.printAsTextualPipeline(os);
+    // Strip `any(...)` from the textual pipeline.
+    funcPipelineStr =
+        StringRef(funcPipelineStr).drop_front(4).drop_back().str();
     return success();
   }
 
