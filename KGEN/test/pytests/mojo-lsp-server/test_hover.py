@@ -459,6 +459,18 @@ async def test_hover_import(client: LanguageClient):
         assert result.contents.value == expected
 
     await assert_import(
+        "builtin",
+        """### package `builtin`
+
+---
+
+###
+Implements the builtin package.
+
+""",
+    )
+
+    await assert_import(
         "string",
         """### module `string`
 
@@ -470,16 +482,35 @@ Implements basic object methods for working with strings.
 """,
     )
 
-    await assert_import(
-        "simd",
-        """### module `simd`
+    simd_doc = """### module `simd`
 
 ---
 
 ###
 Implements SIMD struct.
 
+"""
+    await assert_import("simd", simd_doc)
+    await assert_import("_simd", simd_doc)
+
+    await assert_import(
+        "aliases",
+        """### module `aliases`
 """,
+    )
+
+    await assert_import(
+        "function",
+        """```mojo
+(function) fn function() -> Int
+```""",
+    )
+
+    await assert_import(
+        "StructWithAlias",
+        """```mojo
+struct StructWithAlias
+```""",
     )
 
 
@@ -507,21 +538,6 @@ alias IDENTITY = 0
         """```mojo
 alias ExternalAlias = 0
 ```""",
-    )
-
-    doc = Document.from_file("types.mojo")
-    requests.open_document(doc)
-
-    await assert_hover(
-        "builtin",
-        """### package `builtin`
-
----
-
-###
-Implements the builtin package.
-
-""",
     )
 
 

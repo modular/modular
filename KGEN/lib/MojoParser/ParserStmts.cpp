@@ -1557,7 +1557,8 @@ ParseResult StmtParser::parseFromImportStmt() {
       if (!currentResolvedModule) {
         currentResolvedModule = &shared.importModule(
             moduleAttr,
-            curDeclScope->getIfOperation()->getParentOfType<PackageOp>(), loc);
+            curDeclScope->getIfOperation()->getParentOfType<PackageOp>(),
+            importLoc);
       }
       return *currentResolvedModule;
     });
@@ -1591,8 +1592,8 @@ ParseResult StmtParser::parseFromImportStmt() {
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         translateLocation(importLoc), moduleAttr, importDestNameAttr,
         builder.getStringAttr(importSourceName),
-        translateLocation(importSourceNameLoc),
-        translateLocation(importDestLoc));
+        translateLocation(importDestLoc),
+        translateLocation(importSourceNameLoc));
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);

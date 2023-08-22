@@ -479,8 +479,9 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
                                          StringAttr importName, SMLoc loc,
                                          SMLoc importNameLoc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
-
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
+  shared.notifyListenerOnRef(&module, importName, importNameLoc);
+
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
                           /*declName=*/StringAttr(), moduleName, importNameLoc,
                           dest);
@@ -492,10 +493,15 @@ DeclResolver::importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
                                    StringAttr destName, SMLoc loc,
                                    SMLoc sourceNameLoc, SMLoc destNameLoc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
+  shared.notifyListenerOnModuleImport(module, moduleName, loc);
+
   FailureOr<ArrayRef<ASTDecl *>> results =
       lookupDeclInModule(module, sourceName, sourceNameLoc);
   if (failed(results))
     return failure();
+  shared.notifyListenerOnRef(*results, sourceName, sourceNameLoc);
+  shared.notifyListenerOnRef(*results, destName, destNameLoc);
+
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(*results), destName,
                           sourceName, moduleName, destNameLoc, dest);
 }
