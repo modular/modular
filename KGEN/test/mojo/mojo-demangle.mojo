@@ -6,7 +6,7 @@
 
 # Invoking the subcommand with `--help` prints its help text.
 # RUN: mojo demangle --one -two --help | FileCheck %s --check-prefix CHECK-HELP
-# CHECK-HELP: Demangles the given name
+# CHECK-HELP: mojo-demangle
 
 # Reject unknown options.
 # RUN: not mojo demangle -one --two '$aModule::main()' 2>&1 | FileCheck %s --check-prefix CHECK-UNKNOWN

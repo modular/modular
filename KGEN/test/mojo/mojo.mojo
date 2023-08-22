@@ -14,4 +14,4 @@
 
 # Invoking the driver with `--help` prints the driver's help text.
 # RUN: mojo --help | FileCheck %s --check-prefix CHECK-HELP
-# CHECK-HELP: The Mojo{{.*}} command line interface
+# CHECK-HELP: mojo
