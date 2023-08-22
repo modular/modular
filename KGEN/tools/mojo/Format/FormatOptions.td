@@ -15,7 +15,7 @@ def FormatOptionGroup : OptionGroup<"Format options">, Index<0>;
 
 def line_length : Separate<["--"], "line-length">,
   Group<FormatOptionGroup>, Index<0>, MetaVarName<"INTEGER">,
-  HelpText<"How many characters per line to allow, with a default of 80.">;
+  HelpText<"Sets the max character line length. Default is 80.">;
 def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<0>,
   MetaVarName<"INTEGER">, Alias<line_length>;
 
@@ -26,5 +26,5 @@ def : Separate<["-"], "l">, Group<FormatOptionGroup>, Index<0>,
 def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<1>;
 
 def quiet : Flag<["--"], "quiet">, Group<DiagnosticOptionGroup>,
-  Index<0>, HelpText<"Don't emit non-error messages.">;
+  Index<0>, HelpText<"Disables non-error messages.">;
 def : Flag<["-"], "q">, Group<DiagnosticOptionGroup>, Index<0>, Alias<quiet>;
