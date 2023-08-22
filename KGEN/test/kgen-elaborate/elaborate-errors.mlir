@@ -205,7 +205,7 @@ kgen.generator @interpreter_state_owner() {
 // expected-error @below {{no viable expansions found}}
 kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
-  // expected-note @below {{operand and result type of rebind operation did not concretize to the same type}}
+  // expected-note @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
   %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
   kgen.return
 }
@@ -301,5 +301,14 @@ kgen.generator @no_impls() {
 // expected-error @below {{no viable expansions found}}
 kgen.generator export @get_all_impls_none() {
   kgen.param.declare impls: variadic<!kgen.signature<() -> ()>> = <get_all_impls(@no_impls)>
+  kgen.return
+}
+
+// -----
+
+// expected-error @below {{no viable expansions found}}
+kgen.generator @failed_param_rebind() {
+  // expected-note @below {{rebind input type 'i64' does not match result type 'i32'}}
+  kgen.param.declare value: i32 = <rebind(:i64 2)>
   kgen.return
 }

@@ -416,9 +416,11 @@ static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
   Type outType;
   HANDLE_EVALUATOR_CONC(outType, inode, op.getLoc(), op.getType());
   if (outType != op.getInput().getType()) {
-    inode->setToError(ErrorTree(op.getLoc(),
-                                "operand and result type of rebind operation "
-                                "did not concretize to the same type"));
+    inode->setToError(
+        ErrorTree(op.getLoc(), "error: rebind input type '" +
+                                   mlir::debugString(op.getInput().getType()) +
+                                   "' does not match result type '" +
+                                   mlir::debugString(outType) + "'"));
     return failure();
   }
   op.replaceAllUsesWith(op.getOperand());
