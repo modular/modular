@@ -506,17 +506,17 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     printParamName(p, decl.getName());
   else
     p.printSymbolName(getSymName());
+
   printFunctionSignature(p, getBodyRegion(), getInputParams(),
                          getResultParams(), getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
+  printOptionalConstraints(p, *this, getConstraints());
+  printOptionalDecorators(p, *this, getDecorators());
 
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-
   printFunctionAttributes(p, *this, ignoredAttrNames);
-  printOptionalConstraints(p, *this, getConstraints());
-  printOptionalDecorators(p, *this, getDecorators());
 
   p << ' ';
   p.printRegion(getBodyRegion(), /*printEntryBlockArgs=*/false);

@@ -45,6 +45,13 @@ lit.func @noneTypeAndValue() -> !lit.none {
   kgen.return %0 : !lit.none
 }
 
+// CHECK-LABEL: @attributesAndDecorators
+lit.func @attributesAndDecorators()
+  // CHECK-NEXT: decorators <{{.*}}> attributes {isParametric} {
+  decorators <:() -> () @decorator> attributes {isParametric} {
+  lit.end_func
+}
+
 // -----
 
 // CHECK-LABEL: lit.struct.decl @A
