@@ -10,24 +10,12 @@
 # REQUIRES: avx2
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import align_up, div_ceil, max, min
-
-from Matmul import _submatmul_sequential_sync, matmul, pack_b
-from MatmulUtils import (
-    MatmulConfig,
-    PartitionHeuristic,
-    calculate_tile_n_k,
-    get_matmul_config,
-    get_partitioned_matmul,
-    is_critical_stride,
-    search_mm_config,
-)
-from Matrix import Matrix
-from memory.buffer import DynamicRankBuffer, NDBuffer
-from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from memory.buffer import NDBuffer
+from Matrix import Matrix
+from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from runtime.llcl import Runtime, OwningOutputChainPtr
 
 alias alignment = 64
 
@@ -50,21 +38,6 @@ fn gemm_naive[
                 c[i, j] += a_val * b_val
 
 
-fn _get_tile_n_k[
-    config: MatmulConfig,
-    transpose_b: Bool,
-](n: Int, k: Int) -> StaticIntTuple[2]:
-    @parameter
-    if not transpose_b:
-        return calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
-        ](n, k)
-    else:
-        return calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size
-        ](k, n)
-
-
 fn test_matmul[
     m: Int,
     n: Int,
@@ -75,15 +48,6 @@ fn test_matmul[
     b_type: DType,
     c_type: DType,
 ]():
-    alias config = search_mm_config[
-        a_type, b_type, c_type, True, is_critical_stride(k)
-    ]()
-    let tile_n_k = _get_tile_n_k[config, transpose_b](n, k)
-    let tile_n = tile_n_k[0]
-    let tile_k = align_up(tile_n_k[1], 4) if b_packed else tile_n_k[1]
-    let padded_n = div_ceil(n, tile_n) * tile_n if b_packed else n
-    let padded_k = div_ceil(k, tile_k) * tile_k if b_packed else k
-
     # k%4 != 0 can overread into unallocated memory and fault
     # 3 bytes of padding fixes this. See issue 18784
     alias extra_bytes = 3
@@ -91,6 +55,14 @@ fn test_matmul[
         alignment, m * k + extra_bytes
     )
     let b_ptr = DTypePointer[b_type].aligned_alloc(alignment, k * n)
+    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
+
+    var padded_n_k = StaticIntTuple[2]()
+    padded_n_k = pack_matmul_b_shape_func[b_type, transpose_b, True](b)
+
+    let padded_n = padded_n_k[1] if b_packed else n
+    let padded_k = padded_n_k[0] if b_packed else k
+
     let bp_ptr = DTypePointer[b_type].aligned_alloc(
         alignment, padded_k * padded_n
     )
@@ -98,7 +70,7 @@ fn test_matmul[
     let c1_ptr = DTypePointer[c_type].aligned_alloc(alignment, m * n)
 
     let a = NDBuffer[2, DimList.create_unknown[2](), a_type](a_ptr, Index(m, k))
-    let b = NDBuffer[2, DimList.create_unknown[2](), b_type](b_ptr, Index(k, n))
+
     let bp = NDBuffer[2, DimList.create_unknown[2](), b_type](
         bp_ptr, Index(padded_k, padded_n)
     )
@@ -142,33 +114,16 @@ fn test_matmul[
             cm0[i, j] = 0
             cm1[i, j] = cm0[i, j]
 
-    let sub_matmul_config = get_partitioned_matmul[PartitionHeuristic.MOJO](
-        m, n, k, 0, 1
-    )
-
-    if b_packed:
-        pack_b[
-            transpose_b,
-            config.simd_size,
-            config.pack_inner_size,
-            b_type,
-            DimList.create_unknown[2](),
-            DimList.create_unknown[2](),
-        ](
-            bp,
-            b,
-            tile_n,
-            tile_k,
+    with Runtime() as runtime:
+        if b_packed:
+            let out_chain = OwningOutputChainPtr(runtime)
+            pack_b_ndbuffer[b_type](b, bp, out_chain.borrow())
+            out_chain.wait()
+        let out_chain = OwningOutputChainPtr(runtime)
+        matmul[a_type, b_type, c_type, False, transpose_b, b_packed](
+            c, a, bp, out_chain.borrow()
         )
-
-    _submatmul_sequential_sync[
-        a_type,
-        b_type,
-        c_type,
-        False,  # transpose_a - not supported yet
-        transpose_b,
-        b_packed,
-    ](c, a, bp, sub_matmul_config.shape, sub_matmul_config.offset)
+        out_chain.wait()
 
     gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)
 
@@ -189,12 +144,17 @@ fn test_matmul[
     c1_ptr.free()
 
 
+alias N = 257
+alias M = 1023
+alias K = 513
+
+
 fn test_matmul_vnni():
     print("== test_matmul_vnni")
     test_matmul[
-        257,
-        1023,
-        513,
+        N,
+        M,
+        K,
         False,  # transpose_b
         False,  # b_packed
         DType.uint8,
@@ -206,9 +166,9 @@ fn test_matmul_vnni():
 fn test_matmul_vnni_bpacked():
     print("== test_matmul_vnni_bpacked")
     test_matmul[
-        257,
-        1023,
-        513,
+        N,
+        M,
+        K,
         False,  # transpose_b
         True,  # b_packed
         DType.uint8,

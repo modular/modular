@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, max, min, sqrt
+from math import div_ceil, max, min, sqrt, align_up
 from sys.build import is_debug_build
 from sys.info import (
     has_avx2,
@@ -753,12 +753,19 @@ fn dispatch_is_critical_stride[
 fn _get_tile_n_k[
     config: MatmulConfig, transpose_b: Bool, type: DType
 ](b: NDBuffer[2, DimList.create_unknown[2](), type]) -> StaticIntTuple[2]:
+    var tile_n_k: StaticIntTuple[2]
+
     @parameter
     if not transpose_b:
-        return calculate_tile_n_k[
+        tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size
         ](b.dim(1), b.dim(0))
     else:
-        return calculate_tile_n_k[
+        tile_n_k = calculate_tile_n_k[
             config.pack_data_size, config.pack_inner_size
         ](b.dim(0), b.dim(1))
+
+    # a_type and ctype are not provided yet so for now we only use the b_type
+    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    tile_n_k[1] = align_up(tile_n_k[1], 4) if use_vnni else tile_n_k[1]
+    return tile_n_k

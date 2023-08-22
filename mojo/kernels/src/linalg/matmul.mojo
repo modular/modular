@@ -1459,16 +1459,22 @@ fn pack_matmul_b_shape_func[
     If transpose_b is True, this returns the un-transposed shape, since pack_b
     will un-transpose `b_ref` as part of the packing layout transformation."""
 
+    # a_type and ctype are not provided yet so for now we only use the b_type
+    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    alias a_type = DType.uint8 if use_vnni else type
+    alias b_type = type
+    alias c_type = DType.int32 if use_vnni else type
+
     var output = StaticIntTuple[2]()
 
     let k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
 
     if is_critical_stride(k):
-        alias config = search_mm_config[type, True, True]()
+        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         tile_n_k = _get_tile_n_k[config, transpose_in_0, type](b_input)
     else:
-        alias config2 = search_mm_config[type, True, False]()
+        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
         tile_n_k = _get_tile_n_k[config2, transpose_in_0, type](b_input)
 
     @parameter
@@ -1485,7 +1491,6 @@ fn pack_matmul_b_shape_func[
     return output
 
 
-# TODO(16867): Merge this with pack_b_ndbuffer.
 fn pack_b[
     transpose_b: Bool,
     simd_size: Int,
@@ -1605,7 +1610,6 @@ fn pack_b[
                 dst_offset += tile_n * tile_k
 
 
-# TODO(16867): Merge this with pack_b.
 @always_inline
 fn _pack_b_ndbuffer_impl[
     type: DType,
@@ -1626,8 +1630,15 @@ fn _pack_b_ndbuffer_impl[
 
     # The config (in particular inner size and tile_k) needs to EXACTLY match the
     # values used in the matmul algorithm consuming this packed b matrix
+
+    # a_type and ctype are not provided yet so for now we only use the b_type
+    alias use_vnni = use_vnni_fn[DType.uint8, type, DType.int32]()
+    alias a_type = DType.uint8 if use_vnni else type
+    alias b_type = type
+    alias c_type = DType.int32 if use_vnni else type
+
     if is_critical_stride(k):
-        alias config = search_mm_config[type, True, True]()
+        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
         let tile_n_k = _get_tile_n_k[config, transposed, type](b_input)
         pack_b[
             transposed,
@@ -1643,7 +1654,7 @@ fn _pack_b_ndbuffer_impl[
             tile_n_k[1],
         )
     else:
-        alias config2 = search_mm_config[type, True, False]()
+        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
         let tile_n_k = _get_tile_n_k[config2, transposed, type](b_input)
         pack_b[
             transposed,
@@ -1658,7 +1669,6 @@ fn _pack_b_ndbuffer_impl[
             tile_n_k[0],
             tile_n_k[1],
         )
-
     out_chain.mark_ready()
 
 
