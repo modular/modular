@@ -1193,11 +1193,17 @@ def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
   let arguments = (ins
     SymbolNameAttr:$moduleName,
     SymbolNameAttr:$importName,
-    OptionalAttr<SymbolNameAttr>:$declName
+    OptionalAttr<SymbolNameAttr>:$declName,
+    OptionalAttr<Builtin_LocationAttr>:$importNameLoc,
+    OptionalAttr<Builtin_LocationAttr>:$declNameLoc
   );
   let assemblyFormat = [{
-    $moduleName (`->` $declName^)? `as` $importName attr-dict
+    $moduleName (`->` $declName^)? `as` $importName
+    (`declNameLoc` `(` $declNameLoc^ `)`)?
+    (`importNameLoc` `(` $importNameLoc^ `)`)?
+    attr-dict
   }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -64,6 +64,11 @@ public:
   /// FileLineColLoc.
   Location translateLocation(llvm::SMLoc loc) const;
 
+  /// Decode the specific MLIR location information into an SMLoc for use with
+  /// the SourceMgr. This returns an invalid SMLoc if the location is not
+  /// understood.
+  SMLoc convertLocToSMLoc(mlir::LocationAttr loc) const;
+
   /// This is a helper object that allows turning Location objects into SMLoc's.
   class SourceMgrLocationMapper;
   std::unique_ptr<SourceMgrLocationMapper> sourceMgrMapper;

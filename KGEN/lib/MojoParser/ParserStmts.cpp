@@ -1577,8 +1577,10 @@ ParseResult StmtParser::parseFromImportStmt() {
     if (missingIdentifier)
       return failure();
     StringRef importDestName = importSourceName;
+    SMLoc importDestLoc = importSourceNameLoc;
     if (consumeIf(Token::kw_as)) {
       importDestName = getTokenSpelling();
+      importDestLoc = getToken().getLoc();
       if (parseToken(Token::identifier,
                      "expected name to import '" + importSourceName + "' as"))
         return failure();
@@ -1587,11 +1589,13 @@ ParseResult StmtParser::parseFromImportStmt() {
     // Create an unresolved decl for this import.
     StringAttr importDestNameAttr = builder.getStringAttr(importDestName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        translateLocation(importSourceNameLoc), moduleAttr, importDestNameAttr,
-        builder.getStringAttr(importSourceName));
-    getDeclResolver().addDecl(
-        importDecl, importSourceNameLoc, importDestNameAttr, curDeclScope,
-        getLexer().getCursor(), getLexer().getCursor(), /*indentation=*/-1);
+        translateLocation(importLoc), moduleAttr, importDestNameAttr,
+        builder.getStringAttr(importSourceName),
+        translateLocation(importSourceNameLoc),
+        translateLocation(importDestLoc));
+    getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
+                              curDeclScope, getLexer().getCursor(),
+                              getLexer().getCursor(), /*indentation=*/-1);
 
     // Check for more elements to import.
     if (!consumeIf(Token::comma))
@@ -1625,8 +1629,10 @@ ParseResult StmtParser::parseImportStmt() {
       return failure();
 
     // Check for a name binding.
+    mlir::LocationAttr boundModuleLocAttr;
     if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
+      boundModuleLocAttr = translateLocation(getToken().getLoc());
       if (parseToken(Token::identifier, "expected name to bind import"))
         return failure();
     }
@@ -1635,7 +1641,8 @@ ParseResult StmtParser::parseImportStmt() {
     StringAttr importDestNameAttr = builder.getStringAttr(boundModuleName);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         translateLocation(importLoc), moduleAttr, importDestNameAttr,
-        /*declName=*/StringAttr());
+        /*declName=*/StringAttr(), boundModuleLocAttr,
+        /*declNameLoc=*/mlir::LocationAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);

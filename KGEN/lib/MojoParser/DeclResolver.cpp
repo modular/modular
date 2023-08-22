@@ -476,26 +476,28 @@ LogicalResult DeclResolver::aliasDeclsImpl(
 LogicalResult DeclResolver::importModule(ASTDecl &dest,
                                          PackageOp currentPackage,
                                          StringAttr moduleName,
-                                         StringAttr importName, SMLoc loc) {
+                                         StringAttr importName, SMLoc loc,
+                                         SMLoc importNameLoc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
 
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(&module), importName,
-                          /*declName=*/StringAttr(), moduleName, loc, dest);
+                          /*declName=*/StringAttr(), moduleName, importNameLoc,
+                          dest);
 }
 
 LogicalResult
 DeclResolver::importDeclFromModule(ASTDecl &dest, PackageOp currentPackage,
                                    StringAttr moduleName, StringAttr sourceName,
-                                   StringAttr destName, SMLoc loc) {
-  // Make sure the module has been resolved.
+                                   StringAttr destName, SMLoc loc,
+                                   SMLoc sourceNameLoc, SMLoc destNameLoc) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   FailureOr<ArrayRef<ASTDecl *>> results =
-      lookupDeclInModule(module, sourceName, loc);
+      lookupDeclInModule(module, sourceName, sourceNameLoc);
   if (failed(results))
     return failure();
   return aliasImportDecls(TinyPtrVector<ASTDecl *>(*results), destName,
-                          sourceName, moduleName, loc, dest);
+                          sourceName, moduleName, destNameLoc, dest);
 }
 
 LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
@@ -2858,7 +2860,9 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     StringAttr importName = builder.getStringAttr("." + name);
     StringAttr boundName = builder.getStringAttr("$" + name);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
-        op->getLoc(), importName, boundName, /*declName=*/StringAttr());
+        op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
+        /*importNameLoc=*/mlir::LocationAttr(),
+        /*destNameLoc=*/mlir::LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
 
@@ -2866,7 +2870,9 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     // indexing into this module.
     boundName = builder.getStringAttr(name);
     importDecl = builder.create<LIT::UnresolvedImportOp>(
-        op->getLoc(), importName, boundName, /*declName=*/StringAttr());
+        op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
+        /*importNameLoc=*/mlir::LocationAttr(),
+        /*declNameLoc=*/mlir::LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }
@@ -3646,14 +3652,24 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
                                            ASTDecl &decl) {
   PackageOp packageOp = op->getParentOfType<PackageOp>();
 
+  // Grab the location of the import name if present.
+  SMLoc importNameLoc =
+      shared.diags.convertLocToSMLoc(op.getImportNameLocAttr());
+  if (!importNameLoc.isValid())
+    importNameLoc = decl.getLoc();
+
   // Check if we are importing a specific decl within the module, or the
   // module itself.
   if (auto declName = op.getDeclNameAttr()) {
+    SMLoc declNameLoc = shared.diags.convertLocToSMLoc(op.getDeclNameLocAttr());
+    if (!declNameLoc.isValid())
+      declNameLoc = decl.getLoc();
+
     return getDeclResolver().importDeclFromModule(
         *decl.getParentDecl(), packageOp, op.getModuleNameAttr(), declName,
-        op.getImportNameAttr(), decl.getLoc());
+        op.getImportNameAttr(), decl.getLoc(), declNameLoc, importNameLoc);
   }
-  return getDeclResolver().importModule(*decl.getParentDecl(), packageOp,
-                                        op.getModuleNameAttr(),
-                                        op.getImportNameAttr(), decl.getLoc());
+  return getDeclResolver().importModule(
+      *decl.getParentDecl(), packageOp, op.getModuleNameAttr(),
+      op.getImportNameAttr(), decl.getLoc(), importNameLoc);
 }

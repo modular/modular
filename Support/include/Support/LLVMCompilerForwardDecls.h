@@ -74,6 +74,7 @@ class InFlightDiagnostic;
 class IntegerAttr;
 class IntegerType;
 class Location;
+class LocationAttr;
 class MemRefType;
 class MLIRContext;
 class ModuleOp;

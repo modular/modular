@@ -150,15 +150,13 @@ static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic)
     : sourceMgr(sourceMgr), context(context),
+      sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>()),
       useMLIRDiagnostics(useMLIRDiagnostics),
       maxNotesPerDiagnostic(maxNotesPerDiagnostic),
       unknownBufferNameIdentifier(
           StringAttr::get(context,
                           Diags::SourceMgrLocationMapper::kUnnamedFileSigil)
-              .getAsOpaquePointer()) {
-  if (!useMLIRDiagnostics)
-    sourceMgrMapper = std::make_unique<SourceMgrLocationMapper>();
-}
+              .getAsOpaquePointer()) {}
 
 Diags::~Diags() {}
 
@@ -213,6 +211,12 @@ Location Diags::translateLocation(SMLoc loc) const {
 
   return FileLineColLoc::get(bufferName, lineAndColumn.first,
                              lineAndColumn.second);
+}
+
+SMLoc Diags::convertLocToSMLoc(mlir::LocationAttr loc) const {
+  if (FileLineColLoc fileLoc = dyn_cast_if_present<FileLineColLoc>(loc))
+    return sourceMgrMapper->convertLocToSMLoc(sourceMgr, fileLoc);
+  return SMLoc();
 }
 
 //===----------------------------------------------------------------------===//

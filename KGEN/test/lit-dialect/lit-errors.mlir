@@ -335,3 +335,8 @@ lit.func @wrong_error_return(%arg0: i32) -> !pop.variant<index> {
   // expected-error @below {{'lit.error_return' op operand #0 type '!pop.variant<i32>' does not match expected result type '!pop.variant<index>'}}
   lit.error_return %var : !pop.variant<i32>
 }
+
+// -----
+
+// expected-error @below {{specified `declNameLoc` without `declName`}}
+lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
