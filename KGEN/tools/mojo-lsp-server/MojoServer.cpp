@@ -853,8 +853,8 @@ MojoDocument::onCodeCompletionSync(const lsp::Position &completePos) const {
   uint64_t rawCompletePos = posLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   std::vector<KGEN::Mojo::CodeCompletionResult> results =
-      KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &mlirContext, runtime,
-                               context->compilationOptions);
+      MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
+                                      runtime, context->compilationOptions);
 
   // Map the Mojo results to LSP results.
   lsp::CompletionList completionList;

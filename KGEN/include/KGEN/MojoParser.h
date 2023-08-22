@@ -29,6 +29,9 @@ namespace LIT {
 class PackageOp;
 class SharedState;
 } // namespace LIT
+namespace Mojo {
+struct CodeCompletionResult;
+} // namespace Mojo
 } // namespace KGEN
 namespace LLCL {
 class Runtime;
@@ -249,6 +252,16 @@ public:
   /// In the case of success, the decl corresponding to the module is returned.
   /// In the case of an error, a null decl is returned.
   MojoASTDeclRef parseFile(unsigned int fileId);
+
+  //===--------------------------------------------------------------------===//
+  // Code Completion
+
+  /// Returns the code completion results for the given buffer at the given
+  /// completion position.
+  static std::vector<KGEN::Mojo::CodeCompletionResult>
+  codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+               MLIRContext *context, LLCL::Runtime &runtime,
+               const KGEN::CompilationOptions &options);
 
   //===--------------------------------------------------------------------===//
   // REPL

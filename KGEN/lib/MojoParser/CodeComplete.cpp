@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Lexer.h"
+#include "ParserDriverImpl.h"
+
 #include "KGEN/MojoParser/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
@@ -42,9 +45,9 @@ static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
 namespace {
 /// This class implements a listener that collects code completion results.
 struct CodeCompletionListener : public MojoParserListener {
-  CodeCompletionListener(std::vector<CodeCompletionResult> &results, SMLoc loc,
+  CodeCompletionListener(std::vector<CodeCompletionResult> &results,
                          llvm::SourceMgr &sourceMgr)
-      : results(results), loc(loc), sourceMgr(sourceMgr) {}
+      : results(results), sourceMgr(sourceMgr) {}
   ~CodeCompletionListener() override = default;
 
   /// Returns true if the listener is interested in being notified for the given
@@ -148,9 +151,10 @@ struct CodeCompletionListener : public MojoParserListener {
 //===----------------------------------------------------------------------===//
 
 std::vector<CodeCompletionResult>
-Mojo::codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-                   MLIRContext *context, LLCL::Runtime &runtime,
-                   const KGEN::CompilationOptions &options) {
+MojoParserContext::codeComplete(llvm::MemoryBufferRef buffer,
+                                uint64_t completionPosition,
+                                MLIRContext *context, LLCL::Runtime &runtime,
+                                const KGEN::CompilationOptions &options) {
   if (buffer.getBufferSize() < completionPosition)
     return {};
   llvm::SourceMgr sourceMgr;
@@ -162,14 +166,9 @@ Mojo::codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
   // emitted when grabbing completion results from a partial file.
   sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
 
-  // Compute the completion SM location by finding the next token from the input
-  // completion position.
-  SMLoc completeLoc = SMLoc::getFromPointer(
-      buffer.getBuffer().drop_front(completionPosition).ltrim().data());
-
   // Build the listener that collects the results.
   std::vector<CodeCompletionResult> results;
-  CodeCompletionListener listener(results, completeLoc, sourceMgr);
+  CodeCompletionListener listener(results, sourceMgr);
 
   MojoParserConfig config(context, runtime, options);
   config.parserListener = &listener;
@@ -181,9 +180,18 @@ Mojo::codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
   // about diagnostics for completion results.
   config.maxNotesPerDiagnostic = 0;
 
+  // Build the parser context with our listener.
   MojoParserContext parserContext(sourceMgr, config);
   listener.parserContext = &parserContext;
-  parserContext.parseFile(sourceMgr.getMainFileID());
 
+  // Compute the completion SM location by finding the next token from the input
+  // completion position.
+  StringRef completionPosStr =
+      buffer.getBuffer().drop_front(completionPosition);
+  Lexer lexer(parserContext.impl->sharedState, completionPosStr,
+              completionPosStr.data());
+  listener.loc = lexer.getToken().getLoc();
+
+  parserContext.parseFile(sourceMgr.getMainFileID());
   return results;
 }

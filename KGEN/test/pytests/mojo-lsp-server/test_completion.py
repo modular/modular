@@ -31,6 +31,8 @@ async def test_completion_import(client: LanguageClient):
         "foo.mojo",
         """
 import b
+
+# This is a comment.
 """,
     )
     requests = Requests(client)
