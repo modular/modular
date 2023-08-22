@@ -893,8 +893,12 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
                                     ArrayRef<TypedAttr> paramValues) {
   auto gen =
       symtab.read([name = symbolRef.getAttr()](const SymbolTable &symtab) {
-        return symtab.lookup<GeneratorOp>(name);
+        return symtab.lookup(name);
       });
+
+  // If the requested function is already concrete, return it.
+  if (auto func = dyn_cast<FuncOp>(gen))
+    return {func};
 
   SmallVector<Attribute> inputParams;
   for (TypedAttr value : paramValues)
@@ -903,7 +907,8 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   auto vals = ArrayAttr::get(symbolRef.getContext(), inputParams);
 
   // Lookup the node if it already exists.
-  ParamNode *node = g.getOrCreate(runtime, vals, gen, /*depth=*/0);
+  ParamNode *node =
+      g.getOrCreate(runtime, vals, cast<GeneratorOp>(gen), /*depth=*/0);
   // If the node has already been elaborated, just use that result.
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
