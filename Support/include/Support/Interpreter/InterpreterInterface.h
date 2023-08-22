@@ -290,6 +290,8 @@ private:
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
+  ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
+
   /// The blob manager to materializing interpreter memory into the IR. Access
   /// to the blob manager is thread-safe.
   DialectResourceManager &blobMgr;

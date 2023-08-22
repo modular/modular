@@ -262,6 +262,28 @@ def M_PointerAttr : MAttr<"Pointer", "pointer", [TypedAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
+// StoreToMemAttr
+//===----------------------------------------------------------------------===//
+
+def StoreToMemAttr : MAttr<"StoreToMem", "store_to_mem", [TypedAttrInterface]> {
+  let summary = "wrap an attribute in stack memory";
+  let description = [{
+    The `#M.store_to_mem` attribute indicates to the interpreter that the value
+    should be stored into memory before used.
+
+    Example:
+
+    ```mlir
+    #M.store_to_mem<5 : index> : !M.pointer<index>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$value,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $value `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // MemorySpaceAttr
 //===----------------------------------------------------------------------===//
 
