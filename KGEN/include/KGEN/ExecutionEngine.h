@@ -208,8 +208,6 @@ private:
 class ExecutionEngine {
 public:
   ~ExecutionEngine();
-  /// This class is move-constructible.
-  ExecutionEngine(ExecutionEngine &&other);
 
   //===--------------------------------------------------------------------===//
   // Constructors
@@ -284,13 +282,21 @@ public:
     return found->add(libName, std::forward<Args &&>(args)...);
   }
 
-  //===--------------------------------------------------------------------===//
-  // JITDylib management
-  //===--------------------------------------------------------------------===//
+  /// Constructs and adds an object with libName to the layer of LayerT.
+  /// However, if libName already exists then is a no-op. Thread safe.
+  template <typename LayerT, typename... Args>
+  ErrorOrSuccess addIfAbsent(StringRef libName, Args &&...args) {
+    LayerT *found = findLayer<LayerT>();
+    if (!found)
+      return Error("could not find layer of type " +
+                   llvm::getTypeName<LayerT>());
 
-  /// Check if we have the given JITDylib. Return true if the library already
-  /// exists, false if it does not.
-  bool libraryExists(StringRef libName);
+    std::lock_guard<std::mutex> guard(mu);
+    if (executionSession->getJITDylibByName(libName))
+      return success();
+
+    return found->add(libName, std::forward<Args &&>(args)...);
+  }
 
   //===--------------------------------------------------------------------===//
   // Compiled symbol lookup
@@ -348,6 +354,10 @@ private:
 
   /// JITLink linker. This is what drives all the linking underneath our JIT.
   std::unique_ptr<llvm::orc::ObjectLinkingLayer> objectLayer = nullptr;
+
+  /// Protects the addition to all the layers in 'layers' when called via
+  /// the thread-safe addIfAbsent.
+  std::mutex mu;
 
   /// List of materialization layers the JIT has. The base is *always* the
   /// object linking layer. We are not likely to have more than 5 layers total:
