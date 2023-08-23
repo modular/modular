@@ -131,8 +131,8 @@ kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
 // -------------------------------------------------------------------------- //
 
 kgen.func @async_wrapper() -> !pop.coroutine<() -> (index)> always_inline {
-  %idx2 = index.constant 3 loc(#locAsyncCaller)
-  %0 = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
+  %idx3 = index.constant 3 loc(#locAsyncCaller)
+  %0 = lit.async.call[(index) async -> index: @inline_me](%idx3) loc(#locAsyncCaller)
   kgen.return %0 : !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
 } loc(#locAsyncCaller)
 
@@ -146,6 +146,16 @@ kgen.func @call_async_indirect() -> !pop.coroutine<() -> (index)> {
   %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCaller)
   kgen.return %1 : !pop.coroutine<() -> (index)> loc(#locCaller)
 } loc(#locCaller)
+
+// CHECK-LABEL: @call_async_no_debuginfo
+kgen.func @call_async_no_debuginfo() -> !pop.coroutine<() -> (index)> {
+  // CHECK-NEXT: index.constant 2
+  // CHECK-NEXT: lit.async.execute
+  // CHECK-NOT: debuginfo.value
+  %idx2 = index.constant 2 loc(#locAsyncCaller)
+  %0 = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
+  kgen.return %0 : !pop.coroutine<() -> (index)>
+}
 
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
 // CHECK-DAG: #[[LOC_ARG:loc[0-9]+]] = loc("foo.mlir":13:12)
