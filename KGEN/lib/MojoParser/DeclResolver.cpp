@@ -2224,11 +2224,12 @@ void DeclResolver::setLocationDebugScope(
 }
 
 static void emitClosureInstance(SignatureType closureSignature,
-                                SharedState &shared, LIT::FuncOp nestedFunction,
-                                SMLoc location) {
+                                SharedState &shared,
+                                ASTDecl &nestedFunctionDecl, SMLoc location) {
+  LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
-      location, nestedFunction, fileModuleOp);
+      location, nestedFunctionDecl, fileModuleOp);
   TypedAttr signatureAttr = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(nestedFunction), closureSignature);
   closureImpl.setClosureSignatureAttr(signatureAttr);
@@ -2529,7 +2530,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       // Emit Closure structures necessary for instantiating an escaping
       // closure.
       if (signature.isEscaping())
-        emitClosureInstance(signature, shared, funcOp, decl.getLoc());
+        emitClosureInstance(signature, shared, decl, decl.getLoc());
 
       decl.irValue = SBValue(b.create<CreateClosureOp>(
           parent.getLoc(), funcOp.getSignature(),

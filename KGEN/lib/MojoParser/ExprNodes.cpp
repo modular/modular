@@ -12,6 +12,7 @@
 #include "ExprNodes.h"
 #include "ASTDecl.h"
 #include "CallEmission.h"
+#include "ClosureEmitter.h"
 #include "ExprEmitter.h"
 #include "IRValues.h"
 #include "ParserParamEvaluator.h"
@@ -427,7 +428,7 @@ bool CallArgument::isPositionalStringLiteral(StringRef str) const {
 static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
                                   ArrayRef<ASTDecl *> decls,
                                   const ExprNode *expr, ValueDest &dest,
-                                  Value &mlirValue) {
+                                  Capture &capture) {
   emitter.shared.notifyListenerOnRef(decls, spelling, expr);
 
   // Functions form an address, and may be overloaded.
@@ -477,7 +478,7 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
   // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
   // can check if it is captured in a function.
   CValue value;
-
+  Value mlirValue;
   // 'let' declarations resolve to an SBvalue when they are register_passable.
   if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
     mlirValue = letDecl.getResult();
@@ -520,7 +521,14 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
     return {};
   }
-
+  if (auto slValue = value.getIfSLValue()) {
+    if (ASTType(slValue.getRValueType())
+            .isRegisterPassable(expr->getLoc(), emitter.shared)) {
+      capture = Capture(mlirValue, value.getType(), value.getType());
+      return value;
+    }
+  }
+  capture = Capture(mlirValue, value.getRValueType(), value.getType());
   return value;
 }
 
@@ -625,17 +633,31 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
-  Value mlirValue;
+  Capture capture;
   AnyValue result =
-      emitDeclReference(spelling, emitter, decls, this, dest, mlirValue);
-  if (!mlirValue)
+      emitDeclReference(spelling, emitter, decls, this, dest, capture);
+
+  if (!capture)
     return result;
+  auto nestedFunc =
+      getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
+  bool livesInsideNestedFunc = nestedFunc && !nestedFunc.getIsParametric() &&
+                               nestedFunc.getParamDeclAttr();
+  if (livesInsideNestedFunc) {
+    // if we have referenced a function that is not a closure, then there is no
+    // state and this is not considered a capture.
+    if (!isa<LIT::FuncOp>(*decls[0])) {
+      assert(decls.size() == 1 && "Only functions may be overloaded");
+      ASTDecl &decl = *decls[0];
+      if (decl.getParentDecl() && (decl.getParentDecl() != &container))
+        emitter.shared.addCaptureToScope(container, capture);
+    }
+  }
   CValue value = result.getIfCValue();
+  Value mlirValue = capture.getMlirValue();
 
   // If this is a capture inside a nonparametric function, emit a copy.
-  if (auto nestedFunc =
-          getBlockParentOfType<FuncOp>(emitter.builder->getInsertionBlock());
-      nestedFunc && !nestedFunc.getIsParametric()) {
+  if (livesInsideNestedFunc && !nestedFunc.getSignature().isEscaping()) {
     assert(mlirValue && "unexpected PValue");
     if (mlirValue.getParentRegion()->isProperAncestor(
             &nestedFunc.getBodyRegion())) {
@@ -983,7 +1005,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
             getLoc());
     if (failed(decls))
       return {};
-    Value unused;
+    Capture unused;
     return emitDeclReference(attrSpelling, emitter, *decls, this, dest, unused);
   }
 
