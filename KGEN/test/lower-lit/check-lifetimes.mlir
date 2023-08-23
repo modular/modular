@@ -426,6 +426,8 @@ lit.func @external_func(%arg: !pop.pointer<@MyStruct> owned_in_mem) attributes {
   arg = 1
 > : !debuginfo.unresolved<index>
 
+#fileLoc = loc("foo.mlir":0:0)
+#loc = loc(fused<#subprogram>[#fileLoc])
 
 lit.struct.decl @SomeData {
 }
@@ -437,8 +439,8 @@ lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStru
 // CHECK: lit.func @init
 lit.func @init(%self: !pop.pointer<@MyStruct> init_self) {
   // CHECK-NEXT: debuginfo.value #local_variable
-  debuginfo.value #local_variable = %self : !pop.pointer<@MyStruct>
+  debuginfo.value #local_variable = %self : !pop.pointer<@MyStruct> loc(#loc)
   // CHECK-NOT: __del__
-  %2 = kgen.call @bar(%self) : (!pop.pointer<@MyStruct> init_self) -> !lit.none
-  kgen.return
-}
+  %2 = kgen.call @bar(%self) : (!pop.pointer<@MyStruct> init_self) -> !lit.none loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)

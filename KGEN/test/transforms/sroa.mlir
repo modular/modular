@@ -396,6 +396,9 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "__next__", linkageName = "$Range::_ZeroStartingRange::__next__($Range::_ZeroStartingRange&)_concrete", file = #file, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : !subroutine
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self", file = #file, line = 27, arg = 1> : !unresolved
 
+#fileLoc = loc("foo.mlir":0:0)
+#loc = loc(fused<#subprogram>[#fileLoc])
+
 // CHECK: !unresolved = !debuginfo.unresolved<index>
 // CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0", {{.*}}> : !unresolved
 // CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1", {{.*}}> : !unresolved
@@ -404,10 +407,10 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 kgen.func @sroa_valueop() {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: %1 = pop.stack_allocation 1 x index
-  %0 = pop.stack_allocation 1 x !pop.struct<index, index>
+  %0 = pop.stack_allocation 1 x !pop.struct<index, index> loc(#loc)
   // CHECK-NEXT: debuginfo.value #[[VAR0]] = %0 : !pop.pointer<index>
   // CHECK-NEXT: debuginfo.value #[[VAR1]] = %1 : !pop.pointer<index>
-  debuginfo.value #local_variable = %0 : !pop.pointer<struct<index, index>>
+  debuginfo.value #local_variable = %0 : !pop.pointer<struct<index, index>> loc(#loc)
   // CHECK-NEXT: kgen.return
-  kgen.return
-}
+  kgen.return loc(#loc)
+} loc(#loc)

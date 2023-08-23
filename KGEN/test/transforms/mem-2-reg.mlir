@@ -304,11 +304,14 @@ kgen.generator @unknown_region_op() {
 
 #local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 0, arg = 0, alignInBits = 0> : !debuginfo.unresolved<index>
 
+#fileLoc = loc("foo.mlir":0:0)
+#loc = loc(fused<#callerSp>[#fileLoc])
+
 // CHECK-LABEL: @mem2reg_valueop
 kgen.func @mem2reg_valueop(%arg0: index) {
   // CHECK-NEXT: debuginfo.value #local_variable = %arg0 : index
-  %0 = pop.stack_allocation 1 x index
-  pop.store %arg0, %0 : !pop.pointer<index>
-  debuginfo.value #local_variable = %0 : !pop.pointer<index>
-  kgen.return
-}
+  %0 = pop.stack_allocation 1 x index loc(#loc)
+  pop.store %arg0, %0 : !pop.pointer<index> loc(#loc)
+  debuginfo.value #local_variable = %0 : !pop.pointer<index> loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)

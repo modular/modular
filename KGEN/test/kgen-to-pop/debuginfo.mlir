@@ -52,15 +52,18 @@ lit.struct.decl @SmallVector<N, T: type> {
   arg = 1
 > : !debuginfo.unresolved<!pop.array<3, i32>>
 
+#fileLoc = loc("foo.mlir":0:0)
+#loc = loc(fused<#subprogram>[#fileLoc])
+
 kgen.func @foo() {
   // CHECK-DAG: %[[LIST:.*]] = kgen.param.constant: array<3, i32> = <[1, 2, 3]>
 
   // CHECK: debuginfo.value #local_variable = %[[LIST]]
-  %values = kgen.param.constant: array<3, i32> = <[1, 2, 3]>
-  debuginfo.value #local_variable = %values : !pop.array<3, i32>
+  %values = kgen.param.constant: array<3, i32> = <[1, 2, 3]> loc(#loc)
+  debuginfo.value #local_variable = %values : !pop.array<3, i32> loc(#loc)
   // CHECK-DAG: %[[EMPTY:.*]] = kgen.param.constant: array<0, i32> = <[]>
   // CHECK: debuginfo.value #local_variable1 = %[[EMPTY]]
-  %empty = kgen.param.constant: array<0, i32> = <[]>
-  debuginfo.value #local_variable1 = %empty : !pop.array<0, i32>
-  kgen.return
-}
+  %empty = kgen.param.constant: array<0, i32> = <[]> loc(#loc)
+  debuginfo.value #local_variable1 = %empty : !pop.array<0, i32> loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
