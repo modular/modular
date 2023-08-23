@@ -168,7 +168,7 @@ export class MOJOContext implements vscode.Disposable {
     }
 
     // Configure file patterns relative to the workspace folder.
-    let filePattern: vscode.GlobPattern = '**/*.{lit,mojo}';
+    let filePattern: vscode.GlobPattern = '**/*.{mojo,🔥}';
     let selectorPattern: string|undefined = undefined;
     if (workspaceFolder) {
       filePattern = new vscode.RelativePattern(workspaceFolder, filePattern);
@@ -197,7 +197,6 @@ export class MOJOContext implements vscode.Disposable {
     // Configure the client options.
     const clientOptions: vscodelc.LanguageClientOptions = {
       documentSelector : [
-        {language : 'lit', pattern : selectorPattern},
         {language : 'mojo', pattern : selectorPattern},
       ],
       synchronize : {
