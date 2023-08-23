@@ -32,6 +32,11 @@
 using namespace M;
 
 namespace {
+
+//===----------------------------------------------------------------------===//
+// TestDataFlowPass
+//===----------------------------------------------------------------------===//
+
 /// This is a pass for testing data-flow analysis on HLCF operations.
 struct TestDataFlowPass
     : public mlir::PassWrapper<TestDataFlowPass, OperationPass<>> {
@@ -66,9 +71,11 @@ struct TestDataFlowPass
     });
   }
 };
-} // namespace
 
-namespace {
+//===----------------------------------------------------------------------===//
+// TestGeneratePreElaboratedBody
+//===----------------------------------------------------------------------===//
+
 /// This pass generates a kgen.func that clones the body and adds a
 /// "_elaborated" suffix to the name for all the specified lit.funcs in the
 /// module. It's used to test the logic in LowerLIT that handles pre-elaborated
@@ -156,6 +163,21 @@ struct TestGeneratePreElaboratedBody
     }
   }
 };
+
+//===----------------------------------------------------------------------===//
+// TestAlwaysFailPass
+//===----------------------------------------------------------------------===//
+
+/// This is a pass that always fails for the purpose of debugging reproducers.
+struct TestAlwaysFailPass
+    : public mlir::PassWrapper<TestAlwaysFailPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestAlwaysFailPass);
+
+  StringRef getArgument() const override { return "test-always-fail"; };
+
+  void runOnOperation() override { return signalPassFailure(); }
+};
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -181,6 +203,7 @@ int main(int argc, char **argv) {
   // Register test passes.
   mlir::PassRegistration<TestDataFlowPass>{};
   mlir::PassRegistration<TestGeneratePreElaboratedBody>{};
+  mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Register opt passes.
   KGEN::registerAlwaysInlineParametric();
