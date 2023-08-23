@@ -26,9 +26,8 @@ add_modular_testsuite(check-kgen
   kgen-translate
   mojo-lsp-server
   mojo-sdk
-  mojo-jupyter-executor
 )
 
 if(LLDB_FOUND)
-  add_dependencies(check-kgen MojoLLDB)
+  add_dependencies(check-kgen MojoLLDB mojo-jupyter-executor)
 endif()
