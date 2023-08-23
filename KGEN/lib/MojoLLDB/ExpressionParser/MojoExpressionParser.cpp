@@ -596,29 +596,6 @@ MojoExpressionParser::MojoExpressionParser(
 
 MojoExpressionParser::~MojoExpressionParser() = default;
 
-/// Collect the name and type of the current persistent variables within the
-/// given state.
-static void collectPersistentVariables(
-    MojoPersistentExpressionState &state,
-    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
-  DenseSet<ConstString> persistentVariableNames;
-  for (int i : llvm::reverse(llvm::seq<int>(0, state.GetSize()))) {
-    lldb::ExpressionVariableSP var = state.GetVariableAtIndex(i);
-    assert(var && "expected valid variable in persistent state");
-    if (!persistentVariableNames.insert(var->GetName()).second)
-      continue;
-
-    // All persistent variable types are wrapped in a reference type, so unwrap
-    // the types before adding them to the current expression.
-    auto ptrType =
-        cast<LIT::REPLResultRefType>(mlir::Type::getFromOpaquePointer(
-            var->GetCompilerType().GetOpaqueQualType()));
-
-    mlir::Type varType = ptrType.getElementType();
-    variables.emplace_back(var->GetName().GetStringRef(), varType);
-  }
-}
-
 M::LogicalResult
 MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                             DiagnosticManager &diagnosticManager) {
@@ -649,7 +626,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Collect the current persistent variables.
   SmallVector<std::pair<StringRef, mlir::Type>> variables;
-  collectPersistentVariables(state, variables);
+  state.collectPersistentVariables(variables);
 
   // Parse the expression.
   auto [expressionId, exprModuleName] = state.getNextExpressionModuleName();
