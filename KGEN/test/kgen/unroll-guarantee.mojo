@@ -9,6 +9,7 @@
 # COM: https://github.com/modularml/modular/issues/19008
 
 
+@no_inline
 fn use(i: Int):
     pass
 

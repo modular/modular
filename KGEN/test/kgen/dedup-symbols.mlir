@@ -7,16 +7,16 @@
 // CHECK: define internal void @nested2
 // CHECK: define internal void @nested1
 
-kgen.func @nested1() {
+kgen.func @nested1() no_inline {
   kgen.return
 }
 
-kgen.func @nested2() {
+kgen.func @nested2() no_inline {
   kgen.call @nested1() : () -> ()
   kgen.return
 }
 
-kgen.func @dependency() {
+kgen.func @dependency() no_inline {
   kgen.call @nested2() : () -> ()
   kgen.call @nested1() : () -> ()
   kgen.return

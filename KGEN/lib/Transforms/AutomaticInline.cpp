@@ -1,0 +1,522 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "InliningUtils.h"
+#include "KGEN/CLOptions.h"
+#include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENPasses.h"
+#include "LLCL/Runtime/Algorithms.h"
+#include "LLCL/Runtime/Allocator.h"
+#include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/ForkJoin.h"
+#include "Support/STLExtras.h"
+#include "Support/Threading/ThreadLocalCache.h"
+#include "mlir/Analysis/CallGraph.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Threading.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/StringSet.h"
+#include "llvm/Support/RWMutex.h"
+
+using namespace M;
+using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// CallGraphNode
+//===----------------------------------------------------------------------===//
+
+struct CallGraphNode {
+  /// If the function will be inlined, removed it from the module so that it can
+  /// later be erased in parallel. Ownership is passed to the node.
+  explicit CallGraphNode(FuncOp func, LLCL::Runtime &runtime)
+      : func(func),
+        doneInlining(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
+
+  CallGraphNode(CallGraphNode &&other)
+      : func(other.func), doneInlining(std::move(other.doneInlining)) {
+    other.func = nullptr;
+  }
+
+  /// If an error occurred during inlining, nodes can end up owning the function
+  /// upon destruction. Erase the function.
+  ~CallGraphNode() {
+    if (func && isAllInlined() && !func.isExternal() && !func.isExported()) {
+      func->remove();
+      func->erase();
+    }
+  }
+
+  /// Should callee be inlined or not given a threshold.
+  bool shouldInlineCallee(CallGraphNode *callee, uint64_t threshold);
+
+  /// Can the caller try to inline the callee so that the caller's
+  /// worker for inlining should wait for the callee's to finish
+  /// before starting. This is a first step check to establish
+  /// parallel inline work dependencies. More inlining heuristics
+  /// are defined in the shouldInlineCallee() function.
+  bool canInlineCallee(CallGraphNode *callee);
+
+  /// Is all callsite of this function inlined,
+  /// if so the operation can be erased.
+  bool isAllInlined();
+
+  /// Get number of operations in this function.
+  uint64_t getNumOperations();
+
+  /// The function represented by the node.
+  FuncOp func;
+
+  /// Nodes of functions that inline call this function. These are the child
+  /// edges.
+  std::vector<CallGraphNode *> callers;
+
+  /// This mutex guards `callsites` and `callers` during parallel graph
+  /// construction.
+  llvm::sys::SmartRWMutex<true> mutex;
+
+  /// The number of processed calls. When the value of this counter equals the
+  /// size of `callsites`, then all calls for this function have been processed.
+  std::atomic<size_t> numProcessedCalls = 0;
+
+  /// Track the number of times the function has been inlined. Once the counter
+  /// reaches the number of callers, the function can be erased.
+  std::atomic<size_t> numTimesInlined = 0;
+
+  /// Chain value to mark if inlining is done or not for synchronizing CallGraph
+  /// dependencies.
+  LLCL::AsyncValueRef<LLCL::Chain> doneInlining;
+
+  /// Nodes in the same SCC as the current one.
+  llvm::SmallSet<CallGraphNode *, 6> sccNodes;
+
+  /// Maps the callees to their callsites inside of this function.
+  /// Key: callee's CallGraphNode.
+  /// Value: list of callsites of the callee.
+  using CallSitesMap =
+      DenseMap<CallGraphNode *,
+               std::vector<std::optional<KGENCallOpInterface>>>;
+  CallSitesMap callSites;
+};
+
+//===----------------------------------------------------------------------===//
+// CallGraph
+//===----------------------------------------------------------------------===//
+
+struct CallGraph {
+  explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
+                     const StringAttr updateAttrName)
+      : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
+        updateAttrName(updateAttrName) {}
+
+  /// Build the CallGraph.
+  void build(ModuleOp module, const SymbolTable &symtab);
+
+  /// Inline callees in caller.
+  void inlineNode(CallGraphNode *caller, uint64_t threshold);
+
+  /// Performing inlining on the graph.
+  void performInlining(uint64_t threshold);
+
+  /// Get graph entry node.
+  CallGraphNode *getExternalCallerNode() { return &externalNode; }
+
+  /// Reference to the LLCL runtime for launch jobs in parallel.
+  LLCL::Runtime &runtime;
+
+  /// The pass managers to use.
+  PerThreadPassManagers &pms;
+
+  using NodesType = typename llvm::MapVector<FuncOp, CallGraphNode>;
+  using iterator = typename NodesType::iterator;
+
+  /// Nodes in the CallGraph.
+  NodesType nodes;
+
+  /// External node that has all the functions that do not have a caller in the
+  /// Module as callees. This node is the entry node of the CallGraph for
+  /// computing SCCs.
+  CallGraphNode externalNode;
+
+  /// If inner pipeline for function optimization failed or not.
+  bool innerPipelineFailed = false;
+
+  /// When updating debug info, defer the update by tagging scope operations
+  /// with an attribute. This is null if updates are not needed.
+  StringAttr updateAttrName;
+};
+
+namespace {
+//===----------------------------------------------------------------------===//
+// LLVM iterator helpers
+//===----------------------------------------------------------------------===//
+
+struct CallGraphNodeRef;
+
+struct CallGraphNodeIterator {
+  CallGraphNode *node;
+  CallGraphNode::CallSitesMap::iterator iter;
+
+  bool operator==(const CallGraphNodeIterator &rhs) const {
+    return node == rhs.node && iter == rhs.iter;
+  }
+  bool operator!=(const CallGraphNodeIterator &rhs) const {
+    return node != rhs.node || iter != rhs.iter;
+  }
+  CallGraphNodeIterator operator++() {
+    ++iter;
+    return *this;
+  }
+
+  CallGraphNodeIterator operator++(int) {
+    CallGraphNodeIterator tmp = *this;
+    ++*this;
+    return tmp;
+  }
+
+  CallGraphNodeRef operator*();
+};
+
+struct CallGraphNodeRef {
+  CallGraphNode *node;
+
+  bool operator==(const CallGraphNodeRef &rhs) const {
+    return node == rhs.node;
+  }
+  bool operator!=(const CallGraphNodeRef &rhs) const { return !(*this == rhs); }
+
+  CallGraphNodeIterator begin() const {
+    return {node, node->callSites.begin()};
+  }
+
+  CallGraphNodeIterator end() const { return {node, node->callSites.end()}; }
+};
+} // namespace
+
+CallGraphNodeRef CallGraphNodeIterator::operator*() { return {iter->first}; }
+
+namespace llvm {
+template <>
+struct DenseMapInfo<CallGraphNodeRef> {
+  static CallGraphNodeRef getEmptyKey() {
+    return {DenseMapInfo<CallGraphNode *>::getEmptyKey()};
+  }
+  static CallGraphNodeRef getTombstoneKey() {
+    return {DenseMapInfo<CallGraphNode *>::getTombstoneKey()};
+  }
+  static unsigned getHashValue(const CallGraphNodeRef &node) {
+    return DenseMapInfo<CallGraphNode *>::getHashValue(node.node);
+  }
+  static bool isEqual(const CallGraphNodeRef &lhs,
+                      const CallGraphNodeRef &rhs) {
+    return lhs == rhs;
+  }
+};
+
+// Provide graph traits for traversing call graphs using standard graph
+// traversals.
+template <>
+struct GraphTraits<CallGraphNode *> {
+  using NodeRef = CallGraphNodeRef;
+  using ChildIteratorType = CallGraphNodeIterator;
+
+  static NodeRef getEntryNode(NodeRef node) { return node; }
+
+  static ChildIteratorType child_begin(NodeRef node) { return node.begin(); }
+  static ChildIteratorType child_end(NodeRef node) { return node.end(); }
+};
+
+template <>
+struct GraphTraits<CallGraph *> : public GraphTraits<CallGraphNode *> {
+  /// The entry node into the graph is the external node.
+  static NodeRef getEntryNode(CallGraph *cg) {
+    return {cg->getExternalCallerNode()};
+  }
+
+  // nodes_iterator/begin/end - Allow iteration over all nodes in the graph
+  using nodes_iterator = CallGraph::iterator;
+  static nodes_iterator nodes_begin(CallGraph *cg) { return cg->nodes.begin(); }
+  static nodes_iterator nodes_end(CallGraph *cg) { return cg->nodes.end(); }
+};
+} // namespace llvm
+
+bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
+  // Try to inline callee if it is not in the same SCC as the current node
+  // (which is the caller).
+  return !sccNodes.contains(callee) && (callee != this);
+}
+
+bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
+                                       uint64_t threshold) {
+  // Don't handle functions that are marked as always_inline. Leave them for
+  // ForceInlinePass.
+  if (callee->func.getInlineLevel() != InlineLevel::Automatic)
+    return false;
+
+  // Don't inline callee who is in the same scc as current node (caller).
+  if (sccNodes.contains(callee))
+    return false;
+
+  // TODO: Add more sophisticated heuristics for cost model based inlining
+  // strategy.
+  return callee->numProcessedCalls * callee->getNumOperations() < threshold;
+}
+
+bool CallGraphNode::isAllInlined() {
+  return numProcessedCalls == numTimesInlined && numTimesInlined > 0;
+}
+
+uint64_t CallGraphNode::getNumOperations() {
+  if (!func)
+    return 0;
+
+  uint64_t result = 0;
+  func->walk([&](Operation *) { ++result; });
+  return result;
+}
+
+void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
+  TimeTraceScope traceScope("CallGraphBase::build");
+
+  // Instantiate the nodes for the graph first.
+  for (auto func : llvm::make_early_inc_range(module.getOps<FuncOp>())) {
+    if (func.isExternal())
+      continue;
+    nodes.insert(std::make_pair(func, CallGraphNode(func, runtime)));
+  }
+
+  // Build the graph by walking all the calls in each function and adding edges
+  // as appropriate.
+  auto workFn = [this, &symtab](std::pair<FuncOp, CallGraphNode> &value) {
+    auto &[func, node] = value;
+    CallGraphNode *callerNode = &node;
+    func.getBodyRegion().walk([&](KGENCallOpInterface call) {
+      Operation *calleeOp = symtab.lookup(
+          cast<FlatSymbolRefAttr>(
+              cast<SymbolConstantAttr>(call.getCallee()).getSymbol())
+              .getAttr());
+      assert(calleeOp && "Can't find callee in the SymbolTable, invalid IR?");
+
+      // Only add the edge if the symbol we found is of the type we expect.
+      auto callee = dyn_cast<FuncOp>(calleeOp);
+      if (!callee)
+        return;
+
+      CallGraphNode *calleeNode = &nodes.find(callee)->second;
+      {
+        llvm::sys::SmartScopedWriter<true> lock(callerNode->mutex);
+        callerNode->callSites[calleeNode].emplace_back(call);
+      }
+      {
+        llvm::sys::SmartScopedWriter<true> lock(calleeNode->mutex);
+        calleeNode->callers.push_back(callerNode);
+      }
+
+      calleeNode->numProcessedCalls++;
+    });
+  };
+
+  mlir::parallelForEach(module.getContext(), nodes, workFn);
+
+  for (auto &[func, node] : nodes) {
+    if (node.callers.empty())
+      externalNode.callSites[&node].emplace_back(std::nullopt);
+  }
+
+  for (auto scc = llvm::scc_begin(this); scc != llvm::scc_end(this); ++scc) {
+    llvm::SmallSet<CallGraphNode *, 6> sccNodes;
+    for (auto node : (*scc))
+      sccNodes.insert(node.node);
+
+    for (CallGraphNodeRef node : (*scc))
+      node.node->sccNodes = sccNodes;
+  }
+}
+
+void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
+  SmallVector<AnyAsyncValueRef> calleeAsynchValues;
+  // Collect callee dependencies to wait.
+  for (auto [callee, calls] : caller->callSites) {
+    if (!caller->canInlineCallee(callee))
+      continue;
+    calleeAsynchValues.emplace_back(callee->doneInlining.copy());
+  }
+
+  if (calleeAsynchValues.empty()) {
+    caller->doneInlining.copy().emplace();
+    return;
+  }
+
+  auto inlineFunc = [&pms = pms, &innerPipelineFailed = innerPipelineFailed,
+                     caller, &updateAttrName = updateAttrName,
+                     threshold](ArrayRef<AnyAsyncValueRef>) mutable {
+    for (auto [callee, calls] : caller->callSites) {
+      if (!caller->shouldInlineCallee(callee, threshold))
+        continue;
+
+      for (std::optional<KGENCallOpInterface> &call : calls) {
+        if (!call)
+          continue;
+
+        // Perform inlining callee.
+        IRMapping map;
+        auto [scope, singleExit] =
+            inlineRegion(map, call.value(), callee->func.getBodyRegion());
+
+        // If we need to perform a debug info update, defer this until
+        // inlining is done. Doing an update here results in quadratic
+        // runtime as functions are successively inlined and updated.
+        if (updateAttrName) {
+          // We don't know where the op will end up, so tag it with an
+          // attribute. Encode information {singleExit} as bits.
+          scope->setAttr(
+              updateAttrName,
+              OpBuilder(scope->getContext()).getBoolAttr(singleExit));
+        } else if (singleExit) {
+          foldTrivialLoop(scope);
+        }
+        callee->numTimesInlined++;
+      }
+    }
+
+    if (!updateAttrName && caller->func)
+      if (failed(pms.getPassManager().run(caller->func)))
+        innerPipelineFailed = true;
+
+    caller->doneInlining.copy().emplace();
+  };
+  LLCL::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
+}
+
+void CallGraph::performInlining(uint64_t threshold) {
+  for (auto &[func, node] : nodes)
+    inlineNode(&node, threshold);
+
+  inlineNode(&externalNode, threshold);
+  LLCL::await(externalNode.doneInlining);
+}
+
+//===----------------------------------------------------------------------===//
+// AutomaticInlinePass
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_AUTOMATICINLINE
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
+  explicit AutomaticInline(
+      const AutomaticInlineOptions &options = {},
+      LLCL::Runtime *runtime = nullptr,
+      std::function<void(mlir::OpPassManager &)> buildFuncPasses =
+          [](mlir::OpPassManager &) {})
+      : AutomaticInlineBase(options), runtime(runtime),
+        buildFuncPasses(buildFuncPasses) {}
+
+  LogicalResult initialize(MLIRContext *ctx) override {
+    // Parse the pass pipeline if provided.
+    if (!buildFuncPasses) {
+      buildFuncPasses = [this](mlir::OpPassManager &pm) {
+        (void)mlir::parsePassPipeline(funcPipelineStr, pm);
+      };
+      return success();
+    }
+    // Otherwise, convert the pipeline functor to a string so that reproducer
+    // generation has the nested passes.
+    mlir::OpPassManager pipeline;
+    buildFuncPasses(pipeline);
+    llvm::raw_string_ostream os(funcPipelineStr);
+    pipeline.printAsTextualPipeline(os);
+    // Strip `any(...)` from the textual pipeline.
+    funcPipelineStr =
+        StringRef(funcPipelineStr).drop_front(4).drop_back().str();
+    return success();
+  }
+
+  void runOnOperation() override;
+
+  LLCL::Runtime *runtime;
+
+  /// The function pass pipeline builder.
+  std::function<void(mlir::OpPassManager &)> buildFuncPasses;
+
+  uint64_t getInlineThreshold();
+};
+} // namespace
+
+uint64_t AutomaticInline::getInlineThreshold() {
+  // TODO: add better heuristics
+  switch (optimizationLevel) {
+  case 0:
+    return 0;
+  case 1:
+    return 10;
+  case 2:
+    return 20;
+  case 3:
+    return 50;
+  default:
+    return 50;
+  }
+}
+
+void AutomaticInline::runOnOperation() {
+  auto rt = ConditionallyOwnedPointer<LLCL::Runtime>::allocateIfNeeded(
+      runtime, LLCL::createLeakCheckAllocator(LLCL::createMallocAllocator()),
+      LLCL::createSingleThreadWorkQueue());
+
+  SymbolTable &symtab =
+      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+
+  StringAttr updateAttrName;
+  if (updateDebugInfo)
+    updateAttrName = StringAttr::get(&getContext(), "inliner_debuginfo_update");
+
+  PerThreadPassManagers pms(&getContext(), buildFuncPasses);
+  CallGraph graph(*rt, pms, updateAttrName);
+
+  graph.build(getOperation(), symtab);
+  graph.performInlining(getInlineThreshold());
+  if (graph.innerPipelineFailed)
+    return signalPassFailure();
+
+  // If we need to handle debug info, do that now.
+  if (updateAttrName) {
+    TimeTraceScope traceScope("updateDebugInfo");
+    LLCL::ForkJoin state(*rt);
+    std::atomic<bool> innerPipelineFailed = false;
+    for (auto &[func, node] : graph.nodes) {
+      if (!func || node.isAllInlined() || node.callSites.empty())
+        continue;
+
+      state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
+        updateScopeDebugInfo(func, updateAttrName);
+        // Run the function pipeline here.
+        TimeTraceScope traceScope("optimizeFunction");
+        if (failed(pms.getPassManager().run(func)))
+          innerPipelineFailed = true;
+      });
+    }
+
+    state.join();
+    if (innerPipelineFailed)
+      signalPassFailure();
+  }
+}
+
+std::unique_ptr<mlir::Pass> KGEN::createAutomaticInline(
+    LLCL::Runtime &runtime, const AutomaticInlineOptions &options,
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses) {
+  return std::make_unique<AutomaticInline>(options, &runtime, buildFuncPasses);
+}

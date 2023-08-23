@@ -887,3 +887,31 @@ def ExternalizePrecompiledFunctions:
     amount of code passed to LLVM.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Inliner
+//===----------------------------------------------------------------------===//
+
+def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
+  let summary = "KGEN automatic inliner pass`";
+  let description = [{
+    The `automatic inliner` pass inlines functions with InlineLevel::Automatic
+    automatically based on inline heuristics. This pass doesn't inline functions
+    with other InlineLevels such as `always_inline`
+    (inlined through ForceInline pass) or `no_inline` (should not be inlined).
+    The inline heuristics is based on compilation optimization level with more
+    `-O3` has the most aggressive inlining and `-O0` the least.
+    The heuristics is simple for current implementation, and is subject
+    to improve over time.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+  let options = [
+    Option<"updateDebugInfo", "update-debug-info", "bool", "false",
+           "If true, debug info of inlined functions are updated accordingly.">,
+    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
+           "Specify the compilation optimization level.">,
+    Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
+           "Specify the inner pipeline to use on functions.">
+  ];
+}
