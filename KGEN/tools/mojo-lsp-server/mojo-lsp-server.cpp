@@ -25,6 +25,10 @@ using namespace mlir::lsp;
 int main(int argc, char **argv) {
   llvm::InitLLVM IL(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::PrettyStackTraceProgram X(argc, argv);
+  llvm::setBugReportMsg(
+      "Please submit a bug report to https://github.com/modularml/mojo/issues "
+      "and include the crash backtrace along with all the relevant source "
+      "codes with the contents they had at crash time.\n");
 
   llvm::cl::opt<JSONStreamStyle> inputStyle{
       "input-style",
