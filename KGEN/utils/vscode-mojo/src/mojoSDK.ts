@@ -89,13 +89,22 @@ export class MOJOSDK {
     // Read in the config file.
     const modularCfg = path.join(modularPath, "modular.cfg");
     let configPath = vscode.Uri.from({scheme : 'file', path : modularCfg});
-    let configPathStat = await vscode.workspace.fs.stat(configPath);
-    if (!(configPathStat.type & vscode.FileType.File)) {
+
+    try {
+      let configPathStat = await vscode.workspace.fs.stat(configPath);
+      if (!(configPathStat.type & vscode.FileType.File)) {
+        this.loggingService.logInfo(
+            `Missing or invalid modular.cfg file: '${modularCfg}'.`);
+        this.promptInstallSDK();
+        return undefined;
+      }
+    } catch (e) {
       this.loggingService.logInfo(
-          `Missing or invalid modular.cfg file: '${modularCfg}'.`);
+          `Error when stat'ing modular.cfg file: '${modularCfg}'. ` + e);
       this.promptInstallSDK();
       return undefined;
     }
+
     let modularConfig = ini.parse(new TextDecoder().decode(
         await vscode.workspace.fs.readFile(configPath)));
 
