@@ -82,22 +82,23 @@ public:
   /// string encountered during parsing.
   void updateResourceWithString(StringRef key, StringRef value);
 
-  /// Copy the provided data into a new heap-allocated blob with the provided
-  /// size and alignment. The base name will be used to form the key. If there
-  /// is a conflict, the base name is automatically renamed.
-  MemoryHandle addBlobResource(StringRef baseName, void *memory, size_t size,
-                               size_t align);
+  /// Get or add a blob resource with the provided data. String resources
+  /// are deduplicated based on content.
+  MemoryHandle getOrAddBlobResource(void *memory, size_t size, size_t align);
   /// Get or add a string resource with the provided data. String resources
   /// are deduplicated based on content.
   MemoryHandle getOrAddStringResource(StringRef value);
 
 private:
+  /// Get or add a resource with the provided data. Resources are deduplicated
+  /// based on content.
+  MemoryHandle getOrAddResource(ArrayRef<char> data, size_t align,
+                                ResourceKind kind);
+
   /// The internal map of tracked blobs. StringMap stores entries in distinct
   /// allocations, so we can freely take references to the data without fear of
   /// invalidation during additional insertion/deletion.
   Shared<llvm::StringMap<ResourceEntry>> resources;
-  /// Content map of strings for deduplication.
-  Shared<llvm::StringMap<MemoryHandle>> stringTable;
 };
 
 //===----------------------------------------------------------------------===//
