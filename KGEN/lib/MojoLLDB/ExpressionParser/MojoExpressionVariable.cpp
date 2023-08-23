@@ -6,8 +6,10 @@
 
 #include "MojoExpressionVariable.h"
 #include "JITExecutionUnit.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Utility/LLDBLog.h"
+#include "mlir/IR/Types.h"
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -147,4 +149,24 @@ lldb::addr_t MojoPersistentExpressionState::LookupSymbol(ConstString name) {
   if (si != symbolMap.end())
     return si->second;
   return PersistentExpressionState::LookupSymbol(name);
+}
+
+void MojoPersistentExpressionState::collectPersistentVariables(
+    SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables) {
+  DenseSet<ConstString> persistentVariableNames;
+  for (int i : llvm::reverse(llvm::seq<int>(0, GetSize()))) {
+    lldb::ExpressionVariableSP var = GetVariableAtIndex(i);
+    assert(var && "expected valid variable in persistent state");
+    if (!persistentVariableNames.insert(var->GetName()).second)
+      continue;
+
+    // All persistent variable types are wrapped in a reference type, so unwrap
+    // the types before adding them to the current expression.
+    auto ptrType =
+        cast<LIT::REPLResultRefType>(mlir::Type::getFromOpaquePointer(
+            var->GetCompilerType().GetOpaqueQualType()));
+
+    mlir::Type varType = ptrType.getElementType();
+    variables.emplace_back(var->GetName().GetStringRef(), varType);
+  }
 }

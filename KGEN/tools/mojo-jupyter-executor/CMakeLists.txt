@@ -7,6 +7,9 @@
 add_modular_tool(mojo-jupyter-executor
   main.cpp
 
+  DEPENDS
+  mojo-sdk
+
   LINK_LIBS PUBLIC
   KGENCompilerRT
   LLCLRuntimeGlobals
