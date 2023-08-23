@@ -183,39 +183,67 @@ private:
 /// interpreter.
 class InterpreterMemoryConverter {
 public:
-  /// Create a converter instance. A single instance is held for an entire
-  /// module to ensure globals are deduplicated.
-  InterpreterMemoryConverter(SymbolTable &symtab, POPToLLVMTypeConverter &tc)
-      : symtab(symtab), tc(tc) {}
-
-  /// Convert a single memory reference.
-  Value convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
-
-  /// Get or add a global for the handle. It must be a `const_global` region.
-  Operation *getOrCreateGlobal(Location loc, MemoryHandle hdl);
-
-private:
   /// Each materialized blob will have a corresponding SSA value representing
   /// the pointer to the beginning of the blob or an LLVM global for
   /// `const_global` blobs.
   using MaterializedBlobs = SmallVector<PointerUnion<Operation *, Value>>;
 
-  /// Ensure the blobs within the memory space have been materialized and
-  /// then return them.
-  MaterializedBlobs &getOrMaterialize(ImplicitLocOpBuilder &b,
-                                      MemorySpaceAttr space);
-  /// Get a pointer into the blob at the given offset.
-  static Value getBlobPointer(ImplicitLocOpBuilder &b, Type ptrType,
-                              MaterializedBlobs &materialized, int64_t index,
-                              int64_t offset);
+  /// Create a converter instance. A single instance is held for an entire
+  /// module to ensure globals are deduplicated.
+  InterpreterMemoryConverter(SymbolTable &symtab, POPToLLVMTypeConverter &tc)
+      : symtab(symtab), tc(tc) {}
 
+  /// A conversion scope represents the range of IR in which identity is
+  /// uniquely bestowed upon memory space attributes with the same value.
+  /// Outside a scope, the same memory space attribute, where equality is
+  /// determined by the contents, resolve to different actual addresses.
+  ///
+  /// FIXME: Once the parser has a correct model for lifetimes and identity in
+  /// parameter expressions, the scope struct can be removed and materialization
+  /// can be globally-scoped again.
+  class MaterializationScope {
+  public:
+    /// Convert a single memory reference.
+    Value convertMemRef(ImplicitLocOpBuilder &b, MemRefAttr ref);
+
+    /// Get the parent converter.
+    InterpreterMemoryConverter &getParent() { return imc; }
+
+  private:
+    explicit MaterializationScope(InterpreterMemoryConverter &imc) : imc(imc) {}
+
+    /// Ensure the blobs within the memory space have been materialized and
+    /// then return them.
+    MaterializedBlobs &getOrMaterialize(ImplicitLocOpBuilder &b,
+                                        MemorySpaceAttr space);
+    /// Get a pointer into the blob at the given offset.
+    static Value getBlobPointer(ImplicitLocOpBuilder &b, Type ptrType,
+                                MaterializedBlobs &materialized, int64_t index,
+                                int64_t offset);
+
+    /// The interpreter memory converter.
+    InterpreterMemoryConverter &imc;
+
+    /// Lazily materialized memory spaces.
+    DenseMap<MemorySpaceAttr, MaterializedBlobs> blobs;
+
+    friend class InterpreterMemoryConverter;
+  };
+
+  friend class MaterializationScope;
+
+  /// Create a new identity scope for converting memory values.
+  MaterializationScope createScope() { return MaterializationScope(*this); }
+
+  /// Get or add a global for the handle. It must be a `const_global` region.
+  Operation *getOrCreateGlobal(Location loc, MemoryHandle hdl);
+
+private:
   /// The symbol table to use for globals.
   SymbolTable &symtab;
   /// The type converter to use.
   POPToLLVMTypeConverter &tc;
 
-  /// Lazily materialized memory spaces.
-  DenseMap<MemorySpaceAttr, MaterializedBlobs> blobs;
   /// Lazily materialized globals.
   llvm::StringMap<Operation *> globals;
 };
@@ -235,10 +263,10 @@ Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 
 /// Generate the LLVM IR to materialize a constant of the given value. This is
 /// used to convert attribute values in `kgen.param.constant`.
-Value convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                             const POPToLLVMTypeConverter &tc,
-                             SymbolTable &symtab,
-                             InterpreterMemoryConverter *imc, TypedAttr attr);
+Value convertParameterToLLVM(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    SymbolTable &symtab,
+    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // POPToLLVMDebugInfoTypeConverter

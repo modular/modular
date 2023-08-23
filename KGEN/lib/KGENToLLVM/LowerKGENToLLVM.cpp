@@ -216,7 +216,8 @@ public:
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value value = convertParameterToLLVM(b, *getTypeConverter(), symtab, &imc,
+    InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
+    Value value = convertParameterToLLVM(b, *getTypeConverter(), symtab, &scope,
                                          op.getValue());
     if (!value)
       return failure();

@@ -28,6 +28,13 @@ kgen.func @stack() {
   kgen.return
 }
 
+// CHECK-LABEL: llvm.func internal @stack_shared
+kgen.func @stack_shared() {
+  // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
+  %0 = kgen.param.constant: !pop.pointer<i16> = <#M.memref<[(mem_stack, stack, [])], 0, 0>>
+  kgen.return
+}
+
 // CHECK-LABEL: llvm.func internal @global
 kgen.func @global() -> !pop.pointer<i8> {
   // CHECK: %[[BASE:.*]] = llvm.mlir.addressof @mem_global : !llvm.ptr<array<4 x i8>>

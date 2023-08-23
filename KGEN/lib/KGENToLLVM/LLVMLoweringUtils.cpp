@@ -542,15 +542,15 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
 // Interpreter Memory Conversion
 //===----------------------------------------------------------------------===//
 
-Value InterpreterMemoryConverter::convertMemRef(ImplicitLocOpBuilder &b,
-                                                MemRefAttr ref) {
+Value InterpreterMemoryConverter::MaterializationScope::convertMemRef(
+    ImplicitLocOpBuilder &b, MemRefAttr ref) {
   MaterializedBlobs &materialized = getOrMaterialize(b, ref.getMemory());
   Value ptr = getBlobPointer(b, LLVM::LLVMPointerType::get(b.getContext()),
                              materialized, ref.getIndex(), ref.getOffset());
-  return b.create<LLVM::BitcastOp>(tc.convertType(ref.getType()), ptr);
+  return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);
 }
 
-Value InterpreterMemoryConverter::getBlobPointer(
+Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
     ImplicitLocOpBuilder &b, Type ptrType, MaterializedBlobs &materialized,
     int64_t index, int64_t offset) {
   PointerUnion<Operation *, Value> value = materialized[index];
@@ -595,8 +595,8 @@ Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
 }
 
 InterpreterMemoryConverter::MaterializedBlobs &
-InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
-                                             MemorySpaceAttr space) {
+InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
+    ImplicitLocOpBuilder &b, MemorySpaceAttr space) {
   if (auto it = blobs.find(space); it != blobs.end())
     return it->second;
 
@@ -608,7 +608,7 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
   for (const MemoryBlob &blob : space) {
     if (blob.getKind() == MemoryKind::ConstGlobal) {
       materialized.emplace_back(
-          getOrCreateGlobal(b.getLoc(), blob.getHandle()));
+          imc.getOrCreateGlobal(b.getLoc(), blob.getHandle()));
       continue;
     }
     // Create the relevant allocation.
@@ -630,7 +630,7 @@ InterpreterMemoryConverter::getOrMaterialize(ImplicitLocOpBuilder &b,
   }
 
   // Perform memcpy of non-global blobs while remapping pointer regions.
-  int64_t pointerSize = tc.getTarget().getDataLayout().getPointerSize();
+  int64_t pointerSize = imc.tc.getTarget().getDataLayout().getPointerSize();
   for (auto [blob, value] : llvm::zip(space, materialized)) {
     // Constant globals don't have pointer regions.
     if (blob.getKind() == MemoryKind::ConstGlobal)
@@ -781,11 +781,10 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
   return container;
 }
 
-Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
-                                   const POPToLLVMTypeConverter &tc,
-                                   SymbolTable &symtab,
-                                   InterpreterMemoryConverter *imc,
-                                   TypedAttr attr) {
+Value KGEN::convertParameterToLLVM(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    SymbolTable &symtab,
+    InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // builtin
 
@@ -821,14 +820,14 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
   }
 
   // Materialize memrefs from the interpreter.
-  if (imc)
+  if (scope)
     if (auto ref = dyn_cast<MemRefAttr>(attr))
-      return imc->convertMemRef(b, ref);
+      return scope->convertMemRef(b, ref);
 
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
   if (auto strAttr = dyn_cast<StringAttr>(attr))
-    return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
+    return lowerStringToGlobalConstant(strAttr, b, tc, scope->getParent());
 
   //===--------------------------------------------------------------------===//
   // POP
@@ -849,7 +848,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      Value element = convertParameterToLLVM(b, tc, symtab, imc, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, scope, value);
       if (!element)
         return {};
       // If this is a struct with one element, return it directly.
@@ -868,7 +867,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
     if (!variantType)
       return {};
     Value value =
-        convertParameterToLLVM(b, tc, symtab, imc, variant.getValue());
+        convertParameterToLLVM(b, tc, symtab, scope, variant.getValue());
     if (!value)
       return {};
 
@@ -892,7 +891,7 @@ Value KGEN::convertParameterToLLVM(ImplicitLocOpBuilder &b,
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      Value element = convertParameterToLLVM(b, tc, symtab, imc, value);
+      Value element = convertParameterToLLVM(b, tc, symtab, scope, value);
       if (!element)
         return {};
 
