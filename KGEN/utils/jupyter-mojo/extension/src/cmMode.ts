@@ -27,8 +27,8 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
   var commonKeywords = [
     "as", "assert", "break", "class", "continue", "def", "del", "elif", "else",
     "except", "finally", "for", "from", "global", "if", "import", "lambda",
-    "pass", "raise", "return", "try", "while", "with", "yield", "in", "False",
-    "True",
+    "pass", "raise", "raises", "return", "try", "while", "with", "yield", "in",
+    "False", "True",
 
     // Mojo Keywords.
     "alias", "fn", "let", "struct", "var"
