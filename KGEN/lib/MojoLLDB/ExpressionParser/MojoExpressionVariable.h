@@ -16,6 +16,10 @@
 #include "lldb/lldb-public.h"
 #include "llvm/Support/Casting.h"
 
+namespace mlir {
+class Type;
+} // namespace mlir
+
 namespace M::KGEN::Mojo {
 //===----------------------------------------------------------------------===//
 // MojoExpressionVariable
@@ -171,6 +175,11 @@ public:
   ArrayRef<std::unique_ptr<ExpressionInstanceState>> getExpressionInstances() {
     return expressionInstances;
   }
+
+  /// Collect the name and type of the current persistent variables within the
+  /// given state.
+  void collectPersistentVariables(
+      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &variables);
 
 private:
   /// Instance state associated with successful expression evaluations.
