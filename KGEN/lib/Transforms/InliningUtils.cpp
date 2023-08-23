@@ -148,15 +148,17 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
       DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
 
     // Recurse into the body if needed and allowed.
-    if (isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op)) {
+    if (isa<HLCF::LoopOp>(op)) {
       if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
         updateScopeDebugInfoFrom(op, tag, updateAttrName, stripValues);
         return WalkResult::skip();
       }
-    } else if (isa<DebugInfo::SubprogramScoped>(op)) {
-      updateScopeDebugInfoFrom(op, IntegerAttr::get(tag.getType(), 0),
-                               updateAttrName, stripValues);
-      return WalkResult::skip();
+    } else if (isa<LIT::AsyncExecuteOp, StageClosureOp>(op)) {
+      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName)) {
+        updateScopeDebugInfoFrom(op, tag, updateAttrName,
+                                 isa<FileLineColLoc>(op->getLoc()));
+        return WalkResult::skip();
+      }
     }
     return WalkResult::advance();
   });
