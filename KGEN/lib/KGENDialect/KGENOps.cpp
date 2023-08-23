@@ -30,7 +30,7 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// custom<ParamConstantOpValue>
+// ParamConstantOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseParamConstantOpValue(OpAsmParser &p, TypedAttr &value,
@@ -49,22 +49,27 @@ static void printParamConstantOpValue(OpAsmPrinter &p, Operation *,
   p << ">";
 }
 
-LogicalResult ParamConstantOp::verify() {
+/// Parameter materialization operations are not allowed to materialize
+/// capturing signature-typed values, since they can be inlined.
+template <typename OpT>
+static LogicalResult verifyParamValueOp(OpT op) {
   // Forbid the materialization of parameter capturing closures.
-  if (auto sig = dyn_cast<SignatureType>(getType())) {
+  if (auto sig = dyn_cast<SignatureType>(op.getType())) {
     if (sig.isCapturing())
-      return emitOpError("cannot be used to materialize capturing closures; "
-                         "use `kgen.create_closure` instead");
+      return op.emitOpError("cannot be used to materialize capturing closures; "
+                            "use `kgen.create_closure` instead");
     if (!sig.getResultParamTypes().empty() || !sig.getInputParamTypes().empty())
-      return emitOpError("cannot materialize parametric signatures; fully bind "
-                         "the signature first");
+      return op.emitOpError("cannot materialize parametric signatures; fully "
+                            "bind the signature first");
   }
 
-  if (getValue().getType() == getType())
+  if (op.getValue().getType() == op.getType())
     return success();
-  return emitOpError() << "parameter type " << getValue().getType()
-                       << " does not match result type " << getType();
+  return op.emitOpError() << "parameter type " << op.getValue().getType()
+                          << " does not match result type " << op.getType();
 }
+
+LogicalResult ParamConstantOp::verify() { return verifyParamValueOp(*this); }
 
 void ParamConstantOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
@@ -88,6 +93,38 @@ void ParamConstantOp::getAsmResultNames(
 
 OpFoldResult ParamConstantOp::fold(FoldAdaptor adaptor) {
   return getValueAttr();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamMaterializeOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ParamMaterializeOp::verify() { return verifyParamValueOp(*this); }
+
+LogicalResult ParamMaterializeOp::canonicalize(ParamMaterializeOp op,
+                                               PatternRewriter &rewriter) {
+  // Decay to a constant if the parameter value is a constant value with no
+  // memory references.
+  if (!ParameterAttr::isSimpleConstant(op.getValue()))
+    return rewriter.notifyMatchFailure(op, "value is not a simple constant");
+
+  mlir::AttrTypeWalker walker;
+  bool foundRef = false;
+  walker.addWalk([&](MemRefAttr ref) -> std::pair<Attribute, WalkResult> {
+    foundRef = true;
+    return {ref, WalkResult::interrupt()};
+  });
+  walker.walk(op.getValue());
+  if (foundRef)
+    return rewriter.notifyMatchFailure(op, "value has memory references");
+
+  rewriter.replaceOpWithNewOp<ParamConstantOp>(op, op.getValue());
+  return success();
+}
+
+ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  return ErrorTree(getLoc(), "TODO");
 }
 
 //===----------------------------------------------------------------------===//
