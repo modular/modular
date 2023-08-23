@@ -400,22 +400,64 @@ fn parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     Args:
         num_work_items: Number of parallel tasks.
     """
-    let core_count = num_cores()
-    let chunk_size = max(div_ceil(num_work_items, core_count), 1)
+
+    with Runtime(num_work_items) as rt:
+        parallelize[func](rt, num_work_items)
+
+
+@always_inline
+fn parallelize[
+    func: fn (Int) capturing -> None
+](rt: Runtime, num_work_items: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    returns when all are complete.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
+    function will return only after all the sub-tasks have completed.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        rt: The runtime.
+        num_work_items: Number of parallel tasks.
+    """
+    parallelize[func](rt, num_work_items, num_cores())
+
+
+@always_inline
+fn parallelize[
+    func: fn (Int) capturing -> None
+](rt: Runtime, num_work_items: Int, num_workers: Int):
+    """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel and
+    returns when all are complete.
+
+    Execute func(0) ... func(num_work_items-1) as sub-tasks in parallel. This
+    function will return only after all the sub-tasks have completed.
+
+    Parameters:
+        func: The function to invoke.
+
+    Args:
+        rt: The runtime.
+        num_work_items: Number of parallel tasks.
+        num_workers: The number of works to use for execution.
+    """
+
+    let chunk_size = max(div_ceil(num_work_items, num_workers), 1)
 
     @always_inline
     @parameter
-    fn coarsed_func(thread_idx: Int):
+    fn coarse_grained_func(thread_idx: Int):
         for i in range(
             chunk_size * thread_idx,
             min(chunk_size * (thread_idx + 1), num_work_items),
         ):
             func(i)
 
-    with Runtime(core_count) as rt:
-        let out_chain = OwningOutputChainPtr(rt)
-        async_parallelize[coarsed_func](out_chain.borrow(), core_count)
-        out_chain.wait()
+    let out_chain = OwningOutputChainPtr(rt)
+    async_parallelize[coarse_grained_func](out_chain.borrow(), num_workers)
+    out_chain.wait()
 
 
 # ===----------------------------------------------------------------------===#
