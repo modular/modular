@@ -15,3 +15,8 @@
 # Invoking the driver with `--help` prints the driver's help text.
 # RUN: mojo --help | FileCheck %s --check-prefix CHECK-HELP
 # CHECK-HELP: mojo
+
+# Invoking the driver with `--version` prints the version, for example
+# '0.4.0-release (eb70c661)':
+# RUN: mojo --version | FileCheck %s --check-prefix CHECK-VERSION
+# CHECK-VERSION: mojo {{[0-9]+}}.{{[0-9]+}}.{{[0-9]+}}{{.*}}({{[a-f0-9]+}})
