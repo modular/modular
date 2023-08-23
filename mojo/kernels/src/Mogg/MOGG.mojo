@@ -1732,6 +1732,10 @@ fn conv[
     dilation_type: DType,
     output_type: DType,
     filter_packed: Bool,
+    lambdas_have_fusion: Bool,
+    output_0_fn: fn[type: DType, width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
     input: NDBuffer[4, DimList.create_unknown[4](), input_type],
     filter: NDBuffer[
@@ -1789,9 +1793,23 @@ fn conv[
         pad_h_tuple, pad_w_tuple, strides_tuple, dilation_tuple
     )
 
-    conv_2d_nhwc_direct[filter_rank, filter_packed, conv_info_static](
-        input, filter, output, conv_info, out_chain
-    )
+    # Specialize the function to take 4D coordiantes.
+    # The bias is broadcasted to the same shape as output and
+    # accessed by the 4D coordinates.
+    @parameter
+    @always_inline
+    fn epilogue_wrapper[
+        type: DType, width: Int
+    ](coords: StaticIntTuple[4], val: SIMD[type, width]):
+        output_0_fn[type, width, 4](coords, val)
+
+    conv_2d_nhwc_direct[
+        filter_rank,
+        filter_packed,
+        conv_info_static,
+        lambdas_have_fusion,
+        epilogue_wrapper,
+    ](input, filter, output, conv_info, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
