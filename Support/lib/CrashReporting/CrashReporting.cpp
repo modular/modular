@@ -86,7 +86,8 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
     return Error(llvm::Twine("while reading configuration: ") +
                  configOr.getError());
   auto config = std::move(*configOr);
-  if (!config.getValue("crash_reporting.disabled").empty())
+  auto enabled = config.getValue("crash_reporting.enabled");
+  if (enabled.equals_insensitive("false"))
     return success();
 
   // Crashpad needs a few paths and other configuration bits:
@@ -104,6 +105,18 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
                  handlerPathOr.getError());
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
   StringRef url = config.getValue("crash_reporting.url");
+
+  // Update the database if we have a URL and reporting is not enabled. In most
+  // cases this will just read the existing database settings and not change.
+  if (!url.empty()) {
+    auto database =
+        crashpad::CrashReportDatabase::Initialize(base::FilePath(databasePath));
+    bool uploads_enabled = false;
+    if (database != nullptr && database->GetSettings() != nullptr &&
+        (!database->GetSettings()->GetUploadsEnabled(&uploads_enabled) ||
+         !uploads_enabled))
+      database->GetSettings()->SetUploadsEnabled(true);
+  }
 
   // Launch Crashpad handler.
   crashpad::CrashpadClient client;
