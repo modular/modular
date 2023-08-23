@@ -1052,7 +1052,7 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
   // Use of the interpreter's memory model requires a target specification,
   // which the parser does not have.
   if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfResult())
-    return Error("function has memory-primary result");
+    return Error("function has memory-only result");
 
   // Make sure to fully resolve the body and everything within it.
   if (failed(resolver.resolveFully(*decl, decl->getLoc())))
@@ -1848,7 +1848,7 @@ static void verifyFunctionNameBinding(
     }
   }
 
-  // __*init__ methods are weird - for memory-primary results we define
+  // __*init__ methods are weird - for memory-only results we define
   // init in convention Python style, but for @register_passable values, we
   // return it.  We handle this by mapping them to different enumerators so
   // things downstream have stronger invariants.

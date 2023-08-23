@@ -299,11 +299,11 @@ public:
   SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
   /// This helper emits the specified value as an MRValue which has
-  /// memory-primary representation, materializing PValues as needed. This
+  /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
   MRValue emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context);
   /// This helper emits the specified value as an MBValue which has
-  /// memory-primary representation, materializing PValues as needed. This
+  /// memory-only representation, materializing PValues as needed. This
   /// returns null if emission fails.
   MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
 

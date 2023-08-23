@@ -38,7 +38,7 @@ fn make_reg_pair(first: Int, second: Int) -> RegIntPair:
     return RegIntPair {first: first, second: second}
 
 
-# This is a memory primary type.
+# This is a memory only type.
 struct MemIntPair:
     var first: Int
     var second: Int

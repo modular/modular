@@ -283,7 +283,7 @@ fn returnMemType() -> MemType:
 
 fn passMemTypeResultGeneric():
     # expected-error @below {{invalid call to 'takeGenericResultFn': argument #0 cannot be converted from 'fn() -> MemType'}}
-    # expected-note @below {{memory-primary type bound to generic result type: payload returns 'MemType' by reference}}
+    # expected-note @below {{memory-only type bound to generic result type: payload returns 'MemType' by reference}}
     takeGenericResultFn[MemType](returnMemType)
 
 # expected-error @+1 {{unexpected token in expression}}
