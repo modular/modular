@@ -622,6 +622,12 @@ void MojoDocument::parseDocument() {
     lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
                        "POSIX: signal number + 128) = {0}",
                        crc.RetCode);
+    lsp::Logger::error(
+        "A crash happened in the mojo parser when processing the "
+        "file {0}.\nPlease report this issue in "
+        "https://github.com/modularml/mojo/issues along with all the relevant "
+        "source codes with the contents they had at crash time.",
+        uri);
     isInvalidated = true;
     lsp::PublishDiagnosticsParams diagParams(uri, version);
     lsp::Diagnostic lspDiag;
@@ -630,8 +636,8 @@ void MojoDocument::parseDocument() {
     lspDiag.message =
         "A crash happened in the mojo parser with the current version of this "
         "file. Please report this issue in "
-        "https://github.com/modularml/mojo/issues along with the corresponding "
-        "source code.";
+        "https://github.com/modularml/mojo/issues along with all the relevant "
+        "source codes with their current contents.";
     diagParams.diagnostics.push_back(lspDiag);
     sendDiagnosticsFn(diagParams);
   }
