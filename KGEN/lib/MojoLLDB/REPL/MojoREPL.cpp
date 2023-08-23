@@ -6,6 +6,8 @@
 
 #include "MojoREPL.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
+#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/CodeComplete.h"
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -23,6 +25,7 @@
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
+#include "mlir/IR/Types.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Process.h"
 #include "llvm/TargetParser/Host.h"
@@ -527,6 +530,20 @@ lldb::offset_t MojoREPL::GetDesiredIndentation(const StringList &lines,
 void MojoREPL::CompleteCode(const std::string &current_code,
                             CompletionRequest &request) {
   // TODO: Implement this when we have code completion functionality in Mojo.
+}
+
+std::vector<CodeCompletionResult>
+MojoREPL::handleREPLCodeComplete(MojoTypeSystem &typeSystem, StringRef code,
+                                 uint64_t completionPos) {
+  // Collect the current persistent variables.
+  SmallVector<std::pair<StringRef, mlir::Type>> variables;
+  auto *persistentState = static_cast<MojoPersistentExpressionState *>(
+      typeSystem.GetPersistentExpressionState());
+  persistentState->collectPersistentVariables(variables);
+
+  // Call into the parser context to perform the code completion.
+  return typeSystem.getParserContext().codeCompleteREPLExpresion(
+      code, completionPos, variables);
 }
 
 //===----------------------------------------------------------------------===//

@@ -264,6 +264,16 @@ public:
                MLIRContext *context, LLCL::Runtime &runtime,
                const KGEN::CompilationOptions &options);
 
+  /// Returns the code completion results for the given buffer at the given
+  /// completion position. The given callback is invoked with the parsing
+  /// context, and source manager buffer file id, allowing for custom additional
+  /// setup and parser invocation.
+  static std::vector<KGEN::Mojo::CodeCompletionResult>
+  codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+               MLIRContext *context, LLCL::Runtime &runtime,
+               const KGEN::CompilationOptions &options,
+               function_ref<void(MojoParserContext &, int)> parserCallback);
+
   //===--------------------------------------------------------------------===//
   // REPL
 
@@ -297,6 +307,11 @@ public:
   parseREPLExpresion(MojoParserREPLListener &listener, StringRef exprId,
                      StringRef exprText, StringRef replExprFnName,
                      ArrayRef<std::pair<StringRef, Type>> replVariables);
+
+  /// Return the code completion results for the given REPL expression.
+  std::vector<KGEN::Mojo::CodeCompletionResult>
+  codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
+                            ArrayRef<std::pair<StringRef, Type>> replVariables);
 
   /// Remove the previously parsed REPL expression. This allows for removing an
   /// erroneous expression when it is only detected as invalid after it has been
