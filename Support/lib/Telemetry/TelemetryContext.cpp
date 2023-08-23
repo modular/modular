@@ -38,6 +38,7 @@ using namespace M;
 using namespace Telemetry;
 using namespace Exporter;
 
+#ifdef MODULAR_ENABLE_TELEMETRY
 static Level levelFromString(StringRef levelStr) {
   int level;
   if (levelStr.getAsInteger(10, level))
@@ -52,7 +53,6 @@ static Level levelFromString(StringRef levelStr) {
   llvm_unreachable("unknown telemetry level");
 }
 
-#ifdef MODULAR_ENABLE_TELEMETRY
 static void configureInternalLogging(Config &cfg) {
   // OTel internal logging (e.g. warnings and errors related to OTel's
   // operation) is off by default and controlled with `telemetry.internal_log`
