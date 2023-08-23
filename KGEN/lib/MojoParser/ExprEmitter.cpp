@@ -582,7 +582,10 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   }
 
   // Otherwise, emit a generalized parameter constant.
-  return SRValue(builder->create<ParamConstantOp>(location, attr));
+  return SRValue(
+      value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
+          ? Value(builder->create<ParamConstantOp>(location, value.ir))
+          : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
 /// Emit any kind of PValue to an SLValue.
@@ -594,8 +597,10 @@ MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
   Location loc = translateLocation(value.expr->getLoc());
-  builder->create<POP::StoreOp>(
-      loc, builder->create<ParamConstantOp>(loc, value.ir), dest);
+  Value attr = value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
+                   ? Value(builder->create<ParamConstantOp>(loc, value.ir))
+                   : builder->create<ParamMaterializeOp>(loc, value.ir);
+  builder->create<POP::StoreOp>(loc, attr, dest);
   return MBValue(dest);
 }
 

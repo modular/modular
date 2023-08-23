@@ -690,7 +690,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
     # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*", var = false, synth = true : <{{.*}}@MemoryType>
-    # CHECK: %[[VALUE:.*]] = kgen.param.constant: {{.*}}@MemoryType = <apply_result_slot({{.*}}value = 1
+    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: {{.*}}@MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: pop.store %[[VALUE]], %[[ANON]]
     # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%[[ANON]])
     defaultArgumentNonRegisterType()

@@ -265,7 +265,7 @@ Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 /// used to convert attribute values in `kgen.param.constant`.
 Value convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
-    SymbolTable &symtab,
+    InterpreterMemoryConverter *imc,
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//

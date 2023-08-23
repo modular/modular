@@ -99,7 +99,7 @@ MemoryHandle DialectResourceManager::getOrAddResource(ArrayRef<char> data,
   // Pray to Ranald that there be no collisions!
   auto hash = llvm::BLAKE3::hash({(const uint8_t *)data.data(), data.size()});
   std::string key =
-      (kind == ResourceKind::String ? "static_string_" : "memory_blob") +
+      (kind == ResourceKind::String ? "static_string_" : "memory_blob_") +
       llvm::toHex(hash, /*LowerCase=*/true);
   ResourceEntry *entry =
       resources.modify([&](llvm::StringMap<ResourceEntry> &entries) {

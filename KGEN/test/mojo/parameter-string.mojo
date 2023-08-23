@@ -13,26 +13,33 @@ struct StringParam[value: String]:
         print(value)
 
 
-# ELABORATE: kgen.func {{.*}}stringInputParam
+# ELABORATE: kgen.func @"$parameter-string::stringInputParam[[FUNC:.*]]"() -> !pop.array<0, i1>
 # ELABORATE-NOT: kgen.func {{.*}}stringInputParam
+@no_inline
 fn stringInputParam[value: String]():
+    print(value)
+
+
+@always_inline
+fn stringInputParamInline[value: String]():
     print(value)
 
 
 fn main():
     # CHECK: hello world
-    # ELABORATE: kgen.call
     StringParam[String("hello") + " " + "world"]().print_it()
 
     alias strValue: String = "thrice"
-    # CHECK-COUNT-3: thrice
-    print(strValue)
-    # ELABORATE: kgen.call @[[INSTANTIATION:.*]]() : () -> !pop.array<0, i1>
+    # CHECK-COUNT-4: thrice
+    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
     stringInputParam[strValue]()
-    # ELABORATE: kgen.call
     instantiateElsewhere()
+
+    # ELABORATE-COUNT-2: kgen.param.materialize: struct<pointer<
+    stringInputParamInline[strValue]()
+    print(strValue)
 
 
 fn instantiateElsewhere():
-    # ELABORATE: kgen.call @[[INSTANTIATION]]() : () -> !pop.array<0, i1>
+    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
     stringInputParam["thrice"]()
