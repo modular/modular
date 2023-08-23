@@ -57,7 +57,8 @@ void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
 void MojoParserListener::onImport(SMLoc importLoc) {}
 void MojoParserListener::onImport(ResolveInputDeclFn getPackageDecl,
                                   SMLoc importLoc) {}
-void MojoParserListener::onMemberLookup(MojoASTDeclRef decl, SMLoc loc) {}
+void MojoParserListener::onMemberLookup(ResolveInputDeclFn getDeclFn,
+                                        SMLoc loc) {}
 void MojoParserListener::onModuleImport(MojoASTDeclRef declRef,
                                         StringRef spelling, SMLoc importLoc) {}
 void MojoParserListener::onModuleDecl(MojoASTDeclRef declRef,

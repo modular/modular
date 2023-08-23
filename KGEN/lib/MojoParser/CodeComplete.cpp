@@ -98,7 +98,10 @@ struct CodeCompletionListener : public MojoParserListener {
 
   /// Notify the listener that a member within the given decl is being looked
   /// up.
-  void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc) override {
+  void onMemberLookup(ResolveInputDeclFn getDeclFn,
+                      llvm::SMLoc lookupLoc) override {
+    MojoASTDeclRef decl = getDeclFn();
+
     for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
       StringRef name = child.getName();
       if (!showDeclDuringLookup(decl, name))
