@@ -588,7 +588,15 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 /// Emit any kind of PValue to an SLValue.
 MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
                                          ExprContext context) {
-  llvm_unreachable("TODO: memory-only parameter expressions not supported yet");
+  // PValues don't have lifetimes and are immortal with respect to the compiler.
+  // Emit a memcpy into the SLValue. Creating an SSA value of the memory-primary
+  // type for the sake of memcpy is safe because the bulk store will ensure the
+  // variable does not get promoted off the stack, and after struct lowering,
+  // the type is erased down to its MLIR constituents anyways.
+  Location loc = translateLocation(value.expr->getLoc());
+  builder->create<POP::StoreOp>(
+      loc, builder->create<ParamConstantOp>(loc, value.ir), dest);
+  return MBValue(dest);
 }
 
 /// This helper emits the specified value as a SRValue which has an SSA
@@ -629,6 +637,44 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   auto pValue = value.getIfPValue();
   assert(pValue && "must be PValue if register-passable and not SRValue");
   return emitPValueToSRValue({pValue, expr}, context);
+}
+
+MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
+                                         ExprContext context) {
+  PValue pvalue = value.ir;
+  // FIXME: This is a hack around default arguments requiring types to match.
+  if (auto memWrapper = dyn_cast<StoreToMemAttr>(pvalue.get()))
+    pvalue = memWrapper.getValue();
+
+  // We model this as an immutable let value with a separately stored
+  // initializer.
+  auto var = builder->create<VarLetDeclOp>(
+      translateLocation(value.expr->getLoc()),
+      POP::PointerType::get(pvalue.getType()),
+      StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
+      /*isSynth=*/true);
+  if (!emitPValueToSLValue({pvalue, value.expr}, SLValue(var), context))
+    return {};
+  return MRValue(var);
+}
+
+MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context) {
+  if (auto mr = value.ir.getIfMRValue())
+    return mr;
+  assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
+  return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
+}
+
+MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
+                                 ExprContext context) {
+  if (auto mb = value.ir.getIfMBValue())
+    return mb;
+  // Decay MRValue to MBValue.
+  if (auto mr = value.ir.getIfMRValue())
+    return MBValue(mr);
+  assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
+  return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
 }
 
 /// This helper emits the specified expression as a parameter value, diagnosing
@@ -885,8 +931,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return SBValue(val);
   }
 
-  assert(!value.ir.getIfPValue() &&
-         "TODO: memory-only parameter expressions not supported yet");
+  if (auto pvalue = value.ir.getIfPValue())
+    return emitPValueToSLValue({pvalue, value.expr}, destPtr, context);
 
   // Otherwise, assign with a move constructor.
   // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`

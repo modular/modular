@@ -235,6 +235,58 @@ fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
 ##===----------------------------------------------------------------------===##
+# Memory-primary parameters
+##===----------------------------------------------------------------------===##
+
+@value
+struct MemoryType:
+    var value: Int
+
+struct NonMovableMemoryType:
+    var value: Int
+
+    fn __init__(inout self, value: Int):
+        self.value = value
+
+fn makeMemoryValue(x: Int) -> MemoryType:
+    return x
+
+fn passMemoryValue(x: MemoryType) -> MemoryType:
+    return x
+
+# CHECK-LABEL: lit.func @"callMemoryValueParam
+fn callMemoryValueParam():
+    # CHECK: paramValue: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
+    alias paramValue = makeMemoryValue(1234)
+    # CHECK: %dynamicLet = lit.varlet.decl
+    # CHECK: %[[PARAM_VALUE:.*]] = kgen.param.constant: {{.*}}MemoryType = <{{.*}}paramValue>
+    # CHECK: pop.store %[[PARAM_VALUE]], %dynamicLet
+    let dynamicLet = paramValue
+
+    alias nonMovable = NonMovableMemoryType(42)
+    # CHECK: %dynamicVar = lit.varlet.decl
+    # CHECK: %[[NON_MOVABLE:.*]] = kgen.param.constant: {{.*}}NonMovableMemoryType
+    # CHECK: pop.store %[[NON_MOVABLE]], %dynamicVar
+    var dynamicVar = nonMovable
+
+    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}}, #M.store_to_mem<{{.*}}paramValue
+    alias copy = passMemoryValue(paramValue)
+    # CHECK: lit.varlet.decl
+    # CHECK: %[[MVALUE:.*]] = lit.varlet.decl
+    # CHECK: %[[PVALUE:.*]] = kgen.param.constant: {{.*}}@MemoryType = <{{.*}}copy>
+    # CHECK: pop.store %[[PVALUE]], %[[MVALUE]]
+    # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, %[[MVALUE]])
+    _ = passMemoryValue(copy)
+
+    # CHECK: call {{.*}}memoryParam{{.*}}<:{{.*}}MemoryType apply_result_slot({{.*}}__init__{{.*}}value = 22
+    memoryParam[MemoryType(22)]()
+
+# CHECK-LABEL: lit.func @"memoryParam
+# CHECK-SAME: <{{.*}}value: {{.*}}MemoryType>()
+fn memoryParam[value: MemoryType]():
+    pass
+
+##===----------------------------------------------------------------------===##
 # Result parameters
 ##===----------------------------------------------------------------------===##
 
