@@ -154,19 +154,6 @@ export class MOJOContext implements vscode.Disposable {
           {env : {...process.env, MODULAR_HOME : mojoConfig.modularHomePath}}
     };
 
-    // This setting is not exposed in package.json because it's internal.
-    const env = config.get<{[key: string] : string}>("env", workspaceFolder);
-    if (env) {
-      for (let [name, value] of Object.entries(env)) {
-        // We need to resolve wildcard values manually.
-        const resolvedPath = workspaceFolder
-                                 ? value.replace("${workspaceFolder}",
-                                                 workspaceFolder.uri.fsPath)
-                                 : value;
-        serverOptions.options!.env[name] = resolvedPath;
-      }
-    }
-
     // Configure file patterns relative to the workspace folder.
     let filePattern: vscode.GlobPattern = '**/*.{mojo,🔥}';
     let selectorPattern: string|undefined = undefined;
