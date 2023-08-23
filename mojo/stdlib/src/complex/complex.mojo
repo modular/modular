@@ -28,6 +28,7 @@ struct ComplexSIMD[type: DType, size: Int]:
     var im: SIMD[type, size]
     """The imaginary part of the complex SIMD value."""
 
+    @always_inline
     fn __add__(self, rhs: Self) -> Self:
         """Adds two complex values.
 
@@ -39,6 +40,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         """
         return Self {re: self.re + rhs.re, im: self.im + rhs.im}
 
+    @always_inline
     fn __mul__(self, rhs: Self) -> Self:
         """Multiplies two complex values.
 
@@ -53,6 +55,7 @@ struct ComplexSIMD[type: DType, size: Int]:
             self.re.fma(rhs.im, self.im * rhs.re),
         )
 
+    @always_inline
     fn __neg__(self) -> Self:
         """Negates the complex value.
 
@@ -61,6 +64,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         """
         return ComplexSIMD(-self.re, -self.im)
 
+    @always_inline
     fn norm(self) -> SIMD[type, size]:
         """Returns the magnitude of the complex value.
 
@@ -69,6 +73,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         """
         return sqrt(self.squared_norm())
 
+    @always_inline
     fn squared_norm(self) -> SIMD[type, size]:
         """Returns the squared magnitude of the complex value.
 
@@ -78,6 +83,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         return self.re.fma(self.re, self.im * self.im)
 
     # fma(self, b, c)
+    @always_inline
     fn fma(self, b: Self, c: Self) -> Self:
         """Computes FMA operation.
 
@@ -97,6 +103,7 @@ struct ComplexSIMD[type: DType, size: Int]:
         )
 
     # fma(self, self, c)
+    @always_inline
     fn squared_add(self, c: Self) -> Self:
         """Computes Square-Add operation.
 
