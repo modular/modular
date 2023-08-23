@@ -231,8 +231,8 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
     :() -> !pop.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
 
-  // CHECK-NEXT: <{ #M.memref<[(return_heap_concrete_mem, heap, [])], 0, 0>,
-  // CHECK-SAME:    #M.memref<[(return_heap_concrete_mem, heap, [])], 0, 2> }>
+  // CHECK-NEXT: <{ #M.memref<[([[RETURN_HEAP:.*]], heap, [])], 0, 0>,
+  // CHECK-SAME:    #M.memref<[([[RETURN_HEAP]], heap, [])], 0, 2> }>
   kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
     :(i16, i16) -> !pop.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
 
@@ -241,13 +241,13 @@ kgen.generator export @do_it() {
     :(!pop.pointer<i16>, !pop.pointer<i16>) -> i16 @copy_load,
     #M.memref<[(mem, heap, [])], 0, 2>, #M.memref<[(mem, heap, [])], 0, 0>)>
 
-  // CHECK-NEXT: <#M.memref<[(modify_stack_mem_concrete_mem, stack, [])], 0, 0>>
+  // CHECK-NEXT: <#M.memref<[([[MODIFY_STACK_MEM:.*]], stack, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(
     :(!pop.pointer<i16>) -> !pop.pointer<i16> @modify_stack_mem,
     #M.memref<[(stack, stack, [])], 0, 0>)>
 
-  // CHECK-NEXT: <#M.memref<[(return_pointer_to_pointer_concrete_mem, heap, [(8, 1, 0)]),
-  // CHECK-SAME:             (return_pointer_to_pointer_concrete_mem_1, stack, [])], 0, 8>>
+  // CHECK-NEXT: <#M.memref<[([[RETURN_POINTER:.*]], heap, [(8, 1, 0)]),
+  // CHECK-SAME:             ([[RETURN_POINTER_1:.*]], stack, [])], 0, 8>>
   kgen.param.constant: !pop.pointer<pointer<i16>> = <apply(
     :(!pop.pointer<i16>) -> !pop.pointer<pointer<i16>> @return_pointer_to_pointer,
     #M.memref<[(some_ptr, stack, [])], 0, 0>)>
@@ -261,7 +261,7 @@ kgen.generator export @do_it() {
   kgen.param.constant: index = <apply(
     :(!pop.pointer<i16>) -> index @free_null, #M.pointer<0>)>
 
-  // CHECK-NEXT: <#M.memref<[(freed_memory_concrete_mem, heap, [])], 0, 0>>
+  // CHECK-NEXT: <#M.memref<[([[FREED_CONCRETE_MEM:.*]], heap, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(:() -> !pop.pointer<i16> @freed_memory)>
 
   // COM: `ord("hello world"[2]) -> 108`.
@@ -287,12 +287,12 @@ kgen.generator export @do_it() {
       some_ptr: "0x20000000EFBE",
       pointer: "0x40000000000000000000000000F2052A01000000",
       string: "hello world"
-      // CHECK-NEXT: return_heap_concrete_mem: "0x00200000ADDEEFBE"
-      // CHECK-NEXT: modify_stack_mem_concrete_mem: "0x200000000000"
+      // CHECK-NEXT: [[RETURN_HEAP]]: "0x00200000ADDEEFBE"
+      // CHECK-NEXT: [[MODIFY_STACK_MEM]]: "0x200000000000"
       // COM: 0x77359400 -> 2000000000, the base stack address
-      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem: "0x4000000000000000000000000094357700000000"
-      // CHECK-NEXT: return_pointer_to_pointer_concrete_mem_1: "0x20000000EFBE"
-      // CHECK-NEXT: freed_memory_concrete_mem:
+      // CHECK-NEXT: [[RETURN_POINTER]]: "0x4000000000000000000000000094357700000000"
+      // CHECK-NEXT: [[RETURN_POINTER_1]]: "0x20000000EFBE"
+      // CHECK-NEXT: [[FREED_CONCRETE_MEM]]:
       // CHECK-NEXT: string: "hello world"
     // CHECK-NEXT: }
     }

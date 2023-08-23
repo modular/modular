@@ -291,23 +291,9 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-/// Resource reference names must be valid MLIR identifiers.
-static std::string getResourceBaseName(Region &entry) {
-  // Use the parent function name as the base name for materialized resources.
-  auto symbol = cast<mlir::SymbolOpInterface>(entry.getParentOp());
-  std::string baseName = (symbol.getName() + "_mem").str();
-  for (char &c : baseName) {
-    if (!std::isalnum(c) && c != '_')
-      c = '_';
-  }
-  return baseName;
-}
-
 ErrorOrSuccess
 InterpreterState::externalizeMemory(Region &entry,
                                     MutableArrayRef<Attribute> results) {
-  std::string baseName = getResourceBaseName(entry);
-
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
   DenseMap<const MemoryBlob *, int64_t> blobIndices;
@@ -335,10 +321,6 @@ InterpreterState::externalizeMemory(Region &entry,
         if (blob.isFreed())
           continue;
 
-        MemoryHandle hdl =
-            blob.isOwned() ? blobMgr.addBlobResource(baseName, blob.getOwned(),
-                                                     blob.size, blob.align)
-                           : blob.getHandle();
         SmallVector<M::MemoryBlob::PointerRegion> pointerRegions;
         if (blob.pointerRegions) {
           assert(blob.isOwned() && "const memory cannot have pointers");
@@ -354,11 +336,20 @@ InterpreterState::externalizeMemory(Region &entry,
             // If the address is garbage, just ignore it and let it live.
             if (mem.isError())
               continue;
+            // Otherwise, "canonicalize" the pointer value to zero.
+            memset(blob.getOwned(), 0, target.getDataLayout().getPointerSize());
             auto [memBlob, offset] = mem.takeValue();
             pointerRegions.push_back(M::MemoryBlob::PointerRegion{
                 index, blobIndices.at(&memBlob), offset});
           }
         }
+
+        // Add the new blob value to the blob manager if one with the same value
+        // does not already exist.
+        MemoryHandle hdl =
+            blob.isOwned() ? blobMgr.getOrAddBlobResource(blob.getOwned(),
+                                                          blob.size, blob.align)
+                           : blob.getHandle();
         blobs.emplace_back(hdl, table->kind, std::move(pointerRegions));
       }
     }
