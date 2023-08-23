@@ -11,6 +11,7 @@
 #include "ClosureEmitter.h"
 #include "ASTDecl.h"
 #include "ExprEmitter.h"
+#include "IRValues.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -169,12 +170,11 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   return declOp;
 }
 
-StructDeclOp ClosureEmitter::createClosureImplStructDecl(FuncOp nestedFunction,
-                                                         ClosureCache &cache) {
-  // Get captures and create the init signature, the field types, and the
-  // closure impl signature, which is used to unique the closure struct.
-  llvm::SetVector<Value> captures;
-  mlir::getUsedValuesDefinedAbove(nestedFunction->getRegions(), captures);
+StructDeclOp ClosureEmitter::createClosureImplStructDecl(
+    SMLoc location, ASTDecl &nestedFunctionDecl, ClosureCache &cache) {
+  FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
+  assert(nestedFunction && "a function must back the nestedFunctionDecl");
+  ArrayRef<Capture> captures = shared.getCapturesInScope(nestedFunctionDecl);
   SmallVector<Type> closureImplSigTypes;
   SmallVector<ValueInputConvention> closureImplSigConventions;
 
@@ -184,38 +184,35 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(FuncOp nestedFunction,
   SmallVector<Type> initSigTypes(initArgCount);
   SmallVector<ValueInputConvention> initSigConventions(initArgCount);
   SmallVector<StringAttr> initSigNames(initArgCount);
+  ExprEmitter emitter(shared, nestedFunctionDecl, EC_Type);
   // TODO: Enable expression of how to capture.
   unsigned i = 0;
-  for (Value value : captures) {
-    Type initArgType;
-    ValueInputConvention initArgConvention;
-    if (auto declref = dyn_cast<DeclRefType>(value.getType())) {
-      ASTDecl &astDecl =
-          shared.declResolver->getDeclForTypeSymbol(declref.getSymbol());
-      if (auto structOp = dyn_cast<StructDeclOp>(astDecl)) {
-        if (structOp.isRegisterPassable()) {
-          initArgType = declref;
-          initArgConvention = ValueInputConvention::BorrowedInReg;
-          fieldTypes.emplace_back(declref);
-        } else {
-          initArgType = POP::PointerType::get(declref);
-          initArgConvention = ValueInputConvention::BorrowedInMem;
-          fieldTypes.emplace_back(declref);
-        }
-      } else {
-        llvm_unreachable("Encountered a declref that is not registered with "
-                         "the declResolver");
-      }
-    } else {
-      // If it's not a declref, then it must be an MLIR type.
-      initArgType = value.getType();
-      initArgConvention = ValueInputConvention::BorrowedInReg;
-      fieldTypes.push_back(value.getType());
+  for (Capture capture : captures) {
+    Type fieldType = capture.getFieldType();
+    Type initType = capture.getInitType();
+
+    ValueInputConvention inputConvention;
+    if (ASTType(fieldType).isRegisterPassable(location, shared))
+      inputConvention = ValueInputConvention::OwnedInReg;
+    else
+      inputConvention = ValueInputConvention::OwnedInMem;
+
+    if (auto signatureType = dyn_cast<SignatureType>(fieldType)) {
+      if (signatureType.isCapturing())
+        shared.emitError(location,
+                         "TODO: Cannot capture a signature type that "
+                         "captures until new closures are turned on.");
+      if (signatureType.isEscaping())
+        shared.emitError(location,
+                         "TODO: Cannot capture a signature type that escapes "
+                         "until new closures are turned on.");
     }
-    closureImplSigConventions.push_back(initArgConvention);
-    closureImplSigTypes.push_back(initArgType);
-    initSigTypes[i + 1] = initArgType;
-    initSigConventions[i + 1] = initArgConvention;
+
+    fieldTypes.push_back(fieldType);
+    closureImplSigConventions.push_back(inputConvention);
+    closureImplSigTypes.push_back(initType);
+    initSigTypes[i + 1] = initType;
+    initSigConventions[i + 1] = inputConvention;
     initSigNames[i + 1] =
         StringAttr::get(shared.getContext(), "field" + std::to_string(i));
     i++;
@@ -479,3 +476,9 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   return init;
 }
+
+Type Capture::getFieldType() const { return fieldType; }
+
+Type Capture::getInitType() const { return initType; }
+
+Value Capture::getMlirValue() const { return mlirValue; }

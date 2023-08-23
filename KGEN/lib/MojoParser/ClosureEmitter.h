@@ -49,7 +49,8 @@ public:
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
-  StructDeclOp createClosureImplStructDecl(FuncOp nestedFunction,
+  StructDeclOp createClosureImplStructDecl(SMLoc loc,
+                                           ASTDecl &nestedFunctionDecl,
                                            ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
@@ -72,6 +73,25 @@ private:
   StringAttr copyFieldAttr;
   StringAttr moveFieldAttr;
 };
+
+class Capture {
+public:
+  Capture() : init(false) {}
+  Capture(Value value, Type fieldType, Type initType)
+      : mlirValue(value), fieldType(fieldType), initType(initType), init(true) {
+  }
+  operator bool() const { return init; }
+  Value getMlirValue() const;
+  Type getFieldType() const;
+  Type getInitType() const;
+
+private:
+  Value mlirValue;
+  Type fieldType;
+  Type initType;
+  bool init;
+};
+
 } // namespace M::KGEN::LIT
 
 #endif // CLOSUREEMITTER_H

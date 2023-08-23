@@ -48,6 +48,7 @@ class FileModuleOp;
 class PackageOp;
 class ExprNode;
 enum class CallSyntax : uint8_t;
+class Capture;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -328,8 +329,16 @@ public:
 
   /// Emitters invoke this method to get a closure declaration.
   StructDeclOp getOrGenerateClosureImplStruct(llvm::SMLoc location,
-                                              LIT::FuncOp nestedFunction,
+                                              ASTDecl &nestedFunction,
                                               FileModuleOp fileModuleOp);
+
+  /// Given a scope that refers to a nested function, return the set of captured
+  /// values.
+  ArrayRef<Capture> getCapturesInScope(ASTDecl &scope);
+
+  /// Given a nested function, a capture value, and the corresponding capture
+  /// ASTDecl, store the capture associated with the nested function.
+  void addCaptureToScope(ASTDecl &scope, Capture capture);
 
 private:
   /// The internal state of an imported module or package.
@@ -482,7 +491,6 @@ public:
   bool isFailure() const { return kind == kFailure; }
   bool isErroneous() const { return kind == kErroneous; }
 };
-
 } // namespace M::KGEN::LIT
 
 #endif // SHARED_STATE_H
