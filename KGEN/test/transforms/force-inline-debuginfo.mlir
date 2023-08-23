@@ -65,15 +65,17 @@
 #locCaller = loc(fused<#callerSp>[#locCallsite])
 // CHECK-DAG: #[[INLINED_LOC:.*]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at
 
+#valueLoc = loc(fused<#calleeSp>[#locCallsite])
+
 // -------------------------------------------------------------------------- //
 // Test nodebug behavior for debuginfo.value ops.
 // -------------------------------------------------------------------------- //
 
 kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
-  %0 = index.add %arg0, %arg0
-  debuginfo.value #local_variable = %arg0 : index
-  kgen.return %0: index
-}
+  %0 = index.add %arg0, %arg0 loc(#valueLoc)
+  debuginfo.value #local_variable = %arg0 : index loc(#valueLoc)
+  kgen.return %0: index loc(#valueLoc)
+} loc(#valueLoc)
 
 // CHECK-LABEL: kgen.func @call_nodebug_inline_me
 kgen.func @call_nodebug_inline_me() -> index {

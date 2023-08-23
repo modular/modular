@@ -814,20 +814,23 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
   arg = 1
 > : !debuginfo.unresolved<index>
 
+#fileLoc = loc("foo.mlir":0:0)
+#loc = loc(fused<#subprogram>[#fileLoc])
+
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<T: type>(%arg0: index) {
   // CHECK: kgen.param.declare T0: type = <index> loc(#[[CALL_LOC:.*]])
   // CHECK-NEXT: kgen.rebind %arg0 : index to !kgen.paramref<T0> loc(#[[CALL_LOC]])
   // CHECK-NEXT: kgen.return
-  kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> ()
-  kgen.return
-}
+  kgen.call @nodebug_inline_me<:type index>(%arg0) : (index) -> () loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
 kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
-  debuginfo.value #local_variable = %arg0 : !kgen.paramref<T>
-  kgen.return
-}
+  debuginfo.value #local_variable = %arg0 : !kgen.paramref<T> loc(#loc)
+  kgen.return loc(#loc)
+} loc(#loc)
 
 // -----
 

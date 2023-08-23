@@ -6,6 +6,7 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
@@ -74,6 +75,17 @@ LogicalResult ValueOp::verify() {
       return emitOpError("location scope must match variable scope: ")
              << scope << " vs. " << varAttr.getScope();
     }
+  }
+
+  // The surrounding subprogram op must have a subprogram scope.
+  auto scope = (*this)->getParentOfType<SubprogramScoped>();
+  if (!scope)
+    return success();
+  if (!isa_and_nonnull<DISubprogramAttr>(scope.getLocScope())) {
+    return emitOpError("is contained within a subprogram scoped operation that "
+                       "lacks a subprogram scope")
+               .attachNote(scope.getLoc())
+           << "see surrounding scope function here";
   }
 
   return success();
