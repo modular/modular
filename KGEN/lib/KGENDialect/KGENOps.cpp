@@ -109,13 +109,13 @@ LogicalResult ParamMaterializeOp::canonicalize(ParamMaterializeOp op,
     return rewriter.notifyMatchFailure(op, "value is not a simple constant");
 
   mlir::AttrTypeWalker walker;
-  bool foundRef = false;
-  walker.addWalk([&](MemRefAttr ref) -> std::pair<Attribute, WalkResult> {
-    foundRef = true;
-    return {ref, WalkResult::interrupt()};
+  walker.addWalk([&](MemRefAttr ref) {
+    for (const MemoryBlob &blob : ref.getMemory())
+      if (blob.getKind() != MemoryKind::ConstGlobal)
+        return WalkResult::interrupt();
+    return WalkResult::advance();
   });
-  walker.walk(op.getValue());
-  if (foundRef)
+  if (walker.walk(op.getValue()).wasInterrupted())
     return rewriter.notifyMatchFailure(op, "value has memory references");
 
   rewriter.replaceOpWithNewOp<ParamConstantOp>(op, op.getValue());
@@ -124,7 +124,11 @@ LogicalResult ParamMaterializeOp::canonicalize(ParamMaterializeOp op,
 
 ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
                                                  InterpreterState &state) {
-  return ErrorTree(getLoc(), "TODO");
+  Attribute value = getValue();
+  if (ErrorOrSuccess err = state.internalizeMemory(value); err.isError())
+    return ErrorTree(getLoc(), err.takeError());
+  state.mapResults(value);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

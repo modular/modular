@@ -206,18 +206,48 @@ struct ConvertKGENUnreachable : public ConvertPOPToLLVMPattern<UnreachableOp> {
 // ConvertKGENParamConstant
 //===----------------------------------------------------------------------===//
 
-class ConvertKGENParamConstant : public ConvertSymbolOpToLLVM<ParamConstantOp> {
+class ConvertKGENParamConstant
+    : public ConvertPOPToLLVMPattern<ParamConstantOp> {
 public:
-  ConvertKGENParamConstant(mlir::LLVMTypeConverter &tc, SymbolTable &symtab,
+  ConvertKGENParamConstant(mlir::LLVMTypeConverter &tc,
                            InterpreterMemoryConverter &imc)
-      : ConvertSymbolOpToLLVM(tc, symtab), imc(imc) {}
+      : ConvertPOPToLLVMPattern(tc), imc(imc) {}
 
   LogicalResult
   matchAndRewrite(ParamConstantOp op, ParamConstantOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
-    Value value = convertParameterToLLVM(b, *getTypeConverter(), symtab, &scope,
+    Value value = convertParameterToLLVM(b, *getTypeConverter(), &imc, &scope,
+                                         op.getValue());
+    if (!value)
+      return failure();
+    rewriter.replaceOp(op, value);
+    return success();
+  }
+
+private:
+  /// Convert for global memory references.
+  InterpreterMemoryConverter &imc;
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENParamMaterialize
+//===----------------------------------------------------------------------===//
+
+class ConvertKGENParamMaterialize
+    : public ConvertPOPToLLVMPattern<ParamMaterializeOp> {
+public:
+  ConvertKGENParamMaterialize(mlir::LLVMTypeConverter &tc,
+                              InterpreterMemoryConverter &imc)
+      : ConvertPOPToLLVMPattern(tc), imc(imc) {}
+
+  LogicalResult
+  matchAndRewrite(ParamMaterializeOp op, ParamMaterializeOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
+    Value value = convertParameterToLLVM(b, *getTypeConverter(), &imc, &scope,
                                          op.getValue());
     if (!value)
       return failure();
@@ -277,7 +307,8 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENExternFunc
       // clang-format on
       >(typeConverter, symtab);
-  patterns.insert<ConvertKGENParamConstant>(typeConverter, symtab, imc);
+  patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
+      typeConverter, imc);
   // Just remove LinkOps.
   patterns.add(removeLinkOps);
 }

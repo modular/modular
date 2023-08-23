@@ -545,7 +545,7 @@ fn rethrowsToRethrow():
 # Issue #12358
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
-   # CHECK-NEXT: %0 = kgen.param.constant: {{.*}}Error = <{{.*}}>
+   # CHECK-NEXT: %0 = kgen.param.materialize: {{.*}}Error = <{{.*}}>
    # CHECK-NEXT: lit.raise %0 : <{{.*}}@"$error"::@Error>
    raise "thing"
 

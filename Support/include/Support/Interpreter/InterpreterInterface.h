@@ -84,6 +84,10 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
+  /// Exchange memory references for interpreter memory references upon entering
+  /// the interpreter.
+  ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
+
   //===--------------------------------------------------------------------===//
   // Interpreter Control Flow
 
@@ -285,10 +289,6 @@ private:
   /// upon exit from the interpreter.
   ErrorOrSuccess externalizeMemory(Region &entry,
                                    MutableArrayRef<Attribute> results);
-
-  /// Exchange memory references for interpreter memory references upon entering
-  /// the interpreter.
-  ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
 
   ErrorOr<PointerAttr> allocateInternalStackFor(Type type, Type ptrType);
 

@@ -783,7 +783,7 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
 
 Value KGEN::convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
-    SymbolTable &symtab,
+    InterpreterMemoryConverter *imc,
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr) {
   //===--------------------------------------------------------------------===//
   // builtin
@@ -826,8 +826,11 @@ Value KGEN::convertParameterToLLVM(
 
   // Convert string constant to a struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
-  if (auto strAttr = dyn_cast<StringAttr>(attr))
-    return lowerStringToGlobalConstant(strAttr, b, tc, scope->getParent());
+  if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+    if (!imc)
+      return {};
+    return lowerStringToGlobalConstant(strAttr, b, tc, *imc);
+  }
 
   //===--------------------------------------------------------------------===//
   // POP
@@ -848,7 +851,7 @@ Value KGEN::convertParameterToLLVM(
                 [](auto attr) { return attr.getValues(); });
 
     for (auto [idx, value] : llvm::enumerate(values)) {
-      Value element = convertParameterToLLVM(b, tc, symtab, scope, value);
+      Value element = convertParameterToLLVM(b, tc, imc, scope, value);
       if (!element)
         return {};
       // If this is a struct with one element, return it directly.
@@ -866,8 +869,7 @@ Value KGEN::convertParameterToLLVM(
         tc.convertType(variant.getType()));
     if (!variantType)
       return {};
-    Value value =
-        convertParameterToLLVM(b, tc, symtab, scope, variant.getValue());
+    Value value = convertParameterToLLVM(b, tc, imc, scope, variant.getValue());
     if (!value)
       return {};
 
@@ -891,7 +893,7 @@ Value KGEN::convertParameterToLLVM(
 
     // 2. Store elements of the sequence into the allocated space.
     for (auto [idx, value] : llvm::enumerate(variadic.getValues())) {
-      Value element = convertParameterToLLVM(b, tc, symtab, scope, value);
+      Value element = convertParameterToLLVM(b, tc, imc, scope, value);
       if (!element)
         return {};
 

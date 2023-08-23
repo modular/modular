@@ -259,13 +259,13 @@ fn callMemoryValueParam():
     # CHECK: paramValue: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     alias paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.varlet.decl
-    # CHECK: %[[PARAM_VALUE:.*]] = kgen.param.constant: {{.*}}MemoryType = <{{.*}}paramValue>
+    # CHECK: %[[PARAM_VALUE:.*]] = kgen.param.materialize: {{.*}}MemoryType = <{{.*}}paramValue>
     # CHECK: pop.store %[[PARAM_VALUE]], %dynamicLet
     let dynamicLet = paramValue
 
     alias nonMovable = NonMovableMemoryType(42)
     # CHECK: %dynamicVar = lit.varlet.decl
-    # CHECK: %[[NON_MOVABLE:.*]] = kgen.param.constant: {{.*}}NonMovableMemoryType
+    # CHECK: %[[NON_MOVABLE:.*]] = kgen.param.materialize: {{.*}}NonMovableMemoryType
     # CHECK: pop.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
@@ -273,7 +273,7 @@ fn callMemoryValueParam():
     alias copy = passMemoryValue(paramValue)
     # CHECK: lit.varlet.decl
     # CHECK: %[[MVALUE:.*]] = lit.varlet.decl
-    # CHECK: %[[PVALUE:.*]] = kgen.param.constant: {{.*}}@MemoryType = <{{.*}}copy>
+    # CHECK: %[[PVALUE:.*]] = kgen.param.materialize: {{.*}}@MemoryType = <{{.*}}copy>
     # CHECK: pop.store %[[PVALUE]], %[[MVALUE]]
     # CHECK: call {{.*}}passMemoryValue{{.*}}(%{{.*}}, %[[MVALUE]])
     _ = passMemoryValue(copy)

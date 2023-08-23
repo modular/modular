@@ -15,7 +15,7 @@ kgen.func @heap() -> !pop.pointer<i16> {
   // CHECK: llvm.store %[[CST_BE]], %[[P1]] {alignment = 32 :
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
-  %0 = kgen.param.constant: !pop.pointer<i16> = <#M.memref<[(mem_heap, heap, [])], 0, 0>>
+  %0 = kgen.param.materialize: !pop.pointer<i16> = <#M.memref<[(mem_heap, heap, [])], 0, 0>>
   // CHECK: llvm.return %[[RESULT_TYPED]] : !llvm.ptr<i16>
   kgen.return %0 : !pop.pointer<i16>
 }
@@ -24,14 +24,14 @@ kgen.func @heap() -> !pop.pointer<i16> {
 kgen.func @stack() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
   // CHECK-NEXT: builtin.unrealized_conversion_cast %[[ALLOC]]
-  %0 = kgen.param.constant: !pop.pointer<i16> = <#M.memref<[(mem_stack, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !pop.pointer<i16> = <#M.memref<[(mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @stack_shared
 kgen.func @stack_shared() {
   // CHECK: %[[ALLOC:.*]] = pop.stack_allocation 2 x i8 align 32
-  %0 = kgen.param.constant: !pop.pointer<i16> = <#M.memref<[(mem_stack, stack, [])], 0, 0>>
+  %0 = kgen.param.materialize: !pop.pointer<i16> = <#M.memref<[(mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
@@ -41,7 +41,7 @@ kgen.func @global() -> !pop.pointer<i8> {
   // CHECK: %[[BASE_OPAQUE:.*]] = llvm.bitcast %[[BASE]]
   // CHECK: %[[RESULT:.*]] = llvm.getelementptr inbounds %[[BASE_OPAQUE]][2]
   // CHECK: %[[RESULT_TYPED:.*]] = llvm.bitcast %[[RESULT]]
-  %0 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_global, const_global, [])], 0, 2>>
+  %0 = kgen.param.materialize: !pop.pointer<i8> = <#M.memref<[(mem_global, const_global, [])], 0, 2>>
   // CHECK: llvm.return %[[RESULT_TYPED]]
   kgen.return %0 : !pop.pointer<i8>
 }
@@ -63,7 +63,7 @@ kgen.func @pointer_to_pointer() {
   // CHECK: %[[TAIL:.*]] = llvm.getelementptr inbounds %[[PTR1]][8]
   // CHECK: %[[C8:.*]] = llvm.mlir.constant(8 :
   // CHECK: llvm.store %[[C8]], %[[TAIL]]
-  %0 = kgen.param.constant: !pop.pointer<pointer<i16>> = <#M.memref<[
+  %0 = kgen.param.materialize: !pop.pointer<pointer<i16>> = <#M.memref<[
     (foo, stack, [(0, 1, 0)]),
     (bar, heap, [])
   ], 0, 0>>
@@ -73,10 +73,10 @@ kgen.func @pointer_to_pointer() {
 // CHECK-LABEL: llvm.func internal @string
 kgen.func @string() {
   // CHECK: llvm.mlir.addressof @mem_string :
-  %0 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, [])], 0, 0>>
+  %0 = kgen.param.materialize: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, [])], 0, 0>>
   // COM: Ensure `const_global` handle gets deduplicated.
   // CHECK: llvm.mlir.addressof @mem_string :
-  %1 = kgen.param.constant: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, []), (mem_stack, stack, [])], 0, 0>>
+  %1 = kgen.param.materialize: !pop.pointer<i8> = <#M.memref<[(mem_string, const_global, []), (mem_stack, stack, [])], 0, 0>>
   kgen.return
 }
 
