@@ -184,6 +184,7 @@ int main(int argc, char **argv) {
 
   // Register opt passes.
   KGEN::registerAlwaysInlineParametric();
+  KGEN::registerAutomaticInline();
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerCheckRecursiveStructs();

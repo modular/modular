@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_conversion_library(KGENTransforms
+  AutomaticInline.cpp
   Canonicalizer.cpp
   CleanupCompilerGlobals.cpp
   ControlFlowUtils.cpp

@@ -211,8 +211,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
-  // Run the inliner with an inner function pass pipeline.
-  auto buildInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
+  // Run the ForceInline pass with an inner function pass pipeline.
+  auto buildForceInlineFuncPasses = [options](mlir::OpPassManager &pm) {
     pm.addPass(createCleanupCompilerGlobals());
     if (options.optimizationLevel < 1)
       return;
@@ -228,10 +228,11 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
     pm.addPass(mlir::createCSEPass());
     pm.addPass(createCanonicalizer());
   };
+
   pm.addPass(createForceInline(
       runtime,
       {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug},
-      std::move(buildInlinerFuncPasses)));
+      std::move(buildForceInlineFuncPasses)));
 
   // Process debuginfo based on the selected debugging level.
   if (options.debugLevel == CompilationOptions::DebugInfoLevel::kSynthetic)
@@ -250,6 +251,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
   }
+
+  // TODO: Enable AutomaticInline pass here.
 
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());

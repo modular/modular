@@ -4,7 +4,7 @@
 kgen.link "libKGENCompilerRT.a" as @CompilerRT
 
 // kgen.extern.func doesn't pass through the elaborator, so we have to provide a dummy implementation.
-kgen.func @KGEN_CompilerRT_Initialize() -> i1 attributes {precompiledBodyRef = @CompilerRT} {
+kgen.func @KGEN_CompilerRT_Initialize() -> i1 no_inline attributes {precompiledBodyRef = @CompilerRT} {
   %0 = kgen.param.constant : i1 = <0>
   kgen.return %0 : i1
 }
