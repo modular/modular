@@ -40,12 +40,9 @@ struct LITDialectFoldInterface : public mlir::DialectFoldInterface {
   /// out of ops that define a subprogram location scope, since the hoisted
   /// constant would carry incorrect scope information into their new scope.
   bool shouldMaterializeInto(Region *region) const override {
-    Operation *parent = region->getParentOp();
-    if (auto scopedParent = dyn_cast<DebugInfo::SubprogramScoped>(parent))
-      if (scopedParent.getLocScope())
-        return true;
-
-    return isa<DeclInterface>(parent);
+    if (DebugInfo::shouldMaterializeConstantsInto(*region))
+      return true;
+    return isa<DeclInterface>(region->getParentOp());
   }
 };
 

@@ -11,6 +11,17 @@
 using namespace M;
 using namespace M::DebugInfo;
 
+bool DebugInfo::shouldMaterializeConstantsInto(Region &region) {
+  Operation *parent = region.getParentOp();
+  if (auto scopedParent = dyn_cast<DebugInfo::SubprogramScoped>(parent))
+    if (scopedParent.getLocScope())
+      return true;
+  if (auto scopedParent = dyn_cast<DebugInfo::InlinedSubprogramScoped>(parent))
+    if (scopedParent.getCallLocAttr())
+      return true;
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

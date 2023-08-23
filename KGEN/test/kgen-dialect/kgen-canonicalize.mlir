@@ -215,6 +215,21 @@ kgen.func @no_hoist() {
   kgen.return loc(#loc4)
 } loc(#loc4)
 
+// COM: Callee does not have debug info, but the caller does.
+// CHECK-LABEL: kgen.func @no_hoist_nodebug_callee
+kgen.func @no_hoist_nodebug_callee() {
+  // CHECK-NEXT: kgen.stage_closure = () {
+  %0 = kgen.stage_closure = () {
+    // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
+    %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
+    %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
+    pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
+    kgen.return loc(#loc5)
+  } callLoc(#loc4) loc(#loc2)
+  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.return loc(#loc4)
+} loc(#loc4)
+
 // CHECK-LABEL: kgen.func @hoist
 kgen.func @hoist() {
   // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>

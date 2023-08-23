@@ -13,6 +13,10 @@
 namespace M::DebugInfo {
 class SubprogramScoped;
 
+/// Return true if constants should be materialized into a subprogram scoped
+/// region.
+bool shouldMaterializeConstantsInto(Region &region);
+
 namespace impl {
 LogicalResult verifySubprogramScoped(SubprogramScoped op);
 } // namespace impl
