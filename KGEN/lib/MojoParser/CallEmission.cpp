@@ -1966,8 +1966,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       // Promote PValue's if needed.
       return emitSRValue(argValAndExpr, EC_CallArgValue);
     case ValueInputConvention::OwnedInMem:
-      arg = argValAndExpr.ir.getIfMRValue();
-      break;
+      // Promote PValue's if needed.
+      return emitMRValue(argValAndExpr, EC_CallArgValue);
     case ValueInputConvention::BorrowedInReg:
       if (auto pVal = argValAndExpr.ir.getIfPValue())
         return arg = emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -1990,8 +1990,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       arg = argValAndExpr.ir.getIfSBValue();
       break;
     case ValueInputConvention::BorrowedInMem:
-      arg = argValAndExpr.ir.getIfMBValue();
-      break;
+      // Promote PValue's if needed.
+      return emitMBValue(argValAndExpr, EC_CallArgValue);
     case ValueInputConvention::ByRefResult: {
       auto tmpSlotAddr = argValAndExpr.ir.getIfSLValue();
       assert(tmpSlotAddr && "byref_result value start in a temp slot");
@@ -2259,8 +2259,11 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
 
     // Emitting a call in a parameter context. Generate an apply operator.
     SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
-    for (auto [argValAndExpr, calleeArgType] :
-         llvm::zip(argumentValues, calleeSig.getValueInputs())) {
+    bool dropFirst =
+        calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+    for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
+             argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
+             calleeSig.getValueInputConventions().drop_front(dropFirst))) {
       if (!argValAndExpr.ir.getIfPValue()) {
         emitError(argValAndExpr.expr->getLoc(),
                   "cannot use a dynamic value in parameter context")
@@ -2268,6 +2271,13 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return {};
       }
       TypedAttr arg = argValAndExpr.ir.getIfPValue().get();
+      // Put memory-primary arguments into memory ("PRValue" to "PLValue"
+      // conversion).
+      if (!llvm::is_contained({ValueInputConvention::BorrowedInReg,
+                               ValueInputConvention::OwnedInReg},
+                              convention) &&
+          !isa<StoreToMemAttr>(arg))
+        arg = StoreToMemAttr::get(arg, POP::PointerType::get(arg.getType()));
       // Emit a rebind if the refined type does not match the callee arg type.
       if (arg.getType() != calleeArgType)
         arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);

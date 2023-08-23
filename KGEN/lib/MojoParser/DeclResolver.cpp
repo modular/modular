@@ -1286,15 +1286,6 @@ void ParsedArgument::processParameterArgs(
     if (!type)
       type = emitter.shared.getTypeCheckErrorType();
 
-    // Parameters must be register passable for now.
-    if (!type.isRegisterPassable(arg.loc, emitter.shared)) {
-      emitter.emitError(arg.loc, "cannot use type ")
-          << type
-          << " in a parameter: only @register_passable types are supported "
-             "right now";
-      type = emitter.shared.getTypeCheckErrorType();
-    }
-
     VarArgKind vararg = arg.vararg;
     if (vararg != VarArgKind::None && isResultParams)
       emitter.emitError(arg.loc, "result parameters may not be variadic");

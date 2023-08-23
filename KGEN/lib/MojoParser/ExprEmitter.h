@@ -288,6 +288,9 @@ public:
   /// Emit any kind of PValue to an SLValue.
   MBValue emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
                               ExprContext context);
+  /// This helpers emits a PValue to an MRValue that has a memory
+  /// representation, materializing the PValue.
+  MRValue emitPValueToMRValue(ASTExprAnd<PValue> value, ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as
@@ -295,6 +298,14 @@ public:
   /// with values that are memory-only.
   SRValue emitSRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
+  /// This helper emits the specified value as an MRValue which has
+  /// memory-primary representation, materializing PValues as needed. This
+  /// returns null if emission fails.
+  MRValue emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context);
+  /// This helper emits the specified value as an MBValue which has
+  /// memory-primary representation, materializing PValues as needed. This
+  /// returns null if emission fails.
+  MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
   /// This helper emits the specified value as a PValue. This returns null if
   /// emission fails.

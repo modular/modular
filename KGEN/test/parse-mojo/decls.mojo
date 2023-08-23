@@ -677,7 +677,7 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 # CHECK-SAME: owned_in_mem = #M.store_to_mem<{{.*}}apply_result_slot, {{.*}}@object::@"__init__
 def defaultArgumentUntyped(a = 1): pass
 
-struct NonRegisterPassableStruct:
+struct MemoryType:
     var value: Int
 
     fn __init__(inout self, value: Int):
@@ -685,7 +685,18 @@ struct NonRegisterPassableStruct:
 
 # CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
 # CHECK-SAME: borrow_in_mem = #M.store_to_mem<{{.*}}apply_result_slot, {{.*}}__init__
-fn defaultArgumentNonRegisterType(a: NonRegisterPassableStruct = 1): pass
+fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
+
+# CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
+fn callNonRegisterDefaultArg():
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*", var = false, synth = true : <{{.*}}@MemoryType>
+    # CHECK: %[[VALUE:.*]] = kgen.param.constant: {{.*}}@MemoryType = <apply_result_slot({{.*}}value = 1
+    # CHECK: pop.store %[[VALUE]], %[[ANON]]
+    # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%[[ANON]])
+    defaultArgumentNonRegisterType()
+    # CHECK: lit.alias.decl {{.*}}none: !lit.none = <apply({{.*}}defaultArgumentNonRegisterType
+    # CHECK-SAME: #M.store_to_mem<{{.*}}apply_result_slot, {{.*}}MemoryType::@"__init__{{.*}}value = 1}>
+    alias none = defaultArgumentNonRegisterType()
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():

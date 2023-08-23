@@ -291,12 +291,22 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-ErrorOrSuccess
-InterpreterState::externalizeMemory(Region &entry,
-                                    MutableArrayRef<Attribute> results) {
+/// Resource reference names must be valid MLIR identifiers.
+static std::string getResourceBaseName(Region &entry) {
   // Use the parent function name as the base name for materialized resources.
   auto symbol = cast<mlir::SymbolOpInterface>(entry.getParentOp());
   std::string baseName = (symbol.getName() + "_mem").str();
+  for (char &c : baseName) {
+    if (!std::isalnum(c) && c != '_')
+      c = '_';
+  }
+  return baseName;
+}
+
+ErrorOrSuccess
+InterpreterState::externalizeMemory(Region &entry,
+                                    MutableArrayRef<Attribute> results) {
+  std::string baseName = getResourceBaseName(entry);
 
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
@@ -640,7 +650,10 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
         readAttributeFromMemory(resultSlotAttr.getAddr(), resultType);
     if (result.isError())
       return ErrorTree(loc, result.takeError());
-    return result.takeValue();
+    Attribute value = result.takeValue();
+    if (ErrorOrSuccess err = externalizeMemory(region, value); err.isError())
+      return ErrorTree(region.getLoc(), err.takeError());
+    return cast<TypedAttr>(value);
   }
 
   // The interpreter ran into an error. Report an error using a stacktrace.
