@@ -1,5 +1,6 @@
 // RUN: kgen-opt -force-inline %s | FileCheck %s
 // RUN: kgen-opt -force-inline=func-pipeline='canonicalize,cse' %s | FileCheck %s --check-prefix=CANON
+// RUN: not kgen-opt -pass-pipeline='builtin.module(force-inline{func-pipeline='canonicalize,cse'}, test-always-fail)' %s --mlir-pass-pipeline-crash-reproducer=- | FileCheck %s --check-prefix=REPRO
 
 // CHECK-LABEL: kgen.func @top
 // CANON-LABEL: kgen.func @top
@@ -17,3 +18,5 @@ kgen.func @bar(%arg0: index) -> index always_inline {
   %0 = index.add %arg0, %arg0
   kgen.return %0 : index
 }
+
+// REPRO: pipeline: "builtin.module(force-inline{func-pipeline=canonicalize,cse update-debug-info=true}, test-always-fail)"
