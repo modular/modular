@@ -88,17 +88,22 @@ ErrorOrSuccess M::parseCompilationOptions(
     compilationOptions.optimizationLevel = 0;
 
   // Setup the debug level.
-  StringRef level = args.getLastArgValue(debugLevelId, "none");
-  if (!llvm::is_contained({"none", "line", "full"}, level)) {
-    return Error("invalid debug level '" + level +
-                 "', expected one of: `none` (the default value), "
-                 "`line-tables`, or `full`");
+  StringLiteral kDebugLevelNone = "none";
+  StringLiteral kDebugLevelLineTables = "line-tables";
+  StringLiteral kDebugLevelFull = "full";
+  StringRef level = args.getLastArgValue(debugLevelId, kDebugLevelNone);
+  if (!llvm::is_contained(
+          {kDebugLevelNone, kDebugLevelLineTables, kDebugLevelFull}, level)) {
+    return Error(llvm::formatv("invalid debug level '{0}', expected one of: "
+                               "`{1}` (the default value), `{2}`, or `{3}`",
+                               level, kDebugLevelNone, kDebugLevelLineTables,
+                               kDebugLevelFull));
   }
   compilationOptions.debugLevel =
       llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
-          .Case("none", CompilationOptions::kNoDebug)
-          .Case("line-tables", CompilationOptions::kLineTablesOnly)
-          .Case("full", CompilationOptions::kFullDebugInfo);
+          .Case(kDebugLevelNone, CompilationOptions::kNoDebug)
+          .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
+          .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
 
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 
