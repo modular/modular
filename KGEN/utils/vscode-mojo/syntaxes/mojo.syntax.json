@@ -1133,6 +1133,9 @@
       },
       "patterns": [
         {
+          "include": "#raises-modifier"
+        },
+        {
           "include": "#function-def-name"
         },
         {
@@ -1162,6 +1165,10 @@
           "match": "(?x)\n  \\b ([[:alpha:]_]\\w*) \\b\n"
         }
       ]
+    },
+    "raises-modifier": {
+      "name": "storage.modifier",
+      "match": "(raises)"
     },
     "parameters": {
       "name": "meta.function.parameters.python",
