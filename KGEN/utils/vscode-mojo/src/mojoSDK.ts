@@ -133,12 +133,12 @@ export class MOJOSDK {
          "SDK is installed, please set the MODULAR_HOME environment variable to the " +
          "appropriate path, or set the `mojo.modularHomePath` configuration. If you do " +
          "not have it installed, would you like to install it?"),
-        "install", "open setting");
-    if (value === "install") {
+        "Install", "Open setting");
+    if (value === "Install") {
       // TODO: This should resolve to the actual mojo download link when
       // the user console is in place.
       vscode.env.openExternal(vscode.Uri.parse("https://www.modular.com/mojo"));
-    } else if (value === "open setting") {
+    } else if (value === "Open setting") {
       vscode.commands.executeCommand(
           'workbench.action.openWorkspaceSettings',
           {openToSide : false, query : `mojo.modularHomePath`});
