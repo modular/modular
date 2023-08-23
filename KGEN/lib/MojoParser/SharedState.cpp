@@ -1857,8 +1857,12 @@ void SharedState::notifyListenerOnImport(
 void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
   if (!isListenerInterestedInLoc(parserListener, lookupLoc))
     return;
-  resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
-  parserListener->onMemberLookup(&decl, lookupLoc);
+  parserListener->onMemberLookup(
+      [&]() -> MojoASTDeclRef {
+        resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
+        return &decl;
+      },
+      lookupLoc);
 }
 
 void SharedState::notifyListenerOnMemberLookup(

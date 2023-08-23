@@ -141,7 +141,8 @@ public:
 
   /// Notify the listener that a member within the given decl is being looked
   /// up.
-  virtual void onMemberLookup(MojoASTDeclRef decl, llvm::SMLoc lookupLoc);
+  virtual void onMemberLookup(ResolveInputDeclFn getDeclFn,
+                              llvm::SMLoc lookupLoc);
 
   /// Notify the listener that a new `module` decl has been created by the
   /// parser.
