@@ -109,7 +109,7 @@ TEST(ErrorOr, fromLLVMErrorOrOK) {
 namespace {
 class ToasterErrorCategory : public std::error_category {
 public:
-  const char *name() const override { return "Toaster"; }
+  const char *name() const noexcept override { return "Toaster"; }
   std::string message(int code) const override { return "Toaster overheated"; }
 };
 } // namespace
