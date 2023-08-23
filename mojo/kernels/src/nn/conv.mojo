@@ -14,6 +14,7 @@ from algorithm import (
     tile,
     unroll,
     unswitch,
+    vectorize,
     vectorize_unroll,
 )
 from ConvUtils import (
@@ -2433,12 +2434,12 @@ struct ConvIm2ColNHWC[
 # Direct Convolution                                                           #
 # ===----------------------------------------------------------------------=== #
 
-alias elementwise_epilogue_type = fn (Int, Int, Int, Int) capturing -> None
+alias elementwise_epilogue_type = fn (Int, Int, Int, Int, Int) capturing -> None
 
 
 @closure
 fn direct_null_elementwise_epilogue(
-    point: Int, num_points: Int, f_offset: Int, f_size: Int
+    n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
 ):
     pass
 
@@ -2655,6 +2656,7 @@ struct ConvDirectNHWC[
                     elementwise_epilogue_fn,
                 )
                 instance._n_loop()
+                print("conv padding end")
 
         if num_partitions[1] > 1:
             # Finish the conv computation and sync at the end.
@@ -2695,15 +2697,20 @@ struct ConvDirectNHWC[
 
                 @parameter
                 if elementwise_epilogue_enabled:
-                    elementwise_epilogue_fn(
-                        reduce_range[0], reduce_range[1], 0, conv_shape.f
-                    )
+                    for m in range(
+                        reduce_range[0], reduce_range[0] + reduce_range[1]
+                    ):
+                        let nhowo = _m_to_n_ho_wo_nhwc(m, conv_shape)
+                        elementwise_epilogue_fn(
+                            nhowo[0], nhowo[1], nhowo[2], 0, conv_shape.f
+                        )
 
             # NOTE: synchronous, so use of locally allocated output_ptr is safe.
             sync_parallelize[reduce_task](out_chain, num_threads)
             output_ptr.free()
         else:
-            async_parallelize[task_func](out_chain, num_tasks)
+            # Use sync to work around #12624
+            sync_parallelize[task_func](out_chain, num_tasks)
 
     fn direct_conv(self):
         self._c_tile_loop[False](0, self.cf_tile_size[0])
@@ -3038,10 +3045,20 @@ struct ConvDirectNHWC[
 
         @parameter
         if elementwise_epilogue_enabled and last_c_tile:
-            let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
-            self.elementwise_epilogue_fn(
-                n_ho_wo, micro_kernel_height, f_tile_offset, f_tile_size_bounded
-            )
+            for m in range(n_ho_wo, n_ho_wo + micro_kernel_height):
+                # If has residual, the tile size has been extended to a simd_size.
+                # Here needs to use the real bound F.
+                let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
+                # The micro tile may cover points in different rows/images.
+                # Convert the 1D index back to (n, ho, wo).
+                let offsets = _m_to_n_ho_wo_nhwc(m, self.conv_shape)
+                self.elementwise_epilogue_fn(
+                    offsets[0],
+                    offsets[1],
+                    offsets[2],
+                    f_tile_offset,
+                    f_tile_size_bounded,
+                )
 
     @always_inline
     fn _init_output_micro_tile[
@@ -3575,12 +3592,10 @@ struct ConvDirectNHWC[
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
             let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
-            let nhowo = wo + self.conv_shape.out_w * (
-                ho + self.conv_shape.out_h * n
-            )
-            self.elementwise_epilogue_fn(
-                nhowo, micro_kernel_height, f_tile_offset, f_tile_size_bounded
-            )
+            for wo_idx in range(wo, wo + micro_kernel_height):
+                self.elementwise_epilogue_fn(
+                    n, ho, wo_idx, f_tile_offset, f_tile_size_bounded
+                )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3901,10 +3916,17 @@ struct ConvInfo[conv_info_static: ConvInfoStatic]:
         self.dilation = dilation
 
 
+alias elementwise_lambda_fn_sig_type = fn[type: DType, width: Int] (
+    StaticIntTuple[4], SIMD[type, width]
+) capturing -> None
+
+
 fn conv_2d_nhwc_direct[
     filter_rank: Int,
     filter_packed: Bool,
     conv_info_static: ConvInfoStatic,
+    lambdas_have_fusion: Bool,
+    epilogue_wrapper: elementwise_lambda_fn_sig_type,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -3951,6 +3973,25 @@ fn conv_2d_nhwc_direct[
         conv_info.dilation.get(),
     )
 
+    # The closure updates a row segment of the output.
+    fn elementwise_epilogue_closure(
+        n: Int,
+        ho: Int,
+        wo: Int,
+        f_offset: Int,
+        f_size: Int,
+    ):
+        alias simd_size = simdwidthof[output_type]()
+
+        @always_inline
+        @parameter
+        fn body[width: Int](idx: Int):
+            let coords = Index(n, ho, wo, f_offset + idx)
+            let vec = output.simd_load[width](coords)
+            epilogue_wrapper[output_type, width](coords, vec)
+
+        vectorize[simd_size, body](f_size)
+
     ConvDirectNHWC[
         filter_rank,
         input_shape,
@@ -3958,5 +3999,12 @@ fn conv_2d_nhwc_direct[
         output_shape,
         input_type,
         filter_packed,
-        False,
-    ].run(output_rebind, input, filter_rebind, conv_shape, out_chain)
+        lambdas_have_fusion,
+    ].run(
+        output_rebind,
+        input,
+        filter_rebind,
+        conv_shape,
+        elementwise_epilogue_closure,
+        out_chain,
+    )
