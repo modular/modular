@@ -935,7 +935,7 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
       return;
     // Different result semantics but same result type.
     diag.attachNote(payloadLoc.getStart())
-        << "memory-primary type bound to generic result type: "
+        << "memory-only type bound to generic result type: "
         << (lhsByRef ? "payload" : "argument") << " returns "
         << ASTType(lhsRetType) << " by reference";
   }
@@ -2271,7 +2271,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         return {};
       }
       TypedAttr arg = argValAndExpr.ir.getIfPValue().get();
-      // Put memory-primary arguments into memory ("PRValue" to "PLValue"
+      // Put memory-only arguments into memory ("PRValue" to "PLValue"
       // conversion).
       if (!llvm::is_contained({ValueInputConvention::BorrowedInReg,
                                ValueInputConvention::OwnedInReg},

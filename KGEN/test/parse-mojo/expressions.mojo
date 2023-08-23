@@ -95,7 +95,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}([[AX]], %regX)
   a.x = regX
 
-  # Pass memory primary things by value as arguments.
+  # Pass memory only things by value as arguments.
 
   # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.varlet.decl {{.*}}@MemoryOnlyPair
   # CHECK-NEXT: kgen.call @{{.*}}@"__copyinit__{{.*}}"([[TMPPAIR]], %a)
