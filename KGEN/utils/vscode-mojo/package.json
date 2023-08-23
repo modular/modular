@@ -24,7 +24,8 @@
     "vscode:prepublish": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
-    "package": "vsce package --out ./out/vscode-mojo.vsix"
+    "package": "vsce package --out ./out/vscode-mojo.vsix",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/ini": "~1.3.31",
