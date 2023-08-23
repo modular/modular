@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# ALLOW_RETRIES: 5
-# TODO(#19566): Reenable compilation with `-debug-level full`
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 # Test gather_2D_input_1D_indices_axis_0.
 # This test verifies that the prefetch function in `gather` passes

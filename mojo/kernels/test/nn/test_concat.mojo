@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# TODO(#19566): Reenable compilation with `-debug-level full`
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 from Concat import _concat_parallel, concat
 from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
