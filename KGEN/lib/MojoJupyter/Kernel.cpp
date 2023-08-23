@@ -15,7 +15,6 @@
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
-#include "KGEN/MojoParser/CodeComplete.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/STLExtras.h"
@@ -49,9 +48,6 @@ using namespace M::KGEN::Mojo;
 /// An output function used to send output to the Jupyter kernel. The first
 /// argument is the output type, and the second is the output string.
 using OutputFn = void (*)(const char *, const char *);
-
-/// A function used to send code completion results to the Jupyter kernel.
-using CompletionFn = void (*)(const char *);
 
 /// Return the persistent expression state for Mojo.
 static MojoPersistentExpressionState *
@@ -188,12 +184,6 @@ public:
   /// Interrupt the currently running execution.
   void interruptExecution();
 
-  /// Perform code completion at the given position within the given code
-  /// string. The completion function will be called with the completion
-  /// results.
-  void codeComplete(StringRef code, int completionPos,
-                    CompletionFn completionFn);
-
 private:
   /// Initialize the target.
   LogicalResult initializeTarget(const char *mojoReplExe);
@@ -288,12 +278,6 @@ MODULAR_EXPORT int checkMojoExecutionFinished(MojoKernel *kernel) {
 
 MODULAR_EXPORT void interruptMojoExecution(MojoKernel *kernel) {
   kernel->interruptExecution();
-}
-
-MODULAR_EXPORT void checkMojoCodeComplete(MojoKernel *kernel, const char *code,
-                                          int completionPos,
-                                          CompletionFn completionFn) {
-  kernel->codeComplete(code, completionPos, completionFn);
 }
 
 MODULAR_EXPORT void destroyMojoKernel(MojoKernel *kernel) { delete kernel; }
@@ -617,15 +601,3 @@ ExecutionFinishedState MojoKernel::checkExecutionFinished() {
 }
 
 void MojoKernel::interruptExecution() { process->SendAsyncInterrupt(); }
-
-//===----------------------------------------------------------------------===//
-// Code Completion
-//===----------------------------------------------------------------------===//
-
-void MojoKernel::codeComplete(StringRef code, int completionPos,
-                              CompletionFn completionFn) {
-  std::vector<CodeCompletionResult> results = MojoREPL::handleREPLCodeComplete(
-      getMojoTypeSystem(target), code, completionPos);
-  for (const CodeCompletionResult &result : results)
-    completionFn(result.label.data());
-}

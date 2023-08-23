@@ -9,10 +9,6 @@ set(KGEN_BINARY_DIR ${MODULAR_BINARY_DIR}/KGEN)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-# This target represents the full mojo-sdk, and builds both `mojo` and all of
-# the necessary standard library packages.
-add_custom_target(mojo-sdk)
-
 # add_kgen_translation_library is a wrapper around add_modular_mlir_library that
 # automatically links the library into kgen-translate.
 function(add_kgen_translation_library name)
@@ -131,8 +127,9 @@ macro(_setup_defines)
   endif()
 endmacro()
 
-# Add the necessary tool dependencies to the mojo-sdk target.
-add_dependencies(mojo-sdk mojo mojo-lsp-server)
+# This target represents the full mojo-sdk, and builds both `mojo` and all of
+# the necessary standard library packages.
+add_custom_target(mojo-sdk DEPENDS mojo mojo-lsp-server)
 if(LLDB_FOUND)
   add_dependencies(mojo-sdk MojoJupyter)
 endif()

@@ -16,8 +16,6 @@
 #include <vector>
 
 namespace M::KGEN::Mojo {
-struct CodeCompletionResult;
-
 /// This class implements a MOJO repl plugin for LLDB.
 class MojoREPL : public llvm::RTTIExtends<MojoREPL, lldb_private::REPL> {
 public:
@@ -43,15 +41,6 @@ public:
   /// Return the common help message to show in commands like `:help` or `:mojo
   /// help`.
   static const char *GetHelpPrologue();
-
-  //===--------------------------------------------------------------------===//
-  // Code Completion
-  //===--------------------------------------------------------------------===//
-
-  /// Perform a REPL code completion within the given type system.
-  static std::vector<CodeCompletionResult>
-  handleREPLCodeComplete(MojoTypeSystem &typeSystem, StringRef code,
-                         uint64_t completionPos);
 
 protected:
   lldb_private::Status DoInitialization() override { return {}; }
