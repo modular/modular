@@ -20,6 +20,8 @@ using namespace M;
 
 static constexpr llvm::StringLiteral kHandlerProgramName =
     "modular-crashpad-handler";
+static constexpr llvm::StringLiteral kDefaultURL =
+    "https://crash-reporting.modular.com";
 
 std::filesystem::path
 M::getCrashDatabasePath(Config &config,
@@ -105,6 +107,8 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
                  handlerPathOr.getError());
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
   StringRef url = config.getValue("crash_reporting.url");
+  if (url.empty())
+    url = kDefaultURL;
 
   // Update the database if we have a URL and reporting is not enabled. In most
   // cases this will just read the existing database settings and not change.
