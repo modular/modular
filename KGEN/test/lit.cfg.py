@@ -30,15 +30,6 @@ def configure_lldb_tests(config):
             f"{lldb_env} mojo repl --source-quietly -S {config.lit_lldb_init}",
         )
     )
-    config.substitutions.append(
-        (
-            "%mojo_jupyter_executor",
-            (
-                f"{lldb_env} mojo-jupyter-executor --lldb-init-file"
-                f" {config.lit_lldb_init}"
-            ),
-        )
-    )
 
 
 # name: The name of this test suite.

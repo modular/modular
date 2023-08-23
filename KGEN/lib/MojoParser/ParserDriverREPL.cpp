@@ -14,7 +14,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
-#include "KGEN/MojoParser/CodeComplete.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Lexer.h"
 #include "ParserDriverImpl.h"
@@ -539,72 +538,6 @@ LogicalResult REPLDiagnosticHandler::processDiagnostics(StringRef exprText) {
 // Driver
 //===----------------------------------------------------------------------===//
 
-/// Build a module decl for use in a REPL expression.
-static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
-                                SharedState &sharedState) {
-  StringRef exprId = sourceBuf->getBufferIdentifier();
-
-  // If we are emitting debug info, create a file entry for this file.
-  DebugInfo::DIBuilder::ScopeGuard fileGuard;
-  if (sharedState.diBuilder)
-    fileGuard = sharedState.diBuilder->pushFile(exprId, "/");
-
-  // Create the input module.
-  MLIRContext *ctx = sharedState.getContext();
-  auto fileLoc = FileLineColLoc::get(ctx, exprId, /*line=*/0, /*column=*/0);
-  return sharedState.createModule(exprId, sourceBuf, fileLoc);
-}
-
-/// Build and resolve a REPL module for the given wrapped expression string.
-/// Returns the fully resolved REPL module decl.
-static ASTDecl &
-buildAndResolveREPLModule(const llvm::MemoryBuffer *sourceBuf,
-                          SharedState &sharedState,
-                          ArrayRef<KGEN::LIT::ASTDecl *> replModuleDecls) {
-  ASTDecl &moduleDecl = buildREPLModule(sourceBuf, sharedState);
-
-  // Before resolving everything in the REPL cell, resolve the body and import
-  // as many of the previously defined REPL decls that we can.
-  if (!replModuleDecls.empty()) {
-    ASTDecl *lastModuleDecl = replModuleDecls.back();
-
-    // Explicitly import any decls from the previous REPL module that aren't
-    // already defined in the current module. We can't use wildcards here
-    // because we also want to import _ and other traditionally "hidden" decls
-    // from previous cells.
-    SmallVector<std::pair<StringAttr, const TinyPtrVector<ASTDecl *>>> fnDecls;
-    auto &moduleChildDecls = moduleDecl.getDeclsInScope();
-    for (auto &[name, decls] : lastModuleDecl->getDeclsInScope()) {
-      auto existingDeclsIt = moduleChildDecls.find(name);
-      if (existingDeclsIt == moduleChildDecls.end()) {
-        sharedState.declResolver->aliasDecls(decls, name, SMLoc(), moduleDecl);
-        continue;
-      }
-      // If we hit an overlap and these are function decls, save them for
-      // processing for later. We might be able to import if the signatures
-      // don't overlap.
-      if (isa<LIT::FuncOp>(*existingDeclsIt->second.front()) &&
-          isa<LIT::FuncOp>(*decls.front())) {
-        fnDecls.push_back({name, decls});
-      }
-    }
-
-    // Now that we've imported all of the decls we can, go ahead and import the
-    // functions that have name overlaps. We do this afterwards so that we can
-    // resolve the signature of the pre-existing functions to see if there are
-    // signature overlaps (to avoid duplicate function declarations).
-    for (auto &[name, decls] : fnDecls) {
-      (void)sharedState.declResolver->tryAliasDecls(decls, name, SMLoc(),
-                                                    moduleDecl);
-    }
-  }
-
-  // With the top-level of the file parsed, we can now go ahead and resolve all
-  // of the deferred declarations.
-  sharedState.declResolver->resolveAll();
-  return moduleDecl;
-}
-
 MojoASTDeclRef MojoParserContext::parseREPLExpresion(
     MojoParserREPLListener &listener, StringRef exprId, StringRef exprText,
     StringRef replExprFnName,
@@ -630,9 +563,57 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
       sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
 
-  // Resolve a module decl for this REPL expression.
-  ASTDecl &moduleDecl = buildAndResolveREPLModule(sourceBuf, impl->sharedState,
-                                                  impl->replModuleDecls);
+  // If we are emitting debug info, create a file entry for this file.
+  DebugInfo::DIBuilder::ScopeGuard fileGuard;
+  if (impl->sharedState.diBuilder)
+    fileGuard = impl->sharedState.diBuilder->pushFile(exprId, "/");
+
+  // Create the input module.
+  MLIRContext *ctx = impl->sharedState.getContext();
+  auto fileLoc = FileLineColLoc::get(ctx, exprId, /*line=*/0, /*column=*/0);
+  ASTDecl &moduleDecl =
+      impl->sharedState.createModule(exprId, sourceBuf, fileLoc);
+
+  // Before resolving everything in the REPL cell, resolve the body and import
+  // as many of the previously defined REPL decls that we can.
+  if (!impl->replModuleDecls.empty()) {
+    ASTDecl *lastModuleDecl = impl->replModuleDecls.back();
+
+    // Explicitly import any decls from the previous REPL module that aren't
+    // already defined in the current module. We can't use wildcards here
+    // because we also want to import _ and other traditionally "hidden" decls
+    // from previous cells.
+    SmallVector<std::pair<StringAttr, const TinyPtrVector<ASTDecl *>>> fnDecls;
+    auto &moduleChildDecls = moduleDecl.getDeclsInScope();
+    for (auto &[name, decls] : lastModuleDecl->getDeclsInScope()) {
+      auto existingDeclsIt = moduleChildDecls.find(name);
+      if (existingDeclsIt == moduleChildDecls.end()) {
+        impl->sharedState.declResolver->aliasDecls(decls, name, SMLoc(),
+                                                   moduleDecl);
+        continue;
+      }
+      // If we hit an overlap and these are function decls, save them for
+      // processing for later. We might be able to import if the signatures
+      // don't overlap.
+      if (isa<LIT::FuncOp>(*existingDeclsIt->second.front()) &&
+          isa<LIT::FuncOp>(*decls.front())) {
+        fnDecls.push_back({name, decls});
+      }
+    }
+
+    // Now that we've imported all of the decls we can, go ahead and import the
+    // functions that have name overlaps. We do this afterwards so that we can
+    // resolve the signature of the pre-existing functions to see if there are
+    // signature overlaps (to avoid duplicate function declarations).
+    for (auto &[name, decls] : fnDecls) {
+      (void)impl->sharedState.declResolver->tryAliasDecls(decls, name, SMLoc(),
+                                                          moduleDecl);
+    }
+  }
+
+  // With the top-level of the file parsed, we can now go ahead and resolve all
+  // of the deferred declarations.
+  impl->sharedState.declResolver->resolveAll();
 
   // Clear up the error state so that we are still able to parse future cells,
   // we'll handle diagnostic checks below.
@@ -657,64 +638,6 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
   // Update the last REPL module decl.
   impl->replModuleDecls.push_back(&moduleDecl);
   return MojoASTDeclRef(&lookupSingleDecl(moduleDecl, replExprFnName));
-}
-
-std::vector<Mojo::CodeCompletionResult>
-MojoParserContext::codeCompleteREPLExpresion(
-    StringRef exprText, uint64_t completionPosition,
-    ArrayRef<std::pair<StringRef, Type>> replVariables) {
-  // Insert a marker into the expression text at the completion position. This
-  // is only really necessary because we currently do string splicing to fake
-  // support for top-level code, meaning that we don't know where the completion
-  // position will end up after that process is done.
-  constexpr StringLiteral kCompletionMarker = "<#COMPLETION_MARKER#>";
-  std::string exprTextWithMarker = exprText.substr(0, completionPosition).str();
-  exprTextWithMarker += kCompletionMarker;
-  exprTextWithMarker += exprText.drop_front(completionPosition).str();
-
-  // Wrap the expression text in a function so that we can execute it.
-  std::string wrappedExprText = wrapExpressionText(
-      "__repl_code_complete_fn", exprTextWithMarker, replVariables,
-      /*isFirstREPLCell=*/impl->replModuleDecls.empty());
-
-  // Remove the completion marker from the wrapped expression text and grab the
-  // new completion position.
-  completionPosition = wrappedExprText.find(kCompletionMarker);
-  wrappedExprText.erase(completionPosition, kCompletionMarker.size());
-
-  // Functor used to parse a REPL expression for use by code completion.
-  auto replParseFn = [&](MojoParserContext &ctx, int fileId) {
-    SourceMgr &mainSourceMgr = impl->sharedState.getSourceMgr();
-    SourceMgr &sourceMgr = ctx.getSourceMgr();
-    const llvm::MemoryBuffer *sourceBuf =
-        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
-
-    // Pull in the existing REPL module state.
-    SmallVector<ASTDecl *> completionReplModuleDecls;
-    for (ASTDecl *module : impl->replModuleDecls) {
-      int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
-      const llvm::MemoryBuffer *moduleBuf =
-          mainSourceMgr.getMemoryBuffer(bufferId);
-
-      // Add the copy of the decl and resolve its body.
-      int completionBufferId = sourceMgr.AddNewSourceBuffer(
-          llvm::MemoryBuffer::getMemBuffer(*moduleBuf),
-          SMLoc::getFromPointer(sourceBuf->getBufferStart()));
-      ASTDecl &newModuleDecl = buildAndResolveREPLModule(
-          sourceMgr.getMemoryBuffer(completionBufferId), ctx.impl->sharedState,
-          completionReplModuleDecls);
-      completionReplModuleDecls.push_back(&newModuleDecl);
-    }
-
-    // Resolve a module decl for this REPL expression.
-    buildAndResolveREPLModule(sourceBuf, ctx.impl->sharedState,
-                              completionReplModuleDecls);
-  };
-
-  return MojoParserContext::codeComplete(
-      llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
-      impl->sharedState.getContext(), impl->sharedState.runtime,
-      impl->sharedState.options, replParseFn);
 }
 
 void MojoParserContext::removeLastREPLExpression() {

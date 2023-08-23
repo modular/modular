@@ -40,7 +40,6 @@ enum ExecutionFinishedState : int {
   kFinishedError = 2,
 };
 
-using CompletionFn = void (*)(const char *);
 using OutputFn = void (*)(const char *, const char *);
 
 using OpaqueMojoKernel = void *;
@@ -52,9 +51,6 @@ MODULAR_EXPORT int startMojoExecution(OpaqueMojoKernel kernel,
                                       const char *cellId, const char *code,
                                       int storeHistory);
 MODULAR_EXPORT int checkMojoExecutionFinished(OpaqueMojoKernel kernel);
-MODULAR_EXPORT void checkMojoCodeComplete(OpaqueMojoKernel kernel,
-                                          const char *code, int completionPos,
-                                          CompletionFn completionFn);
 MODULAR_EXPORT void destroyMojoKernel(OpaqueMojoKernel kernel);
 
 //===----------------------------------------------------------------------===//
@@ -87,16 +83,6 @@ public:
   /// Check if the current execution has finished.
   int hasExecutionFinished() const {
     return checkMojoExecutionFinished(kernel);
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Code Completion
-  //===--------------------------------------------------------------------===//
-
-  /// Perform code completion at the given position in the code.
-  void codeComplete(const char *code, int completionPos,
-                    CompletionFn completionFn) {
-    checkMojoCodeComplete(kernel, code, completionPos, completionFn);
   }
 
 private:
@@ -167,18 +153,6 @@ static void executeAsREPL(MojoKernel &kernel, StringRef currentCell = "") {
 }
 
 //===----------------------------------------------------------------------===//
-// Command Handlers
-//===----------------------------------------------------------------------===//
-
-/// Check the code completion results for the end position of the given code
-/// cell. The computed completion results are printed to outs.
-static void checkCodeCompletion(MojoKernel &kernel, StringRef code) {
-  kernel.codeComplete(code.data(), code.size(), [](const char *completion) {
-    llvm::outs() << "completion: " << completion << "\n";
-  });
-}
-
-//===----------------------------------------------------------------------===//
 // Jupyter Executor
 //===----------------------------------------------------------------------===//
 
@@ -220,25 +194,17 @@ static LogicalResult executeNotebook(MojoKernel &kernel, StringRef notebookPath,
       continue;
 
     // Concatenate all of the lines of the cell into a single string.
-    std::string codeStr;
+    std::string code;
     for (const auto &line : *source)
       if (std::optional<StringRef> lineStr = line.getAsString())
-        codeStr += *lineStr;
-    if (codeStr.empty())
+        code += *lineStr;
+    if (code.empty())
       continue;
-    codeStr += "\n\n";
-    StringRef code(codeStr);
+    code += "\n\n";
 
-    // Process special commands.
-    // Check if this cell is testing code completion results.
-    if (code.consume_front("%%test_code_completion\n")) {
-      checkCodeCompletion(kernel, code.trim());
-      continue;
-    }
-
-    // Otherwise, execute the cell code.
+    // Execute the cell code.
     std::string cellName = ("notebook_cell_" + Twine(index)).str();
-    int finishState = kernel.startExecution(cellName.c_str(), code.data());
+    int finishState = kernel.startExecution(cellName.c_str(), code.c_str());
 
     // If we finish with an error and we're in debug mode, drop into REPL mode
     // in the current cell.

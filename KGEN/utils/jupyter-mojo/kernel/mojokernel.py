@@ -340,35 +340,6 @@ class MojoKernel(Kernel):
                 "execution_count": self.execution_count,
             }
 
-    def do_complete(self, code: str, cursor_pos: int):
-        """Find code completions for the given code and cursor position."""
-
-        # The type of the completion function, it takes a completion label.
-        completion_callback_type: ctypes.CFUNCTYPE = ctypes.CFUNCTYPE(
-            None, ctypes.c_char_p
-        )
-
-        # Build the callback handler used to process completion results.
-        results = []
-        completion_callback = completion_callback_type(
-            lambda result: results.append(result.decode())
-        )
-
-        self.lib_mojo_jupyter.checkMojoCodeComplete(
-            ctypes.c_void_p(self.mojo_kernel),
-            ctypes.c_char_p(code.encode()),
-            ctypes.c_int(cursor_pos),
-            completion_callback,
-        )
-
-        return {
-            "matches": results,
-            "cursor_end": cursor_pos,
-            "cursor_start": cursor_pos,
-            "metadata": {},
-            "status": "ok",
-        }
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)

@@ -158,16 +158,6 @@ MojoParserContext::codeComplete(llvm::MemoryBufferRef buffer,
                                 uint64_t completionPosition,
                                 MLIRContext *context, LLCL::Runtime &runtime,
                                 const KGEN::CompilationOptions &options) {
-  return codeComplete(
-      buffer, completionPosition, context, runtime, options,
-      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
-}
-
-std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
-    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &options,
-    function_ref<void(MojoParserContext &, int)> parserCallback) {
   if (buffer.getBufferSize() < completionPosition)
     return {};
   llvm::SourceMgr sourceMgr;
@@ -205,6 +195,6 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
               completionPosStr.data());
   listener.loc = lexer.getToken().getLoc();
 
-  parserCallback(parserContext, sourceMgr.getMainFileID());
+  parserContext.parseFile(sourceMgr.getMainFileID());
   return results;
 }
