@@ -38,6 +38,17 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
   kgen.return
 }
 
+// CHECK-LABEL: @param_materialize
+kgen.generator @param_materialize() -> (i32, !pop.pointer<i32>) {
+  // CHECK-NEXT: kgen.param.constant: i32 = <2>
+  %0 = kgen.param.materialize: i32 = <2>
+  // CHECK-NEXT: kgen.param.materialize
+  %1 = kgen.param.materialize: pointer<i32> = <#M.memref<[(undef, heap, [])], 0, 0>>
+  // CHECK-NOT: kgen.param.materialize
+  %2 = kgen.param.materialize: pointer<i32> = <#M.memref<[(undef, heap, [])], 0, 0>>
+  kgen.return %0, %1 : i32, !pop.pointer<i32>
+}
+
 // CHECK-LABEL: kgen.func @cast_from_folds
 // CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32> loc({{.*}})) -> !pop.scalar<f32> {
 kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {

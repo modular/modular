@@ -338,9 +338,10 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 
 def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
-  let summary = [{
+  let summary = "create a constant value from a parameter value";
+  let description = [{
     The `kgen.param.constant` operation materializes the value of a parameter
-    expression as an SSA value that may be used by other operations.
+    expression as a constant SSA value that may be used by other operations.
     Conceptually, it bridges the parameter/compile-time value domain to the
     dynamic/runtime value domain.
 
@@ -365,6 +366,42 @@ def KGEN_ParamConstantOp : KGENOp<"param.constant", [Pure, ConstantLike,
 
   let hasFolder = 1;
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ParamMaterializeOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamMaterializeOp : KGENOp<"param.materialize",
+    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = [{
+    The `kgen.param.materialize` operation materializes the value of a parameter
+    expression as an SSA value that may be used by other operations. It bridges
+    the parameter domain to the runtime domain. This operation assumes the
+    materialization of the parameter expression may have memory allocation
+    side-effects.
+
+    Example:
+
+    ```mlir
+    %value0 = kgen.param.materialize = <1>
+    %value1 = kgen.param.materialize: pointer<f32> = <ptr_val>
+    ```
+  }];
+
+  let arguments = (ins TypedAttrInterface:$value);
+  let results = (outs Res<AnyType, "", [MemAlloc]>:$result);
+  let assemblyFormat = [{
+    `` custom<ParamConstantOpValue>($value, type($result)) attr-dict
+  }];
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$value),
+              [{ build($_builder, $_state, value.getType(), value); }]>
+  ];
+
+  let hasVerifier = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1146,4 +1183,3 @@ def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
   let assemblyFormat = "`(` $input `)` attr-dict";
   let hasFolder = 1;
 }
-
