@@ -114,7 +114,7 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   if (res != CURLE_OK) {
     response.kind = HTTPResponse::Kind::TransportError;
     response.transportErrorMessage =
-        llvm::formatv("http error: failed to reach URL {0} with cURL error {1}",
+        llvm::formatv("failed to reach URL {0} with cURL error {1}",
                       request.URL, curl_easy_strerror(res));
   } else {
     // Check our response code.
