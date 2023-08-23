@@ -3,12 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo -debug-level full %s | FileCheck %s
 
 # FIXME(#18257): Flaky LSAN crashes.
 # UNSUPPORTED: asan
-
-# TODO(#19566): Reenable compilation with `-debug-level full`
-# RUN: %mojo %s | FileCheck %s
 
 from algorithm import (
     all_true,
