@@ -68,7 +68,7 @@ struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
 
 # Issue #6374: [Lit] Add support for type placeholder
 fn typePlaceholder():
-    # CHECK: %x = lit.varlet.decl {{.*}} : <!kgen.variadic<i32>>
+    # CHECK: %x = lit.varlet.decl {{.*}} : <variadic<i32>>
     var x: __mlir_type[`!kgen.variadic<`, __mlir_type.i32, `>`]
 
 

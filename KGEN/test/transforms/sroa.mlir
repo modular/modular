@@ -104,9 +104,9 @@ kgen.func @struct_of_structs(%arg1: !pop.struct<struct<scalar<index>>, struct<sc
   }
 
   // Just check this has been broken into several allocations.
-  // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x !pop.scalar<index>
-  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x !pop.scalar<index>
-  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x !pop.scalar<index>
+  // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x scalar<index>
+  // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x scalar<index>
+  // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x scalar<index>
 
   // In this test the incoming argument is a struct of structs so we can't
   // sroa the argument. Still check that we are still left with no stack alloc
@@ -294,10 +294,10 @@ kgen.func @store_arg(
   // CHECK: stack_allocation 2 x index
   %0 = pop.stack_allocation 2 x index
   pop.store %0, %arg0 : !pop.pointer<pointer<index>>
-  // CHECK: stack_allocation 1 x !pop.struct<index>
+  // CHECK: stack_allocation 1 x struct<index>
   %1 = pop.stack_allocation 1 x !pop.struct<index>
   pop.store %1, %arg1 : !pop.pointer<pointer<struct<index>>>
-  // CHECK: stack_allocation 1 x !pop.array<2, index>
+  // CHECK: stack_allocation 1 x array<2, index>
   %2 = pop.stack_allocation 1 x !pop.array<2, index>
   pop.store %2, %arg2 : !pop.pointer<pointer<array<2, index>>>
   kgen.return
@@ -306,7 +306,7 @@ kgen.func @store_arg(
 // CHECK-LABEL: kgen.func @negArrayGep
 kgen.func @negArrayGep() {
   // CHECK: kgen.param.constant = <-1>
-  // CHECK-NEXT: pop.stack_allocation 1 x !pop.array<2, index>
+  // CHECK-NEXT: pop.stack_allocation 1 x array<2, index>
   // CHECK-NEXT: pop.array.gep
   %0 = kgen.param.constant = <-1>
   %array = pop.stack_allocation 1 x !pop.array<2, index>
@@ -328,7 +328,7 @@ kgen.func @negOffsetGep() {
 // CHECK-LABEL: kgen.func @oobArrayGep
 kgen.func @oobArrayGep() {
   // CHECK: kgen.param.constant = <2>
-  // CHECK-NEXT: pop.stack_allocation 1 x !pop.array<2, index>
+  // CHECK-NEXT: pop.stack_allocation 1 x array<2, index>
   // CHECK-NEXT: pop.array.gep
   %0 = kgen.param.constant = <2>
   %array = pop.stack_allocation 1 x !pop.array<2, index>

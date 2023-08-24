@@ -1150,10 +1150,10 @@ fn foo_adaptive[x: Int]() -> Int:
 
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
-    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!kgen.signature<<{{.*}}@"$int"::@Int>() -> !kgen.declref<{{.*}}@"$int"::@Int>>> =
+    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<<{{.*}}@"$int"::@Int>() -> !kgen.declref<{{.*}}@"$int"::@Int>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
-    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<!kgen.signature<() -> !kgen.declref<{{.*}}@"$int"::@Int>>> =
+    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<() -> !kgen.declref<{{.*}}@"$int"::@Int>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()"<:{{.*}}@"$int"::@Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"<:{{.*}}@"$int"::@Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
@@ -1205,7 +1205,7 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %float8: {{.*}}<{{.*}}@"$int"::@Int>(!kgen.declref<@"$expressions"::@ParamType<[[A]]: {{.*}}@"$int"::@Int = *(0,0)>> borrow) -> !lit.none
 # CHECK-SAME: %float9: {{.*}}<[] -> {{.*}}@"$int"::@Int>() -> !lit.none
 # CHECK-SAME: %float10: {{.*}}<<{{.*}}@"$int"::@Int, @"$expressions"::@ParamType<[[A]]: {{.*}}@"$int"::@Int = *(0,0)>>() throws -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
-# CHECK-SAME: %float11: {{.*}}<<variadic<!kgen.mlirtype>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
+# CHECK-SAME: %float11: {{.*}}<<variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<@"$builtin"::@"$error"::@Error, !lit.none>
 # CHECK-SAME: %float12: {{.*}}<(!kgen.declref<{{.*}}@"$int"::@Int> borrow = #lit.struct<{value = 10}>, !kgen.declref<{{.*}}@"$string_literal"::@StringLiteral> borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
 fn function_types(
   float0: fn(Int) -> Int,
@@ -1247,7 +1247,7 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 
 
 # CHECK-LABEL: lit.func @"variadic_memory_subscript
-# CHECK-SAME: variadic<!pop.pointer<{{.*}}TwoParamsStruct<
+# CHECK-SAME: variadic<pointer<{{.*}}TwoParamsStruct<
 # CHECK-SAME:   a{{.*}} = variadic_get{{.*}}a, 0
 # CHECK-SAME:   b{{.*}} = variadic_get{{.*}}a, 1
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):

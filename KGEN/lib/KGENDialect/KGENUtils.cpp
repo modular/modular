@@ -164,7 +164,7 @@ static ParseResult parseParameterSpec(AsmParser &parser,
 
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
-ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
+OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &parser, Type &type) {
   // Check for sugared types before parsing standard ones. We need to check for
   // each keyword individually, since builtin types are also keywords.
   auto *dialect = parser.getContext()->getLoadedDialect<KGENDialect>();
@@ -186,7 +186,7 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
     if (parseOptionalParamBindSpec(parser, values))
       return failure();
     type = DeclRefType::get(symbol, values);
-    return success();
+    return LogicalResult::success();
   }
 
   // Try to parse an optional signature. Signatures can begin with `<` or `(`.
@@ -197,11 +197,18 @@ ParseResult KGEN::parseKGENType(AsmParser &parser, Type &type) {
       if (failed(*result))
         return failure();
       type = signature;
-      return success();
+      return LogicalResult::success();
     }
   }
 
-  return parser.parseType(type);
+  return parser.parseOptionalType(type);
+}
+
+ParseResult KGEN::parseKGENType(AsmParser &p, Type &type) {
+  OptionalParseResult result = parseOptionalKGENType(p, type);
+  if (result.has_value())
+    return result.value();
+  return p.emitError(p.getCurrentLocation(), "expected a KGEN type");
 }
 
 void KGEN::printKGENType(raw_ostream &os, Type type) {

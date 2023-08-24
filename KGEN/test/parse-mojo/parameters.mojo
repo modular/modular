@@ -57,11 +57,11 @@ fn generic_fn[a: DType, b: Int, c: __mlir_type.`!kgen.mlirtype`](d : Int):
 # CHECK: lit.func @"call_generic{{.*}}"<[[DT:.*]]: @"$builtin"::@"$dtype"::@DType>()
 fn call_generic[dt: DType]():
   # CHECK: %[[C57:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$builtin"::@"$dtype"::@DType [[DT]], :{{.*}}@"$int"::@Int {{.*}}42{{.*}}, :type !kgen.declref<@"$builtin"::@"$dtype"::@DType>>(%[[C57]])
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$builtin"::@"$dtype"::@DType [[DT]], :{{.*}}@"$int"::@Int {{.*}}42{{.*}}, :type @"$builtin"::@"$dtype"::@DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[TMP:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$builtin"::@"$dtype"::@DType [[DT]], :{{.*}}@"$int"::@Int #lit.struct<{value = 13}>, :type !kgen.declref<@"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$int"::@Int = #lit.struct<{value = 4}>, {{.*}}dt: @"$builtin"::@"$dtype"::@DType = [[DT]]>>>(%2) : (!kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !lit.none
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:@"$builtin"::@"$dtype"::@DType [[DT]], :{{.*}}@"$int"::@Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: {{.*}}@"$int"::@Int = #lit.struct<{value = 4}>, {{.*}}dt: @"$builtin"::@"$dtype"::@DType = [[DT]]>>(%2) : (!kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !lit.none
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -565,7 +565,7 @@ fn dependent_variadic_parameter[
 fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
     # CHECK-NEXT: kgen.call @"$parameters"::@"variadic_parameter{{.*}}"<:variadic<index> [[ELEMS]]>
     _ = variadic_parameter[elems]()
-    # CHECK: kgen.call @"$parameters"::@"dependent_variadic_parameter{{.*}}"<:type !kgen.declref<{{.*}}@"$int"::@Int>, :variadic<{{.*}}@"$int"::@Int>
+    # CHECK: kgen.call @"$parameters"::@"dependent_variadic_parameter{{.*}}"<:type {{.*}}@"$int"::@Int, :variadic<{{.*}}@"$int"::@Int>
     _ = dependent_variadic_parameter[Int, 1, 2]()
 
 
@@ -601,7 +601,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(b)
   # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<{{.*}}@Int apply({{.*}}__mul__{{.*}}, [[SIZE]], {{.*}}2{{.*}})>(%b2)
   callee1(b2)
-  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<:type !kgen.declref<@"$parameters"::@StaticVec<{{.*}}size: {{.*}}@Int = [[SIZE]]>>>(%b)
+  # CHECK-NEXT: kgen.call @{{.*}}callee2{{.*}}<:type @"$parameters"::@StaticVec<{{.*}}size: {{.*}}@Int = [[SIZE]]>>(%b)
   callee2(b)
   # CHECK-NEXT: kgen.call @{{.*}}callee3{{.*}}<17, :dtype f32>(%c)
   callee3(c)
@@ -682,7 +682,7 @@ fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.func @"call_with_tail_types()"
 fn call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int, :variadic<type> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int>, :variadic<!kgen.mlirtype> [{{.*}}FloatLiteral>]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type {{.*}}@Int, :variadic<type> [{{.*}}FloatLiteral]>
     tail_types(1, 1.2)

@@ -219,11 +219,11 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
-# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !pop.pointer<!kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>>
+# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !pop.pointer<(!pop.pointer<array<0, i1>>) -> !lit.none>
 
 # Allocate memory on heap
-# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(!kgen.declref<@[[CI_TYPE:.*]]>, current_target())>
-# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(!kgen.declref<@[[CI_TYPE]]>, current_target())>
+# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(@[[CI_TYPE:.*]], current_target())>
+# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(@[[CI_TYPE]], current_target())>
 # CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %index_0, %index : <@[[CI_TYPE]]>
 
 # Copy source (stack) into target (heap)

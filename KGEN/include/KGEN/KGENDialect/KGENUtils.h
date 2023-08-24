@@ -49,6 +49,7 @@ void printStringParam(AsmPrinter &p, Operation *, Attribute value);
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
 ParseResult parseKGENType(AsmParser &parser, Type &type);
+OptionalParseResult parseOptionalKGENType(AsmParser &parser, Type &type);
 
 /// Try to parse a specific KGEN type.
 template <typename T>

@@ -192,9 +192,9 @@ kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
 
 // CHECK-LABEL: kgen.generator @parameterized_declref_type
 kgen.generator @parameterized_declref_type() {
-  // CHECK-NEXT: !pop.array<2, simd<apply(:(!pop.struct<>) -> index @unbox, { }), f32>>
-  %3 = pop.stack_allocation 1 x !kgen.declref<@StaticTuple<size = 2,
-    type: type = !kgen.declref<@SIMD<size: @Int = #lit.struct<{}>, type: dtype = f32>>>>
+  // CHECK-NEXT: array<2, simd<apply(:(!pop.struct<>) -> index @unbox, { }), f32>>
+  %3 = pop.stack_allocation 1 x @StaticTuple<size = 2,
+    ty: type = !kgen.declref<@SIMD<size: @Int = #lit.struct<{}>, type: dtype = f32>>>
   kgen.return
 }
 
@@ -204,8 +204,8 @@ lit.struct.decl @SIMD<size: @Int, type: dtype> {
 
 lit.struct.decl @Int {}
 
-lit.struct.decl @StaticTuple<size, type: type> {
-  lit.struct.field array : !pop.array<size, type>
+lit.struct.decl @StaticTuple<size, ty: type> {
+  lit.struct.field array : !pop.array<size, ty>
 }
 
 // -----
@@ -247,7 +247,7 @@ kgen.generator @bad_declref(%arg0: !kgen.declref<@not_a_struct<a = 1>>) {
 // -----
 
 lit.struct.decl @Bar {
-  lit.struct.field x : !kgen.declref<@Pointer<type: type = !kgen.declref<@Foo>>>
+  lit.struct.field x : !kgen.declref<@Pointer<ty: type = !kgen.declref<@Foo>>>
   lit.struct.field y : ui32
 }
 
@@ -256,22 +256,22 @@ lit.struct.decl @Foo {
   lit.struct.field y : f32
 }
 
-lit.struct.decl @Pointer<type: type> {
-  lit.struct.field address : !pop.pointer<type>
+lit.struct.decl @Pointer<ty: type> {
+  lit.struct.field address : !pop.pointer<ty>
 }
 
 !bar_ref = !kgen.declref<@Bar>
 !foo_ref = !kgen.declref<@Foo>
-!foo_ptr_ref = !kgen.declref<@Pointer<type: type = !foo_ref>>
+!foo_ptr_ref = !kgen.declref<@Pointer<ty: type = !foo_ref>>
 !null_ptr = !pop.pointer<scalar<invalid>>
 
 // CHECK-LABEL: @gepFooFromBar
 kgen.func @gepFooFromBar(%s: !pop.pointer<@Bar>) ->
-!pop.pointer<@Pointer<type: type = !foo_ref>> {
+!pop.pointer<@Pointer<ty: type = !foo_ref>> {
   // CHECK: %0 = pop.struct.gep %arg0[0] : <struct<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>, ui32>>
   // CHECK: kgen.return %0 : !pop.pointer<pointer<struct<struct<pointer<scalar<invalid>>, ui32>, f32>>>
-  %0 = lit.struct.gep %s[x] : <@Pointer<type: type = !foo_ref>> from <@Bar>
-  kgen.return %0 : !pop.pointer<@Pointer<type: type = !foo_ref>>
+  %0 = lit.struct.gep %s[x] : <@Pointer<ty: type = !foo_ref>> from <@Bar>
+  kgen.return %0 : !pop.pointer<@Pointer<ty: type = !foo_ref>>
 }
 
 // CHECK-LABEL: @makeFoo

@@ -642,17 +642,17 @@ kgen.generator @parametricAdd<size, dt: dtype>
 kgen.generator @stack_allocation<size, ty: type, address_space_val>() {
   // CHECK: pop.stack_allocation size x ty
   %0 = pop.stack_allocation size x ty
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32>
+  // CHECK: pop.stack_allocation 16 x simd<4, f32>
   %1 = pop.stack_allocation 16 x !pop.simd<4, f32>
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align 8
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> align 8
   %2 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align size
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> align size
   %3 = pop.stack_allocation 16 x !pop.simd<4, f32> align size
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> address_space 5
   %4 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> align 8 address_space 5
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> align 8 address_space 5
   %5 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8 address_space 5
-  // CHECK: pop.stack_allocation 16 x !pop.simd<4, f32> address_space address_space_val
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> address_space address_space_val
   %6 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space address_space_val
   kgen.return
 }
@@ -681,7 +681,7 @@ kgen.generator @global_constant() {
 
 // CHECK-LABEL: @global_alloc
 kgen.generator @global_alloc() {
-  // CHECK-NEXT: pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+  // CHECK-NEXT: pop.global_alloc 2 x scalar<si32> align 32 address_space 3
   %0 = pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
   kgen.return
 }
@@ -828,7 +828,7 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.paramref<T
   // CHECK: pop.array.replace %{{.*}}, %0[0] : !pop.array<2, T>
   %2 = pop.array.replace %1, %0[0] : !pop.array<2, T>
 
-  // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x !pop.array<4, T>
+  // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x array<4, T>
   %5 = pop.stack_allocation 1 x !pop.array<4, T>
   // CHECK: %[[IDX:.*]] = index.constant
   %6 = index.constant 2
@@ -876,7 +876,7 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T: type, I: index>(
 
 // CHECK-LABEL: @parametric_pack
 kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.paramref<T>) {
-  // CHECK-NEXT: pop.pack.create(%arg0, %arg1) : !pop.pack<[!pop.simd<N, bool>, T]>
+  // CHECK-NEXT: pop.pack.create(%arg0, %arg1) : !pop.pack<[simd<N, bool>, T]>
   %0 = pop.pack.create(%arg0, %arg1) : !pop.pack<[!pop.simd<N, bool>, T]>
   kgen.return
 }
@@ -945,20 +945,20 @@ kgen.generator @variadics<ty: type>(
     %arg2: !pop.struct<>,
     %arg3: !pop.struct<>,
     %arg4: !kgen.paramref<ty>) {
-  // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: %[[V0:.*]] = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<scalar<f32>>
   %v0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<!pop.scalar<f32>>
-  // CHECK: pop.variadic.size %[[V0]] : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: pop.variadic.size %[[V0]] : !kgen.variadic<scalar<f32>>
   %s0 = pop.variadic.size %v0 : !kgen.variadic<!pop.scalar<f32>>
-  // CHECK: pop.variadic.get %[[V0]][%{{[a-zA-Z0-9]+}}] : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: pop.variadic.get %[[V0]][%{{[a-zA-Z0-9]+}}] : !kgen.variadic<scalar<f32>>
   %i0 = index.constant 2
   %g0 = pop.variadic.get %v0[%i0] : !kgen.variadic<!pop.scalar<f32>>
 
-  // CHECK: %[[V1:.*]] = pop.variadic.create [] : !kgen.variadic<!pop.scalar<f32>>
+  // CHECK: %[[V1:.*]] = pop.variadic.create [] : !kgen.variadic<scalar<f32>>
   %v1 = pop.variadic.create [] : !kgen.variadic<!pop.scalar<f32>>
   // CHECK: pop.variadic.size %[[V1]]
   %s1 = pop.variadic.size %v1 : !kgen.variadic<!pop.scalar<f32>>
 
-  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!pop.struct<>>
+  // CHECK: %[[V2:.*]] = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<struct<>>
   %v2 = pop.variadic.create [%arg2, %arg3] : !kgen.variadic<!pop.struct<>>
   // CHECK: pop.variadic.size %[[V2]]
   %s2 = pop.variadic.size %v2 : !kgen.variadic<!pop.struct<>>

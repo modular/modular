@@ -1367,8 +1367,8 @@ kgen.generator @call() {
 
 // CHECK-LABEL: kgen.func @unpack_in_type
 kgen.generator @unpack_in_type() {
-  // CHECK-NEXT: !pop.array<1, index>
-  %0 = pop.stack_allocation 1 x !pop.array<apply(:() -> index @produce_one), index>
+  // CHECK-NEXT: array<1, index>
+  %0 = pop.stack_allocation 1 x array<apply(:() -> index @produce_one), index>
   kgen.return
 }
 
@@ -1594,18 +1594,19 @@ kgen.generator @param_apply() {
 
 // COM: This crashes if you don't handle nested parameter ifs correctly *with* multi-versioned kgen.param.apply.
 
-kgen.generator @"$List::VariadicList::__init__(__mlir_type.!kgen.paramref<type>*)"<type: type>(%arg0: !kgen.variadic<type>) vararg -> !kgen.variadic<type> {
-  %0 = kgen.call @"$List::VariadicList::__init__(__mlir_type.!kgen.variadic<type>)"<:type type>(%arg0) : (!kgen.variadic<type>) -> !kgen.variadic<type>
-  kgen.return %0 : !kgen.variadic<type>
+
+kgen.generator @init_variadic<ty: type>(%arg0: !kgen.variadic<ty>) vararg -> !kgen.variadic<ty> {
+  %0 = kgen.call @pass_variadic<:type ty>(%arg0) : (!kgen.variadic<ty>) -> !kgen.variadic<ty>
+  kgen.return %0 : !kgen.variadic<ty>
 }
-kgen.generator @"$List::VariadicList::__init__(__mlir_type.!kgen.variadic<type>)"<type: type>(%arg0: !kgen.variadic<type>) -> !kgen.variadic<type> {
-  kgen.return %arg0 : !kgen.variadic<type>
+kgen.generator @pass_variadic<ty: type>(%arg0: !kgen.variadic<ty>) -> !kgen.variadic<ty> {
+  kgen.return %arg0 : !kgen.variadic<ty>
 }
 
-kgen.generator @make_index_list() -> !kgen.variadic<!pop.scalar<index>> {
-  %0 = kgen.param.constant: variadic<!pop.scalar<index>> = <[0, 1, 2]>
-  %1 = kgen.call @"$List::VariadicList::__init__(__mlir_type.!kgen.paramref<type>*)"<:type !pop.scalar<index>>(%0) : (!kgen.variadic<!pop.scalar<index>>) vararg -> !kgen.variadic<!pop.scalar<index>>
-  kgen.return %1 : !kgen.variadic<!pop.scalar<index>>
+kgen.generator @make_index_list() -> !kgen.variadic<scalar<index>> {
+  %0 = kgen.param.constant: variadic<scalar<index>> = <[0, 1, 2]>
+  %1 = kgen.call @init_variadic<:type scalar<index>>(%0) : (!kgen.variadic<scalar<index>>) vararg -> !kgen.variadic<scalar<index>>
+  kgen.return %1 : !kgen.variadic<scalar<index>>
 }
 
 // CHECK-LABEL: kgen.func @fork_on_index_list()
