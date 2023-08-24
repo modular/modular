@@ -61,7 +61,7 @@ Type ParamRefType::get(TypedAttr param) {
 OptionalParseResult MLIRTypeType::parseValue(AsmParser &p,
                                              TypedAttr &value) const {
   Type type;
-  OptionalParseResult result = p.parseOptionalType(type);
+  OptionalParseResult result = parseOptionalKGENType(p, type);
   if (!result.has_value())
     return {};
   if (failed(*result))
@@ -74,7 +74,7 @@ LogicalResult MLIRTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
-  p << type.getValue();
+  printKGENType(p.getStream(), type.getValue());
   return success();
 }
 

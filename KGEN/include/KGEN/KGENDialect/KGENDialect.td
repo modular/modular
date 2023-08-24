@@ -70,7 +70,7 @@ def KGENDialect : Dialect {
 
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.
-    friend ParseResult parseKGENType(AsmParser &, Type &);
+    friend OptionalParseResult parseOptionalKGENType(AsmParser &, Type &);
     friend void printKGENType(AsmPrinter &, Type);
     friend void printParamName(AsmPrinter &p, StringAttr, bool);
   }];

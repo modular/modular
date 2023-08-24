@@ -406,14 +406,14 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>()
-// CHECK: constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
+// CHECK: constraints <[eq(:type typeParam, scalar<f32>), "f32 scalarzzz", #{{.*}}]> {
    constraints <[eq(:type typeParam, !pop.scalar<f32>), "f32 scalarzzz"]>
  {
-  // CHECK: kgen.param.declare ty1: type = <!pop.scalar<f32>>
-  kgen.param.declare ty1: type = <!pop.scalar<f32>>
+  // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
+  kgen.param.declare ty1: type = <scalar<f32>>
 
-  // CHECK: kgen.param.declare ty2: type = <!pop.scalar<dt>>
-  kgen.param.declare ty2: type = <!pop.scalar<dt>>
+  // CHECK: kgen.param.declare ty2: type = <scalar<dt>>
+  kgen.param.declare ty2: type = <scalar<dt>>
 
   // This op returns an SSA value whose type is specified by a type parameter.
   // CHECK: "test.someop"() : () -> !kgen.paramref<ty2>
@@ -583,8 +583,8 @@ lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: <add(get_sizeof(!kgen.declref<@A>, #kgen.target<{{.*}}>),
-  // CHECK-SAME: get_sizeof(!kgen.declref<@B>, #kgen.target<{{.*}}>))>
+  // CHECK: <add(get_sizeof(@A, #kgen.target<{{.*}}>),
+  // CHECK-SAME: get_sizeof(@B, #kgen.target<{{.*}}>))>
   %0 = kgen.param.constant = <add(get_sizeof(!kgen.declref<@A>, #target),
                                   get_sizeof(!kgen.declref<@B>, #target))>
   kgen.return
@@ -693,8 +693,8 @@ kgen.generator @f2() {
 
 // CHECK-LABEL: kgen.generator @checkGetAllImpls
 kgen.generator @checkGetAllImpls() -> index {
-  // CHECK: kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
-  kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls(@multipleImplsFn)>
+  // CHECK: kgen.param.declare impls: variadic<() -> index> = <get_all_impls(@multipleImplsFn)>
+  kgen.param.declare impls: variadic<() -> index> = <get_all_impls(@multipleImplsFn)>
 
   // CHECK-NEXT: kgen.param.fork oneImpl: () -> index = <impls>
   kgen.param.fork oneImpl: () -> index = <impls>

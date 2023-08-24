@@ -211,25 +211,25 @@ lit.func @struct_attr() {
 // -----
 
 // expected-note @below {{see struct declaration here}}
-lit.struct.decl @ParamField<type: type> {
-  lit.struct.field a : !kgen.paramref<type>
+lit.struct.decl @ParamField<ty: type> {
+  lit.struct.field a : !kgen.paramref<ty>
 }
 
 lit.func @struct_attr() {
   // expected-error @below {{struct attribute field #0 has type 'index' but corresponding struct field "a" expected 'i1'}}
-  kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a = 5}>>
+  kgen.param.constant: @ParamField<ty: type = i1> = <#lit.struct<{a = 5}>>
   kgen.return
 }
 
 // -----
 
-lit.struct.decl @ParamField<type: type> {
-  lit.struct.field a : !kgen.paramref<type>
+lit.struct.decl @ParamField<ty: type> {
+  lit.struct.field a : !kgen.paramref<ty>
 }
 
 lit.func @struct_attr() {
   // expected-error @below {{'kgen.param.constant' op invalid use of parameter with no declaration "A"}}
-  kgen.param.constant: @ParamField<type: type = i1> = <#lit.struct<{a: i1 = A}>>
+  kgen.param.constant: @ParamField<ty: type = i1> = <#lit.struct<{a: i1 = A}>>
   kgen.return
 }
 

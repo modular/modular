@@ -64,7 +64,7 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
 
 // CHECK-LABEL: @variadic
 kgen.generator @variadic<ty: type>(
-  // CHECK-SAME: !kgen.variadic<!pop.scalar<f32>>
+  // CHECK-SAME: !kgen.variadic<scalar<f32>>
   %arg0: !kgen.variadic<!pop.scalar<f32>>,
   // CHECK-SAME: !kgen.variadic<ty>
   %arg1: !kgen.variadic<ty>
