@@ -314,6 +314,17 @@ ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, MLIRTypeType::get(p.getContext()));
 }
 
+void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  llvm::interleaveComma(
+      values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });
+}
+
+ParseResult KGEN::parseTypeParamValues(AsmParser &p,
+                                       SmallVector<TypedAttr> &values) {
+  return p.parseCommaSeparatedList(
+      [&] { return parseTypeParamValue(p, values.emplace_back()); });
+}
+
 /// Print an attribute value that is known to have index type.
 void KGEN::printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value) {
   printParamValue(p, cast<TypedAttr>(value));
@@ -1758,45 +1769,6 @@ ParseResult KGEN::parseOptionalAddressSpaceParamValue(AsmParser &p,
   }
 
   return parseIndexParamValue(p, result);
-}
-
-/// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix or a symbol reference.
-ParseResult KGEN::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
-  // Try to parse a symbol name as sugar for DeclRefType.
-  {
-    SymbolRefAttr ref;
-    auto refResult = p.parseOptionalAttribute(ref);
-    if (refResult.has_value()) {
-      if (failed(*refResult))
-        return failure();
-
-      ParamBindArrayAttr paramValues;
-      if (parseOptionalParamBindSpec(p, paramValues))
-        return failure();
-      Type result = DeclRefType::get(ref, paramValues);
-      typeExpr = TypeConstantAttr::get(result);
-      return success();
-    }
-  }
-  return parseTypeParamValue(p, typeExpr);
-}
-
-/// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix.
-void KGEN::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
-  // If this isn't a type constant, defer to the parameter value printer.
-  auto typeCst = dyn_cast<TypeConstantAttr>(typeExpr);
-  if (!typeCst)
-    return printTypeParamValue(p, typeExpr);
-
-  // Try to print on the known types. Fallback to the generic type printer
-  // otherwise.
-  if (auto refType = dyn_cast_or_null<DeclRefType>(typeCst.getValue())) {
-    p << refType.getSymbol();
-    return printOptionalParamBindSpec(p, refType.getParamValues());
-  }
-  printTypeParamValue(p, typeExpr);
 }
 
 /// Compare a range of values from an "originator" to a corresponding range of

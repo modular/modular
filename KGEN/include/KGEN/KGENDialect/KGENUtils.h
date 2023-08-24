@@ -117,6 +117,11 @@ void printTypeParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `type` type.
 ParseResult parseTypeParamValue(AsmParser &p, TypedAttr &value);
 
+/// Print an array of parameter type values.
+void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+/// Parse an array of parameter type values.
+ParseResult parseTypeParamValues(AsmParser &p, SmallVector<TypedAttr> &values);
+
 /// Print a parameter value that is known to have `index` type.
 void printIndexParamValue(AsmPrinter &p, Operation *op, Attribute value);
 void printIndexParamValue(AsmPrinter &p, Attribute value);
@@ -237,9 +242,6 @@ void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
   llvm::interleaveComma(values, p,
                         [&](TypedAttr value) { printParamValue(p, value); });
 }
-
-ParseResult parsePrettyType(AsmParser &p, TypedAttr &typeExpr);
-void printPrettyType(AsmPrinter &p, TypedAttr typeExpr);
 
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces

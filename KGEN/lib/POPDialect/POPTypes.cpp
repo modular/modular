@@ -45,15 +45,6 @@ static Type parseScalarType(AsmParser &p) {
   return SIMDType::get(1, resultDType);
 }
 
-static ParseResult parsePrettyScalarType(AsmParser &p, TypedAttr &typeExpr) {
-  Type t = parseScalarType(p);
-  if (isa_and_nonnull<SIMDType>(t)) {
-    typeExpr = TypeConstantAttr::get(t);
-    return success();
-  }
-  return failure();
-}
-
 //===----------------------------------------------------------------------===//
 // ArrayType
 //===----------------------------------------------------------------------===//
@@ -737,111 +728,6 @@ CoroutineType CoroutineType::get(SignatureType sig) {
       FnMetadataAttr::get(
           ctx, 0, sig.isThrows() ? FnEffects::Throws : FnEffects::None));
   return POP::CoroutineType::get(ctx, coroSig);
-}
-
-//===----------------------------------------------------------------------===//
-// Pretty Type Parsing and Printing
-//===----------------------------------------------------------------------===//
-
-/// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix or a symbol reference.
-ParseResult POP::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
-  // Try to parse a symbol name as sugar for [LIT]DeclRefType.
-  {
-    SymbolRefAttr ref;
-    auto refResult = p.parseOptionalAttribute(ref);
-    if (refResult.has_value()) {
-      if (failed(*refResult))
-        return failure();
-
-      ParamBindArrayAttr paramValues;
-      if (parseOptionalParamBindSpec(p, paramValues))
-        return failure();
-      Type result = DeclRefType::get(ref, paramValues);
-      typeExpr = TypeConstantAttr::get(result);
-      return success();
-    }
-  }
-
-  StringRef typeName;
-  // Try to parse a keyword for a known POP type. Allow `dtype` for
-  // `!kgen.dtype` as well. If this fails, defer to the parameter value
-  // parser.
-  if (p.parseOptionalKeyword(
-          &typeName,
-          {ArrayType::getMnemonic(), PointerType::getMnemonic(),
-           SIMDType::getMnemonic(), StructType::getMnemonic(),
-           VariantType::getMnemonic(), DTypeType::getMnemonic(), "scalar"}))
-    return parseTypeParamValue(p, typeExpr);
-
-  if (typeName == ArrayType::getMnemonic())
-    return parsePrettyTypeImpl<ArrayType>(p, typeExpr);
-  if (typeName == PointerType::getMnemonic())
-    return parsePrettyTypeImpl<PointerType>(p, typeExpr);
-  if (typeName == SIMDType::getMnemonic())
-    return parsePrettyTypeImpl<SIMDType>(p, typeExpr);
-  if (typeName == StructType::getMnemonic())
-    return parsePrettyTypeImpl<StructType>(p, typeExpr);
-  if (typeName == VariantType::getMnemonic())
-    return parsePrettyTypeImpl<VariantType>(p, typeExpr);
-  if (typeName == "scalar")
-    return parsePrettyScalarType(p, typeExpr);
-
-  if (typeName == DTypeType::getMnemonic()) {
-    typeExpr = TypeConstantAttr::get(DTypeType::get(p.getContext()));
-    return success();
-  }
-
-  llvm_unreachable("unknown keyword");
-}
-
-/// Try to print a pretty type or a standard MLIR type. A pretty type is a POP
-/// type without the dialect prefix.
-void POP::printPrettyType(AsmPrinter &p, TypedAttr typeExpr) {
-  // If this isn't a type constant, defer to the parameter value printer.
-  auto typeCst = dyn_cast<TypeConstantAttr>(typeExpr);
-  if (!typeCst)
-    return printTypeParamValue(p, typeExpr);
-
-  // Try to print on the known types. Fallback to the generic type printer
-  // otherwise.
-  llvm::TypeSwitch<Type>(typeCst.getValue())
-      .Case<ArrayType, PointerType, StructType, VariantType>([&](auto popType) {
-        p << decltype(popType)::getMnemonic();
-        popType.print(p);
-      })
-      .Case([&](SIMDType popType) {
-        if (popType.isScalar()) {
-          p << "scalar<";
-          printDTypeParamValue(p, popType.getDType());
-          p << ">";
-          return;
-        }
-        p << SIMDType::getMnemonic();
-        popType.print(p);
-      })
-      .Case([&](DeclRefType ref) {
-        p << ref.getSymbol();
-        printOptionalParamBindSpec(p, ref.getParamValues());
-      })
-      .Case([&](DTypeType) { p << DTypeType::getMnemonic(); })
-      .Default([&](auto) { printTypeParamValue(p, typeExpr); });
-}
-
-static ParseResult parseArrayOfPrettyTypes(AsmParser &p,
-                                           SmallVector<TypedAttr> &values) {
-  return p.parseCommaSeparatedList([&]() -> ParseResult {
-    TypedAttr value;
-    if (failed(POP::parsePrettyType(p, value)))
-      return failure();
-    values.push_back(value);
-    return success();
-  });
-}
-
-static void printArrayOfPrettyTypes(AsmPrinter &p, ArrayRef<TypedAttr> values) {
-  llvm::interleaveComma(
-      values, p, [&](TypedAttr value) { POP::printPrettyType(p, value); });
 }
 
 //===----------------------------------------------------------------------===//

@@ -46,7 +46,7 @@ def POP_ArrayType : POPType<"Array", "array", [
   let parameters = (ins "TypedAttr":$size, "TypedAttr":$elementType);
   let assemblyFormat = [{
     `<` custom<IndexParamValue>($size) `,` ` `
-        custom<PrettyType>($elementType) `>`
+        custom<TypeParamValue>($elementType) `>`
   }];
   let genVerifyDecl = 1;
 
@@ -118,7 +118,7 @@ def POP_PointerType : POPType<"Pointer", "pointer",
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
-    `<` custom<PrettyType>($elementType) ``
+    `<` custom<TypeParamValue>($elementType) ``
     (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
   let genVerifyDecl = 1;
@@ -354,7 +354,7 @@ def POP_StructType : POPType<"Struct", "struct", [
 
   let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$elementTypes);
   let assemblyFormat = [{
-    `<` (`>`) : (custom<ArrayOfPrettyTypes>($elementTypes)^ `>`)?
+    `<` (`>`) : (custom<TypeParamValues>($elementTypes)^ `>`)?
   }];
   let genVerifyDecl = 1;
 
@@ -456,7 +456,7 @@ def POP_VariantType : POPType<"Variant", "variant",
   }];
 
   let parameters = (ins ArrayRefParameter<"TypedAttr">:$types);
-  let assemblyFormat = "`<` custom<ArrayOfPrettyTypes>($types) `>`";
+  let assemblyFormat = "`<` custom<TypeParamValues>($types) `>`";
   let skipDefaultBuilders = 1;
 
   let builders = [
@@ -522,9 +522,7 @@ def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
   }];
 
   let parameters = (ins KGEN_SignatureType:$signature);
-  let assemblyFormat = [{
-    `<` custom<KGENType>($signature) `>`
-  }];
+  let assemblyFormat = "`<` custom<KGENType>($signature) `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "SignatureType":$sig)>,
