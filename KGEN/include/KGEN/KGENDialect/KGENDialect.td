@@ -72,6 +72,7 @@ def KGENDialect : Dialect {
     /// pretty functions.
     friend ParseResult parseKGENType(AsmParser &, Type &);
     friend void printKGENType(AsmPrinter &, Type);
+    friend void printParamName(AsmPrinter &p, StringAttr, bool);
   }];
 }
 

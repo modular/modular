@@ -2,35 +2,35 @@
 // RUN: kgen-opt -emit-bytecode %s | kgen-opt | FileCheck %s
 
 // CHECK-LABEL: @pointer
-kgen.generator @pointer<type: type, address_space>(
+kgen.generator @pointer<ty: type, address_space>(
   // CHECK-SAME: !pop.pointer<scalar<f32>>
   %arg0: !pop.pointer<scalar<f32>>,
   // CHECK-SAME: !pop.pointer<scalar<f32>, 5>
   %arg1: !pop.pointer<scalar<f32>, 5>,
-  // CHECK-SAME: !pop.pointer<type>
-  %arg2: !pop.pointer<type>,
-  // CHECK-SAME: !pop.pointer<type, 7>
-  %arg3: !pop.pointer<type, 7>,
+  // CHECK-SAME: !pop.pointer<ty>
+  %arg2: !pop.pointer<ty>,
+  // CHECK-SAME: !pop.pointer<ty, 7>
+  %arg3: !pop.pointer<ty, 7>,
   // CHECK-SAME: !pop.pointer<scalar<f32>, address_space>
   %arg4: !pop.pointer<scalar<f32>, address_space>,
-  // CHECK-SAME: !pop.pointer<type, address_space>
-  %arg5: !pop.pointer<type, address_space>
+  // CHECK-SAME: !pop.pointer<ty, address_space>
+  %arg5: !pop.pointer<ty, address_space>
 ) {
   kgen.return
 }
 
 // CHECK-LABEL: @array
-kgen.generator @array<size, type: type>(
+kgen.generator @array<size, ty: type>(
   // CHECK-SAME: !pop.array<4, scalar<f32>>
   %arg0: !pop.array<4, scalar<f32>>,
-  // CHECK-SAME: !pop.array<size, type>
-  %arg1: !pop.array<size, type>
+  // CHECK-SAME: !pop.array<size, ty>
+  %arg1: !pop.array<size, ty>
 ) {
   kgen.return
 }
 
 // CHECK-LABEL: @struct
-kgen.generator @struct<size, dtype: dtype, type: type>(
+kgen.generator @struct<size, dtype: dtype, ty: type>(
   // CHECK-SAME: !pop.struct<scalar<f32>, simd<4, ui64>>
   %arg0: !pop.struct<scalar<f32>, simd<4, ui64>>,
   // CHECK-SAME: !pop.struct<pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<scalar<f32>, scalar<f64>>>
@@ -42,8 +42,8 @@ kgen.generator @struct<size, dtype: dtype, type: type>(
       !pop.scalar<f64>
     >
   >,
-  // CHECK: !pop.struct<type, array<size, scalar<dtype>>>
-  %arg2: !pop.struct<type, array<size, scalar<dtype>>>
+  // CHECK: !pop.struct<ty, array<size, scalar<dtype>>>
+  %arg2: !pop.struct<ty, array<size, scalar<dtype>>>
 ) {
   kgen.return
 }
@@ -63,11 +63,11 @@ kgen.generator @pack<Ts: variadic<!kgen.mlirtype>, T0: type, T1: type>(
 }
 
 // CHECK-LABEL: @variadic
-kgen.generator @variadic<type: type>(
+kgen.generator @variadic<ty: type>(
   // CHECK-SAME: !kgen.variadic<!pop.scalar<f32>>
   %arg0: !kgen.variadic<!pop.scalar<f32>>,
-  // CHECK-SAME: !kgen.variadic<type>
-  %arg1: !kgen.variadic<type>
+  // CHECK-SAME: !kgen.variadic<ty>
+  %arg1: !kgen.variadic<ty>
 ) {
   kgen.return
 }

@@ -78,9 +78,10 @@ void printColonTypeOrIndex(AsmPrinter &p, Type type);
 //===----------------------------------------------------------------------===//
 
 /// Print a parameter name correctly, using a double quoted syntax if it
-/// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
-void printParamName(AsmPrinter &p, StringRef name);
-
+/// conflicts with an MLIR or KGEN keyword, or a bareword otherwise. When
+/// printing a parameter name in a reference, the name must be escaped to
+/// prevent collision with other parameter values, particularly types.
+void printParamName(AsmPrinter &p, StringAttr name, bool isRef = false);
 /// Parse a parameter name as either a keyword or double quoted string.
 ParseResult parseParamName(AsmParser &p, StringAttr &name);
 

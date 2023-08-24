@@ -386,12 +386,12 @@ kgen.generator @datalayout_operators() {
 }
 
 // DTYPES
-// CHECK-LABEL: kgen.generator @dtype_params<dt: dtype, *"f32", *"ui32">()
-kgen.generator @dtype_params<dt: !kgen.dtype, *"f32", *"ui32">() {
+// CHECK-LABEL: kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>()
+kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 
   // Make sure that kgen keywords are printed properly escaped.
-  // CHECK: kgen.param.constant = <add(*"f32", *"ui32")>
-  kgen.param.constant  = <add(*"f32", *"ui32")>
+  kgen.param.declare dt0: dtype = <*"f32">
+  kgen.param.declare dt1: dtype = <*"ui32">
 
   // CHECK: kgen.param.constant: dtype = <f32>
   kgen.param.constant: !kgen.dtype = <#kgen.dtype.constant<f32>>
@@ -564,7 +564,7 @@ kgen.generator @testTargetInfo() {
 // COM: roundtrips as an escaped parameter name.
 
 // CHECK-LABEL: @mlir_builtin_types
-// CHECK-SAME: <*"index": type>
+// CHECK-SAME: <index: type>
 // CHECK-SAME: %[[ARG0:.*]]: !pop.pointer<index>
 // CHECK-SAME: %[[ARG1:.*]]: !pop.pointer<*"index">
 kgen.generator @mlir_builtin_types<*"index": type>(
