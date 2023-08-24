@@ -131,9 +131,17 @@ ErrorOr<DIScopeAttr> DebugInfo::getScopeWithinBody(Location loc) {
     scope = dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata());
     if (ArrayRef<Location> nestedLocs = fusedLoc.getLocations();
         !scope && !nestedLocs.empty()) {
-      UNWRAP_ERROR_OR_SET(scope, getScopeWithinBody(nestedLocs.back()));
+      {
+        auto scopeOr = getScopeWithinBody(nestedLocs.back());
+        if (scopeOr.isError())
+          return scopeOr.takeError();
+        scope = std::move(*scopeOr);
+      }
       for (Location nestedLoc : nestedLocs.drop_back()) {
-        UNWRAP_ERROR(nestedScope, getScopeWithinBody(nestedLoc));
+        auto nestedScopeOr = getScopeWithinBody(nestedLoc);
+        if (nestedScopeOr.isError())
+          return nestedScopeOr.takeError();
+        auto nestedScope = std::move(*nestedScopeOr);
         if (nestedScope != scope)
           return Error("contains inconsistent scopes in fused location");
       }

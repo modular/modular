@@ -88,11 +88,13 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
     return tmOr.takeError();
 
   // Create the execution engine.
-  UNWRAP_ERROR(engine,
-               ExecutionEngine::createWithStandardLayers(
-                   ExecutionEngineOptions{/*registerDebugPlugins=*/false,
-                                          /*sanitizers=*/options.sanitizers},
-                   **tmOr));
+  auto engineOr = ExecutionEngine::createWithStandardLayers(
+      ExecutionEngineOptions{/*registerDebugPlugins=*/false,
+                             /*sanitizers=*/options.sanitizers},
+      **tmOr);
+  if (engineOr.isError())
+    return engineOr.takeError();
+  auto engine = std::move(*engineOr);
 
   // Create the object compiler so we can add its layer to the execution engine.
   mlir::PassManager mgr(target.getContext());
@@ -125,13 +127,18 @@ evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
     TimeTraceScope<> traceScope("compile-specializations");
     // Get pointers to all the candidates.
     for (FuncOp candidate : specializations) {
-      UNWRAP_ERROR(func, engine->lookup(candidate.getNameAttr()));
-      candidatePtrs.push_back(func.getFunctionPointer());
+      auto funcOr = engine->lookup(candidate.getNameAttr());
+      if (funcOr.isError())
+        return funcOr.takeError();
+      candidatePtrs.push_back(funcOr->getFunctionPointer());
     }
   }
 
   // Lookup the evaluator function
-  UNWRAP_ERROR(evaluatorFunc, engine->lookup(evaluator.getNameAttr()));
+  auto evaluatorFuncOr = engine->lookup(evaluator.getNameAttr());
+  if (evaluatorFuncOr.isError())
+    return evaluatorFuncOr.takeError();
+  auto evaluatorFunc = std::move(*evaluatorFuncOr);
 
   return
       [engine = std::move(engine), evaluatorFunc = std::move(evaluatorFunc),

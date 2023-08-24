@@ -410,7 +410,10 @@ static ErrorOr<std::vector<std::string>> getAllHostCPUModelNames() {
 }
 
 ErrorOr<std::string> M::getHostCPUModelName() {
-  UNWRAP_ERROR(allModelNames, getAllHostCPUModelNames());
+  auto allModelNamesOr = getAllHostCPUModelNames();
+  if (allModelNamesOr.isError())
+    return allModelNamesOr.takeError();
+  auto allModelNames = std::move(*allModelNamesOr);
   std::sort(allModelNames.begin(), allModelNames.end());
   allModelNames.erase(std::unique(allModelNames.begin(), allModelNames.end()),
                       allModelNames.end());
@@ -506,18 +509,25 @@ M::ErrorOr<size_t> M::getHostCPUCacheSize(size_t cacheLevel) {
     FileDescriptorCloser cacheDirIndexFDCloser(cacheDirIndexFD);
 
     char levelBuf[32], typeBuf[32], sizeBuf[32];
-    UNWRAP_ERROR(levelLen, readSmallFileFromDirFD(
-                               cacheDirIndexFD, "level",
+    auto levelLenOr =
+        readSmallFileFromDirFD(cacheDirIndexFD, "level",
                                "cache index " + llvm::Twine(index) + " level",
-                               levelBuf, sizeof(levelBuf)));
-    UNWRAP_ERROR(typeLen, readSmallFileFromDirFD(
-                              cacheDirIndexFD, "type",
-                              "cache index " + llvm::Twine(index) + " type",
-                              typeBuf, sizeof(typeBuf)));
-    UNWRAP_ERROR(sizeLen, readSmallFileFromDirFD(
-                              cacheDirIndexFD, "size",
-                              "cache index " + llvm::Twine(index) + " size",
-                              sizeBuf, sizeof(sizeBuf)));
+                               levelBuf, sizeof(levelBuf));
+    if (levelLenOr.isError())
+      return levelLenOr.takeError();
+    auto levelLen = std::move(*levelLenOr);
+    auto typeLenOr = readSmallFileFromDirFD(
+        cacheDirIndexFD, "type", "cache index " + llvm::Twine(index) + " type",
+        typeBuf, sizeof(typeBuf));
+    if (typeLenOr.isError())
+      return typeLenOr.takeError();
+    auto typeLen = std::move(*typeLenOr);
+    auto sizeLenOr = readSmallFileFromDirFD(
+        cacheDirIndexFD, "size", "cache index " + llvm::Twine(index) + " size",
+        sizeBuf, sizeof(sizeBuf));
+    if (sizeLenOr.isError())
+      return sizeLenOr.takeError();
+    auto sizeLen = std::move(*sizeLenOr);
     StringRef levelStr = StringRef(levelBuf, levelLen).trim();
     StringRef typeStr = StringRef(typeBuf, typeLen).trim();
     StringRef sizeStr = StringRef(sizeBuf, sizeLen).trim();
@@ -791,16 +801,19 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   machineInfo.osName =
       llvm::Triple::getOSTypeName(llvm::Triple(machineInfo.triple).getOS());
   machineInfo.cpuArch = llvm::sys::getHostCPUName();
-  UNWRAP_ERROR(cpuModelName, getHostCPUModelName());
-  machineInfo.cpuModelName = std::move(cpuModelName);
+  auto cpuModelNameOr = getHostCPUModelName();
+  if (cpuModelNameOr.isError())
+    return cpuModelNameOr.takeError();
+  machineInfo.cpuModelName = std::move(*cpuModelNameOr);
 
   llvm::StringMap<bool> features;
   auto gotfeatures = llvm::sys::getHostCPUFeatures(features);
   if (!gotfeatures) {
     // getCPUFeatures doesn't do anything for M1. So let's ask clang.
 #if defined(MODULAR_ARM_NEON) && defined(__APPLE__)
-    RETURN_ERROR(getCPUFeatures(machineInfo.triple, machineInfo.cpuArch,
-                                machineInfo.cpuFeatures));
+    if (auto err = getCPUFeatures(machineInfo.triple, machineInfo.cpuArch,
+                                  machineInfo.cpuFeatures))
+      return err.takeError();
 #else
     return Error("Failed to get cpu features");
 #endif //  defined(MODULAR_ARM_NEON) && defined(__APPLE__)
@@ -818,17 +831,25 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
     return physicalCoresOr.takeError();
   machineInfo.numPhysicalCores = physicalCoresOr.takeValue();
 
-  UNWRAP_ERROR(l1CacheSize, getHostCPUCacheSize(1));
-  machineInfo.l1CacheSize = l1CacheSize;
+  auto l1CacheSizeOr = getHostCPUCacheSize(1);
+  if (l1CacheSizeOr.isError())
+    return l1CacheSizeOr.takeError();
+  machineInfo.l1CacheSize = std::move(*l1CacheSizeOr);
 
-  UNWRAP_ERROR(l2CacheSize, getHostCPUCacheSize(2));
-  machineInfo.l2CacheSize = l2CacheSize;
+  auto l2CacheSizeOr = getHostCPUCacheSize(2);
+  if (l2CacheSizeOr.isError())
+    return l2CacheSizeOr.takeError();
+  machineInfo.l2CacheSize = std::move(*l2CacheSizeOr);
 
-  UNWRAP_ERROR(l3CacheSize, getHostCPUCacheSize(3));
-  machineInfo.l3CacheSize = l3CacheSize;
+  auto l3CacheSizeOr = getHostCPUCacheSize(3);
+  if (l3CacheSizeOr.isError())
+    return l3CacheSizeOr.takeError();
+  machineInfo.l3CacheSize = std::move(*l3CacheSizeOr);
 
-  UNWRAP_ERROR(l4CacheSize, getHostCPUCacheSize(4));
-  machineInfo.l4CacheSize = l4CacheSize;
+  auto l4CacheSizeOr = getHostCPUCacheSize(4);
+  if (l4CacheSizeOr.isError())
+    return l4CacheSizeOr.takeError();
+  machineInfo.l4CacheSize = std::move(*l4CacheSizeOr);
 
   if (haveThreadAffinity()) {
     ErrorOr<CPUSystemInfo> errOrSysInfo = CPUSystemInfo::get();
