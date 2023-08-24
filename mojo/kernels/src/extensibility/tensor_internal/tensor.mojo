@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements the TensorSpec, TensorShape, and Tensor type.
+Implements the `Tensor` type and provides access to `TensorShape` and
+`TensorSpec`.
 
 Example:
 
 ```mojo
-from Tensor import Tensor, TensorSpec, TensorShape
+from tensor import Tensor, TensorSpec, TensorShape
 from utils.index import Index
 from random import rand
 

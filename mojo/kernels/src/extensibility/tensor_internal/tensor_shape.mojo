@@ -3,6 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Implements the `TensorShape` type.
+
+You can optionally import `TensorShape` from the `tensor` module:
+
+```mojo
+from tensor import Tensor, TensorSpec, TensorShape
+```
+"""
 
 
 from sys.info import is_little_endian, sizeof

@@ -3,6 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Implements the `TensorSpec` type.
+
+You can optionally import `TensorSpec` from the `tensor` module:
+
+```mojo
+from tensor import Tensor, TensorSpec, TensorShape
+```
+"""
 
 from .tensor_shape import TensorShape, _as_rep16
 
