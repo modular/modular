@@ -88,8 +88,14 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
     return Error(llvm::Twine("while reading configuration: ") +
                  configOr.getError());
   auto config = std::move(*configOr);
-  auto enabled = config.getValue("crash_reporting.enabled");
-  if (enabled.equals_insensitive("false"))
+  ErrorOr<bool> enabledOr =
+      config.getValueAsBool("crash_reporting.enabled", /*defaultValue=*/true);
+  if (enabledOr.isError()) {
+    llvm::report_fatal_error(
+        llvm::Twine("Unable to parse crash_reporting.enabled configuration: ") +
+        enabledOr.getError());
+  }
+  if (!*enabledOr)
     return success();
 
   // Crashpad needs a few paths and other configuration bits:
