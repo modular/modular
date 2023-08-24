@@ -71,6 +71,11 @@ public:
   /// Get a value with a possible override from the environment.
   StringRef getValue(StringRef key);
 
+  /// Get a boolean value with possible override from the environment.  Default
+  /// is returned if not set.  Error is returned if set, but to a value that
+  /// cannot be interpreted as a boolean.
+  ErrorOr<bool> getValueAsBool(StringRef key, bool defaultValue);
+
   /// Set a value - this will override anything that was already set for that
   /// key.
   void setValue(StringRef key, StringRef value);
