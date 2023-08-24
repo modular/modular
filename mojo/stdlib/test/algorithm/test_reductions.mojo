@@ -18,10 +18,12 @@ from algorithm import (
     product,
     sum,
     variance,
+    argmax,
+    argmin,
 )
 
 # TODO: Fold this import into the one above.
-from algorithm.reduction import max, min
+from algorithm.reduction import max, min, _index_of_first_one
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
@@ -212,13 +214,93 @@ fn test_boolean():
     print(none_true(vector))
 
 
+# CHECK-LABEL: test_index_of_first_one
+fn test_index_of_first_one():
+    print("== test_index_of_first_one")
+
+    # CHECK: 0
+    print(_index_of_first_one(SIMD[DType.bool, 4](True, False, True, False)))
+
+    # CHECK: 2
+    print(_index_of_first_one(SIMD[DType.bool, 4](False, False, True, True)))
+
+    # CHECK: 2
+    print(_index_of_first_one(SIMD[DType.bool, 4](False, False, True, False)))
+
+    # CHECK: 1
+    print(_index_of_first_one(SIMD[DType.bool, 4](False, True, True, False)))
+
+    # CHECK: 1
+    print(_index_of_first_one(SIMD[DType.bool, 4](False, True, True, True)))
+
+    # CHECK: 0
+    print(
+        _index_of_first_one(
+            SIMD[DType.bool, 8](
+                True, False, True, False, True, False, True, False
+            )
+        )
+    )
+
+    # CHECK: 1
+    print(
+        _index_of_first_one(
+            SIMD[DType.bool, 8](
+                False, True, True, False, True, False, True, False
+            )
+        )
+    )
+
+    # CHECK: 5
+    print(
+        _index_of_first_one(
+            SIMD[DType.bool, 8](
+                False, False, False, False, False, True, False, False
+            )
+        )
+    )
+
+    # CHECK: 7
+    print(
+        _index_of_first_one(
+            SIMD[DType.bool, 8](
+                False, False, False, False, False, False, False, True
+            )
+        )
+    )
+
+    # CHECK: 7
+    print(
+        _index_of_first_one(
+            SIMD[DType.bool, 16](
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                True,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                True,
+            )
+        )
+    )
+
+
 # CHECK-LABEL: test_argn
 fn test_argn():
     print("== test_argn")
 
-    alias size = 15
+    alias size = 93
 
-    let vector = NDBuffer[1, DimList(size), DType.float32].stack_allocation()
+    let vector = NDBuffer[1, DimList(size), DType.int32].stack_allocation()
     let output = NDBuffer[1, DimList(1), DType.index].stack_allocation()
 
     for i in range(size):
@@ -227,7 +309,7 @@ fn test_argn():
     with Runtime(4) as runtime:
         let out_chain_0 = OwningOutputChainPtr(runtime)
         argmax(
-            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.float32]](
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
             ),
             0,
@@ -237,12 +319,12 @@ fn test_argn():
             out_chain_0.borrow(),
         )
         out_chain_0.wait()
-        # CHECK: argmax = 14
+        # CHECK: argmax = 92
         print("argmax = ", output[0])
 
         let out_chain_1 = OwningOutputChainPtr(runtime)
         argmin(
-            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.float32]](
+            rebind[NDBuffer[1, DimList.create_unknown[1](), DType.int32]](
                 vector
             ),
             0,
@@ -261,7 +343,7 @@ fn test_argn_2():
     print("== test_argn_2")
 
     alias batch_size = 4
-    alias size = 15
+    alias size = 91
 
     let vector = NDBuffer[
         2, DimList(batch_size, size), DType.float32
@@ -272,7 +354,7 @@ fn test_argn_2():
 
     for i in range(batch_size):
         for j in range(size):
-            vector[Index(i, j)] = i * size + j
+            vector[Index(i, j)] = j
 
     with Runtime(4) as runtime:
         let out_chain_0 = OwningOutputChainPtr(runtime)
@@ -287,10 +369,10 @@ fn test_argn_2():
             out_chain_0.borrow(),
         )
         out_chain_0.wait()
-        # CHECK: argmax = 14
-        # CHECK: argmax = 14
-        # CHECK: argmax = 14
-        # CHECK: argmax = 14
+        # CHECK: argmax = 90
+        # CHECK: argmax = 90
+        # CHECK: argmax = 90
+        # CHECK: argmax = 90
         for i in range(batch_size):
             print("argmax = ", output[Index(i, 0)])
 
@@ -484,6 +566,7 @@ fn main():
     test_mean_variance()
     test_3d_reductions()
     test_boolean()
+    test_index_of_first_one()
     test_argn()
     test_argn_2()
     test_argn_2_test_2()
