@@ -1489,15 +1489,6 @@ fn _argn[
                     input.simd_load[simd_width](j)
                 )
 
-        @parameter
-        @always_inline
-        fn get_input[type: DType](i: Int, j: Int) -> SIMD[type, 1]:
-            @parameter
-            if rank == 2:
-                return rebind[SIMD[type, 1]](input[i, j])
-            else:
-                return rebind[SIMD[type, 1]](input[j])
-
         for i in range(d0):
             var global_val: SIMD[type, 1]
 
@@ -1510,7 +1501,7 @@ fn _argn[
             var idx = SIMD[out_type, 1](0)
             if d1 < simd_width:
                 for j in range(d1):
-                    let elem = get_input[type](i, j)
+                    let elem = get_input[type, 1](i, j)
                     if cmp(global_val, elem):
                         global_val = elem
                         idx = j
@@ -1541,7 +1532,7 @@ fn _argn[
                 ].to_int()
 
                 for j in range(last_simd_index, d1, 1):
-                    let elem = get_input[type](i, j)
+                    let elem = get_input[type, 1](i, j)
                     if cmp(global_val, elem):
                         global_val = elem
                         idx = j
