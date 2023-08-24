@@ -344,7 +344,7 @@ ParseResult KGEN::parseParamDecl(AsmParser &p, ParamDeclAttr &result) {
 }
 
 void KGEN::printParamDecl(AsmPrinter &p, ParamDeclAttr decl) {
-  printParamName(p, decl.getName().getValue());
+  printParamName(p, decl.getName());
   printColonTypeOrIndex(p, decl.getType());
 }
 
@@ -513,11 +513,17 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise.
-void KGEN::printParamName(AsmPrinter &p, StringRef name) {
+void KGEN::printParamName(AsmPrinter &p, StringAttr name, bool isRef) {
   // If this will conflict with a reserved keyword then we need a '*' prefix and
   // double quotes.
-  bool needsQuotes = succeeded(DType::getFromString(name)) ||
-                     !isLegalMLIRIdentifier(name) || isMLIRBuiltinType(name);
+  auto isSugaredType = [&] {
+    return name.getContext()
+        ->getLoadedDialect<KGENDialect>()
+        ->typeParseFns.contains(name);
+  };
+  bool needsQuotes = !isLegalMLIRIdentifier(name) ||
+                     (isRef && (succeeded(DType::getFromString(name)) ||
+                                isMLIRBuiltinType(name) || isSugaredType()));
   if (needsQuotes)
     p << "*\"";
   llvm::printEscapedString(name, p.getStream());
@@ -934,7 +940,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   }
 
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(value)) {
-    printParamName(p, declRef.getName());
+    printParamName(p, declRef.getName(), isa<MLIRTypeType>(value.getType()));
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
@@ -1750,7 +1756,7 @@ ParseResult KGEN::parseOptionalAddressSpaceParamValue(AsmParser &p,
 /// Try to parse a pretty type or a standard MLIR type. A pretty type is a POP
 /// type without the dialect prefix or a symbol reference.
 ParseResult KGEN::parsePrettyType(AsmParser &p, TypedAttr &typeExpr) {
-  // Try to parse a symbol name as sugar for [LIT]DeclRefType.
+  // Try to parse a symbol name as sugar for DeclRefType.
   {
     SymbolRefAttr ref;
     auto refResult = p.parseOptionalAttribute(ref);
