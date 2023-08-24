@@ -143,7 +143,7 @@ def LIT_RefType : LITType<"Ref", "ref"> {
   let parameters = (ins "bool":$isMutable,
                         "TypedAttr":$elementType, "TypedAttr":$lifetime);
   let assemblyFormat = [{
-    `<` custom<MutFlag>($isMutable) `` custom<PrettyType>($elementType) `,`
+    `<` custom<MutFlag>($isMutable) `` custom<TypeParamValue>($elementType) `,`
         custom<LifetimeParamValue>($lifetime) `>`
   }];
 

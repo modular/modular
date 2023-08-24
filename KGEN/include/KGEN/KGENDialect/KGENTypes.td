@@ -368,7 +368,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   }];
 
   let parameters = (ins "TypedAttr":$elementType);
-  let assemblyFormat = "`<` custom<PrettyType>($elementType) `>`";
+  let assemblyFormat = "`<` custom<TypeParamValue>($elementType) `>`";
   let genVerifyDecl = 1;
 
   let builders = [
