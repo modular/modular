@@ -216,6 +216,17 @@ public:
 
   LogicalResult emitArchive(StringRef object) const;
 
+  //===--------------------------------------------------------------------===//
+  // Hacks and workarounds
+  //===--------------------------------------------------------------------===//
+
+  // TODO(#20024): Until we have a better solution we need to disable oneDNN
+  // optimizations in stock tf since they appear to be incompatible with the
+  // tf eager C API.
+  cl::opt<bool> disableTFOneDNN{
+      "disable-tf-onednn",
+      cl::desc("Disable the stock TF oneDNN optimizations."), cl::init(false)};
+
 private:
   /// Default alignment for input files.
   /// Used only when both client code and CLI do not specify alignment.
