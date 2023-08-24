@@ -703,7 +703,8 @@ static ErrorOr<int32_t> getIntInBytes(StringRef repr) {
 
 ErrorOr<DataLayout> DataLayout::parse(StringRef desc) {
   DataLayout dl(desc);
-  RETURN_ERROR(dl.parse());
+  if (auto err = dl.parse())
+    return err.takeError();
   return dl;
 }
 
@@ -736,11 +737,21 @@ ErrorOrSuccess DataLayout::parse() {
 
   while (!desc.empty()) {
     // Split at '-'.
-    { UNWRAP_ERROR_OR_SET(split, checkedSplit(desc, '-')); }
+    {
+      auto splitOr = checkedSplit(desc, '-');
+      if (splitOr.isError())
+        return splitOr.takeError();
+      split = std::move(*splitOr);
+    }
     desc = split.second;
 
     // Split at ':'.
-    { UNWRAP_ERROR_OR_SET(split, checkedSplit(split.first, ':')); }
+    {
+      auto splitOr = checkedSplit(split.first, ':');
+      if (splitOr.isError())
+        return splitOr.takeError();
+      split = std::move(*splitOr);
+    }
 
     // Aliases used below.
     StringRef &tok = split.first;   // Current token.
@@ -763,7 +774,10 @@ ErrorOrSuccess DataLayout::parse() {
       // Address space.
       unsigned addrSpace = 0;
       if (!tok.empty()) {
-        UNWRAP_ERROR_OR_SET(addrSpace, getInt(tok));
+        auto addrSpaceOr = getInt(tok);
+        if (addrSpaceOr.isError())
+          return addrSpaceOr.takeError();
+        addrSpace = std::move(*addrSpaceOr);
       }
       if (addrSpace != 0) {
         // Skip non-default address spaces.
@@ -773,16 +787,36 @@ ErrorOrSuccess DataLayout::parse() {
       // Size.
       if (rest.empty())
         return Error("missing pointer size specification");
-      UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':'));
-      UNWRAP_ERROR_OR_SET(ptrWidth, getInt(tok));
+      {
+        auto splitOr = checkedSplit(rest, ':');
+        if (splitOr.isError())
+          return splitOr.takeError();
+        split = std::move(*splitOr);
+      }
+      {
+        auto ptrWidthOr = getInt(tok);
+        if (ptrWidthOr.isError())
+          return ptrWidthOr.takeError();
+        ptrWidth = std::move(*ptrWidthOr);
+      }
       if (!ptrWidth)
         return Error("invalid pointer size of 0 bytes");
 
       // ABI alignment.
       if (rest.empty())
         return Error("missing pointer ABI alignment specification");
-      { UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':')); }
-      UNWRAP_ERROR_OR_SET(ptrAbiAlign, getIntInBytes(tok));
+      {
+        auto splitOr = checkedSplit(rest, ':');
+        if (splitOr.isError())
+          return splitOr.takeError();
+        split = std::move(*splitOr);
+      }
+      {
+        auto ptrAbiAlignOr = getIntInBytes(tok);
+        if (ptrAbiAlignOr.isError())
+          return ptrAbiAlignOr.takeError();
+        ptrAbiAlign = std::move(*ptrAbiAlignOr);
+      }
       if (!llvm::isPowerOf2_32(ptrAbiAlign))
         return Error("pointer ABI alignment must be a power of 2");
 
@@ -801,15 +835,28 @@ ErrorOrSuccess DataLayout::parse() {
       // Bit size.
       unsigned size = 0;
       if (!tok.empty()) {
-        UNWRAP_ERROR_OR_SET(size, getInt(tok));
+        auto sizeOr = getInt(tok);
+        if (sizeOr.isError())
+          return sizeOr.takeError();
+        size = std::move(*sizeOr);
       }
 
       // ABI alignment.
       if (rest.empty())
         return Error("missing alignment specification");
-      UNWRAP_ERROR_OR_SET(split, checkedSplit(rest, ':'));
+      {
+        auto splitOr = checkedSplit(rest, ':');
+        if (splitOr.isError())
+          return splitOr.takeError();
+        split = std::move(*splitOr);
+      }
       unsigned abiAlign;
-      UNWRAP_ERROR_OR_SET(abiAlign, getIntInBytes(tok));
+      {
+        auto abiAlignOr = getIntInBytes(tok);
+        if (abiAlignOr.isError())
+          return abiAlignOr.takeError();
+        abiAlign = std::move(*abiAlignOr);
+      }
       if (!abiAlign)
         return Error("ABI alignment specification cannot be zero");
 
@@ -990,7 +1037,10 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             HostMachineInfo &hostMachineInfo) {
   // Leave the data layout empty.
-  UNWRAP_ERROR(empty, DataLayout::parse(""));
+  auto emptyOr = DataLayout::parse("");
+  if (emptyOr.isError())
+    return emptyOr.takeError();
+  auto empty = std::move(*emptyOr);
 
   return TargetInfoAttr::get(
       ctx, llvm::Triple(hostMachineInfo.triple), hostMachineInfo.cpuArch,
