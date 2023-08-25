@@ -5,12 +5,10 @@
 struct MemExample:
   pass
 
-# CHECK-LABEL: lit.func @"borrow[__mlir_type.!lit.lifetime]
-# CHECK-SAME: (__mlir_type.!lit.ref<{{.*}}_MemExample, *(0,0)>)"<_10x11_lt: lifetime>(%a: !lit.ref<@{{.*}}@MemExample, _10x11_lt> borrow)
+# CHECK-LABEL: lit.func @"borrow{{.*}}"<{{.*}}lt: lifetime>(%a: !lit.ref<!MemExample, {{.*}}lt> borrow)
 fn borrow[lt: Lifetime](a: ref[lt] MemExample):
   pass
 
-# CHECK-LABEL: lit.func @"mutate[__mlir_type.!lit.lifetime]
-# CHECK-SAME: (__mlir_type.!lit.ref<mut {{.*}}MemExample, *(0,0)>)"<_15x11_lt: lifetime>(%a: !lit.ref<mut @"{{.*}}@MemExample, _15x11_lt> borrow)
+# CHECK-LABEL: lit.func @"mutate{{.*}}"<{{.*}}lt: lifetime>(%a: !lit.ref<mut !MemExample, {{.*}}lt> borrow)
 fn mutate[lt: Lifetime](a: mutref[lt] MemExample):
   pass

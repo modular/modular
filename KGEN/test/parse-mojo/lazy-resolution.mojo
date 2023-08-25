@@ -10,7 +10,7 @@
 # gets pulled in.
 
 # CHECK: lit.func @"use_of_error_type
-# CHECK: except (%{{.*}}: !kgen.declref<@"$builtin"::@"$error"::@Error>)
+# CHECK: except (%{{.*}}: !Error)
 
 # CHECK: lit.package @"$builtin"
 # CHECK: lit.file_module @"$error"

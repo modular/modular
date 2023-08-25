@@ -120,14 +120,14 @@ fn take_closure_raises(
     ],
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = kgen.call_signature %g(%x) : (index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index>
+    # CHECK: %0 = kgen.call_signature %g(%x) : (index borrow) throws|capturing -> !pop.variant<!Error, index>
     let result = g(x)
 
 
 fn throws_main() raises:
     let x = (4).value
 
-    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<@{{.*}}::@Error, index>
+    # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<!Error, index>
     @parameter
     fn g(y: __mlir_type.index) raises -> __mlir_type.index:
         return x
@@ -202,7 +202,7 @@ def let_decls() -> None:
     # CHECK: %y = lit.letreg.decl "y" = %0 : {{.*}}FloatLiteral
     let y = 1.0
 
-    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}@"$int"::@Int::@"__init__{{.*}}(%x)
+    # CHECK: [[TMP:%.*]] = kgen.call {{.*}}Int::@"__init__{{.*}}(%x)
     # CHECK: %z = lit.letreg.decl "z" = [[TMP]]
     let z = Int(x)
 
@@ -226,15 +226,15 @@ def var_decls() -> None:
     var y: Int
 
     # CHECK: [[Y:%.*]] = pop.load %y
-    # CHECK: [[ONE:%.*]] = kgen.param.constant: {{.*}}@"$int"::@Int {{.*}} 1
-    # CHECK: [[ADD:%.*]] = kgen.call {{.*}}@"$int"::@Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
-    # CHECK: pop.store [[ADD]], %y : !pop.pointer<{{.*}}@"$int"::@Int>
+    # CHECK: [[ONE:%.*]] = kgen.param.constant: !Int {{.*}} 1
+    # CHECK: [[ADD:%.*]] = kgen.call {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
+    # CHECK: pop.store [[ADD]], %y : !pop.pointer<!Int>
     y = y + 1
 
-    # CHECK: kgen.param.constant: {{.*}}@"$string_literal"::@StringLiteral = <#lit.struct<{value: string = "hello"}>>
+    # CHECK: kgen.param.constant: !StringLiteral = <#lit.struct<{value: string = "hello"}>>
     let const_str = "hello"
 
-    # CHECK: %str = lit.varlet.decl {{.*}} : <{{.*}}@StringLiteral>
+    # CHECK: %str = lit.varlet.decl {{.*}} : <!StringLiteral>
     # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}} = "hello"
     # CHECK: pop.store [[CONST]], %str
     var str = "hello"
@@ -319,7 +319,7 @@ fn callOverload(a: Int):
     # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$int::Int)"]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:<>(!kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)">()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:<>(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)">()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -395,7 +395,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$int::Int,{{.*}}$int::Int]()"
     paramOverload[a, b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload[a, b, c]()
 
     # CHECK: kgen.call @"$decls"::@"paramOverload({{.*}}$int::Int)"
@@ -404,13 +404,13 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}$int::Int,AnyType]($1)"
     paramOverload[a](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$int\22::_Int>]({{.*}}$int::Int)"
+    # CHECK: kgen.call @"$decls"::@"paramOverload[{{.*}}variadic<{{.*}}Int{{.*}}>]({{.*}}$int::Int)"
     paramOverload[a, b](x)
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload2[a]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$builtin\22::_\22$int\22::_Int>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}Int{{.*}}>]()"
     paramOverload2[a, b]()
 
     # CHECK: kgen.call @"$decls"::@"paramOverload2[$decls::MyInt]()"
@@ -419,7 +419,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK: kgen.call @"$decls"::@"paramOverload2[$decls::MyInt,$decls::MyInt]()"
     paramOverload2[MyInt(a), b]()
 
-    # CHECK: kgen.call @"$decls"::@"paramOverload2[__mlir_type.!kgen.variadic<_\22$decls\22::_MyInt>]()"
+    # CHECK: kgen.call @"$decls"::@"paramOverload2[{{.*}}variadic<{{.*}}MyInt{{.*}}>]()"
     paramOverload2[MyInt(a), b, c]()
 
 
@@ -546,7 +546,7 @@ fn nestedFnInLoop():
             # CHECK-NEXT: return %[[I]]
             return i
 
-        # CHECK: kgen.call_param[() -> {{.*}}@Int{{.*}}: *"foo()"]()
+        # CHECK: kgen.call_param[() -> !Int: *"foo()"]()
         let result = foo()
 
 
@@ -569,8 +569,8 @@ fn orvalueInferType():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
-# CHECK-SAME: (%a: !pop.pointer<@"$decls"::@StructWithInit> owned_in_mem,
-# CHECK-SAME:  %b: !pop.pointer<@"$decls"::@StructWithInit> borrow_in_mem)
+# CHECK-SAME: (%a: !pop.pointer<!StructWithInit> owned_in_mem,
+# CHECK-SAME:  %b: !pop.pointer<!StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
     # CHECK: %1 = pop.load [[AX]]
@@ -598,16 +598,16 @@ struct RPStructWithInitTrivial:
 
 
 # CHECK-LABEL: lit.func @"ownedConventionReg
-# CHECK-SAME: (%a: !kgen.declref<@"$decls"::@RPStructWithInit>,
-# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@RPStructWithInit> borrow,
-# CHECK-SAME:  %triv: !kgen.declref<@"$decls"::@RPStructWithInitTrivial> borrow)
+# CHECK-SAME: (%a: !RPStructWithInit,
+# CHECK-SAME:  %b: !RPStructWithInit borrow,
+# CHECK-SAME:  %triv: !RPStructWithInitTrivial borrow)
 fn ownedConventionReg(
     owned a: RPStructWithInit,
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
     # CHECK: %a_0 = lit.varlet.decl "a", var = true
-    # CHECK: pop.store %a, %a_0 : !pop.pointer<@"$decls"::@RPStructWithInit>
+    # CHECK: pop.store %a, %a_0 : !pop.pointer<!RPStructWithInit>
 
     # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
     # CHECK:  = pop.load [[AX]]
@@ -620,7 +620,7 @@ fn ownedConventionReg(
     let t = triv
 
     # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
-    # CHECK: [[ONE:%.*]]  = kgen.param.constant: {{.*}}@"$int"::@Int = <#lit.struct<{value = 1}>>
+    # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: pop.store [[ONE]], [[AX]]
     a.x = 1
 
@@ -649,7 +649,7 @@ fn callerFn(borrowed arg0: BorrowStruct):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"defaultArgument
-# CHECK-SAME: %c: !kgen.declref<{{.*}}@"$int"::@Int> borrow = #lit.struct<{value = 5}>)
+# CHECK-SAME: %c: !Int borrow = #lit.struct<{value = 5}>)
 fn defaultArgument(a: Int, b: Int = 3, c: Int = 5) -> Int:
     return a + b
 
@@ -668,8 +668,8 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !kgen.declref<{{.*}}@"$int"::@Int> borrow = apply(:<>(!kgen.declref<{{.*}}@"$int"::@Int> borrow, !kgen.declref<{{.*}}@"$int"::@Int> borrow)
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$int"::@Int> {{.*}}@"$int"::@Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
+# CHECK-SAME: (%a: !Int borrow = apply(:<>(!Int borrow, !Int borrow)
+# CHECK-SAME: -> !Int {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -689,8 +689,8 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*", var = false, synth = true : <{{.*}}@MemoryType>
-    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: {{.*}}@MemoryType = <apply_result_slot({{.*}}value = 1
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*", var = false, synth = true : <!MemoryType>
+    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: pop.store %[[VALUE]], %[[ANON]]
     # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%[[ANON]])
     defaultArgumentNonRegisterType()
@@ -700,7 +700,7 @@ fn callNonRegisterDefaultArg():
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f {{.*}} : !kgen.signature<(!kgen.declref<{{.*}}@"$int"::@Int> borrow, !kgen.declref<{{.*}}@"$int"::@Int> borrow = #lit.struct<{value = 3}>, {{.*}} = 5}>)
+    # CHECK: %f {{.*}} : !kgen.signature<(!Int borrow, !Int borrow = #lit.struct<{value = 3}>, {{.*}} = 5}>)
     let f = defaultArgument
 
 
@@ -722,7 +722,7 @@ struct VaList[EltType: __mlir_type.`!kgen.mlirtype`]:
         return __mlir_op.`pop.variadic.get`(self.value, index.value)
 
 
-# CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a: !kgen.variadic<{{.*}}@"$int"::@Int> borrow) vararg
+# CHECK-LABEL: lit.func @"variadics({{.*}}$int::Int*)"(%a: !kgen.variadic<!Int> borrow) vararg
 fn variadics(*a: Int):
     let vaArgs = VaList[Int](a)
     let size = vaArgs.size()
@@ -745,18 +745,18 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 
 # CHECK-LABEL: lit.func @"callVariadic{{.*}})"<
-# CHECK-SAME: [[P:.*]]: @"$builtin"::@"$int"::@Int>
+# CHECK-SAME: [[P:.*]]: !Int>
 fn callVariadic[p: Int](x: Int):
-    # CHECK: %variadic = kgen.param.constant: variadic<@"$builtin"::@"$int"::@Int> = <[]>
+    # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: call @"$decls"::@"variadics($builtin::$int::Int*)"(%variadic)
     variadics()
-    # CHECK: %variadic_0 = kgen.param.constant: variadic<@"$builtin"::@"$int"::@Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
+    # CHECK: %variadic_0 = kgen.param.constant: variadic<!Int> = <[{{.*}}7{{.*}}11{{.*}}13{{.*}}]>
     # CHECK: call @"$decls"::@"variadics($builtin::$int::Int*)"(%variadic_0)
     variadics(7, 11, 13)
     # CHECK: %[[VAR:.*]] = pop.variadic.create [%x]
     # CHECK: call @"$decls"::@"variadics($builtin::$int::Int*)"(%[[VAR]])
     variadics(x)
-    # CHECK: %[[CST:.*]] = kgen.param.constant: {{.*}}@"$int
+    # CHECK: %[[CST:.*]] = kgen.param.constant: !Int
     # CHECK: %[[VAR:.*]] = pop.variadic.create [%x, %[[CST]]]
     # CHECK: call @"$decls"::@"variadics($builtin::$int::Int*)"(%[[VAR]])
     variadics(x, 1)
@@ -766,13 +766,13 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: @"variadics($builtin::$int::Int*)", [[[P]], {{.*}} = 1{{.*}}]
     alias NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: @"parameterizedVariadic{{.*}}"<:type {{.*}}@"$int"::@Int>
+    # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
     parameterizedVariadic(1, 2)
-    # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:type {{.*}}@"$int"::@Int>
+    # CHECK: kgen.call {{.*}}@ParameterizedStruct::@"__init__(${{.*}}::ParameterizedStruct[[[T:.*]]]=&,[[T]]*)"<:type !Int>
     _ = ParameterizedStruct(3)
-    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<{{.*}}@"$int"::@Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
+    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS:.*]]]=&)"<:variadic<!Int> [#lit.struct<{value = 4}>, #lit.struct<{value = 5}>]>
     _ = VarArgsParameterizedStruct[4, 5]()
-    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"<:variadic<{{.*}}@"$int"::@Int> []>
+    # CHECK: kgen.call {{.*}}@VarArgsParameterizedStruct::@"__init__(${{.*}}::VarArgsParameterizedStruct[[[IS]]]=&)"<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
 
 
@@ -806,15 +806,15 @@ fn variadicParameter[*Ts: __mlir_type.`!kgen.mlirtype`](x: Int):
 
 # CHECK-LABEL: lit.func @"usePacks
 # CHECK-SAME: [[ARGX:%.*]]: !kgen.declref<@"$builtin"::@"$simd"::@SIMD{{.*}}f32
-# CHECK-SAME: [[ARGY:%.*]]: !kgen.declref<{{.*}}@"$int"::@Int>
+# CHECK-SAME: [[ARGY:%.*]]: !Int
 fn usePacks(x: Float32, y: Int):
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [{{.*}}@"$int"::@Int]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>>
     var a: MyTuple[Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [{{.*}}@"$int"::@Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, {{.*}}@"$int"::@Int]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>>
     var b: MyTuple[Int, Float32, Int]
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [{{.*}}@"$int"::@Int]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>>
     let c = MyTuple[Int](1)
-    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [{{.*}}FloatLiteral, index]>>
+    # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>>
     let d = MyTuple(3.14, (6).value)
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>>
     let e = MyTuple()
@@ -830,11 +830,11 @@ fn usePacks(x: Float32, y: Int):
     pack()
 
     # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, {{.*}}@"$int"::@Int]>(%[[PACK4]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
     pack((1).value, x, y)
-    # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: {{.*}}@"$int"::@Int = <#lit.struct<{value = 1}>>
+    # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [{{.*}}@"$int"::@Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, {{.*}}@"$int"::@Int]>(%[[PACK5]])
+    # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
     pack[Int, Float32, Int]((1).value, x, y)
 
     # CHECK: index.constant 1
@@ -842,7 +842,7 @@ fn usePacks(x: Float32, y: Int):
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
     packBorrowed((1).value, x, y)
 
-    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [{{.*}}@"$int"::@Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
+    # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
     variadicParameter[Int, Float32](1)
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
     variadicParameter((2).value)
@@ -873,7 +873,7 @@ def implicit_return_obj():
 # raises specifier.
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int> attributes {isDef
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws -> !pop.variant<!Error, !Int> attributes {isDef
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
     # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
@@ -881,7 +881,7 @@ def defAlwaysRaises() -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<@{{.*}}::@Error, {{.*}}@"$int"::@Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"() throws -> !pop.variant<!Error, !Int>
 fn fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}#lit.struct<{value = 0}>
     # CHECK-NEXT: %1 = pop.variant.create [[RESULT]]
@@ -889,7 +889,7 @@ fn fnThatRaises() raises -> Int:
     return 0
 
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<@{{.*}}::@Error, !lit.none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws -> !pop.variant<!Error, !lit.none>
 fn raisesReturnsNone() raises:
     # CHECK-NEXT: %0 = kgen.param.constant: !lit.none
     # CHECK-NEXT: %1 = pop.variant.create %0
@@ -899,7 +899,7 @@ fn raisesReturnsNone() raises:
 
 
 # COM: We can return an variant of error and index in a non-throwing function.
-# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<@{{.*}}::@Error, index>
+# CHECK-LABEL: lit.func @"raisesReturnsVariant()"() -> !pop.variant<!Error, index>
 fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
     return __mlir_op.`pop.variant.create`[
         _type : __mlir_type[`!pop.variant<`, Error, `, index>`]
@@ -932,7 +932,7 @@ struct EmptyStruct:
 
 # CHECK-NEXT: }
 
-# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}size: {{.*}}@"$int"::@Int> {
+# CHECK-LABEL: lit.struct.decl @OneLineStruct<{{.*}}size: !Int> {
 struct OneLineStruct[size: Int]:
     pass
     pass
@@ -946,7 +946,7 @@ struct StructWithInit:
     var y: Int
 
     # CHECK: lit.func @"__init__($decls::StructWithInit=&,{{.*}}$int::Int)"
-    # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
+    # CHECK-SAME: (%self: !pop.pointer<!StructWithInit> init_self,
     fn __init__(inout self, a: Int):
         # CHECK: %0 = lit.struct.gep %self[x]
         # CHECK: pop.store %a, %0
@@ -962,7 +962,7 @@ struct StructWithInit:
 
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !pop.pointer<@"$decls"::@StructWithInit> init_self,
+    # CHECK-SAME: (%self: !pop.pointer<!StructWithInit> init_self,
     fn __init__(inout self, a: Int, b: Int):
         # CHECK: hlcf.if
         if a == b:
@@ -990,7 +990,7 @@ struct StructExample:
     fn __init__() -> Self:
         return Self {}
 
-    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !kgen.declref<{{.*}}@"$int"::@Int> borrow) -> !lit.none attributes {{.*}} isStatic
+    # CHECK: lit.func @"static({{.*}}$int::Int)"(%x: !Int borrow) -> !lit.none attributes {{.*}} isStatic
     @staticmethod
     fn static(x: Int):
         # CHECK: %0 = {{.*}}#lit.struct<{value = 4}>
@@ -998,12 +998,12 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<@"$decls"::@StructExample> byref) -> !lit.none
+    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<!StructExample> byref) -> !lit.none
     fn mutatingMethod(inout self):
         pass
 
 
-# CHECK: lit.func @"callStatic{{.*}}(%a: !kgen.declref<{{.*}}@"$int"::@Int> borrow)
+# CHECK: lit.func @"callStatic{{.*}}(%a: !Int borrow)
 fn callStatic(a: Int):
     # CHECK: kgen.call @"$decls"::@StructExample::@"static{{.*}}(%a)
     StructExample.static(a)
@@ -1048,9 +1048,9 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__init__
-# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
-# CHECK-SAME:     %a: !kgen.declref<{{.*}}@"$int"::@Int> borrow,
-# CHECK-SAME:    %b: !kgen.declref<{{.*}}::@StructExample>) -> !lit.none
+# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
+# CHECK-SAME:     %a: !Int borrow,
+# CHECK-SAME:    %b: !StructExample) -> !lit.none
 # CHECK-SAME:    attributes {specialFnKind = 2 : i8} {
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: pop.store %a, %0
@@ -1059,8 +1059,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: !lit.none
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
-# CHECK-SAME:  %existing: !pop.pointer<@"$decls"::@ValueMem> borrow_in_mem)
+# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %existing: !pop.pointer<!ValueMem> borrow_in_mem)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %existing[a]
 # CHECK-NEXT: %2 = pop.load %1
@@ -1073,8 +1073,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: !lit.none
 
 # CHECK: lit.func @"__moveinit__
-# CHECK-SAME: (%self: !pop.pointer<{{.*}}@ValueMem> init_self,
-# CHECK-SAME:  %existing: !pop.pointer<@"$decls"::@ValueMem> owned_in_mem)
+# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %existing: !pop.pointer<!ValueMem> owned_in_mem)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %existing[a]
 # CHECK-NEXT: %2 = lit.load.consume %1
@@ -1094,16 +1094,16 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__init__
-# CHECK-SAME: (%a: !kgen.declref<{{.*}}@"$int"::@Int> borrow,
-# CHECK-SAME:  %b: !kgen.declref<@"$decls"::@StructExample>) ownedresult
-# CHECK-SAME:    -> !kgen.declref<@"$decls"::@ValueReg>
+# CHECK-SAME: (%a: !Int borrow,
+# CHECK-SAME:  %b: !StructExample) ownedresult
+# CHECK-SAME:    -> !ValueReg
 # CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
 # CHECK-NEXT: lit.return %0
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%existing: !kgen.declref<@"$decls"::@ValueReg> borrow)
-# CHECK-SAME:  -> !kgen.declref<@"$decls"::@ValueReg>
+# CHECK-SAME: (%existing: !ValueReg borrow)
+# CHECK-SAME:  -> !ValueReg
 # CHECK-SAME: attributes {isStatic, specialFnKind = 6 : i8}
 # CHECK-NEXT: %0 = lit.struct.extract %existing[a]
 # CHECK-NEXT: %1 = lit.struct.extract %existing[b]
@@ -1116,7 +1116,7 @@ struct ValueReg:
 # async/await
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.func @"coroutine()"() async -> !kgen.declref<{{.*}}@"$int"::@Int>
+# CHECK-LABEL: lit.func @"coroutine()"() async -> !Int
 async fn coroutine() -> Int:
     # CHECK: lit.return %0
     return 0
@@ -1126,8 +1126,8 @@ async fn coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
     async fn do_something(self: StructWithAsync):
-        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[<>() async -> !kgen.declref<{{.*}}@"$int"::@Int>: @"$decls"::@"coroutine()"]()
-        # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type {{.*}}@Int>(%[[CORO]])
+        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[<>() async -> !Int: @"$decls"::@"coroutine()"]()
+        # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
         # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
         let a = coroutine()
 
@@ -1166,9 +1166,9 @@ fn topLevelFunction() -> Int:
         # CHECK-NEXT: pop.load %a
         return a
 
-    # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$int"::@Int> = <*"nestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !Int = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call_param[<>() capturing -> !kgen.declref<{{.*}}@"$int"::@Int>: *"nestedFunction()"]()
+    # CHECK: call_param[<>() capturing -> !Int: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1183,9 +1183,9 @@ struct SomeStruct:
             # CHECK-NEXT: pop.load %a
             return a
 
-        # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !kgen.declref<{{.*}}@"$int"::@Int> = <*"nestedFunction()">
+        # CHECK: lit.alias.decl {{.*}}b: <>() capturing -> !Int = <*"nestedFunction()">
         alias b = nestedFunction
-        # CHECK: call_param[<>() capturing -> !kgen.declref<{{.*}}@"$int"::@Int>: *"nestedFunction()"]()
+        # CHECK: call_param[<>() capturing -> !Int: *"nestedFunction()"]()
         return nestedFunction()
 
 
@@ -1215,7 +1215,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn capturingNestedFunction() -> Int:
         return value
 
-    # CHECK: lit.alias.decl {{.*}}fatRef: <>() capturing -> {{.*}}@Int> = <*"capturingNestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}fatRef: <>() capturing -> !Int = <*"capturingNestedFunction()">
     alias fatRef = capturingNestedFunction
 
 
@@ -1227,9 +1227,9 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl {{.*}}reff: <{{.*}}@"$int"::@Int>() -> !lit.none = <*"nestedFunction[{{.*}}$int::Int]()">
+        # CHECK: lit.alias.decl {{.*}}reff: <!Int>() -> !lit.none = <*"nestedFunction[{{.*}}$int::Int]()">
         alias reff = nestedFunction
-        # CHECK: call_param[{{.*}}: bind_signature(:<{{.*}}@"$int"::@Int>() -> !lit.none *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call_param[{{.*}}: bind_signature(:<!Int>() -> !lit.none *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 
@@ -1258,15 +1258,15 @@ fn returnTup0a() -> ():
   return ()
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [{{.*}}@"$int"::@Int]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int]>>
 fn returnTup1() -> Tuple[Int]:
-  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[{{.*}}@"$int"::@Int]>
+  # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[!Int]>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
   # CHECK-NEXT: lit.return
   return (4,)
 
 # CHECK-LABEL: lit.func @"returnTup1
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [{{.*}}@"$int"::@Int]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int]>>
 fn returnTup1a() -> (Int,):
   return (4,)
 
@@ -1274,15 +1274,15 @@ fn returnTup1b() -> (Int,):
   return 4,
 
 # CHECK-LABEL: lit.func @"returnTup2
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [{{.*}}@"$int"::@Int, {{.*}}@"$float_literal"::@FloatLiteral]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[{{.*}}@"$int"::@Int, {{.*}}@"$float_literal"::@FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (4, 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
-# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [{{.*}}@"$int"::@Int, {{.*}}@"$float_literal"::@FloatLiteral]>>
+# CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2a() -> (Int, FloatLiteral):
-  # CHECK-NEXT: kgen.param.constant: !pop.pack<[{{.*}}@"$int"::@Int, {{.*}}@"$float_literal"::@FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
+  # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
   return (4, 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2b
@@ -1293,12 +1293,12 @@ fn returnTup2b() -> (Int, FloatLiteral):
 # Global Variables
 ##===----------------------------------------------------------------------===##
 
-# CHECK-LABEL: lit.globalvar.decl @trivial_global : {{.*}}@Int
-# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <{{.*}}@Int>
+# CHECK-LABEL: lit.globalvar.decl @trivial_global : !Int
+# CHECK-NEXT: %0 = lit.globalvar.ref @{{.*}}::@trivial_global : <!Int>
 # CHECK-NEXT: %1 = kgen.param.constant
 # CHECK-NEXT: pop.store %1, %0
 var trivial_global: Int = 1
-# CHECK-LABEL: lit.globalvar.decl @trivial_global_implicit : {{.*}}@Int
+# CHECK-LABEL: lit.globalvar.decl @trivial_global_implicit : !Int
 # CHECK-NEXT: %0 = lit.globalvar.ref
 # CHECK-NEXT: %1 = kgen.param.constant
 # CHECK-NEXT: pop.store %1, %0
@@ -1308,12 +1308,12 @@ var trivial_global_implicit = 1
 @register_passable
 struct RegType: pass
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global : {{.*}}@RegType>
+# CHECK-LABEL: lit.globalvar.decl @reg_global : !RegType
 # CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref @{{.*}}::@reg_global
 # CHECK-NEXT: pop.store %0, %1
 let reg_global: RegType = RegType()
-# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : {{.*}}@RegType> isVar
+# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType isVar
 # CHECK-NEXT: %0 = kgen.call {{.*}}@RegType::@"__init__()"
 # CHECK-NEXT: %1 = lit.globalvar.ref
 # CHECK-NEXT: pop.store %0, %1
@@ -1373,7 +1373,7 @@ fn refGlobals():
     # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}([[REG_REF]])
     mutGlobalReg(reg_global_implicit)
     # CHECK: [[MEM_REF:%.*]] = lit.globalvar.ref {{.*}}@mem_global
-    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}}@MemType>
+    # CHECK-NEXT: %anonymous2A = lit.varlet.decl {{.*}} <!MemType>
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[MEM_REF]])
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(mem_global)

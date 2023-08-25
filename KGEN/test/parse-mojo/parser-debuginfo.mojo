@@ -24,8 +24,8 @@ fn callerFn[rows: __mlir_type.index](arg0: CalledStruct[rows]):
 
 # Check single file debug info generation.
 
-# CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!kgen.declref<{{.*}}@"$int"::@Int>>
-# CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.declref<{{.*}}@"$int"::@Int>, !kgen.declref<{{.*}}@"$int"::@Int>) -> (!kgen.declref<{{.*}}@"$int"::@Int>): DW_CC_normal>
+# CHECK-DAG: ![[INT_TYPE:.*]] = !debuginfo.unresolved<!Int>
+# CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<(!Int, !Int) -> (!Int): DW_CC_normal>
 # CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "power", linkageName = "power({{.*}}$int::Int,{{.*}}$int::Int)", file = #{{.*}}, line = [[LN:[0-9]+]], scopeLine = [[LN]], subprogramFlags = "Definition|Optimized"> : ![[SP_TYPE]]
 # CHECK-DAG: #[[LHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "lhs", file = #{{.*}}, line = [[LN]], arg = 1> : ![[INT_TYPE]]
 # CHECK-DAG: #[[RHS_VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "rhs", file = #{{.*}}, line = [[LN]], arg = 2> : ![[INT_TYPE]]
@@ -67,8 +67,8 @@ from imported_module import VeryUniqueStruct
 
 # CHECK-DAG: lit.struct.decl @VeryUniqueStruct
 # CHECK-DAG: lit.struct.field very_unique_field : index loc(#[[LOC:loc[0-9]+]])
-# CHECK-DAG: lit.func @"very_unique_func($builtin::$int::Int)"(%very_unique_arg: !kgen.declref<@"$builtin"::@"$int"::@Int> loc("[[FILENAME]]"
-# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !kgen.declref<@"$builtin"::@"$int"::@Int> loc(#[[VALUE_LOC:loc[0-9]+]])
+# CHECK-DAG: lit.func @"very_unique_func($builtin::$int::Int)"(%very_unique_arg: !Int loc("[[FILENAME]]"
+# CHECK-DAG: debuginfo.value #[[LOCAL_VAR]] = %very_unique_arg : !Int loc(#[[VALUE_LOC:loc[0-9]+]])
 
 # CHECK-DAG: #[[LOC]] = loc(fused<#[[FILE]]>[#loc{{[0-9]+}}])
 # CHECK-DAG: #[[VALUE_LOC]] = loc(fused<#[[SP]]>[#[[LINE_LOC:loc[0-9]+]]])
@@ -90,19 +90,19 @@ fn caller():
 
 # CHECK-DAG: lit.func @"__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)"
 # CHECK-DAG:   pop.store %value, %[[VAL:.*]] : !pop.pointer<index> loc(#[[INIT_LOC:loc[0-9]*]])
-# CHECK-DAG:   %[[VAL]] = lit.struct.gep %self[value] : <index> from <@"$parser-debuginfo"::@MyValueStruct> loc(#[[INIT_LOC]])
+# CHECK-DAG:   %[[VAL]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[INIT_LOC]])
 
 # CHECK-DAG: lit.func @"__copyinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
 # CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : !pop.pointer<index> loc(#[[COPY_LOC:loc[0-9]*]])
 # CHECK-DAG:   pop.store %[[VAL2]], %[[VAL0:.*]] : !pop.pointer<index> loc(#[[COPY_LOC]])
-# CHECK-DAG:   %[[VAL0]] = lit.struct.gep %self[value] : <index> from <@"$parser-debuginfo"::@MyValueStruct> loc(#[[COPY_LOC]])
-# CHECK-DAG:   %[[VAL1]] = lit.struct.gep %existing[value] : <index> from <@"$parser-debuginfo"::@MyValueStruct> loc(#[[COPY_LOC]])
+# CHECK-DAG:   %[[VAL0]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
+# CHECK-DAG:   %[[VAL1]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 
 # CHECK-DAG: lit.func @"__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
 # CHECK-DAG:   %[[VAL3:.*]] = lit.load.consume %[[VAL4:.*]] : !pop.pointer<index> loc(#[[MOVE_LOC:loc[0-9]*]])
 # CHECK-DAG:   pop.store %[[VAL3]], %[[VAL5:.*]] : !pop.pointer<index> loc(#[[MOVE_LOC]])
-# CHECK-DAG:   %[[VAL5]] = lit.struct.gep %self[value] : <index> from <@"$parser-debuginfo"::@MyValueStruct> loc(#[[MOVE_LOC]])
-# CHECK-DAG:   %[[VAL4]] = lit.struct.gep %existing[value] : <index> from <@"$parser-debuginfo"::@MyValueStruct> loc(#[[MOVE_LOC]])
+# CHECK-DAG:   %[[VAL5]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
+# CHECK-DAG:   %[[VAL4]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
 
 # CHECK-DAG: #[[INIT_LOC]] = loc(fused<#[[SP_INIT]]>[#[[DEC_LOC:loc[0-9]*]]])
 # CHECK-DAG: #[[COPY_LOC]] = loc(fused<#[[SP_COPY]]>[#[[DEC_LOC]]])
