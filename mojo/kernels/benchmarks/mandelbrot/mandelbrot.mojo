@@ -13,11 +13,21 @@
 
 from builtin.io import _printf
 from utils.vector import DynamicVector
-from memory.buffer import Buffer, NDBuffer
+from memory.buffer import Buffer
 from Matrix import Matrix
 from utils.list import Dim, DimList
-from runtime.llcl import num_cores, Runtime, TaskGroup
-from algorithm import parallelize
+from runtime.llcl import (
+    num_cores,
+    Runtime,
+    TaskGroup,
+    OwningOutputChainPtr,
+)
+from algorithm import (
+    parallelize,
+    vectorize,
+    sync_parallelize,
+    async_parallelize,
+)
 from math import iota
 from complex import ComplexSIMD
 from benchmark import Benchmark
@@ -30,10 +40,13 @@ alias int_type = DType.index
 
 
 alias width = 4096
-# using simd_width=16
-constrained[width % 16 == 0, "must be a multiple of 16"]()
 alias height = 4096
 alias MAX_ITERS = 1000
+
+alias min_x = -2.0
+alias max_x = 0.47
+alias min_y = -1.12
+alias max_y = 1.12
 
 
 fn draw_mandelbrot[h: Int, w: Int](out: Matrix[DimList(h, w), int_type, False]):
@@ -133,66 +146,8 @@ fn mandelbrot_blog_1[
             out[row, col] = res
 
 
-# ===----------------------------------------------------------------------===#
-# Optimized
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn mandelbrot_kernel[
-    simd_width: Int
-](c: ComplexSIMD[float_type, simd_width]) -> SIMD[int_type, simd_width]:
-    var z = ComplexSIMD[float_type, simd_width](0, 0)
-    var nv: SIMD[int_type, simd_width] = 0
-    var mask: SIMD[DType.bool, simd_width] = -1
-    var i: Int = MAX_ITERS
-
-    while (i != 0) and mask.reduce_or():
-        mask = z.squared_norm() <= 4
-        z = z.squared_add(c)
-        nv = mask.select(nv + 1, nv)
-        i -= 1
-    return nv
-
-
-@always_inline
-fn mandelbrot[
-    simd_width: Int, h: Int, w: Int, parallel: Bool
-](
-    out: Matrix[DimList(h, w), int_type, False],
-    rows_per_worker: Int,
-    min_x: SIMD[float_type, simd_width],
-    max_x: SIMD[float_type, simd_width],
-    min_y: SIMD[float_type, simd_width],
-    max_y: SIMD[float_type, simd_width],
-):
-    # Each task gets a row
-    @always_inline
-    @parameter
-    fn worker(row: Int):
-        let rowv: SIMD[float_type, simd_width] = row
-        let simd_val = iota[float_type, simd_width]()
-        let scalex = (max_x - min_x) / w
-        let scaley = (max_y - min_y) / h
-        for col in range(w // simd_width):
-            var colv: SIMD[float_type, simd_width] = col * simd_width
-            colv = colv + simd_val
-            let cx = min_x + colv * scalex
-            let cy = min_y + rowv * scaley
-            let c = ComplexSIMD[float_type, simd_width](cx, cy)
-            out.simd_store[simd_width](
-                row, col * simd_width, mandelbrot_kernel[simd_width](c)
-            )
-
-    @parameter
-    if parallel:
-        parallelize[worker](h)
-    else:
-        for row in range(h):
-            worker(row)
-
-
-fn main():
+fn main_blog_part1():
+    constrained[width % 16 == 0, "must be a multiple of 16"]()
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type.value, `>`]](
         width * height
     )
@@ -232,7 +187,113 @@ fn main():
     vec._del_old()
 
 
-fn main_efficient():
+# ===----------------------------------------------------------------------===#
+# Blog post 2
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct BlogPost2Step:
+    var value: Int
+    alias VECTORIZE = BlogPost2Step(0)
+    """Vectorizes the code."""
+    alias VECTORIZE_WIDE = BlogPost2Step(1)
+    """Uses wider vector width."""
+    alias PARALLELIZE = BlogPost2Step(6)
+    """Implements coarse-grained parallelism."""
+    alias PARALLELIZE_FINE_2 = BlogPost2Step(7)
+    """Implements fine-grained parallelism (twice num_cores)."""
+    alias PARALLELIZE_FINE_4 = BlogPost2Step(8)
+    """Implements fine-grained parallelism (four times num_cores)."""
+    alias PARALLELIZE_FINE_8 = BlogPost2Step(9)
+    """Implements fine-grained parallelism (eight times num_cores)."""
+    alias PARALLELIZE_FINE_16 = BlogPost2Step(10)
+    """Implements fine-grained parallelism (sixteen times num_cores)."""
+    alias PARALLELIZE_FINE_32 = BlogPost2Step(11)
+    """Implements fine-grained parallelism (thirty-two times num_cores)."""
+
+    fn __init__(value: Int) -> Self:
+        return Self {value: value}
+
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: BlogPost2Step) -> Bool:
+        return self.value == rhs.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, rhs: BlogPost2Step) -> Bool:
+        return self.value != rhs.value
+
+
+@always_inline
+fn mandelbrot_kernel[
+    simd_width: Int
+](c: ComplexSIMD[float_type, simd_width]) -> SIMD[int_type, simd_width]:
+    """A vectorized implementation of the inner mandelbrot computation."""
+    var z = ComplexSIMD[float_type, simd_width](0, 0)
+    var iters = SIMD[int_type, simd_width](0)
+
+    var in_set_mask: SIMD[DType.bool, simd_width] = True
+    for i in range(MAX_ITERS):
+        if not in_set_mask.reduce_or():
+            break
+        in_set_mask = z.squared_norm() <= 4
+        iters = in_set_mask.select(iters + 1, iters)
+        z = z.squared_add(c)
+
+    return iters
+
+
+@always_inline
+fn mandelbrot[
+    simd_width: Int, h: Int, w: Int, step: BlogPost2Step
+](inout out: Matrix[DimList(h, w), int_type, False], rt: Runtime):
+    # Each task gets a row.
+    @always_inline
+    @parameter
+    fn worker(row: Int):
+        let scale_x = (max_x - min_x) / w
+        let scale_y = (max_y - min_y) / h
+
+        @always_inline
+        @parameter
+        fn compute_vector[simd_width: Int](col: Int):
+            """Each time we oeprate on a `simd_width` vector of pixels."""
+            let cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
+            let cy = min_y + row * scale_y
+            let c = ComplexSIMD[float_type, simd_width](cx, cy)
+            out.simd_store[simd_width](
+                row, col, mandelbrot_kernel[simd_width](c)
+            )
+
+        # We vectorize the call to compute_vector where call gets a chunk of
+        # pixels.
+        vectorize[simd_width, compute_vector](w)
+
+    @parameter
+    if step == BlogPost2Step.PARALLELIZE:
+        # If we just want to parallelize, then we launch the code above to
+        # run in parallel with each thread getting a chunk of h.
+        parallelize[worker](rt, h)
+    elif step.value >= BlogPost2Step.PARALLELIZE_FINE_2.value:
+        # A parallel launch where we overpartition the work. Each thread is
+        # now resposnible for multiple chunks and executes these chunks in a
+        # round-robin manner.
+        parallelize[worker](
+            rt,
+            h,
+            # Get the number of workers multiple.
+            (step.value - BlogPost2Step.PARALLELIZE_FINE_2.value + 2)
+            * num_cores(),
+        )
+    else:
+        # The sequential non-parallel version.
+        for row in range(h):
+            worker(row)
+
+
+fn main_blog_part2():
+    constrained[width % 16 == 0, "must be a multiple of 16"]()
 
     let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type.value, `>`]](
         width * height
@@ -240,41 +301,177 @@ fn main_efficient():
     let dptr = DTypePointer[int_type](vec.data.address)
     let m: Matrix[DimList(height, width), int_type, False] = vec.data
 
-    @always_inline
-    @parameter
-    fn bench_parallel[simd_width: Int]():
-        let min_x = -2.0
-        let max_x = 0.47
-        let min_y = -1.12
-        let max_y = 1.12
+    alias ns_per_second: Int = 1_000_000_000
 
-        mandelbrot[simd_width, height, width, True](
-            m, 1, min_x, max_x, min_y, max_y
-        )
-
-    var time: Float64
-    let ns_per_second: Int = 1_000_000_000
-
-    bench_parallel[simdwidthof[DType.float32]()]()
+    with Runtime(num_cores()) as rt0:
+        alias simd_width = simdwidthof[DType.float64]()
+        mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](m, rt0)
     var pixel_sum: Int = 0
     for i in range(height):
         for j in range(width):
             pixel_sum += m[i, j].to_int()
     print("pixel sum: ", pixel_sum)
 
-    var num_warmup: Int = 1
-    time = Benchmark(num_warmup).run[bench_parallel[16]]() / ns_per_second
-    print("Parallel with simd_width=16 ", time)
+    alias num_warmup = 1
+    alias experiment_iter_count = 2
+    var time: Float64
 
-    time = Benchmark(num_warmup).run[bench_parallel[8]]() / ns_per_second
-    print("Parallel with simd_width=8 ", time)
+    # PART 1. Just vectorize
+    with Runtime(num_cores()) as rt1:
 
-    time = Benchmark(num_warmup).run[bench_parallel[4]]() / ns_per_second
-    print("Parallel with simd_width=4 ", time)
+        @always_inline
+        @parameter
+        fn bench_vector[simd_width: Int]():
+            mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE](
+                m, rt1
+            )
 
-    time = Benchmark(num_warmup).run[bench_parallel[1]]() / ns_per_second
-    print("Parallel with simd_width=1 ", time)
+        for i in range(experiment_iter_count):
+            alias simd_width = simdwidthof[DType.float64]()
+            time = (
+                Benchmark(num_warmup).run[bench_vector[simd_width]]()
+                / ns_per_second
+            )
+            print("Vectorize with simd_width=", simd_width, "::", time)
+
+    # PART 2. Vectorize, fine grained
+    with Runtime(num_cores()) as rt2:
+
+        @always_inline
+        @parameter
+        fn bench_vector_2[simd_width: Int]():
+            mandelbrot[simd_width, height, width, BlogPost2Step.VECTORIZE_WIDE](
+                m, rt2
+            )
+
+        for i in range(experiment_iter_count):
+            alias simd_width = 2 * simdwidthof[DType.float64]()
+            time = (
+                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+                / ns_per_second
+            )
+            print("Vectorize with simd_width=", simd_width, "::", time)
+
+        for i in range(experiment_iter_count):
+            alias simd_width = 4 * simdwidthof[DType.float64]()
+            time = (
+                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+                / ns_per_second
+            )
+            print("Vectorize with simd_width=", simd_width, "::", time)
+
+        for i in range(experiment_iter_count):
+            alias simd_width = 8 * simdwidthof[DType.float64]()
+            time = (
+                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+                / ns_per_second
+            )
+            print("Vectorize with simd_width=", simd_width, "::", time)
+
+        for i in range(experiment_iter_count):
+            alias simd_width = 16 * simdwidthof[DType.float64]()
+            time = (
+                Benchmark(num_warmup).run[bench_vector_2[simd_width]]()
+                / ns_per_second
+            )
+            print("Vectorize with simd_width=", simd_width, "::", time)
+
+    # Parallelize the code.
+    with Runtime(num_cores()) as rt3:
+        alias simd_width = 4 * simdwidthof[DType.float64]()
+
+        @always_inline
+        @parameter
+        fn bench_parallel[simd_width: Int]():
+            mandelbrot[simd_width, height, width, BlogPost2Step.PARALLELIZE](
+                m, rt3
+            )
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel with simd_width=", simd_width, "::", time)
+
+    # Fine grained parallelism.
+    with Runtime(num_cores()) as rt4:
+        alias simd_width = 2 * simdwidthof[DType.float64]()
+
+        @always_inline
+        @parameter
+        fn bench_parallel_2[simd_width: Int]():
+            mandelbrot[
+                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_2
+            ](m, rt4)
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel_2[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel(2) with simd_width=", simd_width, "::", time)
+
+        @always_inline
+        @parameter
+        fn bench_parallel_4[simd_width: Int]():
+            mandelbrot[
+                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_4
+            ](m, rt4)
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel_4[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel(4) with simd_width=", simd_width, "::", time)
+
+        @always_inline
+        @parameter
+        fn bench_parallel_8[simd_width: Int]():
+            mandelbrot[
+                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_8
+            ](m, rt4)
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel_8[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel(8) with simd_width=", simd_width, "::", time)
+
+        @always_inline
+        @parameter
+        fn bench_parallel_16[simd_width: Int]():
+            mandelbrot[
+                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_16
+            ](m, rt4)
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel_16[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel(16) with simd_width=", simd_width, "::", time)
+
+        @always_inline
+        @parameter
+        fn bench_parallel_32[simd_width: Int]():
+            mandelbrot[
+                simd_width, height, width, BlogPost2Step.PARALLELIZE_FINE_32
+            ](m, rt4)
+
+        for i in range(experiment_iter_count):
+            time = (
+                Benchmark(num_warmup).run[bench_parallel_32[simd_width]]()
+                / ns_per_second
+            )
+            print("Parallel(32) with simd_width=", simd_width, "::", time)
 
     print(m[0, 0])
-    # draw_mandelbrot[height, width](m)
     vec._del_old()
+
+
+fn main():
+    # main_blog_part1()
+    main_blog_part2()
