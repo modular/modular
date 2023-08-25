@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements higher-order functions."""
+"""Implements higher-order functions.
+
+You can import these APIs from the `algorithm` package. For example:
+
+```mojo
+from algorithm import map
+```
+"""
 
 from math import div_ceil, max, min
 from math.numerics import FlushDenormals

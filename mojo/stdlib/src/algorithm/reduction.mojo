@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements SIMD reductions."""
+"""Implements SIMD reductions.
+
+You can import these APIs from the `algorithm` package. For example:
+
+```mojo
+from algorithm import map_reduce
+```
+"""
 
 from math import all_true as _all_true
 from math import any_true as _any_true

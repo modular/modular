@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements sorting functions."""
+"""Implements sorting functions.
+
+You can import these APIs from the `algorithm` package. For example:
+
+```mojo
+from algorithm.sort import sort
+```
+"""
 
 from math.bit import ctlz
 from sys.info import bitwidthof
