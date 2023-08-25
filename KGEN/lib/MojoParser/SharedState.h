@@ -48,7 +48,6 @@ class FileModuleOp;
 class PackageOp;
 class ExprNode;
 enum class CallSyntax : uint8_t;
-class Capture;
 
 /// Given a number, return one string if the number is 1, otherwise return the
 /// other.  This is typically used to generate an "s" suffix, but can also be
@@ -57,6 +56,29 @@ inline const char *plural(size_t value, const char *one = "",
                           const char *other = "s") {
   return value == 1 ? one : other;
 }
+
+/// Capture represents a nested function value whose declaration is in the
+/// parent function.
+class Capture {
+public:
+  Capture() : init(false) {}
+  Capture(Value value, Type fieldType, Type initType)
+      : mlirValue(value), fieldType(fieldType), initType(initType), init(true) {
+  }
+  bool operator==(Capture const &rhs) {
+    return rhs.init == init && rhs.mlirValue == mlirValue;
+  }
+  operator bool() const { return init; }
+  Value getMlirValue() const;
+  Type getFieldType() const;
+  Type getInitType() const;
+
+private:
+  Value mlirValue;
+  Type fieldType;
+  Type initType;
+  bool init;
+};
 
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
@@ -333,12 +355,14 @@ public:
                                               FileModuleOp fileModuleOp);
 
   /// Given a scope that refers to a nested function, return the set of captured
-  /// values.
-  ArrayRef<Capture> getCapturesInScope(ASTDecl &scope);
+  /// values in the form of a range: the begin and end iterators of the capture
+  /// list.
+  iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
+  getCaptureRangeInScope(ASTDecl &scope);
 
   /// Given a nested function, a capture value, and the corresponding capture
   /// ASTDecl, store the capture associated with the nested function.
-  void addCaptureToScope(ASTDecl &scope, Capture capture);
+  void addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl, Capture capture);
 
 private:
   /// The internal state of an imported module or package.

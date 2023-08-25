@@ -648,9 +648,9 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // state and this is not considered a capture.
     if (!isa<LIT::FuncOp>(*decls[0])) {
       assert(decls.size() == 1 && "Only functions may be overloaded");
-      ASTDecl &decl = *decls[0];
-      if (decl.getParentDecl() && (decl.getParentDecl() != &container))
-        emitter.shared.addCaptureToScope(container, capture);
+      ASTDecl *decl = decls[0];
+      if (decl->getParentDecl() && (decl->getParentDecl() != &container))
+        emitter.shared.addCaptureToScope(container, decl, capture);
     }
   }
   CValue value = result.getIfCValue();
