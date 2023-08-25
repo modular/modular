@@ -327,7 +327,7 @@ fn _stack_allocation[
         return __mlir_op.`pop.global_alloc`[
             count : count.value,
             _type : __mlir_type[
-                `!pop.pointer<`, type, `,`, address_space.value().value, `>`
+                `!kgen.pointer<`, type, `,`, address_space.value().value, `>`
             ],
             alignment : alignment.value,
             address_space : address_space.value().value,
@@ -336,7 +336,7 @@ fn _stack_allocation[
         return __mlir_op.`pop.stack_allocation`[
             count : count.value,
             _type : __mlir_type[
-                `!pop.pointer<`, type, `,`, address_space.value().value, `>`
+                `!kgen.pointer<`, type, `,`, address_space.value().value, `>`
             ],
             alignment : alignment.value,
             address_space : address_space.value().value,
@@ -360,7 +360,7 @@ struct DevicePointer[type: AnyType, address_space: AddressSpace]:
     """
 
     alias pointer_type = __mlir_type[
-        `!pop.pointer<`, type, `,`, address_space.value().value, `>`
+        `!kgen.pointer<`, type, `,`, address_space.value().value, `>`
     ]
 
     var address: Self.pointer_type
@@ -496,7 +496,7 @@ struct DevicePointer[type: AnyType, address_space: AddressSpace]:
     fn __as_index(self) -> Int:
         # Returns the pointer address as an index.
         let addr = llvm_intrinsic[
-            "addrspacecast", __mlir_type[`!pop.pointer<`, type, `>`]
+            "addrspacecast", __mlir_type[`!kgen.pointer<`, type, `>`]
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
             _type : __mlir_type.`!pop.scalar<index>`
@@ -521,7 +521,11 @@ struct DevicePointer[type: AnyType, address_space: AddressSpace]:
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type : __mlir_type[
-                `!pop.pointer<`, new_type, `,`, address_space.value().value, `>`
+                `!kgen.pointer<`,
+                new_type,
+                `,`,
+                address_space.value().value,
+                `>`,
             ]
         ](self.address)
 
@@ -630,7 +634,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
 
     alias element_type = __mlir_type[`!pop.scalar<`, type.value, `>`]
     alias pointer_type = __mlir_type[
-        `!pop.pointer<`,
+        `!kgen.pointer<`,
         Self.element_type,
         `,`,
         address_space.value().value,
@@ -786,7 +790,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
             address, as the original `DTypePointer`.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type : __mlir_type[`!pop.pointer<scalar<`, new_type.value, `>>`]
+            _type : __mlir_type[`!kgen.pointer<scalar<`, new_type.value, `>>`]
         ](self.address)
 
     @always_inline
@@ -890,7 +894,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
         alias alignment_value = alignment.value
         let ptr = __mlir_op.`pop.pointer.bitcast`[
             _type : __mlir_type[
-                `!pop.pointer<`,
+                `!kgen.pointer<`,
                 SIMD[type, width],
                 `,`,
                 address_space.value().value,
@@ -976,7 +980,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
         alias alignment_value = alignment.value
         let ptr = __mlir_op.`pop.pointer.bitcast`[
             _type : __mlir_type[
-                `!pop.pointer<`,
+                `!kgen.pointer<`,
                 SIMD[type, width],
                 `,`,
                 address_space.value().value,
@@ -989,7 +993,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
     fn __as_index(self) -> Int:
         # Returns the pointer address as an index.
         let addr = llvm_intrinsic[
-            "addrspacecast", __mlir_type[`!pop.pointer<`, SIMD[type, 1], `>`]
+            "addrspacecast", __mlir_type[`!kgen.pointer<`, SIMD[type, 1], `>`]
         ](self.address)
         return __mlir_op.`pop.pointer_to_index`[
             _type : __mlir_type.`!pop.scalar<index>`
