@@ -218,55 +218,55 @@ kgen.func @simd_select(%arg0: !pop.simd<4, bool>, %arg1: !pop.simd<4, f32>, %arg
 }
 
 // CHECK-LABEL: @load
-kgen.func @load(%p: !pop.pointer<scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @load(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: llvm.load
-  %0 = pop.load %p : !pop.pointer<scalar<f32>>
+  %0 = pop.load %p : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
 // CHECK-LABEL: @load_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
-kgen.func @load_with_alignment(%p: !pop.pointer<scalar<f32>>) -> !pop.scalar<f32> {
+kgen.func @load_with_alignment(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
   // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK: llvm.load %[[PTR]]  {alignment = 128 : i64}
-  %0 = pop.load %p align 128 : !pop.pointer<scalar<f32>>
+  %0 = pop.load %p align 128 : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !pop.scalar<f32>
 }
 
 // CHECK-LABEL: @store
-kgen.func @store(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @store(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK: llvm.store
-  pop.store %v, %p : !pop.pointer<scalar<si32>>
+  pop.store %v, %p : !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
 // CHECK-LABEL: @store_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @store_with_alignment(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64}
-  pop.store %v, %p align 128 : !pop.pointer<scalar<si32>>
+  pop.store %v, %p align 128 : !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
 // CHECK-LABEL: @nontemporal_store_with_alignment
 // CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
 // CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
-kgen.func @nontemporal_store_with_alignment(%p: !pop.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
+kgen.func @nontemporal_store_with_alignment(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64, nontemporal}
-  pop.store %v, %p align 128 nontemporal: !pop.pointer<scalar<si32>>
+  pop.store %v, %p align 128 nontemporal: !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !pop.pointer<scalar<f32>>, %i: index) -> !pop.pointer<scalar<f32>> {
+kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
-  %0 = pop.offset %p[%i] : !pop.pointer<scalar<f32>>
-  kgen.return %0 : !pop.pointer<scalar<f32>>
+  %0 = pop.offset %p[%i] : !kgen.pointer<scalar<f32>>
+  kgen.return %0 : !kgen.pointer<scalar<f32>>
 }
 
 // CHECK-LABEL: @pop_select
@@ -557,24 +557,24 @@ kgen.func @cmp_simd(%lhs: !pop.simd<4, f32>, %rhs: !pop.simd<4, f32>) -> !pop.si
 }
 
 // CHECK-LABEL: @pointer_to_index
-kgen.func @pointer_to_index(%a: !pop.pointer<scalar<f32>>, %b: !pop.pointer<simd<4, si32>>)
+kgen.func @pointer_to_index(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.pointer<simd<4, si32>>)
     -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK: llvm.ptrtoint
-  %0 = pop.pointer_to_index %a : !pop.pointer<scalar<f32>> to !pop.scalar<index>
+  %0 = pop.pointer_to_index %a : !kgen.pointer<scalar<f32>> to !pop.scalar<index>
   // CHECK: llvm.ptrtoint
-  %1 = pop.pointer_to_index %b : !pop.pointer<simd<4, si32>> to !pop.scalar<index>
+  %1 = pop.pointer_to_index %b : !kgen.pointer<simd<4, si32>> to !pop.scalar<index>
   kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<index>
 }
 
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer(%idx: !pop.scalar<index>) -> (
-      !pop.pointer<scalar<f32>>,
-      !pop.pointer<simd<4, si32>>) {
+      !kgen.pointer<scalar<f32>>,
+      !kgen.pointer<simd<4, si32>>) {
   // CHECK: llvm.inttoptr
-  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.pointer<scalar<f32>>
+  %0 = pop.index_to_pointer %idx : !pop.scalar<index> to !kgen.pointer<scalar<f32>>
   // CHECK: llvm.inttoptr
-  %1 = pop.index_to_pointer %idx : !pop.scalar<index> to !pop.pointer<simd<4, si32>>
-  kgen.return %0, %1 :!pop.pointer<scalar<f32>>, !pop.pointer<simd<4, si32>>
+  %1 = pop.index_to_pointer %idx : !pop.scalar<index> to !kgen.pointer<simd<4, si32>>
+  kgen.return %0, %1 :!kgen.pointer<scalar<f32>>, !kgen.pointer<simd<4, si32>>
 }
 
 // CHECK-LABEL: @address_to_index
@@ -696,12 +696,12 @@ kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> !pop.scalar<f32> {
 
 // CHECK-LABEL: @call_void_intrinsic
 kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
-                               %arg1: !pop.pointer<si8>) {
+                               %arg1: !kgen.pointer<si8>) {
   // CHECK: %[[ARG0_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK: %[[ARG1_CAST:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: llvm.call_intrinsic "llvm.lifetime.start"(%[[ARG0_CAST]], %[[ARG1_CAST]]) : (i64, !llvm.ptr<i8>) -> ()
   pop.call_llvm_intrinsic "llvm.lifetime.start", (%arg0, %arg1) :
-    (!pop.scalar<si64>, !pop.pointer<si8>) -> ()
+    (!pop.scalar<si64>, !kgen.pointer<si8>) -> ()
   kgen.return
 }
 
@@ -724,43 +724,43 @@ kgen.func @inline_asm(
 }
 
 // CHECK-LABEL: kgen.func @atomic_cmpxchg
-kgen.func @atomic_cmpxchg(%ptr: !pop.pointer<scalar<index>>,
+kgen.func @atomic_cmpxchg(%ptr: !kgen.pointer<scalar<index>>,
                           %cmp: !pop.scalar<index>,
                           %new: !pop.scalar<index>) {
   // CHECK: llvm.cmpxchg {{.*}} monotonic monotonic
   %0 = pop.atomic.cmpxchg %ptr, %cmp, %new monotonic monotonic :
-                    !pop.pointer<scalar<index>>
+                    !kgen.pointer<scalar<index>>
 
   // CHECK: llvm.cmpxchg {{.*}} acq_rel monotonic
   %1 = pop.atomic.cmpxchg %ptr, %cmp, %new acq_rel monotonic :
-                    !pop.pointer<scalar<index>>
+                    !kgen.pointer<scalar<index>>
 
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @atomic_rmw
-kgen.func @atomic_rmw(%ptr0: !pop.pointer<scalar<index>>,
+kgen.func @atomic_rmw(%ptr0: !kgen.pointer<scalar<index>>,
                       %val0: !pop.scalar<index>,
-                      %ptr1: !pop.pointer<scalar<f32>>,
+                      %ptr1: !kgen.pointer<scalar<f32>>,
                       %val1: !pop.scalar<f32>,
-                      %ptr2: !pop.pointer<scalar<ui32>>,
+                      %ptr2: !kgen.pointer<scalar<ui32>>,
                       %val2: !pop.scalar<ui32>) {
   // CHECK: llvm.atomicrmw add {{.*}} monotonic
-  %0 = pop.atomic.rmw add(%ptr0, %val0) monotonic : !pop.pointer<scalar<index>>
+  %0 = pop.atomic.rmw add(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: llvm.atomicrmw sub {{.*}} monotonic
-  %1 = pop.atomic.rmw sub(%ptr0, %val0) monotonic : !pop.pointer<scalar<index>>
+  %1 = pop.atomic.rmw sub(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: llvm.atomicrmw _xor {{.*}} monotonic
-  %2 = pop.atomic.rmw xor(%ptr0, %val0) monotonic : !pop.pointer<scalar<index>>
+  %2 = pop.atomic.rmw xor(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: llvm.atomicrmw min {{.*}} monotonic
-  %3 = pop.atomic.rmw min(%ptr0, %val0) monotonic : !pop.pointer<scalar<index>>
+  %3 = pop.atomic.rmw min(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: llvm.atomicrmw max {{.*}} monotonic
-  %4 = pop.atomic.rmw max(%ptr0, %val0) monotonic : !pop.pointer<scalar<index>>
+  %4 = pop.atomic.rmw max(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
 
   // CHECK: llvm.atomicrmw fadd {{.*}} monotonic
-  %5 = pop.atomic.rmw add(%ptr1, %val1) monotonic : !pop.pointer<scalar<f32>>
+  %5 = pop.atomic.rmw add(%ptr1, %val1) monotonic : !kgen.pointer<scalar<f32>>
 
   // CHECK: llvm.atomicrmw umax {{.*}} monotonic
-  %6 = pop.atomic.rmw max(%ptr2, %val2) monotonic : !pop.pointer<scalar<ui32>>
+  %6 = pop.atomic.rmw max(%ptr2, %val2) monotonic : !kgen.pointer<scalar<ui32>>
   kgen.return
 }
 
@@ -852,10 +852,10 @@ kgen.func @extract_size(%a: !kgen.string) ->  index {
 }
 
 // CHECK-LABEL: @extract_addr
-kgen.func @extract_addr(%a: !kgen.string) -> !pop.pointer<scalar<si8>> {
+kgen.func @extract_addr(%a: !kgen.string) -> !kgen.pointer<scalar<si8>> {
   // CHECK: llvm.extractvalue %0[0] : !llvm.struct<(ptr<i8>, i64)>
   %1 = pop.string.address %a
-  kgen.return %1: !pop.pointer<scalar<si8>>
+  kgen.return %1: !kgen.pointer<scalar<si8>>
 }
 
 }

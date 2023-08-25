@@ -88,7 +88,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (auto ptr = dyn_cast<POP::PointerType>(t)) {
+  if (auto ptr = dyn_cast<PointerType>(t)) {
     ErrorOr<std::string> elementaryType =
         getCTypeForElementary(ptr.getElementAsType());
     // If the type is not elementary, then pass it as an opaque pointer.

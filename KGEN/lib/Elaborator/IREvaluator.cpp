@@ -60,7 +60,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
     arguments.push_back(input);
-  auto ptr = dyn_cast<POP::PointerType>(func.getArgument(0).getType());
+  auto ptr = dyn_cast<PointerType>(func.getArgument(0).getType());
   if (!ptr)
     return ErrorTree(func.getLoc(), "first argument is not a pointer");
   ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(

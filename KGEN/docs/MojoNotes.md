@@ -141,7 +141,7 @@ Python identifier syntax:
 
 ```python
 fn takeMLIRTypes(a: __mlir_type.f32,
-                 b: __mlir_type.`!pop.pointer<!pop.scalar<ui32>>`): pass
+                 b: __mlir_type.`!kgen.pointer<!pop.scalar<ui32>>`): pass
 
 struct Bool:
   var value : __mlir_type.i1
@@ -175,12 +175,12 @@ value into a dynamic one, e.g. when storing into a variable:
 ```mlir
   # CHECK: %d = lit.varlet.decl "d", var = true : <i17>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
-  # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
+  # CHECK: pop.store [[TMP]], %d : !kgen.pointer<i17>
   var d = __mlir_attr.`4: i17`
 
   # CHECK: %dt = lit.varlet.decl "dt", var = true : <dtype>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
-  # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
+  # CHECK: pop.store [[TMP]], %dt  : !kgen.pointer<dtype>
   var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
 ```
 
@@ -213,7 +213,7 @@ you can use:
 ```mlir
   # CHECK: %idxConstant = lit.varlet.decl "idxConstant", var = true, var = true : <index>
   # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
-  # CHECK-NEXT: pop.store [[TMP]], %idxConstant : !pop.pointer<index>
+  # CHECK-NEXT: pop.store [[TMP]], %idxConstant : !kgen.pointer<index>
   var idxConstant = __mlir_op.`index.constant`[value: 42]()
 ```
 

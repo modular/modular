@@ -154,79 +154,6 @@ ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerType
-//===----------------------------------------------------------------------===//
-
-LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  TypedAttr type, TypedAttr addressSpace) {
-  if (type && !::isa<MLIRTypeType>(type.getType()))
-    return emitError() << "type parameter for pointer must be a !kgen.mlirtype";
-  if (addressSpace && !addressSpace.getType().isIndex())
-    return emitError() << "address space parameter `" << addressSpace
-                       << "` must be an index type";
-  return success();
-}
-
-Type PointerType::getElementAsType() const {
-  TypedAttr elemType = getElementType();
-  if (auto typeCst = ::dyn_cast<TypeConstantAttr>(elemType))
-    return typeCst.getValue();
-  assert(::isa<MLIRTypeType>(elemType.getType()) &&
-         "parameter expr must have metatype type");
-  return ParamRefType::get(elemType);
-}
-
-PointerType PointerType::get(TypedAttr elementType, unsigned addressSpace) {
-  MLIRContext *ctx = elementType.getContext();
-  return PointerType::get(ctx, elementType,
-                          IntegerAttr::get(IndexType::get(ctx), addressSpace));
-}
-
-PointerType PointerType::get(Type elementType, unsigned addressSpace) {
-  return get(TypeConstantAttr::get(elementType), addressSpace);
-}
-
-PointerType PointerType::get(TypedAttr elementType, TypedAttr addressSpace) {
-  return get(addressSpace.getContext(), elementType, addressSpace);
-}
-
-PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
-  return get(TypeConstantAttr::get(elementType), addressSpace);
-}
-
-std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerSize();
-}
-
-std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
-}
-
-ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
-                                    InterpreterState &state) const {
-  int64_t size = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem =
-      state.getWritableMemory(addr, size, /*writePointer=*/true);
-  if (mem.isError())
-    return mem.takeError();
-  // The pointer size of the target is variable.
-  APInt intVal(size * CHAR_BIT, value.cast<PointerAttr>().getAddr());
-  llvm::StoreIntToMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
-  return success();
-}
-
-ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
-                                         InterpreterState &state) const {
-  int64_t size = *getTypeSize(state.getTarget());
-  ErrorOr<const void *> mem = state.getReadableMemory(addr, size);
-  if (mem.isError())
-    return mem.takeError();
-  APInt intVal(size * CHAR_BIT, 0);
-  llvm::LoadIntFromMemory(intVal, (const uint8_t *)*mem, size);
-  return PointerAttr::get(intVal.getLimitedValue(), *this);
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
@@ -749,7 +676,6 @@ void POPDialect::registerTypes() {
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
   dialect->registerMnemonicType<ArrayType>();
-  dialect->registerMnemonicType<PointerType>();
   dialect->registerMnemonicType<StructType>();
   dialect->registerMnemonicType<VariantType>();
 

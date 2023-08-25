@@ -19,7 +19,7 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 kgen.func @convert_pop_types(
     %arg0: !pop.simd<1, f32>,
-    %arg1: !pop.pointer<simd<1, f32>>,
+    %arg1: !kgen.pointer<simd<1, f32>>,
     %arg2: !pop.simd<4, f32>) {
   kgen.return
 }

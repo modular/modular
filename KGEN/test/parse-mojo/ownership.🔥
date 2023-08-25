@@ -48,7 +48,7 @@ struct RegExample:
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
-# CHECK-SAME: (%arg0: !pop.pointer<!MemExample> owned_in_mem)
+# CHECK-SAME: (%arg0: !kgen.pointer<!MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
@@ -328,7 +328,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[
         detail_fn: __mlir_type[
-            `!kgen.signature<(!pop.pointer<`,
+            `!kgen.signature<(!kgen.pointer<`,
             MemExample,
             `> byref_result) -> !lit.none>`,
         ],
@@ -371,15 +371,15 @@ struct Complicated:
   var b: MemExample
 
 # Issue #12068 - This shouldn't crash.
-fn testPointerGEP(ptr: __mlir_type[`!pop.pointer<`, Complicated, `>`]) -> Int:
+fn testPointerGEP(ptr: __mlir_type[`!kgen.pointer<`, Complicated, `>`]) -> Int:
   let addr = ptr
   return __get_address_as_lvalue(addr).b.x
 
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
 # pointer magically from memory.
 # CHECK-LABEL: lit.func @"testTakePointeeAsOwned
-fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
-                          i1ptr: __mlir_type.`!pop.pointer<i1>`):
+fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
+                          i1ptr: __mlir_type.`!kgen.pointer<i1>`):
   # This should run the destructor.
   # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
@@ -404,8 +404,8 @@ fn testTakePointeeAsOwned(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
 
 
 # CHECK-LABEL: testGetAsUnitializedObject
-fn testGetAsUnitializedObject(ptr: __mlir_type[`!pop.pointer<`, MemExample, `>`],
-                             i1ptr: __mlir_type.`!pop.pointer<i1>`):
+fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
+                             i1ptr: __mlir_type.`!kgen.pointer<i1>`):
   # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
   # before the overwrite.
 
@@ -724,7 +724,7 @@ struct ExoticDelExample:
 
     # Test the condition
     # CHECK-NEXT: %3 = lit.struct.gep %self_0[cond] : <i1> from <!ExoticDelExample>
-    # CHECK-NEXT: %4 = pop.load %3 : !pop.pointer<i1>
+    # CHECK-NEXT: %4 = pop.load %3 : !kgen.pointer<i1>
     # CHECK-NEXT: hlcf.if %4 {
     if self.cond:
       # This side we manually consume for c.
@@ -1024,7 +1024,7 @@ fn optimizeCopyToMove():
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
-# CHECK-SAME: %a: !pop.pointer<!MemExample> borrow_in_mem
+# CHECK-SAME: %a: !kgen.pointer<!MemExample> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
   # CHECK-NEXT: kgen.param.constant: !lit.none
   pass

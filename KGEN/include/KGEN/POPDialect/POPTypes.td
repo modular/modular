@@ -80,89 +80,6 @@ def ArrayKnownSize : ConfinedType<POP_ArrayType,
     "array with known size">;
 
 //===----------------------------------------------------------------------===//
-// PointerType
-//===----------------------------------------------------------------------===//
-
-def POP_PointerType : POPType<"Pointer", "pointer",
-    [DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
-  let summary = "parameterized pointer type";
-  let description = [{
-    This type represents a pointer. The pointee type is parameterized with a
-    `!kgen.mlirtype` type. An optional `addressSpace` argument can be specified
-    (default to 0).
-
-    Example:
-
-    ```mlir
-    // A pointer to a scalar.
-    !pop.pointer<scalar<f32>>
-
-    // A pointer to a SIMD vector.
-    !pop.pointer<simd<4, f32>>
-
-    // A parameterized scalar pointer.
-    !pop.pointer<scalar<type>>
-
-    // A completely parameterized pointer.
-    !pop.pointer<elementType>
-
-    // The address space parameter is optional, but can be specified.
-    !pop.pointer<scalar<si32>, 2>
-
-    // The address space also works on parametrized pointers.
-    !pop.pointer<elementType, 5>
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$elementType,
-                        DefaultValuedParameter<"TypedAttr",
-                          "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
-  let assemblyFormat = [{
-    `<` custom<TypeParamValue>($elementType) ``
-    (`,` custom<IndexParamValue>($addressSpace)^)? `>`
-  }];
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        CArg<"unsigned", "0">:$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        CArg<"unsigned", "0">:$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
-                                        "TypedAttr":$addressSpace)>,
-    TypeBuilderWithInferredContext<(ins "Type":$elementType,
-                                        "TypedAttr":$addressSpace)>,
-  ];
-
-  let extraClassDeclaration = [{
-    /// Return the elementType attribute as a type.
-    Type getElementAsType() const;
-
-    /// Get the element type as the provided type.
-    template <typename ElTy>
-    ElTy getElementAs() { return getElementAsType().cast<ElTy>(); }
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// Type Constraints
-
-class PointerElementType<string lhs, string rhs> : TypesMatchWith<
-    "pointer element type", lhs, rhs,
-    "ParamRefType::get($_self.cast<POP::PointerType>().getElementType())">;
-
-class PointerOf<Type type> : ConfinedType<POP_PointerType,
-    [CPred<"$_self.cast<POP::PointerType>().getElementType()">,
-     SubstLeaves<"$_self",
-      "$_self.cast<POP::PointerType>().getElementAsType()",
-      type.predicate>],
-    "pointer to " # type.summary> {
-  let cppClassName = "::M::KGEN::POP::PointerType";
-  let builderCall = !if(!empty(type.builderCall), "",
-                       "PointerType::get(" # type.builderCall #")");
-}
-
-//===----------------------------------------------------------------------===//
 // SIMDType
 //===----------------------------------------------------------------------===//
 
@@ -288,7 +205,7 @@ def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.simd<1, si8>">,
                                    "$_builder.getContext(), KGENDType::si8))">;
 
 def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
-    [POP_PointerType, AddressSIMD, UnboundSIMD]>;
+    [PointerType, AddressSIMD, UnboundSIMD]>;
 
 
 def UnboundOrIndexOrInt : AnyTypeOf<[
@@ -339,7 +256,7 @@ def POP_StructType : POPType<"Struct", "struct", [
 
     // A struct with nested types.
     !pop.struct<
-      !pop.pointer<simd<4, si8>>,
+      !kgen.pointer<simd<4, si8>>,
       !pop.array<24, scalar<si64>>,
       !pop.struct<
         !pop.scalar<f32>,

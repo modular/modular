@@ -606,8 +606,8 @@ def Mem2Reg : Pass<"mem-2-reg"> {
 
     ```mlir
     %0 = pop.stack_allocation 1 x index
-    pop.store %arg0, %0 : !pop.pointer<index>
-    %1 = pop.load %0 : !pop.pointer<index>
+    pop.store %arg0, %0 : !kgen.pointer<index>
+    %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
     ```
 
@@ -622,11 +622,11 @@ def Mem2Reg : Pass<"mem-2-reg"> {
     ```mlir
     %0 = pop.stack_allocation 1 x index
     hlcf.if %arg2 {
-      pop.store %arg0, %0 : !pop.pointer<index>
+      pop.store %arg0, %0 : !kgen.pointer<index>
     } else {
-      pop.store %arg1, %0 : !pop.pointer<index>
+      pop.store %arg1, %0 : !kgen.pointer<index>
     }
-    %1 = pop.load %0 : !pop.pointer<index>
+    %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
     ```
   }];
@@ -652,15 +652,15 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
     into earliest block we can.
 
     ```mlir
-      %s = pop.load %arg0 : !pop.pointer<struct<index, index, index>>
+      %s = pop.load %arg0 : !kgen.pointer<struct<index, index, index>>
 
       hlcf.loop {
-        %0 = pop.struct.extract %s[0] : !pop.pointer<struct<index, index, index>>
+        %0 = pop.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
         hlcf.loop {
-          %1 = pop.struct.extract %s[1] : !pop.pointer<struct<index, index, index>>
+          %1 = pop.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
           hlcf.if %arg2 {
             %2 = pop.struct.extract %s[2] :
-                        !pop.pointer<struct<index, index, index>>
+                        !kgen.pointer<struct<index, index, index>>
             // ...
           } else {
             // ..
@@ -672,10 +672,10 @@ def HoistTrivialInvariants : Pass<"hoist-trivial-invariants", "KGEN::FuncOp"> {
     Becomes:
 
     ```mlir
-      %s = pop.load %arg0 : !pop.pointer<struct<index, index, index>>
-      %0 = pop.struct.extract %s[0] : !pop.pointer<struct<index, index, index>>
-      %1 = pop.struct.extract %s[1] : !pop.pointer<struct<index, index, index>>
-      %2 = pop.struct.extract %s[2] : !pop.pointer<struct<index, index, index>>
+      %s = pop.load %arg0 : !kgen.pointer<struct<index, index, index>>
+      %0 = pop.struct.extract %s[0] : !kgen.pointer<struct<index, index, index>>
+      %1 = pop.struct.extract %s[1] : !kgen.pointer<struct<index, index, index>>
+      %2 = pop.struct.extract %s[2] : !kgen.pointer<struct<index, index, index>>
 
       hlcf.loop {
         hlcf.loop {

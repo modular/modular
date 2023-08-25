@@ -58,7 +58,7 @@ struct LifetimeTrackable {
     return getTypeOrPointeeType(value.getType(), isIndirect);
   }
 
-  /// When isIndirect is true, this strips off the top level POP::PointerType
+  /// When isIndirect is true, this strips off the top level PointerType
   /// from the specified type, otherwise it returns it unmodified.
   static Type getTypeOrPointeeType(Type type, bool isIndirect);
 };

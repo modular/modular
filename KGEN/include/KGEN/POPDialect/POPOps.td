@@ -484,22 +484,22 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 
     ```mlir
     // Bitcast an opaque pointer to an f32 pointer.
-    %0 = pop.pointer.bitcast %arg0 : !pop.pointer<scalar<invalid>> to
-                                     !pop.pointer<scalar<f32>>
+    %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<scalar<invalid>> to
+                                     !kgen.pointer<scalar<f32>>
 
     // Bitcast a scalar pointer to a SIMD pointer.
-    %1 = pop.pointer.bitcast %0 : !pop.pointer<scalar<f32>> to
-                                  !pop.pointer<simd<4, f32>>
+    %1 = pop.pointer.bitcast %0 : !kgen.pointer<scalar<f32>> to
+                                  !kgen.pointer<simd<4, f32>>
 
     // Bitcast an opaque pointer to a function pointer.
-    %2 = pop.pointer.bitcast %arg0 : !pop.pointer<scalar<invalid>> to
+    %2 = pop.pointer.bitcast %arg0 : !kgen.pointer<scalar<invalid>> to
                                      (i32, i32) -> (f32, f32)
     ```
   }];
 
-  let arguments = (ins AnyTypeOf<[KGEN_ParamRefType, POP_PointerType,
+  let arguments = (ins AnyTypeOf<[KGEN_ParamRefType, PointerType,
                                   FunctionType]>:$input);
-  let results = (outs AnyTypeOf<[KGEN_ParamRefType, POP_PointerType,
+  let results = (outs AnyTypeOf<[KGEN_ParamRefType, PointerType,
                                  FunctionType]>:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` qualified(type($output))
@@ -710,13 +710,13 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     Example:
 
     ```mlir
-    %0 = pop.load %ptr0 : !pop.pointer<scalar<f32>>
-    %1 = pop.load %ptr1 : !pop.pointer<simd<4, type>>
-    %2 = pop.load %ptr0 align 8 : !pop.pointer<scalar<f32>>
+    %0 = pop.load %ptr0 : !kgen.pointer<scalar<f32>>
+    %1 = pop.load %ptr1 : !kgen.pointer<simd<4, type>>
+    %2 = pop.load %ptr0 align 8 : !kgen.pointer<scalar<f32>>
     ```
   }];
 
-  let arguments = (ins Arg<POP_PointerType, "", [MemRead]>:$ptr,
+  let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
@@ -745,15 +745,15 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     Example:
 
     ```mlir
-    pop.store %0, %ptr0 : !pop.pointer<scalar<f32>>
-    pop.store %1, %ptr1 : !pop.pointer<simd<4, type>>
-    pop.store %1, %ptr1 align 8 : !pop.pointer<simd<4, type>>
-    pop.store %1, %ptr1 align 8 nontemporal: !pop.pointer<simd<4, type>>
+    pop.store %0, %ptr0 : !kgen.pointer<scalar<f32>>
+    pop.store %1, %ptr1 : !kgen.pointer<simd<4, type>>
+    pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
+    pop.store %1, %ptr1 align 8 nontemporal: !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins AnyType:$arg,
-                       Arg<POP_PointerType, "", [MemWrite]>:$ptr,
+                       Arg<PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        UnitAttr:$nonTemporal);
   let assemblyFormat = [{
@@ -781,13 +781,13 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
     Example:
 
     ```mlir
-    %addr0 = pop.offset %ptr0[%idx] : !pop.pointer<scalar<f32>>
-    %addr1 = pop.offset %ptr1[%idx] : !pop.pointer<simd<4, type>>
+    %addr0 = pop.offset %ptr0[%idx] : !kgen.pointer<scalar<f32>>
+    %addr1 = pop.offset %ptr1[%idx] : !kgen.pointer<simd<4, type>>
     ```
   }];
 
-  let arguments = (ins POP_PointerType:$ptr, Index:$index);
-  let results = (outs POP_PointerType:$result);
+  let arguments = (ins PointerType:$ptr, Index:$index);
+  let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
   }];
@@ -959,12 +959,12 @@ def POP_StructGEPOp : POPOp<"struct.gep", [Pure,
     ```mlir
     ^bb0(%struct: !pop.struct<i32, i64>):
       %mem = pop.stack_allocation 1 : !pop.struct<i32, i64>
-      pop.store %struct, %mem : !pop.pointer<struct<i32, i64>>
+      pop.store %struct, %mem : !kgen.pointer<struct<i32, i64>>
     ```
   }];
 
   let arguments = (ins PointerOf<POP_StructType>:$container, IndexAttr:$index);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $container `[` $index `]` attr-dict `:` type($container)
   }];
@@ -1151,7 +1151,7 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
   }];
 
   let arguments = (ins PointerOf<POP_ArrayType>:$array, Index:$index);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array)";
   let hasCanonicalizeMethod = 1;
 }
@@ -1431,26 +1431,26 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
     // Scoped to the enclosing region.
     %0 = pop.stack_allocation count x type
 
-    %mem = scf.if %cond -> !pop.pointer<type> {
+    %mem = scf.if %cond -> !kgen.pointer<type> {
       // OK: The memory is scoped to the enclosing region.
-      scf.yield %0 : !pop.pointer<type>
+      scf.yield %0 : !kgen.pointer<type>
     } else {
       // Scoped to the 'else' region.
       %1 = pop.stack_allocation count x type
 
       // The memory is escaping its enclosed region.
-      scf.yield %1 : !pop.pointer<type>
+      scf.yield %1 : !kgen.pointer<type>
     }
 
     // NOT OK: Loading pointer to invalid memory.
-    %v = pop.load %mem : !pop.pointer<type>
+    %v = pop.load %mem : !kgen.pointer<type>
     ```
   }];
 
   let arguments = (ins AttrOfType<Index>:$count,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<Index>>:$address_space);
-  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
+  let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
@@ -1490,7 +1490,7 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc",
   }];
 
   let arguments = (ins Index:$align, Index:$size);
-  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$ptr);
+  let results = (outs Res<PointerType, "", [MemAlloc]>:$ptr);
 
   let assemblyFormat = "$align `,` $size attr-dict `:` type($ptr)";
 }
@@ -1514,7 +1514,7 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
     ```
   }];
 
-  let arguments = (ins Arg<POP_PointerType, "", [MemFree]>:$ptr);
+  let arguments = (ins Arg<PointerType, "", [MemFree]>:$ptr);
 
   let assemblyFormat = "$ptr attr-dict `:` type($ptr)";
 }
@@ -1542,8 +1542,8 @@ def POP_ExternalCallOp : POPOp<"external_call",
     non-variadic arguments.
 
     ```mlir
-    pop.external_call @printf(%fmt, %v0, %v1) (!pop.pointer<scalar<si8>>) -> ()
-      : (!pop.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
+    pop.external_call @printf(%fmt, %v0, %v1) (!kgen.pointer<scalar<si8>>) -> ()
+      : (!kgen.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
     ```
 
     The `funcAttrs` attribute specifies LLVM function attributes on the external
@@ -1590,7 +1590,7 @@ def POP_GlobalAddressOp : POPOp<"global.address", [Pure,
   let summary = "Get the address of a global variable.";
   let description = [{
     The `pop.global.address` operation returns the address of a referenced
-    global variable. The type of the result is a `!pop.pointer` to the global
+    global variable. The type of the result is a `!kgen.pointer` to the global
     type.
 
     Example:
@@ -1601,7 +1601,7 @@ def POP_GlobalAddressOp : POPOp<"global.address", [Pure,
   }];
 
   let arguments = (ins SymbolRefAttr:$global);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
 
   let assemblyFormat = "$global attr-dict `:` type($result)";
 }
@@ -1629,7 +1629,7 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
   let arguments = (ins AttrOfType<Index>:$count,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<Index>>:$address_space);
-  let results = (outs Res<POP_PointerType, "", [MemAlloc]>:$result);
+  let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
@@ -1661,7 +1661,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 
   let arguments = (ins TypedAttrInterface:$value,
                         OptionalAttr<AttrOfType<Index>>:$alignment);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
 
   let assemblyFormat = [{
     `` custom<GlobalConstantOpValue>($value, type($result))
@@ -1743,8 +1743,8 @@ def POP_IndexToPointerOp : POPOp<"index_to_pointer", [
     Example:
 
     ```mlir
-    %addr0 = pop.index_to_pointer %idx : index to !pop.pointer<scalar<f32>>
-    %addr1 = pop.index_to_pointer %idx : index to !pop.pointer<simd<4, type>>
+    %addr0 = pop.index_to_pointer %idx : index to !kgen.pointer<scalar<f32>>
+    %addr1 = pop.index_to_pointer %idx : index to !kgen.pointer<simd<4, type>>
     %addr2 = pop.index_to_pointer %idx : index to !pop.scalar<address>
     %addr4 = pop.index_to_pointer %idx : !pop.simd<4, index> to
                                          !pop.simd<4, address>
@@ -1777,8 +1777,8 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !pop.pointer<scalar<f32>> to index
-    %addr1 = pop.pointer_to_index %idx : !pop.pointer<simd<4, type>> to index
+    %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>> to index
+    %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>> to index
     %addr2 = pop.pointer_to_index %idx : !pop.scalar<address> to index
     %addr4 = pop.pointer_to_index %idx : !pop.simd<4, address> to
                                          !pop.simd<4, index>
@@ -2273,7 +2273,7 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
 
     ```mlir
     %b0 = pop.atomic.cmpxchg %ptr, %cmp, %val monotonic monotonic :
-        !pop.pointer<scalar<index>>
+        !kgen.pointer<scalar<index>>
     ```
   }];
 
@@ -2323,7 +2323,7 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
     Example:
 
     ```mlir
-    %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !pop.pointer<scalar<index>>
+    %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !kgen.pointer<scalar<index>>
     ```
   }];
 

@@ -577,26 +577,26 @@ kgen.generator export @constexpr_fma() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @init_self(%arg0: !pop.pointer<index>, %arg1: index) {
+kgen.generator @init_self(%arg0: !kgen.pointer<index>, %arg1: index) {
   %idx1 = index.constant 1
   %0 = index.add %idx1, %arg1
-  pop.store %0, %arg0 : !pop.pointer<index>
+  pop.store %0, %arg0 : !kgen.pointer<index>
   kgen.return
 }
 
-kgen.generator @byref_result(%arg0: !pop.pointer<index>, %arg1: !pop.pointer<index>) {
-  %0 = pop.load %arg1 : !pop.pointer<index>
+kgen.generator @byref_result(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<index>) {
+  %0 = pop.load %arg1 : !kgen.pointer<index>
   %idx2 = index.constant 2
   %1 = index.mul %idx2, %0
-  pop.store %1, %arg0 : !pop.pointer<index>
+  pop.store %1, %arg0 : !kgen.pointer<index>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant = <2048>
-  kgen.param.declare value = <apply_result_slot(:(!pop.pointer<index>, index) -> () @init_self, 1023)>
-  kgen.param.constant = <apply_result_slot(:(!pop.pointer<index>, !pop.pointer<index>) -> () @byref_result, #M.store_to_mem<#kgen.param.decl.ref<"value"> : index>)>
+  kgen.param.declare value = <apply_result_slot(:(!kgen.pointer<index>, index) -> () @init_self, 1023)>
+  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index>, !kgen.pointer<index>) -> () @byref_result, #M.store_to_mem<#kgen.param.decl.ref<"value"> : index>)>
   kgen.return
 }
 
@@ -609,16 +609,16 @@ kgen.generator @alloc_load_store(%arg0: index) -> index {
   %idx3 = index.constant 3
 
   %p0 = pop.stack_allocation 4 x index
-  pop.store %idx0, %p0 : !pop.pointer<index>
-  %p1 = pop.offset %p0[%idx1] : !pop.pointer<index>
-  pop.store %idx1, %p1 : !pop.pointer<index>
-  %p2 = pop.offset %p0[%idx2] : !pop.pointer<index>
-  pop.store %idx2, %p2 : !pop.pointer<index>
-  %p3 = pop.offset %p1[%idx2] : !pop.pointer<index>
-  pop.store %idx3, %p3 : !pop.pointer<index>
+  pop.store %idx0, %p0 : !kgen.pointer<index>
+  %p1 = pop.offset %p0[%idx1] : !kgen.pointer<index>
+  pop.store %idx1, %p1 : !kgen.pointer<index>
+  %p2 = pop.offset %p0[%idx2] : !kgen.pointer<index>
+  pop.store %idx2, %p2 : !kgen.pointer<index>
+  %p3 = pop.offset %p1[%idx2] : !kgen.pointer<index>
+  pop.store %idx3, %p3 : !kgen.pointer<index>
 
-  %ptr = pop.offset %p0[%arg0] : !pop.pointer<index>
-  %result = pop.load %ptr : !pop.pointer<index>
+  %ptr = pop.offset %p0[%arg0] : !kgen.pointer<index>
+  %result = pop.load %ptr : !kgen.pointer<index>
   kgen.return %result : index
 }
 

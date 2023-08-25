@@ -70,7 +70,7 @@ lit.struct.decl @Adder<size> {
   lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
     %0 = lit.varlet.decl "a", var = true, synth=false : <index>
     %one = index.constant 1
-    pop.store %one, %0 : !pop.pointer<index>
+    pop.store %one, %0 : !kgen.pointer<index>
     kgen.return
   }
 }
@@ -182,7 +182,7 @@ lit.struct.decl @foo {
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
   %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
-  %0 = kgen.call @throwing_callee(%y) : (!pop.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
+  %0 = kgen.call @throwing_callee(%y) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
   // CHECK: %2 = pop.variant.is !pop.array<0, i1>, %1 : !pop.variant<@Error, array<0, i1>>
   // CHECK: %3 = hlcf.if %2 -> !pop.array<0, i1> {
   // CHECK:   %4 = pop.variant.get %1 : !pop.variant<@Error, array<0, i1>> as !pop.array<0, i1>
@@ -192,7 +192,7 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
   // CHECK:   %5 = pop.variant.create %4 : !kgen.declref<@Error> -> !pop.variant<@Error, array<0, i1>>
   // CHECK:   kgen.return %5 : !pop.variant<@Error, array<0, i1>>
   // CHECK:  }
-  %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
+  %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
     %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
     lit.yield %7 : !lit.none
   } else {
@@ -267,8 +267,8 @@ lit.func @return_raise_or(%cond: i1, %err: !kgen.declref<@Error>) -> !pop.varian
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0: !pop.pointer<index>) throws ->
-lit.func @removeMetadata(%arg0: !pop.pointer<index> byref) throws -> index {
+// CHECK-SAME: (%arg0: !kgen.pointer<index>) throws ->
+lit.func @removeMetadata(%arg0: !kgen.pointer<index> byref) throws -> index {
   %0 = index.constant 0
   kgen.return %0 : index
 }

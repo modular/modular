@@ -88,7 +88,7 @@ kgen.generator @foo() {
 #file = #debuginfo.file<"foo.mojo" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 
-// CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<2, 1>>>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[CL_SP_TYPE:.*]] = !debuginfo.subroutine<(!kgen.pointer<scalar<#pop.struct.extract<2, 1>>>) -> (): DW_CC_normal>
 // CHECK-DAG: ![[OTHER_SP_TYPE:.*]] = !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "foo", linkageName = "foo"
 // CHECK-DAG: #[[CL_SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "SomeClosure", linkageName = "SomeClosure", {{.*}}> : ![[CL_SP_TYPE]]
@@ -98,7 +98,7 @@ kgen.generator @foo() {
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #subprogram1 = #debuginfo.subprogram<
   compileUnit = #compile_unit, scope = #file, name = "SomeClosure", linkageName = "SomeClosure", file = #file, line = 183, scopeLine = 183, subprogramFlags = "Definition|Optimized"
-> : !debuginfo.subroutine<(!pop.pointer<scalar<#pop.struct.extract<N, 1>>>) -> (): DW_CC_normal>
+> : !debuginfo.subroutine<(!kgen.pointer<scalar<#pop.struct.extract<N, 1>>>) -> (): DW_CC_normal>
 #subprogram2 = #debuginfo.subprogram<
   compileUnit = #compile_unit, scope = #file, name = "OtherClosure", linkageName = "OtherClosure", file = #file, line = 56, scopeLine = 56, subprogramFlags = "Definition|Optimized"
 > : !debuginfo.subroutine<(!pop.array<K, index>) -> (): DW_CC_normal>

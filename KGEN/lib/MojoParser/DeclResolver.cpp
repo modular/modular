@@ -1519,7 +1519,7 @@ void ParsedArgument::computeArgumentConventions(
     // Adjust the MLIR type if needed.
     if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
         arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
-      argType = POP::PointerType::get(argType);
+      argType = PointerType::get(argType);
       if (i >= defaultOffset) {
         // Add the PValue to LValue conversion in the default value.
         size_t index = i - defaultOffset;
@@ -2551,7 +2551,7 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   ExprEmitter emitter(shared, parentDecl, builder);
 
   ASTType declType = argValue.getRValueType();
-  Type varType = POP::PointerType::get(declType);
+  Type varType = PointerType::get(declType);
   auto varDecl = builder.create<VarLetDeclOp>(shared.translateLocation(loc),
                                               varType, argName,
                                               /*isVar*/ true,
@@ -2652,9 +2652,9 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
     // If this `def` returns an object but is missing a return, insert one
     // automatically.
     auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
-    if (objType && objType.isEqualCanon(
-                       cast<POP::PointerType>(func.getArgument(0).getType())
-                           .getElementType())) {
+    if (objType &&
+        objType.isEqualCanon(cast<PointerType>(func.getArgument(0).getType())
+                                 .getElementType())) {
       // Emit `object()` into the memory type return slot.
       ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
@@ -3370,7 +3370,7 @@ static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
   // The argument is always owned.
   ValueInputConvention convention = ValueInputConvention::OwnedInReg;
   if (!selfType.isRegisterPassable(structDecl.getLoc(), resolver.shared)) {
-    selfType = POP::PointerType::get(selfType);
+    selfType = PointerType::get(selfType);
     convention = ValueInputConvention::OwnedInMem;
   }
 

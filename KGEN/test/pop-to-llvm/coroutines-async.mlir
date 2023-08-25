@@ -10,7 +10,7 @@ llvm.func @coro_promise() {
   // CHECK: %2 = llvm.getelementptr inbounds %1[24] : (!llvm.ptr<i8>) -> !llvm.ptr<struct<(i32, i64)>>
   %1 = pop.coroutine.promise %0 : <() -> (i32, i64)>
   // CHECK: "use"(%2)
-  "use"(%1) : (!pop.pointer<struct<i32, i64>>) -> ()
+  "use"(%1) : (!kgen.pointer<struct<i32, i64>>) -> ()
   llvm.return
 }
 

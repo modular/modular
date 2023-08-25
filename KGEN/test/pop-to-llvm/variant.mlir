@@ -152,9 +152,9 @@ kgen.func @variant_create_5(%arg0: !pop.struct<array<2, i16>, struct<struct<i8, 
 }
 
 // CHECK-LABEL: @variant_create_6
-kgen.func @variant_create_6(%arg0: !pop.pointer<index>) -> !pop.variant<pointer<index>> {
+kgen.func @variant_create_6(%arg0: !kgen.pointer<index>) -> !pop.variant<pointer<index>> {
   // CHECK: llvm.ptrtoint
-  %0 = pop.variant.create %arg0 : !pop.pointer<index> -> !pop.variant<pointer<index>>
+  %0 = pop.variant.create %arg0 : !kgen.pointer<index> -> !pop.variant<pointer<index>>
   kgen.return %0 : !pop.variant<pointer<index>>
 }
 
@@ -292,18 +292,18 @@ kgen.func @variant_get_4(%arg0: !pop.variant<struct<array<2, i16>, struct<struct
 }
 
 // CHECK-LABEL: @variant_get_5
-kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !pop.pointer<index> {
+kgen.func @variant_get_5(%arg0: !pop.variant<pointer<index>>) -> !kgen.pointer<index> {
   // CHECK: llvm.inttoptr
-  %0 = pop.variant.get %arg0 : !pop.variant<pointer<index>> as !pop.pointer<index>
-  kgen.return %0 : !pop.pointer<index>
+  %0 = pop.variant.get %arg0 : !pop.variant<pointer<index>> as !kgen.pointer<index>
+  kgen.return %0 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @unpack_pointer
-kgen.func @unpack_pointer(%arg0: !pop.variant<pointer<i8>>) -> !pop.pointer<i8> {
+kgen.func @unpack_pointer(%arg0: !pop.variant<pointer<i8>>) -> !kgen.pointer<i8> {
   // CHECK: trunc %{{.*}} : i64 to i64
   // CHECK: inttoptr %{{.*}} : i64 to !llvm.ptr<i8>
-  %0 = pop.variant.get %arg0 : !pop.variant<pointer<i8>> as !pop.pointer<i8>
-  kgen.return %0 : !pop.pointer<i8>
+  %0 = pop.variant.get %arg0 : !pop.variant<pointer<i8>> as !kgen.pointer<i8>
+  kgen.return %0 : !kgen.pointer<i8>
 }
 
 }

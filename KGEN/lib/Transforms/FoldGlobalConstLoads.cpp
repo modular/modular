@@ -77,7 +77,7 @@ void FoldGlobalConstLoads::runOnOperation() {
       // Bitcast of array global -> pointer with optional offset loads
       if (auto bitcast = dyn_cast<POP::PointerBitcastOp>(user)) {
         // Expecting a pointer...
-        auto ptr = dyn_cast<POP::PointerType>(bitcast.getOutput().getType());
+        auto ptr = dyn_cast<PointerType>(bitcast.getOutput().getType());
         if (!ptr)
           return;
 

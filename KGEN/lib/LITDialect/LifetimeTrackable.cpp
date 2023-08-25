@@ -165,7 +165,7 @@ Type LifetimeTrackable::getTypeOrPointeeType(Type type, bool isIndirect) {
   if (!isIndirect)
     return type;
 
-  auto pointee = llvm::cast<POP::PointerType>(type).getElementType();
+  auto pointee = llvm::cast<PointerType>(type).getElementType();
   if (auto type = dyn_cast<TypeConstantAttr>(pointee))
     return type.getValue();
   return ParamRefType::get(pointee);

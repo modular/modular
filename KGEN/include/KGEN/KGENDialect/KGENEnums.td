@@ -116,7 +116,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
 
   /// This is an owned memory-only value, which is passed indirectly.
   ///
-  /// The MLIR type is always a POP::PointerType, and the underlying type is a
+  /// The MLIR type is always a PointerType, and the underlying type is a
   /// memory-only type.  The caller initializes the memory slot and the callee
   /// destroys it, returning with it uninitialized.
   ///
@@ -133,14 +133,14 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// This is an immutably borrowed memory-only value, which is passed
   /// indirectly.
   ///
-  /// The MLIR type is always a POP::PointerType, and the underlying type is a
+  /// The MLIR type is always a PointerType, and the underlying type is a
   /// memory-only type.  The caller passes a reference to an uninitialized
   /// memory slot that may be read but not mutated by the callee.
   I32EnumAttrCase<"BorrowedInMem", 3, "borrow_in_mem">,
 
   /// This is used for by-ref arguments like `fn x(a&: Int)`.
   ///
-  /// The MLIR type is always a POP::PointerType, and the underlying type can be
+  /// The MLIR type is always a PointerType, and the underlying type can be
   /// anything.  The value is initialized on entry to the function and must be
   /// initialized when the function returns.
   I32EnumAttrCase<"ByRef", 4, "byref">,
@@ -148,7 +148,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
   /// This is used on the first argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.
   ///
-  /// The MLIR type is always a POP::PointerType, and the underlying type can be
+  /// The MLIR type is always a PointerType, and the underlying type can be
   /// anything.  The value is uninitialized on entry to the function and defined
   /// on exit from the function if it returns.
   ///

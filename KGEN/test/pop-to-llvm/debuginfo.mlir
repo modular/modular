@@ -12,8 +12,8 @@
                        ui128, i128, si128,
                        f16, f32, f64, f80, f128, bf16,
                        !pop.array<5, f32>]>
-!pointerTest = !pop.pointer<scalar<bool>>
-!voidPointerTest = !pop.pointer<scalar<invalid>>
+!pointerTest = !kgen.pointer<scalar<bool>>
+!voidPointerTest = !kgen.pointer<scalar<invalid>>
 !scalarTest = !pop.scalar<bool>
 !simdTest = !pop.simd<8, ui32>
 !structTest = !pop.struct<scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<pointer<scalar<bool>>, array<4, simd<8, si32>>>>

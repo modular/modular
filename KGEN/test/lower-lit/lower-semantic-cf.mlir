@@ -363,12 +363,12 @@ lit.struct.decl @StructWithNestedFn<a_param> {
   lit.func @topLevelFunction<b_param>() -> index {
     %a = lit.varlet.decl "a", var = true, synth=false : <index>
     %idx0 = index.constant 0
-    pop.store %idx0, %a : !pop.pointer<index>
+    pop.store %idx0, %a : !kgen.pointer<index>
 
     // CHECK: kgen.param.declare.region nestedFunction = () -> index
     lit.func nestedFunction() -> index {
       // CHECK-NEXT: pop.load %a
-      %0 = pop.load %a : !pop.pointer<index>
+      %0 = pop.load %a : !kgen.pointer<index>
       lit.return %0 : index
       lit.end_func
     }

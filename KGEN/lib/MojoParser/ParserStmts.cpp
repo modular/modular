@@ -954,7 +954,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
   auto varDeclOp = builder.create<VarLetDeclOp>(
-      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())), target,
+      forLoc, PointerType::get(UnresolvedType::get(getContext())), target,
       /*isVar=*/funcOp && funcOp.getIsDef(), /*isSynth=*/true);
 
   // If there is a failure before we parse the for loop body, we still
@@ -978,14 +978,14 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   // Emit a call to __iter__ into a var with an inferred type.
   VarLetDeclOp rangeRef = builder.create<VarLetDeclOp>(
-      forLoc, POP::PointerType::get(UnresolvedType::get(getContext())),
-      "$RANGE", /*isVar*/ true, /*isSynth=*/true);
+      forLoc, PointerType::get(UnresolvedType::get(getContext())), "$RANGE",
+      /*isVar*/ true, /*isSynth=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
                                         CallSyntax::kImplicitConvert, seqExp)) {
     rangeDest.resetForError();
     varDeclOp.getResult().setType(
-        POP::PointerType::get(shared.getTypeCheckErrorType()));
+        PointerType::get(shared.getTypeCheckErrorType()));
     return {};
   }
 
@@ -1109,7 +1109,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         // If we are parsing inside a 'def', create a mutable LValue to allow
         // reassignment.
         auto varDecl = builder.create<VarLetDeclOp>(
-            errVal.getLoc(), POP::PointerType::get(errVal.getType()), errName,
+            errVal.getLoc(), PointerType::get(errVal.getType()), errName,
             /*isVar=*/true, /*isSynth=*/true);
         decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
         builder.create<POP::StoreOp>(errVal.getLoc(), errVal, varDecl,
@@ -1209,7 +1209,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       return failure();
     target = builder.create<VarLetDeclOp>(
         shared.translateLocation(targetLoc),
-        POP::PointerType::get(UnresolvedType::get(getContext())), name,
+        PointerType::get(UnresolvedType::get(getContext())), name,
         /*isVar*/ false, /*isSynth=*/false);
     enterDest = ValueDest(target, EC_WithContextMgr);
   }
@@ -1304,7 +1304,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPoint(tryOp);
     excVar = builder.create<VarLetDeclOp>(
-        loc, POP::PointerType::get(builder.getI1Type()), "__with_exc__",
+        loc, PointerType::get(builder.getI1Type()), "__with_exc__",
         /*isVar=*/true, /*isSynth=*/true);
     builder.create<POP::StoreOp>(
         loc, builder.create<mlir::index::BoolConstantOp>(loc, true), excVar);
@@ -1799,7 +1799,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
 
     // Emit the vardecl at the current insertion point.  Unlike implicitly
     // declared variables, let/var declarations are always correctly scoped.
-    auto varType = POP::PointerType::get(unresolvedType);
+    auto varType = PointerType::get(unresolvedType);
     declOp = builder.create<VarLetDeclOp>(loc, varType, name, isVar,
                                           /*isSynth=*/false);
     delayAddingName = true;
@@ -1870,7 +1870,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     ValueDest dest;
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
-      varOp.getResult().setType(POP::PointerType::get(parsedType));
+      varOp.getResult().setType(PointerType::get(parsedType));
       dest = ValueDest(SLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
@@ -1887,7 +1887,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
            "RValue emission should have inferred var type");
 
   } else if (parsedType) {
-    varOp.getResult().setType(POP::PointerType::get(parsedType));
+    varOp.getResult().setType(PointerType::get(parsedType));
   } else {
     // If there was neither a type or initializer, reject the var.
     emitError(varOp.getLoc(),

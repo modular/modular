@@ -209,7 +209,7 @@ static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
   // Just free the coroutine context.
   Value hdl = b.createConversion(cache.i8PtrType, op.getCoroutine());
   b.create<POP::AlignedFreeOp>(
-      b.createConversion(POP::PointerType::get(cache.i8Type), hdl));
+      b.createConversion(PointerType::get(cache.i8Type), hdl));
   op.erase();
 }
 
@@ -472,7 +472,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
                                           prepare.getResult(0)),
                       ArrayRef<GEPArg>{0, 1}, /*inbounds=*/true));
   Value allocCall = b.create<POP::AlignedAllocOp>(
-      POP::PointerType::get(cache.i8Type),
+      PointerType::get(cache.i8Type),
       ArrayRef<Value>{
           b.createConversion(
               b.getType<IndexType>(),

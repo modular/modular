@@ -131,7 +131,7 @@ def LIT_RefType : LITType<"Ref", "ref"> {
   let summary = "lifetime-bound reference type";
   let description = [{
     This type represents a typed reference to a memory object with a lifetime.
-    This is lowered to a !pop.pointer after CheckLifetimes verifies that the
+    This is lowered to a !kgen.pointer after CheckLifetimes verifies that the
     uses of it are all correct.  Examples:
 
     ```mlir

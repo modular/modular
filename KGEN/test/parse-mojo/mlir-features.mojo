@@ -15,16 +15,16 @@ fn mlirMagicTest(
     # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
     var b: __mlir_type.f64
     # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<float32>>>
-    var c: __mlir_type.`!pop.pointer<!pop.pointer<float32>>`
+    var c: __mlir_type.`!kgen.pointer<!kgen.pointer<float32>>`
 
     # CHECK: %d = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
-    # CHECK: pop.store [[TMP]], %d : !pop.pointer<i17>
+    # CHECK: pop.store [[TMP]], %d : !kgen.pointer<i17>
     var d = __mlir_attr.`4: i17`
 
     # CHECK: %dt = lit.varlet.decl
     # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
-    # CHECK: pop.store [[TMP]], %dt  : !pop.pointer<dtype>
+    # CHECK: pop.store [[TMP]], %dt  : !kgen.pointer<dtype>
     var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype `
 
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
@@ -62,8 +62,8 @@ fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
 # CHECK-LABEL: lit.struct.decl @ComplexSubstitution
 # CHECK-SAME: <[[TYPE:.*]]: dtype>
 struct ComplexSubstitution[type: __mlir_type.`!kgen.dtype`]:
-    # CHECK: lit.struct.field pointer : !pop.pointer<scalar<[[TYPE]]>>
-    var pointer: __mlir_type[`!pop.pointer<!pop.scalar<`, type, `>>`]
+    # CHECK: lit.struct.field pointer : !kgen.pointer<scalar<[[TYPE]]>>
+    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, type, `>>`]
 
 
 # Issue #6374: [Lit] Add support for type placeholder
@@ -109,8 +109,8 @@ fn testAttrConcatWithoutType[
 # CHECK-SAME: <[[ELTYPE:.*]]: type>
 @register_passable
 struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
-    alias StorageTy = __mlir_type[`!pop.pointer<`, elType, `>`]
-    # CHECK: lit.struct.field value : !pop.pointer<[[ELTYPE]]>
+    alias StorageTy = __mlir_type[`!kgen.pointer<`, elType, `>`]
+    # CHECK: lit.struct.field value : !kgen.pointer<[[ELTYPE]]>
     var value: Self.StorageTy
 
     fn __init__(value: Self.StorageTy) -> MyPointer[elType]:
@@ -118,13 +118,13 @@ struct MyPointer[elType: __mlir_type.`!kgen.mlirtype`]:
 
 
 # CHECK-LABEL: getAddressOf{{.*}}"<
-# CHECK-SAME: [[T:.*]]: type>(%arg: !pop.pointer<[[T]]> byref)
+# CHECK-SAME: [[T:.*]]: type>(%arg: !kgen.pointer<[[T]]> byref)
 fn getAddressOf[T: __mlir_type.`!kgen.mlirtype`](inout arg: T) -> MyPointer[T]:
     return __mlir_op.`pop.pointer.bitcast`[_type : MyPointer[T].StorageTy](
         __get_lvalue_as_address(arg)
     )
     # CHECK-NEXT: lit.ownership.def.lvalue %arg
-    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!pop.pointer<elType>)"<:type [[T]]>(%arg)
+    # CHECK-NEXT: %0 = kgen.call @"{{.*}}@MyPointer::@"__init__(__mlir_type.!kgen.pointer<elType>)"<:type [[T]]>(%arg)
     # CHECK-NEXT: lit.return %0
 
 

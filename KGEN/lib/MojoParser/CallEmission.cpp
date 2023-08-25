@@ -113,9 +113,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
           failed(
               matchParams(actual.getElementType(), expected.getElementType())));
 
-  // Handle POP::PointerType.
-  if (auto actual = dyn_cast<POP::PointerType>(actualType))
-    if (auto expected = dyn_cast<POP::PointerType>(expectedType))
+  // Handle PointerType.
+  if (auto actual = dyn_cast<PointerType>(actualType))
+    if (auto expected = dyn_cast<PointerType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
 
   // Handle VariadicType
@@ -763,7 +763,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
 
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
-    // proper type traits.  Note that the POP::PointerType is considered a valid
+    // proper type traits.  Note that the PointerType is considered a valid
     // register passable type, so things passed byref are ok.
     if (!ASTType(expectedType)
              .isRegisterPassable(callable.expr->getLoc(), emitter.shared))
@@ -2277,7 +2277,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                                ValueInputConvention::OwnedInReg},
                               convention) &&
           !isa<StoreToMemAttr>(arg))
-        arg = StoreToMemAttr::get(arg, POP::PointerType::get(arg.getType()));
+        arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
       // Emit a rebind if the refined type does not match the callee arg type.
       if (arg.getType() != calleeArgType)
         arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);

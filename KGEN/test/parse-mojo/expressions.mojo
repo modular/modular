@@ -43,8 +43,8 @@ struct MemoryOnlyPair:
   var y: Int
 
   # CHECK: lit.func @"__copyinit__{{.*}}"(
-  # CHECK-SAME: %self: !pop.pointer<!MemoryOnlyPair> init_self,
-  # CHECK-SAME: %existing: !pop.pointer<!MemoryOnlyPair> borrow_in_mem) -> !lit.none
+  # CHECK-SAME: %self: !kgen.pointer<!MemoryOnlyPair> init_self,
+  # CHECK-SAME: %existing: !kgen.pointer<!MemoryOnlyPair> borrow_in_mem) -> !lit.none
   fn __copyinit__(inout self, existing: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.struct.gep %existing[x]
     # CHECK-NEXT: %1 = lit.struct.gep %self[x]
@@ -57,8 +57,8 @@ struct MemoryOnlyPair:
     self.y = existing.y
 
   # CHECK: lit.func @"method{{.*}}"(
-  # CHECK-SAME: %self: !pop.pointer<!MemoryOnlyPair> owned_in_mem,
-  # CHECK-SAME: %arg: !pop.pointer<!MemoryOnlyInt> owned_in_mem)
+  # CHECK-SAME: %self: !kgen.pointer<!MemoryOnlyPair> owned_in_mem,
+  # CHECK-SAME: %arg: !kgen.pointer<!MemoryOnlyInt> owned_in_mem)
   fn method(owned self, owned arg: MemoryOnlyInt):
     # CHECK: %0 = lit.struct.gep %self[y]
     # CHECK: %1 = lit.struct.gep %arg[x]
@@ -107,7 +107,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # Drill into rvalue without cloning intermediate values.
   # CHECK-NEXT: [[V2X:%.*]] = lit.struct.gep %v2[x]
   # CHECK-NEXT: [[V2XX:%.*]] = lit.struct.gep [[V2X]][x]
-  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !pop.pointer<!Int>
+  # CHECK-NEXT: [[VAL:%.*]] = pop.load [[V2XX]] : !kgen.pointer<!Int>
   # CHECK-NEXT: lit.letreg.decl "v2xx" = [[VAL]]
   let v2xx = v2.x.x
 
@@ -130,7 +130,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: [[VARIADIC:%.*]]  = pop.variadic.create [%regX, %regX]
   # CHECK-NEXT: kgen.call @{{.*}}variadic{{.*}}([[VARIADIC]])
   MemoryOnlyInt.variadic(regX, regX)
-  # CHECK-NEXT: lit.ownership.use %regX : !pop.pointer<!MemoryOnlyInt>
+  # CHECK-NEXT: lit.ownership.use %regX : !kgen.pointer<!MemoryOnlyInt>
   # CHECK-NEXT: lit.ownership.use %regX
 
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%__result__, %v2)
@@ -603,7 +603,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"(%a: !Int borrow, %b: !pop.pointer<!Int> byref) -> !lit.none
+# CHECK-LABEL: lit.func @"byval_byref_function({{.*}}$int::Int,{{.*}}$int::Int&)"(%a: !Int borrow, %b: !kgen.pointer<!Int> byref) -> !lit.none
 fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
@@ -630,7 +630,7 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = (5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !pop.pointer<!object> owned_in_mem)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.pointer<!object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: [[B:%.*]] = pop.load %b_1
   # CHECK-NEXT: pop.store [[B]], %a_0
@@ -652,7 +652,7 @@ def basic_assignments(a: Int, b: Int, c: M, d: M):
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__imul__({{.*}}$int::Int&,{{.*}}$int::Int)"(%a_0, [[LOAD_B]])
   a *= b
-  # HECK:      [[LOAD_C:%.*]] = pop.load %c_2  : !pop.pointer<@M>
+  # HECK:      [[LOAD_C:%.*]] = pop.load %c_2  : !kgen.pointer<@M>
   # HECK-NEXT: [[RES:%.*]] = kgen.call @M::@"__imatmul__({{.*}}$int::Int&,{{.*}}$int::Int)"(%d_3, [[LOAD_C]])
   #d @= c
   # HECK:      [[LOAD_B:%.*]] = pop.load %b_1
@@ -1000,7 +1000,7 @@ fn testSIMDGetter[type: DType](owned a: SIMD[type, 2]) -> __mlir_type[
 struct MyInlineIntInit:
     var intVal: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__($expressions::MyInlineIntInit=&,$expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self: !pop.pointer<!MyInlineIntInit> init_self, %intVal: !pop.pointer<!MemoryOnlyInt> borrow_in_mem) -> !lit.none
+    # CHECK-SAME: (%self: !kgen.pointer<!MyInlineIntInit> init_self, %intVal: !kgen.pointer<!MemoryOnlyInt> borrow_in_mem) -> !lit.none
     fn __init__(inout self, intVal: MemoryOnlyInt):
         # CHECK: %0 = lit.struct.gep %self[intVal]
         # CHECK: kgen.call {{.*}}__copyinit__{{.*}}(%0, %intVal)
@@ -1116,7 +1116,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !pop.pointer<!Bool>
+    # CHECK-NEXT: pop.store %[[IF_A_B]], %res : !kgen.pointer<!Bool>
     var res = a < b < c < d
 
     # COM: This checks the parsing precedence between `<` and `and`.
@@ -1135,7 +1135,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[IF_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: pop.store %[[IF]], %res : !pop.pointer<!Bool>
+    # CHECK-NEXT: pop.store %[[IF]], %res : !kgen.pointer<!Bool>
     res = a < b < c and d < e
 
 # CHECK-LABEL: lit.func @"foo_adaptive[{{.*}}$int::Int](){{.*}} {isAdaptive
@@ -1159,7 +1159,7 @@ fn test_adaptive_set():
 
 fn lvalue_utilities(inout a: Int):
   # Get the address of the specified physical lvalue as a pop.pointer value.
-  let addr : __mlir_type[`!pop.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
+  let addr : __mlir_type[`!kgen.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
 
   # Get and use an lvalue from an address.
   __get_address_as_lvalue(addr) = 42
@@ -1195,10 +1195,10 @@ struct ParamType[a: Int]: pass
 
 # CHECK-LABEL: lit.func @"function_types
 # CHECK-SAME: %float0: {{.*}}(!Int borrow) -> !Int
-# CHECK-SAME: %float1: {{.*}}(!pop.pointer<!MemoryType> byref_result, !pop.pointer<!MemoryType> borrow_in_mem) -> !lit.none
+# CHECK-SAME: %float1: {{.*}}(!kgen.pointer<!MemoryType> byref_result, !kgen.pointer<!MemoryType> borrow_in_mem) -> !lit.none
 # CHECK-SAME: %float2: {{.*}}(!RegType) ownedresult -> !RegType
-# CHECK-SAME: %float3: {{.*}}(!pop.pointer<!MemoryType> owned_in_mem) -> !lit.none
-# CHECK-SAME: %float4: {{.*}}(!pop.pointer<!Int> byref) -> !lit.none
+# CHECK-SAME: %float3: {{.*}}(!kgen.pointer<!MemoryType> owned_in_mem) -> !lit.none
+# CHECK-SAME: %float4: {{.*}}(!kgen.pointer<!Int> byref) -> !lit.none
 # CHECK-SAME: %float5: {{.*}}(!Int borrow) throws -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float6: {{.*}}(!Int borrow) throws|async|capturing -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float7: {{.*}}(!kgen.variadic<!Int>) throws|vararg -> !pop.variant<!Error, !lit.none>

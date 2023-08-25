@@ -3,18 +3,18 @@
 
 // CHECK-LABEL: @pointer
 kgen.generator @pointer<ty: type, address_space>(
-  // CHECK-SAME: !pop.pointer<scalar<f32>>
-  %arg0: !pop.pointer<scalar<f32>>,
-  // CHECK-SAME: !pop.pointer<scalar<f32>, 5>
-  %arg1: !pop.pointer<scalar<f32>, 5>,
-  // CHECK-SAME: !pop.pointer<ty>
-  %arg2: !pop.pointer<ty>,
-  // CHECK-SAME: !pop.pointer<ty, 7>
-  %arg3: !pop.pointer<ty, 7>,
-  // CHECK-SAME: !pop.pointer<scalar<f32>, address_space>
-  %arg4: !pop.pointer<scalar<f32>, address_space>,
-  // CHECK-SAME: !pop.pointer<ty, address_space>
-  %arg5: !pop.pointer<ty, address_space>
+  // CHECK-SAME: !kgen.pointer<scalar<f32>>
+  %arg0: !kgen.pointer<scalar<f32>>,
+  // CHECK-SAME: !kgen.pointer<scalar<f32>, 5>
+  %arg1: !kgen.pointer<scalar<f32>, 5>,
+  // CHECK-SAME: !kgen.pointer<ty>
+  %arg2: !kgen.pointer<ty>,
+  // CHECK-SAME: !kgen.pointer<ty, 7>
+  %arg3: !kgen.pointer<ty, 7>,
+  // CHECK-SAME: !kgen.pointer<scalar<f32>, address_space>
+  %arg4: !kgen.pointer<scalar<f32>, address_space>,
+  // CHECK-SAME: !kgen.pointer<ty, address_space>
+  %arg5: !kgen.pointer<ty, address_space>
 ) {
   kgen.return
 }
@@ -35,7 +35,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
   %arg0: !pop.struct<scalar<f32>, simd<4, ui64>>,
   // CHECK-SAME: !pop.struct<pointer<simd<4, si8>>, array<24, scalar<si64>>, struct<scalar<f32>, scalar<f64>>>
   %arg1: !pop.struct<
-    !pop.pointer<simd<4, si8>>,
+    !kgen.pointer<simd<4, si8>>,
     !pop.array<24, scalar<si64>>,
     !pop.struct<
       !pop.scalar<f32>,

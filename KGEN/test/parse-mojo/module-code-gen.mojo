@@ -60,38 +60,38 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT:      }
 
 # CHECK-NEXT:    lit.func @"__copyinit__
-# CHECK-SAME:    (%self: !pop.pointer<@{{.*}}::@"_CI_{{.*}}"> init_self,
-# CHECK-SAME:    %existing: !pop.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
+# CHECK-SAME:    (%self: !kgen.pointer<@{{.*}}::@"_CI_{{.*}}"> init_self,
+# CHECK-SAME:    %existing: !kgen.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
 # CHECK-NEXT:    [[V0:%.*]] = lit.struct.gep %self[field0] : <!String>
 # CHECK-NEXT:    [[V1:%.*]] = lit.struct.gep %existing[field0] : <!String>
 # CHECK-NEXT:    [[V2:%.*]] = kgen.call @{{.*}}__copyinit__{{.*}}"([[V0]], [[V1]])
 # CHECK-NEXT:    [[V3:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:    [[V4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
-# CHECK-NEXT:    [[V5:%.*]] = pop.load [[V4]] : !pop.pointer<!Int>
-# CHECK-NEXT:    pop.store [[V5]], [[V3]] : !pop.pointer<!Int>
+# CHECK-NEXT:    [[V5:%.*]] = pop.load [[V4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:    pop.store [[V5]], [[V3]] : !kgen.pointer<!Int>
 # CHECK-NEXT:    [[V6:%.*]] = lit.struct.gep %self[field2] : <index>
 # CHECK-NEXT:    [[V7:%.*]] = lit.struct.gep %existing[field2] : <index>
-# CHECK-NEXT:    [[V8:%.*]] = pop.load [[V7]] : !pop.pointer<index>
-# CHECK-NEXT:    pop.store [[V8]], [[V6]] : !pop.pointer<index>
+# CHECK-NEXT:    [[V8:%.*]] = pop.load [[V7]] : !kgen.pointer<index>
+# CHECK-NEXT:    pop.store [[V8]], [[V6]] : !kgen.pointer<index>
 # CHECK-NEXT:    [[V9:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:    lit.return [[V9]] : !lit.none
 # CHECK-NEXT:    lit.end_func
 # CHECK-NEXT:    }
 
 # CHECK-NEXT:      lit.func @"__moveinit__
-# CHECK-SAME:      (%self: !pop.pointer<@"{{.*}}"::@"_CI_{{.*}}"> init_self, %existing:
-# CHECK-SAME:      !pop.pointer<@"{{.*}}"::@"_CI_{{.*}}"> owned_in_mem) -> !lit.none attributes {specialFnKind = 4 : i8} {
+# CHECK-SAME:      (%self: !kgen.pointer<@"{{.*}}"::@"_CI_{{.*}}"> init_self, %existing:
+# CHECK-SAME:      !kgen.pointer<@"{{.*}}"::@"_CI_{{.*}}"> owned_in_mem) -> !lit.none attributes {specialFnKind = 4 : i8} {
 # CHECK-NEXT:      [[W0:%.*]] = lit.struct.gep %self[field0] : <!String>
 # CHECK-NEXT:      [[W1:%.*]] = lit.struct.gep %existing[field0] : <!String>
 # CHECK-NEXT:      [[W2:%.*]] = kgen.call @{{.*}}__moveinit__{{.*}}"([[W0]], [[W1]])
 # CHECK-NEXT:      [[W3:%.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT:      [[W4:%.*]] = lit.struct.gep %existing[field1] : <!Int>
-# CHECK-NEXT:      [[W5:%.*]] = lit.load.consume [[W4]] : !pop.pointer<!Int>
-# CHECK-NEXT:      pop.store [[W5]], [[W3]] : !pop.pointer<!Int>
+# CHECK-NEXT:      [[W5:%.*]] = lit.load.consume [[W4]] : !kgen.pointer<!Int>
+# CHECK-NEXT:      pop.store [[W5]], [[W3]] : !kgen.pointer<!Int>
 # CHECK-NEXT:      [[W6:%.*]] = lit.struct.gep %self[field2] : <index>
 # CHECK-NEXT:      [[W7:%.*]] = lit.struct.gep %existing[field2] : <index>
-# CHECK-NEXT:      [[W8:%.*]] = lit.load.consume [[W7]] : !pop.pointer<index>
-# CHECK-NEXT:      pop.store [[W8]], [[W6]] : !pop.pointer<index>
+# CHECK-NEXT:      [[W8:%.*]] = lit.load.consume [[W7]] : !kgen.pointer<index>
+# CHECK-NEXT:      pop.store [[W8]], [[W6]] : !kgen.pointer<index>
 # CHECK-NEXT:      [[W9:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:      lit.ownership.mark.destroyed %existing
 # CHECK-NEXT:      lit.return %9 : !lit.none
@@ -102,9 +102,9 @@ fn foo1(x:String, y:String, z:Int, u: __mlir_type.index) -> String:
 # CHECK-NEXT: [[Q0:%.*]] = lit.struct.gep %self[field0] : <!String>
 # CHECK-NEXT: [[Q1:%.*]] = kgen.call @{{.*}}::@"__moveinit__{{.*}}"([[Q0]], %field0)
 # CHECK-NEXT: [[Q2:%.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT: pop.store %field1, [[Q2]] : !pop.pointer<!Int>
+# CHECK-NEXT: pop.store %field1, [[Q2]] : !kgen.pointer<!Int>
 # CHECK-NEXT: [[Q3:%.*]] = lit.struct.gep %self[field2] : <index>
-# CHECK-NEXT: pop.store %field2, [[Q3]] : !pop.pointer<index>
+# CHECK-NEXT: pop.store %field2, [[Q3]] : !kgen.pointer<index>
 # CHECK-NEXT: [[Q4:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.return [[Q4]] : !lit.none
 # CHECK-NEXT: lit.end_func
@@ -133,10 +133,10 @@ fn makes_escaping_closure(m: String):
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.struct.decl @"_CW_{{.*}}(,{{.*}}::String)\22"
-# CHECK-NEXT:     lit.struct.field field0 : !pop.pointer<array<0, i1>>
-# CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<(!pop.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
-# CHECK-NEXT:     lit.struct.field move : !kgen.signature<(!pop.pointer<array<0, i1>> init_self, !pop.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field field0 : !kgen.pointer<array<0, i1>>
+# CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!kgen.pointer<array<0, i1>> init_self, !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field move : !kgen.signature<(!kgen.pointer<array<0, i1>> init_self, !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
 # CHECK-DAG:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
 # CHECK-DAG:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
@@ -148,8 +148,8 @@ fn makes_escaping_closure(m: String):
 # CHECK: lit.func @"__copyinit__
 # CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]] : !pop.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !pop.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:   [[COPY:%.*]] = pop.load [[COPY_PTR]]
 # CHECK-NEXT:   kgen.call_signature [[COPY]]([[SELF_IMPL]], [[EXISTING_IMPL]])
@@ -165,7 +165,7 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   lit.ownership.mark.destroyed %existing
 
 # CHECK: lit.func @"returns_escaping_closure({{.*}}::String)"
-# CHECK-SAME: (%m: !pop.pointer<!String> borrow_in_mem) -> !kgen.signature<(!pop.pointer<!String> byref_result, !pop.pointer<!String> borrow_in_mem) capturing -> !lit.none>
+# CHECK-SAME: (%m: !kgen.pointer<!String> borrow_in_mem) -> !kgen.signature<(!kgen.pointer<!String> byref_result, !kgen.pointer<!String> borrow_in_mem) capturing -> !lit.none>
 fn returns_escaping_closure(m: String) -> fn(String) escaping -> String:
    fn myclosure(n:String) -> String:
       return n + m
@@ -207,7 +207,7 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 # Closure Wrapper Initializer
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
+# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !kgen.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
 
 # CHECK-NEXT: %[[V7:.*]] = lit.struct.gep %self[move]
 # CHECK-NEXT: %[[V8:.*]] = kgen.create_closure [{{.*}}]()
@@ -219,7 +219,7 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
-# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !pop.pointer<(!pop.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
 
 # Allocate memory on heap
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(@[[CI_TYPE:.*]], current_target())>
@@ -231,26 +231,26 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V2:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <@{{.*}}::@"_CW_{{.*}}">
-# CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !pop.pointer<@[[CI_TYPE]]> to !pop.pointer<array<0, i1>>
-# CHECK-NEXT:  pop.store %[[V3]], %[[V2]] : !pop.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<@[[CI_TYPE]]> to !kgen.pointer<array<0, i1>>
+# CHECK-NEXT:  pop.store %[[V3]], %[[V2]] : !kgen.pointer<pointer<array<0, i1>>>
 
 # CHECK-NEXT:  %[[V4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT:  lit.return %[[V4]] : !lit.none
 # CHECK-NEXT:  lit.end_func
 # CHECK-NEXT:  }
 
-# CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !pop.pointer<@{{.*}}::@"_CI_${{.*}}
+# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !kgen.pointer<@{{.*}}::@"_CI_${{.*}}
 
-# CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>>) -> !lit.none
+# CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
 
-# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>> init_self, %existing: !pop.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
+# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>> init_self, %existing: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
 # CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %existing
 # CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__copyinit__{{.*}}(%[[W0]], %[[W1]])
 
-# CHECK: lit.func @"_CW_{{.*}}_moveinit__CI_{{.*}}"(%self: !pop.pointer<array<0, i1>> init_self, %existing: !pop.pointer<array<0, i1>> owned_in_mem) -> !lit.none
+# CHECK: lit.func @"_CW_{{.*}}_moveinit__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>> init_self, %existing: !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
 # CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %existing
 # CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__moveinit__{{.*}}(%[[W0]], %[[W1]])
@@ -269,30 +269,30 @@ fn materialize_escaping_closure(m: String, z:String):
 # Pointer Captures
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.struct.field field0 : !pop.pointer<!String>
-# CHECK: lit.struct.field field1 : !pop.pointer<!String>
-# CHECK: lit.struct.field field2 : !pop.pointer<!Int>
-# CHECK: lit.struct.field field3 : !pop.pointer<index>
+# CHECK: lit.struct.field field0 : !kgen.pointer<!String>
+# CHECK: lit.struct.field field1 : !kgen.pointer<!String>
+# CHECK: lit.struct.field field2 : !kgen.pointer<!Int>
+# CHECK: lit.struct.field field3 : !kgen.pointer<index>
 # CHECK: lit.struct.field field4 : !String
 # CHECK: lit.struct.field field5 : !String
 
 # CHECK: lit.func @"__init__({{.*}}_CI_{{.*}} init_self,
-# CHECK-SAME: %field0: !pop.pointer<!String>, %field1: !pop.pointer<!String>, %field2: !pop.pointer<!Int>,
-# CHECK-SAME: %field3: !pop.pointer<index>, %field4: !pop.pointer<!String> owned_in_mem, %field5: !pop.pointer<!String> owned_in_mem
-fn doNothing(x:__mlir_type[`!pop.pointer<`, String, `>`], y:__mlir_type[`!pop.pointer<`, String, `>`]):
+# CHECK-SAME: %field0: !kgen.pointer<!String>, %field1: !kgen.pointer<!String>, %field2: !kgen.pointer<!Int>,
+# CHECK-SAME: %field3: !kgen.pointer<index>, %field4: !kgen.pointer<!String> owned_in_mem, %field5: !kgen.pointer<!String> owned_in_mem
+fn doNothing(x:__mlir_type[`!kgen.pointer<`, String, `>`], y:__mlir_type[`!kgen.pointer<`, String, `>`]):
    pass
 
-fn doNothingAgain(x:__mlir_type[`!pop.pointer<`, Int, `>`], y:__mlir_type.`!pop.pointer<index>`, w:String, local:String):
+fn doNothingAgain(x:__mlir_type[`!kgen.pointer<`, Int, `>`], y:__mlir_type.`!kgen.pointer<index>`, w:String, local:String):
    pass
 
-fn makes_escaping_closure(x: __mlir_type[`!pop.pointer<`, Int, `>`],
-                          y: __mlir_type.`!pop.pointer<index>`,
-                          z: __mlir_type[`!pop.pointer<`, String, `>`],
+fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
+                          y: __mlir_type.`!kgen.pointer<index>`,
+                          z: __mlir_type[`!kgen.pointer<`, String, `>`],
                           w: String):
    let local:String = "1234"
    let alignment = 0
    let size = 1
-   let local_ptr: __mlir_type[`!pop.pointer<`, String, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!pop.pointer<`, String, `>`]](alignment.value, size.value)
+   let local_ptr: __mlir_type[`!kgen.pointer<`, String, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!kgen.pointer<`, String, `>`]](alignment.value, size.value)
    fn do_stuff_with_pointers() escaping -> NoneType:
       doNothing(local_ptr, z)
       doNothingAgain(x,y,local,w)
@@ -309,7 +309,7 @@ fn foo(x:Int, y:String, z: String):
 # CHECK: lit.struct.field field0 : !Int
 # CHECK: lit.struct.field field1 : !String
 # CHECK: lit.struct.field field2 : !String
-# CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@"{{.*}}"> init_self, %field0: !Int, %field1: !pop.pointer<!String> owned_in_mem, %field2: !pop.pointer<!String> owned_in_mem)
+# CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<@"{{.*}}"> init_self, %field0: !Int, %field1: !kgen.pointer<!String> owned_in_mem, %field2: !kgen.pointer<!String> owned_in_mem)
 fn makes_escaping_closure(owned x: Int,
                           owned y: String,
                           inout z: String):
@@ -337,20 +337,20 @@ fn foo():
 # SLValues
 ##===----------------------------------------------------------------------===##
 
-fn make_pointer() -> __mlir_type.`!pop.pointer<index>`:
+fn make_pointer() -> __mlir_type.`!kgen.pointer<index>`:
    let alignment = 0
    let size = 8
    return __mlir_op.`pop.aligned_alloc`[
-           _type : __mlir_type.`!pop.pointer<index>`
+           _type : __mlir_type.`!kgen.pointer<index>`
        ](alignment.value, size.value)
 
 # CHECK: lit.struct.decl @"_CI_
-# CHECK-NEXT: lit.struct.field field0 : !pop.pointer<index>
-# CHECK-NEXT: lit.struct.field field1 : !pop.pointer<index>
+# CHECK-NEXT: lit.struct.field field0 : !kgen.pointer<index>
+# CHECK-NEXT: lit.struct.field field1 : !kgen.pointer<index>
 # CHECK-NEXT: lit.struct.field field2 : !Int
 # CHECK-NEXT: lit.struct.field field3 : !Int
 
-# CHECK: (%self: !pop.pointer<@{{.*}}"_CI_{{.*}}"> init_self, %field0: !pop.pointer<index>, %field1: !pop.pointer<index>, %field2: !Int, %field3: !Int)
+# CHECK: (%self: !kgen.pointer<@{{.*}}"_CI_{{.*}}"> init_self, %field0: !kgen.pointer<index>, %field1: !kgen.pointer<index>, %field2: !Int, %field3: !Int)
 fn foo(owned y:Int):
   var w = 5
   var q = make_pointer()

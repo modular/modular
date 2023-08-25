@@ -152,7 +152,7 @@ kgen.generator @two_candidates() {
   kgen.return
 }
 
-kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %sz: index) -> index {
+kgen.generator @evaluator(%fns: !kgen.pointer<() -> ()>, %sz: index) -> index {
   // Always pick the second one.
   %idx1 = index.constant 1
   kgen.return %idx1 : index
@@ -160,7 +160,7 @@ kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %sz: index) -> index {
 
 kgen.generator @foo() {
   kgen.param.evaluate selected: () -> () = [@two_candidates]
-    with [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
+    with [(!kgen.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.call_param[() -> (): select]()
   kgen.return
 }

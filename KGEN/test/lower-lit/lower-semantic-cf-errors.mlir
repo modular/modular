@@ -12,7 +12,7 @@ lit.func @no_return_result() -> i32 {
   lit.end_func
 }
 
-lit.func @no_return_result2(%x: !pop.pointer<i32> byref_result) -> !lit.none {
+lit.func @no_return_result2(%x: !kgen.pointer<i32> byref_result) -> !lit.none {
 // expected-error @below {{return expected at end of function with results}}
   lit.end_func
 }

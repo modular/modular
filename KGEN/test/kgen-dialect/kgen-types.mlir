@@ -10,8 +10,8 @@ kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !kgen.declref<@MyStruct<a
 }
 
 // CHECK-LABEL: @sugaredScalar
-// CHECK-SAME: %arg0: !pop.pointer<*"scalar">
-kgen.generator @sugaredScalar<scalar: type>(%arg0: !pop.pointer<*"scalar">) {
+// CHECK-SAME: %arg0: !kgen.pointer<*"scalar">
+kgen.generator @sugaredScalar<scalar: type>(%arg0: !kgen.pointer<*"scalar">) {
   kgen.return
 }
 

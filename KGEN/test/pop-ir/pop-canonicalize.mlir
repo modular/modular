@@ -425,20 +425,20 @@ kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
 }
 
 // CHECK-LABEL: @pointer_bitcast
-kgen.func @pointer_bitcast() -> !pop.pointer<si32> {
+kgen.func @pointer_bitcast() -> !kgen.pointer<si32> {
   // CHECK-NEXT: pointer<si32> = <#M.pointer<0>>
   %0 = kgen.param.constant: pointer<si64> = <#M.pointer<0>>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<si64> to !pop.pointer<si32>
-  kgen.return %1 : !pop.pointer<si32>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<si64> to !kgen.pointer<si32>
+  kgen.return %1 : !kgen.pointer<si32>
 }
 
 // CHECK-LABEL: @pointer_bitcast_of_bitcast
-kgen.func @pointer_bitcast_of_bitcast(%arg0: !pop.pointer<si32>) -> !pop.pointer<f32> {
-  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !pop.pointer<si32> to !pop.pointer<f32>
-  %0 = pop.pointer.bitcast %arg0 : !pop.pointer<si32> to !pop.pointer<f64>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<f64> to !pop.pointer<f32>
+kgen.func @pointer_bitcast_of_bitcast(%arg0: !kgen.pointer<si32>) -> !kgen.pointer<f32> {
+  // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<si32> to !kgen.pointer<f32>
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<si32> to !kgen.pointer<f64>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<f64> to !kgen.pointer<f32>
   // CHECK-NEXT: return %0
-  kgen.return %1 : !pop.pointer<f32>
+  kgen.return %1 : !kgen.pointer<f32>
 }
 
 // CHECK-LABEL: @cast
@@ -630,22 +630,22 @@ kgen.func @array_get_non_const_1(%arg0: index, %arg1: index) -> index {
 }
 
 // CHECK-LABEL: @array_gep
-kgen.func @array_gep(%array: !pop.pointer<array<1, index>>, %idx: index) -> !pop.pointer<index> {
-  // CHECK: (%[[ARRAY:.*]]: !pop.pointer<array<1, index>>, %[[IDX:.*]]: index)
+kgen.func @array_gep(%array: !kgen.pointer<array<1, index>>, %idx: index) -> !kgen.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<1, index>>, %[[IDX:.*]]: index)
   // CHECK-NEXT: %[[ZERO:.*]] = kgen.param.constant = <0>
   // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[ZERO]]]
   // CHECK-NEXT: kgen.return %[[GEP]]
-  %1 = pop.array.gep %array[%idx] : !pop.pointer<array<1, index>>
-  kgen.return %1 : !pop.pointer<index>
+  %1 = pop.array.gep %array[%idx] : !kgen.pointer<array<1, index>>
+  kgen.return %1 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @array_gep_unchanged
-kgen.func @array_gep_unchanged(%array: !pop.pointer<array<2, index>>, %idx: index) -> !pop.pointer<index> {
-  // CHECK: (%[[ARRAY:.*]]: !pop.pointer<array<2, index>>, %[[IDX:.*]]: index)
+kgen.func @array_gep_unchanged(%array: !kgen.pointer<array<2, index>>, %idx: index) -> !kgen.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<2, index>>, %[[IDX:.*]]: index)
   // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[IDX]]]
   // CHECK-NEXT: kgen.return %[[GEP]]
-  %1 = pop.array.gep %array[%idx] : !pop.pointer<array<2, index>>
-  kgen.return %1 : !pop.pointer<index>
+  %1 = pop.array.gep %array[%idx] : !kgen.pointer<array<2, index>>
+  kgen.return %1 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @array_replace
@@ -698,14 +698,14 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
 }
 
 // CHECK-LABEL: @index_to_pointer
-kgen.func @index_to_pointer() -> (!pop.pointer<i8>, !pop.scalar<address>) {
+kgen.func @index_to_pointer() -> (!kgen.pointer<i8>, !pop.scalar<address>) {
   // CHECK-DAG: #M.pointer<1>
   // CHECK-DAG: scalar<address> = <2>
   %0 = kgen.param.constant: scalar<index> = <<1>>
   %1 = kgen.param.constant: scalar<index> = <<2>>
-  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !pop.pointer<i8>
+  %2 = pop.index_to_pointer %0 : !pop.scalar<index> to !kgen.pointer<i8>
   %3 = pop.index_to_pointer %1 : !pop.scalar<index> to !pop.scalar<address>
-  kgen.return %2, %3 : !pop.pointer<i8>, !pop.scalar<address>
+  kgen.return %2, %3 : !kgen.pointer<i8>, !pop.scalar<address>
 }
 
 // CHECK-LABEL: @pointer_to_index
@@ -714,7 +714,7 @@ kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: <2>
   %0 = kgen.param.constant: pointer<i8> = <#M.pointer<1>>
   %1 = kgen.param.constant: scalar<address> = <<2>>
-  %2 = pop.pointer_to_index %0 : !pop.pointer<i8> to !pop.scalar<index>
+  %2 = pop.pointer_to_index %0 : !kgen.pointer<i8> to !pop.scalar<index>
   %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>
   kgen.return %2, %3 : !pop.scalar<index>, !pop.scalar<index>
 }
@@ -916,11 +916,11 @@ kgen.func @dtype_from_ui8() -> !kgen.dtype {
 
 // CHECK-LABEL: @fold_offset
 // CHECK: (%[[ARG0:.*]]:
-kgen.func @fold_offset(%arg0: !pop.pointer<index>) -> (!pop.pointer<index>) {
+kgen.func @fold_offset(%arg0: !kgen.pointer<index>) -> (!kgen.pointer<index>) {
   // CHECK-NEXT: kgen.return %[[ARG0]]
   %0 = kgen.param.constant = <0>
-  %1 = pop.offset %arg0[%0] : !pop.pointer<index>
-  kgen.return %1 : !pop.pointer<index>
+  %1 = pop.offset %arg0[%0] : !kgen.pointer<index>
+  kgen.return %1 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @select

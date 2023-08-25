@@ -2,74 +2,74 @@
 
 kgen.generator @store_load_pointer(%arg0: i32) -> i32 {
   %0 = pop.stack_allocation 1 x i32
-  pop.store %arg0, %0 : !pop.pointer<i32>
-  %1 = pop.stack_allocation 1 x !pop.pointer<i32>
-  pop.store %0, %1 : !pop.pointer<pointer<i32>>
-  %2 = pop.load %1 : !pop.pointer<pointer<i32>>
-  %3 = pop.load %2 : !pop.pointer<i32>
+  pop.store %arg0, %0 : !kgen.pointer<i32>
+  %1 = pop.stack_allocation 1 x !kgen.pointer<i32>
+  pop.store %0, %1 : !kgen.pointer<pointer<i32>>
+  %2 = pop.load %1 : !kgen.pointer<pointer<i32>>
+  %3 = pop.load %2 : !kgen.pointer<i32>
   kgen.return %3 : i32
 }
 
 kgen.generator @store_load<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   %0 = pop.stack_allocation 1 x T
-  pop.store %arg0, %0 : !pop.pointer<T>
-  %1 = pop.load %0 : !pop.pointer<T>
+  pop.store %arg0, %0 : !kgen.pointer<T>
+  %1 = pop.load %0 : !kgen.pointer<T>
   kgen.return %1 : !kgen.paramref<T>
 }
 
 kgen.generator @i24_pair_bitcast(%arg0: !pop.array<2, i24>) -> i64 {
   %0 = pop.stack_allocation 2 x i24
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<i24> to !pop.pointer<array<2, i24>>
-  pop.store %arg0, %1 : !pop.pointer<array<2, i24>>
-  %2 = pop.pointer.bitcast %0 : !pop.pointer<i24> to !pop.pointer<i64>
-  %3 = pop.load %2 : !pop.pointer<i64>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<i24> to !kgen.pointer<array<2, i24>>
+  pop.store %arg0, %1 : !kgen.pointer<array<2, i24>>
+  %2 = pop.pointer.bitcast %0 : !kgen.pointer<i24> to !kgen.pointer<i64>
+  %3 = pop.load %2 : !kgen.pointer<i64>
   kgen.return %3 : i64
 }
 
 kgen.generator @bitcast<I: type, O: type>(%arg0: !kgen.paramref<I>) -> !kgen.paramref<O> {
   %0 = pop.stack_allocation 1 x I
-  pop.store %arg0, %0 : !pop.pointer<I>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<I> to !pop.pointer<O>
-  %2 = pop.load %1 : !pop.pointer<O>
+  pop.store %arg0, %0 : !kgen.pointer<I>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<I> to !kgen.pointer<O>
+  %2 = pop.load %1 : !kgen.pointer<O>
   kgen.return %2 : !kgen.paramref<O>
 }
 
 // COM: Store the variant and sneakily read its discriminator's raw value.
 kgen.generator @variant_bitcast_discr(%arg0: !pop.variant<i32, i64>) -> i8 {
   %0 = pop.stack_allocation 1 x !pop.variant<i32, i64>
-  pop.store %arg0, %0 : !pop.pointer<variant<i32, i64>>
-  %1 = pop.pointer.bitcast %0 : !pop.pointer<variant<i32, i64>> to !pop.pointer<struct<i64, i8>>
+  pop.store %arg0, %0 : !kgen.pointer<variant<i32, i64>>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<variant<i32, i64>> to !kgen.pointer<struct<i64, i8>>
   %2 = pop.struct.gep %1[1] : <struct<i64, i8>>
-  %3 = pop.load %2 : !pop.pointer<i8>
+  %3 = pop.load %2 : !kgen.pointer<i8>
   kgen.return %3 : i8
 }
 
 kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
   %0 = kgen.param.constant = <I>
   %1 = pop.stack_allocation 1 x !pop.array<3, i24>
-  pop.store %arg0, %1 : !pop.pointer<array<3, i24>>
+  pop.store %arg0, %1 : !kgen.pointer<array<3, i24>>
   %2 = pop.array.gep %1[%0] : <array<3, i24>>
-  %3 = pop.load %2 : !pop.pointer<i24>
+  %3 = pop.load %2 : !kgen.pointer<i24>
   kgen.return %3 : i24
 }
 
 kgen.generator @struct_gep_load(%arg0: !pop.struct<i8, i16, i32>) -> i32 {
   %1 = pop.stack_allocation 1 x !pop.struct<i8, i16, i32>
-  pop.store %arg0, %1 : !pop.pointer<struct<i8, i16, i32>>
+  pop.store %arg0, %1 : !kgen.pointer<struct<i8, i16, i32>>
   %2 = pop.struct.gep %1[2] : <struct<i8, i16, i32>>
-  %3 = pop.load %2 : !pop.pointer<i32>
+  %3 = pop.load %2 : !kgen.pointer<i32>
   kgen.return %3 : i32
 }
 
 kgen.generator @bitcast_offset() -> !pop.struct<scalar<ui8>, scalar<ui8>>{
   %x = pop.stack_allocation 1 x !pop.scalar<si64>
   %0 = kgen.param.constant: scalar<si64> = <5>
-  pop.store %0, %x : !pop.pointer<scalar<si64>>
-  %1 = pop.pointer.bitcast %x : !pop.pointer<scalar<si64>> to !pop.pointer<scalar<ui8>>
-  %2 = pop.load %1 : !pop.pointer<scalar<ui8>>
+  pop.store %0, %x : !kgen.pointer<scalar<si64>>
+  %1 = pop.pointer.bitcast %x : !kgen.pointer<scalar<si64>> to !kgen.pointer<scalar<ui8>>
+  %2 = pop.load %1 : !kgen.pointer<scalar<ui8>>
   %idx1 = index.constant 1
-  %3 = pop.offset %1[%idx1] : !pop.pointer<scalar<ui8>>
-  %4 = pop.load %3 : !pop.pointer<scalar<ui8>>
+  %3 = pop.offset %1[%idx1] : !kgen.pointer<scalar<ui8>>
+  %4 = pop.load %3 : !kgen.pointer<scalar<ui8>>
   %5 = pop.struct.create(%2, %4) : !pop.struct<scalar<ui8>, scalar<ui8>>
   kgen.return %5 : !pop.struct<scalar<ui8>, scalar<ui8>>
 }
@@ -79,66 +79,66 @@ kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !pop.struct<pointer<i16>,
   %idx1 = index.constant 1
   %idx32 = index.constant 0x2000
   %0 = pop.aligned_alloc %idx32, %idx4 : <i16>
-  pop.store %arg0, %0 : !pop.pointer<i16>
-  %1 = pop.offset %0[%idx1] : !pop.pointer<i16>
-  pop.store %arg1, %1 : !pop.pointer<i16>
+  pop.store %arg0, %0 : !kgen.pointer<i16>
+  %1 = pop.offset %0[%idx1] : !kgen.pointer<i16>
+  pop.store %arg1, %1 : !kgen.pointer<i16>
   %2 = pop.struct.create(%0, %1) : !pop.struct<pointer<i16>, pointer<i16>>
   kgen.return %2 : !pop.struct<pointer<i16>, pointer<i16>>
 }
 
 // COM: Check that the pointers alias.
-kgen.generator @copy_load(%arg0: !pop.pointer<i16>, %arg1: !pop.pointer<i16>) -> i16 {
-  %0 = pop.load %arg1: !pop.pointer<i16>
+kgen.generator @copy_load(%arg0: !kgen.pointer<i16>, %arg1: !kgen.pointer<i16>) -> i16 {
+  %0 = pop.load %arg1: !kgen.pointer<i16>
   %idx1 = index.constant 1
-  %1 = pop.offset %arg1[%idx1] : !pop.pointer<i16>
-  pop.store %0, %1 : !pop.pointer<i16>
-  %2 = pop.load %arg0 : !pop.pointer<i16>
+  %1 = pop.offset %arg1[%idx1] : !kgen.pointer<i16>
+  pop.store %0, %1 : !kgen.pointer<i16>
+  %2 = pop.load %arg0 : !kgen.pointer<i16>
   kgen.return %2 : i16
 }
 
-kgen.generator @modify_stack_mem(%arg0: !pop.pointer<i16>) -> !pop.pointer<i16> {
+kgen.generator @modify_stack_mem(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<i16> {
   %zero = kgen.param.constant: i16 = <0>
-  pop.store %zero, %arg0 : !pop.pointer<i16>
-  kgen.return %arg0 : !pop.pointer<i16>
+  pop.store %zero, %arg0 : !kgen.pointer<i16>
+  kgen.return %arg0 : !kgen.pointer<i16>
 }
 
-kgen.generator @return_pointer_to_pointer(%arg0: !pop.pointer<i16>) -> !pop.pointer<pointer<i16>> {
+kgen.generator @return_pointer_to_pointer(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> {
   %idx-1 = index.constant -1
   %idx16 = index.constant 16
   %0 = pop.aligned_alloc %idx-1, %idx16 : <pointer<i16>>
   %idx1 = index.constant 1
-  %1 = pop.offset %0[%idx1] : !pop.pointer<pointer<i16>>
-  pop.store %arg0, %1 : !pop.pointer<pointer<i16>>
-  kgen.return %1 : !pop.pointer<pointer<i16>>
+  %1 = pop.offset %0[%idx1] : !kgen.pointer<pointer<i16>>
+  pop.store %arg0, %1 : !kgen.pointer<pointer<i16>>
+  kgen.return %1 : !kgen.pointer<pointer<i16>>
 }
 
-kgen.generator @load_pointer_to_pointer(%arg0: !pop.pointer<pointer<i16>>) -> i16 {
+kgen.generator @load_pointer_to_pointer(%arg0: !kgen.pointer<pointer<i16>>) -> i16 {
   %idx1 = index.constant 1
-  %0 = pop.offset %arg0[%idx1] : !pop.pointer<pointer<i16>>
-  %1 = pop.load %0 : !pop.pointer<pointer<i16>>
-  %2 = pop.load %1 : !pop.pointer<i16>
+  %0 = pop.offset %arg0[%idx1] : !kgen.pointer<pointer<i16>>
+  %1 = pop.load %0 : !kgen.pointer<pointer<i16>>
+  %2 = pop.load %1 : !kgen.pointer<i16>
   kgen.return %2 : i16
 }
 
-kgen.generator @free_null(%arg0: !pop.pointer<i16>) -> index {
+kgen.generator @free_null(%arg0: !kgen.pointer<i16>) -> index {
   %idx0 = index.constant 0
   pop.aligned_free %arg0 : <i16>
   kgen.return %idx0 : index
 }
 
-kgen.generator @freed_memory() -> !pop.pointer<i16> {
+kgen.generator @freed_memory() -> !kgen.pointer<i16> {
   %idx-1 = index.constant -1
   %idx4 = index.constant 4
   %0 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   %1 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   pop.aligned_free %0 : <i16>
-  kgen.return %1 : !pop.pointer<i16>
+  kgen.return %1 : !kgen.pointer<i16>
 }
 
-kgen.generator @const_string(%arg0: !pop.pointer<i8>) -> !pop.struct<i8, pointer<i8>> {
-  %0 = pop.load %arg0 : !pop.pointer<i8>
+kgen.generator @const_string(%arg0: !kgen.pointer<i8>) -> !pop.struct<i8, pointer<i8>> {
+  %0 = pop.load %arg0 : !kgen.pointer<i8>
   %idx2 = index.constant 2
-  %1 = pop.offset %arg0[%idx2] : !pop.pointer<i8>
+  %1 = pop.offset %arg0[%idx2] : !kgen.pointer<i8>
   %2 = pop.struct.create(%0, %1) : !pop.struct<i8, pointer<i8>>
   kgen.return %2 : !pop.struct<i8, pointer<i8>>
 }
@@ -238,36 +238,36 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
-    :(!pop.pointer<i16>, !pop.pointer<i16>) -> i16 @copy_load,
+    :(!kgen.pointer<i16>, !kgen.pointer<i16>) -> i16 @copy_load,
     #M.memref<[(mem, heap, [])], 0, 2>, #M.memref<[(mem, heap, [])], 0, 0>)>
 
   // CHECK-NEXT: <#M.memref<[([[MODIFY_STACK_MEM:.*]], stack, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(
-    :(!pop.pointer<i16>) -> !pop.pointer<i16> @modify_stack_mem,
+    :(!kgen.pointer<i16>) -> !kgen.pointer<i16> @modify_stack_mem,
     #M.memref<[(stack, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <#M.memref<[([[RETURN_POINTER:.*]], heap, [(8, 1, 0)]),
   // CHECK-SAME:             ([[RETURN_POINTER_1:.*]], stack, [])], 0, 8>>
-  kgen.param.constant: !pop.pointer<pointer<i16>> = <apply(
-    :(!pop.pointer<i16>) -> !pop.pointer<pointer<i16>> @return_pointer_to_pointer,
+  kgen.param.constant: !kgen.pointer<pointer<i16>> = <apply(
+    :(!kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> @return_pointer_to_pointer,
     #M.memref<[(some_ptr, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
-    :(!pop.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
+    :(!kgen.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
     #M.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <apply(
-    :(!pop.pointer<i16>) -> index @free_null, #M.pointer<0>)>
+    :(!kgen.pointer<i16>) -> index @free_null, #M.pointer<0>)>
 
   // CHECK-NEXT: <#M.memref<[([[FREED_CONCRETE_MEM:.*]], heap, [])], 0, 0>>
-  kgen.param.constant: pointer<i16> = <apply(:() -> !pop.pointer<i16> @freed_memory)>
+  kgen.param.constant: pointer<i16> = <apply(:() -> !kgen.pointer<i16> @freed_memory)>
 
   // COM: `ord("hello world"[2]) -> 108`.
   // CHECK-NEXT: <{ 108, #M.memref<[(string, const_global, [])], 0, 4> }>
   kgen.param.constant: struct<i8, pointer<i8>> = <apply(
-    :(!pop.pointer<i8>) -> !pop.struct<i8, pointer<i8>> @const_string,
+    :(!kgen.pointer<i8>) -> !pop.struct<i8, pointer<i8>> @const_string,
     #M.memref<[(string, const_global, [])], 0, 2>)>
 
   // CHECK-NEXT: <1>

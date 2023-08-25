@@ -1,8 +1,8 @@
 // RUN: kgen-opt --hoist-trivial-invariants -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: @basic
-kgen.func @basic(%arg0: !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>) {
-  %struct = pop.load %arg0 : !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+kgen.func @basic(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>) {
+  %struct = pop.load %arg0 : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
 
   // CHECK: %[[LOAD:.*]] = pop.load
   // CHECK-NEXT: pop.struct.extract %[[LOAD]][2]
@@ -22,8 +22,8 @@ kgen.func @basic(%arg0: !pop.pointer<struct<struct<scalar<index>>, struct<scalar
 }
 
 // CHECK-LABEL: @many_nests
-kgen.func @many_nests(%arg0: !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>, %cond: i1) {
-  %struct = pop.load %arg0 : !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+kgen.func @many_nests(%arg0: !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>, %cond: i1) {
+  %struct = pop.load %arg0 : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
 
   // CHECK: %[[LOAD:.*]] = pop.load
   // CHECK-NEXT: pop.struct.extract %[[LOAD]][2]
@@ -53,15 +53,15 @@ kgen.func @many_nests(%arg0: !pop.pointer<struct<struct<scalar<index>>, struct<s
 }
 
 // CHECK-LABEL: @memory_ops_untouched
-kgen.func @memory_ops_untouched(%input: !pop.pointer<index>, %output: !pop.pointer<index>) {
+kgen.func @memory_ops_untouched(%input: !kgen.pointer<index>, %output: !kgen.pointer<index>) {
   // CHECK: hlcf.loop
   // CHECK-NEXT: hlcf.loop
   // CHECK-NEXT: pop.load
   // CHECK-NEXT: pop.store
   hlcf.loop {
     hlcf.loop {
-      %load = pop.load %input : !pop.pointer<index>
-      pop.store %load, %output  : !pop.pointer<index>
+      %load = pop.load %input : !kgen.pointer<index>
+      pop.store %load, %output  : !kgen.pointer<index>
       hlcf.break
     }
     hlcf.break

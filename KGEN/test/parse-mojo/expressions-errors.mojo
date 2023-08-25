@@ -400,7 +400,7 @@ struct GetSettable:
 
 fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   # expected-error @+1 {{expression must be mutable}}
-  let addr : __mlir_type.`!pop.pointer<index>` = __get_lvalue_as_address(a)
+  let addr : __mlir_type.`!kgen.pointer<index>` = __get_lvalue_as_address(a)
 
   # expected-error @+1 {{cannot use a dynamic LValue in this operator}}
   _ = __get_lvalue_as_address(b[1])
@@ -409,7 +409,7 @@ fn lvalue_utilities(a: __mlir_type.index, inout b: GetSettable):
   __get_address_as_lvalue(addr) = 42
 
   let addr2 : __mlir_type.index
-  # expected-error @+1 {{operand must have '!pop.pointer<T>' type, not 'index'}}
+  # expected-error @+1 {{operand must have '!kgen.pointer<T>' type, not 'index'}}
   __get_address_as_lvalue(addr2) = 42
 
 

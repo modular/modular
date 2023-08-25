@@ -653,7 +653,7 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT: %val = lit.varlet.decl
   # CHECK-NEXT: [[TARGET:%.*]] = kgen.call {{.*}}__enter__{{.*}}(%a)
   # CHECK-NEXT: pop.store [[TARGET]], %val
-  # CHECK: pop.store %true, %__with_exc__ : !pop.pointer<i1>
+  # CHECK: pop.store %true, %__with_exc__ : !kgen.pointer<i1>
   # CHECK-NEXT: lit.try
   # CHECK-NEXT: lit.try
   with a as val:

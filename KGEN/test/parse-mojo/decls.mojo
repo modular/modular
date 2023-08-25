@@ -228,7 +228,7 @@ def var_decls() -> None:
     # CHECK: [[Y:%.*]] = pop.load %y
     # CHECK: [[ONE:%.*]] = kgen.param.constant: !Int {{.*}} 1
     # CHECK: [[ADD:%.*]] = kgen.call {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)"([[Y]], [[ONE]])
-    # CHECK: pop.store [[ADD]], %y : !pop.pointer<!Int>
+    # CHECK: pop.store [[ADD]], %y : !kgen.pointer<!Int>
     y = y + 1
 
     # CHECK: kgen.param.constant: !StringLiteral = <#lit.struct<{value: string = "hello"}>>
@@ -240,7 +240,7 @@ def var_decls() -> None:
     var str = "hello"
 
     # CHECK: %z = lit.varlet.decl {{.*}} : <index>
-    # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !pop.pointer<index>
+    # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !kgen.pointer<index>
     # CHECK-NEXT: pop.store [[TMP]], %z
     var z = x
     z = (42).value
@@ -445,9 +445,9 @@ fn variadic_params():
 
 
 # Test that pointers don't get confused with by-ref arguments.
-# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !pop.pointer<si32> borrow) -> si32
-fn testPointerArgs(ptr: __mlir_type.`!pop.pointer<si32>`) -> __mlir_type.si32:
-    # CHECK-NEXT: %0 = pop.load %ptr : !pop.pointer<si32>
+# CHECK-LABEL: lit.func @"testPointerArgs{{.*}}(%ptr: !kgen.pointer<si32> borrow) -> si32
+fn testPointerArgs(ptr: __mlir_type.`!kgen.pointer<si32>`) -> __mlir_type.si32:
+    # CHECK-NEXT: %0 = pop.load %ptr : !kgen.pointer<si32>
     return __mlir_op.`pop.load`[_type : __mlir_type.si32](ptr)
 
 
@@ -569,8 +569,8 @@ fn orvalueInferType():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
-# CHECK-SAME: (%a: !pop.pointer<!StructWithInit> owned_in_mem,
-# CHECK-SAME:  %b: !pop.pointer<!StructWithInit> borrow_in_mem)
+# CHECK-SAME: (%a: !kgen.pointer<!StructWithInit> owned_in_mem,
+# CHECK-SAME:  %b: !kgen.pointer<!StructWithInit> borrow_in_mem)
 fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.struct.gep %a[x]
     # CHECK: %1 = pop.load [[AX]]
@@ -607,7 +607,7 @@ fn ownedConventionReg(
     borrowed triv: RPStructWithInitTrivial,
 ):
     # CHECK: %a_0 = lit.varlet.decl "a", var = true
-    # CHECK: pop.store %a, %a_0 : !pop.pointer<!RPStructWithInit>
+    # CHECK: pop.store %a, %a_0 : !kgen.pointer<!RPStructWithInit>
 
     # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
     # CHECK:  = pop.load [[AX]]
@@ -634,7 +634,7 @@ struct BorrowStruct:
 
 
 # CHECK-LABEL: callerFn
-# CHECK-SAME: (%arg0: !pop.pointer<{{.*}}> borrow_in_mem)
+# CHECK-SAME: (%arg0: !kgen.pointer<{{.*}}> borrow_in_mem)
 fn callerFn(borrowed arg0: BorrowStruct):
     # CHECK-NEXT: kgen.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
@@ -946,7 +946,7 @@ struct StructWithInit:
     var y: Int
 
     # CHECK: lit.func @"__init__($decls::StructWithInit=&,{{.*}}$int::Int)"
-    # CHECK-SAME: (%self: !pop.pointer<!StructWithInit> init_self,
+    # CHECK-SAME: (%self: !kgen.pointer<!StructWithInit> init_self,
     fn __init__(inout self, a: Int):
         # CHECK: %0 = lit.struct.gep %self[x]
         # CHECK: pop.store %a, %0
@@ -962,7 +962,7 @@ struct StructWithInit:
 
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !pop.pointer<!StructWithInit> init_self,
+    # CHECK-SAME: (%self: !kgen.pointer<!StructWithInit> init_self,
     fn __init__(inout self, a: Int, b: Int):
         # CHECK: hlcf.if
         if a == b:
@@ -998,7 +998,7 @@ struct StructExample:
         StructExample.static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !pop.pointer<!StructExample> byref) -> !lit.none
+    # CHECK: lit.func @"mutatingMethod($decls::StructExample&)"(%self: !kgen.pointer<!StructExample> byref) -> !lit.none
     fn mutatingMethod(inout self):
         pass
 
@@ -1048,7 +1048,7 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__init__
-# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
+# CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
 # CHECK-SAME:     %a: !Int borrow,
 # CHECK-SAME:    %b: !StructExample) -> !lit.none
 # CHECK-SAME:    attributes {specialFnKind = 2 : i8} {
@@ -1059,8 +1059,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: !lit.none
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
-# CHECK-SAME:  %existing: !pop.pointer<!ValueMem> borrow_in_mem)
+# CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %existing: !kgen.pointer<!ValueMem> borrow_in_mem)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %existing[a]
 # CHECK-NEXT: %2 = pop.load %1
@@ -1073,8 +1073,8 @@ struct ValueMem:
 # CHECK-NEXT: kgen.param.constant: !lit.none
 
 # CHECK: lit.func @"__moveinit__
-# CHECK-SAME: (%self: !pop.pointer<!ValueMem> init_self,
-# CHECK-SAME:  %existing: !pop.pointer<!ValueMem> owned_in_mem)
+# CHECK-SAME: (%self: !kgen.pointer<!ValueMem> init_self,
+# CHECK-SAME:  %existing: !kgen.pointer<!ValueMem> owned_in_mem)
 # CHECK-NEXT: %0 = lit.struct.gep %self[a]
 # CHECK-NEXT: %1 = lit.struct.gep %existing[a]
 # CHECK-NEXT: %2 = lit.load.consume %1

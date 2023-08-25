@@ -228,7 +228,7 @@ kgen.generator @failed_apply() {
 
 // -----
 
-kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
+kgen.generator @evaluator(%fns: !kgen.pointer<() -> ()>, %size: index) -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
@@ -244,13 +244,13 @@ kgen.generator @no_valid_specializations() {
 kgen.generator export @entry() {
   // expected-note @below {{call expansion failed - no concrete specialization}}
   kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
-    [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
+    [(!kgen.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.return
 }
 
 // -----
 
-kgen.generator @evaluator(%fns: !pop.pointer<() -> ()>, %size: index) -> index {
+kgen.generator @evaluator(%fns: !kgen.pointer<() -> ()>, %size: index) -> index {
   %idx1 = index.constant 1
   kgen.return %idx1 : index
 }
@@ -263,7 +263,7 @@ kgen.generator @one() {
 kgen.generator export @entry() {
   // expected-note @below {{user-provided evaluator returned an out-of-bounds result: 1}}
   kgen.param.evaluate f: () -> () = [@one] with
-    [(!pop.pointer<() -> ()>, index) -> index: @evaluator]
+    [(!kgen.pointer<() -> ()>, index) -> index: @evaluator]
   kgen.return
 }
 
