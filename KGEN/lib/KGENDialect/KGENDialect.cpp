@@ -20,11 +20,12 @@
 using namespace M;
 using namespace KGEN;
 
+namespace {
+
 //===----------------------------------------------------------------------===//
 // KGENDialectFoldInterface
 //===----------------------------------------------------------------------===//
 
-namespace {
 struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
   using DialectFoldInterface::DialectFoldInterface;
 
@@ -39,6 +40,35 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
     return isa<DeclInterface>(region->getParentOp());
   }
 };
+
+//===----------------------------------------------------------------------===//
+// KGENDialectOpAsmDialectInterface
+//===----------------------------------------------------------------------===//
+
+struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
+  using OpAsmDialectInterface::OpAsmDialectInterface;
+
+  //===--------------------------------------------------------------------===//
+  // Aliases
+
+  AliasResult getAlias(Attribute attr, raw_ostream &os) const override {
+    return AliasResult::NoAlias;
+  }
+
+  AliasResult getAlias(Type type, raw_ostream &os) const override {
+    // Alias DeclRefType if required.
+    if (auto ref = dyn_cast<DeclRefType>(type)) {
+      if (std::optional<StringRef> aliasName = ref.getAliasName()) {
+        os << *aliasName;
+        return AliasResult::OverridableAlias;
+      }
+      return AliasResult::NoAlias;
+    }
+
+    return AliasResult::NoAlias;
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -48,7 +78,7 @@ struct KGENDialectFoldInterface : public mlir::DialectFoldInterface {
 void KGENDialect::initialize() {
   registerAttributes();
   registerTypes();
-  addInterfaces<KGENDialectFoldInterface>();
+  addInterfaces<KGENDialectFoldInterface, KGENDialectOpAsmDialectInterface>();
   registerBytecodeInterface();
   injectAttrInterfaces();
 

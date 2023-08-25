@@ -297,8 +297,10 @@ def KGEN_DeclRefType : KGENType<"DeclRef", "declref"> {
 
   let extraClassDeclaration = [{
     /// Get the name of the referenced type.
-    StringAttr getName() {
-      return getSymbol().getRootReference(); }
+    StringAttr getName() { return getSymbol().getRootReference(); }
+
+    /// Return an alias name if the DeclRefType should be printed with an alias.
+    std::optional<StringRef> getAliasName();
   }];
 }
 

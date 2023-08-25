@@ -48,7 +48,7 @@ struct RegExample:
 fn consume(owned a: RegExample): pass
 
 # CHECK-LABEL: lit.func @"destructors
-# CHECK-SAME: (%arg0: !pop.pointer<@"$ownership"::@MemExample> owned_in_mem)
+# CHECK-SAME: (%arg0: !pop.pointer<!MemExample> owned_in_mem)
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
@@ -353,7 +353,7 @@ fn thing_that_raises(value: Int, c: Bool) raises -> MemExample:
     raise Error("TypeError: cannot invert values of this type")
 
 # CHECK-LABEL: lit.struct.decl @Parameterized
-# CHECK-SAME: <{{.*}}level: {{.*}}@"$int"::@Int>
+# CHECK-SAME: <{{.*}}level: !Int>
 struct Parameterized[level: Int]:
     fn __init__(inout self): pass
 
@@ -364,7 +364,7 @@ struct Parameterized[level: Int]:
 fn test_parameterized():
   # CHECK: %x = lit.varlet.decl "x"
   let x = Parameterized[4]()
-  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:{{.*}}@"$int"::@Int #lit.struct<{value = 4}>>(%x)
+  # CHECK: kgen.call @"$ownership"::@Parameterized::@"__del__($ownership::Parameterized[level])"<:!Int #lit.struct<{value = 4}>>(%x)
 
 struct Complicated:
   var a: MemExample
@@ -723,7 +723,7 @@ struct ExoticDelExample:
     # CHECK-NEXT: %2 = kgen.call {{.*}}__del__{{.*}}(%1)
 
     # Test the condition
-    # CHECK-NEXT: %3 = lit.struct.gep %self_0[cond] : <i1> from <@"$ownership"::@ExoticDelExample>
+    # CHECK-NEXT: %3 = lit.struct.gep %self_0[cond] : <i1> from <!ExoticDelExample>
     # CHECK-NEXT: %4 = pop.load %3 : !pop.pointer<i1>
     # CHECK-NEXT: hlcf.if %4 {
     if self.cond:
@@ -1024,7 +1024,7 @@ fn optimizeCopyToMove():
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
-# CHECK-SAME: %a: !pop.pointer<@"$ownership"::@MemExample> borrow_in_mem
+# CHECK-SAME: %a: !pop.pointer<!MemExample> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
   # CHECK-NEXT: kgen.param.constant: !lit.none
   pass

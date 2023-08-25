@@ -225,8 +225,13 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
       it != dialect->typePrintFns.end()) {
     it->second(p, type);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
-    p << ref.getSymbol();
-    printOptionalParamBindSpec(p, ref.getParamValues());
+    // Use the alias printer if suitable.
+    if (ref.getAliasName()) {
+      p.printType(ref);
+    } else {
+      p << ref.getSymbol();
+      printOptionalParamBindSpec(p, ref.getParamValues());
+    }
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // If there are no parameters and no effects, print a SignatureType as a
     // function type to keep things concise.

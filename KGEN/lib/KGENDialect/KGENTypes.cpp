@@ -74,7 +74,7 @@ LogicalResult MLIRTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
   auto type = ::dyn_cast<TypeConstantAttr>(value);
   if (!type)
     return failure();
-  printKGENType(p.getStream(), type.getValue());
+  printKGENType(p, type.getValue());
   return success();
 }
 
@@ -519,6 +519,26 @@ DeclRefType DeclRefType::get(SymbolRefAttr name,
 
 DeclRefType DeclRefType::get(SymbolRefAttr name) {
   return get(name, ArrayRef<ParamBindAttr>());
+}
+
+std::optional<StringRef> DeclRefType::getAliasName() {
+  // Don't alias types with parameter references.
+  if (!getParamValues().empty())
+    return {};
+  StringRef rootName = getSymbol().getRootReference().getValue();
+
+  // Alias declref types that have mangled names.
+  if (llvm::all_of(rootName, [](char c) { return std::isalnum(c); }))
+    return {};
+
+  // Use the leaf name as the alias name.
+  StringRef leaf = getSymbol().getLeafReference().getValue();
+  unsigned offset = leaf.size();
+  while (offset > 0 && std::isalnum(leaf[offset - 1]))
+    --offset;
+  if (offset == leaf.size())
+    return {};
+  return leaf.substr(offset);
 }
 
 //===----------------------------------------------------------------------===//
