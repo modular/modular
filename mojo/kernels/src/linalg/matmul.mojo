@@ -603,7 +603,7 @@ struct MatmulInnerLoopBPacked[
             c_type,
         ],
     ):
-        """Utility funcion on the inner loop. Initializes a local c buffer with
+        """Utility function on the inner loop. Initializes a local c buffer with
         all zeros.
 
         Args:
@@ -633,7 +633,7 @@ struct MatmulInnerLoopBPacked[
         # indexing within tile, in (m,n)
         tile_idx: StaticIntTuple[2],
     ):
-        """Utility funcion on the inner loop. Loads a local c_buffer with the
+        """Utility function on the inner loop. Loads a local c_buffer with the
         value stored in the output buffer space, given the indices within the
         tile being processed.
 
@@ -642,8 +642,6 @@ struct MatmulInnerLoopBPacked[
             tile_idx: index tuple with (m,n) coordinates within the current
                 processing tile.
         """
-        alias alignment = alignof[SIMD[c_type, simd_size]]()
-        alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
         let N = self.c.dim(1)
         var c_ptr = self.c.data.offset(
             (self.global_offset.M + tile_idx[0]) * N
@@ -656,22 +654,11 @@ struct MatmulInnerLoopBPacked[
         fn body[idx0: Int, idx1: Int]():
             var c_data: SIMD[c_type, simd_size] = 0
             if skip_boundary_check or (
-                Index(idx0, idx1 * simd_size + simd_size)
-                <= (self.c_bound - tile_idx)
+                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_idx[1]
             ):
                 # Use simd load if all within bound
-                @parameter
-                if is_row_aligned:
-                    c_data = c_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                        simd_size, alignment
-                    ]()
-                else:
-                    c_data = c_ptr.offset(idx1 * simd_size).simd_load[
-                        simd_size
-                    ]()
-            elif (idx0 + tile_idx[0]) < self.c_bound[
-                0
-            ] and idx1 * simd_size <= self.c_bound[1]:
+                c_data = c_ptr.offset(idx1 * simd_size).simd_load[simd_size]()
+            elif idx1 * simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
                 c_data = partial_simd_load[c_type, simd_size](
@@ -685,9 +672,7 @@ struct MatmulInnerLoopBPacked[
                 c_data = SIMD[c_type, simd_size](0)
 
             # Store data to local buffer.
-            c_local.aligned_simd_store[simd_size, alignment](
-                Index(idx0, idx1 * simd_size), c_data
-            )
+            c_local.simd_store[simd_size](Index(idx0, idx1 * simd_size), c_data)
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
@@ -705,7 +690,7 @@ struct MatmulInnerLoopBPacked[
         ],
         tile_idx: StaticIntTuple[2],
     ):
-        """Utility funcion on the inner loop. Stores the value of a local c
+        """Utility function on the inner loop. Stores the value of a local c
         buffer to the corresponding position in the output buffer space.
 
         Args:
@@ -713,9 +698,6 @@ struct MatmulInnerLoopBPacked[
             tile_idx: index tuple with (m,n) coordinates within the current
                 processing tile.
         """
-        alias alignment = alignof[SIMD[c_type, simd_size]]()
-        alias is_row_aligned = shape_c.at[1]().is_multiple[alignment]()
-
         let N = self.c.dim(1)
         var c_ptr = self.c.data.offset(
             (self.global_offset.M + tile_idx[0]) * N
@@ -726,27 +708,16 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            let c_data = c_local.aligned_simd_load[simd_size, alignment](
+            let c_data = c_local.simd_load[simd_size](
                 Index(idx0, idx1 * simd_size)
             )
             if skip_boundary_check or (
-                Index(idx0, idx1 * simd_size + simd_size)
-                <= (self.c_bound - tile_idx)
+                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_idx[1]
             ):
                 # Use simd store if all within bound
-                @parameter
-                if is_row_aligned:
-                    c_ptr.offset(idx1 * simd_size).aligned_simd_store[
-                        simd_size, alignment
-                    ](c_data)
-                else:
-                    c_ptr.offset(idx1 * simd_size).simd_store[simd_size](c_data)
-            elif (
-                idx0 < (self.c_bound[0] - tile_idx[0])
-                and idx1 * simd_size <= self.c_bound[1]
-            ):
-                # Use partial store if row in bound but col not
-                #  in simd bound.
+                c_ptr.offset(idx1 * simd_size).simd_store[simd_size](c_data)
+            elif idx1 * simd_size <= self.c_bound[1]:
+                # Use partial store if col not in simd bound.
                 partial_simd_store(
                     c_ptr.offset(idx1 * simd_size),
                     0,
@@ -772,7 +743,7 @@ struct MatmulInnerLoopBPacked[
         ],
         tile_n_k_idx: StaticIntTuple[2],
     ):
-        """Utility funcion on the inner loop. Launch one tile of fma on the
+        """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing `a_col_size` columns of A.
 
         Args:
@@ -847,7 +818,7 @@ struct MatmulInnerLoopBPacked[
         ],
         tile_n_k_idx: StaticIntTuple[2],
     ):
-        """Utility funcion on the inner loop. Launch one tile of fma on the
+        """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
 
         Args:
@@ -911,7 +882,7 @@ struct MatmulInnerLoopBPacked[
         ],
         tile_n_k_idx: StaticIntTuple[2],
     ):
-        """Utility funcion on the inner loop. Launch one tile of fma on the
+        """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
 
         Args:
@@ -967,7 +938,7 @@ struct MatmulInnerLoopBPacked[
 
     @adaptive
     fn _run_inner_loop(self):
-        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
         constrained[Self.use_vnni]()
@@ -1001,7 +972,7 @@ struct MatmulInnerLoopBPacked[
 
     @adaptive
     fn _run_inner_loop(self):
-        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
         constrained[not Self.use_vnni and (not has_neon() or critical_stride)]()
@@ -1030,7 +1001,7 @@ struct MatmulInnerLoopBPacked[
 
     @adaptive
     fn _run_inner_loop(self):
-        """Utility funcion on the inner loop. Run the inner kernel on the whole
+        """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
         constrained[has_neon() and not critical_stride]()
