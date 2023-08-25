@@ -248,6 +248,11 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
   // We generate the LLVM dialect.
   let dependentDialects = ["mlir::LLVM::LLVMDialect",
                            "mlir::index::IndexDialect"];
+
+  let options = [
+    Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
+           "If true, global destructors are not generated.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -337,8 +342,6 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
   // FIXME(#16605): Global destructors don't work in JIT mode.
   let options = [
-    Option<"disableGlobalDtors", "disable-global-dtors", "bool", "false",
-           "If true, global destructors are not generated.">,
     Option<"allocFnName", "alloc-fn-name", "std::string",
            "\"kgenAlignedAlloc\"", "The aligned allocate function name.">,
     Option<"freeFnName", "free-fn-name", "std::string",

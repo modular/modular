@@ -290,9 +290,9 @@ lit.globalvar.decl @foo : index {
 
 // CHECK: (ctor_fn)bar
 lit.globalvar.decl @bar : index {
-  // CHECK-NEXT: pop.global.address @foo
+  // CHECK-NEXT: kgen.global.address @foo
   lit.globalvar.ref @foo : <index>
-  // CHECK-NEXT: pop.global.address @baz
+  // CHECK-NEXT: kgen.global.address @baz
   lit.globalvar.ref @baz : <index>
   // CHECK-NEXT: kgen.return
 }, {
@@ -320,7 +320,7 @@ lit.file_module @module {
 
   // CHECK-LABEL: kgen.generator @"module::ref_exported"
   lit.func @ref_exported() {
-    // CHECK-NEXT: pop.global.address @foo : <index>
+    // CHECK-NEXT: kgen.global.address @foo : <index>
     %0 = lit.globalvar.ref @module::@exported : <index>
     kgen.return
   }
@@ -343,7 +343,7 @@ lit.globalvar.decl @bar : index {
 
 // CHECK: kgen.generator @"(ctor_fn)self"
 lit.globalvar.decl @self : index {
-  // CHECK-NEXT: pop.global.address @self
+  // CHECK-NEXT: kgen.global.address @self
   lit.globalvar.ref @self : <index>
 }, {
   lit.globalvar.ref @self : <index>

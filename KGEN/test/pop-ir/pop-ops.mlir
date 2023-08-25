@@ -1095,8 +1095,8 @@ kgen.global @global_var : i32 [@global_var_ctor, @global_var_ctor](2)
 
 // CHECK-LABEL: @global_address
 kgen.func @global_address() -> !kgen.pointer<i32> {
-  // CHECK-NEXT: pop.global.address @global_var : <i32>
-  %0 = pop.global.address @global_var : <i32>
+  // CHECK-NEXT: kgen.global.address @global_var : <i32>
+  %0 = kgen.global.address @global_var : <i32>
   kgen.return %0 : !kgen.pointer<i32>
 }
 

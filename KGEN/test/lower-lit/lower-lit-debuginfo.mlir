@@ -80,11 +80,11 @@ lit.file_module @module {
 #file = #debuginfo.file<"foo.mlir" in "/">
 
 // CHECK-LABEL: kgen.generator @"(ctor_fn)foo"()
-// CHECK-NEXT:    pop.global.address @foo : <index> loc(#[[LOC_CTOR_OP:.*]])
+// CHECK-NEXT:    kgen.global.address @foo : <index> loc(#[[LOC_CTOR_OP:.*]])
 // CHECK-NEXT:    kgen.return loc(#[[LOC_CTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_CTOR]])
 // CHECK-LABEL: kgen.generator @"(dtor_fn)foo"() {
-// CHECK-NEXT:    pop.global.address @foo : <index> loc(#[[LOC_DTOR_OP:.*]])
+// CHECK-NEXT:    kgen.global.address @foo : <index> loc(#[[LOC_DTOR_OP:.*]])
 // CHECK-NEXT:    kgen.return loc(#[[LOC_DTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])
 // CHECK-NEXT:  kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0) loc(#[[LOC_OP:.*]])

@@ -103,46 +103,6 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
 // -----
 
-// COM: Don't generate globals where there are none.
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK-NOT: llvm.mlir.global_ctors
-  // CHECK-NOT: llvm.mlir.global_dtors
-}
-
-// -----
-
-module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK: llvm.mlir.global_ctors {ctors = [@foo_c, @bar_c, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
-  // CHECK: llvm.mlir.global_dtors {dtors = [@foo_d, @bar_d, @noop], priorities = [2 : i32, 5 : i32, 0 : i32]}
-  llvm.func @foo_c() {
-    llvm.return
-  }
-  llvm.func @foo_d() {
-    llvm.return
-  }
-  llvm.func @bar_c() {
-    llvm.return
-  }
-  llvm.func @bar_d() {
-    llvm.return
-  }
-
-  // CHECK: llvm.mlir.global internal @foo() {{.*}} : i32
-  kgen.global @foo : i32 [@foo_c, @foo_d](2)
-  // CHECK: llvm.mlir.global internal @bar() {{.*}} : i64
-  kgen.global @bar : i64 [@bar_c, @bar_d](5)
-
-  llvm.func @noop() {
-    llvm.return
-  }
-  // CHECK: llvm.mlir.global external @exported() {{.*}} : f32
-  // CHECK-NEXT: [[UNDEF:%.*]] = llvm.mlir.undef
-  // CHECK-NEXT: llvm.return [[UNDEF]]
-  kgen.global export @exported : f32 [@noop, @noop](0)
-}
-
-// -----
-
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: llvm.func @alloc_free
   llvm.func @alloc_free() {

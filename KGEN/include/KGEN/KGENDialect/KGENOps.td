@@ -1098,6 +1098,31 @@ def KGEN_GlobalOp : KGENOp<"global", [Symbol, NoTerminator,
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalAddressOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_GlobalAddressOp : KGENOp<"global.address", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get the address of a global variable.";
+  let description = [{
+    The `kgen.global.address` operation returns the address of a referenced
+    global variable. The type of the result is a `!kgen.pointer` to the global
+    type.
+
+    Example:
+
+    ```mlir
+    %ptr = kgen.global.address @foo : <i32>
+    ```
+  }];
+
+  let arguments = (ins SymbolRefAttr:$global);
+  let results = (outs PointerType:$result);
+
+  let assemblyFormat = "$global attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
 // LinkOp
 //===----------------------------------------------------------------------===//
 
