@@ -614,7 +614,7 @@ struct VariadicListMem[type: AnyType]:
         type: The type of the elements in the list.
     """
 
-    alias StorageType = __mlir_type[`!kgen.variadic<!pop.pointer<`, type, `>>`]
+    alias StorageType = __mlir_type[`!kgen.variadic<!kgen.pointer<`, type, `>>`]
     var value: Self.StorageType
     """The underlying storage, a variadic list of pointers to elements of the
     given type."""
@@ -642,7 +642,9 @@ struct VariadicListMem[type: AnyType]:
         return __mlir_op.`pop.variadic.size`(self.value)
 
     @always_inline
-    fn __getitem__(self, index: Int) -> __mlir_type[`!pop.pointer<`, type, `>`]:
+    fn __getitem__(
+        self, index: Int
+    ) -> __mlir_type[`!kgen.pointer<`, type, `>`]:
         """Gets a single element on the variadic list.
 
         Args:

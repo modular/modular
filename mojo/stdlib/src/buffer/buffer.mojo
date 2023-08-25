@@ -670,7 +670,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        ptr: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
+        ptr: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
         dynamic_shape: StaticIntTuple[rank],
     ) -> NDBuffer[rank, shape, type]:
         """Constructs an NDBuffer with statically known rank, but dynamic
