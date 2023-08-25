@@ -231,16 +231,13 @@ fn fn_returns_section_poor_style() -> Int:
 
 
 fn fn_nested_fn():
-    """This is a function that defines a nested struct and function.
+    """This is a function that defines a nested function.
 
-    The nested struct and function do not include doc strings, but neither
-    should be reported as invalid.
+    The nested function does not include a doc string, but it should not be
+    reported as invalid.
     """
 
     fn nested_fn():
-        pass
-
-    struct NestedStruct:
         pass
 
     return

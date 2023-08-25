@@ -1960,9 +1960,11 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
 ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
                                         size_t curIndent) {
-  // We don't support structs in structs (yet?).
+  // We don't support non-top level structs (yet?).
   if (isa<StructDeclOp>(getParentDecl()))
     emitTokenError("nested struct not supported here");
+  if (isa<LIT::FuncOp>(getParentDecl()))
+    emitTokenError("struct inside a function not supported here");
 
   auto smLoc = consumeToken(Token::kw_struct).getLoc();
   auto loc = translateLocation(smLoc);
