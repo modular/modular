@@ -101,6 +101,8 @@ struct StmtParser : public ParserBase {
   }
 
   ParseResult parseSuite(ssize_t curIndent);
+  void pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
+                      llvm::SaveAndRestore<ASTDecl *> &keepDecl);
   ParseResult parseLocalScopeSuite(ssize_t curIndent,
                                    ArrayRef<ScopeDecl> decls = {});
   ParseResult parseStmt(bool onlySimpleStmt, bool &parsedCompound,
@@ -230,19 +232,25 @@ ParseResult StmtParser::parseSuite(ssize_t curIndent) {
   return success();
 }
 
-ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
-                                             ArrayRef<ScopeDecl> decls) {
-  // If we are generating debug info, push a local scope for the suite.
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+void StmtParser::pushChildScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard,
+                                llvm::SaveAndRestore<ASTDecl *> &keepDecl) {
+  // If we are generating debug info, push a local scope
   if (shared.diBuilder)
     pushLocalScope(scopeGuard);
 
-  // Push a new local variable scope for the subsequent suite.
-  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  // Push a new local variable scope.
   SMLoc loc;
   (void)getLocation(loc);
   curDeclScope = &getDeclResolver().addFullyResolvedDecl(nullptr, StringAttr(),
                                                          loc, curDeclScope);
+}
+
+ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
+                                             ArrayRef<ScopeDecl> decls) {
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  // Push a new local variable scope for the subsequent suite.
+  pushChildScope(scopeGuard, keepDecl);
 
   // Add the scope variables.
   for (const ScopeDecl &decl : decls) {
@@ -1227,6 +1235,22 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   if (!enterResult)
     enterDest.resetForError();
 
+  // If we are in a def, we need to use function scoping.  If we are in a fn,
+  // we need to use lexical scope.  In the top level, when supported, I guess we
+  // use global scope?  Maybe we should revisit that when the time comes.
+  bool useLexicalScope = false;
+  if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
+    if (!funcOp.getIsDef())
+      useLexicalScope = true;
+  }
+
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  if (useLexicalScope)
+    pushChildScope(scopeGuard, keepDecl);
+
+  // The tail of the computation we put in a lambda so we can call it in a new
+  // scope or in the current scope depending on whether we are in a def or a fn.
   // Inject the target into our scope if asked for.
   if (target) {
     auto &targetDecl = getDeclResolver().addFullyResolvedDecl(

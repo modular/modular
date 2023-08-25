@@ -691,6 +691,16 @@ fn testWithRaising(a: ExampleCM) raises:
   # CHECK-NEXT: hlcf.if %[[EXC]]
   # CHECK-NEXT:   call {{.*}}__exit__{{.*}}(%a)
 
+fn testWithScoping(a: ExampleCM):
+  # This is a test that issue #18811 is fixed, in which a `with`
+  # statement inside a `fn` does not respect lexical scope and binds
+  # its variable in its parent scope.
+  with a as withDecl:
+    # CHECK: %withDecl = lit.varlet.decl "withDecl"{{.*}}
+    noop(withDecl)
+  with a as withDecl:
+    # CHECK: %withDecl_0 = lit.varlet.decl "withDecl"{{.*}}
+    noop(withDecl)
 
 ##===----------------------------------------------------------------------===##
 
