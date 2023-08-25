@@ -629,6 +629,9 @@ struct ResolveErrorIsBubbled:
    fn __init__(inout self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
       pass
 
+fn function_with_struct():
+  struct Foo: # expected-error {{struct inside a function not supported here}}
+    var x: Int
 
 ##===----------------------------------------------------------------------===##
 # Class
