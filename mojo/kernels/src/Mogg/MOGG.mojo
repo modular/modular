@@ -316,8 +316,8 @@ fn TensorIndicesTypeDef[
 fn to_buffer[
     type: DType, rank: Int
 ](
-    data: __mlir_type[`!pop.pointer<scalar<`, type.value, `>>`],
-    shape: __mlir_type.`!pop.pointer<index>`,
+    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
+    shape: __mlir_type.`!kgen.pointer<index>`,
 ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
@@ -344,7 +344,7 @@ fn to_buffer[
 @always_inline
 fn to_shape[
     rank: Int
-](shape: __mlir_type.`!pop.pointer<index>`,) -> StaticIntTuple[rank]:
+](shape: __mlir_type.`!kgen.pointer<index>`,) -> StaticIntTuple[rank]:
     let shape_ptr = Pointer(shape)
     var shape_tuple = StaticIntTuple[rank]()
 
