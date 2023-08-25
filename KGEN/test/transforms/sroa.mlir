@@ -7,21 +7,21 @@
 // MEM2REG-LABEL: @simple_struct
 kgen.func @simple_struct(%arg1: !pop.struct<index, index>) -> !pop.scalar<index> {
   %array = pop.stack_allocation 1 x !pop.struct<index, index>
-  pop.store %arg1, %array : !pop.pointer<struct<index, index>>
+  pop.store %arg1, %array : !kgen.pointer<struct<index, index>>
 
   // CHECK: %[[MEM1:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
 
   // Extract from the input and store into stack.
   // CHECK-NEXT: %[[EXTRACT:.*]] = pop.struct.extract %[[ARG0:.*]][0] : !pop.struct<index, index>
-  // CHECK-NEXT: pop.store %[[EXTRACT]], %[[MEM1]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[EXTRACT]], %[[MEM1]] : !kgen.pointer<index>
   // CHECK-NEXT: %[[EXTRACT2:.*]] = pop.struct.extract %[[ARG0]][1] : !pop.struct<index, index>
-  // CHECK-NEXT: pop.store %[[EXTRACT2]], %[[MEM2]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[EXTRACT2]], %[[MEM2]] : !kgen.pointer<index>
 
 
   // Load from stack.
-  // CHECK-NEXT: pop.load %[[MEM1]] : !pop.pointer<index>
-  // CHECK-NEXT: pop.load %[[MEM2]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.load %[[MEM1]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.load %[[MEM2]] : !kgen.pointer<index>
 
 
   // When running with mem2reg check we get rid of the allocs.
@@ -33,8 +33,8 @@ kgen.func @simple_struct(%arg1: !pop.struct<index, index>) -> !pop.scalar<index>
   %gep1 = pop.struct.gep %array[0] : <struct<index, index>>
   %gep2 = pop.struct.gep %array[1] : <struct<index, index>>
 
-  %load1 = pop.load %gep1 : !pop.pointer<index>
-  %load2 = pop.load %gep2 : !pop.pointer<index>
+  %load1 = pop.load %gep1 : !kgen.pointer<index>
+  %load2 = pop.load %gep2 : !kgen.pointer<index>
   %scalar1 = pop.cast_from_builtin %load1 : index to !pop.scalar<index>
   %scalar2 = pop.cast_from_builtin %load2 : index to !pop.scalar<index>
   %out = pop.add %scalar1, %scalar2 : !pop.scalar<index>
@@ -52,14 +52,14 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
 
   // Extract from the input and store into stack.
   // CHECK-NEXT: %[[GET:.*]] = pop.array.get %[[ARG0:.*]][0] : !pop.array<2, index>
-  // CHECK-NEXT: pop.store %[[GET]], %[[MEM1]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[GET]], %[[MEM1]] : !kgen.pointer<index>
   // CHECK-NEXT: %[[GET2:.*]] = pop.array.get %[[ARG0]][1] : !pop.array<2, index>
-  // CHECK-NEXT: pop.store %[[GET2]], %[[MEM2]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[GET2]], %[[MEM2]] : !kgen.pointer<index>
 
 
   // Load from stack.
-  // CHECK-NEXT: pop.load %[[MEM1]] : !pop.pointer<index>
-  // CHECK-NEXT: pop.load %[[MEM2]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.load %[[MEM1]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.load %[[MEM2]] : !kgen.pointer<index>
 
   // MEM2REG: %[[OP1:.*]] = pop.array.get %[[ARG0:.*]][0] : !pop.array<2, index>
   // MEM2REG-NEXT: %[[OP2:.*]] = pop.array.get %[[ARG0]][1] : !pop.array<2, index>
@@ -69,13 +69,13 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
   // MEM2REG-NEXT: kgen.return %[[ADD]] : !pop.scalar<index>
 
    %array = pop.stack_allocation 1 x !pop.array<2, index>
-   pop.store %arg1, %array : !pop.pointer<array<2, index>>
+   pop.store %arg1, %array : !kgen.pointer<array<2, index>>
 
    %gep1 = pop.array.gep %array[%0] : <array<2, index>>
    %gep2 = pop.array.gep %array[%1] : <array<2, index>>
 
-   %load1 = pop.load %gep1 : !pop.pointer<index>
-   %load2 = pop.load %gep2 : !pop.pointer<index>
+   %load1 = pop.load %gep1 : !kgen.pointer<index>
+   %load2 = pop.load %gep2 : !kgen.pointer<index>
    %scalar1 = pop.cast_from_builtin %load1 : index to !pop.scalar<index>
    %scalar2 = pop.cast_from_builtin %load2 : index to !pop.scalar<index>
    %out = pop.add %scalar1, %scalar2 : !pop.scalar<index>
@@ -86,15 +86,15 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
 // MEM2REG-LABEL: @struct_of_structs
 kgen.func @struct_of_structs(%arg1: !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>) {
   %memory = pop.stack_allocation 1 x !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
-  pop.store %arg1, %memory : !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+  pop.store %arg1, %memory : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
   hlcf.loop {
-    %load = pop.load %memory : !pop.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
+    %load = pop.load %memory : !kgen.pointer<struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
     hlcf.loop "inlined_cf_scope" {
       %getElem1 = pop.struct.extract %load[2] : !pop.struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>
       %getElem2 = pop.struct.extract %getElem1[0] : !pop.struct<scalar<index>>
 
       %gep = pop.struct.gep %memory[0] : <struct<struct<scalar<index>>, struct<scalar<index>>, struct<scalar<index>>>>
-      %newLoad = pop.load %gep : !pop.pointer<struct<scalar<index>>>
+      %newLoad = pop.load %gep : !kgen.pointer<struct<scalar<index>>>
       %getElem3 = pop.struct.extract %newLoad[0] : !pop.struct<scalar<index>>
 
       %out = pop.div %getElem3, %getElem2 : !pop.scalar<index>
@@ -127,9 +127,9 @@ kgen.func @struct_of_structs(%arg1: !pop.struct<struct<scalar<index>>, struct<sc
 
 // CHECK-LABEL: @stack_of_N
 // MEM2REG-LABEL: @stack_of_N
-// CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-// MEM2REG: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !pop.pointer<index>) {
+// CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index, %[[ARG2:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !kgen.pointer<index>) {
   %0 = kgen.param.constant = <0>
   %1 = kgen.param.constant = <1>
   %2 = kgen.param.constant = <2>
@@ -139,70 +139,70 @@ kgen.func @stack_of_N(%val1: index, %val2: index, %val3: index, %output : !pop.p
   // CHECK: %[[MEM1:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x index
-  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !pop.pointer<index>
-  // CHECK-NEXT: pop.store %[[ARG1]], %[[MEM2]] : !pop.pointer<index>
-  // CHECK-NEXT: pop.store %[[ARG2]], %[[MEM3]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG1]], %[[MEM2]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG2]], %[[MEM3]] : !kgen.pointer<index>
 
   // Mem2Reg should eliminate everything
   // MEM2REG-NEXT: kgen.param.constant = <0>
   // MEM2REG-NEXT: kgen.param.constant = <1>
   // MEM2REG-NEXT: kgen.param.constant = <2>
-  // MEM2REG-NEXT: pop.store %[[ARG2]], %[[OUT_PTR]] : !pop.pointer<index>
+  // MEM2REG-NEXT: pop.store %[[ARG2]], %[[OUT_PTR]] : !kgen.pointer<index>
   // MEM2REG-NEXT: kgen.return
 
-  %offset1 = pop.offset %alloc[%0] : !pop.pointer<index>
-  pop.store %val1, %offset1 : !pop.pointer<index>
+  %offset1 = pop.offset %alloc[%0] : !kgen.pointer<index>
+  pop.store %val1, %offset1 : !kgen.pointer<index>
 
-  %offset2 = pop.offset %alloc[%1] : !pop.pointer<index>
-  pop.store %val2, %offset2 : !pop.pointer<index>
+  %offset2 = pop.offset %alloc[%1] : !kgen.pointer<index>
+  pop.store %val2, %offset2 : !kgen.pointer<index>
 
-  %offset3 = pop.offset %alloc[%2] : !pop.pointer<index>
-  pop.store %val3, %offset3 : !pop.pointer<index>
+  %offset3 = pop.offset %alloc[%2] : !kgen.pointer<index>
+  pop.store %val3, %offset3 : !kgen.pointer<index>
 
-  %annoying_offset = pop.offset %alloc[%2] : !pop.pointer<index>
-  %load = pop.load %annoying_offset align 8  : !pop.pointer<index>
-  pop.store %load, %output : !pop.pointer<index>
+  %annoying_offset = pop.offset %alloc[%2] : !kgen.pointer<index>
+  %load = pop.load %annoying_offset align 8  : !kgen.pointer<index>
+  pop.store %load, %output : !kgen.pointer<index>
   kgen.return
 }
 
 
 // CHECK-LABEL: @bigger_stack
-// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-kgen.func @bigger_stack(%val1: index, %output : !pop.pointer<index>) {
+// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+kgen.func @bigger_stack(%val1: index, %output : !kgen.pointer<index>) {
   %0 = kgen.param.constant = <0>
 
   // Larger stacks should not be touched.
   // CHECK: pop.stack_allocation 32 x index
 
   %alloc = pop.stack_allocation 32 x index
-  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
-  pop.store %val1, %offset : !pop.pointer<index>
-  %load = pop.load %offset align 8  : !pop.pointer<index>
-  pop.store %load, %output : !pop.pointer<index>
+  %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
+  pop.store %val1, %offset : !kgen.pointer<index>
+  %load = pop.load %offset align 8  : !kgen.pointer<index>
+  pop.store %load, %output : !kgen.pointer<index>
   kgen.return
 }
 
 // Handle storing directly to the stack as an implicit offset of 0.
 // CHECK-LABEL: @n_stack_store
 // MEM2REG-LABEL: @n_stack_store
-// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-// MEM2REG: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-kgen.func @n_stack_store(%val1: index, %output : !pop.pointer<index>) {
+// CHECK: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: index, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+kgen.func @n_stack_store(%val1: index, %output : !kgen.pointer<index>) {
   %alloc = pop.stack_allocation 3 x index
-  pop.store %val1, %alloc : !pop.pointer<index>
-  %load = pop.load %alloc align 8  : !pop.pointer<index>
-  pop.store %load, %output : !pop.pointer<index>
+  pop.store %val1, %alloc : !kgen.pointer<index>
+  %load = pop.load %alloc align 8  : !kgen.pointer<index>
+  pop.store %load, %output : !kgen.pointer<index>
 
   // CHECK-NEXT: %[[MEM1:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM3:.*]] = pop.stack_allocation 1 x index
-  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !pop.pointer<index>
-  // CHECK-NEXT: %[[LOAD:.*]] = pop.load %[[MEM1]] : !pop.pointer<index>
-  // CHECK-NEXT: pop.store %[[LOAD]], %[[OUT_PTR]] : !pop.pointer<index>
+  // CHECK-NEXT: pop.store %[[ARG0]], %[[MEM1]] : !kgen.pointer<index>
+  // CHECK-NEXT: %[[LOAD:.*]] = pop.load %[[MEM1]] : !kgen.pointer<index>
+  // CHECK-NEXT: pop.store %[[LOAD]], %[[OUT_PTR]] : !kgen.pointer<index>
 
 
   // Mem2Reg should eliminate everything
-  // MEM2REG-NEXT: pop.store %[[ARG0]], %[[OUT_PTR]] : !pop.pointer<index>
+  // MEM2REG-NEXT: pop.store %[[ARG0]], %[[OUT_PTR]] : !kgen.pointer<index>
   // MEM2REG-NEXT: kgen.return
 
   kgen.return
@@ -210,9 +210,9 @@ kgen.func @n_stack_store(%val1: index, %output : !pop.pointer<index>) {
 
 // CHECK-LABEL: @n_stack_arrays
 // MEM2REG-LABEL: @n_stack_arrays
-// CHECK: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-// MEM2REG: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !pop.pointer<index>) {
+// CHECK: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<index>) {
   %0 = kgen.param.constant = <0>
   %1 = kgen.param.constant = <1>
 
@@ -233,33 +233,33 @@ kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !pop.pointer<ind
   // MEM2REG-NEXT: pop.array.get %[[ARG0]][2] : !pop.array<3, index>
 
   %alloc = pop.stack_allocation 5 x !pop.array<3, index>
-  pop.store %val, %alloc : !pop.pointer<array<3, index>>
-  %offset = pop.offset %alloc[%1] : !pop.pointer<array<3, index>>
-  pop.store %val, %offset : !pop.pointer<array<3, index>>
+  pop.store %val, %alloc : !kgen.pointer<array<3, index>>
+  %offset = pop.offset %alloc[%1] : !kgen.pointer<array<3, index>>
+  pop.store %val, %offset : !kgen.pointer<array<3, index>>
 
   %gep1 = pop.array.gep %alloc[%0] : <array<3, index>>
   %gep2 = pop.array.gep %offset[%1] : <array<3, index>>
 
-  %load = pop.load %gep1 align 8  : !pop.pointer<index>
-  pop.store %load, %output : !pop.pointer<index>
+  %load = pop.load %gep1 align 8  : !kgen.pointer<index>
+  pop.store %load, %output : !kgen.pointer<index>
 
-  %load2 = pop.load %gep2 align 8  : !pop.pointer<index>
-  pop.store %load2, %output : !pop.pointer<index>
+  %load2 = pop.load %gep2 align 8  : !kgen.pointer<index>
+  pop.store %load2, %output : !kgen.pointer<index>
 
   kgen.return
 }
 
 // CHECK-LABEL: @n_stack_structs
 // MEM2REG-LABEL: @n_stack_structs
-// CHECK: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-// MEM2REG: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !pop.pointer<index>)
-kgen.func @n_stack_structs(%val: !pop.struct<index, index>, %output : !pop.pointer<index>) {
+// CHECK: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+// MEM2REG: (%[[ARG0:.*]]: !pop.struct<index, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
+kgen.func @n_stack_structs(%val: !pop.struct<index, index>, %output : !kgen.pointer<index>) {
   %1 = kgen.param.constant = <1>
 
   %alloc = pop.stack_allocation 5 x !pop.struct<index, index>
-  pop.store %val, %alloc : !pop.pointer<struct<index, index>>
-  %offset = pop.offset %alloc[%1] : !pop.pointer<struct<index, index>>
-  pop.store %val, %offset : !pop.pointer<struct<index, index>>
+  pop.store %val, %alloc : !kgen.pointer<struct<index, index>>
+  %offset = pop.offset %alloc[%1] : !kgen.pointer<struct<index, index>>
+  pop.store %val, %offset : !kgen.pointer<struct<index, index>>
 
   // CHECK: pop.stack_allocation 1 x index
   // CHECK-NEXT: pop.stack_allocation 1 x index
@@ -277,29 +277,29 @@ kgen.func @n_stack_structs(%val: !pop.struct<index, index>, %output : !pop.point
   %gep1 = pop.struct.gep %alloc[0] : <struct<index, index>>
   %gep2 = pop.struct.gep %offset[1] : <struct<index, index>>
 
-  %load = pop.load %gep1 align 8  : !pop.pointer<index>
-  pop.store %load, %output : !pop.pointer<index>
+  %load = pop.load %gep1 align 8  : !kgen.pointer<index>
+  pop.store %load, %output : !kgen.pointer<index>
 
-  %load2 = pop.load %gep2 align 8  : !pop.pointer<index>
-  pop.store %load2, %output : !pop.pointer<index>
+  %load2 = pop.load %gep2 align 8  : !kgen.pointer<index>
+  pop.store %load2, %output : !kgen.pointer<index>
 
   kgen.return
 }
 
 // CHECK-LABEL: @store_arg
 kgen.func @store_arg(
-    %arg0: !pop.pointer<pointer<index>>,
-    %arg1: !pop.pointer<pointer<struct<index>>>,
-    %arg2: !pop.pointer<pointer<array<2, index>>>) {
+    %arg0: !kgen.pointer<pointer<index>>,
+    %arg1: !kgen.pointer<pointer<struct<index>>>,
+    %arg2: !kgen.pointer<pointer<array<2, index>>>) {
   // CHECK: stack_allocation 2 x index
   %0 = pop.stack_allocation 2 x index
-  pop.store %0, %arg0 : !pop.pointer<pointer<index>>
+  pop.store %0, %arg0 : !kgen.pointer<pointer<index>>
   // CHECK: stack_allocation 1 x struct<index>
   %1 = pop.stack_allocation 1 x !pop.struct<index>
-  pop.store %1, %arg1 : !pop.pointer<pointer<struct<index>>>
+  pop.store %1, %arg1 : !kgen.pointer<pointer<struct<index>>>
   // CHECK: stack_allocation 1 x array<2, index>
   %2 = pop.stack_allocation 1 x !pop.array<2, index>
-  pop.store %2, %arg2 : !pop.pointer<pointer<array<2, index>>>
+  pop.store %2, %arg2 : !kgen.pointer<pointer<array<2, index>>>
   kgen.return
 }
 
@@ -321,7 +321,7 @@ kgen.func @negOffsetGep() {
   // CHECK-NEXT: pop.offset
   %0 = kgen.param.constant = <-1>
   %alloc = pop.stack_allocation 2 x index
-  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
+  %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   kgen.return
 }
 
@@ -343,7 +343,7 @@ kgen.func @oobOffsetGep() {
   // CHECK-NEXT: pop.offset
   %0 = kgen.param.constant = <2>
   %alloc = pop.stack_allocation 2 x index
-  %offset = pop.offset %alloc[%0] : !pop.pointer<index>
+  %offset = pop.offset %alloc[%0] : !kgen.pointer<index>
   kgen.return
 }
 
@@ -356,19 +356,19 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
   %2 = kgen.param.constant = <1>
   %3 = kgen.param.constant = <0>
   %4 = pop.stack_allocation 1 x !pop.array<4, index>
-  pop.store %array, %4 : !pop.pointer<array<4, index>>
+  pop.store %array, %4 : !kgen.pointer<array<4, index>>
   %5 = pop.array.get %arg0[0] : !pop.array<4, index>
   %6 = pop.array.gep %4[%3] : <array<4, index>>
-  pop.store %5, %6 : !pop.pointer<index>
+  pop.store %5, %6 : !kgen.pointer<index>
   %7 = pop.array.gep %4[%2] : <array<4, index>>
-  pop.store %2, %7 : !pop.pointer<index>
+  pop.store %2, %7 : !kgen.pointer<index>
   %8 = pop.array.get %arg0[2] : !pop.array<4, index>
   %9 = pop.array.gep %4[%1] : <array<4, index>>
-  pop.store %8, %9 : !pop.pointer<index>
+  pop.store %8, %9 : !kgen.pointer<index>
   %10 = pop.array.get %arg0[3] : !pop.array<4, index>
   %11 = pop.array.gep %4[%0] : <array<4, index>>
-  pop.store %10, %11 : !pop.pointer<index>
-  %12 = pop.load %4 : !pop.pointer<array<4, index>>
+  pop.store %10, %11 : !kgen.pointer<index>
+  %12 = pop.load %4 : !kgen.pointer<array<4, index>>
   kgen.return %12 : !pop.array<4, index>
 }
 
@@ -390,7 +390,7 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 // -----
 
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
-!unresolved = !debuginfo.unresolved<!pop.pointer<struct<index, index>>>
+!unresolved = !debuginfo.unresolved<!kgen.pointer<struct<index, index>>>
 #file = #debuginfo.file<"/tmp/test.mojo" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "__next__", linkageName = "$Range::_ZeroStartingRange::__next__($Range::_ZeroStartingRange&)_concrete", file = #file, line = 27, scopeLine = 27, subprogramFlags = "Definition|Optimized"> : !subroutine
@@ -408,9 +408,9 @@ kgen.func @sroa_valueop() {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: %1 = pop.stack_allocation 1 x index
   %0 = pop.stack_allocation 1 x !pop.struct<index, index> loc(#loc)
-  // CHECK-NEXT: debuginfo.value #[[VAR0]] = %0 : !pop.pointer<index>
-  // CHECK-NEXT: debuginfo.value #[[VAR1]] = %1 : !pop.pointer<index>
-  debuginfo.value #local_variable = %0 : !pop.pointer<struct<index, index>> loc(#loc)
+  // CHECK-NEXT: debuginfo.value #[[VAR0]] = %0 : !kgen.pointer<index>
+  // CHECK-NEXT: debuginfo.value #[[VAR1]] = %1 : !kgen.pointer<index>
+  debuginfo.value #local_variable = %0 : !kgen.pointer<struct<index, index>> loc(#loc)
   // CHECK-NEXT: kgen.return
   kgen.return loc(#loc)
 } loc(#loc)

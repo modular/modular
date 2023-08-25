@@ -73,6 +73,6 @@ fn crashOnInvalid():
   _ = __mlir_op.`invalid_op`[_type: __mlir_type.i16]()
 
 
-# expected-error @below {{argument #0 in manually specified signature type should be a `!pop.pointer`}}
+# expected-error @below {{argument #0 in manually specified signature type should be a `!kgen.pointer`}}
 fn bad_signature_type[func: __mlir_type[`!kgen.signature<(`, Int, ` byref) -> !lit.none>`]]():
     pass

@@ -101,10 +101,10 @@ kgen.func @pack_constant_1() -> !pop.pack<[]> {
 }
 
 // CHECK-LABEL: @pointer_constant
-kgen.func @pointer_constant() -> !pop.pointer<?> {
+kgen.func @pointer_constant() -> !kgen.pointer<?> {
   // CHECK-NEXT: ptr null
   %null = kgen.param.constant: pointer<?> = <#M.pointer<0>>
-  kgen.return %null : !pop.pointer<?>
+  kgen.return %null : !kgen.pointer<?>
 }
 
 }

@@ -29,11 +29,8 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 namespace M::KGEN {
-class ReturnOp;
-
-namespace POP {
 class PointerType;
-} // namespace POP
+class ReturnOp;
 
 namespace LIT {
 enum class SpecialFunctionKind : uint8_t;

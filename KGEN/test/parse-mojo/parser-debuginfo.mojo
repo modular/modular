@@ -89,18 +89,18 @@ fn caller():
 # CHECK-DAG: #[[FILE]] = #debuginfo.file<"within split at [[FILENAME:.*parser-debuginfo.mojo]]:{{[0-9]+}} offset " in "/">
 
 # CHECK-DAG: lit.func @"__init__($parser-debuginfo::MyValueStruct=&,__mlir_type.index)"
-# CHECK-DAG:   pop.store %value, %[[VAL:.*]] : !pop.pointer<index> loc(#[[INIT_LOC:loc[0-9]*]])
+# CHECK-DAG:   pop.store %value, %[[VAL:.*]] : !kgen.pointer<index> loc(#[[INIT_LOC:loc[0-9]*]])
 # CHECK-DAG:   %[[VAL]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[INIT_LOC]])
 
 # CHECK-DAG: lit.func @"__copyinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
-# CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : !pop.pointer<index> loc(#[[COPY_LOC:loc[0-9]*]])
-# CHECK-DAG:   pop.store %[[VAL2]], %[[VAL0:.*]] : !pop.pointer<index> loc(#[[COPY_LOC]])
+# CHECK-DAG:   %[[VAL2:.*]] = pop.load %[[VAL1:.*]] : !kgen.pointer<index> loc(#[[COPY_LOC:loc[0-9]*]])
+# CHECK-DAG:   pop.store %[[VAL2]], %[[VAL0:.*]] : !kgen.pointer<index> loc(#[[COPY_LOC]])
 # CHECK-DAG:   %[[VAL0]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 # CHECK-DAG:   %[[VAL1]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[COPY_LOC]])
 
 # CHECK-DAG: lit.func @"__moveinit__($parser-debuginfo::MyValueStruct=&,$parser-debuginfo::MyValueStruct)"
-# CHECK-DAG:   %[[VAL3:.*]] = lit.load.consume %[[VAL4:.*]] : !pop.pointer<index> loc(#[[MOVE_LOC:loc[0-9]*]])
-# CHECK-DAG:   pop.store %[[VAL3]], %[[VAL5:.*]] : !pop.pointer<index> loc(#[[MOVE_LOC]])
+# CHECK-DAG:   %[[VAL3:.*]] = lit.load.consume %[[VAL4:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC:loc[0-9]*]])
+# CHECK-DAG:   pop.store %[[VAL3]], %[[VAL5:.*]] : !kgen.pointer<index> loc(#[[MOVE_LOC]])
 # CHECK-DAG:   %[[VAL5]] = lit.struct.gep %self[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
 # CHECK-DAG:   %[[VAL4]] = lit.struct.gep %existing[value] : <index> from <!MyValueStruct> loc(#[[MOVE_LOC]])
 
@@ -125,12 +125,12 @@ struct MyValueStruct:
 
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:      %[[V0:.*]] = pop.stack_allocation 1 x index  loc(#[[PARENT_FUNC_LOC0:.*]])
-# CHECK-DAG:      pop.store %m, %[[V0]] : !pop.pointer<index> loc(#[[PARENT_FUNC_LOC1:.*]])
-# CHECK-DAG:      %[[V1:.*]] = pop.load %[[V0]] : !pop.pointer<index> loc(#[[PARENT_FUNC_LOC0]])
+# CHECK-DAG:      pop.store %m, %[[V0]] : !kgen.pointer<index> loc(#[[PARENT_FUNC_LOC1:.*]])
+# CHECK-DAG:      %[[V1:.*]] = pop.load %[[V0]] : !kgen.pointer<index> loc(#[[PARENT_FUNC_LOC0]])
 # CHECK-DAG:      lit.func *"myclosure
 # CHECK-DAG:        %[[W0:.*]] = pop.stack_allocation 1 x index  loc(#[[NESTED_FUNC_LOC:.*]])
-# CHECK-DAG:        pop.store %[[V1]], %[[W0]] : !pop.pointer<index> loc(#[[NESTED_FUNC_LOC]])
-# CHECK-DAG:        %[[W4:.*]] = pop.load %[[W0]] : !pop.pointer<index>
+# CHECK-DAG:        pop.store %[[V1]], %[[W0]] : !kgen.pointer<index> loc(#[[NESTED_FUNC_LOC]])
+# CHECK-DAG:        %[[W4:.*]] = pop.load %[[W0]] : !kgen.pointer<index>
 # CHECK-DAG:        lit.return %[[W4]] : index
 # CHECK-DAG:        lit.end_func loc(#[[NESTED_FUNC_LOC]])
 # CHECK-DAG:      } loc(#[[NESTED_FUNC_LOC]])

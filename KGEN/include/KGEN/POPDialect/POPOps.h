@@ -27,6 +27,7 @@
 
 namespace M::KGEN {
 class DTypeType;
+class PointerType;
 class StringArrayAttr;
 class StringType;
 class TypeArrayAttr;
@@ -45,7 +46,6 @@ class ArrayType;
 class ClosureType;
 class CoroutineType;
 class PackType;
-class PointerType;
 class SIMDType;
 class StructType;
 class VariantType;

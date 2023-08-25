@@ -17,6 +17,6 @@ kgen.generator @read_uninitialized() -> index {
   // expected-note @below {{memory allocated here}}
   %0 = pop.stack_allocation 1 x index
   // expected-warning @below {{load of uninitialized memory}}
-  %1 = pop.load %0 : !pop.pointer<index>
+  %1 = pop.load %0 : !kgen.pointer<index>
   kgen.return %1 : index
 }

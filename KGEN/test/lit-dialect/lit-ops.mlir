@@ -10,7 +10,7 @@ lit.func @trivial_generator(%name: si32) -> si32 {
 // CHECK-LABEL: lit.func @vardecl
 lit.func @vardecl<ty : dtype>(%x : i32) {
 // CHECK-NEXT: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<ty>>
-  %a = lit.varlet.decl "a", var = true, synth = false: !pop.pointer<scalar<ty>>
+  %a = lit.varlet.decl "a", var = true, synth = false: !kgen.pointer<scalar<ty>>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32
@@ -28,7 +28,7 @@ lit.struct.decl @SomeStruct<ty: dtype> {
   }
 
   // CHECK: %size = lit.varlet.decl "size", var = true, synth = false : <scalar<ty>>
-  %size = lit.varlet.decl "size", var = true, synth = false : !pop.pointer<scalar<ty>>
+  %size = lit.varlet.decl "size", var = true, synth = false : !kgen.pointer<scalar<ty>>
 
   // CHECK: lit.func @getMyType
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
@@ -193,17 +193,17 @@ lit.file_module @module {
 
   // CHECK: lit.struct.decl @B
   lit.struct.decl @B {
-    // CHECK-NEXT: lit.func @foo(%{{.*}}: !kgen.declref<@module::@B>, %{{.*}}: !pop.pointer<@module::@A>
-    lit.func @foo(%self: !kgen.declref<@module::@B>, %a: !pop.pointer<@module::@A>) {
+    // CHECK-NEXT: lit.func @foo(%{{.*}}: !kgen.declref<@module::@B>, %{{.*}}: !kgen.pointer<@module::@A>
+    lit.func @foo(%self: !kgen.declref<@module::@B>, %a: !kgen.pointer<@module::@A>) {
       kgen.return
     }
   }
 }
 
 // CHECK-LABEL: lit.func @main
-lit.func @main(%a: !pop.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
-  // CHECK-NEXT: call_param[(!kgen.declref<@module::@B>, !pop.pointer<@module::@A>) -> (): @module::@B::@foo]
-  kgen.call_param[(!kgen.declref<@module::@B>, !pop.pointer<@module::@A>) -> (): @module::@B::@foo](%b, %a)
+lit.func @main(%a: !kgen.pointer<@module::@A>, %b: !kgen.declref<@module::@B>) {
+  // CHECK-NEXT: call_param[(!kgen.declref<@module::@B>, !kgen.pointer<@module::@A>) -> (): @module::@B::@foo]
+  kgen.call_param[(!kgen.declref<@module::@B>, !kgen.pointer<@module::@A>) -> (): @module::@B::@foo](%b, %a)
   kgen.return
 }
 
@@ -293,7 +293,7 @@ lit.func @param_return_no_results<() -> ()>() {
 }
 
 lit.struct.decl @GiveMeDefault {
-  lit.varlet.decl "size", var = true, synth = false : !pop.pointer<scalar<index>>
+  lit.varlet.decl "size", var = true, synth = false : !kgen.pointer<scalar<index>>
 }
 
 // CHECK-LABEL: lit.func @default_struct
@@ -322,8 +322,8 @@ lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
   %y = lit.varlet.decl "y", var = true, synth = false : <@MyStruct>
   %none = kgen.param.constant: !lit.none = <#lit.none>
   %ret = kgen.param.constant: !pop.variant<@Error, !lit.none> = <#pop.variant<:!lit.none #lit.none>>
-  // CHECK: lit.handle_variant %variant, %y : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
-  %0 = lit.handle_variant %ret, %y : (!pop.variant<@Error, !lit.none>, !pop.pointer<@MyStruct>) -> !lit.none {
+  // CHECK: lit.handle_variant %variant, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
+  %0 = lit.handle_variant %ret, %y : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none {
     // CHECK-NEXT: lit.yield %{{.*}} : !lit.none
     lit.yield %none : !lit.none
   // CHECK-NEXT: else

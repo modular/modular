@@ -636,7 +636,7 @@ def KGEN_ParamEvaluateOp : KGENOp<"param.evaluate",
 
     ```mlir
     kgen.param.evaluate best: (index) -> i1 = [@fooImpl, @barImpl]
-      with [(!pop.pointer<(index) -> i1>, index) -> index: @evaluator]
+      with [(!kgen.pointer<(index) -> i1>, index) -> index: @evaluator]
     ```
   }];
 

@@ -170,7 +170,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
-  addConversion([=](POP::PointerType pointer) -> std::optional<Type> {
+  addConversion([=](PointerType pointer) -> std::optional<Type> {
     unsigned addressSpace =
         cast<IntegerAttr>(pointer.getAddressSpace()).getInt();
     if (Type elementType = convertType(pointer.getElementAsType()))
@@ -616,11 +616,11 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     mlir::AsmResourceBlob *mem = blob.getHandle().getBlob();
     if (blob.getKind() == MemoryKind::Stack) {
       popAlloc = b.create<POP::StackAllocationOp>(
-          POP::PointerType::get(b.getI8Type()), mem->getData().size(),
+          PointerType::get(b.getI8Type()), mem->getData().size(),
           b.getIndexAttr(mem->getDataAlignment()));
     } else {
       popAlloc = b.create<POP::AlignedAllocOp>(
-          POP::PointerType::get(b.getI8Type()),
+          PointerType::get(b.getI8Type()),
           b.create<mlir::index::ConstantOp>(mem->getDataAlignment()),
           b.create<mlir::index::ConstantOp>(mem->getData().size()));
     }
@@ -1119,7 +1119,7 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
         StringAttr::get(ctx, "pack"), target);
   }
 
-  if (auto pointerType = dyn_cast<POP::PointerType>(type)) {
+  if (auto pointerType = dyn_cast<PointerType>(type)) {
     DebugInfo::DIType elementDIType = buildDebugTypeFromPOPType(
         ctx, pointerType.getElementAsType(), converter, target);
     return DebugInfo::DIPointerType::get(elementDIType,
@@ -1180,7 +1180,7 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
                                      target);
   });
 
-  addConversion([&converter, target](POP::PointerType type) {
+  addConversion([&converter, target](PointerType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });

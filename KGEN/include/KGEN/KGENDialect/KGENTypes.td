@@ -13,6 +13,7 @@
 
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
+include "Support/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 
@@ -263,6 +264,90 @@ def CalleeArgumentTypes : TypesMatchWith<"operands match callee argument types",
     "callee", "operands", "cast<SignatureType>($_self).getValueInputs()">;
 def CalleeResultTypes : TypesMatchWith<"results match callee result types",
     "callee", "results", "cast<SignatureType>($_self).getValueResults()">;
+
+//===----------------------------------------------------------------------===//
+// PointerType
+//===----------------------------------------------------------------------===//
+
+def PointerType : KGENType<"Pointer", "pointer", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "parameterized pointer type";
+  let description = [{
+    This type represents a pointer. The pointee type is parameterized with a
+    `!kgen.mlirtype` type. An optional `addressSpace` argument can be specified
+    (default to 0).
+
+    Example:
+
+    ```mlir
+    // A pointer to a scalar.
+    !kgen.pointer<scalar<f32>>
+
+    // A pointer to a SIMD vector.
+    !kgen.pointer<simd<4, f32>>
+
+    // A parameterized scalar pointer.
+    !kgen.pointer<scalar<type>>
+
+    // A completely parameterized pointer.
+    !kgen.pointer<elementType>
+
+    // The address space parameter is optional, but can be specified.
+    !kgen.pointer<scalar<si32>, 2>
+
+    // The address space also works on parametrized pointers.
+    !kgen.pointer<elementType, 5>
+    ```
+  }];
+
+  let parameters = (ins "TypedAttr":$elementType,
+                        DefaultValuedParameter<"TypedAttr",
+                          "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($elementType) ``
+    (`,` custom<IndexParamValue>($addressSpace)^)? `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        CArg<"unsigned", "0">:$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$elementType,
+                                        "TypedAttr":$addressSpace)>,
+    TypeBuilderWithInferredContext<(ins "Type":$elementType,
+                                        "TypedAttr":$addressSpace)>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the elementType attribute as a type.
+    Type getElementAsType() const;
+
+    /// Get the element type as the provided type.
+    template <typename ElTy>
+    ElTy getElementAs() { return getElementAsType().cast<ElTy>(); }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Type Constraints
+
+class PointerElementType<string lhs, string rhs> : TypesMatchWith<
+    "pointer element type", lhs, rhs,
+    "ParamRefType::get($_self.cast<PointerType>().getElementType())">;
+
+class PointerOf<Type type> : ConfinedType<PointerType,
+    [CPred<"$_self.cast<PointerType>().getElementType()">,
+     SubstLeaves<"$_self",
+      "$_self.cast<PointerType>().getElementAsType()",
+      type.predicate>],
+    "pointer to " # type.summary> {
+  let cppClassName = "::M::KGEN::PointerType";
+  let builderCall = !if(!empty(type.builderCall), "",
+                       "PointerType::get(" # type.builderCall #")");
+}
 
 //===----------------------------------------------------------------------===//
 // DeclRefType

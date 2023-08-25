@@ -196,17 +196,17 @@ kgen.func @pack_index_out_of_bounds(%pack: !pop.pack<[si8, ui8]>) {
 
 // -----
 
-kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
+kgen.func @struct_gep_type(%a: !kgen.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op element index 1 out of bounds (>=1)}}
-  %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i32>
+  %0 = "pop.struct.gep"(%a) { index = 1 : index } : (!kgen.pointer<struct<i32>>) -> !kgen.pointer<i32>
   kgen.return
 }
 
 // -----
 
-kgen.func @struct_gep_type(%a: !pop.pointer<struct<i32>>) {
+kgen.func @struct_gep_type(%a: !kgen.pointer<struct<i32>>) {
   // expected-error @below {{'pop.struct.gep' op result type 'i64' does not match struct element type at index 0: 'i32'}}
-  %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!pop.pointer<struct<i32>>) -> !pop.pointer<i64>
+  %0 = "pop.struct.gep"(%a) { index = 0 : index } : (!kgen.pointer<struct<i32>>) -> !kgen.pointer<i64>
   kgen.return
 }
 

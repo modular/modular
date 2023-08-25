@@ -2,14 +2,14 @@
 
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call
-  kgen.func @external_call(%a: !pop.simd<1, ui32>, %b: !pop.pointer<i32>) -> !pop.simd<4, f64> {
+  kgen.func @external_call(%a: !pop.simd<1, ui32>, %b: !kgen.pointer<i32>) -> !pop.simd<4, f64> {
     // CHECK: llvm.call @foo
     %0 = pop.external_call @foo(%a) attributes {
       funcAttrs = ["noinline", "noreturn"],
       memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read>
     } : (!pop.simd<1, ui32>) -> !pop.simd<4, f64>
     // CHECK: llvm.call @bar
-    %1 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = [{llvm.signext}]} : (!pop.pointer<i32>) -> i32
+    %1 = pop.external_call @bar(%b) attributes {argAttrs = [{llvm.noalias}], resAttrs = [{llvm.signext}]} : (!kgen.pointer<i32>) -> i32
     kgen.return %0 : !pop.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>
@@ -48,11 +48,11 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 
   // CHECK-LABEL: llvm.mlir.global internal @global_alloc_global_alloc() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
   // CHECK-LABEL: kgen.func @global_alloc
-  kgen.func @global_alloc() -> !pop.pointer<scalar<f32>, 3> {
+  kgen.func @global_alloc() -> !kgen.pointer<scalar<f32>, 3> {
     // CHECK-NEXT: %0 = llvm.mlir.addressof @global_alloc_global_alloc : !llvm.ptr<array<2 x f32>, 3>
     // CHECK-NEXT: %1 = llvm.bitcast %0 : !llvm.ptr<array<2 x f32>, 3> to !llvm.ptr<f32, 3>
     %0 = pop.global_alloc 2 x !pop.scalar<f32> align 4 address_space 3
-    kgen.return %0 : !pop.pointer<scalar<f32>, 3>
+    kgen.return %0 : !kgen.pointer<scalar<f32>, 3>
   }
 }
 

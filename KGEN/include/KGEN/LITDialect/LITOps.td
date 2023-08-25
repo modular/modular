@@ -281,7 +281,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     ```mlir
     lit.struct.decl @Buffer<size, dtype: dtype> {
       lit.struct.field size : index
-      lit.struct.field ptr : !pop.pointer<scalar<dtype>>
+      lit.struct.field ptr : !kgen.pointer<scalar<dtype>>
       lit.struct.field dtype : !kgen.dtype
     }
     ```
@@ -530,7 +530,7 @@ def LIT_StructGEPOp : LITOp<"struct.gep", [Pure,
   }];
 
   let arguments = (ins StrAttr:$field, PointerOf<KGEN_DeclRefType>:$container);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($result) `from` type($container)
@@ -746,7 +746,7 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
 
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $name `,` `var``=`$isVar`,` `synth``=`$isSynthesized
           `:` type($result) attr-dict
@@ -844,11 +844,11 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
   }];
 
   let arguments = (ins SymbolRefAttr:$global);
-  let results = (outs POP_PointerType:$result);
+  let results = (outs PointerType:$result);
 
   let builders = [
     OpBuilder<(ins "GlobalVarDeclOp":$op), [{
-      build($_builder, $_state, POP::PointerType::get(op.getType()),
+      build($_builder, $_state, PointerType::get(op.getType()),
             getFullyResolvedSymbolRef(op));
     }]>,
   ];
@@ -1269,11 +1269,11 @@ def LIT_LoadConsumeOp : LITOp<"load.consume",
     Example:
 
     ```mlir
-    %0 = lit.load.consume %ptr0 : !pop.pointer<scalar<f32>>
+    %0 = lit.load.consume %ptr0 : !kgen.pointer<scalar<f32>>
     ```
   }];
 
-  let arguments = (ins Arg<POP_PointerType, "", [MemRead]>:$ptr);
+  let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$ptr attr-dict `:` qualified(type($ptr))";
 }
@@ -1350,14 +1350,14 @@ def LIT_OwnershipMakePointerLValue : LITOp<"ownership.make.pointer.lvalue",
                                         [AllTypesMatch<["ptr", "valuePtr"]>]> {
   let summary = "Project a pointer address as an tracked LValue";
   let description = [{
-    This op projects a !pop.pointer value as an LValue, whose value is
+    This op projects a !kgen.pointer value as an LValue, whose value is
     initialized on entry (or not) based on the first property, and initialized
     after last use (or not) depending on the second one.
 
     This works with memory values.
 
     ```mlir
-    %1 = lit.ownership.make.pointer.lvalue %0 : !pop.pointer<@MyStruct>
+    %1 = lit.ownership.make.pointer.lvalue %0 : !kgen.pointer<@MyStruct>
     ```
   }];
 
@@ -1410,10 +1410,10 @@ def LIT_HandleVariantOp : LITOp<"handle_variant",
 
     ```mlir
     %0 = kgen.call @throwing_callee(%y) :
-      (!pop.pointer<@MyStruct> byref_result) throws ->
+      (!kgen.pointer<@MyStruct> byref_result) throws ->
       !pop.variant<@Error, !lit.none>
     %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, !lit.none>,
-      !pop.pointer<@MyStruct>) -> !lit.none {
+      !kgen.pointer<@MyStruct>) -> !lit.none {
       %7 = pop.variant.get %0 :
         !pop.variant<@Error, !lit.none> as !lit.none
       lit.yield %7 : !lit.none
@@ -1459,7 +1459,7 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
 
     ```mlir
     %1 = lit.handle_variant %0, %x : (!pop.variant<@Error, !lit.none>,
-      !pop.pointer<@MyStruct>) -> !lit.none {
+      !kgen.pointer<@MyStruct>) -> !lit.none {
       %7 = pop.variant.get %0 : !pop.variant<@Error, !lit.none> as !lit.none
       lit.yield %7 : !lit.none
     } else {

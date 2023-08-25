@@ -344,13 +344,13 @@ kgen.func @simd_shuffle_1xf32(%a: !pop.scalar<f32>, %b: !pop.scalar<f32>) -> (!p
 }
 
 // CHECK-LABEL: @simd_load_store
-kgen.func @simd_load_store(%i: index, %p0: !pop.pointer<simd<4, f32>>) {
+kgen.func @simd_load_store(%i: index, %p0: !kgen.pointer<simd<4, f32>>) {
   // CHECK: llvm.getelementptr %{{.*}} : (!llvm.ptr<vector<4xf32>>, {{.*}}) -> !llvm.ptr<vector<4xf32>>
-  %0 = pop.offset %p0[%i] : !pop.pointer<simd<4, f32>>
+  %0 = pop.offset %p0[%i] : !kgen.pointer<simd<4, f32>>
   // CHECK: llvm.load
-  %1 = pop.load %0 : !pop.pointer<simd<4, f32>>
+  %1 = pop.load %0 : !kgen.pointer<simd<4, f32>>
   // CHECK: llvm.store
-  pop.store %1, %p0 : !pop.pointer<simd<4, f32>>
+  pop.store %1, %p0 : !kgen.pointer<simd<4, f32>>
   kgen.return
 }
 

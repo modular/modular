@@ -39,14 +39,14 @@ kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
 }
 
 // CHECK-LABEL: @param_materialize
-kgen.generator @param_materialize() -> (i32, !pop.pointer<i32>) {
+kgen.generator @param_materialize() -> (i32, !kgen.pointer<i32>) {
   // CHECK-NEXT: kgen.param.constant: i32 = <2>
   %0 = kgen.param.materialize: i32 = <2>
   // CHECK-NEXT: kgen.param.materialize
   %1 = kgen.param.materialize: pointer<i32> = <#M.memref<[(undef, heap, [])], 0, 0>>
   // CHECK-NOT: kgen.param.materialize
   %2 = kgen.param.materialize: pointer<i32> = <#M.memref<[(undef, heap, [])], 0, 0>>
-  kgen.return %0, %1 : i32, !pop.pointer<i32>
+  kgen.return %0, %1 : i32, !kgen.pointer<i32>
 }
 
 // CHECK-LABEL: kgen.func @cast_from_folds
@@ -219,7 +219,7 @@ kgen.func @no_hoist() {
     // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
-    pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
+    pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
   } callLoc(#loc4) loc(#loc5)
   kgen.call_signature %0() : () -> () loc(#loc4)
@@ -234,7 +234,7 @@ kgen.func @no_hoist_nodebug_callee() {
     // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
-    pop.store %array, %1 : !pop.pointer<array<1, index>> loc(#loc6)
+    pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
   } callLoc(#loc4) loc(#loc2)
   kgen.call_signature %0() : () -> () loc(#loc4)
@@ -249,7 +249,7 @@ kgen.func @hoist() {
     // CHECK-NOT: kgen.param.constant: array<1, index> = <[0]>
     %array = kgen.param.constant: array<1, index> = <[0]>
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
-    pop.store %array, %1 : !pop.pointer<array<1, index>>
+    pop.store %array, %1 : !kgen.pointer<array<1, index>>
     kgen.return
   }
   kgen.call_signature %0() : () -> ()

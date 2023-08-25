@@ -356,7 +356,7 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
   // persisted, returns a value corresponding to the address of the field.
   // Returns nullptr otherwise.
   auto checkInsertPersistentVar = [&](Operation *varOp, StringAttr name,
-                                      POP::PointerType type) {
+                                      PointerType type) {
     mlir::Type elementType = type.getElementAsType();
 
     // Check if the variable should be persisted.
@@ -366,14 +366,14 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // The variable was persisted, insert a new field into the state struct.
     std::string newFieldName = ("__new_repl_var_" + name.strref()).str();
     structBuilder.create<LIT::StructFieldOp>(varOp->getLoc(), newFieldName,
-                                             POP::PointerType::get(type),
+                                             PointerType::get(type),
                                              /*docString=*/DocStringAttr());
 
     // Materialize a reference to the variable within the function.
     mlir::ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
     Value fieldGep = builder.create<LIT::StructGEPOp>(
-        varOp->getLoc(), POP::PointerType::get(POP::PointerType::get(type)),
-        newFieldName, structValue);
+        varOp->getLoc(), PointerType::get(PointerType::get(type)), newFieldName,
+        structValue);
     Value fieldLoad = builder.create<POP::LoadOp>(varOp->getLoc(), fieldGep);
 
     // TODO: Whenever we have globals, we should be able to use a global
@@ -409,8 +409,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // Handle register based let decls. These have an initializer, and never
     // expose the actual pointer.
     if (auto letOp = dyn_cast<LIT::LetRegDeclOp>(*decl)) {
-      Value field = checkInsertPersistentVar(
-          letOp, letOp.getNameAttr(), POP::PointerType::get(letOp.getType()));
+      Value field = checkInsertPersistentVar(letOp, letOp.getNameAttr(),
+                                             PointerType::get(letOp.getType()));
       if (!field)
         continue;
       decl->setIRValue(MRValue(field));

@@ -221,7 +221,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
              "Cannot resolve an already-resolved vardecl");
-      varOp.getResult().setType(POP::PointerType::get(resultType));
+      varOp.getResult().setType(PointerType::get(resultType));
       return SLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
@@ -289,7 +289,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       slotType = requiredType;
   }
 
-  Type declIRType = POP::PointerType::get(slotType);
+  Type declIRType = PointerType::get(slotType);
   auto nameAttr = StringAttr::get(emitter.getContext(), "anonymous*");
 
   // We model this as an immutable let value with a separately stored
@@ -655,7 +655,7 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
   // initializer.
   auto var = builder->create<VarLetDeclOp>(
       translateLocation(value.expr->getLoc()),
-      POP::PointerType::get(pvalue.getType()),
+      PointerType::get(pvalue.getType()),
       StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
       /*isSynth=*/true);
   if (!emitPValueToSLValue({pvalue, value.expr}, SLValue(var), context))
@@ -1148,7 +1148,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // conveniently type check this.
   SmallVector<ASTExprAnd<AnyValue>> args;
   if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
-    auto attr = UnknownAttr::get(POP::PointerType::get(requiredType));
+    auto attr = UnknownAttr::get(PointerType::get(requiredType));
     args.push_back({PValue(attr), value.expr});
   }
   args.push_back(value);
@@ -1362,7 +1362,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     // be inferred, and those may depend on other value arguments.  Handle this
     // by setting up a placeholder with the type we know so far, and use that to
     // filter the overload set.
-    auto attr = UnknownAttr::get(POP::PointerType::get(type));
+    auto attr = UnknownAttr::get(PointerType::get(type));
     argsWithSelf.push_back({PValue(attr), expr});
     argsWithSelf.append(args.begin(), args.end());
     args = argsWithSelf;
@@ -1548,7 +1548,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Type declIRType = POP::PointerType::get(rvalueType);
+  Type declIRType = PointerType::get(rvalueType);
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
   auto tmpDecl =
       emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,

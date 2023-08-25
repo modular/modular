@@ -50,17 +50,17 @@ kgen.func @struct_extract_one(%a: !pop.struct<f32>) -> f32 {
 }
 
 // CHECK-LABEL: @struct_gep
-kgen.func @struct_gep(%a: !pop.pointer<struct<i32, i64>>) -> !pop.pointer<i64> {
+kgen.func @struct_gep(%a: !kgen.pointer<struct<i32, i64>>) -> !kgen.pointer<i64> {
   // CHECK: llvm.getelementptr %{{.*}}[0, 1] : (!llvm.ptr<struct<(i32, i64)>>) -> !llvm.ptr<i64>
   %0 = pop.struct.gep %a[1] : <struct<i32, i64>>
-  kgen.return %0 : !pop.pointer<i64>
+  kgen.return %0 : !kgen.pointer<i64>
 }
 
 // CHECK-LABEL: @struct_gep_one
-kgen.func @struct_gep_one(%a: !pop.pointer<struct<i32>>) -> !pop.pointer<i32> {
+kgen.func @struct_gep_one(%a: !kgen.pointer<struct<i32>>) -> !kgen.pointer<i32> {
   // CHECK: llvm.getelementptr %0[0, 0] : (!llvm.ptr<struct<(i32)>>) -> !llvm.ptr<i32>
   %0 = pop.struct.gep %a[0] : <struct<i32>>
-  kgen.return %0 : !pop.pointer<i32>
+  kgen.return %0 : !kgen.pointer<i32>
 }
 
 }

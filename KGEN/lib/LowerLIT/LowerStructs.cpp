@@ -321,7 +321,7 @@ Type StructOperationLowerer::replace(Type type) {
   // Keep track of types.
   seenTypes.insert(type);
 
-  auto processPointer = [&](POP::PointerType ptr) -> Type {
+  auto processPointer = [&](PointerType ptr) -> Type {
     if (!foundRecursion)
       return replaceImpl(ptr);
     // Handle a struct (Foo) that has a pointer to a recursive struct, i.e.:
@@ -353,7 +353,7 @@ Type StructOperationLowerer::replace(Type type) {
     erasedType = true;
     // Erase the type of Pointer[Foo] to Pointer[NoneType] to break the
     // recursive chain.
-    return POP::PointerType::get(POP::SIMDType::get(
+    return PointerType::get(POP::SIMDType::get(
         1, KGEN::DTypeConstantAttr::get(ptr.getContext(), DType::invalid)));
   };
 
@@ -397,7 +397,7 @@ Type StructOperationLowerer::replace(Type type) {
   if (auto ditype = dyn_cast<DebugInfo::DIType>(type)) {
     if (runDebugTypeConversion)
       result = debugTypeConverter.convertDebugType(ditype);
-  } else if (auto ptr = dyn_cast<POP::PointerType>(type)) {
+  } else if (auto ptr = dyn_cast<PointerType>(type)) {
     result = processPointer(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
@@ -407,8 +407,8 @@ Type StructOperationLowerer::replace(Type type) {
     // !lit.lifetime => !pop.struct<>
     result = emptyStructAttr.getType();
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
-    // !lit.ref<@T, life> => !pop.pointer<@T>
-    result = POP::PointerType::get(ref.getElementType());
+    // !lit.ref<@T, life> => !kgen.pointer<@T>
+    result = PointerType::get(ref.getElementType());
   } else {
     // Recursively replace types.
     result = replaceImpl(type);
@@ -734,8 +734,8 @@ void LowerStructsPass::runOnOperation() {
         cast.erase();
       } else {
         if (cast->getNumResults() == 1 && cast->getNumOperands() == 1) {
-          if (isa<POP::PointerType>(cast.getResult(0).getType()) &&
-              isa<POP::PointerType>(cast.getOperand(0).getType())) {
+          if (isa<PointerType>(cast.getResult(0).getType()) &&
+              isa<PointerType>(cast.getOperand(0).getType())) {
             // Change into a PointerBitcastOp for Pointer whose type is erased
             // to be NoneType.
             OpBuilder b(cast);

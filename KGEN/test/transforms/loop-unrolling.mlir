@@ -152,11 +152,11 @@ kgen.func @loop_carried_dependency() {
 kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) -> index {
   // CHECK: [[IDX:%.*]] = index.constant 1
   // CHECK-NEXT: [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
-  // CHECK-NEXT: [[V4:%.*]] = pop.offset %0[[[IDX]]] : !pop.pointer<scalar<f32>>
-  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] align 1  : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V4:%.*]] = pop.offset %0[[[IDX]]] : !kgen.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V5:%.*]] = pop.load [[V4]] align 1  : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V6:%.*]] = pop.cast [[V5]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V7:%.*]] = pop.cast_to_builtin [[V6]] : !pop.scalar<index> to index
   // CHECK-NEXT: [[V8:%.*]] = index.add [[V3]], [[V7]]
@@ -166,14 +166,14 @@ kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, 
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  %1 = hlcf.for [%idx10 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx10 : index, %arg1 = %idx0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>) -> index {
+  %1 = hlcf.for [%idx10 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx10 : index, %arg1 = %idx0 : index, %arg2 = %0 : !kgen.pointer<scalar<f32>>) -> index {
     %3 = index.sub %arg3, %idx1
-    %4 = pop.load %arg2 align 1  : !pop.pointer<scalar<f32>>
+    %4 = pop.load %arg2 align 1  : !kgen.pointer<scalar<f32>>
     %5 = pop.cast %4 : !pop.scalar<f32> to !pop.scalar<index>
     %6 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !pop.pointer<scalar<f32>>
-    hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !pop.pointer<scalar<f32>>)]
+    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
   } {unrollFactor = #hlcf<loop_unroll_full full>}
   kgen.return %1 : index
 }
@@ -181,7 +181,7 @@ kgen.func @loop_has_side_effect(%arg0: !pop.struct<pointer<scalar<f32>>, index, 
 // CHECK-LABEL: @single_iteration_no_decorator
 kgen.func @single_iteration_no_decorator(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) -> index {
   // CHECK:      [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !pop.pointer<scalar<f32>>
+  // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align 1  : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
   // CHECK-NEXT: kgen.return [[V3]] : index
@@ -189,14 +189,14 @@ kgen.func @single_iteration_no_decorator(%arg0: !pop.struct<pointer<scalar<f32>>
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %0 = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  %1 = hlcf.for [%idx1 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx1 : index, %arg1 = %idx0 : index, %arg2 = %0 : !pop.pointer<scalar<f32>>) -> index {
+  %1 = hlcf.for [%idx1 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx1 : index, %arg1 = %idx0 : index, %arg2 = %0 : !kgen.pointer<scalar<f32>>) -> index {
     %3 = index.sub %arg3, %idx1
-    %4 = pop.load %arg2 align 1  : !pop.pointer<scalar<f32>>
+    %4 = pop.load %arg2 align 1  : !kgen.pointer<scalar<f32>>
     %5 = pop.cast %4 : !pop.scalar<f32> to !pop.scalar<index>
     %6 = pop.cast_to_builtin %5 : !pop.scalar<index> to index
     %7 = index.add %arg1, %6
-    %8 = pop.offset %arg2[%idx1] : !pop.pointer<scalar<f32>>
-    hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !pop.pointer<scalar<f32>>)]
+    %8 = pop.offset %arg2[%idx1] : !kgen.pointer<scalar<f32>>
+    hlcf.for.yield [induction_var (%3 : index)] [retvals (%7: index)] [iterargs (%8: !kgen.pointer<scalar<f32>>)]
 
   } {unrollFactor = #hlcf<loop_unroll_full none>}
   kgen.return %1 : index
@@ -293,4 +293,3 @@ kgen.func @unroll_factor_not_divisible() -> index {
 
   kgen.return %1 : index
 }
-

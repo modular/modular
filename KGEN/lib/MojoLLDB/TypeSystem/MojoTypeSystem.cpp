@@ -317,7 +317,7 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
                                      lldb_private::CompilerType *pointeeType,
                                      bool *isRValue) {
   MojoASTTypeRef refType(type);
-  return (isa<POP::PointerType, LIT::REPLResultRefType>(refType.getMLIRType()));
+  return (isa<PointerType, LIT::REPLResultRefType>(refType.getMLIRType()));
 }
 
 uint32_t MojoTypeSystem::GetTypeInfo(
@@ -338,7 +338,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
         pointeeOrElementCompilerType);
   }
 
-  if (auto ptrType = dyn_cast<POP::PointerType>(mlirType)) {
+  if (auto ptrType = dyn_cast<PointerType>(mlirType)) {
     if (pointeeOrElementCompilerType) {
       pointeeOrElementCompilerType->SetCompilerType(
           weak_from_this(),
@@ -498,7 +498,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
                               .GetOpaqueQualType(),
                           omitEmptyBaseClasses, exeCtx);
 
-  if (isa<POP::PointerType>(mlirType))
+  if (isa<PointerType>(mlirType))
     return 1;
 
   if (auto simdTy = dyn_cast<POP::SIMDType>(mlirType)) {
@@ -548,7 +548,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   }
 
   // Pointer only has one child, so just return the unwrapped pointer type
-  if (isa<POP::PointerType>(mlirType))
+  if (isa<PointerType>(mlirType))
     return getCompilerTypeFromType(
         refType.getPointerElementType().getMLIRType());
 

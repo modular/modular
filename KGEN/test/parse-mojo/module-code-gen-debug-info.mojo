@@ -53,8 +53,8 @@ fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn( __
 # CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__moveinit__", linkageName = "__moveinit__{{.*}}::_CI_{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR5:.*]]
 # CHECK-DAG: #[[SP3:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__copyinit__", linkageName = "__copyinit__{{.*}}::_CI_{{.*}}", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SR5]]
 
-# CHECK-DAG: lit.ownership.mark.destroyed %self : !pop.pointer<@{{.*}}::@"_CI_{{.*}}\22(${{.*}}::InMemType,__mlir_type.index)\22"> loc(#[[CI_LOC_DEL:.*]])
-# CHECK-DAG: lit.ownership.mark.destroyed %existing : !pop.pointer<@{{.*}}::@"_CI_{{.*}}_\22(${{.*}}::InMemType,__mlir_type.index)\22"> loc(#[[CI_LOC_MOV:.*]])
+# CHECK-DAG: lit.ownership.mark.destroyed %self : !kgen.pointer<@{{.*}}::@"_CI_{{.*}}\22(${{.*}}::InMemType,__mlir_type.index)\22"> loc(#[[CI_LOC_DEL:.*]])
+# CHECK-DAG: lit.ownership.mark.destroyed %existing : !kgen.pointer<@{{.*}}::@"_CI_{{.*}}_\22(${{.*}}::InMemType,__mlir_type.index)\22"> loc(#[[CI_LOC_MOV:.*]])
 
 # CHECK-DAG: #[[CI_LOC_DEL]] = loc(fused<#[[SP1]]>[#[[CI_LOC:.*]]])
 # CHECK-DAG: #[[CI_LOC_MOV]] = loc(fused<#[[SP2]]>[#[[CI_LOC]]])

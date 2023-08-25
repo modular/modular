@@ -204,10 +204,10 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   return false;
 }
 
-/// Given a POP::PointerType, return the element as an ASTType.  This aborts
+/// Given a PointerType, return the element as an ASTType.  This aborts
 /// if the current type isn't a pointer.
 ASTType ASTType::getPointerElementType() const {
-  return ASTType(cast<POP::PointerType>(mlirType).getElementType());
+  return ASTType(cast<PointerType>(mlirType).getElementType());
 }
 
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
@@ -448,8 +448,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         actualType = cast<VariadicType>(actualType.mlirType).getElementType();
       if (convention != ValueInputConvention::OwnedInReg &&
           convention != ValueInputConvention::BorrowedInReg) {
-        actualType =
-            cast<POP::PointerType>(actualType.mlirType).getElementType();
+        actualType = cast<PointerType>(actualType.mlirType).getElementType();
       }
       actualType.print(os, forDiag);
     }
@@ -462,7 +461,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << " -> ";
     Type resultType = sig.getValueResults().front();
     if (inMemResult) {
-      ASTType(cast<POP::PointerType>(inMemResult).getElementType())
+      ASTType(cast<PointerType>(inMemResult).getElementType())
           .print(os, forDiag);
     } else if (isa<NoneType>(resultType)) {
       os << "None";

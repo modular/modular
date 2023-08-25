@@ -43,7 +43,7 @@ fn fancy_signature[dt: DType, size: Int]
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[RES:.*]] = kgen.call @"$parameters"::@"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]])
-  # CHECK: pop.store %[[RES]], %local : !pop.pointer<!Int>
+  # CHECK: pop.store %[[RES]], %local : !kgen.pointer<!Int>
   var local = take_3index(size, size, size)
 
   # CHECK: %[[TMP:.*]] = kgen.call {{.*}}__add__
@@ -104,7 +104,7 @@ struct TestParamStruct[A: Int]:
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
   # CHECK: %0 = kgen.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>() : () ownedresult -> !kgen.declref<{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
-  # CHECK: pop.store %0, %arg11 : !pop.pointer<{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
+  # CHECK: pop.store %0, %arg11 : !kgen.pointer<{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = pop.load %arg11
@@ -587,14 +587,14 @@ fn callee2[T: __mlir_type.`!kgen.mlirtype`](v: T): pass
 fn callee3[size: __mlir_type.index, type: __mlir_type.`!kgen.dtype`]
    (v:  __mlir_type[`!pop.simd<`, size, `, `, type, `>`]): pass
 fn callee4[T: __mlir_type.`!kgen.mlirtype`]
-   (v:  __mlir_type[`!pop.pointer<`, T, `>`]): pass
+   (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.func @"testParamInference{{.*}}"<
 # CHECK-SAME: [[SIZE:.*]]: !Int>(
 fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
                                  b2: StaticVec[size*2],
                                  c: __mlir_type.`!pop.simd<17, f32>`,
-                                 d: __mlir_type.`!pop.pointer<f32>`):
+                                 d: __mlir_type.`!kgen.pointer<f32>`):
   # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<{{.*}}4{{.*}}>(%a)
   callee1(a)
   # CHECK-NEXT: kgen.call @{{.*}}callee1{{.*}}<:!Int [[SIZE]]>(%b)
@@ -669,7 +669,7 @@ fn testDependentField():
     var lvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE_PTR:.*]] = lit.struct.gep %lvalue[value]
     # CHECK-NEXT: kgen.rebind %[[VALUE_PTR]] {{.*}} to
-    # CHECK-SAME: !pop.pointer<{{.*}}@Abstraction<[[A:.*]]: {{.*}} = {{.*}} 2}>>>
+    # CHECK-SAME: !kgen.pointer<{{.*}}@Abstraction<[[A:.*]]: {{.*}} = {{.*}} 2}>>>
     takeAbstraction2(lvalue.value)
     let rvalue = AnotherAbstraction[1]()
     # CHECK: %[[VALUE:.*]] = lit.struct.extract %rvalue[value]

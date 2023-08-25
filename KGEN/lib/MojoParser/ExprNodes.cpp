@@ -553,7 +553,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto contextualType = dest.getIfLValueInitializerType();
     assert(contextualType && "must have contextual type");
     auto loc = getLocation(emitter);
-    Type declIRType = POP::PointerType::get(contextualType);
+    Type declIRType = PointerType::get(contextualType);
     auto nameAttr = StringAttr::get(loc.getContext(), spelling);
     return builder.create<VarLetDeclOp>(loc, declIRType, nameAttr, isVar,
                                         isSynth);
@@ -668,7 +668,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       OpBuilder::InsertionGuard guard(*emitter.builder);
       emitter.builder->setInsertionPoint(nestedFunc);
       // Emit a raw stack allocation.
-      auto ptrType = POP::PointerType::get(value.getRValueType());
+      auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
       ValueDest copyDest(SLValue(tmp), EC_CaptureCopy);
@@ -764,11 +764,11 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
       case ValueInputConvention::ByRef:
       case ValueInputConvention::ByRefResult:
       case ValueInputConvention::OwnedInMem:
-        if (!isa<POP::PointerType>(type)) {
+        if (!isa<PointerType>(type)) {
           shared.emitError(node->getLoc(), "argument #")
               << i
               << " in manually specified signature type should be a "
-                 "`!pop.pointer`";
+                 "`!kgen.pointer`";
           return {};
         }
         break;
@@ -1645,8 +1645,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         emitter.translateLocation(getLoc()),
         emitter.emitSRValue(indexValues.front(), EC_Subscript),
         emitter.emitSRValue({mlirIndex, indexExpr}, EC_Subscript));
-    // FIXME: Should not be doing a bare `!pop.pointer` type check.
-    if (auto ptrType = dyn_cast<POP::PointerType>(
+    // FIXME: Should not be doing a bare `!kgen.pointer` type check.
+    if (auto ptrType = dyn_cast<PointerType>(
             ASTType(variadic.getElementType()).mlirType)) {
       if (!ASTType(ptrType.getElementType())
                .isRegisterPassable(getLoc(), emitter.shared))
@@ -2839,10 +2839,10 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   SRValue exprVal = emitter.emitExprSRValue(subExpr, EC_Unknown);
   if (!exprVal)
     return {};
-  auto pointerType = dyn_cast<POP::PointerType>(exprVal.getType().mlirType);
+  auto pointerType = dyn_cast<PointerType>(exprVal.getType().mlirType);
   if (!pointerType) {
     emitter.emitError(getLoc(),
-                      "operand must have '!pop.pointer<T>' type, not ")
+                      "operand must have '!kgen.pointer<T>' type, not ")
         << exprVal.getType() << getRange();
     return {};
   }

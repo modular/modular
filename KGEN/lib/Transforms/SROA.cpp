@@ -186,7 +186,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
       OpBuilder b(value);
       DebugInfo::DILocalVariableAttr var = value.getValueInfo();
       auto getElementVar = [&](unsigned i) {
-        auto ptrType = cast<POP::PointerType>(newAllocas[i].getType());
+        auto ptrType = cast<PointerType>(newAllocas[i].getType());
         return DebugInfo::DILocalVariableAttr::get(
             // FIXME(11743): We can do better with field names on the structs.
             var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
@@ -382,7 +382,7 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
     int64_t numElems = cast<IntegerAttr>(alloc.getCount()).getInt();
     newAllocas.reserve(numElems);
 
-    auto ptr = cast<POP::PointerType>(alloc.getResult().getType());
+    auto ptr = cast<PointerType>(alloc.getResult().getType());
     for (int64_t i = 0; i < numElems; ++i) {
       Value v = builder.create<StackAllocationOp>(alloc.getLoc(), ptr, 1);
       newAllocas.push_back(v);
@@ -457,7 +457,7 @@ void SROAPass::runOnOperation() {
         return;
 
       // Stack allocation is always a pointer to something.
-      auto ptrType = cast<POP::PointerType>(alloc.getResult().getType());
+      auto ptrType = cast<PointerType>(alloc.getResult().getType());
 
       // We decompose structs if there is one element otherwise we decompose the
       // stack itself.

@@ -359,7 +359,7 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function is a memory only type, return the by-ref result.
   if (sigType.hasMemoryOnlyResult())
-    return cast<POP::PointerType>(argTypes.front()).getElementAsType();
+    return cast<PointerType>(argTypes.front()).getElementAsType();
 
   // Otherwise it is the normal result.
   if (sigType.isThrows())
@@ -975,11 +975,10 @@ StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 void StructGEPOp::build(OpBuilder &builder, OperationState &result,
                         Value structBasePtr, StructFieldOp field) {
   TypedAttr refExpr =
-      cast<POP::PointerType>(structBasePtr.getType()).getElementType();
+      cast<PointerType>(structBasePtr.getType()).getElementType();
   auto structType =
       cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
-  build(builder, result,
-        POP::PointerType::get(field.getReboundType(structType)),
+  build(builder, result, PointerType::get(field.getReboundType(structType)),
         field.getNameAttr(), structBasePtr);
 }
 

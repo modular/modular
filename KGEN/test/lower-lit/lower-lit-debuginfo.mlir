@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-lit -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!pop.pointer<index>>
+// CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "varDecl", linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10, arg = 0> : ![[DIVAR_TYPE]]
@@ -9,7 +9,7 @@
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
-// CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !pop.pointer<index>
+// CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !kgen.pointer<index>
 // CHECK-NEXT:    debuginfo.value #[[DILETVAR]] = %[[ARG0]] : index
 
 // CHECK-LABEL: kgen.generator @"module::fn"()
@@ -38,7 +38,7 @@ lit.file_module @module {
 
 // -----
 
-// CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!pop.pointer<index>>
+// CHECK: ![[DIVAR_TYPE:.*]] = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: ![[DILETVAR_TYPE:.*]] = !debuginfo.unresolved<index>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = "varDecl", linkageName = "Int::varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10, arg = 0> : ![[DIVAR_TYPE]]
@@ -47,7 +47,7 @@ lit.file_module @module {
 // CHECK-LABEL: kgen.generator @"Int::varDecl"
 // CHECK-SAME: (%[[ARG0:.*]]: index
 // CHECK-NEXT:    %[[VAR_A:.*]] = pop.stack_allocation 1 x index
-// CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !pop.pointer<index>
+// CHECK-NEXT:    debuginfo.value #[[DIVAR]] = %[[VAR_A]] : !kgen.pointer<index>
 // CHECK-NEXT:    debuginfo.value #[[DILETVAR]] = %[[ARG0]] : index
 
 // CHECK-LABEL: kgen.generator @"module::fn"()

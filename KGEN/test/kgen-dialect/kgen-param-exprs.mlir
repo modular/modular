@@ -565,15 +565,15 @@ kgen.generator @testTargetInfo() {
 
 // CHECK-LABEL: @mlir_builtin_types
 // CHECK-SAME: <index: type>
-// CHECK-SAME: %[[ARG0:.*]]: !pop.pointer<index>
-// CHECK-SAME: %[[ARG1:.*]]: !pop.pointer<*"index">
+// CHECK-SAME: %[[ARG0:.*]]: !kgen.pointer<index>
+// CHECK-SAME: %[[ARG1:.*]]: !kgen.pointer<*"index">
 kgen.generator @mlir_builtin_types<*"index": type>(
-  %arg0: !pop.pointer<index>, %arg1: !pop.pointer<*"index">
+  %arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<*"index">
 ) -> (index, !kgen.paramref<*"index">) {
-  // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !pop.pointer<index>
-  %0 = pop.load %arg0 : !pop.pointer<index>
-  // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !pop.pointer<*"index">
-  %1 = pop.load %arg1 : !pop.pointer<*"index">
+  // CHECK: %[[V0:.*]] = pop.load %[[ARG0]] : !kgen.pointer<index>
+  %0 = pop.load %arg0 : !kgen.pointer<index>
+  // CHECK: %[[V1:.*]] = pop.load %[[ARG1]] : !kgen.pointer<*"index">
+  %1 = pop.load %arg1 : !kgen.pointer<*"index">
   // CHECK: return %[[V0]], %[[V1]] : index, !kgen.paramref<*"index">
   kgen.return %0, %1 : index, !kgen.paramref<*"index">
 }
@@ -678,7 +678,7 @@ kgen.generator @mlirOperationExpr() {
   kgen.return
 }
 
-kgen.generator @evaluator(%funcs: !pop.pointer<!kgen.signature<() -> ()>>, %num: index) -> index {
+kgen.generator @evaluator(%funcs: !kgen.pointer<!kgen.signature<() -> ()>>, %num: index) -> index {
   %0 = kgen.param.constant = <2>
   kgen.return %0 : index
 }
@@ -737,13 +737,13 @@ kgen.generator @partial_bind_index<c>() {
   kgen.return
 }
 
-kgen.generator @result_slot(%arg0: !pop.pointer<index> byref_result, %arg1: index) {
+kgen.generator @result_slot(%arg0: !kgen.pointer<index> byref_result, %arg1: index) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @apply_result_slot
 kgen.generator @apply_result_slot() {
-  // CHECK-NEXT: constant: pointer<index> = <apply_result_slot(:<>(!pop.pointer<index> byref_result, index) -> () @result_slot, 2)>
-  kgen.param.constant: pointer<index> = <apply_result_slot(:<>(!pop.pointer<index> byref_result, index) -> () @result_slot, 2)>
+  // CHECK-NEXT: constant: pointer<index> = <apply_result_slot(:<>(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
+  kgen.param.constant: pointer<index> = <apply_result_slot(:<>(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
   kgen.return
 }

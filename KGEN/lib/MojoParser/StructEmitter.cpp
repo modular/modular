@@ -142,7 +142,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   // self.
   if (isMemoryOnly) {
     BlockArgument selfArg = body->getArgument(0);
-    assert(selfArg.getType().isa<POP::PointerType>());
+    assert(selfArg.getType().isa<PointerType>());
     size_t idx = 1;
     for (StructFieldOp field : structOp.getFieldDecls()) {
       // Add the block argument, get it as an RValue since it is owned.
@@ -193,8 +193,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 }
 
 /// Given a function of the form
-/// "lit.func __copyinit__(%target: !pop.pointer<@MyStruct>, %existing:
-/// !pop.pointer<@MyStruct>), populate the method with the following:
+/// "lit.func __copyinit__(%target: !kgen.pointer<@MyStruct>, %existing:
+/// !kgen.pointer<@MyStruct>), populate the method with the following:
 /// %targetField0Ptr = lit.struct.get %self[field0]
 /// %sourceField0Ptr = lit.struct.get %existing[field0]
 /// copyinit_of_type_of_field0(%targetField0, %field
@@ -260,9 +260,9 @@ LogicalResult StructEmitter::populateMoveCopy(LIT::FuncOp func,
 /// Given a struct and a list of arguments, generate a function. For example,
 /// given {MyStruct, "prefix", [ParamType1, ParamType2], [borrow_in_mem,
 /// borrow_in_mem], ["x","b"]}, this function produces:
-///       lit.func @prefixParam1Param2(%self: !pop.pointer<@MyStruct> init_self,
-///       %x: ParamType1 borrow_in_mem, %b : ParamType2 borrow_in_mem) ->
-///       !lit.none  {
+///       lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
+///       init_self, %x: ParamType1 borrow_in_mem, %b : ParamType2
+///       borrow_in_mem) -> !lit.none  {
 ///          %0 = kgen.param.constant: !lit.none = <#lit.none>
 ///          lit.return %0 : !lit.none
 ///          lit.end_func
@@ -398,7 +398,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
   bool isMemoryOnly = !declOp.isRegisterPassable();
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
   Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
-  Type ptrToSelf = POP::PointerType::get(selfType);
+  Type ptrToSelf = PointerType::get(selfType);
   StringAttr selfName = b.getStringAttr("self");
   StringAttr existingName = b.getStringAttr("existing");
   LIT::FuncOp destructorFunc;
@@ -408,7 +408,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     SmallVector<ValueInputConvention> argConventions;
     SmallVector<StringAttr> argNames;
     if (isMemoryOnly) {
-      argTypes.push_back(POP::PointerType::get(selfType));
+      argTypes.push_back(PointerType::get(selfType));
       argConventions.push_back(ValueInputConvention::InitSelf);
       argNames.push_back(StringAttr::get(shared.getContext(), "self"));
     }
@@ -423,7 +423,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
       default:
         llvm_unreachable("unknown case");
       case StructDeclOp::RP_MemoryOnly:
-        fieldType = POP::PointerType::get(fieldType);
+        fieldType = PointerType::get(fieldType);
         conv = ValueInputConvention::OwnedInMem;
         break;
       case StructDeclOp::RP_RegisterPassable:

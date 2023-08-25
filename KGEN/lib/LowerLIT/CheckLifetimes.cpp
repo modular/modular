@@ -1871,10 +1871,10 @@ void DestructorInsertion::destroyValueIfNeeded(
 // TODO: In the presence of returned references / lifetimes, we will
 // need to be more careful here.
 static bool mightPointTo(Value p1, Value p2) {
-  assert(isa<POP::PointerType>(p2.getType()));
+  assert(isa<PointerType>(p2.getType()));
   // If the value is an integer or other random thing, then it can't point to
   // anything.
-  if (!isa<POP::PointerType>(p1.getType()))
+  if (!isa<PointerType>(p1.getType()))
     return false;
 
   Value underlyingP1 = LifetimeTrackable::findUnderlyingValueFromField(p1);
@@ -2086,7 +2086,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
   if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
-    assert(POP::PointerType::get(signature.getValueInputs()[0]) ==
+    assert(PointerType::get(signature.getValueInputs()[0]) ==
            valueToDestroy.getType());
     valueToDestroy = builder.create<POP::LoadOp>(valueToDestroy,
                                                  /*align*/ std::nullopt);

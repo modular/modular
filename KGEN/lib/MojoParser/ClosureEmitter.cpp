@@ -54,7 +54,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
 }
 
 /// Given a function of the form "lit.func __initFromExisting__(%target:
-/// !pop.pointer<@MyStruct>, %existing: !pop.pointer<@MyStruct>)", the opaque
+/// !kgen.pointer<@MyStruct>, %existing: !kgen.pointer<@MyStruct>)", the opaque
 /// pointer FieldOp member, and a FieldOp member that is of type
 /// kgen.signature<(x,x) -> x>, where x is opaque pointer, populate the function
 /// with the following:
@@ -97,7 +97,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
                                                SignatureType signatureType) {
   auto emptyList =
       POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
-  auto opaquePointer = POP::PointerType::get(emptyList);
+  auto opaquePointer = PointerType::get(emptyList);
   SmallVector<Type> fieldTypes;
   fieldTypes.push_back(opaquePointer);
   StructDeclOp declOp =
@@ -125,7 +125,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     else
       inputConventions.push_back(ValueInputConvention::OwnedInMem);
 
-    Type opaquePtrType = POP::PointerType::get(
+    Type opaquePtrType = PointerType::get(
         POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1)));
     SmallVector<Type> inputTypes({opaquePtrType, opaquePtrType});
     StringAttr fieldName = isCopy ? copyFieldAttr : moveFieldAttr;
@@ -255,7 +255,7 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
   auto ptrToClosureImplType =
-      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
+      PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
   initSigTypes[0] = ptrToClosureImplType;
   initSigConventions[0] = ValueInputConvention::InitSelf;
   initSigNames[0] = StringAttr::get(shared.getContext(), "self");
@@ -289,14 +289,14 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
 LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     StructDeclOp closureWrapper, StructDeclOp closureImpl, SMLoc location) {
   auto ptrToClosureImplType =
-      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(closureImpl));
+      PointerType::get(ASTDecl::computeSelfTypeForStruct(closureImpl));
   if (auto init =
           structEmitter.findInitInStruct(closureWrapper, ptrToClosureImplType))
     return init;
 
   auto emptyList =
       POP::ArrayType::get(0, IntegerType::get(fileModuleOp.getContext(), 1));
-  auto opaquePointer = POP::PointerType::get(emptyList);
+  auto opaquePointer = PointerType::get(emptyList);
 
   SmallVector<Type> argTypes;
   SmallVector<ValueInputConvention> argConventions;
@@ -305,7 +305,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   // Add the self to the closure init.
   StringAttr selfName = StringAttr::get(closureWrapper.getContext(), "self");
   Type closureSelfType =
-      POP::PointerType::get(ASTDecl::computeSelfTypeForStruct(closureWrapper));
+      PointerType::get(ASTDecl::computeSelfTypeForStruct(closureWrapper));
   argTypes.push_back(closureSelfType);
   argConventions.push_back(ValueInputConvention::InitSelf);
   argNames.push_back(selfName);
@@ -363,7 +363,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
   Value self = init.getBody()->getArgument(0);
   Value ptrToImpl = builder.create<LIT::StructGEPOp>(
-      POP::PointerType::get(opaquePointer), implField.getNameAttr(), self);
+      PointerType::get(opaquePointer), implField.getNameAttr(), self);
   Value erasedType =
       builder.create<POP::PointerBitcastOp>(opaquePointer, target);
   builder.create<POP::StoreOp>(erasedType, ptrToImpl);
@@ -375,8 +375,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   auto setMember = [&](LIT::FuncOp topLevelFunc, StringAttr fieldName) {
     builder = ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
     auto dtorMember = builder.create<StructGEPOp>(
-        POP::PointerType::get(topLevelFunc.getBoundReference().getType()),
-        fieldName, init.getBody()->getArgument(0));
+        PointerType::get(topLevelFunc.getBoundReference().getType()), fieldName,
+        init.getBody()->getArgument(0));
     auto funcSymbol = builder.create<CreateClosureOp>(
         topLevelFunc.getBoundReference(), ValueRange());
     builder.create<POP::StoreOp>(funcSymbol, dtorMember);

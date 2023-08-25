@@ -101,7 +101,7 @@ public:
   /// specified input value.  Note: this resolves the body of a struct type.
   bool isMovableFrom(ASTExprAnd<CValue> value, SharedState &shared) const;
 
-  /// Given a POP::PointerType, return the element as an ASTType.  This aborts
+  /// Given a PointerType, return the element as an ASTType.  This aborts
   /// if the current type isn't a pointer.
   ASTType getPointerElementType() const;
 
