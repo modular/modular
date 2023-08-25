@@ -418,21 +418,21 @@ struct amx_detail:
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
-            _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
+            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
         let b_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
-            _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
+            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
         let c_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
             count:c256,
             alignment:c128,
-            _type : __mlir_type.`!pop.pointer<scalar<f32>>`,
+            _type : __mlir_type.`!kgen.pointer<scalar<f32>>`,
         ]()
 
         let num_elements = c.num_elements()
