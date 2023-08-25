@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Benchmark class for runtime benchmarking."""
+"""Implements the Benchmark class for runtime benchmarking.
+
+You can import these APIs from the `benchmark` package. For example:
+
+```mojo
+from benchmark import Benchmark
+```
+"""
 
 from math import max, min
 from time import now
