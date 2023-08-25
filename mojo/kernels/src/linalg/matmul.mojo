@@ -83,55 +83,6 @@ fn elementwise_epilogue_c_tile[
     vectorize[simd_width, activation_on_col_chunk](tile_len.N)
 
 
-@always_inline
-fn naive_matmul[
-    shape_a: DimList,
-    shape_b: DimList,
-    shape_c: DimList,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    epilogue_elemwise_func: fn[type: DType] (Int, Int, SIMD[type, 1]) -> SIMD[
-        type, 1
-    ],
-    epilogue_rowise_func: fn[type: DType] (Int, Buffer[Dim(), type]) -> None,
-](
-    c: NDBuffer[2, shape_c, c_type],
-    a: NDBuffer[2, shape_a, a_type],
-    b: NDBuffer[2, shape_b, b_type],
-):
-    """Computes matrix multiplication with a naive algorithm.
-
-    Args:
-        c: Buffer with allocated output space.
-        a: Buffer containing matrix operand A.
-        b: Buffer containing matrix operand B.
-    """
-    let gemm_shape = GemmShape.get[
-        transpose_a,
-        transpose_b,
-    ](c, a, b)
-    let matrix_a = Matrix[shape_a, a_type, transpose_a](a)
-    let matrix_b = Matrix[shape_b, b_type, transpose_b](b)
-    let matrix_c = Matrix[shape_c, c_type, False](c)
-
-    for m in range(gemm_shape.M):
-        var n: Int = 0
-        while n < gemm_shape.N:
-            var c_val: SIMD[c_type, 1] = 0
-            for k in range(gemm_shape.K):
-                let a_val = matrix_a[m, k].cast[c_type]()
-                let b_val = matrix_b[k, n].cast[c_type]()
-                c_val += a_val * b_val
-            c_val = epilogue_elemwise_func[c_type](m, n, c_val)
-            matrix_c[m, n] = c_val
-            n += 1
-        let row = Buffer[Dim(), c_type](c.data.offset(m * gemm_shape.N), n)
-        epilogue_rowise_func[c_type](m, row)
-
-
 # ===----------------------------------------------------------------------=== #
 # Packing routines.
 # ===----------------------------------------------------------------------=== #
