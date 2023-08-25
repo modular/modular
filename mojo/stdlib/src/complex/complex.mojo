@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Complex type."""
+"""Implements the Complex type.
+
+You can import these APIs from the `complex` package. For example:
+
+```mojo
+from complex import ComplexSIMD
+```
+"""
 
 from math import sqrt
 
