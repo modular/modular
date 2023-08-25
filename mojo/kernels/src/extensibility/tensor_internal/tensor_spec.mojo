@@ -6,10 +6,10 @@
 """
 Implements the `TensorSpec` type.
 
-You can optionally import `TensorSpec` from the `tensor` module:
+You can import these APIs from the `tensor` package. For example:
 
 ```mojo
-from tensor import Tensor, TensorSpec, TensorShape
+from tensor import TensorSpec
 ```
 """
 

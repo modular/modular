@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements the `Tensor` type and provides access to `TensorShape` and
-`TensorSpec`.
+Implements the `Tensor` type.
 
 Example:
 
