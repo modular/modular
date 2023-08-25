@@ -1582,31 +1582,6 @@ def POP_ExternalCallOp : POPOp<"external_call",
 }
 
 //===----------------------------------------------------------------------===//
-// GlobalAddressOp
-//===----------------------------------------------------------------------===//
-
-def POP_GlobalAddressOp : POPOp<"global.address", [Pure,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Get the address of a global variable.";
-  let description = [{
-    The `pop.global.address` operation returns the address of a referenced
-    global variable. The type of the result is a `!kgen.pointer` to the global
-    type.
-
-    Example:
-
-    ```mlir
-    %ptr = pop.global.address @foo : <i32>
-    ```
-  }];
-
-  let arguments = (ins SymbolRefAttr:$global);
-  let results = (outs PointerType:$result);
-
-  let assemblyFormat = "$global attr-dict `:` type($result)";
-}
-
-//===----------------------------------------------------------------------===//
 // GlobalAllocOp
 //===----------------------------------------------------------------------===//
 

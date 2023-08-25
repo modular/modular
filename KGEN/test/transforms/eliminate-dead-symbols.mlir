@@ -58,6 +58,6 @@ kgen.global @unused_global : i64 [@unused_global_fn, @unused_global_fn](3)
 
 // CHECK: kgen.func export @anchor_global
 kgen.func export @anchor_global() {
-  pop.global.address @global_var : <i32>
+  kgen.global.address @global_var : <i32>
   kgen.return
 }

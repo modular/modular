@@ -149,8 +149,8 @@ static void lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, returnOp.getVariant());
     } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
-      b.replaceOpWithNewOp<POP::GlobalAddressOp>(
-          globalRefOp, globalRefOp.getType(), globalRefOp.getGlobal());
+      b.replaceOpWithNewOp<GlobalAddressOp>(globalRefOp, globalRefOp.getType(),
+                                            globalRefOp.getGlobal());
     }
   });
 }

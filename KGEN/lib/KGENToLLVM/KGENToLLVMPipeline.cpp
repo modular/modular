@@ -21,14 +21,14 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   using mlir::LLVM::LLVMFuncOp;
 
   // Run all LLVM lowering passes.
-  pm.addPass(createLowerKGENToLLVM());
+  pm.addPass(createLowerKGENToLLVM(
+      LowerKGENToLLVMOptions{/*disableGlobalDtors=*/options.isJIT}));
   pm.addPass(createLowerRuntimeClosures());
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
   pm.addNestedPass<LLVMFuncOp>(createTweakSpilledAllocas());
   pm.addPass(createLowerKGENCoroutinesAsync());
   pm.addPass(createLowerGlobalPOPToLLVM(LowerGlobalPOPToLLVMOptions{
-      /*disableGlobalDtors=*/options.isJIT, options.alignedAllocFnName,
-      options.alignedFreeFnName}));
+      options.alignedAllocFnName, options.alignedFreeFnName}));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
 
   // And finally canonicalize again.

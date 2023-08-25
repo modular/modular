@@ -1547,61 +1547,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
 namespace {
 
 //===----------------------------------------------------------------------===//
-// convertGlobals
-//===----------------------------------------------------------------------===//
-
-static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
-                                    bool disableGlobalDtors) {
-  SmallVector<Attribute> ctors, dtors, priorities;
-
-  for (auto global : llvm::make_early_inc_range(module.getOps<GlobalOp>())) {
-    // Replace the `pop.global` with an `llvm.mlir.global`, raise the
-    // constructor and destructor into functions, and collect a list of them.
-    mlir::IRRewriter b{OpBuilder(global)};
-    Type type = tc.convertType(global.getType());
-    if (!type)
-      return global.emitError("could not convert global type");
-
-    if (global.getCtor()) {
-      ctors.push_back(*global.getCtor());
-      dtors.push_back(*global.getDtor());
-      priorities.push_back(global.getPriorityAttr());
-    }
-
-    // Create the LLVM global.
-    bool isExported = global.isExported();
-    auto llvmGlobal = b.replaceOpWithNewOp<LLVM::GlobalOp>(
-        global, type, /*constant=*/false,
-        isExported ? LLVM::Linkage::External : LLVM::Linkage::Internal,
-        global.getSymName(), /*value=*/Attribute());
-
-    // If the global is not exported, then no need to initialize it.
-    if (!isExported)
-      continue;
-
-    // If the global is exported, explicitly initialize it as undef.
-    b.createBlock(&llvmGlobal.getBodyRegion());
-    Value undef = b.create<LLVM::UndefOp>(llvmGlobal.getLoc(), type);
-    b.create<LLVM::ReturnOp>(llvmGlobal.getLoc(), undef);
-  }
-
-  // Don't generate anything if there are no globals.
-  if (ctors.empty())
-    return success();
-
-  // Create the `llvm.mlir.global_ctors` and `llvm.mlir.global_dtors`.
-  auto b = OpBuilder::atBlockBegin(module.getBody());
-  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr(priorities);
-  b.create<LLVM::GlobalCtorsOp>(module.getLoc(), b.getArrayAttr(ctors),
-                                prioritiesAttr);
-  // FIXME(#16605): Global destructors don't work in JIT mode.
-  if (!disableGlobalDtors)
-    b.create<LLVM::GlobalDtorsOp>(module.getLoc(), b.getArrayAttr(dtors),
-                                  prioritiesAttr);
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPExternalCall
 //===----------------------------------------------------------------------===//
 
@@ -1941,27 +1886,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPGlobalAddress
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPGlobalAddress
-    : public ConvertPOPToLLVMPattern<GlobalAddressOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(GlobalAddressOp op,
-                                GlobalAddressOpAdaptor adaptor,
-                                ConversionPatternRewriter &b) const override {
-    Type type = convertType(op.getType());
-    if (!type)
-      return b.notifyMatchFailure(op.getLoc(), "failed to convert result type");
-    // Trivial lowering to `llvm.mlir.addressof`.
-    b.replaceOpWithNewOp<LLVM::AddressOfOp>(
-        op, type, cast<FlatSymbolRefAttr>(op.getGlobal()));
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // LowerGlobalPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
@@ -1992,10 +1916,6 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   }
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
-  // Convert global ops and generator global constructors and destructors.
-  if (failed(convertGlobals(theModule, typeConverter, disableGlobalDtors)))
-    return signalPassFailure();
-
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
 
@@ -2010,7 +1930,6 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
   target.addIllegalOp<GlobalConstantOp>();
   patterns.insert<ConvertPOPGlobalConstant>(symtab, constants, typeConverter);
-  patterns.insert<ConvertPOPGlobalAddress>(typeConverter);
 
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
