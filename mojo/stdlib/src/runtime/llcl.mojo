@@ -103,7 +103,7 @@ fn _del_llcl_chain(chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_DestroyChain", NoneType](chain.address)
 
 
-fn _async_and_then(hdl: __mlir_type.`!pop.pointer<i8>`, chain: Pointer[Chain]):
+fn _async_and_then(hdl: __mlir_type.`!kgen.pointer<i8>`, chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -326,7 +326,7 @@ struct TaskGroup:
 
     @staticmethod
     fn await_body_impl(
-        hdl: __mlir_type.`!pop.pointer<i8>`, inout task_group: TaskGroup
+        hdl: __mlir_type.`!kgen.pointer<i8>`, inout task_group: TaskGroup
     ):
         _async_and_then(hdl, Pointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
