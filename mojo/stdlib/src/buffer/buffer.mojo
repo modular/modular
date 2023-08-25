@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Buffer class."""
+"""Implements the Buffer class.
+
+You can import these APIs from the `memory` package. For example:
+
+```mojo
+from memory.buffer import Buffer
+```
+"""
 
 from math import fma, iota, max, min
 from sys.info import alignof, simdwidthof, sizeof
@@ -28,6 +35,7 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 # ===----------------------------------------------------------------------===#
 # Buffer
 # ===----------------------------------------------------------------------===#
+
 
 # This type is "async safe" (see async_parallelize).
 @value
@@ -557,6 +565,7 @@ fn _compute_ndbuffer_stride[
 # ===----------------------------------------------------------------------===#
 # NDBuffer
 # ===----------------------------------------------------------------------===#
+
 
 # This type is "async safe" (see async_parallelize).
 @value
@@ -1494,6 +1503,7 @@ fn partial_simd_store[
 # ===----------------------------------------------------------------------===#
 # DynamicRankBuffer
 # ===----------------------------------------------------------------------===#
+
 
 # This type is "async safe" (see async_parallelize).
 # This struct must match DynamicRankBuffer in Kernels/lib/MojoKernels/Kernels.cpp

@@ -3,7 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Provides utilities for working with static and variadic lists."""
+"""Provides utilities for working with static and variadic lists.
+
+You can import these APIs from the `utils` package. For example:
+
+```mojo
+from utils.list import Dim
+```
+"""
 
 from memory.unsafe import Pointer
 
