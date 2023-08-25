@@ -168,6 +168,38 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     : LLVMTypeConverter(target.getContext(), buildLLVMLoweringOpts(target)),
       LLVMDataLayout(target) {
 
+  //===--------------------------------------------------------------------===//
+  // KGEN
+
+  // Convert string types to LLVM literal structs: struct{ptr, size} of type
+  // !llvm.struct<(ptr<i8>, index).
+  addConversion([=](KGEN::StringType stringType) -> std::optional<Type> {
+    return getLLVMTypeForKGENStringType(stringType.getContext(),
+                                        getIndexType());
+  });
+
+  addConversion([=](SignatureType signatureType) -> std::optional<Type> {
+    MLIRContext *ctx = signatureType.getContext();
+    if (signatureType.isCapturing()) {
+      auto pointerTy = LLVM::LLVMPointerType::get(ctx);
+      return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
+    } else {
+      return convertType(signatureType.getValues());
+    }
+  });
+
+  // Variadic types are converted to a struct representing a pointer to the
+  // elements of the sequence, and the sequence size.
+  addConversion([=](VariadicType variadic) -> std::optional<Type> {
+    Type convertedType = convertType(variadic.getElementAsType());
+    if (!convertedType)
+      return {};
+
+    return LLVM::LLVMStructType::getLiteral(
+        &getContext(),
+        {LLVM::LLVMPointerType::get(convertedType), getIndexType()});
+  });
+
   // Convert pointer types to LLVM pointer types. If the element type is
   // unspecified, return an opaque pointer.
   addConversion([=](PointerType pointer) -> std::optional<Type> {
@@ -178,6 +210,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return LLVM::LLVMPointerType::get(pointer.getContext(), addressSpace);
   });
 
+  //===--------------------------------------------------------------------===//
+  // POP
+
   // Convert array types to LLVM array types.
   addConversion([=](POP::ArrayType array) -> std::optional<Type> {
     std::optional<int64_t> size = array.getResolvedSize();
@@ -187,13 +222,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     if (!elementType)
       return {};
     return LLVM::LLVMArrayType::get(elementType, *size);
-  });
-
-  // Convert string types to LLVM literal structs: struct{ptr, size} of type
-  // !llvm.struct<(ptr<i8>, index).
-  addConversion([=](KGEN::StringType stringType) -> std::optional<Type> {
-    return getLLVMTypeForKGENStringType(stringType.getContext(),
-                                        getIndexType());
   });
 
   // Convert struct types to LLVM literal structs.
@@ -256,16 +284,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return Builder(&getContext()).getI8Type();
   });
 
-  addConversion([=](SignatureType signatureType) -> std::optional<Type> {
-    MLIRContext *ctx = signatureType.getContext();
-    if (signatureType.isCapturing()) {
-      auto pointerTy = LLVM::LLVMPointerType::get(ctx);
-      return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
-    } else {
-      return convertType(signatureType.getValues());
-    }
-  });
-
   // Convert variant types to a struct with enough space to contain the largest
   // variant type plus a discriminator.
   addConversion([=](POP::VariantType variant) -> std::optional<Type> {
@@ -293,18 +311,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
         std::max(1u, llvm::Log2_32_Ceil(variant.getTypes().size())));
     return LLVM::LLVMStructType::getLiteral(&getContext(),
                                             {contentType, discrType});
-  });
-
-  // Variadic types are converted to a struct representing a pointer to the
-  // elements of the sequence, and the sequence size.
-  addConversion([=](KGEN::VariadicType variadic) -> std::optional<Type> {
-    Type convertedType = convertType(variadic.getElementAsType());
-    if (!convertedType)
-      return {};
-
-    return LLVM::LLVMStructType::getLiteral(
-        &getContext(),
-        {LLVM::LLVMPointerType::get(convertedType), getIndexType()});
   });
 
   // Coroutine handles are always lowered to opaque pointers.
