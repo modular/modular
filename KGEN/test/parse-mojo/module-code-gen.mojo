@@ -306,10 +306,10 @@ fn makes_escaping_closure(x: __mlir_type[`!pop.pointer<`, Int, `>`],
 fn foo(x:Int, y:String, z: String):
    pass
 
-# CHECK: lit.struct.field field0 : !pop.pointer<!Int>
+# CHECK: lit.struct.field field0 : !Int
 # CHECK: lit.struct.field field1 : !String
 # CHECK: lit.struct.field field2 : !String
-# CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@"{{.*}}"> init_self, %field0: !pop.pointer<!Int>, %field1: !pop.pointer<!String> owned_in_mem, %field2: !pop.pointer<!String> owned_in_mem)
+# CHECK: lit.func @"__init__{{.*}}"(%self: !pop.pointer<@"{{.*}}"> init_self, %field0: !Int, %field1: !pop.pointer<!String> owned_in_mem, %field2: !pop.pointer<!String> owned_in_mem)
 fn makes_escaping_closure(owned x: Int,
                           owned y: String,
                           inout z: String):
@@ -330,3 +330,34 @@ fn foo():
    fn bar() escaping -> Int:
       let x = w + w
       return x
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# SLValues
+##===----------------------------------------------------------------------===##
+
+fn make_pointer() -> __mlir_type.`!pop.pointer<index>`:
+   let alignment = 0
+   let size = 8
+   return __mlir_op.`pop.aligned_alloc`[
+           _type : __mlir_type.`!pop.pointer<index>`
+       ](alignment.value, size.value)
+
+# CHECK: lit.struct.decl @"_CI_
+# CHECK-NEXT: lit.struct.field field0 : !pop.pointer<index>
+# CHECK-NEXT: lit.struct.field field1 : !pop.pointer<index>
+# CHECK-NEXT: lit.struct.field field2 : !Int
+# CHECK-NEXT: lit.struct.field field3 : !Int
+
+# CHECK: (%self: !pop.pointer<@{{.*}}"_CI_{{.*}}"> init_self, %field0: !pop.pointer<index>, %field1: !pop.pointer<index>, %field2: !Int, %field3: !Int)
+fn foo(owned y:Int):
+  var w = 5
+  var q = make_pointer()
+  let u = make_pointer()
+  fn bar() escaping -> Int:
+     __mlir_op.`pop.aligned_free`(q)
+     __mlir_op.`pop.aligned_free`(u)
+     y = y + 1
+     w = w + 1
+     return w

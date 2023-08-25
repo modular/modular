@@ -524,7 +524,8 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
   if (auto slValue = value.getIfSLValue()) {
     if (ASTType(slValue.getRValueType())
             .isRegisterPassable(expr->getLoc(), emitter.shared)) {
-      capture = Capture(mlirValue, value.getType(), value.getType());
+      capture =
+          Capture(mlirValue, value.getRValueType(), value.getRValueType());
       return value;
     }
   }
