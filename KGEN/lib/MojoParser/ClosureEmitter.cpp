@@ -174,11 +174,12 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFunctionDecl, ClosureCache &cache) {
   FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   assert(nestedFunction && "a function must back the nestedFunctionDecl");
-  ArrayRef<Capture> captures = shared.getCapturesInScope(nestedFunctionDecl);
+  auto captureRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
   SmallVector<Type> closureImplSigTypes;
   SmallVector<ValueInputConvention> closureImplSigConventions;
 
-  unsigned captureCount = captures.size();
+  unsigned captureCount =
+      std::distance(captureRange.begin(), captureRange.end());
   unsigned initArgCount = captureCount + 1;
   SmallVector<Type> fieldTypes;
   SmallVector<Type> initSigTypes(initArgCount);
@@ -187,7 +188,8 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
   ExprEmitter emitter(shared, nestedFunctionDecl, EC_Type);
   // TODO: Enable expression of how to capture.
   unsigned i = 0;
-  for (Capture capture : captures) {
+  for (auto &declCaptureIter : captureRange) {
+    Capture capture = declCaptureIter.second;
     Type fieldType = capture.getFieldType();
     Type initType = capture.getInitType();
 

@@ -166,7 +166,8 @@ struct SharedState::Impl : public ClosureCache {
 
   /// The capture values and decls associated with their enclosing nested
   /// function.
-  llvm::DenseMap<ASTDecl *, llvm::SmallVector<Capture, 0>> capturesInScope;
+  llvm::DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>>
+      capturesInScope;
 };
 
 StructDeclOp SharedState::Impl::getExisting(ClosureHash key) {
@@ -1793,12 +1794,16 @@ LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
   return emitter.createClosureImplStructDecl(location, nestedFunc, *this->impl);
 }
 
-ArrayRef<Capture> SharedState::getCapturesInScope(ASTDecl &scope) {
-  return getImpl().capturesInScope[&scope];
+iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
+SharedState::getCaptureRangeInScope(ASTDecl &scope) {
+  llvm::MapVector<ASTDecl *, Capture> &result =
+      getImpl().capturesInScope[&scope];
+  return {result.begin(), result.end()};
 }
 
-void SharedState::addCaptureToScope(ASTDecl &scope, Capture capture) {
-  getImpl().capturesInScope[&scope].push_back(capture);
+void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
+                                    Capture capture) {
+  getImpl().capturesInScope[&scope].insert({captureDecl, capture});
 }
 
 //===----------------------------------------------------------------------===//

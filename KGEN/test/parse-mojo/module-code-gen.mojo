@@ -315,3 +315,18 @@ fn makes_escaping_closure(owned x: Int,
                           inout z: String):
    fn take_owned_and_escape() escaping -> NoneType:
       foo(x, y, z)
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Multiple References
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.struct.decl @"_CI_
+# CHECK-NEXT: lit.struct.field field0 : !Int
+# CHECK-NEXT: lit.func @"__copyinit__
+fn foo():
+   let w = 5
+   fn bar() escaping -> Int:
+      let x = w + w
+      return x
