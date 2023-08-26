@@ -514,6 +514,139 @@ struct PackMatrixCols[
             row_idx += unroll_factor
 
 
+struct LoadStoreOutputTile[
+    type: DType,
+    simd_size: Int,
+    tile_rows: Int,
+    tile_columns: Int,
+    is_load: Bool,
+]:
+    var output_tile: NDBuffer[2, DimList(tile_rows, tile_columns), type]
+    var row_ptrs: Pointer[DTypePointer[type]]
+    var load_store_count: Int
+
+    @always_inline
+    fn __init__(
+        inout self,
+        output_tile: NDBuffer[2, DimList(tile_rows, tile_columns), type],
+        row_ptrs: Pointer[DTypePointer[type]],
+        load_store_count: Int,
+    ):
+        self.output_tile = output_tile
+        self.row_ptrs = row_ptrs
+        self.load_store_count = load_store_count
+
+    @always_inline
+    fn _load_store_columns[
+        base_column: Int,
+        column_count: Int,
+    ](self):
+        """Loads or stores one or more columns from the base column for each
+        row of the tile."""
+
+        @unroll
+        for row in range(tile_rows):
+            # Iterate twice for a pairwise load/store or once for any other access.
+            alias column_step = min(column_count, simd_size)
+
+            @unroll
+            for col in range(
+                base_column, base_column + column_count, column_step
+            ):
+
+                @parameter
+                if is_load:
+                    let data = self.row_ptrs[row].offset(col).simd_load[
+                        column_step
+                    ]()
+                    self.output_tile.simd_store(Index(row, col), data)
+                else:
+                    let data = self.output_tile.simd_load[column_step](
+                        Index(row, col)
+                    )
+                    self.row_ptrs[row].offset(col).simd_store(data)
+
+    @always_inline
+    fn _load_store_tail[
+        base_column: Int,
+        tail_size: Int,
+    ](self):
+        """Loads/stores the last elements of the tile that cannot be accessed
+        pairwise."""
+
+        if self.load_store_count & tail_size:
+            self._load_store_columns[base_column, tail_size]()
+
+            alias tile_columns_remaining = tile_columns - base_column - tail_size
+
+            @parameter
+            if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
+                self._load_store_tail[base_column + tail_size, tail_size // 2]()
+            return
+
+        @parameter
+        if tail_size > 1:
+            self._load_store_tail[base_column, tail_size // 2]()
+
+    @always_inline
+    fn _load_store_pairwise[
+        base_column: Int,
+    ](self):
+        """Loads/stores all pairwise vectors of the tile and dispatches the
+        remaining non-pairwise elements."""
+
+        alias tile_columns_remaining = tile_columns - base_column
+
+        # Support fusion of LDP/STP instructions by emitting pairs of load/store
+        # vector instructions.
+        @parameter
+        if tile_columns_remaining >= 2 * simd_size:
+            if self.load_store_count >= base_column + 2 * simd_size:
+                self._load_store_columns[base_column, 2 * simd_size]()
+                self._load_store_pairwise[base_column + 2 * simd_size]()
+                return
+
+        @parameter
+        if tile_columns_remaining >= simd_size:
+            self._load_store_tail[base_column, simd_size]()
+
+    @staticmethod
+    @always_inline
+    fn run(
+        output_tile: NDBuffer[2, DimList(tile_rows, tile_columns), type],
+        ptr: DTypePointer[type],
+        stride: Int,
+        load_store_count: Int,
+    ):
+        """Interface function to run the load/store output tile.
+        Args:
+            output_tile(NDBuffer): output register tile buffer.
+            ptr(DTypePointer): data buffer to use for transferring the tile
+                buffer.
+            stride(Int): stride to use when stepping through rows of the data
+                buffer.
+            load_store_count(Int): number of elements to load/store.
+        """
+        # Compute the pointers to each row of the memory buffer.
+        # Note that the compiler produces better code if each pointer is calculated
+        # relative to the previous pointer. Using (N * row) causes the compiler to
+        # allocate locals to cache the intermediate results.
+        let row_ptrs = stack_allocation[tile_rows, DTypePointer[type]]()
+
+        @unroll
+        for row in range(tile_rows):
+            row_ptrs.store(
+                row, ptr if row == 0 else row_ptrs[row - 1].offset(stride)
+            )
+
+        let instance = Self(
+            output_tile,
+            row_ptrs,
+            load_store_count,
+        )
+        instance._load_store_pairwise[0]()
+
+
 struct MatmulInnerLoopBPacked[
     shape_a: DimList,
     shape_c: DimList,
@@ -649,6 +782,20 @@ struct MatmulInnerLoopBPacked[
             + tile_idx[1]
         )
 
+        # TODO: For NEON, avoid skip_boundary_check and always use this helper
+        # to generate the load/store sequence.
+        @parameter
+        if has_neon() and not skip_boundary_check:
+            self._initialize_c_tile(c_local)
+            return LoadStoreOutputTile[
+                c_type, simd_size, a_row_size, pack_inner_size, True
+            ].run(
+                c_local,
+                c_ptr,
+                N,
+                min(self.c_bound[1] - tile_idx[1], pack_inner_size),
+            )
+
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
@@ -704,6 +851,19 @@ struct MatmulInnerLoopBPacked[
             + self.global_offset.N
             + tile_idx[1]
         )
+
+        # TODO: For NEON, avoid skip_boundary_check and always use this helper
+        # to generate the load/store sequence.
+        @parameter
+        if has_neon() and not skip_boundary_check:
+            return LoadStoreOutputTile[
+                c_type, simd_size, a_row_size, pack_inner_size, False
+            ].run(
+                c_local,
+                c_ptr,
+                N,
+                min(self.c_bound[1] - tile_idx[1], pack_inner_size),
+            )
 
         @always_inline
         @parameter
