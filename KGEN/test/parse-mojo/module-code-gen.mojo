@@ -275,6 +275,7 @@ fn materialize_escaping_closure(m: String, z:String):
 # CHECK: lit.struct.field field3 : !kgen.pointer<index>
 # CHECK: lit.struct.field field4 : !String
 # CHECK: lit.struct.field field5 : !String
+# CHECK: lit.struct.field field6 : !Int
 
 # CHECK: lit.func @"__init__({{.*}}_CI_{{.*}} init_self,
 # CHECK-SAME: %field0: !kgen.pointer<!String>, %field1: !kgen.pointer<!String>, %field2: !kgen.pointer<!Int>,
@@ -282,7 +283,7 @@ fn materialize_escaping_closure(m: String, z:String):
 fn doNothing(x:__mlir_type[`!kgen.pointer<`, String, `>`], y:__mlir_type[`!kgen.pointer<`, String, `>`]):
    pass
 
-fn doNothingAgain(x:__mlir_type[`!kgen.pointer<`, Int, `>`], y:__mlir_type.`!kgen.pointer<index>`, w:String, local:String):
+fn doNothingAgain(x:__mlir_type[`!kgen.pointer<`, Int, `>`], y:__mlir_type.`!kgen.pointer<index>`, w:String, local:String, size:Int):
    pass
 
 fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
@@ -295,7 +296,7 @@ fn makes_escaping_closure(x: __mlir_type[`!kgen.pointer<`, Int, `>`],
    let local_ptr: __mlir_type[`!kgen.pointer<`, String, `>`] = __mlir_op.`pop.aligned_alloc`[_type : __mlir_type[`!kgen.pointer<`, String, `>`]](alignment.value, size.value)
    fn do_stuff_with_pointers() escaping -> NoneType:
       doNothing(local_ptr, z)
-      doNothingAgain(x,y,local,w)
+      doNothingAgain(x, y, local, w, size)
 
 # // -----
 
@@ -361,3 +362,61 @@ fn foo(owned y:Int):
      y = y + 1
      w = w + 1
      return w
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Closure Impl Call
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<@{{.*}}> borrow_in_mem, %arg0: !Int, %arg1: !Int borrow) -> !lit.none
+# CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
+# CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT: %q = lit.varlet.decl "q", var = true, synth = true : <!Int>
+# CHECK-NEXT: pop.store %arg0, %q : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : (!Int borrow, !Int borrow) -> !Int
+# CHECK-NEXT: pop.store %[[V4]], %[[V0]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V5:.*]] = pop.load %[[V1]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[V6:.*]] = kgen.call @{{.*}}@"print{{.*}}"(%[[V5]]) : (!Int borrow) -> !lit.none
+# CHECK-NEXT: %[[V7:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.return %[[V7]] : !lit.none
+# CHECK-NEXT: lit.end_func
+
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<@{{.*}}> borrow_in_mem, %arg0: !Int borrow) -> !lit.none
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
+# CHECK-NEXT: %[[W1:.*]] = kgen.call @{{.*}}::@"print{{.*}}"(%[[W0]])
+# CHECK-NEXT: %[[W2:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.return %[[W2]] : !lit.none
+# CHECK-NEXT: lit.end_func
+
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<@{{.*}}> borrow_in_mem) -> index
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <index>
+# CHECK-NEXT: %[[W1:.*]] = pop.load %[[W0]] : !kgen.pointer<index>
+# CHECK-NEXT: %[[W2:.*]] = lit.struct.gep %self[field1] : <!Int>
+# CHECK-NEXT: %[[W3:.*]] = lit.struct.gep %[[W2]][value] : <index> from <!Int>
+# CHECK-NEXT: %[[W4:.*]] = pop.load %[[W3]] : !kgen.pointer<index>
+# CHECK-NEXT: %[[W5:.*]] = index.mul %[[W1]], %[[W4]]
+# CHECK-NEXT: lit.return %[[W5]] : index
+# CHECK-NEXT: lit.end_func
+
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %arg1: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
+# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__", var = true, synth = true : <!String>
+# CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%__call_result_tmp__, %[[W0]], %arg1)
+# CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %__call_result_tmp__)
+# CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.return %[[W4]] : !lit.none
+# CHECK-NEXT: lit.end_func
+fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
+   var x = w
+   fn ret_mem(y: String) escaping -> String:
+      return m + y
+   fn ret_mlir_type() escaping -> __mlir_type.index:
+      return __mlir_op.`index.mul`(z, w.value)
+   fn ret_none(p: Int) escaping -> NoneType:
+      print(m)
+   fn capture_slvalue(owned q: Int, ww: Int) escaping -> NoneType:
+      x = x + x
+      print(w)

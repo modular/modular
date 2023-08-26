@@ -2230,9 +2230,6 @@ static void emitClosureInstance(SignatureType closureSignature,
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
       location, nestedFunctionDecl, fileModuleOp);
-  TypedAttr signatureAttr = SymbolConstantAttr::get(
-      getFullyResolvedSymbolRef(nestedFunction), closureSignature);
-  closureImpl.setClosureSignatureAttr(signatureAttr);
   auto closureWrapper = shared.getOrGenerateClosureWrapperStruct(
       location, nestedFunction.getSignature(), fileModuleOp);
   ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
