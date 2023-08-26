@@ -259,26 +259,7 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(createCanonicalizer());
   }
 
-  // Run the AutomaticInliner with an inner function pass pipeline.
-  auto buildAutomaticInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
-    pm.addPass(createCleanupCompilerGlobals());
-    if (options.optimizationLevel < 1)
-      return;
-    pm.addPass(createSimplifyCF());
-    pm.addPass(createSROA());
-    pm.addPass(createMem2Reg());
-    // TODO: can't run HoistTrivailInvariants pass till divs UB is fixed
-    // pm.addPass(createHoistTrivialInvariants());
-    pm.addPass(createStackReuse());
-    pm.addPass(mlir::createCSEPass());
-    pm.addPass(createCanonicalizer());
-  };
-
-  pm.addPass(createAutomaticInline(
-      runtime,
-      {options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug,
-       options.optimizationLevel},
-      std::move(buildAutomaticInlinerFuncPasses)));
+  // TODO: Enable AutomaticInline pass here.
 
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
