@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 
@@ -151,6 +152,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
       declOp, parent.getLoc(), astDecl, /*generateFieldwiseInit*/ false,
       /*forceGenerateDestructor*/ true);
+  assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs.getDestructor();
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
@@ -168,6 +170,19 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   populateMoveCopy(builder, copy, copyCtr, impl, noneType);
   populateMoveCopy(builder, move, moveCtr, impl, noneType);
   return declOp;
+}
+
+static bool isSLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
+  if (astDecl->getIfLValue())
+    return true;
+  if (Operation *op = astDecl->getIfOperation()) {
+    if (auto varlet = dyn_cast<VarLetDeclOp>(op)) {
+      if (ASTType(varlet.getType().getElementAsType())
+              .isRegisterPassable(loc, shared))
+        return true;
+    }
+  }
+  return false;
 }
 
 StructDeclOp ClosureEmitter::createClosureImplStructDecl(
@@ -239,6 +254,7 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
                                            fileModuleOp.getSymNameAttrName());
   if (auto existing = cache.getExisting(key))
     return existing;
+  bool hasByRefReturn = closureWrapperSignature.hasMemoryOnlyResult();
 
   StringAttr name =
       getClosureNameFromType("_CI_", fileModuleOp, closureImplSignature);
@@ -282,6 +298,104 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
     declOp.setMoveInitAttr(moveCtr.getBoundReference());
 
   declOp.setCopyInitAttr(copyCtr.getBoundReference());
+
+  // Generate the __call__ method.
+
+  // Build the call signature from the closure signature. This means inserting
+  // the self argument in the correct location.
+  unsigned callArgCount = closureWrapperSignature.getNumInputs() + 1;
+  SmallVector<Type> callInputTypes;
+  callInputTypes.reserve(callArgCount);
+  SmallVector<ValueInputConvention> callConventions;
+  callConventions.reserve(callArgCount);
+  SmallVector<StringAttr> callNames;
+  callNames.reserve(callArgCount);
+  assert(closureImplSignature.getValueResults().size() == 1 &&
+         "Multiple outputs are not supported.");
+  Type closureResultType = closureImplSignature.getValueResults().front();
+
+  // Move by ref result argument to front before self argument.
+  if (hasByRefReturn) {
+    callInputTypes.push_back(closureWrapperSignature.getValueInputs()[0]);
+    callConventions.push_back(closureWrapperSignature.getInputConvention(0));
+    callNames.push_back(StringAttr::get(shared.getContext(), "__result__"));
+  }
+
+  // Currently Closure Impls are not register passable, so use BorrowInMem
+  // convention.
+  callInputTypes.push_back(ptrToClosureImplType);
+  callConventions.push_back(ValueInputConvention::BorrowedInMem);
+  callNames.push_back(StringAttr::get(shared.getContext(), "self"));
+  for (unsigned i = hasByRefReturn, e = closureWrapperSignature.getNumInputs();
+       i < e; ++i) {
+    callInputTypes.push_back(closureWrapperSignature.getValueInputs()[i]);
+    callConventions.push_back(closureWrapperSignature.getInputConvention(i));
+    callNames.push_back(
+        StringAttr::get(shared.getContext(), "arg" + std::to_string(i)));
+  }
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      declOp.getLoc(), &declOp.getFields().front());
+  StringRef baseName = "__call__";
+  LIT::FuncOp callFunc = structEmitter.createFunction(
+      baseName, callInputTypes, callConventions, callNames, closureResultType,
+      SpecialFunctionKind::kNormal, location, builder);
+
+  // Populate the body of the call op.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = callFunc.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  // Clone the body of the nested function. When closures are turned on, we can
+  // take the body and remove the nested function op from the IR. For now though
+  // to preserve the old pipeline we leave the original nested function intact.
+  IRMapping mapping;
+  callFunc.getBody()->erase();
+  nestedFunction.getBodyRegion().cloneInto(&callFunc.getBodyRegion(), mapping);
+  Location callFuncLocation = callFunc.getLoc();
+  DebugInfo::DISubprogramAttr subprogramAttrOfCallFunc;
+
+  if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
+          callFuncLocation)) {
+    subprogramAttrOfCallFunc = fusedLoc.getMetadata();
+    DebugInfo::DISubprogramAttr subprogramAttrOfOriginalFunc;
+    if (auto fusedLocOriginal =
+            dyn_cast<mlir::FusedLocWith<DebugInfo::DISubprogramAttr>>(
+                nestedFunction.getLoc()))
+      subprogramAttrOfOriginalFunc = fusedLocOriginal.getMetadata();
+
+    // After cloning the DI attributes will be referencing the original
+    // function. We need it to reference the new function. Traverse each
+    // operation and attributes recursively to update all the DI attributes.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](DebugInfo::DISubprogramAttr sp) {
+      if (subprogramAttrOfOriginalFunc == sp)
+        return subprogramAttrOfCallFunc;
+      else
+        return sp;
+    });
+    replacer.recursivelyReplaceElementsIn(callFunc, true, true);
+  }
+
+  builder =
+      ImplicitLocOpBuilder::atBlockBegin(callFunc.getLoc(), callFunc.getBody());
+  SmallVector<Value> fieldValues;
+  Value selfArg = callFunc.getBodyRegion().insertArgument(
+      hasByRefReturn, ptrToClosureImplType, callFuncLocation);
+  for (auto [declAndCapture, fieldOp] :
+       llvm::zip(captureRange, declOp.getFieldDecls())) {
+    Capture capture = declAndCapture.second;
+    auto ptrToField = builder.create<StructGEPOp>(selfArg, fieldOp);
+    bool isRegisterPassable =
+        ASTType(fieldOp.getType()).isRegisterPassable(location, shared);
+    bool expectsPointer = !isRegisterPassable;
+    if (isSLValue(declAndCapture.first, location, shared))
+      expectsPointer = true;
+    Value target = expectsPointer
+                       ? ptrToField
+                       : builder.create<POP::LoadOp>(ptrToField).getResult();
+    replaceAllUsesInRegionWith(capture.getMlirValue(), target,
+                               callFunc.getBodyRegion());
+  }
   cache.storeClosure(key, declOp);
   return declOp;
 }
