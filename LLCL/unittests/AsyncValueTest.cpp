@@ -13,7 +13,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/Semaphore.h"
-#include <llvm/Support/Threading.h>
+#include "llvm/Support/Threading.h"
 
 #include "gtest/gtest.h"
 
