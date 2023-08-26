@@ -373,7 +373,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
     }
     %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@MyStruct>
     %3 = kgen.call @MyStruct::@__init__(%anonymous2A) : (!kgen.pointer<@MyStruct> init_self) -> !lit.none
-    %6 = kgen.call @use(%anonymous2A) : (!kgen.pointer<@MyStruct> borrow_in_mem) -> !lit.none
+    %6 = kgen.call @use(%anonymous2A) : (!kgen.pointer<@MyStruct> borrow_in_mem) vararg -> !lit.none
     // CHECK: kgen.call @MyStruct::@__del__(%anonymous2A) : (!kgen.pointer<@MyStruct> owned_in_mem) -> !lit.none
     hlcf.yield
   }

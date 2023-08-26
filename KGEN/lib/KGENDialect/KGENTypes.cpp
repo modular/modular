@@ -182,23 +182,22 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             getMetadata().getWithFnEffects(effects));
 }
 
-static bool isVarargKind(FnEffects effects, size_t numInputs, size_t index,
-                         FnEffects kind) {
-  if (!bitEnumContainsAny(effects, kind))
+static bool isVarargKind(SignatureType type, size_t index, FnEffects kind) {
+  if (!bitEnumContainsAny(type.getFnEffects(), kind))
     return false;
   // If the function has keyword varargs, the vararg index is the second last.
   // Otherwise, it's the last.
-  return (index + 1 + bitEnumContainsAny(effects, FnEffects::KWVararg)) ==
-         numInputs;
+  return (index + 1 +
+          bitEnumContainsAny(type.getFnEffects(), FnEffects::KWVararg)) ==
+         type.getNumInputs();
 }
 
 bool SignatureType::isVararg(size_t index) {
-  return isVarargKind(getFnEffects(), getNumInputs(), index, FnEffects::Vararg);
+  return isVarargKind(*this, index, FnEffects::Vararg);
 }
 
 bool SignatureType::isPackVararg(size_t index) {
-  return isVarargKind(getFnEffects(), getNumInputs(), index,
-                      FnEffects::PackVararg);
+  return isVarargKind(*this, index, FnEffects::PackVararg);
 }
 
 bool SignatureType::isKWVararg(size_t index) {
@@ -368,70 +367,7 @@ LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypeArrayAttr inputParams, TypeArrayAttr resultParams,
                       FunctionType values, FnMetadataAttr metadata) {
-  // Check we have the right number of conventions.
-  if (metadata.getInputConventions().size() != values.getInputs().size())
-    return emitError() << "incorrect # of input conventions specified";
-
-  bool hasVararg = bitEnumContainsAny(
-      metadata.getFnEffects(), FnEffects::Vararg | FnEffects::PackVararg);
-  unsigned minNumArgs = hasVararg + bitEnumContainsAny(metadata.getFnEffects(),
-                                                       FnEffects::KWVararg);
-  if (values.getNumInputs() < minNumArgs) {
-    return emitError()
-           << "function has varargs and/or kwvarargs but signature only has "
-           << values.getNumInputs() << " arguments";
-  }
-
-  // Verify input convention and argument types.
-  for (auto [i, argType, conv] :
-       llvm::enumerate(values.getInputs(), metadata.getInputConventions())) {
-    Type type = argType;
-    // Verify variadics.
-    if (isVarargKind(metadata.getFnEffects(), values.getNumInputs(), i,
-                     FnEffects::Vararg)) {
-      auto variadic = ::dyn_cast<VariadicType>(type);
-      if (!variadic) {
-        return emitError() << "argument #" << i
-                           << " in signature with varargs should be a "
-                              "`!kgen.variadic` but got: "
-                           << type;
-      }
-      type = variadic.getElementAsType();
-    }
-    // Verify argument conventions.
-    switch (conv) {
-    case ValueInputConvention::BorrowedInMem:
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::InitSelf:
-    case ValueInputConvention::OwnedInMem:
-      if (::isa<PointerType>(type))
-        break;
-      return emitError()
-             << "argument #" << i << " with convention '" << stringifyEnum(conv)
-             << "' in signature type should be a `!kgen.pointer` but got: "
-             << type;
-    default:
-      break;
-    }
-  }
-
-  ArrayRef<TypedAttr> defaults = metadata.getDefaultArguments();
-  for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-    size_t index = values.getInputs().size() - defaults.size() + defaultsIndex;
-    Type expected = values.getInputs()[index];
-    if (value.getType() != expected) {
-      return emitError() << "argument #" << index << " has type " << expected
-                         << " but default argument has type "
-                         << value.getType();
-    }
-  }
-  // If the function throws an error, make sure it has one variant result.
-  if (bitEnumContainsAny(metadata.getFnEffects(), FnEffects::Throws) &&
-      values.getNumResults() != 1)
-    return emitError() << "a function that throws should have 1 result";
-
-  return success();
+  return metadata.verifySignature(emitError, inputParams, resultParams, values);
 }
 
 std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
