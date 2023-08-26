@@ -2656,7 +2656,6 @@ struct ConvDirectNHWC[
                     elementwise_epilogue_fn,
                 )
                 instance._n_loop()
-                print("conv padding end")
 
         if num_partitions[1] > 1:
             # Finish the conv computation and sync at the end.
