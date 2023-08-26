@@ -247,7 +247,7 @@ struct Tensor[dtype: DType]:
         Returns:
           The value at the specified indices.
         """
-        return self[VariadicList[Int](indices)]
+        return self.simd_load[1](VariadicList[Int](indices))
 
     @always_inline
     fn __getitem__(self, indices: VariadicList[Int]) -> SIMD[dtype, 1]:
@@ -259,14 +259,16 @@ struct Tensor[dtype: DType]:
         Returns:
           The value at the specified indices.
         """
-        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
-        return self._ptr.load(self._compute_linear_offset(indices))
+        return self.simd_load[1](indices)
 
     @always_inline
     fn __getitem__[
-        rank: Int
-    ](self, indices: StaticIntTuple[rank]) -> SIMD[dtype, 1]:
-        """Gets the value at the specified indices.
+        len: Int
+    ](self, indices: StaticIntTuple[len]) -> SIMD[dtype, 1]:
+        """Gets the SIMD value at the specified indices.
+
+        Parameters:
+          len: The length of the indecies.
 
         Args:
           indices: The indices of the value to retrieve.
@@ -274,8 +276,81 @@ struct Tensor[dtype: DType]:
         Returns:
           The value at the specified indices.
         """
-        debug_assert(rank == self.rank(), "invalid rank value")
-        return self._ptr.load(self._compute_linear_offset(indices))
+        return self.simd_load[1](indices)
+
+    @always_inline
+    fn simd_load[simd_width: Int](self, index: Int) -> SIMD[dtype, simd_width]:
+        """Gets the SIMD value at the specified index.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+
+        Args:
+          index: The index of the value to retrieve.
+
+        Returns:
+          The SIMD value at the specified indices.
+        """
+        debug_assert(self.rank() == 1, "rank must be 1")
+        return self._ptr.simd_load[simd_width](index)
+
+    @always_inline
+    fn simd_load[
+        simd_width: Int
+    ](self, *indices: Int) -> SIMD[dtype, simd_width]:
+        """Gets the SIMD value at the specified indices.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+
+        Args:
+          indices: The indices of the value to retrieve.
+
+        Returns:
+          The SIMD value at the specified indices.
+        """
+        return self.simd_load[simd_width](VariadicList[Int](indices))
+
+    @always_inline
+    fn simd_load[
+        simd_width: Int
+    ](self, indices: VariadicList[Int]) -> SIMD[dtype, simd_width]:
+        """Gets the SIMD value at the specified indices.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+
+        Args:
+          indices: The indices of the value to retrieve.
+
+        Returns:
+          The SIMD value at the specified indices.
+        """
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
+        return self._ptr.simd_load[simd_width](
+            self._compute_linear_offset(indices)
+        )
+
+    @always_inline
+    fn simd_load[
+        simd_width: Int, len: Int
+    ](self, indices: StaticIntTuple[len]) -> SIMD[dtype, simd_width]:
+        """Gets the SIMD value at the specified indices.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+          len: The length of the indecies.
+
+        Args:
+          indices: The indices of the value to retrieve.
+
+        Returns:
+          The SIMD value at the specified indices.
+        """
+        debug_assert(len == self.rank(), "invalid length value")
+        return self._ptr.simd_load[simd_width](
+            self._compute_linear_offset(indices)
+        )
 
     @always_inline
     fn __setitem__(inout self, index: Int, val: SIMD[dtype, 1]):
@@ -286,7 +361,7 @@ struct Tensor[dtype: DType]:
           val: The value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        return self._ptr.store(index, val)
+        self.simd_store[1](index, val)
 
     @always_inline
     fn __setitem__(inout self, indices: VariadicList[Int], val: SIMD[dtype, 1]):
@@ -296,21 +371,75 @@ struct Tensor[dtype: DType]:
           indices: The indices of the value to set.
           val: The value to store.
         """
-        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
-        return self._ptr.store(self._compute_linear_offset(indices), val)
+        self.simd_store[1](indices, val)
 
     @always_inline
     fn __setitem__[
-        rank: Int
-    ](inout self, indices: StaticIntTuple[rank], val: SIMD[dtype, 1]):
+        len: Int
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, 1]):
         """Sets the value at the specified indices.
+
+        Parameters:
+          len: The length of the indecies.
 
         Args:
           indices: The indices of the value to set.
           val: The value to store.
         """
-        debug_assert(rank == self.rank(), "invalid rank value")
-        return self._ptr.store(self._compute_linear_offset(indices), val)
+        self.simd_store[1, len](indices, val)
+
+    @always_inline
+    fn simd_store[
+        simd_width: Int
+    ](inout self, index: Int, val: SIMD[dtype, simd_width]):
+        """Sets the SIMD value at the specified index.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+
+        Args:
+          index: The index of the value to set.
+          val: The SIMD value to store.
+        """
+        debug_assert(self.rank() == 1, "rank must be 1")
+        self._ptr.simd_store[simd_width](index, val)
+
+    @always_inline
+    fn simd_store[
+        simd_width: Int
+    ](inout self, indices: VariadicList[Int], val: SIMD[dtype, simd_width]):
+        """Sets the SIMD value at the specified indices.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+
+        Args:
+          indices: The indices of the value to set.
+          val: The SIMD value to store.
+        """
+        debug_assert(indices.__len__() == self.rank(), "invalid rank value")
+        self._ptr.simd_store[simd_width](
+            self._compute_linear_offset(indices), val
+        )
+
+    @always_inline
+    fn simd_store[
+        simd_width: Int, len: Int
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, simd_width]):
+        """Sets the SIMD value at the specified indices.
+
+        Parameters:
+          simd_width: The SIMD width of the vector.
+          len: The length of the indecies.
+
+        Args:
+          indices: The indices of the value to set.
+          val: The SIMD value to store.
+        """
+        debug_assert(len == self.rank(), "invalid length value")
+        self._ptr.simd_store[simd_width](
+            self._compute_linear_offset(indices), val
+        )
 
     @always_inline
     fn _compute_linear_offset[
