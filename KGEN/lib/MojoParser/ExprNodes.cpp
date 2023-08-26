@@ -716,63 +716,25 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 static ASTType parseMLIRType(StringRef name, const ExprNode *node,
                              SharedState &shared) {
   Type result;
+  std::vector<Diagnostic> typeDiagnostics;
   {
-    // Capture errors thrown by parseType and ignore them.
-    // FIXME: This doesn't silence errors!
+    // Capture errors thrown by parseType.
+    auto diagHandler = [&](Diagnostic &diag) {
+      typeDiagnostics.push_back(std::move(diag));
+    };
     mlir::ScopedDiagnosticHandler handler(shared.getContext(),
-                                          [](Diagnostic &diag) {});
-
-    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
-    // Copy the string into a temporary smallvector so we can make sure it is
-    // nul terminated for the MLIR asmparser.
-    SmallString<64> tmpBuf(name.begin(), name.end());
-    tmpBuf.push_back(0);
-    // FIXME(#9621): Need to track the number of bytes read because we pass in
-    // more than just the attribute we actually want to parse. This avoids
-    // returning an error but is actually just masking the real problem.
-    size_t bytesRead;
-    result = mlir::parseType(StringRef(tmpBuf).drop_back(), shared.getContext(),
-                             &bytesRead);
+                                          std::move(diagHandler));
+    result = mlir::parseType(name, shared.getContext());
   }
-  if (!result)
-    shared.emitError(node->getLoc(), "unknown MLIR type: ")
+  if (!result) {
+    InflightDiag diagnostic =
+        shared.emitError(node->getLoc(), "invalid MLIR type: ")
         << name << node->getRange();
-
-  // The parser is sensitive to certain "builtin" types and expects them to
-  // follow certain invariants. For handwritten MLIR types, this is not always
-  // guaranteed, so verify them here.
-  if (auto sig = dyn_cast_or_null<SignatureType>(result)) {
-    // Verify argument conventions.
-    for (auto [i, argType, conv] : llvm::enumerate(
-             sig.getValueInputs(), sig.getValueInputConventions())) {
-      Type type = argType;
-      if (sig.isVararg(i)) {
-        auto variadic = dyn_cast<VariadicType>(type);
-        if (!variadic) {
-          shared.emitError(node->getLoc(), "argument #")
-              << i
-              << " in manually specified signature type should be a "
-                 "`!kgen.variadic`";
-          return {};
-        }
-        type = ASTType(variadic.getElementType());
-      }
-      switch (conv) {
-      default:
-        break;
-      case ValueInputConvention::BorrowedInMem:
-      case ValueInputConvention::ByRef:
-      case ValueInputConvention::ByRefResult:
-      case ValueInputConvention::OwnedInMem:
-        if (!isa<PointerType>(type)) {
-          shared.emitError(node->getLoc(), "argument #")
-              << i
-              << " in manually specified signature type should be a "
-                 "`!kgen.pointer`";
-          return {};
-        }
-        break;
-      }
+    for (Diagnostic &diag : typeDiagnostics) {
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      diag.print(os);
+      diagnostic.attachNote(node->getLoc()) << "MLIR error: " << str;
     }
   }
   return result;
