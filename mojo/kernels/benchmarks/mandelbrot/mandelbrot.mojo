@@ -12,9 +12,10 @@
 
 
 from builtin.io import _printf
+from utils.index import Index
 from utils.vector import DynamicVector
 from memory.buffer import Buffer
-from Matrix import Matrix
+from tensor import Tensor
 from utils.list import Dim, DimList
 from runtime.llcl import (
     num_cores,
@@ -49,17 +50,14 @@ alias min_y = -1.12
 alias max_y = 1.12
 
 
-fn draw_mandelbrot[h: Int, w: Int](out: Matrix[DimList(h, w), int_type, False]):
-    let sr = StringRef(".,c8M@jawrpogOQEPGJ")
-    let charset = Buffer[Dim(), DType.int8](
-        rebind[DTypePointer[DType.int8]](sr.data), sr.length
-    )
-    for row in range(h):
-        for col in range(w):
+fn draw_mandelbrot(inout out: Tensor[int_type]):
+    let charset = String(".,c8M@jawrpogOQEPGJ")
+    for row in range(out.dim(0)):
+        for col in range(out.dim(1)):
             let v: Int = out[row, col].value
             if v > 0:
-                let p = charset[v % sr.length]
-                _printf("%c", p.value)
+                let p = charset[v % charset.__len__()]
+                _printf("%c", p)
             else:
                 print_no_newline("0")
         print("")
@@ -113,7 +111,7 @@ fn mandelbrot_kernel_part2(c: ComplexSIMD[float_type, 1]) -> Int:
 fn mandelbrot_blog_1[
     h: Int, w: Int, part: Int
 ](
-    out: Matrix[DimList(h, w), int_type, False],
+    inout out: Tensor[int_type],
     min_x: SIMD[float_type, 1],
     max_x: SIMD[float_type, 1],
     min_y: SIMD[float_type, 1],
@@ -143,16 +141,12 @@ fn mandelbrot_blog_1[
             else:
                 res = 0
 
-            out[row, col] = res
+            out[Index(row, col)] = res
 
 
 fn main_blog_part1():
     constrained[width % 16 == 0, "must be a multiple of 16"]()
-    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type.value, `>`]](
-        width * height
-    )
-    let dptr = DTypePointer[int_type](vec.data.address)
-    let m: Matrix[DimList(height, width), int_type, False] = vec.data
+    let m = Tensor[int_type](height, width)
 
     @always_inline
     @parameter
@@ -184,7 +178,7 @@ fn main_blog_part1():
     time = Benchmark(num_warmup).run[bench_fn[2]]() / ns_per_second
     print("blog post 1 with part=2 ", time)
 
-    vec._del_old()
+    print(m[Index(0, 0)])
 
 
 # ===----------------------------------------------------------------------===#
@@ -247,7 +241,7 @@ fn mandelbrot_kernel[
 @always_inline
 fn mandelbrot[
     simd_width: Int, h: Int, w: Int, step: BlogPost2Step
-](inout out: Matrix[DimList(h, w), int_type, False], rt: Runtime):
+](inout out: Tensor[int_type], rt: Runtime):
     # Each task gets a row.
     @always_inline
     @parameter
@@ -263,7 +257,7 @@ fn mandelbrot[
             let cy = min_y + row * scale_y
             let c = ComplexSIMD[float_type, simd_width](cx, cy)
             out.simd_store[simd_width](
-                row, col, mandelbrot_kernel[simd_width](c)
+                Index(row, col), mandelbrot_kernel[simd_width](c)
             )
 
         # We vectorize the call to compute_vector where call gets a chunk of
@@ -295,11 +289,7 @@ fn mandelbrot[
 fn main_blog_part2():
     constrained[width % 16 == 0, "must be a multiple of 16"]()
 
-    let vec = DynamicVector[__mlir_type[`!pop.scalar<`, int_type.value, `>`]](
-        width * height
-    )
-    let dptr = DTypePointer[int_type](vec.data.address)
-    let m: Matrix[DimList(height, width), int_type, False] = vec.data
+    var m = Tensor[int_type](height, width)
 
     alias ns_per_second: Int = 1_000_000_000
 
@@ -468,8 +458,7 @@ fn main_blog_part2():
             )
             print("Parallel(32) with simd_width=", simd_width, "::", time)
 
-    print(m[0, 0])
-    vec._del_old()
+    print(m[Index(0, 0)])
 
 
 fn main():
