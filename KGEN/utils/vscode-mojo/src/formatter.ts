@@ -7,9 +7,9 @@
 import {exec} from 'child_process';
 import * as vscode from 'vscode';
 
-import {get} from './config';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
+import {get} from './utils/config';
 
 export function registerFormatter(loggingService: LoggingService,
                                   mojoSDK: MOJOSDK) {

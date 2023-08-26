@@ -116,13 +116,51 @@
     },
     "commands": [
       {
+        "category": "Mojo",
         "command": "mojo.restart",
         "title": "mojo: Restart the extension"
       },
       {
+        "category": "Mojo",
         "command": "mojo.restart-suspended",
         "title": "mojo: Restart the extension suspended (for debugging)"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.execInTerminal",
+        "title": "Run Mojo File in Terminal",
+        "when": "!virtualWorkspace && shellExecutionSupported && editorLangId == mojo"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.execInTerminal-icon",
+        "icon": "$(play)",
+        "title": "Run Mojo File",
+        "when": "false"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.execInDedicatedTerminal",
+        "icon": "$(play)",
+        "title": "Run Mojo File in Dedicated Terminal",
+        "when": "false"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "mojo.execInTerminal-icon",
+          "group": "navigation@0",
+          "title": "Run Mojo File",
+          "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
+        },
+        {
+          "command": "mojo.execInDedicatedTerminal",
+          "group": "navigation@0",
+          "title": "Run Mojo File in Dedicated Terminal",
+          "when": "resourceLangId == mojo && !isInDiffEditor && !virtualWorkspace && shellExecutionSupported"
+        }
+      ]
+    }
   }
 }
