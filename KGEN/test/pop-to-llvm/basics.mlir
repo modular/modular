@@ -858,4 +858,15 @@ kgen.func @extract_addr(%a: !kgen.string) -> !kgen.pointer<scalar<si8>> {
   kgen.return %1: !kgen.pointer<scalar<si8>>
 }
 
+
+// CHECK-LABEL: kgen.func @fence
+kgen.func @fence() {
+  // CHECK: llvm.fence acquire
+  pop.fence acquire
+  // CHECK: llvm.fence syncscope("agent") seq_cst
+  pop.fence syncscope("agent") seq_cst
+  // CHECK: llvm.fence syncscope("singlethread") acq_rel
+  pop.fence syncscope("singlethread") acq_rel
+  kgen.return
+}
 }
