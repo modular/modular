@@ -2315,6 +2315,37 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
 }
 
 //===----------------------------------------------------------------------===//
+// Fence
+//===----------------------------------------------------------------------===//
+
+def POP_FenceOp : POPOp<"fence"> {
+  let summary = "used to introduce happens-before edges between operations";
+  let description = [{
+    The `pop.fence` op is used to introduce happens-before edges between
+    operations.
+
+    The `pop.fence` op take an ordering argument which defines what
+    synchronizes-with edges they add. They can only be given acquire, release,
+    acq_rel, and seq_cst orderings.
+
+    Example:
+
+    ```mlir
+    pop.fence seq_cst
+    pop.fence syncscope("singlethread") acq_rel
+    ```
+  }];
+
+  let arguments = (ins POP_AtomicOrderingAttr:$ordering,
+                       OptionalAttr<StrAttr>:$syncscope);
+
+  let assemblyFormat = [{
+    (`syncscope` `(` $syncscope^ `)`)? $ordering attr-dict
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // StringAddressOp
 //===----------------------------------------------------------------------===//
 

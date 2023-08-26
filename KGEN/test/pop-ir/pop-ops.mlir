@@ -1108,3 +1108,14 @@ kgen.func @aligned_alloc(%arg0: index, %arg1: index) {
   pop.aligned_free %0 : <index>
   kgen.return
 }
+
+// CHECK-LABEL: @fence
+kgen.func @fence() {
+  // CHECK: pop.fence acquire
+  pop.fence acquire
+  // CHECK: pop.fence syncscope("agent") seq_cst
+  pop.fence syncscope("agent") seq_cst
+  // CHECK: pop.fence syncscope("singlethread") acq_rel
+  pop.fence syncscope("singlethread") acq_rel
+  kgen.return
+}

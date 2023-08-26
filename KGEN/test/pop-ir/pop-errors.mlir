@@ -250,3 +250,27 @@ kgen.func @coroutine_handle() -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+
+// -----
+
+kgen.func @fence() {
+  // expected-error @below {{'pop.fence' op can be given only acquire, release, acq_rel, and seq_cst orderings}}
+  pop.fence not_atomic
+  kgen.return
+}
+
+// -----
+
+kgen.func @fence() {
+  // expected-error @below {{'pop.fence' op can be given only acquire, release, acq_rel, and seq_cst orderings}}
+  pop.fence monotonic
+  kgen.return
+}
+
+// -----
+
+kgen.func @fence() {
+  // expected-error @below {{'pop.fence' op can be given only acquire, release, acq_rel, and seq_cst orderings}}
+  pop.fence unordered
+  kgen.return
+}

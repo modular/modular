@@ -884,6 +884,19 @@ static Type getCmpXChgResultType(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// FenceOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult FenceOp::verify() {
+  if (llvm::is_contained({AtomicOrdering::NOT_ATOMIC, AtomicOrdering::UNORDERED,
+                          AtomicOrdering::MONOTONIC},
+                         getOrdering()))
+    return emitOpError("can be given only acquire, release, acq_rel, "
+                       "and seq_cst orderings");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 

@@ -1244,6 +1244,24 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPFence
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPFence : public ConvertPOPToLLVMPattern<FenceOp> {
+public:
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(FenceOp op, FenceOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<LLVM::FenceOp>(
+        op, getAtomicOrdering(adaptor.getOrdering()),
+        adaptor.getSyncscopeAttr());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPStringAddress
 //===----------------------------------------------------------------------===//
 
@@ -1402,6 +1420,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPDiv,
       ConvertPOPDTypeFromUI8,
       ConvertPOPDTypeToUI8,
+      ConvertPOPFence,
       ConvertPOPFMA,
       ConvertPOPIndexToPointer,
       ConvertPOPInlineAsm,
