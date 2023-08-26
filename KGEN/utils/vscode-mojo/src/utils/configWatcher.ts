@@ -7,8 +7,9 @@
 import * as chokidar from 'chokidar';
 import * as vscode from 'vscode';
 
+import {MOJOContext} from '../mojoContext';
+
 import * as config from './config';
-import {MOJOContext} from './mojoContext';
 
 /**
  *  Prompt the user to see if we should restart the server.
@@ -51,7 +52,7 @@ export async function activate(mojoContext: MOJOContext,
                                workspaceFolder: vscode.WorkspaceFolder,
                                settings: string[], paths: string[]) {
   // When a configuration change happens, check to see if we should restart.
-  mojoContext.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+  mojoContext.pushSubscription(vscode.workspace.onDidChangeConfiguration(event => {
     for (const setting of settings) {
       const expandedSetting = `mojo.${setting}`;
       if (event.affectsConfiguration(expandedSetting, workspaceFolder)) {
@@ -84,7 +85,7 @@ export async function activate(mojoContext: MOJOContext,
             'mojo language server file has changed. Do you want to reload the server?');
       }
     });
-    mojoContext.subscriptions.push(
+    mojoContext.pushSubscription(
         new vscode.Disposable(() => { fileWatcher.close(); }));
   }
 }

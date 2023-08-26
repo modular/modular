@@ -7,25 +7,25 @@
 import * as vscode from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
 
-import * as config from './config';
-import * as configWatcher from './configWatcher';
+import {activateRunCommands} from './commands/run';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
+import * as configWatcher from './utils/configWatcher';
+import {DisposableContext} from './utils/disposableContext';
 
 /**
  *  This class manages the Mojo extension state, including the language
  *  client.
  */
-export class MOJOContext implements vscode.Disposable {
+export class MOJOContext extends DisposableContext {
   _sdk: MOJOSDK|undefined;
-  subscriptions: vscode.Disposable[] = [];
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   _loggingService: LoggingService|undefined;
 
   private getLoggingService(): LoggingService { return this._loggingService!; }
 
-  private getSDK(): MOJOSDK { return this._sdk!; }
+  public getSDK(): MOJOSDK { return this._sdk!; }
 
   /**
    *  Activate the Mojo context, and start the language clients.
@@ -48,9 +48,9 @@ export class MOJOContext implements vscode.Disposable {
     }
 
     // Watch any new documents to spawn servers when necessary.
-    this.subscriptions.push(
+    this.pushSubscription(
         vscode.workspace.onDidOpenTextDocument(startClientOnOpenDocument));
-    this.subscriptions.push(
+    this.pushSubscription(
         vscode.workspace.onDidChangeWorkspaceFolders((event) => {
           for (const folder of event.removed) {
             const client = this.workspaceClients.get(folder.uri.toString());
@@ -62,8 +62,11 @@ export class MOJOContext implements vscode.Disposable {
         }));
 
     // Initialize the formatter.
-    this.subscriptions.push(registerFormatter(loggingService, this.getSDK()));
+    this.pushSubscription(registerFormatter(loggingService, this.getSDK()));
     loggingService.logInfo("MojoContext activated.");
+
+    // Initialize the execution commands.
+    this.pushSubscription(activateRunCommands(this));
   }
 
   /**
@@ -218,8 +221,7 @@ export class MOJOContext implements vscode.Disposable {
   }
 
   dispose() {
-    this.subscriptions.forEach((d) => { d.dispose(); });
-    this.subscriptions = [];
+    super.dispose();
     this.workspaceClients.forEach((client) => {
       if (client) {
         client.stop();

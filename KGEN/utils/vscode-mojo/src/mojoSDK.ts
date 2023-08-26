@@ -8,8 +8,8 @@ import * as ini from 'ini';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import * as config from './config';
 import {LoggingService} from './logging';
+import * as config from './utils/config';
 
 /**
  * This class represents a subset of the Modular config object used by extension
