@@ -123,6 +123,42 @@ FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+LogicalResult
+FnMetadataAttr::verifySignature(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<Type> inputParamTypes,
+                                ArrayRef<Type> resultParamTypes,
+                                FunctionType values) {
+  // Check we have the right number of conventions.
+  if (getInputConventions().size() != values.getInputs().size())
+    return emitError() << "incorrect # of input conventions specified";
+
+  for (auto [defaultsIndex, value] : llvm::enumerate(getDefaultArguments())) {
+    size_t index = values.getInputs().size() - getDefaultArguments().size() +
+                   defaultsIndex;
+    Type expected = values.getInputs()[index];
+    if (value.getType() != expected) {
+      return emitError() << "argument #" << index << " has type " << expected
+                         << " but default argument has type "
+                         << value.getType();
+    }
+  }
+  // If the function throws an error, make sure it has one variant result.
+  if (bitEnumContainsAny(getFnEffects(), FnEffects::Throws) &&
+      values.getNumResults() != 1)
+    return emitError() << "a function that throws should have 1 result";
+
+  unsigned minNumArgs =
+      (bitEnumContainsAny(getFnEffects(), FnEffects::Vararg) ||
+       bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg)) +
+      bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg);
+  if (values.getNumInputs() < minNumArgs) {
+    return emitError()
+           << "function has varargs and/or kwvarargs but signature only has "
+           << values.getNumInputs() << " arguments";
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
