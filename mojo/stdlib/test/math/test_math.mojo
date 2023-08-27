@@ -177,57 +177,55 @@ fn test_rotate():
     alias type = DType.uint32
 
     # CHECK: [0, 1, 0, 1, 1, 0, 1, 0]
-    print(
-        rotate_right[DType.uint16, 8, 1](
-            SIMD[DType.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0)
-        )
-    )
+    print(rotate_right[1](SIMD[DType.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0)))
     # CHECK: [1, 0, 1, 0, 0, 1, 0, 1]
-    print(
-        rotate_right[DType.uint32, 8, 5](
-            SIMD[DType.uint32, 8](1, 0, 1, 1, 0, 1, 0, 0)
-        )
-    )
+    print(rotate_right[5](SIMD[DType.uint32, 8](1, 0, 1, 1, 0, 1, 0, 0)))
+
+    # CHECK: 416
+    print(rotate_left[2](104))
+
+    # CHECK: 26
+    print(rotate_right[2](104))
+
+    # CHECK: 26
+    print(rotate_left[-2](104))
+
+    # CHECK: 416
+    print(rotate_right[-2](104))
 
     # CHECK: [1, 0, 1, 1]
-    print(rotate_left[type, simd_width, 0](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[0](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [0, 1, 1, 1]
-    print(rotate_left[type, simd_width, 1](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[1](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 1, 0]
-    print(rotate_left[type, simd_width, 2](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[2](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 0, 1]
-    print(rotate_left[type, simd_width, 3](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[3](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 0, 1]
-    print(rotate_left[type, simd_width, -1](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[-1](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 1, 0]
-    print(rotate_left[type, simd_width, -2](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[-2](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [0, 1, 1, 1]
-    print(rotate_left[type, simd_width, -3](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[-3](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 0, 1, 1]
-    print(rotate_left[type, simd_width, -4](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_left[-4](SIMD[type, simd_width](1, 0, 1, 1)))
 
     # CHECK: [1, 0, 1, 1]
-    print(rotate_right[type, simd_width, 0](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_right[0](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 0, 1]
-    print(rotate_right[type, simd_width, 1](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_right[1](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 1, 0]
-    print(rotate_right[type, simd_width, 2](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_right[2](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [0, 1, 1, 1]
-    print(rotate_right[type, simd_width, 3](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_right[3](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 0, 1, 1]
-    print(rotate_right[type, simd_width, 4](SIMD[type, simd_width](1, 0, 1, 1)))
+    print(rotate_right[4](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [0, 1, 1, 1]
-    print(
-        rotate_right[type, simd_width, -1](SIMD[type, simd_width](1, 0, 1, 1))
-    )
+    print(rotate_right[-1](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 1, 0]
-    print(
-        rotate_right[type, simd_width, -2](SIMD[type, simd_width](1, 0, 1, 1))
-    )
+    print(rotate_right[-2](SIMD[type, simd_width](1, 0, 1, 1)))
     # CHECK: [1, 1, 0, 1]
-    print(
-        rotate_right[type, simd_width, -3](SIMD[type, simd_width](1, 0, 1, 1))
-    )
+    print(rotate_right[-3](SIMD[type, simd_width](1, 0, 1, 1)))
 
 
 # CHECK-LABEL: test_rotate_bits
@@ -238,50 +236,70 @@ fn test_rotate_bits():
     alias type = DType.uint8
 
     # CHECK: 104
-    print(rotate_bits_left[type, simd_width, 0](SIMD[type, simd_width](104)))
-    # CHECK: 161
-    print(rotate_bits_left[type, 1, 2](SIMD[type, 1](104)))
-    # CHECK: [161, 161]
-    print(rotate_bits_left[type, 2, 2](SIMD[type, 2](104)))
-    # CHECK: 120
-    print(rotate_bits_left[type, 1, 11](SIMD[type, 1](15)))
-
-    # CHECK: 96
-    print(rotate_bits_left[type, 1, 0](SIMD[type, 1](96)))
-    # CHECK: 192
-    print(rotate_bits_left[type, 1, 1](SIMD[type, 1](96)))
-    # CHECK: 129
-    print(rotate_bits_left[type, 1, 2](SIMD[type, 1](96)))
-    # CHECK: 3
-    print(rotate_bits_left[type, 1, 3](SIMD[type, 1](96)))
-    # CHECK: 6
-    print(rotate_bits_left[type, 1, 4](SIMD[type, 1](96)))
-    # CHECK: 12
-    print(rotate_bits_left[type, 1, 5](SIMD[type, 1](96)))
+    print(rotate_bits_left[0](104))
 
     # CHECK: 104
-    print(rotate_bits_right[type, simd_width, 0](SIMD[type, simd_width](104)))
+    print(rotate_bits_left[0](SIMD[type, simd_width](104)))
+
+    # CHECK: 416
+    print(rotate_bits_left[2](104))
+
     # CHECK: 26
-    print(rotate_bits_right[type, 1, 2](SIMD[type, 1](104)))
-    # CHECK: [26, 26]
-    print(rotate_bits_right[type, 2, 2](SIMD[type, 2](104)))
-    # CHECK: 225
-    print(rotate_bits_right[type, 1, 11](SIMD[type, 1](15)))
+    print(rotate_bits_left[-2](104))
+
+    # CHECK: 161
+    print(rotate_bits_left[2](SIMD[type, 1](104)))
+    # CHECK: [161, 161]
+    print(rotate_bits_left[2](SIMD[type, 2](104)))
+    # CHECK: 120
+    print(rotate_bits_left[11](SIMD[type, 1](15)))
 
     # CHECK: 96
-    print(rotate_bits_right[type, 1, 0](SIMD[type, 1](96)))
-    # CHECK: 48
-    print(rotate_bits_right[type, 1, 1](SIMD[type, 1](96)))
-    # CHECK: 24
-    print(rotate_bits_right[type, 1, 2](SIMD[type, 1](96)))
-    # CHECK: 12
-    print(rotate_bits_right[type, 1, 3](SIMD[type, 1](96)))
-    # CHECK: 6
-    print(rotate_bits_right[type, 1, 4](SIMD[type, 1](96)))
-    # CHECK: 3
-    print(rotate_bits_right[type, 1, 5](SIMD[type, 1](96)))
+    print(rotate_bits_left[0](SIMD[type, 1](96)))
+    # CHECK: 192
+    print(rotate_bits_left[1](SIMD[type, 1](96)))
     # CHECK: 129
-    print(rotate_bits_right[type, 1, 6](SIMD[type, 1](96)))
+    print(rotate_bits_left[2](SIMD[type, 1](96)))
+    # CHECK: 3
+    print(rotate_bits_left[3](SIMD[type, 1](96)))
+    # CHECK: 6
+    print(rotate_bits_left[4](SIMD[type, 1](96)))
+    # CHECK: 12
+    print(rotate_bits_left[5](SIMD[type, 1](96)))
+
+    # CHECK: 104
+    print(rotate_bits_right[0](104))
+
+    # CHECK: 104
+    print(rotate_bits_right[0](SIMD[type, simd_width](104)))
+
+    # CHECK: 26
+    print(rotate_bits_right[2](104))
+
+    # CHECK: 416
+    print(rotate_bits_right[-2](104))
+
+    # CHECK: 26
+    print(rotate_bits_right[2](SIMD[type, 1](104)))
+    # CHECK: [26, 26]
+    print(rotate_bits_right[2](SIMD[type, 2](104)))
+    # CHECK: 225
+    print(rotate_bits_right[11](SIMD[type, 1](15)))
+
+    # CHECK: 96
+    print(rotate_bits_right[0](SIMD[type, 1](96)))
+    # CHECK: 48
+    print(rotate_bits_right[1](SIMD[type, 1](96)))
+    # CHECK: 24
+    print(rotate_bits_right[2](SIMD[type, 1](96)))
+    # CHECK: 12
+    print(rotate_bits_right[3](SIMD[type, 1](96)))
+    # CHECK: 6
+    print(rotate_bits_right[4](SIMD[type, 1](96)))
+    # CHECK: 3
+    print(rotate_bits_right[5](SIMD[type, 1](96)))
+    # CHECK: 129
+    print(rotate_bits_right[6](SIMD[type, 1](96)))
 
 
 fn main():
