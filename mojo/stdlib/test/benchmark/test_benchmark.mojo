@@ -7,7 +7,8 @@
 
 from time import now, sleep
 
-from benchmark import Benchmark, clobber_memory
+from memory.unsafe import Pointer, DTypePointer
+from benchmark import Benchmark, clobber_memory, keep
 
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
@@ -63,5 +64,47 @@ fn test_benchmark():
     print(b5 > 0)
 
 
+struct SomeStruct:
+    var x: Int
+    var y: Int
+
+    @always_inline
+    fn __init__(inout self):
+        self.x = 5
+        self.y = 4
+
+
+@register_passable("trivial")
+struct SomeTrivialStruct:
+    var x: Int
+    var y: Int
+
+    @always_inline
+    fn __init__() -> Self:
+        return Self {x: 3, y: 5}
+
+
+# CHECK-LABEL: test_keep
+# There is nothing to test here other than the code executes and does not crash.
+fn test_keep():
+    print("== test_keep")
+
+    keep(False)
+    keep(33)
+
+    var val = SIMD[DType.index, 4](1, 2, 3, 4)
+    keep(val)
+
+    let ptr = Pointer.address_of(val)
+    keep(ptr)
+
+    var s0 = SomeStruct()
+    keep(s0)
+
+    var s1 = SomeTrivialStruct()
+    keep(s1)
+
+
 fn main():
     test_benchmark()
+    test_keep()

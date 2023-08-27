@@ -133,7 +133,7 @@ fn clobber_memory():
     """Forces all pending memory writes to be flushed to memory.
 
     This ensures that the compiler does not optimize away memory writes if it
-    deems them to be not neccessary. If effect, this operation acts a barrier
+    deems them to be not neccessary. In effect, this operation acts a barrier
     to memory reads and writes.
     """
 
@@ -144,3 +144,136 @@ fn clobber_memory():
         syncscope : "singlethread".value,
         ordering : __mlir_attr.`#pop<atomic_ordering acq_rel>`,
     ]()
+
+
+# ===----------------------------------------------------------------------===#
+# keep
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn keep(val: Bool):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    keep(UInt8(val))
+
+
+@always_inline
+fn keep(val: Int):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    keep(SIMD[DType.index, 1](val))
+
+
+@always_inline
+fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Parameters:
+      type: The `dtype` of the input and output SIMD vector.
+      simd_width: The width of the input and output SIMD vector.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    var tmp = val
+    let tmp_ptr = Pointer.address_of(tmp)
+
+    @parameter
+    if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
+        __mlir_op.`pop.inline_asm`[
+            _type:None,
+            assembly : "".value,
+            constraints : "+m,r,~{memory}".value,
+            hasSideEffects : __mlir_attr.unit,
+        ](tmp_ptr, val)
+    else:
+        __mlir_op.`pop.inline_asm`[
+            _type:None,
+            assembly : "".value,
+            constraints : "+m,~{memory}".value,
+            hasSideEffects : __mlir_attr.unit,
+        ](tmp_ptr, tmp_ptr)
+
+
+@always_inline
+fn keep[type: DType](val: DTypePointer[type]):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Parameters:
+      type: The type of the input.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    keep(Pointer(val.address))
+
+
+@always_inline
+fn keep[type: AnyType](val: Pointer[type]):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Parameters:
+      type: The type of the input.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    var tmp = val
+    let tmp_ptr = Pointer.address_of(tmp)
+    __mlir_op.`pop.inline_asm`[
+        _type:None,
+        assembly : "".value,
+        constraints : "r,~{memory}".value,
+        hasSideEffects : __mlir_attr.unit,
+    ](tmp_ptr)
+
+
+@always_inline
+fn keep[type: AnyType](inout val: type):
+    """Provides a hint to the compiler to not optimize the variable use away.
+
+    This is useful in benchmarking to avoid the compiler not deleting the
+    code to be benchmarked because the variable is not used in a side-effecting
+    manner.
+
+    Parameters:
+      type: The type of the input.
+
+    Args:
+      val: The value to not optimize away.
+    """
+    var tmp = val
+    let tmp_ptr = Pointer.address_of(tmp)
+    __mlir_op.`pop.inline_asm`[
+        _type:None,
+        assembly : "".value,
+        constraints : "r,~{memory}".value,
+        hasSideEffects : __mlir_attr.unit,
+    ](tmp_ptr)
