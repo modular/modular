@@ -298,8 +298,11 @@ public:
   /// of all the dimension sizes.
   size_t getNumElements() const {
     size_t result = 1;
-    for (auto dim : *this)
-      result *= dim;
+    for (auto dim : *this) {
+      assert(dim >= 0 && "attempting to get the number of elements of a "
+                         "TensorSpec with unknown dimensions");
+      result *= static_cast<size_t>(dim);
+    }
     return result;
   }
 
