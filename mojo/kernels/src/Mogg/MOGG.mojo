@@ -401,9 +401,13 @@ fn elementwise_wrapper[
 
         let vector_width_str = String("vector_width=") + simd_width
 
-        let res = String(";").join(name_str, shape_str, vector_width_str)
+        let info = String(";").join(name_str, shape_str, vector_width_str)
 
-        return res
+        return (
+            info
+            + String(";single_thread_blocking_override=")
+            + single_thread_blocking_override
+        )
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.elementwise")
 
@@ -1524,7 +1528,7 @@ fn matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return get_trace_information(
+        let info = get_trace_information(
             "dynamic_tile",
             GemmShape.get[
                 transpose_a,
@@ -1533,6 +1537,11 @@ fn matmul[
             transpose_a,
             transpose_b,
             b_packed,
+        )
+        return (
+            info
+            + String(";single_thread_blocking_override=")
+            + single_thread_blocking_override
         )
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.matmul")
@@ -1582,13 +1591,18 @@ fn batched_matmul[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return get_trace_information_batched_matmul[rank](
+        let info = get_trace_information_batched_matmul[rank](
             "dynamic_tile",
             a.get_shape(),
             b.get_shape(),
             c.get_shape(),
             adj_a,
             adj_b,
+        )
+        return (
+            info
+            + String(";single_thread_blocking_override=")
+            + single_thread_blocking_override
         )
 
     out_chain.trace[TraceLevel.OP, description_fn]("mojo.mogg.batched_matmul")
