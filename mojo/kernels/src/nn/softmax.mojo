@@ -11,6 +11,7 @@ from algorithm import async_parallelize, vectorize_unroll
 from algorithm.reduction import max
 from memory.buffer import Buffer, NDBuffer
 from runtime.llcl import OutputChainPtr
+from runtime.tracing import TraceLevel
 
 from utils.index import product
 from utils.list import Dim, DimList
@@ -472,6 +473,13 @@ fn softmax[
     if axis != rank - 1:
         out_chain.mark_error("softmax not supported on non-inner axis yet")
         return
+
+    @always_inline
+    @parameter
+    fn trace_information() -> String:
+        return String("shape=") + String("x").join(input.get_shape())
+
+    out_chain.trace[TraceLevel.OP, trace_information]("mojo.softmax")
 
     if input.num_elements() == 0:
         return out_chain.mark_ready()
