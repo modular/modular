@@ -377,8 +377,7 @@ fn sync_parallelize[
 @always_inline
 fn parallelize[func: fn (Int) capturing -> None]():
     """Executes func(0) ... func(N-1) as sub-tasks in parallel and returns when
-    all are complete. N is chosen to be the number of logical processors on the
-    system.
+    all are complete. N is chosen to be the number of processors on the system.
 
     Execute func(0) ... func(N-1) as sub-tasks in parallel. This function will
     return only after all the sub-tasks have completed.
