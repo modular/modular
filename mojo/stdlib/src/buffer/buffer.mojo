@@ -418,17 +418,14 @@ fn _compute_nd_index[
 
     result[rank - 1] = index
 
-    @always_inline
-    @parameter
-    fn body[idx: Int]():
+    @unroll
+    for idx in range(rank - 1):
         result[rank - idx - 2] = result[rank - idx - 1] // buf.dim(
             rank - idx - 1
         )
         result[rank - idx - 1] = result[rank - idx - 1] % buf.dim(
             rank - idx - 1
         )
-
-    unroll[rank - 1, body]()
     return result
 
 
@@ -459,12 +456,10 @@ fn _compute_ndbuffer_offset[
 
     var result: Int = 0
 
-    @always_inline
-    @parameter
-    fn body[idx: Int]():
-        result = fma(buf.stride(idx), index[idx], result)
+    @unroll
+    for i in range(rank):
+        result = fma(buf.stride(i), index[i], result)
 
-    unroll[rank, body]()
     return result
 
 
@@ -518,12 +513,10 @@ fn _compute_ndbuffer_offset[
 
     var result: Int = 0
 
-    @always_inline
-    @parameter
-    fn body[idx: Int]():
-        result = fma(buf.stride(idx), index[idx], result)
+    @unroll
+    for i in range(rank):
+        result = fma(buf.stride(i), index[i], result)
 
-    unroll[rank, body]()
     return result
 
 
@@ -817,12 +810,9 @@ struct NDBuffer[
         """
         var res = StaticIntTuple[rank]()
 
-        @parameter
-        @always_inline
-        fn _fill[idx: Int]():
-            res[idx] = self.dim[idx]()
-
-        unroll[rank, _fill]()
+        @unroll
+        for i in range(rank):
+            res[i] = self.dim(i)
         return res
 
     @always_inline
@@ -864,12 +854,10 @@ struct NDBuffer[
         """
         var product: Int = 1
 
-        @parameter
-        @always_inline
-        fn _compute_product[idx: Int]():
-            product *= self.dim[idx]()
+        @unroll
+        for i in range(rank):
+            product *= self.dim(i)
 
-        unroll[rank, _compute_product]()
         return product
 
     @always_inline
