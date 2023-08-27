@@ -7,7 +7,7 @@
 
 from time import now, sleep
 
-from benchmark import Benchmark
+from benchmark import Benchmark, clobber_memory
 
 # CHECK-LABEL: test_benchmark
 fn test_benchmark():
@@ -17,6 +17,7 @@ fn test_benchmark():
     @parameter
     fn time_me():
         sleep(0.002)
+        clobber_memory()
         return
 
     # check that benchmark_function returns after max_time_ns is hit.
