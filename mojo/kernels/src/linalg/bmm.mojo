@@ -273,6 +273,7 @@ fn batched_matmul[
 ):
     constrained[not adj_a, "batched matmul does not support adj_a yet"]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
+
     var batch_size: Int = c_buf.dim[0]()
     if c_buf.get_rank() == 4:
         batch_size *= c_buf.dim(1)
