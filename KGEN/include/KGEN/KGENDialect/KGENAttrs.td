@@ -259,12 +259,6 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
     /// there are no function effects.
     bool isDefault();
 
-    /// Verify the metadata with respect to the enclosing signature type.
-    LogicalResult verifySignature(function_ref<InFlightDiagnostic()> emitError,
-                                  ArrayRef<Type> inputParamTypes,
-                                  ArrayRef<Type> resultParamTypes,
-                                  FunctionType values);
-
     /// Get this metadata attr with the effects swapped out.
     FnMetadataAttr getWithFnEffects(FnEffects effects);
   }];
