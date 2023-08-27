@@ -1257,9 +1257,18 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
     return failure();
 
   // TODO(Keyword Args): now that we parsed a fully generic parameter list,
-  // reject keyword arguments.
-  if (!args.empty() && args.back().kwArgHandling == KWArgHandling::kKeywordOnly)
+  // reject keyword arguments. Remove them from the signature since the
+  // representation does not support them either.
+  auto trailingKwarg = [&] {
+    return !args.empty() &&
+           args.back().kwArgHandling == KWArgHandling::kKeywordOnly;
+  };
+  if (trailingKwarg()) {
     p.emitError(args.back().loc, "TODO: keyword arguments not supported yet");
+    do {
+      args.pop_back();
+    } while (trailingKwarg());
+  }
   return success();
 }
 
