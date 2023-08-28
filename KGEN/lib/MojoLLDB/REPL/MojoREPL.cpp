@@ -516,15 +516,64 @@ bool MojoREPL::SourceIsComplete(const std::string &source) {
   SmallVector<StringRef> lines;
   StringRef(source).split(lines, "\n");
 
-  // If the last line is empty, then the source is complete.
-  return lines.empty() || lines.back().trim("\r").empty();
+  // If the last line is empty, then the source is complete. The only case in
+  // which this fails is if the last expression is a multi-line string because
+  // we'd be forbidding empty lines in them.
+  return lines.empty() || lines.back().trim().empty();
 }
 
 lldb::offset_t MojoREPL::GetDesiredIndentation(const StringList &lines,
                                                int cursorPosition,
                                                int tabSize) {
-  // TODO: Process the input lines to determine the desired indentation.
-  return LLDB_INVALID_OFFSET;
+  // We only indent if we are at the beginning of a line (cursorPosition == 0)
+  // and it's not the first line (lines.getSize() >= 2).
+  if (cursorPosition != 0 || lines.GetSize() < 2)
+    return LLDB_INVALID_OFFSET;
+  // We base our indent level on the previous line. If it creates a new scope,
+  // we increase the indent level, otherwise, we keep the level from the
+  // previous line, unless it starts with keywords that terminate the current
+  // scope, like `break` or `return`, in which case we look for the most recent
+  // line that has a lower indent level, and we use that one. This last
+  // heuristic fails in the presence of multiline strings, but this is a case so
+  // rare that it's fine to fail occasionally. A proper way to handle this would
+  // be to use the mojo parser, which is non-trivial effort.
+  auto getIndentPrefix = [](StringRef line) {
+    return line.substr(0, line.find_first_not_of(" \t\n\v\f\r"));
+  };
+
+  StringRef prevLine(lines[lines.GetSize() - 2]);
+  StringRef prevLineTrimmed = prevLine.trim();
+  StringRef prevIndentPrefix = getIndentPrefix(prevLine);
+  lldb::offset_t prevIndentLevel = prevIndentPrefix.size();
+
+  // Prev is empty, so we deindent all the way to level 0 because we'll be
+  // starting a brand new expression.
+  if (prevLineTrimmed.empty())
+    return 0;
+
+  // Prev line is a comment.
+  if (prevLineTrimmed[0] == '#')
+    return prevIndentLevel;
+
+  // Prev line creates a scope.
+  if (prevLineTrimmed.back() == ':')
+    return prevIndentLevel + tabSize;
+
+  static auto scopeModifiers = {"pass", "return", "continue", "break"};
+  // Prev line breaks the control flow.
+  if (llvm::any_of(scopeModifiers, [&](StringRef keyword) {
+        return prevLineTrimmed.starts_with(keyword);
+      })) {
+    for (const std::string &line : llvm::reverse(llvm::drop_end(lines, 2))) {
+      StringRef indentPrefix = getIndentPrefix(line);
+      if (indentPrefix.size() < prevIndentLevel)
+        return indentPrefix.size();
+    }
+    // This might only happen if the source code is incorrect, so returning 0
+    // indent as fallback is fine.
+    return 0;
+  }
+  return prevIndentLevel;
 }
 
 void MojoREPL::CompleteCode(const std::string &current_code,
