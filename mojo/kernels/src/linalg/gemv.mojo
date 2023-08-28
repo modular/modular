@@ -42,9 +42,8 @@ fn gemv[
 
         for col_idx in range(0, vector_end_col, col_block_size):
 
-            @always_inline
-            @parameter
-            fn _do_accum[idx: Int]():
+            @unroll
+            for idx in range(row_block_size):
                 let accum_idx = Index(idx, 0)
                 let accum = accums.simd_load[col_block_size](accum_idx)
                 let row_chunk = lhs.simd_load[col_block_size](
@@ -54,8 +53,6 @@ fn gemv[
                 accums.simd_store[col_block_size](
                     accum_idx, row_chunk.fma(col_chunk, accum)
                 )
-
-            unroll[row_block_size, _do_accum]()
 
         let scalar_accums = Buffer[
             row_block_size,
@@ -71,14 +68,11 @@ fn gemv[
                 let col = rhs[col_idx]
                 scalar_accums[idx] += row * col
 
-        @always_inline
-        @parameter
-        fn body[idx: Int]():
+        @unroll
+        for idx in range(row_block_size):
             let accum_idx = Index(idx, 0)
             let curr_accum = accums.simd_load[col_block_size](accum_idx)
             scalar_accums[idx] = scalar_accums[idx] + curr_accum.reduce_add()
-
-        unroll[row_block_size, body]()
 
         out.simd_store[row_block_size](
             row_idx, scalar_accums.simd_load[row_block_size](0)

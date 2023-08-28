@@ -318,14 +318,11 @@ fn _permute_data[
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
 
-    @always_inline
-    @parameter
-    fn body[idx: Int]():
+    @unroll
+    for idx in range(size):
         let perm_axis = perms.load(idx)[0].value
         let perm_data = input.load(perm_axis)
         output.store(idx, perm_data)
-
-    unroll[size, body]()
 
 
 fn _fill_strides[
@@ -356,16 +353,13 @@ fn _fill_strides[
     constrained[rank > 0]()
     strides[rank - 1] = 1
 
-    @always_inline
-    @parameter
-    fn _fill_stride_at_idx[idx: Int]():
-        alias axis = rank - idx - 2
+    @unroll
+    for idx in range(rank - 1):
+        let axis = rank - idx - 2
         let next_axis_stride = strides[axis + 1]
-        let next_axis_dim = buf.dim[axis + 1]()
+        let next_axis_dim = buf.dim(axis + 1)
         let curr_axis_stride = next_axis_stride * next_axis_dim
         strides[axis] = curr_axis_stride
-
-    unroll[rank - 1, _fill_stride_at_idx]()
 
 
 # ===------------------------------------------------------------------=== #
