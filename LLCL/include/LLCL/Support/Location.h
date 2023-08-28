@@ -8,6 +8,8 @@
 #define LLCL_SUPPORT_LOCATION_H
 
 #include "LLCL/Support/RCRef.h"
+
+#include <cstdint>
 #include <string>
 
 namespace M {
