@@ -154,6 +154,15 @@ fn spurious_for_loop_variable_unknown_decl():
     print(i)
 
 ##===----------------------------------------------------------------------===##
+# With
+##===----------------------------------------------------------------------===##
+
+# External Issue #529 https://github.com/modularml/mojo/issues/529
+def withWithNoColon():
+  # expected-error @below {{expected ':' after 'with' expression}}
+  with a as b
+
+##===----------------------------------------------------------------------===##
 # Raise
 ##===----------------------------------------------------------------------===##
 

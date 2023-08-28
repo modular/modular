@@ -1222,8 +1222,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     enterDest = ValueDest(target, EC_WithContextMgr);
   }
 
-  if (parseToken(Token::colon, "expected ':' after 'with' expression"))
+  if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
+    enterDest.resetForError();
     return failure();
+  }
 
   AnyValue contextRV = getEmitter().emitExpr(contextExp, EC_WithContextMgr);
 
