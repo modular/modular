@@ -18,7 +18,8 @@ from utils.list import DimList
 
 
 @mogg_register("test_many_ranks_and_types")
-fn _test_many_ranks_and_types[
+@export
+fn test_many_ranks_and_types[
     type1: DType,
     rank1: Int,
     type2: DType,
@@ -44,7 +45,8 @@ fn _test_many_ranks_and_types[
 
 
 @mogg_register("test_one_rank_many_tensor")
-fn _test_one_rank_many_tensor[
+@export
+fn test_one_rank_many_tensor[
     type: DType, rank: Int
 ](
     tensor1: NDBuffer[rank, DimList.create_unknown[rank](), type],
@@ -61,7 +63,8 @@ fn _test_one_rank_many_tensor[
 
 
 @mogg_register("test_3D_in_out_lambda")
-fn _test_3D_in_out_lambda[
+@export
+fn test_3D_in_out_lambda[
     type: DType,
     simd_width: Int,
     input_0_fn: fn[type: DType, width: Int, rank: Int] (

@@ -84,11 +84,6 @@ from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 from MOGGDecorators import *
-from MOGGTests import (
-    _test_3D_in_out_lambda,
-    _test_many_ranks_and_types,
-    _test_one_rank_many_tensor,
-)
 from Pad import pad as _pad
 from Pad import pad_shape
 from Pool import avg_pool, max_pool, pool_shape
@@ -214,10 +209,6 @@ fn MOGGExport():
     alias _mark_output_chain_ready = mark_output_chain_ready
     alias _where = where
     alias _where_shape = where_shape
-
-    alias _a_test_one_rank_many_tensor = _test_one_rank_many_tensor
-    alias _a_test_many_ranks_and_types = _test_many_ranks_and_types
-    alias _a_test_3D_in_out_lambda = _test_3D_in_out_lambda
 
 
 # ===----------------------------------------------------------------------===#
