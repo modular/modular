@@ -73,6 +73,10 @@ from test_package.unknown_nested_module import bar
 # expected-error @below {{unable to locate module 'module_in_package'}}
 import module_in_package
 
+# Check that we don't crash on an invalid use of the missing imported decl.
+# expected-error @below {{expressions are not yet supported at the file scope level}}
+module_in_package
+
 # // -----
 
 from imported_module import *
