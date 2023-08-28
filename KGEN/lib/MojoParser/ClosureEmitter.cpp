@@ -173,7 +173,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
 }
 
 static bool isSLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
-  if (astDecl->getIfLValue())
+  if (astDecl->getIfSLValue())
     return true;
   if (Operation *op = astDecl->getIfOperation()) {
     if (auto varlet = dyn_cast<VarLetDeclOp>(op)) {
