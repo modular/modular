@@ -489,6 +489,15 @@ struct OutputChainPtr:
         self.trace[level](label, str._strref_dangerous())
         str._strref_keepalive()
 
+    @always_inline
+    fn wait(self):
+        """Returns only when the underlying LLCL::OutputChain is emplaced
+        or set to an error. May execute arbitrary tasks while waiting.
+        """
+        external_call["KGEN_CompilerRT_LLCL_OutputChainPtr_Await", NoneType](
+            self.ptr
+        )
+
 
 @register_passable
 struct OwningOutputChainPtr:
