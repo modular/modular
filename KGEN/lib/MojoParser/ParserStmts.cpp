@@ -1388,6 +1388,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp});
   SRValue exitI1Val =
       getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
+  if (!exitI1Val)
+    // Fail, but non-fatal so return success to keep parsing.
+    return success();
   // If __exit__ returns false, then re-raise the error.
   auto ifOp = builder.create<HLCF::IfOp>(loc, exitI1Val);
   builder.create<TryYieldOp>(loc);
