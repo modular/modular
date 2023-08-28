@@ -1749,13 +1749,9 @@ struct DynamicRankBuffer:
     fn _shape_to_static_tuple[rank: Int](self) -> StaticIntTuple[rank]:
         var result = StaticIntTuple[rank]()
 
-        @always_inline
-        @parameter
-        fn _fill[idx: Int]():
-            result.__setitem__[idx](self.dim(idx))
-
-        unroll[rank, _fill]()
-
+        @unroll
+        for idx in range(rank):
+            result[idx] = self.dim(idx)
         return result
 
 
@@ -1810,10 +1806,8 @@ fn prod_dims[
 
     var product: Int = 1
 
-    @always_inline
-    @parameter
-    fn _compute_product[idx: Int]():
-        product *= x.dim[idx + start_dim]()
+    @unroll
+    for idx in range(start_dim, end_dim):
+        product *= x.dim(idx)
 
-    unroll[end_dim - start_dim, _compute_product]()
     return product
