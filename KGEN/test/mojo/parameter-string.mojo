@@ -25,6 +25,11 @@ fn stringInputParamInline[value: String]():
     print(value)
 
 
+fn instantiateElsewhere():
+    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
+    stringInputParam["thrice"]()
+
+
 fn main():
     # CHECK: hello world
     StringParam[String("hello") + " " + "world"]().print_it()
@@ -38,8 +43,3 @@ fn main():
     # ELABORATE-COUNT-2: kgen.param.materialize: struct<pointer<
     stringInputParamInline[strValue]()
     print(strValue)
-
-
-fn instantiateElsewhere():
-    # ELABORATE: kgen.call @"$parameter-string::stringInputParam[[FUNC]]"() : () -> !pop.array<0, i1>
-    stringInputParam["thrice"]()

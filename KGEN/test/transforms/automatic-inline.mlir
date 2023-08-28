@@ -105,3 +105,26 @@ kgen.func @scc1_f(%arg0: index) -> index {
   %1 = kgen.call @scc0_h(%0) : (index) -> index
   kgen.return %1: index
 }
+
+// Not inlining any functions in the same SCC
+// All functions in this SCC is not being called by any other functions
+// outside of the scc. Pass done should not have a race condition
+// and wait for the work item for both of these two functions to be done
+// although they are not in the chain starting from the externalNode.
+// CHECK-LABEL: kgen.func @scc2_f(%arg0: index) -> index
+kgen.func @scc2_f(%arg0: index) -> index {
+  // CHECK: [[V0:%.*]] = kgen.call @scc2_g(%arg0) : (index) -> index
+  // CHECK: [[V1:%.*]] = kgen.call @scc2_f([[V0]]) : (index) -> index
+  // CHECK-NEXT: kgen.return [[V1]] : index
+  %0 = kgen.call @scc2_g(%arg0) : (index) -> index
+  %1 = kgen.call @scc2_f(%0) : (index) -> index
+  kgen.return %1: index
+}
+
+// CHECK-LABEL: kgen.func @scc2_g(%arg0: index) -> index
+kgen.func @scc2_g(%arg0: index) -> index {
+  // CHECK: [[V0:%.*]] = kgen.call @scc2_f(%arg0) : (index) -> index
+  // CHECK-NEXT: kgen.return [[V0]] : index
+  %0 = kgen.call @scc2_f(%arg0) : (index) -> index
+  kgen.return %0: index
+}

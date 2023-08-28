@@ -31,6 +31,8 @@
 using namespace M;
 using namespace KGEN;
 
+struct CallGraph;
+
 //===----------------------------------------------------------------------===//
 // CallGraphNode
 //===----------------------------------------------------------------------===//
@@ -106,6 +108,10 @@ struct CallGraphNode {
       DenseMap<CallGraphNode *,
                std::vector<std::optional<KGENCallOpInterface>>>;
   CallSitesMap callSites;
+
+  /// If node is reachable in the CallGraph
+  /// (e.g. not in any scc that has no callers outside of the scc.)
+  bool reachable = false;
 };
 
 //===----------------------------------------------------------------------===//
@@ -116,7 +122,8 @@ struct CallGraph {
   explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
                      const StringAttr updateAttrName)
       : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
-        updateAttrName(updateAttrName) {}
+        updateAttrName(updateAttrName), numWorkItems(0),
+        done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
   /// Build the CallGraph.
   void build(ModuleOp module, const SymbolTable &symtab);
@@ -150,9 +157,20 @@ struct CallGraph {
   /// If inner pipeline for function optimization failed or not.
   bool innerPipelineFailed = false;
 
+private:
+  /// When a work item ends, call this function for post-processing.
+  void endWork();
+
   /// When updating debug info, defer the update by tagging scope operations
   /// with an attribute. This is null if updates are not needed.
   StringAttr updateAttrName;
+
+  /// Number of work items (i.e. functions to inline)
+  std::atomic<size_t> numWorkItems;
+
+  /// Chain value to mark if all work items are done to mark main thread
+  /// (this inlining pass)to be done.
+  LLCL::AsyncValueRef<LLCL::Chain> done;
 };
 
 namespace {
@@ -252,7 +270,7 @@ struct GraphTraits<CallGraph *> : public GraphTraits<CallGraphNode *> {
 bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
   // Try to inline callee if it is not in the same SCC as the current node
   // (which is the caller).
-  return !sccNodes.contains(callee) && (callee != this);
+  return !sccNodes.contains(callee) && (callee != this) && callee->reachable;
 }
 
 bool CallGraphNode::shouldInlineCallee(CallGraphNode *callee,
@@ -282,6 +300,11 @@ uint64_t CallGraphNode::getNumOperations() {
   uint64_t result = 0;
   func->walk([&](Operation *) { ++result; });
   return result;
+}
+
+void CallGraph::endWork() {
+  if (numWorkItems.fetch_sub(1) == 1)
+    done.copy().emplace();
 }
 
 void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
@@ -334,15 +357,20 @@ void CallGraph::build(ModuleOp module, const SymbolTable &symtab) {
 
   for (auto scc = llvm::scc_begin(this); scc != llvm::scc_end(this); ++scc) {
     llvm::SmallSet<CallGraphNode *, 6> sccNodes;
-    for (auto node : (*scc))
+    for (auto node : (*scc)) {
       sccNodes.insert(node.node);
+      node.node->reachable = true;
+    }
 
     for (CallGraphNodeRef node : (*scc))
       node.node->sccNodes = sccNodes;
   }
+  // Function nodes plus externalNode
+  numWorkItems = nodes.size() + 1;
 }
 
 void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
+
   SmallVector<AnyAsyncValueRef> calleeAsynchValues;
   // Collect callee dependencies to wait.
   for (auto [callee, calls] : caller->callSites) {
@@ -353,12 +381,13 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
 
   if (calleeAsynchValues.empty()) {
     caller->doneInlining.copy().emplace();
+    endWork();
     return;
   }
 
   auto inlineFunc = [&pms = pms, &innerPipelineFailed = innerPipelineFailed,
-                     caller, &updateAttrName = updateAttrName,
-                     threshold](ArrayRef<AnyAsyncValueRef>) mutable {
+                     caller, &updateAttrName = updateAttrName, threshold,
+                     this](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [callee, calls] : caller->callSites) {
       if (!caller->shouldInlineCallee(callee, threshold))
         continue;
@@ -393,6 +422,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         innerPipelineFailed = true;
 
     caller->doneInlining.copy().emplace();
+    endWork();
   };
   LLCL::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
 }
@@ -401,8 +431,10 @@ void CallGraph::performInlining(uint64_t threshold) {
   for (auto &[func, node] : nodes)
     inlineNode(&node, threshold);
 
-  inlineNode(&externalNode, threshold);
-  LLCL::await(externalNode.doneInlining);
+  // Mark externalNode's work done (since it's not doing anything.)
+  externalNode.doneInlining.copy().emplace();
+  endWork();
+  LLCL::await(done);
 }
 
 //===----------------------------------------------------------------------===//
