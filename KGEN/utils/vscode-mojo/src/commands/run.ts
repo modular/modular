@@ -38,6 +38,9 @@ class ExecutionManager extends DisposableContext {
         });
       }));
     }
+
+    this.pushSubscription(vscode.commands.registerCommand(
+        'mojo.debugInTerminal', async () => { this.debugFileInTerminal(); }));
   }
 
   /**
@@ -64,6 +67,43 @@ class ExecutionManager extends DisposableContext {
     // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri))
       vscode.commands.executeCommand('workbench.action.terminal.focus');
+  }
+
+  /**
+   * Debug the current file in a terminal.
+   */
+  async debugFileInTerminal() {
+    let doc = await this.getFileToExecute();
+    if (!doc)
+      return;
+
+    // Find the config for processing this file.
+    let config = await this._context?.getSDK().resolveConfig(
+        vscode.workspace.getWorkspaceFolder(doc.uri));
+    if (config === undefined)
+      return;
+
+    // Pull in the additional visualizers within the lldb-visualizers dir.
+    let visualizersDir = config.mojoLLDBVisualizersPath;
+    let visualizers = await vscode.workspace.fs.readDirectory(
+        vscode.Uri.file(visualizersDir));
+    let visualizerCommands = visualizers.map(
+        ([ name, _type ]) => `command script import ${visualizersDir}/${name}`);
+
+    let debugConfig: vscode.DebugConfiguration = {
+      type : "mojo-lldb",
+      name : "Mojo",
+      request : "launch",
+      program : config.mojoDriverPath,
+      args :
+          [ "run", "--no-optimization", "--debug-level", "full", doc.fileName ],
+      env : {
+        "MODULAR_HOME" : config.modularHomePath,
+      },
+      initCommands : visualizerCommands,
+    };
+    await vscode.debug.startDebugging(
+        vscode.workspace.getWorkspaceFolder(doc.uri), debugConfig);
   }
 
   /**

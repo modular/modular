@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
 
 import {activateRunCommands} from './commands/run';
+import {registerDebugging} from './debug';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
@@ -63,10 +64,14 @@ export class MOJOContext extends DisposableContext {
 
     // Initialize the formatter.
     this.pushSubscription(registerFormatter(loggingService, this.getSDK()));
-    loggingService.logInfo("MojoContext activated.");
+
+    // Initialize the debugger support.
+    this.pushSubscription(registerDebugging(this));
 
     // Initialize the execution commands.
     this.pushSubscription(activateRunCommands(this));
+
+    loggingService.logInfo("MojoContext activated.");
   }
 
   /**

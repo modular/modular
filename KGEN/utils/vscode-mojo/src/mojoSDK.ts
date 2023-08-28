@@ -27,6 +27,16 @@ export class MOJOSDKConfig {
   mojoDriverPath: string = "";
 
   /**
+   * The path to the LLDB vscode debug adapter.
+   */
+  mojoLLDBVSCodePath: string = "";
+
+  /**
+   * The path to the LLDB visualizers.
+   */
+  mojoLLDBVisualizersPath: string = "";
+
+  /**
    * The path the mojo language server within the SDK installation.
    */
   mojoLanguageServerPath: string = "";
@@ -114,6 +124,9 @@ export class MOJOSDK {
     // Extract out the pieces of the config that we care about.
     mojoConfig = new MOJOSDKConfig();
     mojoConfig.modularHomePath = modularPath;
+    mojoConfig.mojoLLDBVSCodePath = modularConfig.mojo.lldb_vscode_path;
+    mojoConfig.mojoLLDBVisualizersPath =
+        modularConfig.mojo.lldb_visualizers_path;
     mojoConfig.mojoDriverPath = modularConfig.mojo.driver_path;
     mojoConfig.mojoLanguageServerPath = modularConfig.mojo.lsp_server_path;
 
