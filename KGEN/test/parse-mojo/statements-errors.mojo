@@ -162,6 +162,26 @@ def withWithNoColon():
   # expected-error @below {{expected ':' after 'with' expression}}
   with a as b
 
+# Issue #20143 https://github.com/modularml/modular/issues/20143
+struct HasBadContextManagerExit:
+  var x: Int
+  fn __init__(inout self, x:Int):
+    self.x = x
+  fn __copyinit__(inout self, other:Self):
+    self.x = other.x
+  fn __enter__(self) -> Self:
+      return self
+  # Note that the __exit__ method takes 2 arguments, IE
+  # `fn __exit__(self, err: Error) -> Bool:`
+  # So this will have a failing __exit__ call when used in `with`.
+  # expected-note @below {{function declared here}}
+  fn __exit__(self) -> Bool:
+      return True
+def useBadContextManagerExit():
+  # expected-error @below {{invalid call to '__exit__'}}
+  with HasBadContextManagerExit(5) as bad:
+      print(bad.x)
+
 ##===----------------------------------------------------------------------===##
 # Raise
 ##===----------------------------------------------------------------------===##
