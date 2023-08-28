@@ -505,7 +505,7 @@ static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
     else
       mlirValue = bvalue.getIfSBValue();
     value = bvalue;
-  } else if (auto lvalue = decl.getIfLValue()) {
+  } else if (auto lvalue = decl.getIfSLValue()) {
     mlirValue = lvalue;
     value = lvalue;
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {

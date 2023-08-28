@@ -1676,7 +1676,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
-    LValue lv = lvalue.ir.getIfLValue();
+    LValue lv = lvalue.ir.getIfSLValue();
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 

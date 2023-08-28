@@ -231,7 +231,7 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   if (auto rv = decl->getIfRValue()) {
     if (rv.getType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
-  } else if (auto lv = decl->getIfLValue()) {
+  } else if (auto lv = decl->getIfSLValue()) {
     if (lv.getRValueType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   } else if (auto bv = decl->getIfBValue()) {
@@ -2718,7 +2718,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       if (auto rv = argDecl.getIfRValue()) {
         if (rv.getType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-      } else if (auto lv = argDecl.getIfLValue()) {
+      } else if (auto lv = argDecl.getIfSLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       } else if (auto bv = argDecl.getIfBValue()) {
