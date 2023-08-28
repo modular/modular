@@ -360,18 +360,8 @@ fn sync_parallelize[
         num_work_items: Number of parallel tasks.
     """
 
-    # CAUTION CAUTION CAUTION: out_chain may be the overall model's final
-    # output chain, in which case emplacing it may signal that the model has
-    # finished and the overall model runtime can be torn down. However,
-    # this call is still nested inside a Mojo and C++ call stack which may
-    # still depend on the runtime. Thus we must be very careful to emplace
-    # out_chain in a way that its waiters will be run only after this call
-    # has returned all the way back to the worker thread loop. We do this
-    # using a fresh chain.
-    let local_chain = OwningOutputChainPtr(out_chain.get_runtime())
-    async_parallelize[func](local_chain.borrow(), num_work_items)
-    local_chain.wait()
-    out_chain.mark_ready()
+    async_parallelize[func](out_chain, num_work_items)
+    out_chain.wait()
 
 
 @always_inline
