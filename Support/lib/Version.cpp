@@ -50,13 +50,21 @@ ErrorOr<Version> Version::parse(StringRef str) {
 bool Version::operator<(const Version &other) const {
   if (major < other.major)
     return true;
+  if (major > other.major)
+    return false;
   if (minor < other.minor)
     return true;
+  if (minor > other.minor)
+    return false;
   if (patch < other.patch)
     return true;
+  if (patch > other.patch)
+    return false;
   // If we have a label and the other doesn't, then the other is greater.
   if (!label.empty() && other.label.empty())
     return true;
+  if (label.empty() && !other.label.empty())
+    return false;
   // Precedence is determined by comparing dot separated identifiers from left
   // to right until a difference is found.
   SmallVector<StringRef> ourLabels, otherLabels;
@@ -85,6 +93,8 @@ bool Version::operator<(const Version &other) const {
     // Letters or hyphens means ASCII sort order.
     if (ourLabel < otherLabel)
       return true;
+    if (ourLabel > otherLabel)
+      return false;
   }
 
   // Finally, larger set of pre-release fields has higher precedence.
