@@ -20,3 +20,27 @@ TEST(Base64, Roundtrip) {
   EXPECT_FALSE(decodedOr.isError()) << decodedOr.takeError();
   EXPECT_EQ(str, *decodedOr);
 }
+
+/// Check that we add padding correctly. This doesn't actually care about the
+/// contents of the string, just that it can be decoded.
+TEST(Base64, Padding) {
+  // This is a problematic string that originally triggered this bug.
+  const llvm::StringLiteral b64Str =
+      "SbxQJvZm0NV4rh82C8jWxRMCOhVKm6Oz2UKBcjKCSUA";
+
+  // These are canonical test vectors, but with the padding stripped off.
+  const llvm::StringLiteral f = "Zg";
+  const llvm::StringLiteral fo = "Zm8";
+  const llvm::StringLiteral foo = "Zm9v";
+  const llvm::StringLiteral foob = "Zm9vYg";
+  const llvm::StringLiteral fooba = "Zm9vYmE";
+  const llvm::StringLiteral foobar = "Zm9vYmFy";
+
+  auto decodedOr = decodeURLSafeBase64(b64Str);
+  EXPECT_FALSE(decodedOr.isError()) << decodedOr.takeError();
+
+  for (auto str : {f, fo, foo, foob, fooba, foobar}) {
+    decodedOr = decodeURLSafeBase64(str);
+    EXPECT_FALSE(decodedOr.isError()) << str << ": " << decodedOr.getError();
+  }
+}

@@ -35,10 +35,10 @@ ErrorOr<std::string> M::decodeURLSafeBase64(StringRef str) {
   std::replace_if(
       out.begin(), out.end(), [](char c) { return c == '_'; }, '/');
 
-  // Add back in any padding we removed.
+  // Add back in any padding we removed, but only if necessary.
   size_t remainder = str.size() % 4;
-  for (size_t i = 0; i < remainder; ++i)
-    out += '=';
+  if (remainder != 0)
+    out += std::string(4 - remainder, '=');
 
   std::vector<char> output;
   auto err = llvm::decodeBase64(out, output);
