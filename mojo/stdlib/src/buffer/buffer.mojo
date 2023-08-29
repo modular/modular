@@ -1420,13 +1420,12 @@ fn partial_simd_load[
     """Loads a vector with dynamic bound.
 
     Out of bound data will be filled with pad value. Data is valid if
-    lbound <= idx < rbound for idx from 0 to (simd_width-1).
+    lbound <= idx < rbound for idx from 0 to (simd_width-1). For example:
 
-    e.g.
         addr 0  1  2  3
         data x 42 43  x
 
-    partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
+        partial_simd_load[4](addr0,1,3) #gives [0 42 43 0]
 
     Parameters:
         type: The underlying dtype of computation.
