@@ -46,14 +46,13 @@ add_modular_library(MojoLLDB SHARED
 # Ensure symbols from the plugin library are visible.
 set_target_properties(MojoLLDB PROPERTIES CXX_VISIBILITY_PRESET default)
 
-# This creates an lldbinit file that is read automatically by our build of LLDB
-# and is used to load the MojoLLDB plugin at startup.
+# We used to create an lldbinit file to automatically load our MojoLLDB plugin,
+# but this conflicted with the --one-line-before-file load of the plugin
+# provided by the 'mojo repl' command.  We do not want to generate this file
+# any more.  Furthermore, we also want to remove stale copies of the file from
+# Modulers' build directories, because otherwise it will stick around and
+# continue to cause issues.
 set(lldbinit ${CMAKE_BINARY_DIR}/lib/lldbinit)
-
-# Generate the lldbinit file automatically. This loads the plugin and enables the log.
-file(GENERATE
-  OUTPUT ${lldbinit}
-  CONTENT "plugin load $<TARGET_FILE:MojoLLDB>\n"
-  TARGET MojoLLDB)
+file(REMOVE ${lldbinit})
 
 add_dependencies(MojoLLDB mojo-repl-entry-point)
