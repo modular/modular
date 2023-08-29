@@ -49,18 +49,9 @@ ErrorOr<TensorSpec> TensorSpec::parseFromString(StringRef str) {
 //===----------------------------------------------------------------------===//
 
 void TensorSpec::print(raw_ostream &os) const {
-  llvm::interleave(
-      *this, os,
-      [&](ssize_t dim) {
-        if (mlir::ShapedType::isDynamic(dim)) {
-          os << "?";
-          return;
-        }
-        os << dim;
-      },
-      "x");
-  if (getRank() != 0)
-    os << 'x';
+  TensorShape::print(os);
+  if (!(hasRank() && getRank() == 0))
+    os << "x";
   os << getEltType();
 }
 
@@ -70,5 +61,3 @@ std::string TensorSpec::getAsString() const {
   print(os);
   return os.str();
 }
-
-void TensorSpec::dump() const { print(llvm::errs()); }

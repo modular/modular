@@ -26,9 +26,21 @@ public:
   TensorSpec(const ShapeType &shape, DType eltType) : TensorShape(shape) {
     setEltType(eltType);
   }
+  template <typename ShapeType>
+  TensorSpec(const ShapeType &shape, TensorRankStyle style, DType eltType)
+      : TensorShape(shape, style) {
+    setEltType(eltType);
+  }
   template <typename T>
   TensorSpec(const std::initializer_list<T> &shape, DType eltType)
       : TensorShape(shape) {
+    static_assert(std::is_integral_v<T>, "shape dimensions must be integral");
+    setEltType(eltType);
+  }
+  template <typename T>
+  TensorSpec(const std::initializer_list<T> &shape, TensorRankStyle style,
+             DType eltType)
+      : TensorShape(shape, style) {
     static_assert(std::is_integral_v<T>, "shape dimensions must be integral");
     setEltType(eltType);
   }
@@ -48,7 +60,6 @@ public:
 
   void print(raw_ostream &os) const;
   std::string getAsString() const;
-  void dump() const;
 
   bool operator==(const TensorSpec &rhs) const {
     return storage.equalsIncludingAux(rhs.storage);
