@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CrashReporting.h"
+
+#include "Config/Version.h"
 #include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 
@@ -82,7 +84,7 @@ ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config &config,
 }
 
 /// Attempt to initialize Crashpad (returning an error upon failure).
-static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
+static ErrorOrSuccess tryInitCrashpad(const char *argv0, const char *program) {
   auto configOr = Config::open();
   if (configOr)
     return Error(llvm::Twine("while reading configuration: ") +
@@ -113,8 +115,16 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
                  handlerPathOr.getError());
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
   StringRef url = config.getValue("crash_reporting.url");
-  if (url.empty())
-    url = kDefaultURL;
+  std::string defaultURL;
+
+  // If the URL is empty, construct a URL by appending to the default URL
+  // above. This is one way to communicate a high-level categorization without
+  // having to dissemble the minidump on the server-side. However, most
+  // attributes should go into the attribute map below.
+  if (url.empty()) {
+    defaultURL = std::string(kDefaultURL) + "/" + std::string(program);
+    url = defaultURL;
+  }
 
   // Update the database if we have a URL and reporting is not enabled. In most
   // cases this will just read the existing database settings and not change.
@@ -128,20 +138,25 @@ static ErrorOrSuccess tryInitCrashpad(const char *argv0) {
       database->GetSettings()->SetUploadsEnabled(true);
   }
 
+  // Setup all the annotations.
+  std::map<std::string, std::string> annotations;
+  annotations["program"] = program;
+  annotations["version"] = getModularVersionString();
+
   // Launch Crashpad handler.
   crashpad::CrashpadClient client;
   if (!client.StartHandler(
           base::FilePath(handlerPath), base::FilePath(databasePath),
           /*metrics_dir=*/base::FilePath(databasePath), std::string(url),
-          /*annotations=*/{},
+          /*annotations=*/annotations,
           /*arguments=*/{}, /*restartable=*/true,
           /*asynchronous_start=*/false))
     return Error("crashpad failed to start handler");
   return success();
 }
 
-void M::initCrashpadForProgram(const char *argv0) {
-  if (auto error = tryInitCrashpad(argv0))
+void M::initCrashpadForProgram(const char *argv0, const char *program) {
+  if (auto error = tryInitCrashpad(argv0, program))
     llvm::errs() << "Failed to initialize Crashpad.  "
                     "Crash reporting will not be available.  "
                     "Cause: "
