@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "./Language/MojoLanguage.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
 #include "REPL/MojoREPL.h"
@@ -47,12 +48,14 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
   MojoREPL::Initialize();
+  lldb_private::MojoLanguage::Initialize();
   return true;
 }
 
 MODULAR_EXPORT void LLDBPluginTerminate() {
   MojoREPL::Terminate();
   MojoTypeSystem::Terminate();
+  lldb_private::MojoLanguage::Terminate();
 }
 
 namespace lldb {

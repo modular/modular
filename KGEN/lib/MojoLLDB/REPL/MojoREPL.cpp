@@ -6,6 +6,7 @@
 
 #include "MojoREPL.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
+#include "../Language/MojoLanguage.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/CodeComplete.h"
 #include "Support/Configuration.h"
