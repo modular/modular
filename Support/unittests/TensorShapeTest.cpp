@@ -59,7 +59,22 @@ struct llvm::yaml::MappingTraits<ShapeHolder> {
 
 TEST(TensorShape, constructor) {
   {
+    SmallVector<int64_t> shape{};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "");
+  }
+
+  {
     SmallVector<int64_t> shape{1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
+  }
+
+  {
+    SmallVector<uint64_t> shape{1, 2, 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
+  }
+
+  {
+    SmallVector<int32_t> shape{1, 2, 3, 4};
     EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
   }
 
@@ -73,17 +88,68 @@ TEST(TensorShape, constructor) {
     EXPECT_EQ(TensorShape(shape).getAsString(), "1x2x3x4");
   }
 
-  EXPECT_EQ(TensorShape({1, 2, 3, 4}).getAsString(), "1x2x3x4");
+  {
+    SmallVector<ssize_t> shape{1, kDynamic, -1, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x?x4");
+  }
 
   {
-    TensorShape shape = {1, 2, 3, 4};
-    EXPECT_EQ(shape.getAsString(), "1x2x3x4");
+    SmallVector<size_t> shape{1, static_cast<size_t>(kDynamic), 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x3x4");
   }
+
+  {
+    SmallVector<uint64_t> shape{1, static_cast<uint64_t>(kDynamic), 3, 4};
+    EXPECT_EQ(TensorShape(shape).getAsString(), "1x?x3x4");
+  }
+
+  EXPECT_EQ(TensorShape(kDynamicallyRanked).getAsString(), "*");
+
+  EXPECT_EQ(TensorShape({1, 2, 3, 4}).getAsString(), "1x2x3x4");
 
   {
     TensorShape shape = {1, 2, 3, 4};
     EXPECT_EQ(TensorShape(shape.getDimsCopy()), shape);
   }
+}
+
+TEST(TensorShape, hasRank) {
+  ASSERT_TRUE(TensorShape({1, 2}).hasRank());
+  ASSERT_FALSE(TensorShape(kDynamicallyRanked).hasRank());
+}
+
+TEST(TensorShape, isStatic) {
+  {
+    TensorShape shape({1, 2, 3, 4});
+    ASSERT_EQ(shape.getKind(), 1 /* k32 */);
+    EXPECT_TRUE(shape.isStatic());
+  }
+  {
+    TensorShape shape({1, 2, -1, 4});
+    ASSERT_EQ(shape.getKind(), 1 /* k32 */);
+    EXPECT_FALSE(shape.isStatic());
+  }
+  {
+    TensorShape shape({1, 2, 3, 4, 5, 6});
+    ASSERT_EQ(shape.getKind(), 0 /* k16 */);
+    EXPECT_TRUE(shape.isStatic());
+  }
+  {
+    TensorShape shape({1, 2, -1, 4, 5, 6});
+    ASSERT_EQ(shape.getKind(), 0 /* k16 */);
+    EXPECT_FALSE(shape.isStatic());
+  }
+  {
+    TensorShape shape({1, 2, 3, 4, 5, 6, 7, 8});
+    ASSERT_EQ(shape.getKind(), 2 /* kOutOfLine */);
+    EXPECT_TRUE(shape.isStatic());
+  }
+  {
+    TensorShape shape({1, 2, -1, 4, 5, 6, 7, 8});
+    ASSERT_EQ(shape.getKind(), 2 /* kOutOfLine */);
+    EXPECT_FALSE(shape.isStatic());
+  }
+  EXPECT_FALSE(TensorShape(kDynamicallyRanked).isStatic());
 }
 
 TEST(TensorShape, representations) {
@@ -108,35 +174,47 @@ TEST(TensorShape, representations) {
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, kDynamic}));
   EXPECT_TRUE(tensorShapeRoundTrips({1, 1, 1, 1, kDynamic}));
+
+  EXPECT_EQ(TensorShape(kDynamicallyRanked), TensorShape(kDynamicallyRanked));
 }
 
 TEST(TensorShape, stringizing) {
-  EXPECT_EQ("", shape({}).getAsString());
-  EXPECT_EQ("5", shape({5}).getAsString());
-  EXPECT_EQ("5x10", shape({5, 10}).getAsString());
-  EXPECT_EQ("5x10x20", shape({5, 10, 20}).getAsString());
-  EXPECT_EQ("?x10x20", shape({kDynamic, 10, 20}).getAsString());
-  EXPECT_EQ("5x?x20", shape({5, kDynamic, 20}).getAsString());
-  EXPECT_EQ("5x10x?", shape({5, 10, kDynamic}).getAsString());
-  EXPECT_EQ("?", shape({kDynamic}).getAsString());
+  EXPECT_EQ(shape({}).getAsString(), "");
+  EXPECT_EQ(shape({5}).getAsString(), "5");
+  EXPECT_EQ(shape({5, 10}).getAsString(), "5x10");
+  EXPECT_EQ(shape({5, 10, 20}).getAsString(), "5x10x20");
+  EXPECT_EQ(shape({kDynamic, 10, 20}).getAsString(), "?x10x20");
+  EXPECT_EQ(shape({5, kDynamic, 20}).getAsString(), "5x?x20");
+  EXPECT_EQ(shape({5, 10, kDynamic}).getAsString(), "5x10x?");
+  EXPECT_EQ(shape({kDynamic}).getAsString(), "?");
+  EXPECT_EQ(TensorShape(kDynamicallyRanked).getAsString(), "*");
 }
 
 TEST(TensorShape, parsing) {
-  EXPECT_EQ(ok(shape({})), TensorShape::parseFromString(""));
-  EXPECT_EQ(ok(shape({5})), TensorShape::parseFromString("5"));
-  EXPECT_EQ(ok(shape({5, 10})), TensorShape::parseFromString("5x10"));
-  EXPECT_EQ(ok(shape({5, 10, 20})), TensorShape::parseFromString("5x10x20"));
-  EXPECT_EQ(ok(shape({kDynamic, 10, 20})),
-            TensorShape::parseFromString("?x10x20"));
-  EXPECT_EQ(ok(shape({5, kDynamic, 20})),
-            TensorShape::parseFromString("5x?x20"));
-  EXPECT_EQ(ok(shape({5, 10, kDynamic})),
-            TensorShape::parseFromString("5x10x?"));
-  EXPECT_EQ(ok(shape({kDynamic})), TensorShape::parseFromString("?"));
-  EXPECT_EQ(ErrorOr<TensorShape>(
+  EXPECT_EQ(TensorShape::parseFromString(""), ok(shape({})));
+  EXPECT_EQ(TensorShape::parseFromString("5"), ok(shape({5})));
+  EXPECT_EQ(TensorShape::parseFromString("5x10"), ok(shape({5, 10})));
+  EXPECT_EQ(TensorShape::parseFromString("5x10x20"), ok(shape({5, 10, 20})));
+  EXPECT_EQ(TensorShape::parseFromString("?x10x20"),
+            ok(shape({kDynamic, 10, 20})));
+  EXPECT_EQ(TensorShape::parseFromString("5x?x20"),
+            ok(shape({5, kDynamic, 20})));
+  EXPECT_EQ(TensorShape::parseFromString("5x10x?"),
+            ok(shape({5, 10, kDynamic})));
+  EXPECT_EQ(TensorShape::parseFromString("?"), ok(shape({kDynamic})));
+  EXPECT_EQ(TensorShape::parseFromString("*"),
+            ok(TensorShape(kDynamicallyRanked)));
+  EXPECT_EQ(TensorShape::parseFromString("2x3.5"),
+            ErrorOr<TensorShape>(
                 Error("could not parse dimension integer from string: 2x3.5 "
-                      "because 3.5 cannot be parsed as an integer")),
-            TensorShape::parseFromString("2x3.5"));
+                      "because 3.5 cannot be parsed as an integer")));
+  EXPECT_EQ(TensorShape::parseFromString("2x-1"),
+            ErrorOr<TensorShape>(Error("could not parse dimension integer from "
+                                       "string: 2x-1 because -1 is negative")));
+  EXPECT_EQ(TensorShape::parseFromString("1x2x3x4x5x6x7x8x9"),
+            ErrorOr<TensorShape>(Error(
+                "could not parse tensor shape from string: 1x2x3x4x5x6x7x8x9 "
+                "because it is larger that the maximum supported rank 8")));
 }
 
 TEST(TensorShape, yamlInput) {

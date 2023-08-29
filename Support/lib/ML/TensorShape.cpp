@@ -27,8 +27,45 @@ bool Detail::TensorShapeStorage::equalsExcludingAuxOOL(
          SmallVector<ssize_t, kMaxRank>(rhs.begin(), rhs.end());
 }
 
-/// Bulk reassignment of elements.
-/// TODO: Forcing dimensions to 64-bit is suboptimal on 32-bit hosts.
+bool Detail::TensorShapeStorage::isStatic() const {
+  if (!hasRank())
+    return false;
+  switch (getRepKind()) {
+  case RepKind::k32:
+    for (size_t i = 0; i < 3; ++i) { // encourage unrolling by checking all dims
+      if (representation.rep32.dims[i] < 0)
+        return false;
+    }
+    if (representation.rep32.dim3 < 0)
+      return false;
+    break;
+  case RepKind::k16:
+    for (size_t i = 0; i < 6; ++i) { // encourage unrolling by checking all dims
+      if (representation.rep16.dims[i] < 0)
+        return false;
+    }
+    break;
+  case RepKind::kOutOfLine:
+    for (size_t i = 0, n = representation.repOutOfLine.rank; i < n; ++i) {
+      if (representation.repOutOfLine.dims[i] < 0)
+        return false;
+    }
+    break;
+  }
+  return true;
+}
+
+void Detail::TensorShapeStorage::assignDynamic() {
+  if (getRepKind() == RepKind::kOutOfLine)
+    delete[] representation.repOutOfLine.dims;
+
+  // Zero-initialize to ensure the representation value is deterministic.
+  // We do not zero out the auxiliary field.
+  memset(&representation, 0, sizeof(representation) - 1);
+
+  representation.rep16.rank = kDynamicRank;
+}
+
 void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
   if (getRepKind() == RepKind::kOutOfLine)
     delete[] representation.repOutOfLine.dims;
@@ -39,8 +76,8 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
 
   // Get and set the rank, regardless of the representation.
   const size_t rank = elements.size();
-  assert(elements.size() <= kMaxRank && "requested shape is too high a rank");
-  representation.repOutOfLine.rank = rank;
+  assert(rank <= kMaxRank && "requested shape has too high a rank");
+  representation.rep16.rank = static_cast<uint8_t>(rank);
 
   // Decide which representation we can use and initialize the elements.  The
   // most common case should fit into 4 dimensions.
@@ -105,20 +142,56 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
 }
 
 //===----------------------------------------------------------------------===//
-// Printing, Stringizing, and Parsing
+// TensorShape
 //===----------------------------------------------------------------------===//
 
+ErrorOrSuccess TensorShape::isRefinedBy(const TensorShape &staticShape) const {
+  if (!staticShape.hasRank())
+    return Error(Twine("Specified shape ") + staticShape.getAsString() +
+                 " must have a statically known rank.");
+  if (hasRank()) {
+    if (getRank() != staticShape.getRank())
+      return Error(Twine("Specified shape ") + staticShape.getAsString() +
+                   " doesn't match the rank of the required shape " +
+                   getAsString() + ".");
+    for (size_t i = 0, n = getRank(); i < n; ++i) {
+      int64_t thisDim = this->operator[](i);
+      int64_t thatDim = staticShape[i];
+      if (thatDim < 0)
+        return Error(Twine("Specified shape ") + staticShape.getAsString() +
+                     " must have statically known dimension at index " +
+                     Twine(i) + ".");
+      if (thisDim >= 0 && thisDim != thatDim)
+        return Error(Twine("Specified shape ") + staticShape.getAsString() +
+                     " has dimension which doesn't match the required shape " +
+                     getAsString() + " at index " + Twine(i) + ".");
+    }
+  } else {
+    for (size_t i = 0, n = staticShape.getRank(); i < n; ++i) {
+      int64_t thatDim = staticShape[i];
+      if (thatDim < 0)
+        return Error(Twine("Specified shape ") + staticShape.getAsString() +
+                     " must have statically known dimension at index " +
+                     Twine(i) + ".");
+    }
+  }
+  return success();
+}
+
 void TensorShape::print(raw_ostream &os) const {
-  llvm::interleave(
-      *this, os,
-      [&](ssize_t dim) {
-        if (mlir::ShapedType::isDynamic(dim)) {
-          os << "?";
-          return;
-        }
-        os << dim;
-      },
-      "x");
+  if (hasRank()) {
+    llvm::interleave(
+        *this, os,
+        [&](ssize_t dim) {
+          if (dim < 0)
+            os << "?";
+          else
+            os << dim;
+        },
+        "x");
+  } else {
+    os << "*";
+  }
 }
 
 std::string TensorShape::getAsString() const {
@@ -128,30 +201,44 @@ std::string TensorShape::getAsString() const {
   return os.str();
 }
 
-void TensorShape::dump() const { print(llvm::errs()); }
-
 ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
   // Empty strings gum up the rest of the function since splitStr would still
   // have one (empty) element, so early-out in this case.
   if (str.empty())
     return TensorShape();
 
+  if (str.size() == 1 && str[0] == '*')
+    return TensorShape(kDynamicallyRanked);
+
   SmallVector<StringRef, kMaxRank> splitStr;
   str.split(splitStr, 'x');
+  size_t rank = splitStr.size();
+  if (rank > kMaxRank) {
+    return Error(Twine("could not parse tensor shape from string: ") + str +
+                 " because it is larger that the maximum supported rank " +
+                 Twine(kMaxRank));
+  }
 
   SmallVector<ssize_t, kMaxRank> shape;
   shape.reserve(splitStr.size());
   for (auto &it : splitStr) {
     int64_t value;
-    if (it == "?")
-      value = mlir::ShapedType::kDynamic;
-    else if (it.getAsInteger(10, value))
+    if (it == "?") {
+      // Follow the MLIR convention for representing dynamic dimensions, though
+      // we interpret any negative value to denote dynamic elsewhere.
+      shape.emplace_back(mlir::ShapedType::kDynamic);
+    } else if (it.getAsInteger(10, value)) {
       return Error(Twine("could not parse dimension integer from string: ") +
                    str + " because " + it + " cannot be parsed as an integer");
-    shape.emplace_back(value);
-    if (shape.back() != value)
+    } else if (value < 0) {
       return Error(Twine("could not parse dimension integer from string: ") +
-                   str + " because " + it + " cannot be represented");
+                   str + " because " + it + " is negative");
+    } else {
+      shape.emplace_back(value);
+      if (shape.back() != value)
+        return Error(Twine("could not parse dimension integer from string: ") +
+                     str + " because " + it + " cannot be represented");
+    }
   }
 
   return TensorShape(shape);

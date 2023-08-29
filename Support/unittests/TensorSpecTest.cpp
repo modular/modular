@@ -108,9 +108,6 @@ TEST(TensorSpec, parsing) {
             TensorSpec::parseFromString("5x10x?xf128"));
   EXPECT_EQ(ok(spec({kDynamic}, DType::si64)),
             TensorSpec::parseFromString("?xsi64"));
-  llvm::errs() << TensorSpec::parseFromString("2x3").getError();
-  llvm::errs() << TensorSpec::parseFromString("2x3xd32").getError();
-
   EXPECT_EQ(ErrorOr<TensorSpec>(
                 Error("could not parse shape from string: 2x3.5xf32: could not "
                       "parse dimension integer from string: 2x3.5 because 3.5 "
