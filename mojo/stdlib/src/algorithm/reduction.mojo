@@ -1744,3 +1744,107 @@ fn reduce_shape[
     var output_shape = input_buf.get_shape()
     output_shape[axis] = 1
     return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# cumsum function
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _floorlog2[n: Int]() -> Int:
+    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
+
+
+@always_inline
+fn _static_log2[n: Int]() -> Int:
+    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
+
+
+@always_inline
+fn _cumsum[
+    size: Int, type: DType
+](dst: Buffer[size, type], src: Buffer[size, type]):
+    dst[0] = src[0]
+    for i in range(1, size):
+        dst[i] = src[i] + dst[i - 1]
+
+
+@always_inline
+fn cumsum[
+    size: Int, type: DType
+](dst: Buffer[size, type], src: Buffer[size, type]):
+    """Computes the cumulative sum of all elements in a buffer.
+       dst[i] = src[i] + src[i-1] + ... + src[0].
+
+    Parameters:
+        size: The size of the input and output buffers.
+        type: The type of the elements of the input and output buffers.
+
+    Args:
+        dst: The buffer that stores the result of cumulative sum operation.
+        src: The buffer of elements for which the cumulative sum is computed.
+    """
+
+    debug_assert(src.__len__() != 0, "Input must not be empty")
+    debug_assert(dst.__len__() != 0, "Output must not be empty")
+
+    alias simd_width = simdwidthof[type]()
+
+    # For length less than simd_width do serial cumulative sum.
+    # Similarly, for the case when simd_width == 2 serial should be faster.
+    if size < simd_width or simd_width == 2:
+        return _cumsum[size, type](dst, src)
+
+    # Stores the offset (i.e., last value of previous simd_width-elements chunk,
+    # replicated across all simd lanes, to be added to all elements of next
+    # chunk.
+    var offset = SIMD[type, simd_width]()
+
+    # Divide the buffer size to div_size chunks of simd_width elements,
+    # to calculate using SIMD and do remaining (tail) serially.
+    let div_size = (size // simd_width) * simd_width
+
+    # Number of inner-loop iterations (for shift previous result and add).
+    alias rep = _static_log2[simd_width]()
+
+    for i in range(0, div_size, simd_width):
+        var x_simd = src.simd_load[simd_width](i)
+        var y_simd = SIMD[type, simd_width]()
+
+        @parameter
+        fn loop_body[idx: Int]():
+            alias a = 2**idx
+            y_simd = x_simd.shift_right[a]()
+            x_simd = x_simd + y_simd
+
+        unroll[rep, loop_body]()
+        dst.simd_store(i, x_simd)
+
+    # e.g., Assuming input buffer 1, 2, 3, 4, 5, 6, 7, 8 and simd_width = 4
+    # The first outer iteration of the above would be the following;
+    # note log2(simd_width) = log2(4) = 2 inner iterations.
+    #   1, 2, 3, 4
+    # + 0, 1, 2, 3  (<-- this is the shift_right operation)
+    # ------------
+    #   1, 3, 5, 7
+    # + 0, 0, 1, 3  (<-- this is the shift_right operation)
+    # ------------
+    #   1, 3, 6, 10
+
+    # Accumulation phase: Loop over simd_width-element chunks,
+    # and add the offset (where offset is a vector of simd_width
+    # containing the last element of the previous chunk).
+    # e.g.,
+    # offset used in iteration 0: 0, 0, 0, 0
+    # offset used in iteration 1: 10, 10, 10, 10
+    for i in range(0, div_size, simd_width):
+        var x_simd = dst.simd_load[simd_width](i)
+        x_simd += offset
+        dst.simd_store(i, x_simd)
+        offset = offset.splat(x_simd[simd_width - 1])
+
+    # Handles the tail, i.e., num of elements at the end that don't
+    # fit within a simd_width-elements vector.
+    for i in range(div_size, size):
+        dst[i] = dst[i - 1] + src[i]

@@ -20,6 +20,7 @@ from algorithm import (
     variance,
     argmax,
     argmin,
+    cumsum,
 )
 
 # TODO: Fold this import into the one above.
@@ -29,6 +30,7 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
+
 
 # CHECK-LABEL: test_reductions
 fn test_reductions():
@@ -560,6 +562,58 @@ fn test_argn_test_zeros():
             print("argmin = ", output[Index(i, 0)])
 
 
+# CHECK-LABEL: test_cumsum
+fn test_cumsum():
+    print("== test_cumsum")
+
+    let vector = Buffer[150, DType.float32].stack_allocation()
+    for i in range(vector.__len__()):
+        vector[i] = i + 1
+    let cumsum_out1 = Buffer[150, DType.float32].stack_allocation()
+    cumsum[150, DType.float32](cumsum_out1, vector)
+    # CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,21.0 ,28.0 ,36.0 ,45.0 ,55.0 ,66.0 ,78.0
+    # CHECK: ,91.0 ,105.0 ,120.0 ,136.0 ,153.0 ,171.0 ,190.0 ,210.0 ,231.0
+    # CHECK: ,253.0 ,276.0 ,300.0 ,325.0 ,351.0 ,378.0 ,406.0 ,435.0 ,465.0
+    # CHECK: ,496.0 ,528.0 ,561.0 ,595.0 ,630.0 ,666.0 ,703.0 ,741.0 ,780.0
+    # CHECK: ,820.0 ,861.0 ,903.0 ,946.0 ,990.0 ,1035.0 ,1081.0 ,1128.0 ,1176.0
+    # CHECK: ,1225.0 ,1275.0 ,1326.0 ,1378.0 ,1431.0 ,1485.0 ,1540.0 ,1596.0
+    # CHECK: ,1653.0 ,1711.0 ,1770.0 ,1830.0 ,1891.0 ,1953.0 ,2016.0 ,2080.0
+    # CHECK: ,2145.0 ,2211.0 ,2278.0 ,2346.0 ,2415.0 ,2485.0 ,2556.0 ,2628.0
+    # CHECK: ,2701.0 ,2775.0 ,2850.0 ,2926.0 ,3003.0 ,3081.0 ,3160.0 ,3240.0
+    # CHECK: ,3321.0 ,3403.0 ,3486.0 ,3570.0 ,3655.0 ,3741.0 ,3828.0 ,3916.0
+    # CHECK: ,4005.0 ,4095.0 ,4186.0 ,4278.0 ,4371.0 ,4465.0 ,4560.0 ,4656.0
+    # CHECK: ,4753.0 ,4851.0 ,4950.0 ,5050.0 ,5151.0 ,5253.0 ,5356.0 ,5460.0
+    # CHECK: ,5565.0 ,5671.0 ,5778.0 ,5886.0 ,5995.0 ,6105.0 ,6216.0 ,6328.0
+    # CHECK: ,6441.0 ,6555.0 ,6670.0 ,6786.0 ,6903.0 ,7021.0 ,7140.0 ,7260.0
+    # CHECK: ,7381.0 ,7503.0 ,7626.0 ,7750.0 ,7875.0 ,8001.0 ,8128.0 ,8256.0
+    # CHECK: ,8385.0 ,8515.0 ,8646.0 ,8778.0 ,8911.0 ,9045.0 ,9180.0 ,9316.0
+    # CHECK: ,9453.0 ,9591.0 ,9730.0 ,9870.0 ,10011.0 ,10153.0 ,10296.0 ,10440.0
+    # CHECK: ,10585.0 ,10731.0 ,10878.0 ,11026.0 ,11175.0 ,11325.0 ,
+    for i in range(cumsum_out1.__len__()):
+        print_no_newline(cumsum_out1[i], ",")
+
+    print()
+
+    let vector2 = Buffer[128, DType.int64].stack_allocation()
+    for i in range(vector2.__len__()):
+        vector2[i] = i + 1
+    let cumsum_out2 = Buffer[128, DType.int64].stack_allocation()
+    cumsum[128, DType.int64](cumsum_out2, vector2)
+    # CHECK: 1 ,3 ,6 ,10 ,15 ,21 ,28 ,36 ,45 ,55 ,66 ,78 ,91 ,105 ,120 ,136
+    # CHECK: ,153 ,171 ,190 ,210 ,231 ,253 ,276 ,300 ,325 ,351 ,378 ,406 ,435
+    # CHECK: ,465 ,496 ,528 ,561 ,595 ,630 ,666 ,703 ,741 ,780 ,820 ,861 ,903
+    # CHECK: ,946 ,990 ,1035 ,1081 ,1128 ,1176 ,1225 ,1275 ,1326 ,1378 ,1431
+    # CHECK: ,1485 ,1540 ,1596 ,1653 ,1711 ,1770 ,1830 ,1891 ,1953 ,2016 ,2080
+    # CHECK: ,2145 ,2211 ,2278 ,2346 ,2415 ,2485 ,2556 ,2628 ,2701 ,2775 ,2850
+    # CHECK: ,2926 ,3003 ,3081 ,3160 ,3240 ,3321 ,3403 ,3486 ,3570 ,3655 ,3741
+    # CHECK: ,3828 ,3916 ,4005 ,4095 ,4186 ,4278 ,4371 ,4465 ,4560 ,4656 ,4753
+    # CHECK: ,4851 ,4950 ,5050 ,5151 ,5253 ,5356 ,5460 ,5565 ,5671 ,5778 ,5886
+    # CHECK: ,5995 ,6105 ,6216 ,6328 ,6441 ,6555 ,6670 ,6786 ,6903 ,7021 ,7140
+    # CHECK: ,7260 ,7381 ,7503 ,7626 ,7750 ,7875 ,8001 ,8128 ,8256 ,
+    for i in range(cumsum_out2.__len__()):
+        print_no_newline(cumsum_out2[i], ",")
+
+
 fn main():
     test_reductions()
     test_product()
@@ -572,3 +626,4 @@ fn main():
     test_argn_2_test_2()
     test_argn_2_neg_axis()
     test_argn_test_zeros()
+    test_cumsum()
