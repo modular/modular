@@ -37,7 +37,7 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   // program, and that's not necessarily the case for LLDB... but we have no
   // real better place to put this, since the only better place ('main'
   // function of the LLDB driver) is upstream and hard to patch in our build.
-  initCrashpadForProgram("mojo-lldb");
+  initCrashpadForProgram("lldb", "mojo-lldb");
 
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();

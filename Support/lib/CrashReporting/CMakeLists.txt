@@ -9,6 +9,7 @@ add_modular_library(MCrashReporting
 
   LINK_LIBS PUBLIC
   MSupport
+  MVersion
 
   client  # Crashpad client library
 )
