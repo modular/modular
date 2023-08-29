@@ -49,6 +49,8 @@ from utils.static_tuple import StaticTuple
 # Utilities
 # ===----------------------------------------------------------------------===#
 
+# TODO(#20271): Support dynamically ranked shapes as per the C++ runtime.
+
 
 @register_passable("trivial")
 struct _RepKind:
