@@ -37,7 +37,7 @@ TEST(Version, Parsing) {
 ///   1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2
 ///   < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0
 /// This also checks more basic precedence:
-///   1.0.0 < 1.1.0 < 2.0.0
+///   1.0.0 < 1.1.0 < 2.0.0, and 1.0.0-rc.1 < 1.0.1-rc.0
 TEST(Version, Precedence) {
   auto v1Alpha = Version::parse("1.0.0-alpha");
   ASSERT_FALSE(v1Alpha.isError()) << v1Alpha.getError();
@@ -60,6 +60,9 @@ TEST(Version, Precedence) {
   auto v1RC1 = Version::parse("1.0.0-rc.1");
   ASSERT_FALSE(v1RC1.isError()) << v1RC1.getError();
 
+  auto v101RC1 = Version::parse("1.0.1-rc.0");
+  ASSERT_FALSE(v101RC1.isError()) << v101RC1.getError();
+
   auto v1 = Version::parse("1.0.0");
   ASSERT_FALSE(v1.isError()) << v1.getError();
 
@@ -70,15 +73,33 @@ TEST(Version, Precedence) {
   ASSERT_FALSE(v2.isError()) << v2.getError();
 
   // Check the example given in the spec.
-  EXPECT_TRUE(*v1Alpha < *v1Alpha1);
-  EXPECT_TRUE(*v1Alpha1 < *v1AlphaBeta);
-  EXPECT_TRUE(*v1AlphaBeta < *v1Beta);
-  EXPECT_TRUE(*v1Beta < *v1Beta2);
-  EXPECT_TRUE(*v1Beta2 < *v1Beta11);
-  EXPECT_TRUE(*v1Beta11 < *v1RC1);
-  EXPECT_TRUE(*v1RC1 < *v1);
-  EXPECT_TRUE(*v1 < *v1p1);
-  EXPECT_TRUE(*v1p1 < *v2);
+  EXPECT_TRUE((*v1Alpha < *v1Alpha1) && *v1Alpha1 > *v1Alpha);
+  EXPECT_TRUE((*v1Alpha1 < *v1AlphaBeta) && (*v1AlphaBeta > *v1Alpha1));
+  EXPECT_TRUE((*v1AlphaBeta < *v1Beta) && (*v1Beta > *v1AlphaBeta));
+  EXPECT_TRUE((*v1Beta < *v1Beta2) && (*v1Beta2 > *v1Beta));
+  EXPECT_TRUE((*v1Beta2 < *v1Beta11) && (*v1Beta11 > *v1Beta2));
+  EXPECT_TRUE((*v1Beta11 < *v1RC1) && (*v1RC1 > *v1Beta11));
+  EXPECT_TRUE((*v1RC1 < *v1) && (*v1 > *v1RC1));
+  EXPECT_TRUE((*v1RC1 < *v101RC1) && (*v101RC1 > *v1RC1));
+  EXPECT_TRUE((*v1 < *v1p1) && (*v1p1 > *v1));
+  EXPECT_TRUE((*v1p1 < *v2) && (*v2 > *v1p1));
+
+  // Check a specific problematic version.
+  auto v020RC4 = Version::parse("0.2.0-rc4");
+  ASSERT_FALSE(v020RC4.isError()) << v020RC4.getError();
+
+  auto v021RC0 = Version::parse("0.2.1-rc0");
+  ASSERT_FALSE(v021RC0.isError()) << v021RC0.getError();
+
+  auto v021RC4 = Version::parse("0.2.1-rc4");
+  ASSERT_FALSE(v021RC4.isError()) << v021RC4.getError();
+
+  // 0.2.0-rc4 should be less than 0.2.1-rc0.
+  EXPECT_TRUE((*v020RC4 < *v021RC0) && (*v021RC0 > *v020RC4));
+  // 0.2.1-rc0 should be less than 0.2.1-rc4.
+  EXPECT_TRUE((*v021RC0 < *v021RC4) && (*v021RC4 > *v021RC0));
+  // 0.2.0-rc4 should be less than 0.2.1-rc4.
+  EXPECT_TRUE((*v020RC4 < *v021RC4) && (*v021RC4 > *v020RC4));
 }
 
 TEST(Version, Equal) {
