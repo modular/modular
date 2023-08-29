@@ -84,7 +84,8 @@ public:
                              ArrayRef<ValueInputConvention> argConventions,
                              ArrayRef<StringAttr> argNames, Type resultType,
                              SpecialFunctionKind specialFnID, SMLoc loc,
-                             ImplicitLocOpBuilder &builder);
+                             ImplicitLocOpBuilder &builder,
+                             FnEffects effects = FnEffects());
 
   LIT::FuncOp
   synthesizeMemberwiseInit(SMLoc location, StructDeclOp structOp,
@@ -92,7 +93,6 @@ public:
                            ArrayRef<ValueInputConvention> argConventions,
                            ArrayRef<StringAttr> argNames);
 
-private:
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
   LIT::FuncOp
@@ -100,8 +100,10 @@ private:
                            ArrayRef<ValueInputConvention> argConventions,
                            ArrayRef<StringAttr> argNames, Type resultType,
                            StructDeclOp structOp,
-                           SpecialFunctionKind specialFnID, SMLoc loc);
+                           SpecialFunctionKind specialFnID, SMLoc loc,
+                           FnEffects effects = FnEffects());
 
+private:
   SharedState &shared;
 };
 

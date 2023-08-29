@@ -137,6 +137,7 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<(!kgen.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field copy : !kgen.signature<(!kgen.pointer<array<0, i1>> init_self, !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field move : !kgen.signature<(!kgen.pointer<array<0, i1>> init_self, !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field call : !kgen.signature<(!kgen.pointer<!String> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem, !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
 # CHECK-DAG:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
 # CHECK-DAG:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
@@ -208,6 +209,9 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<@{{.*}}::@"_CW_{{.*}}"> init_self, %impl: !kgen.pointer<@{{.*}}::@"_CI_{{.*}}"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 2 : i8} {
+# CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [<>(!kgen.pointer<!String> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem, !kgen.pointer<!String> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V7:.*]] = lit.struct.gep %self[move]
 # CHECK-NEXT: %[[V8:.*]] = kgen.create_closure [{{.*}}]()
@@ -254,6 +258,12 @@ fn makes_escaping_closure_from_nomove(m: StringNoMove) -> Int:
 # CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
 # CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %existing
 # CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__moveinit__{{.*}}(%[[W0]], %[[W1]])
+
+# CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%arg0: !kgen.pointer<!String> byref_result, %arg1: !kgen.pointer<array<0, i1>> borrow_in_mem, %arg2: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %arg1
+# CHECK-NEXT: %[[A1:.*]] = kgen.call @{{.*}}@"__call__{{.*}}"(%arg0, %[[A0]], %arg2)
+# CHECK-NEXT: lit.return %[[A1]] : !lit.none
+# CHECK-NEXT: lit.end_func
 fn materialize_escaping_closure(m: String, z:String):
    fn dummy(n:String) escaping -> String:
       return n + m + z
@@ -420,3 +430,33 @@ fn make_diff_closures(m:String, z: __mlir_type.index, owned w: Int):
    fn capture_slvalue(owned q: Int, ww: Int) escaping -> NoneType:
       x = x + x
       print(w)
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Closure Wrapper Call
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.struct.field call : !kgen.signature<(!kgen.pointer<array<0, i1>> borrow_in_mem, !kgen.pointer<!String> borrow_in_mem, !Int borrow) -> !Int>
+# CHECK: lit.func @"__call__{{.*}}"(%arg0: !kgen.pointer<@"{{.*}}_CW_{{.*}}"> borrow_in_mem, %arg1: !kgen.pointer<!String> borrow_in_mem, %arg2: !Int borrow) -> !Int
+# CHECK-NEXT: [[closure_impl_ref0:%.*]] = lit.struct.gep %arg0[field0]
+# CHECK-NEXT: [[closure_impl0:%.*]] = pop.load [[closure_impl_ref0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.struct.gep %arg0[call]
+# CHECK-NEXT: [[casting_call0:%.*]] = pop.load [[casting_call_ref0]]
+# CHECK-NEXT: [[result_of_typed_call0:%.*]] = kgen.call_signature [[casting_call0]]([[closure_impl0]], %arg1, %arg2) : (!kgen.pointer<array<0, i1>> borrow_in_mem, !kgen.pointer<!String> borrow_in_mem, !Int borrow) -> !Int
+# CHECK-NEXT: lit.return [[result_of_typed_call0]] : !Int
+# CHECK-NEXT: lit.end_func
+# CHECK-NEXT: }
+# CHECK: lit.struct.field call : !kgen.signature<(!kgen.pointer<!String> byref_result, !kgen.pointer<array<0, i1>> borrow_in_mem, !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
+# CHECK: lit.func @"__call__{{.*}}"(%arg0: !kgen.pointer<!String> byref_result, %arg1: !kgen.pointer<@"{{.*}}_CW_{{.*}}"> borrow_in_mem, %arg2: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: [[closure_impl_ref:%.*]] = lit.struct.gep %arg1[field0]
+# CHECK-NEXT: [[closure_impl:%.*]] = pop.load [[closure_impl_ref]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: [[casting_call_ref:%.*]] = lit.struct.gep %arg1[call]
+# CHECK-NEXT: [[casting_call:%.*]] = pop.load [[casting_call_ref]]
+# CHECK-NEXT: [[result_of_typed_call:%.*]] = kgen.call_signature [[casting_call]](%arg0, [[closure_impl]], %arg2)
+# CHECK-NEXT: lit.return [[result_of_typed_call]] : !lit.none
+fn makes_escaping_closure(m: String):
+   fn myclosure(n:String) escaping -> String:
+      return n+m
+   fn myclosure2(n:String, j:Int) escaping -> Int:
+      return m.__len__()

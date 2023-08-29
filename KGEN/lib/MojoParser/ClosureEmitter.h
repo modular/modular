@@ -38,7 +38,10 @@ public:
         structEmitter(shared),
         dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
         copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
-        moveFieldAttr(StringAttr::get(shared.getContext(), "move")) {}
+        moveFieldAttr(StringAttr::get(shared.getContext(), "move")),
+        callFieldAttr(StringAttr::get(shared.getContext(), "call")),
+        callMethodAttr(
+            StringAttr::get(shared.getContext(), "closureCallMethod")) {}
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
@@ -72,6 +75,8 @@ private:
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
   StringAttr moveFieldAttr;
+  StringAttr callFieldAttr;
+  StringAttr callMethodAttr;
 };
 
 } // namespace M::KGEN::LIT
