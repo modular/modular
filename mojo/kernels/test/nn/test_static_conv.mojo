@@ -8,15 +8,14 @@
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
 from sys.info import simdwidthof
-
 from Conv import ConvDirectNHWC, direct_null_elementwise_epilogue
 from ConvUtils import (
     ConvShape,
     get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
 )
+from math import div_ceil
 from memory.buffer import NDBuffer
-
 from utils.index import Index
 from utils.list import DimList
 
@@ -42,6 +41,7 @@ alias value_type = DType.float32
 alias simd_width = simdwidthof[value_type]()
 alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 alias micro_kernel_f_size = micro_kernel_width * simd_width
+alias num_micro_tile = div_ceil(F, micro_kernel_f_size)
 
 
 @export(ABI="C")
@@ -50,7 +50,7 @@ fn static_conv(
     input: NDBuffer[4, DimList(N, H, W, C), value_type],
     filter: NDBuffer[
         5,
-        DimList(F // micro_kernel_f_size, R, S, C, micro_kernel_f_size),
+        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
         value_type,
     ],
 ):
@@ -78,7 +78,7 @@ fn static_conv(
     let instance = ConvDirectNHWC[
         5,
         DimList(N, H, W, C),
-        DimList(F // micro_kernel_f_size, R, S, C, micro_kernel_f_size),
+        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
         DimList(N, HO, WO, F),
         value_type,
         True,
@@ -107,7 +107,7 @@ fn test_static_conv():
     let input = NDBuffer[4, DimList(N, H, W, C), value_type].stack_allocation()
     let filter = NDBuffer[
         5,
-        DimList(F // micro_kernel_f_size, R, S, C, micro_kernel_f_size),
+        DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
         value_type,
     ].stack_allocation()
 
