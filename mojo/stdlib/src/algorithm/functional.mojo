@@ -488,16 +488,16 @@ fn tile[
 
     A workgroup function is a function that can process a configurable
     consecutive "tile" of workload. E.g.
-      work_on[3](5)
+      `work_on[3](5)`
     should launch computation on item 5,6,7, and should be semantically
     equivalent to
-      work_on[1](5), work_on[1](6), work_on[1](7).
+      `work_on[1](5)`, `work_on[1](6)`, `work_on[1](7)`.
 
     This generator will try to proceed with the given list of tile sizes on the
     listed order. E.g.
-        tile [func, (3,2,1)](offset, upperbound)
-    will try to call func[3] starting from offset until remaining work is less
-    than 3 from upperbound and then try func[2], and then func[1] etc.
+        `tile[func, (3,2,1)](offset, upperbound)`
+    will try to call `func[3]` starting from offset until remaining work is less
+    than 3 from upperbound and then try `func[2]`, and then `func[1]`, etc.
 
     Parameters:
         workgroup_function: Workgroup function that processes one tile of
@@ -701,24 +701,21 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool):
     following code transformation that reduces the number of branches in the
     generated code
 
-        Before:
-        ```
+    Before:
+
+        for i in range(...)
+            if i < xxx:
+                ...
+
+    After:
+
+        if i < ...
+            for i in range(...)
+                ...
+        else
             for i in range(...)
                 if i < xxx:
                     ...
-        ```
-
-        After:
-
-        ```
-            if i < ...
-                for i in range(...)
-                    ...
-            else
-                for i in range(...)
-                    if i < xxx:
-                        ...
-        ```
 
     This unswitch function generalizes that pattern with the help of meta
     parameters and can be used to perform both loop unswitching and other
@@ -927,23 +924,23 @@ fn _get_start_indices_of_nth_subvolume[
     rank: Int, subvolume_rank: Int
 ](n: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     """Converts a flat index into the starting ND indices of the nth subvolume
-    with rank subvolume_rank.
+    with rank `subvolume_rank`.
 
     For example:
-        - _get_start_indices_of_nth_subvolume[3, 0](n, shape) will return
+        - `_get_start_indices_of_nth_subvolume[3, 0](n, shape)` will return
         the starting indices of the nth element in shape.
-        - _get_start_indices_of_nth_subvolume[3, 1](n, shape) will return
+        - `_get_start_indices_of_nth_subvolume[3, 1](n, shape)` will return
         the starting indices of the nth row in shape.
-        - _get_start_indices_of_nth_subvolume[3, 2](n, shape) will return
+        - `_get_start_indices_of_nth_subvolume[3, 2](n, shape)` will return
         the starting indices of the nth horizontal slice in shape.
 
     The ND indices will iterate from right to left. I.E
 
-    shape = (20, 5, 2, N)
-    _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
-    _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
-    _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
-    _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
+        shape = (20, 5, 2, N)
+        _get_start_indices_of_nth_subvolume[4, 1](1, shape) = (0, 0, 1, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](5, shape) = (0, 2, 1, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](50, shape) = (5, 0, 0, 0)
+        _get_start_indices_of_nth_subvolume[4, 1](56, shape) = (5, 1, 1, 0)
 
     Parameters:
         rank: The rank of the ND index.
@@ -1000,7 +997,7 @@ fn elementwise[
     simd_width: Int,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
 
     Parameters:
@@ -1032,7 +1029,7 @@ fn _elementwise_impl[
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
 
     Parameters:
@@ -1099,7 +1096,7 @@ fn _elementwise_impl[
     use_blocking_impl: Bool,
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
 ](shape: StaticIntTuple[rank], out_chain: OutputChainPtr):
-    """Executes func[width, rank](indices) as sub-tasks for a suitable
+    """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape.
 
     All free vars in func must be "async safe", see async_parallelize.
