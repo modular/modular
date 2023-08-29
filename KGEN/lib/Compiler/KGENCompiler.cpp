@@ -406,12 +406,10 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   if (ex.empty())
     ex = getAllSymbols(theModule);
 
-  auto err = dylib->define(std::make_unique<KGENCompilerMaterializationUnit>(
-                               *this, std::move(st), std::move(ex)),
-                           resourceTracker);
-  if (err)
-    return Error(llvm::toString(std::move(err)));
-  return success();
+  return toModularErrorOr(
+      dylib->define(std::make_unique<KGENCompilerMaterializationUnit>(
+                        *this, std::move(st), std::move(ex)),
+                    resourceTracker));
 }
 
 void KGENCompilerLayer::emit(

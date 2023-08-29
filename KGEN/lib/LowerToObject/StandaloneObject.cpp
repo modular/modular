@@ -370,9 +370,9 @@ addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
                    const llvm::StringSet<> &users,
                    SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
   // Create the binary.
-  auto binaryOr = llvm::object::createBinary(bufferRef);
-  if (!binaryOr)
-    return Error(llvm::toString(binaryOr.takeError()));
+  auto binaryOr = toModularErrorOr(llvm::object::createBinary(bufferRef));
+  if (binaryOr.isError())
+    return binaryOr.takeError();
   std::unique_ptr<llvm::object::Binary> binary = std::move(*binaryOr);
 
   // TODO: Ensure the binary is the correct type.
@@ -416,11 +416,11 @@ addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
   llvm::Error err = llvm::Error::success();
   for (auto &child : archive->children(err)) {
     if (err)
-      return Error(llvm::toString(std::move(err)));
+      return toModularError(std::move(err));
 
-    auto refOr = child.getMemoryBufferRef();
-    if (!refOr)
-      return Error(llvm::toString(refOr.takeError()));
+    auto refOr = toModularErrorOr(child.getMemoryBufferRef());
+    if (refOr.isError())
+      return refOr.takeError();
 
     LLVM_DEBUG(llvm::dbgs() << "Adding object to archive: '"
                             << refOr->getBufferIdentifier() << "'\n");

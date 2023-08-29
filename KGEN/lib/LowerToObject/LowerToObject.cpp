@@ -363,12 +363,10 @@ ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
       dylib->getDefaultResourceTracker();
 
   // Add the materialization unit.
-  auto err = dylib->define(std::make_unique<ObjectCompilerMaterializationUnit>(
-                               *this, symtab, exports),
-                           resourceTracker);
-  if (err)
-    return Error(llvm::toString(std::move(err)));
-  return success();
+  return toModularErrorOr(
+      dylib->define(std::make_unique<ObjectCompilerMaterializationUnit>(
+                        *this, symtab, exports),
+                    resourceTracker));
 }
 
 /// Produce an ExportMap with every symbol in the module.
@@ -382,12 +380,16 @@ static ExportMap getAllSymbols(ModuleOp theModule) {
 void ObjectCompilerLayer::emit(
     std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
     const SymbolTable &symtab, const ExportMap &exports) {
-  auto theModule = cast<ModuleOp>(symtab.getOp());
+  if (auto err = emitImpl(std::move(mr), symtab, exports)) {
+    error = err.takeError();
+    mr->failMaterialization();
+  }
+}
 
-  auto onError = [&](llvm::Error &&err) {
-    error = Error(llvm::toString(std::move(err)));
-    return mr->failMaterialization();
-  };
+ErrorOrSuccess ObjectCompilerLayer::emitImpl(
+    std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
+    const SymbolTable &symtab, const ExportMap &exports) {
+  auto theModule = cast<ModuleOp>(symtab.getOp());
 
   ErrorOr<Cache::BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
@@ -398,20 +400,18 @@ void ObjectCompilerLayer::emit(
   }
 
   // No buffer - materialization fails.
-  if (bufOr.isError()) {
-    error = bufOr.takeError();
-    return mr->failMaterialization();
-  }
+  if (bufOr.isError())
+    return bufOr.takeError();
   Cache::BufferRef archiveBuf = std::move(*bufOr);
   // Store a copy to the ref of the archive.
   generatedArchives[theModule] = archiveBuf.copy();
 
   // Create an Archive object.
-  auto archiveOr = llvm::object::Archive::create(
+  auto archiveOr = toModularErrorOr(llvm::object::Archive::create(
       llvm::MemoryBufferRef(archiveBuf->getBuffer(),
-                            /*BufferName=*/""));
-  if (!archiveOr)
-    return onError(archiveOr.takeError());
+                            /*BufferName=*/"")));
+  if (archiveOr.isError())
+    return archiveOr.takeError();
   std::unique_ptr<llvm::object::Archive> archive = std::move(*archiveOr);
 
   // Create a set of necessary objects from the requested symbols so we don't
@@ -440,9 +440,9 @@ void ObjectCompilerLayer::emit(
       toDelegate;
   while (!worklist.empty()) {
     llvm::orc::SymbolStringPtr sym = worklist.pop_back_val();
-    auto childOr = archive->findSym(*sym);
-    if (!childOr)
-      return onError(childOr.takeError());
+    auto childOr = toModularErrorOr(archive->findSym(*sym));
+    if (childOr.isError())
+      return childOr.takeError();
 
     // We don't have the symbol in this archive, move on.
     if (!*childOr) {
@@ -452,9 +452,9 @@ void ObjectCompilerLayer::emit(
     }
 
     // Grab the memory buffer for that object.
-    auto bufferRef = (**childOr).getMemoryBufferRef();
-    if (!bufferRef)
-      return onError(bufferRef.takeError());
+    auto bufferRef = toModularErrorOr((*childOr)->getMemoryBufferRef());
+    if (bufferRef.isError())
+      return bufferRef.takeError();
 
     // Already handled this exact binary, continue. We don't use the file name
     // because that has the potential to conflict.
@@ -467,17 +467,15 @@ void ObjectCompilerLayer::emit(
 
     // Get the child as a binary - that will allow us to look up the symbols
     // contained in the object.
-    auto binaryOr = (**childOr).getAsBinary();
-    if (!binaryOr)
-      return onError(binaryOr.takeError());
+    auto binaryOr = toModularErrorOr((*childOr)->getAsBinary());
+    if (binaryOr.isError())
+      return binaryOr.takeError();
     std::unique_ptr<llvm::object::Binary> objectBin = std::move(*binaryOr);
 
     auto *objectFile = dyn_cast<llvm::object::ObjectFile>(objectBin.get());
-    if (!objectFile) {
-      error = Error("archive member " + objectBuf->getBufferIdentifier() +
-                    " was not an object file");
-      return mr->failMaterialization();
-    }
+    if (!objectFile)
+      return Error("archive member " + objectBuf->getBufferIdentifier() +
+                   " was not an object file");
 
     // If the object file has undefined symbols in it, add those to the
     // worklist. Don't discriminate here, we don't need to do the full
@@ -485,17 +483,17 @@ void ObjectCompilerLayer::emit(
     // already going to handle, so we don't have to worry about being
     // overly-inclusive.
     for (auto symbol : objectFile->symbols()) {
-      auto flagsOr = symbol.getFlags();
-      if (!flagsOr)
-        return onError(flagsOr.takeError());
+      auto flagsOr = toModularErrorOr(symbol.getFlags());
+      if (flagsOr.isError())
+        return flagsOr.takeError();
       uint32_t flags = *flagsOr;
 
       if (!(flags & llvm::object::BasicSymbolRef::SF_Undefined))
         continue;
 
-      auto nameOr = symbol.getName();
-      if (!nameOr)
-        return onError(nameOr.takeError());
+      auto nameOr = toModularErrorOr(symbol.getName());
+      if (nameOr.isError())
+        return nameOr.takeError();
 
       // Add this undefined symbol to the worklist.
       LLVM_DEBUG(llvm::dbgs()
@@ -511,12 +509,10 @@ void ObjectCompilerLayer::emit(
   // Delegate each object file through its own materialization unit.
   for (auto &[bin, buf] : llvm::reverse(toDelegate)) {
     // Get all the symbols defined by the object file.
-    auto itf =
-        llvm::orc::getObjectFileInterface(session, buf->getMemBufferRef());
-    if (!itf) {
-      error = Error(llvm::toString(itf.takeError()));
-      return mr->failMaterialization();
-    }
+    auto itf = toModularErrorOr(
+        llvm::orc::getObjectFileInterface(session, buf->getMemBufferRef()));
+    if (itf.isError())
+      return itf.takeError();
 
     // Get all new symbols defined by the object file by removing the existing
     // symbols from the MU's symbol map.
@@ -528,10 +524,8 @@ void ObjectCompilerLayer::emit(
 
     // Ask the MR to define the new symbols as materializing. The MR may reject
     // some of the symbols.
-    if (llvm::Error err = mr->defineMaterializing(itf->SymbolFlags)) {
-      error = Error(llvm::toString(std::move(err)));
-      return mr->failMaterialization();
-    }
+    if (auto err = toModularErrorOr(mr->defineMaterializing(itf->SymbolFlags)))
+      return err.takeError();
     itf->SymbolFlags.insert(existing.begin(), existing.end());
 
     // Construct a set of all symbols in the object file that were not rejected
@@ -544,11 +538,9 @@ void ObjectCompilerLayer::emit(
       delegatedSymbols.insert(symbol);
       symbolFlags.try_emplace(symbol, flags);
     }
-    auto delMr = mr->delegate(delegatedSymbols);
-    if (!delMr) {
-      error = Error(llvm::toString(delMr.takeError()));
-      return mr->failMaterialization();
-    }
+    auto delMr = toModularErrorOr(mr->delegate(delegatedSymbols));
+    if (delMr.isError())
+      return delMr.takeError();
     itf->SymbolFlags = std::move(symbolFlags);
 
     // Replace the materialization responsibility with a new materialization
@@ -556,10 +548,8 @@ void ObjectCompilerLayer::emit(
     auto delMu =
         std::make_unique<llvm::orc::BasicObjectLayerMaterializationUnit>(
             baseLayer, std::move(buf), std::move(*itf));
-    if (llvm::Error err = (*delMr)->replace(std::move(delMu))) {
-      error = Error(llvm::toString(std::move(err)));
-      return mr->failMaterialization();
-    }
+    if (auto err = toModularErrorOr((*delMr)->replace(std::move(delMu))))
+      return err.takeError();
   }
   LLVM_DEBUG(
       llvm::dbgs() << "MaterializationResponsibility leftover symbols (should "
@@ -567,6 +557,7 @@ void ObjectCompilerLayer::emit(
       llvm::interleaveComma(mr->getSymbols(), llvm::dbgs(),
                             [](auto ptr) { llvm::dbgs() << *ptr.getFirst(); });
       llvm::dbgs() << "]\n";);
+  return success();
 }
 
 llvm::orc::MaterializationUnit::Interface

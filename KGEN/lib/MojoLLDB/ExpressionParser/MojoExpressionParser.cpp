@@ -306,7 +306,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
   lldb::addr_t funcAddr, funcEnd;
   Status error = executionUnit->getRunnableInfo(funcAddr, funcEnd);
   if (error.Fail())
-    return M::Error(llvm::toString(error.ToError()));
+    return toModularError(error.ToError());
 
   typeSystem->debugLog("[evaluateSpecializations] Evaluator at {0}",
                        (void *)funcAddr);
@@ -342,14 +342,14 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
           lldb::Permissions::ePermissionsWritable,
       error);
   if (error.Fail())
-    return M::Error(llvm::toString(error.ToError()));
+    return toModularError(error.ToError());
 
   // Write the addresses to the allocation we made for the specializations.
   for (auto [index, sa] : llvm::enumerate(specializationAddrs)) {
     exeCtx.GetProcessRef().WritePointerToMemory(
         allocForSpecializations + index * addressByteSize, sa, error);
     if (error.Fail())
-      return M::Error(llvm::toString(error.ToError()));
+      return toModularError(error.ToError());
   }
 
   // Allocate space for the out-parameter pointer we use.
@@ -359,7 +359,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
                                     lldb::Permissions::ePermissionsWritable,
                                 error);
   if (error.Fail())
-    return M::Error(llvm::toString(error.ToError()));
+    return toModularError(error.ToError());
 
   // Find lldb_evaluate_specializations now.
   bool missingWeak;
@@ -417,7 +417,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
     uint64_t bestVar = exeCtx.GetProcessRef().ReadUnsignedIntegerFromMemory(
         allocForBest, sizeof(uint64_t), 0, error);
     if (error.Fail())
-      return M::Error(llvm::toString(error.ToError()));
+      return toModularError(error.ToError());
 
     typeSystem->debugLog("[evaluateSpecializations] Got best = {0}", bestVar);
     return bestVar;

@@ -74,7 +74,7 @@ M::writeFileUnderLock(const std::filesystem::path &filePath,
       return llvm::Error::success();
     });
     if (err)
-      return Error(llvm::toString(std::move(err)));
+      return toModularError(std::move(err));
     return filePath;
   };
 
