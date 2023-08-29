@@ -568,12 +568,12 @@ public:
     return 0;
   }
 
-  size_t
-  GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
-                                llvm::StringRef name, bool omitEmptyBaseClasses,
-                                std::vector<uint32_t> &childIndexes) override {
+  size_t GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
+                                       llvm::StringRef name,
+                                       bool omitEmptyBaseClasses,
+                                       std::vector<uint32_t> &childIndexes) {
     return 0;
-  }
+  };
 
   //===--------------------------------------------------------------------===//
   // Expressions
