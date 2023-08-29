@@ -326,9 +326,10 @@ inline void assign<size_t>(TensorShapeStorage &storage, ArrayRef<size_t> dims,
 /// Represents the dimensions of a tensor.
 ///
 /// TensorShapes may be used to represent both 'expected' and 'actual' shapes.
-/// Expected shapes may have dynamic (aka unknown) rank and dimensions. An
-/// actual shape should refine its corresponding expected shape, ie agree on
-/// known values.
+/// Expected shapes may have 'dynamic' or 'unknown' rank and dimensions. Actual
+/// shapes should be fully known (ie actual.isStatic() is true), and should
+/// refine their corresponding expected shape (ie expected.isRefinedBy(actual)
+/// is true).
 class TensorShape {
 public:
   /// Constructs a tensor shape which is either dynamically ranked or has a
@@ -346,9 +347,9 @@ public:
   /// not support construction from uint32_ts since the meaning of the msb is
   /// ambiguous.
   ///
-  /// If style = kDynamicRankStyle then the dimensions must empty and the shape
-  /// is taken to have a 'dynamic' or 'unknown' rank. Be aware many accessors
-  /// assert the shape hasRank().
+  /// If style is kDynamicRankStyle then the dimensions must be empty and the
+  /// shape is taken to have a 'dynamic' or 'unknown' rank. Be aware many
+  /// accessors assert that the shape hasRank().
   ///
   /// These constructors are defined explicitly (instead of as a template) so
   /// that implicit conversions from things like SmallVector will work.
