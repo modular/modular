@@ -366,12 +366,12 @@ public:
   }
 #ifdef __APPLE__
   /*implicit*/ TensorShape(ArrayRef<size_t> dims,
-                           TensorRankStyle style = kStaticRankStyle) {
+                           TensorRankStyle style = kStaticallyRanked) {
     assign(storage, dims, style);
   }
   /*implicit*/ TensorShape(ArrayRef<ssize_t> dims,
-                           TensorRankStyle style = kStaticRankStyle) {
-    assign(storage, dims, stlye);
+                           TensorRankStyle style = kStaticallyRanked) {
+    assign(storage, dims, style);
   }
 #endif // __APPLE__
 
