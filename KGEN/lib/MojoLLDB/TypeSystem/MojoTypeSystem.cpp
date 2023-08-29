@@ -601,6 +601,45 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   return {};
 }
 
+size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
+    lldb::opaque_compiler_type_t type, llvm::StringRef name,
+    bool omitEmptyBaseClasses, std::vector<uint32_t> &childIndices) {
+  // Check if the name is an index into a collection
+  unsigned long index;
+  if (name.consume_front("[") && name.consumeInteger(10, index) &&
+      name.consume_front("]") && name.empty()) {
+    childIndices.push_back(index);
+    return 1;
+  }
+
+  // Find the index of the field name
+  MojoASTTypeRef refType(type);
+  Type mlirType = refType.getMLIRType();
+
+  if (auto replRefType = dyn_cast<LIT::REPLResultRefType>(mlirType))
+    return GetIndexOfChildMemberWithName(
+        getCompilerTypeFromType(replRefType.getElementType())
+            .GetOpaqueQualType(),
+        name, omitEmptyBaseClasses, childIndices);
+
+  auto declRef = getParserContext().getDecl(refType);
+  if (LIT::StructDeclOp structDeclOp =
+          dyn_cast_if_present<LIT::StructDeclOp>(declRef.getIfOperation())) {
+    for (auto field : llvm::enumerate(structDeclOp.getFieldDecls())) {
+      if (field.value().getName() == name) {
+        // FIXME<20348>: For structs with nested member fields, we will need to
+        // recurse and add the path taken to a member field to the childIndices
+        // vector. For now though we'll just add a single index.
+        childIndices.push_back(field.index());
+
+        // Return the total number of indices.
+        return childIndices.size();
+      }
+    }
+  }
+  return 0;
+}
+
 //===----------------------------------------------------------------------===//
 // Expressions
 //===----------------------------------------------------------------------===//
