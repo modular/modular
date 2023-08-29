@@ -187,6 +187,12 @@ public:
   ObjectCompiler &getRawCompiler() { return objectCompiler; }
 
 private:
+  /// Emit a given module. This will immediately run the materialization.
+  /// Returns errors rather than setting them on the materialization layer.
+  ErrorOrSuccess
+  emitImpl(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
+           const SymbolTable &symtab, const ExportMap &exports);
+
   /// Conform to the ORC's interface and return a map of the exported symbols.
   /// If the export map is empty, uses `getExportedSymbols` to infer them from
   /// the module.
