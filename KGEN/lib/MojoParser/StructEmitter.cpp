@@ -32,18 +32,17 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
                               ArrayRef<ValueInputConvention> argConventions,
                               ArrayRef<StringAttr> argNames, Type resultType,
                               SpecialFunctionKind specialFnID, SMLoc loc,
-                              ImplicitLocOpBuilder &builder) {
+                              ImplicitLocOpBuilder &builder,
+                              FnEffects fnEffects) {
   // Get the signature for the function.
   auto fnType = builder.getFunctionType(argTypes, resultType);
 
-  FnEffects fnEffects = FnEffects();
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
       StructDeclOp::RP_RegisterPassableTrivial)
     fnEffects = fnEffects | FnEffects::OwnedResult;
 
-  // TODO: Should raise if anything we invoke raises.
   auto metadata = builder.getAttr<FnMetadataAttr>(
       argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
   auto none = TypeArrayAttr::get(builder.getContext(), {});
@@ -70,11 +69,12 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames, Type resultType, StructDeclOp structOp,
-    SpecialFunctionKind specialFnID, SMLoc loc) {
+    SpecialFunctionKind specialFnID, SMLoc loc, FnEffects effects) {
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp = createFunction(name, argTypes, argConventions, argNames,
-                                      resultType, specialFnID, loc, builder);
+  LIT::FuncOp funcOp =
+      createFunction(name, argTypes, argConventions, argNames, resultType,
+                     specialFnID, loc, builder, effects);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").

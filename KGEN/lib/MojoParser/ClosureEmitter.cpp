@@ -93,6 +93,43 @@ static void populateMoveCopy(ImplicitLocOpBuilder &builder,
   builder.setLoc(initialLocation);
 }
 
+/// Given a signature of a function, create a new signature by inserting a
+/// closure argument at index 0 or 1 depending on the result type.
+static SignatureType
+addClosureSelfArgToFunctionSignature(Type closureType,
+                                     SignatureType functionType) {
+  unsigned callArgCount = functionType.getNumInputs() + 1;
+  SmallVector<Type> callMemberSignatureInputs;
+  callMemberSignatureInputs.reserve(callArgCount);
+  SmallVector<ValueInputConvention> callMemberInputConventions;
+  callMemberInputConventions.reserve(callArgCount);
+  // Add result slot if necessary.
+  bool hasResultSlot = functionType.hasMemoryOnlyResult();
+  if (hasResultSlot) {
+    callMemberSignatureInputs.push_back(functionType.getValueInputs()[0]);
+    callMemberInputConventions.push_back(ValueInputConvention::ByRefResult);
+  }
+  // Add self.
+  callMemberSignatureInputs.push_back(closureType);
+  callMemberInputConventions.push_back(ValueInputConvention::BorrowedInMem);
+  // Add the rest of the arguments.
+  for (unsigned j = hasResultSlot, e = functionType.getNumInputs(); j < e;
+       j++) {
+    callMemberSignatureInputs.push_back(functionType.getValueInputs()[j]);
+    callMemberInputConventions.push_back(functionType.getInputConvention(j));
+  }
+  // A closure signature is not escaping because its 'escaping' state is
+  // captured in the self argument we are inserting in this function.
+  auto metadata = FnMetadataAttr::get(
+      functionType.getContext(), callMemberInputConventions, {},
+      bitEnumClear(functionType.getFnEffects(), FnEffects::Escaping));
+  return SignatureType::get(
+      functionType.getInputParamTypes(), functionType.getResultParamTypes(),
+      FunctionType::get(functionType.getContext(), callMemberSignatureInputs,
+                        functionType.getValueResults()),
+      metadata);
+}
+
 StructDeclOp
 ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
                                                SignatureType signatureType) {
@@ -141,6 +178,18 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   auto copy = createCopyOrMoveMember(true);
   auto move = createCopyOrMoveMember(false);
 
+  // Add the call member
+  bool hasResultSlot = signatureType.hasMemoryOnlyResult();
+  SignatureType callMemberSignatureType =
+      addClosureSelfArgToFunctionSignature(opaquePointer, signatureType);
+  SmallVector<StringAttr> callArgumentNames(
+      callMemberSignatureType.getNumInputs());
+  for (unsigned i = 0, e = callMemberSignatureType.getNumInputs(); i < e; ++i)
+    callArgumentNames[i] =
+        StringAttr::get(shared.getContext(), "arg" + std::to_string(i));
+  auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
+                                            callMemberSignatureType, nullptr);
+
   ASTDecl &parent = shared.declResolver->getDeclForTypeSymbol(
       SymbolRefAttr::get(fileModuleOp.getDeclName()));
   ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
@@ -169,6 +218,44 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
 
   populateMoveCopy(builder, copy, copyCtr, impl, noneType);
   populateMoveCopy(builder, move, moveCtr, impl, noneType);
+
+  // Add the __call__ Method.
+  Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  KGEN::PointerType ptrToSelfType = KGEN::PointerType::get(selfType);
+  SignatureType closureMethodSignatureType =
+      addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
+  LIT::FuncOp callMethod = structEmitter.synthesizeMethodInStruct(
+      "__call__", closureMethodSignatureType.getValueInputs(),
+      closureMethodSignatureType.getValueInputConventions(), callArgumentNames,
+      signatureType.getValueResults().front(), declOp,
+      SpecialFunctionKind::kNormal, astDecl.getLoc(),
+      closureMethodSignatureType.getFnEffects());
+
+  // Populate the body of ClosureWrapper::__call__.
+  builder = ImplicitLocOpBuilder::atBlockBegin(callMethod.getLoc(),
+                                               callMethod.getBody());
+  Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
+                                 : callMethod.getBody()->getArgument(0);
+  SmallVector<Value> arguments;
+  if (hasResultSlot)
+    arguments.push_back(callMethod.getBody()->getArgument(0));
+
+  arguments.push_back(
+      builder.create<POP::LoadOp>(builder.create<StructGEPOp>(callSelf, impl)));
+
+  for (unsigned i = hasResultSlot ? 2 : 1, e = callMethod.getNumArguments();
+       i < e; i++)
+    arguments.push_back(callMethod.getBody()->getArgument(i));
+
+  assert(callMemberSignatureType.getValueResults().size() == 1);
+  auto getCallMember = builder.create<StructGEPOp>(
+      KGEN::PointerType::get(callMemberSignatureType), callMember.getNameAttr(),
+      callSelf);
+  auto callResult = builder.create<CallSignatureOp>(
+      callMemberSignatureType.getValueResults().front(),
+      builder.create<POP::LoadOp>(getCallMember), arguments);
+  ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
+  builder.create<LIT::EndFuncOp>();
   return declOp;
 }
 
@@ -339,7 +426,7 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
   LIT::FuncOp callFunc = structEmitter.createFunction(
       baseName, callInputTypes, callConventions, callNames, closureResultType,
       SpecialFunctionKind::kNormal, location, builder);
-
+  declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   // Populate the body of the call op.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = callFunc.getLocScope())
@@ -590,6 +677,65 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   makeCopyMoveConstructor(false);
   makeCopyMoveConstructor(true);
 
+  // Create the __call__ function.
+  assert(closureWrapper.getClosureSignature().has_value() &&
+         "The closure signature should have been set at creation time");
+  auto functionSignature =
+      cast<SignatureType>(closureWrapper.getClosureSignatureAttr().getType());
+  SignatureType closureSignature =
+      addClosureSelfArgToFunctionSignature(opaquePointer, functionSignature);
+  assert(closureSignature.getValueResults().size() == 1);
+  SmallVector<StringAttr> callArgumentNames(closureSignature.getNumInputs());
+  for (unsigned i = 0, e = closureSignature.getNumInputs(); i < e; ++i)
+    callArgumentNames[i] =
+        StringAttr::get(shared.getContext(), "arg" + std::to_string(i));
+
+  builder = ImplicitLocOpBuilder::atBlockEnd(
+      fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
+  LIT::FuncOp topLevelCall = structEmitter.createFunction(
+      generateName("_call_"), closureSignature.getValueInputs(),
+      closureSignature.getValueInputConventions(), callArgumentNames,
+      closureSignature.getValueResults().front(), SpecialFunctionKind::kNormal,
+      location, builder, closureSignature.getFnEffects());
+
+  // Populate the __call__ body.
+  {
+    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCall.getLoc(),
+                                               topLevelCall.getBody());
+    Block *body = topLevelCall.getBody();
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (DebugInfo::DIScopeAttr spAttr = topLevelCall.getLocScope())
+      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+    // Cast the opaque pointer back to the closure impl type.
+    Value closureArg = closureSignature.hasMemoryOnlyResult()
+                           ? body->getArgument(1)
+                           : body->getArgument(0);
+    Value implPtr =
+        builder.create<POP::PointerBitcastOp>(ptrToClosureImplType, closureArg);
+    // Call the __call__ on the closure impl.
+    assert(closureImpl->hasAttr(callMethodAttr) &&
+           "Closure Impls are generated with a __call__ method.");
+    SymbolConstantAttr symbol =
+        cast<SymbolConstantAttr>(closureImpl->getAttr(callMethodAttr));
+    SmallVector<Value> args;
+    if (closureSignature.hasMemoryOnlyResult())
+      args.push_back(topLevelCall.getArgument(0));
+    args.push_back(implPtr);
+    for (unsigned i = closureSignature.hasMemoryOnlyResult() + 1,
+                  e = closureSignature.getNumInputs();
+         i < e; ++i)
+      args.push_back(topLevelCall.getArgument(i));
+    Value result =
+        builder
+            .create<CallOp>(
+                symbol.getType().getValueResults(), symbol,
+                ParamDeclArrayAttr::get(closureImpl.getContext(), params), args)
+            .getResult(0);
+    ExprEmitter::emitNormalReturn(builder, result, topLevelDtor);
+    builder.create<LIT::EndFuncOp>();
+  }
+  setMember(topLevelCall, callFieldAttr);
   return init;
 }
 
