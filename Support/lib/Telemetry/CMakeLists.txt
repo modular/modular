@@ -12,6 +12,8 @@ if(MODULAR_ENABLE_TELEMETRY)
 
   include(AddOpenTelemetry)
 
+  add_flag_if_supported("-Werror -Wno-covered-switch-default" SUPPORTS_TELEMETRYWNO_COVERED_SWITCH_DEFAULT)
+
   add_modular_library(MTelemetry
     TelemetryContext.cpp
     FileMetricExporter.cpp
