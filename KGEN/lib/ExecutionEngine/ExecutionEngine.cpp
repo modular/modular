@@ -229,12 +229,12 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
   if (orcRuntimeArchiveGenerator.isError())
     return orcRuntimeArchiveGenerator.takeError();
 
-  // TODO(akirchhoff): Is this supposed to return failure if T::Create fails?
-  // Right now the error is ignored, not sure if that's intentional or not...
-  if (auto platform = T::Create(
-          session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-          platformStdlib, std::move(*orcRuntimeArchiveGenerator)))
-    session.setPlatform(std::move(*platform));
+  auto platformOr = toModularErrorOr(
+      T::Create(session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+                platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
+  if (platformOr.isError())
+    return platformOr.takeError();
+  session.setPlatform(std::move(*platformOr));
   return success();
 }
 
