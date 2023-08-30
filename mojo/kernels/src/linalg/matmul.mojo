@@ -46,7 +46,7 @@ from memory.buffer import (
 from memory.unsafe import DTypePointer
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from Transpose import transpose_inplace
-from VNNI import dot_i8_to_i32_x86
+from VNNI import dot_i8_to_i32_saturated_x86
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList, VariadicList
@@ -1093,7 +1093,9 @@ struct MatmulInnerLoopBPacked[
                 let b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
                     simd_size, alignment
                 ]().cast[c_type]()
-                c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
+                c_val = dot_i8_to_i32_saturated_x86[simd_size](
+                    c_val, a_val, b_val
+                )
                 c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
 
     @adaptive

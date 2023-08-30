@@ -13,11 +13,16 @@
 
 from memory import memcmp
 from memory.buffer import Buffer
-from VNNI import dot_i8_to_i32_AVX2, dot_i8_to_i32_x86
+from VNNI import (
+    dot_i8_to_i32_AVX2,
+    dot_i8_to_i32_saturated_AVX2,
+    dot_i8_to_i32_x86,
+    dot_i8_to_i32_saturated_x86,
+)
 
 
 fn gemm(
-    a: Buffer[16 * 64, DType.int8],
+    a: Buffer[16 * 64, DType.uint8],
     b: Buffer[64 * 16, DType.int8],
     c: Buffer[16 * 16, DType.int32],
 ):
@@ -30,27 +35,6 @@ fn gemm(
                 )
 
 
-fn dot_i8_to_i32_emulate(
-    src: SIMD[DType.int32, 16],
-    a: SIMD[DType.int32, 16],
-    b: SIMD[DType.int32, 16],
-) -> SIMD[DType.int32, 16]:
-    var c: SIMD[DType.int32, 16] = 0
-    for i in range(16):
-        var ai = a[i]
-        var bi = b[i]
-        var sum: Int32 = 0
-        for j in range(4):
-            let ab = ai & 0xFF
-            ai >>= 8
-            let bb = bi & 0xFF
-            bi >>= 8
-            sum += ab * bb
-        sum += src[i]
-        c[i] = sum
-    return c
-
-
 fn pack_vnni(b: Buffer[16 * 64, DType.int8], b2: Buffer[64 * 16, DType.int8]):
     for l in range(16):
         for j in range(16):
@@ -59,7 +43,7 @@ fn pack_vnni(b: Buffer[16 * 64, DType.int8], b2: Buffer[64 * 16, DType.int8]):
 
 
 fn gemm_8_to_32(
-    a: Buffer[16 * 64, DType.int8],
+    a: Buffer[16 * 64, DType.uint8],
     b: Buffer[64 * 16, DType.int8],
     c: Buffer[16 * 16, DType.int32],
     t: Int,
@@ -76,42 +60,105 @@ fn gemm_8_to_32(
                 16
             ]()
             if t == 0:
-                cv = dot_i8_to_i32_x86[16](cv, av, bv)
+                cv = dot_i8_to_i32_saturated_x86[16](cv, av, bv)
             elif t == 1:
-                cv = dot_i8_to_i32_AVX2[16](cv, av, bv)
+                cv = dot_i8_to_i32_saturated_AVX2[16](cv, av, bv)
+            elif t == 2:
+                cv = dot_i8_to_i32_x86[16](cv, av, bv)
             else:
-                cv = dot_i8_to_i32_emulate(cv, av, bv)
+                cv = dot_i8_to_i32_AVX2[16](cv, av, bv)
 
         c.data.offset(16 * i).simd_store[16](cv)
 
 
+fn bitcast[
+    dest_size: Int, dest_type: DType, src_size: Int, src_type: DType
+](v: SIMD[src_type, src_size]) -> SIMD[dest_type, dest_size]:
+    return __mlir_op.`pop.bitcast`[
+        _type : __mlir_type[
+            `!pop.simd<`, dest_size.value, `, `, dest_type.value, `>`
+        ]
+    ](v.value)
+
+
 fn main():
-    let a = Buffer[16 * 64, DType.int8].stack_allocation()
-    let b = Buffer[64 * 16, DType.int8].stack_allocation()
-    let c = Buffer[16 * 16, DType.int32].stack_allocation()
-    let c0 = Buffer[16 * 16, DType.int32].stack_allocation()
-    let c1 = Buffer[16 * 16, DType.int32].stack_allocation()
-    let c2 = Buffer[16 * 16, DType.int32].stack_allocation()
+    let a = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()
+    let asat = Buffer[16 * 64, DType.uint8].aligned_stack_allocation[64]()
+    let b = Buffer[64 * 16, DType.int8].aligned_stack_allocation[64]()
+
+    let c = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let csat = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let c0 = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let c1 = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let c2 = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
+    let c3 = Buffer[16 * 16, DType.int32].aligned_stack_allocation[64]()
 
     for i in range(16 * 64):
-        a[i] = i & 127
-        b[i] = (16 * 64 - i - 1) & 127
+        a[i] = i & 255
+        asat[i] = i & 127
+        b[i] = (i & 255) - 128
+
+    # for i in range(64):
+    #    print(b[i])
 
     for i in range(16 * 16):
         c[i] = i
+        csat[i] = c[i]
         c0[i] = c[i]
         c1[i] = c[i]
         c2[i] = c[i]
+        c3[i] = c[i]
+
+    let av16u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[16]()
+    let av16s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[
+        16
+    ]()
+    let bv16 = b.data.offset(0).bitcast[DType.int32]().simd_load[16]()
+    let cv16u = dot_i8_to_i32_AVX2[16](c.data.simd_load[16](), av16u, bv16)
+    let cv16s = dot_i8_to_i32_saturated_AVX2[16](
+        c.data.simd_load[16](), av16s, bv16
+    )
+
+    # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259, -85226, -83065, -80776, -78359, -75814, -73141, -70340, -67411]
+    print(cv16u)
+    # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827, -36842, -36729, -36488, -36119, -35622, -34997, -34244, -33363]
+    print(cv16s)
+
+    let av8u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[8]()
+    let av8s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[8]()
+    let bv8 = b.data.offset(0).bitcast[DType.int32]().simd_load[8]()
+    let cv8u = dot_i8_to_i32_AVX2[8](c.data.simd_load[8](), av8u, bv8)
+    let cv8s = dot_i8_to_i32_saturated_AVX2[8](c.data.simd_load[8](), av8s, bv8)
+
+    # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259]
+    print(cv8u)
+    # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827]
+    print(cv8s)
+
+    let av4u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[4]()
+    let av4s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[4]()
+    let bv4 = b.data.offset(0).bitcast[DType.int32]().simd_load[4]()
+    let cv4u = dot_i8_to_i32_AVX2[4](c.data.simd_load[4](), av4u, bv4)
+    let cv4s = dot_i8_to_i32_saturated_AVX2[4](c.data.simd_load[4](), av4s, bv4)
+
+    # CHECK: [-97906, -96769, -95504, -94111]
+    print(cv4u)
+    # CHECK: [-33138, -34049, -34832, -35487]
+    print(cv4s)
 
     gemm(a, b, c)
-    gemm_8_to_32(a, b, c0, 0)
-    gemm_8_to_32(a, b, c1, 1)
+    gemm(asat, b, csat)
+    gemm_8_to_32(asat, b, c0, 0)
+    gemm_8_to_32(asat, b, c1, 1)
     gemm_8_to_32(a, b, c2, 2)
+    gemm_8_to_32(a, b, c3, 3)
 
     var errors: Int = 0
-    errors += memcmp(c.data, c0.data, 16 * 16)
-    errors += memcmp(c.data, c1.data, 16 * 16)
+    errors += memcmp(csat.data, c0.data, 16 * 16)
+    errors += memcmp(csat.data, c1.data, 16 * 16)
     errors += memcmp(c.data, c2.data, 16 * 16)
+    errors += memcmp(c.data, c3.data, 16 * 16)
+
     # CHECK: 0
     print(errors)
     if errors != 0:
