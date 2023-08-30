@@ -81,9 +81,14 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (failed(mgr->run(module)))
     return nullptr;
 
+  // Use the input filename for the module name if possible.
+  StringRef moduleName = "LLVMDialectModule";
+  if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
+    moduleName = moduleLoc.getFilename();
+
   // Translate the operation into an LLVM module.
   std::unique_ptr<llvm::Module> llvmModule =
-      mlir::translateModuleToLLVMIR(module, ctx);
+      mlir::translateModuleToLLVMIR(module, ctx, moduleName);
   if (!llvmModule)
     return nullptr;
 

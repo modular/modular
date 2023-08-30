@@ -514,6 +514,7 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
             op->getLoc()));
       }
       TimeTraceScope<> traceScope("split-input-module");
+      StringRef moduleName = llvmModule->getName();
 
       // If we are saving the temp files we don't want to split.
       bool savingTemps = !options.saveTempsPrefix.empty();
@@ -531,7 +532,8 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
         });
       }
       andThenSyncMoving(
-          cacheResults, [op, linksAndUsers = std::move(linksAndUsers),
+          cacheResults, [moduleName = moduleName.str(), op,
+                         linksAndUsers = std::move(linksAndUsers),
                          linkMgr = std::move(linkMgr), buf = buf.copy(),
                          output = output.copy()](
                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
@@ -580,7 +582,8 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
             SmallVector<std::string> archiveMemberNames(values.size());
             for (auto [index, result] : llvm::enumerate(values)) {
               auto &resultBuf = result.get<BufferRef>();
-              archiveMemberNames[index] = (Twine(index) + ".o").str();
+              archiveMemberNames[index] =
+                  (moduleName + "." + Twine(index) + ".o").str();
               archiveMembers.emplace_back(llvm::MemoryBufferRef(
                   resultBuf->getBuffer(), archiveMemberNames[index]));
             }
