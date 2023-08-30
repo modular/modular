@@ -161,19 +161,19 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
 #endif
 
   // We are done when values_remaining drops to zero.
-  size_t numRemaining = values.size();
+  std::atomic<size_t> numRemaining = values.size();
 
   // As each value becomes available, we can decrement our counts.
   for (auto &value : values)
-    value.andThenSync([&numRemaining]() { --numRemaining; });
+    value.andThenSync([&numRemaining]() { numRemaining.fetch_sub(1); });
 
-  if (numRemaining == 0)
+  if (numRemaining.load() == 0)
     return;
 
   // Run work items until numRemaining drops to zero.
-  runUntil([&]() -> bool { return numRemaining == 0; });
+  runUntil([&]() -> bool { return numRemaining.load() == 0; });
 
-  assert(numRemaining == 0 &&
+  assert(numRemaining.load() == 0 &&
          "Some AsyncValues are not ready yet no further "
          "tasks are available to run. Are all input AsyncValues ready?");
 #if MODULAR_PARANOID
