@@ -4,11 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: python-lldb-integration
-#
-# Note: See https://github.com/modularml/modular/issues/16274
-# for why `ALLOW_RETRIES` is set.  This is a known flaky test.
-# ALLOW_RETRIES: 5
 # RUN: %repl <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
