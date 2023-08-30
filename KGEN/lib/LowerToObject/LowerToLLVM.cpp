@@ -37,18 +37,24 @@ using namespace LLCL;
 // lowerAllFuncsToLLVM
 //===----------------------------------------------------------------------===//
 
-/// If requested, attach XRay instrumentation to the given module.
+/// If requested, attach sanitizer/XRay/etc. instrumentations to the given
+/// module.
 /// TODO: Eventually we should explore attaching this information at a higher
 /// level of the stack.
-static void attachXRayAttributes(llvm::Module &module,
-                                 const CompilationOptions &options) {
-  if (!options.enableXRayInstrumentation)
+static void attachInstrumentationAttributes(llvm::Module &module,
+                                            const CompilationOptions &options) {
+  if (!options.enableXRayInstrumentation && !options.sanitizers)
     return;
 
   for (llvm::Function &f : module.functions()) {
     if (f.isDeclaration())
       continue;
-    f.addFnAttr("function-instrument", "xray-always");
+    if (options.enableXRayInstrumentation)
+      f.addFnAttr("function-instrument", "xray-always");
+    if (options.sanitizers.has(Sanitizers::kAddress))
+      f.addFnAttr(llvm::Attribute::SanitizeAddress);
+    if (options.sanitizers.has(Sanitizers::kThread))
+      f.addFnAttr(llvm::Attribute::SanitizeThread);
   }
 }
 
@@ -93,6 +99,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
     return nullptr;
 
   // Attach any necessary instrumentation to the module.
-  attachXRayAttributes(*llvmModule, options);
+  attachInstrumentationAttributes(*llvmModule, options);
   return llvmModule;
 }
