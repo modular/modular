@@ -562,6 +562,69 @@ fn test_argn_test_zeros():
             print("argmin = ", output[Index(i, 0)])
 
 
+# CHECK-LABEL: test_argn_test_identity
+fn test_argn_test_identity():
+    print("== test_argn_test_identity")
+
+    alias batch_size = 3
+    alias size = 5
+
+    let vector = NDBuffer[
+        2, DimList(batch_size, size), DType.int64
+    ].stack_allocation()
+    let output = NDBuffer[
+        2, DimList(batch_size, 1), DType.index
+    ].stack_allocation()
+
+    for i in range(batch_size):
+        for j in range(size):
+            vector[Index(i, j)] = 0
+
+    vector[Index(1, 4)] = 1
+    vector[Index(2, 3)] = 1
+    vector[Index(2, 4)] = 1
+
+    with Runtime(4) as runtime:
+        let out_chain_0 = OwningOutputChainPtr(runtime)
+        argmax(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_0.borrow(),
+        )
+        out_chain_0.wait()
+
+        # CHECK: argmax = 0
+        print("argmax = ", output[Index(0, 0)])
+        # CHECK: argmax = 4
+        print("argmax = ", output[Index(1, 0)])
+        # CHECK: argmax = 3
+        print("argmax = ", output[Index(2, 0)])
+
+        let out_chain_1 = OwningOutputChainPtr(runtime)
+        argmin(
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.int64]](
+                vector
+            ),
+            1,
+            rebind[NDBuffer[2, DimList.create_unknown[2](), DType.index]](
+                output
+            ),
+            out_chain_1.borrow(),
+        )
+        out_chain_1.wait()
+
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        # CHECK: argmin = 0
+        for i in range(batch_size):
+            print("argmin = ", output[Index(i, 0)])
+
+
 # CHECK-LABEL: test_cumsum
 fn test_cumsum():
     print("== test_cumsum")
@@ -626,4 +689,5 @@ fn main():
     test_argn_2_test_2()
     test_argn_2_neg_axis()
     test_argn_test_zeros()
+    test_argn_test_identity()
     test_cumsum()

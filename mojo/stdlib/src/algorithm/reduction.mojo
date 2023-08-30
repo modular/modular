@@ -1470,7 +1470,7 @@ fn _argn[
     fn task_func(task_id: Int):
         @parameter
         @always_inline
-        fn cmp[
+        fn cmpeq[
             type: DType, simd_width: Int
         ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
             DType.bool, simd_width
@@ -1480,6 +1480,17 @@ fn _argn[
                 return a <= b
             else:
                 return a >= b
+
+        fn cmp[
+            type: DType, simd_width: Int
+        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            DType.bool, simd_width
+        ]:
+            @parameter
+            if is_max:
+                return a < b
+            else:
+                return a > b
 
         @parameter
         @always_inline
@@ -1522,7 +1533,7 @@ fn _argn[
                     let curr_values = get_input[type, simd_width](i, j)
                     indices += simd_width
 
-                    let mask = cmp(curr_values, global_values)
+                    let mask = cmpeq(curr_values, global_values)
                     global_indices = mask.select(global_indices, indices)
                     global_values = mask.select(global_values, curr_values)
 
@@ -1534,15 +1545,23 @@ fn _argn[
                 else:
                     global_val = global_values.reduce_min()
 
-                idx = global_indices[
-                    _index_of_first_one(global_values == global_val)
-                ].to_int()
-
+                # Check trailing values.
                 for j in range(last_simd_index, d1, 1):
                     let elem = get_input[type, 1](i, j)
                     if cmp(global_val, elem):
                         global_val = elem
-                        idx = j
+
+                var matching = global_values == global_val
+
+                idx = global_indices[_index_of_first_one(matching)].to_int()
+
+                # Check that no match was found on lower indices.
+                if matching == 0:
+                    # Check trailing indices.
+                    for j in range(last_simd_index, d1, 1):
+                        let elem = get_input[type, 1](i, j)
+                        if elem == global_val:
+                            idx = j
 
             @parameter
             if rank == 1:
