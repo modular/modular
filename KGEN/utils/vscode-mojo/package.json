@@ -18,7 +18,10 @@
     "🔥"
   ],
   "activationEvents": [
-    "onLanguage:mojo"
+    "onLanguage:mojo",
+    "onDebugResolve:mojo-lldb",
+    "onUri",
+    "onStartupFinished"
   ],
   "main": "./out/extension",
   "scripts": {
@@ -39,7 +42,9 @@
   "dependencies": {
     "chokidar": "3.5.2",
     "ini": "4.1.1",
-    "vscode-languageclient": "^8.0.2-next.5"
+    "string-argv": "0.3.2",
+    "vscode-languageclient": "^8.0.2-next.5",
+    "yaml": "2.3.2"
   },
   "repository": {
     "type": "git",
@@ -112,6 +117,23 @@
           "scope": "resource",
           "type": "array",
           "description": "Arguments passed in. Each argument is a separate item in the array."
+        },
+        "mojo.lldb.rpcServer": {
+          "scope": "resource",
+          "description": "Start an RPC server that will accept debug requests.",
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "post": {
+              "type": "number"
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "order": 2
         }
       }
     },
