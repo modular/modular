@@ -63,6 +63,7 @@ from Conv import (
 )
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
+from GatherScatter import gather_reduce
 from GatherScatter import scatter_nd as _scatter_nd
 from Matmul import _pack_b_ndbuffer_impl
 from Matmul import matmul as _matmul
@@ -1400,6 +1401,39 @@ fn transpose_shape[
 # ===----------------------------------------------------------------------===#
 # Gather
 # ===----------------------------------------------------------------------===#
+
+# TODO(#20442): Remove with generic fusion.
+@mogg_register("mo.gather_sum")
+@always_inline
+@export
+fn mogg_gather_sum[
+    output_rank: Int,
+    input_rank: Int,
+    indices_rank: Int,
+    type: DType,
+](
+    input: NDBuffer[input_rank, DimList.create_unknown[input_rank](), type],
+    indices: NDBuffer[
+        indices_rank,
+        DimList.create_unknown[indices_rank](),
+        DType.int32,
+    ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    gather_reduce[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        input_rank,
+        DimList.create_unknown[input_rank](),
+        indices_rank,
+        DimList.create_unknown[indices_rank](),
+        type,
+        0,
+        1,
+        simdwidthof[type](),
+        add,
+    ](output, input, indices, 0, out_chain)
 
 
 @always_inline
