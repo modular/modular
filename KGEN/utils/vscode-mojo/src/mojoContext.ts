@@ -8,10 +8,12 @@ import * as vscode from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
 
 import {activateRunCommands} from './commands/run';
-import {registerDebugging} from './debug';
+import {MojoDebugContext} from './debug/debug';
+import {RpcLaunchServer} from './debug/externalDebugLauncher';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
+import * as config from './utils/config';
 import * as configWatcher from './utils/configWatcher';
 import {DisposableContext} from './utils/disposableContext';
 
@@ -24,7 +26,7 @@ export class MOJOContext extends DisposableContext {
   workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
   _loggingService: LoggingService|undefined;
 
-  private getLoggingService(): LoggingService { return this._loggingService!; }
+  public getLoggingService(): LoggingService { return this._loggingService!; }
 
   public getSDK(): MOJOSDK { return this._sdk!; }
 
@@ -66,7 +68,7 @@ export class MOJOContext extends DisposableContext {
     this.pushSubscription(registerFormatter(loggingService, this.getSDK()));
 
     // Initialize the debugger support.
-    this.pushSubscription(registerDebugging(this));
+    this.pushSubscription(new MojoDebugContext(this));
 
     // Initialize the execution commands.
     this.pushSubscription(activateRunCommands(this));
