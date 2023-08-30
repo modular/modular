@@ -178,6 +178,9 @@ fn non_max_suppression[
     per_class_scores._del_old()
 
     let output_shape = TensorShape(output_predictions.__len__() // 3, 3)
+    # note that the output tensor takes ownership of output_predictions.data
+    # output_predictions.data may be larger than the actual tensor size indicated
+    # by the shape, but that should be OK since the tensor.__del__() frees the pointer
     return Tensor[DType.int64](
         rebind[DTypePointer[DType.int64]](output_predictions.data), output_shape
     )
