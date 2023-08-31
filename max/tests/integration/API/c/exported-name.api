@@ -1,6 +1,6 @@
 // REQUIRES: MODEL
-// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir
-// RUN: modular-api-executor --model-specification=%modelsdir/resnet50-v1.5.yaml --input-shapes=1x224x224x3 --input-names input --output-names output --model-inputs=zeros --allocator=malloc --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED
+// RUN: python3 -m %modeltool download --format tensorflow-savedmodel %modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --weights-dir %api_executor_models_dir
+// RUN: modular-api-executor --model-specification=%modelsdir/Experimental/ResNet50/resnet50-v1.5.yaml --input-shapes=1x224x224x3 --input-names input --output-names output --model-inputs=zeros --allocator=malloc --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED
 // RUN: modular-api-executor --input-shapes=1x224x224x3 --model-inputs=zeros --allocator=malloc --num-threads=0 --num-runs=1 --result-output-style=compact --exported-name serving_default %api_executor_models_dir/resnet50-v1.5 | FileCheck %s --check-prefix=CHECK-EXPORTED-NO-SPEC
 
 // CHECK-EXPORTED: 'benchmark' returned tensor{{.*}}
