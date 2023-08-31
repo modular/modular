@@ -473,10 +473,14 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   llvm::orc::JITDylib &platformStdlib =
       ee->executionSession->createBareJITDylib(platformStdlibName.str());
 
-  // If we have the platform support library, use it.
-  if (auto err = setupPlatform(rtBuf, ee->dataLayout, platformStdlib,
-                               *ee->executionSession, *ee->objectLayer))
-    return err.takeError();
+  // If we have the platform support library, use it. This requires the
+  // compilation target to be a subset of the host process, so disable it for
+  // cross-compilation.
+  if (!options.crossCompiling) {
+    if (auto err = setupPlatform(rtBuf, ee->dataLayout, platformStdlib,
+                                 *ee->executionSession, *ee->objectLayer))
+      return err.takeError();
+  }
 
   // COFF format binaries (Windows) need special handling to deal with
   // exported symbol visibility.
