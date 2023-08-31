@@ -1205,21 +1205,50 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   if (parseExpression(contextExp, std::nullopt))
     return failure();
 
+  // If we are in a def, we need to use function scoping.  If we are in a fn,
+  // we need to use lexical scope.  When we support `with` at the top level, we
+  // should decide whether it is lexical or global scope.  This largely depends
+  // on our view of what `python superset` or `python++` means.
+  bool useLexicalScope = true;
+  if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
+    if (funcOp.getIsDef())
+      useLexicalScope = false;
+  }
+
   // FIXME: This needs to parse this as a target expression and then handle it
   // like a destructuring pattern.
-  VarLetDeclOp target;
+  VarLetDeclOp targetDecl;
+  bool addDecl = false;
   SMLoc targetLoc;
+  SMLoc asLoc;
   ValueDest enterDest(EC_WithContextMgr);
-  if (consumeIf(Token::kw_as)) {
+  if (consumeIf(Token::kw_as, &asLoc)) {
     StringAttr name = StringAttr::get(getContext(), getToken().getSpelling());
     if (parseToken(Token::identifier,
                    "expected identifier for target in 'with'", &targetLoc))
       return failure();
-    target = builder.create<VarLetDeclOp>(
-        shared.translateLocation(targetLoc),
-        PointerType::get(UnresolvedType::get(getContext())), name,
-        /*isVar*/ false, /*isSynth=*/false);
-    enterDest = ValueDest(target, EC_WithContextMgr);
+    ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
+    if (!useLexicalScope && !decls.empty()) {
+      SMLoc declLoc = decls[0]->getLoc();
+      AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls);
+      if (auto slval = emitted.getIfSLValue()) {
+        enterDest = ValueDest(slval, EC_WithContextMgr);
+      } else {
+        (emitError(targetLoc)
+         << name
+         << " is not a valid mutable variable for `with ... as` to target")
+                .attachNote(declLoc)
+            << name << " declared here";
+        return failure();
+      }
+    } else {
+      targetDecl = builder.create<VarLetDeclOp>(
+          shared.translateLocation(targetLoc),
+          PointerType::get(UnresolvedType::get(getContext())), name,
+          /*isVar=*/!useLexicalScope, /*isSynth=*/false);
+      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
+      addDecl = true;
+    }
   }
 
   if (parseToken(Token::colon, "expected ':' after 'with' expression")) {
@@ -1237,28 +1266,17 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   if (!enterResult)
     enterDest.resetForError();
 
-  // If we are in a def, we need to use function scoping.  If we are in a fn,
-  // we need to use lexical scope.  In the top level, when supported, I guess we
-  // use global scope?  Maybe we should revisit that when the time comes.
-  bool useLexicalScope = false;
-  if (auto funcOp = dyn_cast<LIT::FuncOp>(getParentDecl())) {
-    if (!funcOp.getIsDef())
-      useLexicalScope = true;
-  }
-
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   if (useLexicalScope)
     pushChildScope(scopeGuard, keepDecl);
 
-  // The tail of the computation we put in a lambda so we can call it in a new
-  // scope or in the current scope depending on whether we are in a def or a fn.
   // Inject the target into our scope if asked for.
-  if (target) {
-    auto &targetDecl = getDeclResolver().addFullyResolvedDecl(
-        SLValue(target), target.getNameAttr(), targetLoc, curDeclScope);
+  if (addDecl) {
+    auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
+        SLValue(targetDecl), targetDecl.getNameAttr(), targetLoc, curDeclScope);
     if (!enterResult)
-      targetDecl.hasReferenceError = true;
+      targetDeclResolved.hasReferenceError = true;
   }
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the context

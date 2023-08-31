@@ -157,6 +157,21 @@ fn spurious_for_loop_variable_unknown_decl():
 # With
 ##===----------------------------------------------------------------------===##
 
+struct ExampleCM:
+  fn __enter__(self) -> Int:
+    return 42
+  fn __exit__(self):
+    pass # normal
+  fn __exit__(self, err: Error) -> Bool:
+    return True # Raise
+
+def withUsingImmutableVariable(a: ExampleCM):
+  # expected-note @below {{'x' declared here}}
+  let x = 77
+  # expected-error @below {{'x' is not a valid mutable variable for `with ... as` to target}}
+  with a as x:
+    pass
+
 # External Issue #529 https://github.com/modularml/mojo/issues/529
 def withWithNoColon():
   # expected-error @below {{expected ':' after 'with' expression}}

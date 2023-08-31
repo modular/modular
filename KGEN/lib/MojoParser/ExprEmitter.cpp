@@ -729,6 +729,166 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   return {};
 }
 
+PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
+                                             ParamBindArrayAttr bindings,
+                                             SMLoc errLoc) {
+  // If the param is declared in a function, then just directly use it.
+  Operation *parent = param->getParentOp();
+  while (1) {
+    // If this reference is within a function then keep it symbolic.
+    if (parent && isa<LIT::FuncOp>(parent))
+      return ParamDeclRefAttr::get(param.getName(), param.getType());
+
+    // If this is at file scope, inline it.
+    if (!parent || isa<FileModuleOp>(parent))
+      return param.getValue();
+
+    // If this is in a struct, then the value may refer to parameters declared
+    // on the struct, whose values come through 'bindings'.  Remap.
+    if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
+      // If the reference is to a member of the struct that has bindings, remap
+      // them.  This allows things like `SomeType[a,b].someAlias` to substitute
+      // the a/b values into the body of `someAlias`.  If we have no bindings,
+      // then we know we're in a context where the body of the alias is still
+      // valid.
+      if (!bindings)
+        return param.getValue();
+
+      if (structDecl.getInputParams().size() != bindings.size()) {
+        shared.emitError(errLoc,
+                         "incorrect number of struct parameters, expected:")
+            << structDecl.getInputParams().size() << " got: " << bindings.size()
+            << ".";
+        return PValue();
+      }
+
+      ParserParamEvaluator evaluator(*shared.declResolver, bindings);
+      return PValue(evaluator.getReboundAttribute(param.getValue()));
+    }
+
+    // Ignore if and other control flow things.
+    parent = parent->getParentOp();
+  }
+
+  return ParamDeclRefAttr::get(param.getName(), param.getType());
+}
+
+AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
+                                        ArrayRef<ASTDecl *> decls,
+                                        const ExprNode *expr, ValueDest &dest,
+                                        Capture &capture) {
+  shared.notifyListenerOnRef(decls, spelling, expr);
+
+  // Functions form an address, and may be overloaded.
+  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
+    ParamBindArrayAttr paramBindings = {};
+    // Form an overload set value with all the candidates.
+    auto result = ORValue::create(spelling, decls, paramBindings, expr,
+                                  CallSyntax::kDirectCall);
+    return emitResult(std::move(result), expr, dest);
+  }
+
+  assert(decls.size() == 1 && "Only functions may be overloaded");
+  ASTDecl &decl = *decls[0];
+
+  // Aliases form a PValue.
+  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
+    PValue result =
+        resolveAliasDeclareValue(param, /*bindings=*/{}, expr->getLoc());
+    return emitResult(result.get(), expr, dest);
+  }
+
+  // Use of forward alias references.
+  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
+    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
+    return emitResult(result, expr, dest);
+  }
+
+  // If this is a type declaration, return it as a type.
+  if (isa<StructDeclOp>(decl)) {
+    PValue result(DeclRefType::get(decl.getSymbolRef()));
+    return emitResult(result, expr, dest);
+  }
+
+  // If this is a module or package declaration, form a module reference.
+  if (isa<FileModuleOp, PackageOp>(decl)) {
+    PValue result(ModuleAttr::get(MetaTypeType::get(decl.getSymbolRef())));
+    return emitResult(result, expr, dest);
+  }
+
+  if (auto pvalue = decl.getIfPValue())
+    return emitResult(pvalue, expr, dest);
+
+  // All the declarations below require resolving a dynamic value.
+  if (!builder)
+    return emitErrorForDynamicValueInParameter(expr);
+
+  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
+  // can check if it is captured in a function.
+  CValue value;
+  Value mlirValue;
+  // 'let' declarations resolve to an SBvalue when they are register_passable.
+  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
+    mlirValue = letDecl.getResult();
+    value = SBValue(mlirValue);
+
+    // Variable references resolve to an MBValue or LValue addressing the
+    // memory.
+  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
+    // We handle both var and let's as mutable lvalues and let check lifetimes
+    // diagnose any problems.  This allows us to handle late-initialized lets.
+    mlirValue = var.getResult();
+    value = LValue(mlirValue);
+
+    // RValue's and LValues always resolve to their known value.
+  } else if (auto rvalue = decl.getIfRValue()) {
+    if (auto mrValue = rvalue.getIfMRValue())
+      mlirValue = mrValue;
+    else
+      mlirValue = rvalue.getIfSRValue();
+    value = rvalue;
+  } else if (auto bvalue = decl.getIfBValue()) {
+    if (auto mbValue = bvalue.getIfMBValue())
+      mlirValue = mbValue;
+    else
+      mlirValue = bvalue.getIfSBValue();
+    value = bvalue;
+  } else if (auto lvalue = decl.getIfSLValue()) {
+    mlirValue = lvalue;
+    value = lvalue;
+  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
+    auto ref = builder->create<GlobalVarRefOp>(
+        translateLocation(expr->getLoc()), globalOp);
+    mlirValue = ref;
+    if (globalOp.getIsVar())
+      value = SLValue(mlirValue);
+    else
+      value = MBValue(mlirValue);
+  } else {
+    emitError(expr->getLoc(), "use of declaration \"")
+        << spelling << "\" as a value isn't supported yet" << expr->getRange();
+    return {};
+  }
+  if (auto slValue = value.getIfSLValue()) {
+    if (ASTType(slValue.getRValueType())
+            .isRegisterPassable(expr->getLoc(), shared)) {
+      capture =
+          Capture(mlirValue, value.getRValueType(), value.getRValueType());
+      return value;
+    }
+  }
+  capture = Capture(mlirValue, value.getRValueType(), value.getType());
+  return value;
+}
+
+AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
+                                        ArrayRef<ASTDecl *> decls) {
+  SyntheticNode dummyNode({});
+  Capture capture = {};
+  return emitDeclReference(spelling, decls, &dummyNode, ValueDest::none(),
+                           capture);
+}
+
 //===----------------------------------------------------------------------===//
 // emitResult(ValueDest) Implementation
 //===----------------------------------------------------------------------===//
