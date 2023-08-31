@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, fma, max, min
+from math import div_ceil, fma, max, min, align_down
 from sys.info import alignof, simd_byte_width, simdwidthof
 from sys.intrinsics import PrefetchOptions, external_call
 
@@ -2731,9 +2731,11 @@ struct ConvDirectNHWC[
             )
         # C is not partitioned, fuse epilogue in the last C tile.
         else:
-            let c_round_by_tile = (self.conv_shape.c // tile_size) * tile_size
+            # Round down by tile size. This ensures the last tile has size
+            # within (0, tile_size].
+            let c_round_by_tile = align_down((self.conv_shape.c - 1), tile_size)
             tile[c_tile_iteration](0, c_round_by_tile, tile_size)
-            # Update the last c tile with fusion if any
+            # Update the last c tile with fusion
             self._f_tile_loop[padded, True](
                 n, c_round_by_tile, self.conv_shape.c - c_round_by_tile
             )
