@@ -13,11 +13,15 @@
 include "Support/Driver/DriverCommand.td"
 
 // CHECK: driver-tblgen-test [options] <input>
+// CHECK: driver-tblgen-test <command>
 def : CommandDescription<
   "driver-tblgen-test", /*subcommand=*/"",
   "Test that options are output in Markdown.",
   "This command contains an option group with options.",
-  [UsageInfo<"options", "input", /*variadicInput=*/false>]>;
+  [
+    UsageInfo<"options", "input", /*variadicInput=*/false>,
+    UsageInfo<"", "command", /*variadicInput=*/false>
+  ]>;
 
 // CHECK: ## Commands
 // CHECK: `subcommand` — Test that subcommands are output in Markdown
