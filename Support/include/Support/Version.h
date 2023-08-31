@@ -17,6 +17,13 @@ namespace M {
 /// implements the SemVer 2.0.0 spec.
 class Version {
 public:
+  /// Default-construct an empty version (0.0.0)
+  Version() = default;
+  /// Construct a version with a major/minor/patch/label. This performs no
+  /// parsing of any kind.
+  Version(unsigned major, unsigned minor, unsigned patch, std::string l)
+      : major(major), minor(minor), patch(patch), label(std::move(l)) {}
+
   /// Parse the version from a string. This follows standard semver parsing
   /// rules.
   static ErrorOr<Version> parse(StringRef str);
@@ -56,10 +63,10 @@ public:
   std::string toString() const;
 
 private:
-  unsigned major;
-  unsigned minor;
-  unsigned patch;
-  std::string label;
+  unsigned major = 0;
+  unsigned minor = 0;
+  unsigned patch = 0;
+  std::string label = "";
 };
 
 /// Print a Version object.
