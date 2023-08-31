@@ -2302,9 +2302,18 @@ static void emitClosureInstance(SignatureType closureSignature,
     closureImplInitArgs.push_back({anyValueFromCapture(decl, capture), &node});
 
   ValueDest closureDest;
-  Type selfType = ASTDecl::computeSelfTypeForStruct(closureImpl);
-  exprEmitter.emitConstructorCall(ASTType(selfType), closureImplInitArgs, &node,
-                                  CallSyntax::kTypeCall, closureDest, false);
+  Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
+  CValue value = exprEmitter.emitConstructorCall(
+      ASTType(closureImplType), closureImplInitArgs, &node,
+      CallSyntax::kTypeCall, closureDest, false);
+  // Emit the Closure Wrapper instance.
+  ValueDest closureWrapperDest;
+  SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
+  closureWrapperInitArgs.push_back({value, &node});
+  Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
+  exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
+                                  closureWrapperInitArgs, &node,
+                                  CallSyntax::kTypeCall, closureWrapperDest);
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
