@@ -36,3 +36,16 @@ fn captures_closure(x:Int):
       let z = closure1(x)
       let w = closure2(z)
       return w
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Deeply Nested Escaping Closures
+##===----------------------------------------------------------------------===##
+
+fn makes_escaping_closure(m: String):
+   fn myclosure(n:String) escaping -> String:
+      # expected-error @below {{TODO: nested escaping closures deeper than 1 level are not supported yet}}
+      fn nested_nested(k:String) escaping -> String:
+         return n+k
+      return n+m
