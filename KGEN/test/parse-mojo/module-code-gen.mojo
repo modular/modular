@@ -460,3 +460,29 @@ fn makes_escaping_closure(m: String):
       return n+m
    fn myclosure2(n:String, j:Int) escaping -> Int:
       return m.__len__()
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Closure Impl Instantiation
+##===----------------------------------------------------------------------===##
+
+fn makes_escaping_closure(m: String):
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}"::@"_CI_{{.*}}">
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*", var = true, synth = true : <!String>
+   # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"(%anonymous2A_0, %m)
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %anonymous2A_0)
+   fn myclosure_with_mem_types(n:String) escaping -> String:
+      return n+m
+
+# // -----
+
+fn makes_escaping_closure(z: Int):
+   let w = z * z
+   var a = w
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22">
+   # CHECK-NEXT: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int>
+   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w)
+   fn myclosure_with_reg_types(x:Int) escaping -> Int:
+      a = a + 1
+      return x + w

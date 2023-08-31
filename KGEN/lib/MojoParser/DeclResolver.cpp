@@ -2232,10 +2232,44 @@ void DeclResolver::setLocationDebugScope(
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
 
+static AnyValue anyValueFromCapture(const ASTDecl *decl, Capture capture) {
+  AnyValue anyValue;
+  if (BValue bValue = decl->getIfBValue()) {
+    return AnyValue(bValue);
+  } else if (SLValue slValue = decl->getIfSLValue()) {
+    return AnyValue(slValue);
+  } else if (RValue rValue = decl->getIfRValue()) {
+    return AnyValue(rValue);
+  } else if (PValue pValue = decl->getIfPValue()) {
+    return AnyValue(pValue);
+  } else if (Operation *op = decl->getIfOperation()) {
+    if (VarLetDeclOp var = dyn_cast<VarLetDeclOp>(op)) {
+      return AnyValue(SLValue(capture.getMlirValue()));
+    } else if (LetRegDeclOp let = dyn_cast<LetRegDeclOp>(op)) {
+      return AnyValue(SBValue(capture.getMlirValue()));
+    } else {
+      llvm_unreachable("Captured values must be declared.");
+    }
+  }
+  return {};
+}
+
 static void emitClosureInstance(SignatureType closureSignature,
                                 SharedState &shared,
                                 ASTDecl &nestedFunctionDecl, SMLoc location) {
   LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
+  auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
+  assert(parentFunction &&
+         "Expected nestedFunctionDecl to have a parent FuncOp.");
+  auto symbol =
+      dyn_cast<SymbolConstantAttr>(parentFunction.getBoundReference());
+  if (!symbol) {
+    shared.emitError(location, "TODO: nested escaping closures deeper than 1 "
+                               "level are not supported yet");
+    return;
+  }
+  ASTDecl *parentFunctionDecl =
+      shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol());
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
   StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
       location, nestedFunctionDecl, fileModuleOp);
@@ -2244,6 +2278,33 @@ static void emitClosureInstance(SignatureType closureSignature,
   ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
                          shared.getNoneType(), shared);
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
+
+  // Create an instance of the closure implementation in the parent function
+  // right after the nested function definition. In order to emit an instance,
+  // we need the captures and in order to compute the captures we need to
+  // resolve the body.
+  if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
+    return;
+  auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      parentFunction.getLoc(), parentFunction.getBody());
+  builder.setInsertionPointAfter(nestedFunction);
+
+  ExprEmitter exprEmitter(shared, *parentFunctionDecl, builder);
+  SyntheticNode node(location);
+
+  // Create a copy of the captured value.
+  SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
+  for (auto &[decl, capture] : captureIteratorRange)
+    closureImplInitArgs.push_back({anyValueFromCapture(decl, capture), &node});
+
+  ValueDest closureDest;
+  Type selfType = ASTDecl::computeSelfTypeForStruct(closureImpl);
+  exprEmitter.emitConstructorCall(ASTType(selfType), closureImplInitArgs, &node,
+                                  CallSyntax::kTypeCall, closureDest, false);
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]

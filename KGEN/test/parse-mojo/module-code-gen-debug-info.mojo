@@ -70,3 +70,18 @@ fn makes_escaping_closure(m:  InMemType, z: __mlir_type.index) -> fn( __mlir_typ
    fn myclosure(n: __mlir_type.index) ->  __mlir_type.index:
       return z
    return myclosure
+
+# // -----
+
+fn makes_escaping_closure(z: Int):
+   let w = z * z
+   var a = w
+   # CHECK-DAG: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22"> loc(#[[LOC:loc[0-9]*]])
+   # CHECK-DAG: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int> loc(#[[LOC]])
+   # CHECK-DAG: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w) : (!kgen.pointer<@"{{.*}}"::@"_CI_${{.*}}_\22($builtin::$int::Int,$builtin::$int::Int,$builtin::$int::Int)\22"> init_self, !Int, !Int) -> !lit.none loc(#[[LOC]])
+   fn myclosure_with_reg_types(x:Int) escaping -> Int:
+      a = a + 1
+      return x + w
+
+# CHECK-DAG: #[[LOC]] = loc(fused<#subprogram[[ID:.*]]>[#loc[[LOC2:.*]]])
+# CHECK-DAG: #subprogram[[ID]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "makes_escaping_closure", linkageName = "makes_escaping_closure($builtin::$int::Int)", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !subroutine[[ID]]
