@@ -38,6 +38,10 @@ struct ExecutionEngineOptions {
   /// Which sanitizers were enabled on the build.
   Sanitizers sanitizers;
 
+  /// Set to true if the executing engine is being used to cross-compile. This
+  /// will forgo any JIT setup and capabilities.
+  bool crossCompiling = false;
+
   /// An ORC ExecutorProcessControl that the user can specify.
   std::unique_ptr<llvm::orc::ExecutorProcessControl> epc = nullptr;
 };

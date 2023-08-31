@@ -181,6 +181,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   ctx->allowUnregisteredDialects();
 
   CompilationOptions options = clOptions.getCompilationOptions();
+  ExecutionEngineOptions eeOptions;
+  eeOptions.sanitizers = options.sanitizers;
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
 
@@ -292,7 +294,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (targetOr.isError())
       return failure(clOptions.reportError(targetOr.getError()));
     target = targetOr.takeValue();
+    options.targetTriple = target.getTripleStr();
+    options.targetCpu = target.getCpu();
+    options.targetFeatures = target.getFeatures();
   }
+  // Detect cross-compilation by checking whether the target CPU is the same as
+  // the host CPU.
+  eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
 
   // Get the build info from the current build.
   BuildInfoAttr build = BuildInfoAttr::getForCurrentBuild(ctx);
@@ -304,10 +312,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure(clOptions.reportError(tmOr.getError()));
 
   // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
-  auto engineOr = ExecutionEngine::createWithStandardLayers(
-      {/*registerDebugPlugins=*/false,
-       /*sanitizers=*/options.sanitizers},
-      **tmOr);
+  auto engineOr =
+      ExecutionEngine::createWithStandardLayers(std::move(eeOptions), **tmOr);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
