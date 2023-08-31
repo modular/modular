@@ -7,7 +7,6 @@
 from math import (
     abs,
     add,
-    logical_and,
     ceil,
     div,
     div_ceil,
@@ -19,6 +18,9 @@ from math import (
     greater,
     greater_equal,
     isnan,
+    logical_and,
+    logical_not,
+    logical_xor,
     log1p,
     max,
     min,
@@ -31,7 +33,6 @@ from math import (
     sqrt,
     sub,
     tanh,
-    logical_xor,
 )
 from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
@@ -130,7 +131,6 @@ fn MOGGExport():
     alias _arg_min = argmin_wrapped
     alias _abs = abs_wrapped
     alias _add = add
-    alias _logical_and = logical_and
     alias _avg_pool_shape = pool_shape
     alias _avg_pool = avg_pool
     alias _cast = cast
@@ -155,6 +155,9 @@ fn MOGGExport():
     alias _greater_equal = greater_equal
     alias _isinf = isinf
     alias _isnan = isnan
+    alias _logical_and = logical_and
+    alias _logical_not = logical_not
+    alias _logical_xor = logical_xor
     alias _log1p = log1p
     alias _logsoftmax = logsoftmax
     alias _pack_b_ndbuffer = pack_b_ndbuffer
@@ -216,7 +219,6 @@ fn MOGGExport():
     alias _mark_output_chain_ready = mark_output_chain_ready
     alias _where = where
     alias _where_shape = where_shape
-    alias _logical_xor = logical_xor
 
 
 # ===----------------------------------------------------------------------===#
