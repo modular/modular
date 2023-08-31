@@ -22,6 +22,7 @@ from math import (
     log1p,
     max,
     min,
+    mod,
     mul,
     not_equal,
     pow,
@@ -170,6 +171,7 @@ fn MOGGExport():
     alias _batched_matmul = batched_matmul
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
+    alias _mod = mod
     alias _mul = mul
     alias _not_equal = not_equal
     alias _rsqrt = rsqrt
