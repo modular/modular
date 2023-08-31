@@ -702,6 +702,31 @@ fn testWithScoping(a: ExampleCM):
     # CHECK: %withDecl_0 = lit.varlet.decl "withDecl"{{.*}}
     noop(withDecl)
 
+def testWithInDef(a: ExampleCM):
+  # This is a test that issue #20141 is fixed.
+  # https://github.com/modularml/modular/issues/20141
+  # IE that when used inside a `def`, the `with` statement uses
+  # mutable function scope variables.
+  # CHECK: [[VAL1:%.*]] = pop.load %val1
+  val1 = 77
+  # CHECK: kgen.call {{.*}}noop{{.*}}([[VAL1]])
+  noop(val1)
+  with a as val1:
+    # CHECK: [[VAL1:%.*]] = pop.load %val1
+    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL1]])
+    noop(val1)
+  noop(val1)
+  with a as val2:
+    # CHECK: [[VAL2:%.*]] = pop.load %val2
+    # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}([[VAL2]])
+    noop(val2)
+  # CHECK: [[VAL2:%.*]] = pop.load %val2
+  val2 = 78
+  # CHECK: kgen.call {{.*}}noop{{.*}}([[VAL2]])
+  noop(val2)
+
+
+
 ##===----------------------------------------------------------------------===##
 
 # TODO(Issue #6139)

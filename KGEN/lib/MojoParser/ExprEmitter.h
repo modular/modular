@@ -8,7 +8,9 @@
 #define EXPREMITTER_H
 
 #include "ExprNode.h"
+#include "ExprNodes.h"
 #include "IRValues.h"
+#include "KGEN/LITDialect/LITOps.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
@@ -450,6 +452,21 @@ public:
                                const ASTDecl &funcDecl);
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                const FuncOp funcDecl);
+
+  /// Given a AliasDeclOp, return the value that should be used in a reference
+  /// to it.  This currently fully substitutes members unless they are in a
+  /// function definition.
+  PValue resolveAliasDeclareValue(AliasDeclOp param,
+                                  ParamBindArrayAttr bindings, SMLoc errLoc);
+
+  /// Emit a reference to a declaration to an AnyValue. If the value is concrete
+  /// and has a runtime value, `mlirValue` is populated with the corresponding
+  /// SSA value.
+  /// FIXME: The `mlirValue` is a hack for closures and should be removed.
+  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls,
+                             const ExprNode *expr, ValueDest &dest,
+                             Capture &capture);
+  AnyValue emitDeclReference(StringRef spelling, ArrayRef<ASTDecl *> decls);
 };
 
 } // namespace M::KGEN::LIT

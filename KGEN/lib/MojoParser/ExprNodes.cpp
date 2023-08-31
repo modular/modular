@@ -235,53 +235,6 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   return UnboundMLIROperationAttr::get(unboundOp.getName(), attrs);
 }
 
-/// Given a AliasDeclOp, return the value that should be used in a reference
-/// to it.  This currently fully substitutes members unless they are in a
-/// function definition.
-static PValue resolveAliasDeclareValue(AliasDeclOp param,
-                                       ParamBindArrayAttr bindings,
-                                       SharedState &shared, SMLoc errLoc) {
-  // If the param is declared in a function, then just directly use it.
-  Operation *parent = param->getParentOp();
-  while (1) {
-    // If this reference is within a function then keep it symbolic.
-    if (parent && isa<LIT::FuncOp>(parent))
-      return ParamDeclRefAttr::get(param.getName(), param.getType());
-
-    // If this is at file scope, inline it.
-    if (!parent || isa<FileModuleOp>(parent))
-      return param.getValue();
-
-    // If this is in a struct, then the value may refer to parameters declared
-    // on the struct, whose values come through 'bindings'.  Remap.
-    if (auto structDecl = dyn_cast<StructDeclOp>(parent)) {
-      // If the reference is to a member of the struct that has bindings, remap
-      // them.  This allows things like `SomeType[a,b].someAlias` to substitute
-      // the a/b values into the body of `someAlias`.  If we have no bindings,
-      // then we know we're in a context where the body of the alias is still
-      // valid.
-      if (!bindings)
-        return param.getValue();
-
-      if (structDecl.getInputParams().size() != bindings.size()) {
-        shared.emitError(errLoc,
-                         "incorrect number of struct parameters, expected:")
-            << structDecl.getInputParams().size() << " got: " << bindings.size()
-            << ".";
-        return PValue();
-      }
-
-      ParserParamEvaluator evaluator(*shared.declResolver, bindings);
-      return PValue(evaluator.getReboundAttribute(param.getValue()));
-    }
-
-    // Ignore if and other control flow things.
-    parent = parent->getParentOp();
-  }
-
-  return ParamDeclRefAttr::get(param.getName(), param.getType());
-}
-
 //===----------------------------------------------------------------------===//
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
@@ -421,118 +374,6 @@ bool CallArgument::isPositionalStringLiteral(StringRef str) const {
   return kind == kPositional && strExpr && strExpr->getValue() == str;
 }
 
-/// Emit a reference to a declaration to an AnyValue. If the value is concrete
-/// and has a runtime value, `mlirValue` is populated with the corresponding SSA
-/// value.
-/// FIXME: The `mlirValue` is a hack for closures and should be removed.
-static AnyValue emitDeclReference(StringRef spelling, ExprEmitter &emitter,
-                                  ArrayRef<ASTDecl *> decls,
-                                  const ExprNode *expr, ValueDest &dest,
-                                  Capture &capture) {
-  emitter.shared.notifyListenerOnRef(decls, spelling, expr);
-
-  // Functions form an address, and may be overloaded.
-  if (auto firstCandidate = dyn_cast<LIT::FuncOp>(*decls[0])) {
-    ParamBindArrayAttr paramBindings = {};
-    // Form an overload set value with all the candidates.
-    auto result = ORValue::create(spelling, decls, paramBindings, expr,
-                                  CallSyntax::kDirectCall);
-    return emitter.emitResult(std::move(result), expr, dest);
-  }
-
-  assert(decls.size() == 1 && "Only functions may be overloaded");
-  ASTDecl &decl = *decls[0];
-
-  // Aliases form a PValue.
-  if (auto param = dyn_cast<AliasDeclOp>(decl)) {
-    PValue result = resolveAliasDeclareValue(param, /*bindings=*/{},
-                                             emitter.shared, expr->getLoc());
-    return emitter.emitResult(result.get(), expr, dest);
-  }
-
-  // Use of forward alias references.
-  if (auto param = dyn_cast<AliasForwardDeclOp>(decl)) {
-    PValue result(ParamDeclRefAttr::get(param.getName(), param.getType()));
-    return emitter.emitResult(result, expr, dest);
-  }
-
-  // If this is a type declaration, return it as a type.
-  if (isa<StructDeclOp>(decl)) {
-    PValue result(DeclRefType::get(decl.getSymbolRef()));
-    return emitter.emitResult(result, expr, dest);
-  }
-
-  // If this is a module or package declaration, form a module reference.
-  if (isa<FileModuleOp, PackageOp>(decl)) {
-    PValue result(ModuleAttr::get(MetaTypeType::get(decl.getSymbolRef())));
-    return emitter.emitResult(result, expr, dest);
-  }
-
-  if (auto pvalue = decl.getIfPValue())
-    return emitter.emitResult(pvalue, expr, dest);
-
-  // All the declarations below require resolving a dynamic value.
-  if (!emitter.builder)
-    return emitter.emitErrorForDynamicValueInParameter(expr);
-
-  // Narrow the decl to a CValue, and dig out the underlying MLIR value so we
-  // can check if it is captured in a function.
-  CValue value;
-  Value mlirValue;
-  // 'let' declarations resolve to an SBvalue when they are register_passable.
-  if (auto letDecl = dyn_cast<LetRegDeclOp>(decl)) {
-    mlirValue = letDecl.getResult();
-    value = SBValue(mlirValue);
-
-    // Variable references resolve to an MBValue or LValue addressing the
-    // memory.
-  } else if (auto var = dyn_cast<VarLetDeclOp>(decl)) {
-    // We handle both var and let's as mutable lvalues and let check lifetimes
-    // diagnose any problems.  This allows us to handle late-initialized lets.
-    mlirValue = var.getResult();
-    value = LValue(mlirValue);
-
-    // RValue's and LValues always resolve to their known value.
-  } else if (auto rvalue = decl.getIfRValue()) {
-    if (auto mrValue = rvalue.getIfMRValue())
-      mlirValue = mrValue;
-    else
-      mlirValue = rvalue.getIfSRValue();
-    value = rvalue;
-  } else if (auto bvalue = decl.getIfBValue()) {
-    if (auto mbValue = bvalue.getIfMBValue())
-      mlirValue = mbValue;
-    else
-      mlirValue = bvalue.getIfSBValue();
-    value = bvalue;
-  } else if (auto lvalue = decl.getIfSLValue()) {
-    mlirValue = lvalue;
-    value = lvalue;
-  } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
-    auto ref = emitter.builder->create<GlobalVarRefOp>(
-        emitter.translateLocation(expr->getLoc()), globalOp);
-    mlirValue = ref;
-    if (globalOp.getIsVar())
-      value = SLValue(mlirValue);
-    else
-      value = MBValue(mlirValue);
-  } else {
-    emitter.emitError(expr->getLoc(), "use of declaration \"")
-        << spelling << "\" as a value isn't supported yet" << expr->getRange();
-    return {};
-  }
-  if (auto slValue = value.getIfSLValue()) {
-    if (ASTType(slValue.getRValueType())
-            .isRegisterPassable(expr->getLoc(), emitter.shared)) {
-      capture =
-          Capture(mlirValue, value.getRValueType(), value.getRValueType());
-      return value;
-    }
-  }
-  capture = Capture(mlirValue, value.getRValueType(), value.getType());
-  return value;
-}
-
 AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   llvm_unreachable("emitIR is undefined for synthetic nodes.");
 }
@@ -636,7 +477,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   Capture capture;
   AnyValue result =
-      emitDeclReference(spelling, emitter, decls, this, dest, capture);
+      emitter.emitDeclReference(spelling, decls, this, dest, capture);
 
   if (!capture)
     return result;
@@ -969,7 +810,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (failed(decls))
       return {};
     Capture unused;
-    return emitDeclReference(attrSpelling, emitter, *decls, this, dest, unused);
+    return emitter.emitDeclReference(attrSpelling, *decls, this, dest, unused);
   }
 
   if (!isa<StructDeclOp>(*typeDecl)) {
@@ -1039,8 +880,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Parameters form a meta-value.
   if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
-    PValue result = resolveAliasDeclareValue(
-        param, baseRVType.getParamBindings(), emitter.shared, getLoc());
+    PValue result = emitter.resolveAliasDeclareValue(
+        param, baseRVType.getParamBindings(), getLoc());
     return emitter.emitResult(result.get(), this, dest);
   }
 
