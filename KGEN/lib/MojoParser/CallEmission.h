@@ -182,7 +182,7 @@ public:
   /// concrete operand set. If successful, this provides a non-null PValue for a
   /// single callee.
   static PValue lookup(ASTType type, StringRef methodName,
-                       ArrayRef<ASTExprAnd<AnyValue>> operands,
+                       ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
                        ExprEmitter &emitter,
                        std::function<void()> errorHandler);
@@ -201,7 +201,7 @@ public:
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, return the single entry that works.  If not, generate a
   /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
-  PValue filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
+  PValue filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
@@ -226,7 +226,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands, ValueDest &dest,
+  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> posOperands, ValueDest &dest,
                   ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need

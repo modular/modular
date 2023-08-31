@@ -626,34 +626,36 @@ struct OverloadFitness {
   /// `operands`.
   static OverloadFitness evaluate(SignatureType signature,
                                   const OverloadSet &callable,
-                                  ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                  ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                                   bool allowImplicitConversions,
                                   ExprEmitter &emitter);
 
   /// Add explanation for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
-                ArrayRef<ASTExprAnd<AnyValue>> operands, InflightDiag &diag);
+                ArrayRef<ASTExprAnd<AnyValue>> posOperands, InflightDiag &diag);
 };
 } // namespace
 
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
-/// `operands`.
+/// `posOperands`.
 OverloadFitness
 OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
-                          ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                           bool allowImplicitConversions, ExprEmitter &emitter) {
+  // TODO: normalize keyword/positional args based on signature info.
+  ArrayRef<ASTExprAnd<AnyValue>> operands = posOperands;
 
-  const ExprNode *callExpr = callable.expr;
+  SMLoc callLoc = callable.expr->getLoc();
 
   // Check that the signature can be rebound with this set of bindings.
   ssize_t incorrectBindingNo = 0;
   ASTType incorrectBindingExpectedType;
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
   auto [newBindings, fitness] = callable.inputParamBindings.verifyBindings(
-      inputParamTypes, {}, callable.baseName, callExpr->getLoc(),
-      incorrectBindingNo, incorrectBindingExpectedType, emitter,
+      inputParamTypes, {}, callable.baseName, callLoc, incorrectBindingNo,
+      incorrectBindingExpectedType, emitter,
       /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
       signature.hasPackVarargs(), operands,
       [&](size_t index, Type type, ASTType expectedParamType,
@@ -686,8 +688,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
   for (auto output : signature.getValueResults())
-    if (!ASTType(output).isRegisterPassable(callable.expr->getLoc(),
-                                            emitter.shared))
+    if (!ASTType(output).isRegisterPassable(callLoc, emitter.shared))
       return {kResultGenericMem, 0, output, newBindings};
 
   // Ok, the parameters all line up, check the argument list.  We generally want
@@ -765,8 +766,7 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.  Note that the PointerType is considered a valid
     // register passable type, so things passed byref are ok.
-    if (!ASTType(expectedType)
-             .isRegisterPassable(callable.expr->getLoc(), emitter.shared))
+    if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
       return {kArgGenericMem, expectedArgIdx, expectedType, newBindings};
 
     // Handle case when there are no more provided arguments.
@@ -946,7 +946,7 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
 /// (e.g.) `foo(x,y)` or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
-                               ArrayRef<ASTExprAnd<AnyValue>> operands,
+                               ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                                InflightDiag &diag) {
   auto describePayloadArgumentNo = [&]() {
     // If this is a method syntax call, don't count the receiver.
@@ -961,7 +961,7 @@ void OverloadFitness::diagnose(SignatureType signature,
                payload == 0) {
       diag << "left side";
     } else if (callable.syntax == CallSyntax::kSubscript && payload != 0) {
-      if (payload == 1 && operands.size() == 2)
+      if (payload == 1 && posOperands.size() == 2)
         diag << "index";
       else
         diag << "index #" << (payload - 1);
@@ -975,7 +975,7 @@ void OverloadFitness::diagnose(SignatureType signature,
   // This adds a string describing the type of the payload operand to the
   // diagnostic.
   auto getPayloadRValueType = [&] {
-    AnyValue value = operands[payload].ir;
+    AnyValue value = posOperands[payload].ir;
     if (auto cValue = value.getIfCValue())
       return cValue.getRValueType();
     // Otherwise, try to narrow an overload set to a PValue.
@@ -1018,18 +1018,18 @@ void OverloadFitness::diagnose(SignatureType signature,
     return;
   case kArgCount:
     diag << "callee expects " << payload << " argument" << plural(payload)
-         << ", but " << operands.size() << " "
-         << plural(operands.size(), "was", "were") << " specified";
+         << ", but " << posOperands.size() << " "
+         << plural(posOperands.size(), "was", "were") << " specified";
     return;
   case kArgTooFewAtLeast:
     diag << "callee expects at least " << payload << " argument"
-         << plural(payload) << ", but " << operands.size() << " "
-         << plural(operands.size(), "was", "were") << " specified";
+         << plural(payload) << ", but " << posOperands.size() << " "
+         << plural(posOperands.size(), "was", "were") << " specified";
     return;
   case kArgTooManyAtMost:
     diag << "callee expects at most " << payload << " argument"
-         << plural(payload) << ", but " << operands.size() << " "
-         << plural(operands.size(), "was", "were") << " specified";
+         << plural(payload) << ", but " << posOperands.size() << " "
+         << plural(posOperands.size(), "was", "were") << " specified";
     return;
   case kArgNotLValue:
     if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
@@ -1039,20 +1039,21 @@ void OverloadFitness::diagnose(SignatureType signature,
       describePayloadArgumentNo();
       diag << " must be mutable in order to pass as a by-ref argument";
     }
-    diag << operands[payload].expr->getRange();
+    diag << posOperands[payload].expr->getRange();
     return;
   case kArgWrongLVType:
     diag << "l-value of type "
-         << operands[payload].ir.getIfLValue().getRValueType()
+         << posOperands[payload].ir.getIfLValue().getRValueType()
          << " cannot be converted to reference of type "
-         << type.getPointerElementType() << operands[payload].expr->getRange();
+         << type.getPointerElementType()
+         << posOperands[payload].expr->getRange();
     return;
 
   case kArgWrongType: {
     describePayloadArgumentNo();
     diag << " cannot be converted from ";
     addPayloadRValueTypeName();
-    SourceRange payloadLoc = operands[payload].expr->getRange();
+    SourceRange payloadLoc = posOperands[payload].expr->getRange();
     diag << " to " << type << payloadLoc;
     addTypeConversionDetail(diag, payloadLoc, getPayloadRValueType(), type);
     break;
@@ -1072,17 +1073,16 @@ void OverloadFitness::diagnose(SignatureType signature,
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, return the single entry that works.  If not, generate a
 /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
-PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
-                                      bool allowImplicitConversions,
-                                      bool emitDiagnosticOnFailure,
-                                      ExprEmitter &emitter) const {
+PValue OverloadSet::filterOverloadSet(
+    ArrayRef<ASTExprAnd<AnyValue>> posOperands, bool allowImplicitConversions,
+    bool emitDiagnosticOnFailure, ExprEmitter &emitter) const {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
     evaluations.push_back(OverloadFitness::evaluate(
-        signature, *this, operands, allowImplicitConversions, emitter));
+        signature, *this, posOperands, allowImplicitConversions, emitter));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
 
@@ -1094,7 +1094,7 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
         auto diag = emitter.emitError(expr->getLoc(), "invalid call to '")
                     << baseName << "': " << expr->getRange();
-        evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
+        evaluations[0].diagnose(fnDecl.getFullSignature(), *this, posOperands,
                                 diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return {};
@@ -1108,7 +1108,7 @@ PValue OverloadSet::filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> operands,
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
-        eval.diagnose(fnDecl.getFullSignature(), *this, operands, diag);
+        eval.diagnose(fnDecl.getFullSignature(), *this, posOperands, diag);
       }
       return {};
     }
@@ -1510,7 +1510,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
 PValue OverloadSet::lookup(ASTType type, StringRef methodName,
-                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                            const ExprNode *callExpr, CallSyntax syntax,
                            ExprEmitter &emitter,
                            std::function<void()> errorHandler) {
@@ -1525,7 +1525,7 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   // report an error (if we have an error handler) and reset to a null state so
   // the client can check this.
   bool shouldPrintError = bool(errorHandler);
-  return ovSet.filterOverloadSet(operands, /*allowImplicitConversions=*/true,
+  return ovSet.filterOverloadSet(posOperands, /*allowImplicitConversions=*/true,
                                  /*emitDiagnosticOnFailure=*/shouldPrintError,
                                  emitter);
 }
@@ -1668,7 +1668,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
+CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                              ValueDest &dest, ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
@@ -1679,17 +1679,17 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
   if (baseValue) {
-    operandsWithSelf.reserve(operands.size() + 1);
+    operandsWithSelf.reserve(posOperands.size() + 1);
     operandsWithSelf.push_back(baseValue);
-    operandsWithSelf.append(operands.begin(), operands.end());
-    operands = operandsWithSelf;
+    operandsWithSelf.append(posOperands.begin(), posOperands.end());
+    posOperands = operandsWithSelf;
     baseValue = {};
     assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
   }
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  PValue callee = filterOverloadSet(operands,
+  PValue callee = filterOverloadSet(posOperands,
                                     /*allowImplicitConversions=*/true,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee)
@@ -1738,13 +1738,12 @@ CValue OverloadSet::emitCall(ArrayRef<ASTExprAnd<AnyValue>> operands,
     return {};
   }
 
-  return emitter.emitCallUnchecked(callee, operands, resultParamDecls, dest,
+  return emitter.emitCallUnchecked(callee, posOperands, resultParamDecls, dest,
                                    expr);
 }
 
-/// Emit an indirect call to a resolved value.
 CValue ExprEmitter::emitIndirectCall(CValue callee,
-                                     ArrayRef<ASTExprAnd<AnyValue>> operands,
+                                     ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType().mlirType);
@@ -1753,7 +1752,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     // its `__call__` method.
     SmallVector<ASTExprAnd<AnyValue>> callOperands;
     callOperands.push_back({callee, callExpr});
-    llvm::append_range(callOperands, operands);
+    llvm::append_range(callOperands, posOperands);
     return emitNamedMethodCall("__call__", callOperands, dest,
                                CallSyntax::kDirectCall, callExpr);
   }
@@ -1771,19 +1770,19 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     return {};
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*params=*/{}, ParamBindArrayAttr(), callExpr,
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindArrayAttr(), callExpr,
                        CallSyntax::kIndirectCall};
   auto fitness =
-      OverloadFitness::evaluate(calleeSig, bindings, operands,
+      OverloadFitness::evaluate(calleeSig, bindings, posOperands,
                                 /*allowImplicitConversions=*/true, *this);
   if (fitness.kind != OverloadFitness::kValid) {
     // If not, diagnose it with an error.
     auto diag = emitError(callExpr->getLoc(), "invalid indirect call: ");
-    fitness.diagnose(calleeSig, bindings, operands, diag);
+    fitness.diagnose(calleeSig, bindings, posOperands, diag);
     return {};
   }
 
-  return emitCallUnchecked(calleeRV, operands, /*resultParams=*/{}, dest,
+  return emitCallUnchecked(calleeRV, posOperands, /*resultParams=*/{}, dest,
                            callExpr);
 }
 
@@ -2422,4 +2421,54 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
   return emitCResult(SRValue(callResult), callExpr, dest);
+}
+
+CValue ExprEmitter::emitNamedMethodCall(
+    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+    ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
+  assert(!posOperands.empty() &&
+         "Cannot emit a method call without a receiver!");
+
+  // Emit the first/self operand to a CValue so we can figure out which type to
+  // lookup on.
+  CValue selfVal = posOperands[0].ir.getIfCValue();
+  SmallVector<ASTExprAnd<AnyValue>> updatedArgValues;
+  if (!selfVal) {
+    selfVal = emitCValue(posOperands[0], ValueDest::none());
+    if (!selfVal)
+      return {};
+    // We can't mutate posOperands because it's an ArrayRef.  If something
+    // changed, recurse with a temporary buffer.
+    updatedArgValues.append(posOperands.begin(), posOperands.end());
+    updatedArgValues[0].ir = selfVal;
+    posOperands = updatedArgValues;
+  }
+
+  ASTType type = selfVal.getRValueType();
+
+  auto emitNoMethodError = [&]() {
+    auto diag = emitError(callNode->getLoc(), "")
+                << type << " does not implement the '" << methodName
+                << "' method";
+    switch (syntax) {
+    case CallSyntax::kMethodCall:
+      [[fallthrough]];
+    case CallSyntax::kOperator:
+      diag << posOperands[0].expr->getRange();
+      break;
+    case CallSyntax::kReversedOperator:
+      diag << posOperands[1].expr->getRange();
+      break;
+    default:
+      break;
+    }
+  };
+
+  // If the type doesn't have the specified method, emit an error.
+  PValue callee = OverloadSet::lookup(type, methodName, posOperands, callNode,
+                                      syntax, *this, emitNoMethodError);
+  if (!callee)
+    return {};
+
+  return emitIndirectCall(callee, posOperands, dest, callNode);
 }

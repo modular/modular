@@ -1066,64 +1066,6 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 // Function Calls
 //===----------------------------------------------------------------------===//
 
-/// This helper emits a named method call with the provided `argValues`, where
-/// the first arg is the receiver of the call. This emits an error if the
-/// call is invalid and returns null.  The argValues list may not be empty.
-///
-/// `callNode` is the call like expression (e.g. a CallNode, binary operator,
-/// etc) that results in the call, or potentially a random value that is being
-/// fed into an implicit conversion.  This should only be used for location
-/// information.
-CValue ExprEmitter::emitNamedMethodCall(
-    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> argValues,
-    ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
-  assert(!argValues.empty() && "Cannot emit a method call without a receiver!");
-
-  // Emit the first/self operand to a CValue so we can figure out which type to
-  // lookup on.
-  CValue selfVal = argValues[0].ir.getIfCValue();
-  SmallVector<ASTExprAnd<AnyValue>> updatedArgValues;
-  if (!selfVal) {
-    selfVal = emitCValue(argValues[0], ValueDest::none());
-    if (!selfVal)
-      return {};
-    // We can't mutate argValues because it's an ArrayRef.  If something
-    // changed, recurse with a temporary buffer.
-    updatedArgValues.append(argValues.begin(), argValues.end());
-    updatedArgValues[0].ir = selfVal;
-    argValues = updatedArgValues;
-  }
-
-  ASTType type = selfVal.getRValueType();
-
-  auto emitNoMethodError = [&]() {
-    auto diag = emitError(callNode->getLoc(), "")
-                << type << " does not implement the '" << methodName
-                << "' method";
-    switch (syntax) {
-    default:
-      break;
-    case CallSyntax::kMethodCall:
-      diag << argValues[0].expr->getRange();
-      break;
-    case CallSyntax::kOperator:
-      diag << argValues[0].expr->getRange();
-      break;
-    case CallSyntax::kReversedOperator:
-      diag << argValues[1].expr->getRange();
-      break;
-    }
-  };
-
-  // If the type doesn't have the specified method, emit an error.
-  PValue callee = OverloadSet::lookup(type, methodName, argValues, callNode,
-                                      syntax, *this, emitNoMethodError);
-  if (!callee)
-    return {};
-
-  return emitIndirectCall(callee, argValues, dest, callNode);
-}
-
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.

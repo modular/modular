@@ -186,7 +186,7 @@ struct CallArgument {
     kPositional, ///< Positional argument like foo(x)
     kStar,       ///< Splat list of positional values like: foo(*x)
     kKeyword,    ///< Keyword argument: foo(arg=x)
-    kStarStar,   ///< Splat list of keywrod values like: foo(**x)
+    kStarStar,   ///< Splat list of keyword values like: foo(**x)
   } kind = kPositional;
 
   /// This is the expression for the value, and is always present.

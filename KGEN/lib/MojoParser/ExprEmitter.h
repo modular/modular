@@ -315,16 +315,17 @@ public:
   //===--------------------------------------------------------------------===//
   // Function Calls
 
-  /// This helper emits a named method call with the provided `argValues`, where
-  /// the first arg is the receiver of the call. This emits an error if the
-  /// call is invalid and returns null.  The argValues list may not be empty.
+  /// This helper emits a named method call with the provided `posOperands`,
+  /// where the first operand is the receiver of the call. This emits an error
+  /// if the call is invalid and returns null.  The `posOperands` list may not
+  /// be empty.
   ///
   /// `callNode` is the call like expression (e.g. a CallNode, binary operator,
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   CValue emitNamedMethodCall(StringRef methodName,
-                             ArrayRef<ASTExprAnd<AnyValue>> argValues,
+                             ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                              ValueDest &dest, CallSyntax syntax,
                              const ExprNode *callNode);
 
@@ -332,13 +333,13 @@ public:
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CValue callee,
-                          ArrayRef<ASTExprAnd<AnyValue>> operands,
+                          ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                           ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
   CValue emitCallUnchecked(CRValue callee,
-                           ArrayRef<ASTExprAnd<AnyValue>> operands,
+                           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                            ArrayRef<ParamDeclAttr> resultParams,
                            ValueDest &dest, const ExprNode *callExpr);
 
