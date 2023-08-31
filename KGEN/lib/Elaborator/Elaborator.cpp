@@ -415,12 +415,13 @@ static ElaborationState processParamResultBindOp(ImplNode *node,
 static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
   Type outType;
   HANDLE_EVALUATOR_CONC(outType, inode, op.getLoc(), op.getType());
-  if (outType != op.getInput().getType()) {
-    inode->setToError(
-        ErrorTree(op.getLoc(), "error: rebind input type '" +
-                                   mlir::debugString(op.getInput().getType()) +
-                                   "' does not match result type '" +
-                                   mlir::debugString(outType) + "'"));
+  Type inType;
+  HANDLE_EVALUATOR_CONC(inType, inode, op.getLoc(), op.getInput().getType());
+  if (outType != inType) {
+    inode->setToError(ErrorTree(
+        op.getLoc(), "error: rebind input type '" + mlir::debugString(inType) +
+                         "' does not match result type '" +
+                         mlir::debugString(outType) + "'"));
     return failure();
   }
   op.replaceAllUsesWith(op.getOperand());
