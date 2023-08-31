@@ -47,6 +47,17 @@ struct BoundingBox[type: DType]:
         return (self.se[0] - self.nw[0]) * (self.se[1] - self.nw[1])
 
 
+@always_inline
+fn _get_bounding_box[
+    type: DType
+](batch_size: Int, box_idx: Int, boxes: Tensor[type]) -> BoundingBox[type]:
+    let y1 = boxes[batch_size, box_idx, 0]
+    let x1 = boxes[batch_size, box_idx, 1]
+    let y2 = boxes[batch_size, box_idx, 2]
+    let x2 = boxes[batch_size, box_idx, 3]
+    return BoundingBox(y1, x1, y2, x2)
+
+
 fn non_max_suppression[
     type: DType
 ](
@@ -93,14 +104,6 @@ fn non_max_suppression[
     var per_class_scores = DynamicVector[SIMD[type, 1]](num_boxes)
     per_class_scores.resize(num_boxes)
 
-    @always_inline
-    fn get_bounding_box(batch_size: Int, box_idx: Int) -> BoundingBox[type]:
-        let y1 = boxes[batch_size, box_idx, 0]
-        let x1 = boxes[batch_size, box_idx, 1]
-        let y2 = boxes[batch_size, box_idx, 2]
-        let x2 = boxes[batch_size, box_idx, 3]
-        return BoundingBox(y1, x1, y2, x2)
-
     var output_predictions = DynamicVector[Int64]()
 
     for b in range(batch_size):
@@ -142,7 +145,9 @@ fn non_max_suppression[
                 pred_idx < max_output_boxes_per_class
                 and num_boxes_remaining > 0
             ):
-                let pred = get_bounding_box(b, box_idxs[pred_idx].__int__())
+                let pred = _get_bounding_box(
+                    b, box_idxs[pred_idx].__int__(), boxes
+                )
                 num_boxes_remaining -= 1
                 # each output prediction contains 3 values: [batch_index, class_index, box_index]
                 output_predictions.push_back(b)
@@ -157,7 +162,9 @@ fn non_max_suppression[
                 for i in range(
                     pred_idx + 1, pred_idx + 1 + num_boxes_curr_pred
                 ):
-                    let next_box = get_bounding_box(b, box_idxs[i].__int__())
+                    let next_box = _get_bounding_box(
+                        b, box_idxs[i].__int__(), boxes
+                    )
 
                     if pred.iou(next_box) > iou_threshold.cast[type]():
                         per_class_scores[box_idxs[i].__int__()] = min_or_neginf[
