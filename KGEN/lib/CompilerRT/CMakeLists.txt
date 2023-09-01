@@ -52,6 +52,12 @@ function (add_static_dep_lib target)
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps
   )
 endfunction()
+
+if(CMAKE_HOST_APPLE)
+  # FIXME(20613): this dependency might need to go away to keep the runtime small.
+  add_static_dep_lib(clangBasic)
+endif()
+
 add_static_dep_lib(LLVMSupport)
 add_static_dep_lib(LLVMDemangle)
 add_static_dep_lib(LLVMTargetParser)
