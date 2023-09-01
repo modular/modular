@@ -530,14 +530,15 @@ lldb::offset_t MojoREPL::GetDesiredIndentation(const StringList &lines,
   // and it's not the first line (lines.getSize() >= 2).
   if (cursorPosition != 0 || lines.GetSize() < 2)
     return LLDB_INVALID_OFFSET;
-  // We base our indent level on the previous line. If it creates a new scope,
-  // we increase the indent level, otherwise, we keep the level from the
-  // previous line, unless it starts with keywords that terminate the current
-  // scope, like `break` or `return`, in which case we look for the most recent
-  // line that has a lower indent level, and we use that one. This last
-  // heuristic fails in the presence of multiline strings, but this is a case so
-  // rare that it's fine to fail occasionally. A proper way to handle this would
-  // be to use the mojo parser, which is non-trivial effort.
+  // We base our indent level on the previous line. If it creates a new scope or
+  // starts a collection of elements, we increase the indent level, otherwise,
+  // we keep the level from the previous line, unless it starts with keywords
+  // that terminate the current scope, like `break` or `return`, in which case
+  // we look for the most recent line that has a lower indent level, and we use
+  // that one. This last heuristic fails in the presence of multiline strings,
+  // but this is a case so rare that it's fine to fail occasionally. A proper
+  // way to handle this would be to use the mojo parser, which is non-trivial
+  // effort.
   auto getIndentPrefix = [](StringRef line) {
     return line.substr(0, line.find_first_not_of(" \t\n\v\f\r"));
   };
@@ -556,8 +557,8 @@ lldb::offset_t MojoREPL::GetDesiredIndentation(const StringList &lines,
   if (prevLineTrimmed[0] == '#')
     return prevIndentLevel;
 
-  // Prev line creates a scope.
-  if (prevLineTrimmed.back() == ':')
+  // Prev line creates a scope or starts a collection.
+  if (llvm::is_contained({'{', '[', ':'}, prevLineTrimmed.back()))
     return prevIndentLevel + tabSize;
 
   static auto scopeModifiers = {"pass", "return", "continue", "break"};
