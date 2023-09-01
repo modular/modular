@@ -22,6 +22,7 @@
 
 namespace M {
 class MojoParserContext;
+class TargetInfoAttr;
 } // namespace M
 
 namespace M::LLCL {
@@ -48,6 +49,10 @@ public:
 
   /// Return the Mojo parser context attached to this type system.
   MojoParserContext &getParserContext();
+
+  /// Return the target info that corresponds to the current LLDB target, it
+  /// might be invalid if it couldn't be computed.
+  TargetInfoAttr GetTargetInfo() const;
 
   /// Return a CompilerType wrapping type.
   lldb_private::CompilerType getCompilerTypeFromType(mlir::Type type);
