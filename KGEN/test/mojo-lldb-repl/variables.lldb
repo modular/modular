@@ -19,3 +19,33 @@ let `^ weird name` = 12
 
 # CHECK: 12
 print(`^ weird name`)
+
+let v = -101
+let w = SIMD[DType.int8, 2](-50, 31)
+let x = 101
+let y = 202
+let z = SIMD[DType.float32, 4](1, 2, 3, 4)
+
+# CHECK: (Int) v = {
+# CHECK:   (index) value = -101
+# CHECK: }
+# CHECK: (SIMD[si8, 2]) w = {
+# CHECK:   (simd<2, si8>) value = {
+# CHECK:     (si8) [0] = -50
+# CHECK:     (si8) [1] = 31
+# CHECK:   }
+# CHECK: }
+# CHECK: (Int) x = {
+# CHECK:   (index) value = 101
+# CHECK: }
+# CHECK: (Int) y = {
+# CHECK:   (index) value = 202
+# CHECK: }
+# CHECK: (SIMD[f32, 4]) z = {
+# CHECK:   (simd<4, f32>) value = {
+# CHECK:     (f32) [0] = 1
+# CHECK:     (f32) [1] = 2
+# CHECK:     (f32) [2] = 3
+# CHECK:     (f32) [3] = 4
+# CHECK:   }
+# CHECK: }

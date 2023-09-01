@@ -8,6 +8,7 @@
 #define KGEN_MOJOPARSER_ASTDECLREF_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/Types.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -163,5 +164,32 @@ private:
 };
 
 } // namespace M
+
+namespace llvm {
+/// Cast from an MojoASTTypeRef to a mojo type.
+template <typename T>
+struct CastInfo<T, M::MojoASTTypeRef>
+    : public NullableValueCastFailed<T>,
+      public DefaultDoCastIfPossible<T, M::MojoASTTypeRef,
+                                     CastInfo<T, M::MojoASTTypeRef>> {
+  // Provide isPossible here because here we have the const-stripping from
+  // ConstStrippingCast.
+  static bool isPossible(M::MojoASTTypeRef astType) {
+    if (!astType)
+      return false;
+    return T::classof(astType.getMLIRType());
+  }
+
+  static T doCast(M::MojoASTTypeRef astType) {
+    return cast<T>(astType.getMLIRType());
+  }
+};
+
+template <typename T>
+struct CastInfo<T, const M::MojoASTTypeRef>
+    : public ConstStrippingForwardingCast<T, const M::MojoASTTypeRef,
+                                          CastInfo<T, M::MojoASTTypeRef>> {};
+
+} // namespace llvm
 
 #endif // KGEN_MOJOPARSER_ASTDECLREF_H
