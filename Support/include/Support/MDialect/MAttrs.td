@@ -362,28 +362,34 @@ def OptionalStringRefParameter : StringRefParameter<""> {
   let defaultValue = "\"\"";
 }
 
+def OptionalDataLayoutParameter : AttrParameter<"DataLayout", "data layout", "const DataLayout &"> {
+  let defaultValue = "DataLayout()";
+}
+
 def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
   let summary = "Target configuration attribute.";
   let description = [{
     The `#M.target` attribute represents a compilation target configuration. It
-    contains the target triple, CPU type and features, and target data layout
-    information.
+    contains the target triple, optional CPU type, optional features,
+    and derived data such as data layout and SIMD width.
 
     Example:
-
     ```mlir
-    #M.target<triple="arm64-apple-darwin21.6.0", cpu="apple-m1", features="",
-              data_layout="p:64:64-i64:64:64", simd_bit_width=128>
+    #M.target<triple="x86_64-unknown-linux-gnu", cpu="znver3",
+              features="+avx,+avx2", data_layout="p:64:64-i64:64:64",
+              simd_bit_width=256>
+    #M.target<triple="nvptx64-nvidia-cuda", features="+compute_80">
     ```
+
+    Can be (partially) represented at runtime by M::TargetInfo.
   }];
 
   let parameters = (ins
     "llvm::Triple":$triple,
-    StringRefParameter<"">:$cpu,
-    StringRefParameter<"">:$features,
-    AttrParameter<"DataLayout", "data layout", "const DataLayout &">:
-      $data_layout,
-    "int64_t":$simd_bit_width,
+    OptionalStringRefParameter:$cpu,
+    OptionalStringRefParameter:$features,
+    OptionalDataLayoutParameter:$data_layout,
+    DefaultValuedParameter<"int64_t", "0">:$simd_bit_width,
     OptionalStringRefParameter:$tune_cpu
   );
 
@@ -405,6 +411,122 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return llvm::Triple::getOSTypeName(getTriple().getOS());
     }
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// DeviceRefAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
+  let summary = "Refers to a device spec a value or operation occupies";
+  let description = [{
+    The `#M.device_ref` attribute refers to a unique `#M.device_spec` within the
+    overall `#M.device_specs` for a model. It contain a label and id.
+
+    Example:
+    ```mlir
+      #M.device_ref<"cuda", 0>
+    ```
+  }];
+
+  let parameters = (ins
+    StringRefParameter<>:$label,
+    "DeviceId":$id
+  );
+
+  let assemblyFormat = [{
+    `<` $label `,` $id `>`
+  }];
+
+  let extraClassDeclaration = [{
+    /// Returns device ref in compact string form.
+    std::string toString() const;
+  }];
+
+}
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceSpecAttr : MAttr<"DeviceSpec", "device_spec"> {
+  let summary = "Compile-time information about a computational device.";
+  let description = [{
+    The `#M.device_spec` attribute describes everything we need to know about a
+    computational device at compile time which is expected to be present at
+    runtime. This includes the device's `#M.target` configuration (to guide
+    code generation), the device's id (to disambiguate the device from other
+    devices with similar target configuration, default 0), and a string label
+    (so model types and ops may refer to a specific device when needed, eg for
+    device placement).
+
+    Device ids need not refer to physical devices (eg a specific CUDA device
+    id), they are just placeholders. It is the responsibility of the various
+    setup ops in the model's 'init' block to establish the mapping from device
+    ids used in the model to actual physical devices where required. This may
+    require matching properties of the `#M.target` to capabilities probed at
+    runtime.
+
+    ```mlir
+    #M.device_spec<ref = <"cuda", 1>,
+                   target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>
+    ```
+
+    Can be represented at runtime by M::DeviceSpec.
+  }];
+
+  let parameters = (ins
+    M_DeviceRefAttr:$ref,
+    M_TargetInfoAttr:$target
+  );
+
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecCollectionAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_collection"> {
+  let summary = "A collection of device specifications.";
+  let description = [{
+    The `#M.device_spec_collection` attribute describes a collection of
+    `#M.device_spec` attributes along with the device reference for the
+    unique 'host' device. Each `#M.device_spec` must have a distinct device
+    reference, and obviously the 'host' device reference must exist.
+
+    ```mlir
+    #M.device_spec_collection<
+      host = <cpu>,
+      devices = [<ref = <"cpu">,
+                  target = <triple="x86_64-unknown-linux-gnu", cpu="znver3",
+                            features="+avx2">>,
+                 <ref = <"cuda", 1>,
+                  target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>]>
+    ```
+
+    Can be represented at runtime by M::DeviceSpecCollection.
+  }];
+
+  let parameters = (ins
+    M_DeviceRefAttr:$host,
+    ArrayRefParameter<"DeviceSpecAttr">:$devices
+  );
+
+  let assemblyFormat = [{
+    `<` `host` `=` $host `,` `devices` `=` custom<DeviceSpecAttrArray>($devices) `>`
+  }];
+
+  let extraClassDeclaration = [{
+    /// Returns the device spec which matches device reference, or an error if
+    /// no match.
+    ErrorOr<DeviceSpecAttr> findDeviceSpec(DeviceRefAttr deviceReference) const;
+
+    /// Returns the device spec for the host.
+    DeviceSpecAttr getHostDeviceSpec() const;
+  }];
+
+  let genVerifyDecl = 1;
 }
 
 //===----------------------------------------------------------------------===//

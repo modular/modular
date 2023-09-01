@@ -18,22 +18,23 @@ add_modular_unittest(
   SupportTests
 
   AlignedAllocTest.cpp
-  Base64Test.cpp
   BCastTest.cpp
+  Base64Test.cpp
   ConfigurationTest.cpp
   DTypeTest.cpp
-  ErrorTest.cpp
+  DeviceSpecsTest.cpp
   ErrorOrTest.cpp
+  ErrorTest.cpp
   FileSystemExtrasTest.cpp
   FunctionExtrasTest.cpp
-  HostTest.cpp
   HMACTest.cpp
+  HostTest.cpp
   JSONTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
+  TelemetryTest.cpp
   TensorShapeTest.cpp
   TensorSpecTest.cpp
-  TelemetryTest.cpp
   TimeProfilerTest.cpp
   URITest.cpp
   VersionTest.cpp

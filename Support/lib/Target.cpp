@@ -12,19 +12,35 @@
 
 using namespace M;
 
-std::string M::getCPUFeatures(HostMachineInfo &hostMachineInfo) {
+std::string M::encodeFeatures(ArrayRef<std::string> features) {
   std::string featureStr;
   llvm::raw_string_ostream os(featureStr);
   llvm::interleave(
-      hostMachineInfo.cpuFeatures, os, [&](auto &f) { os << '+' << f; }, ",");
+      features, os, [&](auto &f) { os << '+' << f; }, ",");
   return featureStr;
+}
+
+ErrorOr<std::vector<std::string>> M::decodeFeatures(StringRef encodedFeatures) {
+  std::vector<std::string> features;
+  SmallVector<StringRef> plusFeatureCommas;
+  encodedFeatures.split(plusFeatureCommas, ',', /*MaxSplit=*/-1,
+                        /*KeepEmpty=*/false);
+  for (StringRef plusFeatureComma : plusFeatureCommas) {
+    if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
+      return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
+    StringRef feature = plusFeatureComma.trim("+,");
+    if (feature.empty())
+      return Error("ill-formed features: " + encodedFeatures + "'");
+    features.emplace_back(feature);
+  }
+  return features;
 }
 
 std::string M::getHostCPUFeatures() {
   ErrorOr<HostMachineInfo> hostOr = getHostMachineInfo();
   if (hostOr.isError())
     return "";
-  return M::getCPUFeatures(*hostOr);
+  return M::encodeFeatures(hostOr->cpuFeatures);
 }
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
@@ -33,7 +49,7 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOpt::Level optLevel) {
   if (hostOr.isError())
     return hostOr.takeError();
   HostMachineInfo host = std::move(*hostOr);
-  std::string targetFeatures = getCPUFeatures(host);
+  std::string targetFeatures = encodeFeatures(host.cpuFeatures);
 
   std::string errorMessage;
   const llvm::Target *target =

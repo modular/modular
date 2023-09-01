@@ -7,6 +7,7 @@
 #ifndef SUPPORT_MDIALECT_MATTRS_H
 #define SUPPORT_MDIALECT_MATTRS_H
 
+#include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrInterfaces.h"
@@ -376,6 +377,14 @@ ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
                                          StringRef targetTriple, StringRef cpu,
                                          StringRef features,
                                          StringRef tuneCpu = "");
+
+/// Returns runtime representation of target info attribute.
+ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);
+
+/// Returns attribute representing runtime target info.
+TargetInfoAttr fromRuntimeTargetInfo(MLIRContext *ctx,
+                                     const TargetInfo &runtimeTargetInfo);
+
 /// Returns the target info partially describing the given HostMachineInfo.
 /// Only some fields are captured:
 ///  - triple (captured as triple)
@@ -388,14 +397,53 @@ ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
 /// Unlike the above getTargetInfoFor/4, this method does not depend on any
 /// LLVM target management infrastructure and can be used outside of a
 /// jit context.
+///
+/// CAUTION: About to be removed.
 ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
                                          HostMachineInfo &hostMachineInfo);
 /// Return a serialized representation of targetInfoAttr which can be
 /// deserialized by M::recoverHostMachineInfo in Support/Host.h. This can
 /// be used to capture assumptions about the runtime host machine architecture
 /// with generated artifacts such as MEF files.
+///
+/// CAUTION: About to be removed.
 ErrorOr<std::string>
 serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr);
+
+//===----------------------------------------------------------------------===//
+// DeviceRefAttr
+//===----------------------------------------------------------------------===//
+
+/// Returns runtime representation of device ref attribute.
+ErrorOr<DeviceRef> toRuntimeDeviceRef(DeviceRefAttr deviceRefAttr);
+
+/// Returns attribute representing runtime device ref.
+DeviceRefAttr fromRuntimeDeviceRef(MLIRContext *ctx,
+                                   const DeviceRef &runtimeDeviceRef);
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecAttr
+//===----------------------------------------------------------------------===//
+
+/// Returns runtime representation of device spec attribute.
+ErrorOr<DeviceSpec> toRuntimeDeviceSpec(DeviceSpecAttr deviceSpecAttr);
+
+/// Returns attribute representing runtime device spec.
+DeviceSpecAttr fromRuntimeDeviceSpec(MLIRContext *ctx,
+                                     const DeviceSpec &runtimeDeviceSpec);
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecCollectionAttr
+//===----------------------------------------------------------------------===//
+
+/// Returns runtime representation of device spec collection attribute.
+ErrorOr<DeviceSpecCollection>
+toRuntimeDeviceSpecs(DeviceSpecCollectionAttr deviceSpecCollectionAttr);
+
+/// Returns attribute representing runtime device spec collection.
+DeviceSpecCollectionAttr
+fromRuntimeDeviceSpecs(MLIRContext *ctx,
+                       const DeviceSpecCollection &runtimeDeviceSpecCollection);
 
 //===----------------------------------------------------------------------===//
 // BuildInfoAttr
