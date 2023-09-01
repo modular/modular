@@ -257,7 +257,7 @@ public:
     return {};
   }
 
-  uint32_t GetPointerByteSize() override { return 8; }
+  uint32_t GetPointerByteSize() override;
 
   lldb_private::ConstString GetTypeName(lldb::opaque_compiler_type_t type,
                                         bool baseOnly) override;
@@ -404,9 +404,7 @@ public:
   }
 
   bool IsPointerType(lldb::opaque_compiler_type_t type,
-                     lldb_private::CompilerType *pointeeType) override {
-    return false;
-  }
+                     lldb_private::CompilerType *pointeeType) override;
 
   bool IsVoidType(lldb::opaque_compiler_type_t type) override { return false; }
 
@@ -438,9 +436,7 @@ public:
   }
 
   lldb_private::CompilerType
-  GetNonReferenceType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  GetNonReferenceType(lldb::opaque_compiler_type_t type) override;
 
   std::optional<size_t>
   GetTypeBitAlign(lldb::opaque_compiler_type_t type,
@@ -460,9 +456,7 @@ public:
   }
 
   lldb_private::CompilerType
-  GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) override;
 
   lldb_private::CompilerType
   GetArrayElementType(lldb::opaque_compiler_type_t type,

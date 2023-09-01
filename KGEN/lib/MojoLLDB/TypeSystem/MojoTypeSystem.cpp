@@ -18,6 +18,7 @@
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "MojoTypeDataLayout.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
@@ -86,6 +87,9 @@ struct MojoTypeSystem::Impl {
         compilationOptions.targetCpu, compilationOptions.targetFeatures);
     if (succeeded(targetInfoOr))
       targetInfo = *targetInfoOr;
+
+    dataLayoutContext =
+        std::make_unique<MojoTypeDataLayoutContext>(*parserContext, targetInfo);
   }
 
   /// Utility that returns a StructDeclOp if the given astType corresponds to a
@@ -126,6 +130,9 @@ struct MojoTypeSystem::Impl {
 
   /// The target info of the current LLDB Target.
   TargetInfoAttr targetInfo;
+
+  /// The cache to be used for querying data layouts.
+  std::unique_ptr<MojoTypeDataLayoutContext> dataLayoutContext;
 };
 
 //===----------------------------------------------------------------------===//
@@ -342,10 +349,31 @@ bool MojoTypeSystem::IsPointerOrReferenceType(
          IsPointerType(type, pointeeType);
 }
 
+bool MojoTypeSystem::IsPointerType(lldb::opaque_compiler_type_t type,
+                                   lldb_private::CompilerType *pointeeType) {
+  if (!type)
+    return false;
+
+  if (auto pointerType = dyn_cast<KGEN::PointerType>(MojoASTTypeRef(type))) {
+    if (pointeeType)
+      *pointeeType = createCompilerType(pointerType.getElementAsType());
+    return true;
+  }
+  return false;
+}
+
 bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
                                      lldb_private::CompilerType *pointeeType,
                                      bool *isRValue) {
-  return isa<LIT::REPLResultRefType>(MojoASTTypeRef(type));
+  if (!type)
+    return false;
+
+  if (auto refType = dyn_cast<LIT::REPLResultRefType>(MojoASTTypeRef(type))) {
+    if (pointeeType)
+      *pointeeType = createCompilerType(refType.getElementType());
+    return true;
+  }
+  return false;
 }
 
 uint32_t MojoTypeSystem::GetTypeInfo(
@@ -362,9 +390,8 @@ uint32_t MojoTypeSystem::GetTypeInfo(
 
   if (auto ptrType = dyn_cast<PointerType>(mlirType)) {
     if (pointeeOrElementCompilerType) {
-      pointeeOrElementCompilerType->SetCompilerType(
-          weak_from_this(),
-          const_cast<void *>(ptrType.getElementAsType().getAsOpaquePointer()));
+      *pointeeOrElementCompilerType =
+          createCompilerType(ptrType.getElementAsType());
     }
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
   }
@@ -407,19 +434,36 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
   return lldb::eFormatBytes;
 }
 
+lldb_private::CompilerType
+MojoTypeSystem::GetNonReferenceType(lldb::opaque_compiler_type_t type) {
+  return createCompilerType(dereferenceType(type));
+}
+
+lldb_private::CompilerType
+MojoTypeSystem::GetFullyUnqualifiedType(lldb::opaque_compiler_type_t type) {
+  return createCompilerType(dereferenceType(type));
+}
+
+uint32_t MojoTypeSystem::GetPointerByteSize() {
+  return impl->targetInfo.getDataLayout().getPointerSize();
+}
+
 std::optional<uint64_t>
 MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
                            lldb_private::ExecutionContextScope *exeScope) {
   if (!type)
     return {};
 
-  Type mlirTy = dereferenceType(type).getMLIRType();
-  if (mlirTy.isIntOrFloat())
-    return mlirTy.getIntOrFloatBitWidth();
-  if (mlirTy.isIndex())
+  // We need this to handle correctly REPLResultRefType.
+  if (IsPointerOrReferenceType(type, /*pointeeType=*/nullptr))
     return GetPointerByteSize() * CHAR_BIT;
-  // TODO: Use the target info to get the current target width and return that.
-  return GetPointerByteSize() * CHAR_BIT;
+
+  if (auto &layout =
+          impl->dataLayoutContext->getOrCalculate(dereferenceType(type))) {
+    return layout->getByteSize() * CHAR_BIT;
+  }
+
+  return {};
 }
 
 ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
@@ -528,7 +572,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
     if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
       if (kgenDTypeOpt.has_value()) {
-        Type eltType;
+        MojoASTTypeRef eltType;
         if (auto intType = getEquivalentIntegerType(getMLIRContext(),
                                                     kgenDTypeOpt.value()))
           eltType = intType;
@@ -538,36 +582,31 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
         else
           return {};
 
-        if (!simdType.isScalar()) {
-          // Set stuff required for printing array elements.
+        if (const std::optional<MojoTypeDataLayout> &layout =
+                impl->dataLayoutContext->getOrCalculate(eltType)) {
           childName = std::string(llvm::formatv("[{0}]", idx));
-          childByteSize =
-              GetBitSize(createCompilerType(eltType).GetOpaqueQualType(),
-                         exeCtx->GetBestExecutionContextScope())
-                  .value() /
-              8;
+          childByteSize = layout->getByteSize();
           childByteOffset = (int32_t)idx * (int32_t)childByteSize;
+          return createCompilerType(eltType);
+        } else {
+          return {};
         }
-        return createCompilerType(eltType);
       }
     }
     return {};
   }
 
   if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType)) {
-    auto field = *std::next(structDeclOp.getFieldDecls().begin(), idx);
-    childName.assign(field.getName());
-    Type mlirType = astType.getMLIRType();
-    auto refType = cast<DeclRefType>(mlirType);
-    MojoASTTypeRef fieldType = MojoASTTypeRef(field.getTypeAttr().getValue());
-
-    // If the DeclRefType has parameters, try to evaluate and substitute them
-    // into the type.
-    if (!refType.getParamValues().empty())
-      fieldType = getParserContext().concretizeType(refType.getParamValues(),
-                                                    fieldType);
-
-    return createCompilerType(fieldType);
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(astType)) {
+      auto fieldDecl = *std::next(structDeclOp.getFieldDecls().begin(), idx);
+      childName.assign(fieldDecl.getName());
+      const auto &field = layout->getFields()[idx];
+      childByteOffset = field.getByteOffset();
+      childByteSize = field.getByteSize();
+      return createCompilerType(field.getConcreteType());
+    }
+    return {};
   }
   return {};
 }
@@ -584,9 +623,8 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   }
 
   // Find the index of the field name
-  MojoASTTypeRef astType = dereferenceType(type);
-
-  if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType)) {
+  if (LIT::StructDeclOp structDeclOp =
+          impl->getIfStructDecl(dereferenceType(type))) {
     for (auto field : llvm::enumerate(structDeclOp.getFieldDecls())) {
       if (field.value().getName() == name) {
         childIndices.push_back(field.index());
