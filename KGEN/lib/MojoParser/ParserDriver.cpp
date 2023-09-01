@@ -16,6 +16,7 @@
 #include "Lexer.h"
 #include "ParserBase.h"
 #include "ParserDriverImpl.h"
+#include "ParserParamEvaluator.h"
 #include "SharedState.h"
 
 #include "KGEN/CompilationOptions.h"
@@ -487,4 +488,20 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
     impl->sharedState.cacheParsedModules();
 
   return MojoASTDeclRef(moduleDecl);
+}
+
+MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
+  return type.getDecl(impl->sharedState);
+}
+
+MojoASTTypeRef
+MojoParserContext::concretizeType(KGEN::ParamBindArrayAttr params,
+                                  MojoASTTypeRef type) {
+  KGEN::LIT::ParserParamEvaluator evaluator(*(impl->sharedState.declResolver));
+  for (KGEN::ParamBindAttr paramVal : params)
+    evaluator.setParameterValue(paramVal.getName(), paramVal.getValue());
+
+  MojoASTTypeRef concreteType = evaluator.getReboundType(type.getMLIRType());
+  concreteType = evaluator.refineType(concreteType.getMLIRType());
+  return concreteType;
 }

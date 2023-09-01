@@ -321,7 +321,7 @@ public:
   /// Get the declaration that defined an AST type.
   MojoASTDeclRef getDecl(MojoASTTypeRef type);
 
-  /// Substitute parameters into a type and resolve them.
+  /// Substitute parameters into a type and resolve them into a different type.
   MojoASTTypeRef concretizeType(KGEN::ParamBindArrayAttr params,
                                 MojoASTTypeRef type);
 

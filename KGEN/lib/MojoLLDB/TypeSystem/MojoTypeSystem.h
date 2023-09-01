@@ -54,9 +54,6 @@ public:
   /// might be invalid if it couldn't be computed.
   TargetInfoAttr GetTargetInfo() const;
 
-  /// Return a CompilerType wrapping type.
-  lldb_private::CompilerType getCompilerTypeFromType(mlir::Type type);
-
   /// Return if the given language is supported by this type system.
   bool SupportsLanguage(lldb::LanguageType language) override {
     return language == lldb::eLanguageTypeMojo;
@@ -594,6 +591,13 @@ public:
   /// Return a pointer to the persistent expression state for this type system.
   lldb_private::PersistentExpressionState *
   GetPersistentExpressionState() override;
+
+  //===--------------------------------------------------------------------===//
+  // Utils
+  //===--------------------------------------------------------------------===//
+
+  /// Return a CompilerType for the given MLIR type.
+  lldb_private::CompilerType getCompilerTypeFromType(mlir::Type type);
 
   //===--------------------------------------------------------------------===//
   // RTTI support
