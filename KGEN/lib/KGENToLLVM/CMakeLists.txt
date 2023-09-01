@@ -19,11 +19,12 @@ add_modular_conversion_library(KGENToLLVM
   LINK_LIBS PUBLIC
   DebugInfoToLLVM
   DebugInfoTransforms
+  HLCFAnalysis
   KGENDialect
-  POPDialect
   MCompilerSupport
+  POPDialect
 
   MLIRIR
   MLIRIndexToLLVM
   MLIRLLVMCommonConversion
-  )
+)

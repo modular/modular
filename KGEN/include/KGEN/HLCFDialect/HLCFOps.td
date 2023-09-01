@@ -10,7 +10,7 @@
 include "KGEN/HLCFDialect/HLCFAttrs.td"
 include "KGEN/HLCFDialect/HLCFDialect.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
-include "Support/Interpreter/InterpreterInterface.td"
+include "KGEN/Interpreter/InterpreterInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"

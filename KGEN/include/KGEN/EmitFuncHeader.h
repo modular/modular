@@ -7,7 +7,8 @@
 #ifndef EMIT_FUNC_HEADER_H
 #define EMIT_FUNC_HEADER_H
 
-#include "KGEN/KGENDialect/KGENOps.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/ADT/MapVector.h"
 
 namespace M::KGEN {
 class ObjectCompiler;

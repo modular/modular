@@ -11,7 +11,7 @@ include "KGEN/KGENDialect/KGENTypeInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPDialect.td"
 include "Support/MDialect/MTypeInterfaces.td"
-include "Support/Interpreter/InterpreterInterface.td"
+include "KGEN/Interpreter/InterpreterInterface.td"
 include "mlir/IR/AttrTypeBase.td"
 
 class POPType<string typeName, string typeMnemonic, list<Trait> traits = []>

@@ -13,7 +13,7 @@
 
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENTypeInterfaces.td"
-include "Support/Interpreter/InterpreterInterface.td"
+include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MTypeInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 

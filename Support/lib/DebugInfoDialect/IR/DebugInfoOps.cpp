@@ -7,6 +7,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
@@ -28,13 +29,6 @@ void DebugInfoDialect::registerOperations() {
 //===----------------------------------------------------------------------===//
 // ValueOp
 //===----------------------------------------------------------------------===//
-
-/// Implement the interpret hook for this operation. Since the operation has no
-/// results, we cannot use the fold hook.
-ErrorTreeOrSuccess ValueOp::interpret(ArrayRef<Attribute> operands,
-                                      InterpreterState &state) {
-  return success();
-}
 
 /// Return the scope from a ValueOp's location, recursively walking up through a
 /// chain of inlined locations if needed.

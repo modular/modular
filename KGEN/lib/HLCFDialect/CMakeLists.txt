@@ -4,8 +4,6 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(Analysis)
-
 add_modular_dialect_library(HLCFDialect
   HLCFAttrs.cpp
   HLCFDialect.cpp
@@ -20,9 +18,10 @@ add_modular_dialect_library(HLCFDialect
   MLIRKGENIncGen
 
   LINK_LIBS PUBLIC
-  HLCFAnalysis
   InterpreterInterface
 
   MLIRIR
   MLIRSideEffectInterfaces
 )
+
+add_subdirectory(Analysis)

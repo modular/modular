@@ -8,11 +8,11 @@
 #define KGEN_ELABORATOR_IREVALUATOR_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/ErrorTree.h"
-#include "Support/Interpreter/InterpreterInterface.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Support/IndentedOstream.h"
 

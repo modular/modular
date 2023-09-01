@@ -12,12 +12,10 @@ add_modular_tool(kgen-opt
   nativecodegen
 
   LINK_LIBS PRIVATE
+  InitAllKGENDialects
   DebugInfoToLLVM
-  LITDialect
   KGENCompiler
-  KGENDialect
   KGENElaborator
-  POPDialect
   KGENToLLVM
   KGENTransforms
   LowerLIT
@@ -27,9 +25,7 @@ add_modular_tool(kgen-opt
 
   MLIRBuiltinToLLVMIRTranslation
   MLIRIR
-  MLIRIndexDialect
   MLIRIndexToLLVM
-  MLIRLLVMDialect
   MLIROptLib
   MLIRParser
   MLIRSupport

@@ -11,7 +11,6 @@
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/ExecutionEngine.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>

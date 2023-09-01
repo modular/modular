@@ -30,6 +30,7 @@ add_modular_dialect_library(KGENDialect
   CacheDialect
   DebugInfoDialect
   HLCFDialect
+  InterpreterInterface
   MCompilerSupport
   MSupport
   MSupportML

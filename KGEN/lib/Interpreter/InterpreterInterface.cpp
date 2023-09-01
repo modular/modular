@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Interpreter/InterpreterInterface.h"
+#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
@@ -729,5 +729,5 @@ void InterpreterState::transferControlFlowTo(Block *target,
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
-#include "Support/Interpreter/InterpreterOpInterface.cpp.inc"
-#include "Support/Interpreter/MemoryableTypeInterface.cpp.inc"
+#include "KGEN/Interpreter/InterpreterOpInterface.cpp.inc"
+#include "KGEN/Interpreter/MemoryableTypeInterface.cpp.inc"

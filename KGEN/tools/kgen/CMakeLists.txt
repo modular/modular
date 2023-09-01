@@ -18,20 +18,17 @@ add_modular_tool(kgen
   AllTargetsInfos
 
   LINK_LIBS PRIVATE
+  InitAllKGENDialects
   KGENCLOptions
   KGENCompiler
-  KGENDialect
   KGENEmitObject
   KGENExecutionEngine
-  LITDialect
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals
-  POPDialect
   MVersion
 
   MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
-  MLIRIndexDialect
   MLIRParser
   )

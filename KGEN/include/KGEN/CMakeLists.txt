@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(KGENVersion)
+add_subdirectory(Interpreter)
 add_subdirectory(HLCFDialect)
 add_subdirectory(KGENDialect)
 add_subdirectory(LITDialect)

@@ -14,8 +14,8 @@
 #ifndef PARSER_PARAM_EVALUATOR_H
 #define PARSER_PARAM_EVALUATOR_H
 
+#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "Support/Interpreter/InterpreterInterface.h"
 
 namespace M::KGEN::LIT {
 class DeclResolver;

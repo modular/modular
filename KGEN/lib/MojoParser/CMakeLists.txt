@@ -31,13 +31,8 @@ add_modular_conversion_library(MojoParser
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
-  CacheDialect
-  DebugInfoDialect
-  HLCFDialect
-  LITDialect
+  InitAllKGENDialects
   LLCLRuntime
-  KGENDialect
-  POPDialect
   MTelemetry
 
   MLIRBytecodeReader

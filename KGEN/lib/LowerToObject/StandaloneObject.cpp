@@ -6,6 +6,7 @@
 
 #include "KGEN/LowerToObject.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"

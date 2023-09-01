@@ -8,7 +8,7 @@
 #define KGEN_HLCFDIALECT_HLCFOPS_H
 
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
-#include "Support/Interpreter/InterpreterInterface.h"
+#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/OpDefinition.h"

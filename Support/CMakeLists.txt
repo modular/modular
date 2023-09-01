@@ -7,7 +7,6 @@
 add_subdirectory(include/Support/DebugInfoDialect/DebugInfoToLLVM)
 add_subdirectory(include/Support/DebugInfoDialect/IR)
 add_subdirectory(include/Support/DebugInfoDialect/Transforms)
-add_subdirectory(include/Support/Interpreter)
 add_subdirectory(include/Support/MDialect)
 add_subdirectory(lib)
 add_subdirectory(tools/build-info)
