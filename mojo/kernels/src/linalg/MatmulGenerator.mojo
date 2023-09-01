@@ -791,7 +791,6 @@ struct MicroKernelInterface[
             inner_size,
             static_state.static_gemm_switch.N,
             prefetch_b_distance_k,
-            False,  # critical_stride
         ].run(
             c_buffer,
             a_buffer,
