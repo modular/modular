@@ -872,12 +872,11 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   if (auto slValue = value.getIfSLValue()) {
     if (ASTType(slValue.getRValueType())
             .isRegisterPassable(expr->getLoc(), shared)) {
-      capture =
-          Capture(mlirValue, value.getRValueType(), value.getRValueType());
+      capture = Capture(value, value.getRValueType(), value.getRValueType());
       return value;
     }
   }
-  capture = Capture(mlirValue, value.getRValueType(), value.getType());
+  capture = Capture(value, value.getRValueType(), value.getType());
   return value;
 }
 

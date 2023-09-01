@@ -14,6 +14,7 @@
 
 #include "Diags.h"
 
+#include "IRValues.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
 
@@ -62,21 +63,20 @@ inline const char *plural(size_t value, const char *one = "",
 class Capture {
 public:
   Capture() : init(false) {}
-  Capture(Value value, Type fieldType, Type initType)
-      : mlirValue(value), fieldType(fieldType), initType(initType), init(true) {
-  }
+  Capture(AnyValue value, Type fieldType, Type initType);
   bool operator==(Capture const &rhs) {
-    return rhs.init == init && rhs.mlirValue == mlirValue;
+    return rhs.init == init && rhs.getMlirValue() == getMlirValue();
   }
   operator bool() const { return init; }
   Value getMlirValue() const;
   Type getFieldType() const;
   Type getInitType() const;
+  AnyValue getAnyValue() const;
 
 private:
-  Value mlirValue;
   Type fieldType;
   Type initType;
+  AnyValue anyValue;
   bool init;
 };
 

@@ -101,7 +101,7 @@ public:
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> actualParamTypes,
                  ParamDeclArrayAttr actualParamDecls, StringRef baseName,
-                 SMLoc loc, ssize_t &incorrectBindingNo,
+                 llvm::SMLoc loc, ssize_t &incorrectBindingNo,
                  ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
                  Operation *declOp, bool paramVarargs, bool packVarargs = false,
                  ArrayRef<ASTExprAnd<AnyValue>> callOperands = {},
@@ -154,7 +154,7 @@ public:
 
   /// This is a list of result parameters that are to be bound to the returned
   /// parameters from the call.
-  std::vector<std::pair<ASTDecl *, SMLoc>> resultParams;
+  std::vector<std::pair<ASTDecl *, llvm::SMLoc>> resultParams;
 
   /// This is information about where this overload set was formed.
   const ExprNode *expr;
