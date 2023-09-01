@@ -44,11 +44,10 @@
 #define IRVALUES_H
 
 #include "ASTType.h"
-#include "SharedState.h"
-
 #include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ADT/SmartVariant.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {
@@ -730,9 +729,9 @@ class GlobalDLValue : public BaseDLValue {
 public:
   /// The global variable operation.
   Operation *op;
-  SMLoc loc;
+  llvm::SMLoc loc;
 
-  GlobalDLValue(GlobalVarDeclOp op, ASTType type, SMLoc loc);
+  GlobalDLValue(GlobalVarDeclOp op, ASTType type, llvm::SMLoc loc);
 
   GlobalVarDeclOp getGlobal() const;
 

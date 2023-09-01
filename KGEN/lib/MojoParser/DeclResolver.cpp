@@ -2232,28 +2232,6 @@ void DeclResolver::setLocationDebugScope(
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
 
-static AnyValue anyValueFromCapture(const ASTDecl *decl, Capture capture) {
-  AnyValue anyValue;
-  if (BValue bValue = decl->getIfBValue()) {
-    return AnyValue(bValue);
-  } else if (SLValue slValue = decl->getIfSLValue()) {
-    return AnyValue(slValue);
-  } else if (RValue rValue = decl->getIfRValue()) {
-    return AnyValue(rValue);
-  } else if (PValue pValue = decl->getIfPValue()) {
-    return AnyValue(pValue);
-  } else if (Operation *op = decl->getIfOperation()) {
-    if (VarLetDeclOp var = dyn_cast<VarLetDeclOp>(op)) {
-      return AnyValue(SLValue(capture.getMlirValue()));
-    } else if (LetRegDeclOp let = dyn_cast<LetRegDeclOp>(op)) {
-      return AnyValue(SBValue(capture.getMlirValue()));
-    } else {
-      llvm_unreachable("Captured values must be declared.");
-    }
-  }
-  return {};
-}
-
 static void emitClosureInstance(SignatureType closureSignature,
                                 SharedState &shared,
                                 ASTDecl &nestedFunctionDecl, SMLoc location) {
@@ -2299,7 +2277,7 @@ static void emitClosureInstance(SignatureType closureSignature,
   // Create a copy of the captured value.
   SmallVector<ASTExprAnd<AnyValue>> closureImplInitArgs;
   for (auto &[decl, capture] : captureIteratorRange)
-    closureImplInitArgs.push_back({anyValueFromCapture(decl, capture), &node});
+    closureImplInitArgs.push_back({capture.getAnyValue(), &node});
 
   ValueDest closureDest;
   Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);

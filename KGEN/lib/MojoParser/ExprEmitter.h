@@ -11,6 +11,7 @@
 #include "ExprNodes.h"
 #include "IRValues.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "SharedState.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
