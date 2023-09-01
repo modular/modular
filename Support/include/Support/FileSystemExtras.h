@@ -59,7 +59,8 @@ class TempFile {
 public:
   /// Create a TempFile and return any errors during creation. The model is
   /// something like `myString-%%%%%.ext` - the `%` characters are filled in
-  /// with random numbers/letters.
+  /// with random numbers/letters. Non absolute paths are created in the system
+  /// temp directory.
   static ErrorOr<TempFile> create(StringRef model);
   /// TempFiles are move-able.
   TempFile(TempFile &&other);
