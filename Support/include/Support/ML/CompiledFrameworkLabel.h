@@ -56,6 +56,10 @@ public:
     kModularModel,
   } value;
 
+  constexpr CompiledFrameworkLabel() : value(kUnknown) {}
+
+  /* implicit */ constexpr CompiledFrameworkLabel(Cases value) : value(value) {}
+
   /// Returns the top-level operator name representing this framework, or
   /// null if no such representation is possible.
   const char *getAsOpNameOrNull() const;
