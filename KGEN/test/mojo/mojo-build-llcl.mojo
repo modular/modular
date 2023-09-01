@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: system-darwin
-
 # RUN: mojo build %mojo_cpu_build_arch %s -o %t
 # RUN: %t | FileCheck %s
 
@@ -13,6 +11,7 @@
 # libraries.
 
 from runtime.llcl import Runtime
+
 
 # CHECK-LABEL: test_runtime_task
 fn main():
