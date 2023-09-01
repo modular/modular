@@ -21,6 +21,7 @@
 #include "lldb/lldb-private.h"
 
 namespace M {
+class MojoASTTypeRef;
 class MojoParserContext;
 class TargetInfoAttr;
 } // namespace M
@@ -573,7 +574,7 @@ public:
   size_t
   GetIndexOfChildMemberWithName(lldb::opaque_compiler_type_t type,
                                 llvm::StringRef name, bool omitEmptyBaseClasses,
-                                std::vector<uint32_t> &childIndexes) override;
+                                std::vector<uint32_t> &childIndices) override;
 
   //===--------------------------------------------------------------------===//
   // Expressions
@@ -596,8 +597,11 @@ public:
   // Utils
   //===--------------------------------------------------------------------===//
 
-  /// Return a CompilerType for the given MLIR type.
-  lldb_private::CompilerType getCompilerTypeFromType(mlir::Type type);
+  /// Create a CompilerType for the given MLIR type.
+  lldb_private::CompilerType createCompilerType(mlir::Type type);
+
+  /// Create a CompilerType for the given MojoASTTypeRef.
+  lldb_private::CompilerType createCompilerType(MojoASTTypeRef type);
 
   //===--------------------------------------------------------------------===//
   // RTTI support
