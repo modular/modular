@@ -628,6 +628,29 @@ ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
   return PointerAttr::get(intVal.getLimitedValue(), *this);
 }
 
+OptionalParseResult PointerType::parseValue(AsmParser &p,
+                                            TypedAttr &value) const {
+  int64_t addr;
+  if (OptionalParseResult result = p.parseOptionalInteger(addr);
+      result.has_value()) {
+    if (failed(*result))
+      return failure();
+    value = PointerAttr::get(addr, *this);
+    return mlir::success();
+  }
+
+  return {};
+}
+
+LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (auto ptrAttr = ::dyn_cast<PointerAttr>(value)) {
+    p << ptrAttr.getAddr();
+    return success();
+  }
+
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // DTypeType
 //===----------------------------------------------------------------------===//
