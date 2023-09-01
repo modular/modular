@@ -180,10 +180,26 @@ ErrorOr<TempFile> M::writeTempFile(const Twine &model, StringRef buffer) {
 }
 
 ErrorOr<TempFile> TempFile::create(StringRef model) {
+  std::filesystem::path path = model.str();
+
+  // If the path is relative, create it in the system temp directory.
+  std::error_code ec;
+  if (path.is_relative()) {
+    path = std::filesystem::temp_directory_path(ec);
+    if (ec)
+      return Error(ec.message());
+    path /= model.str();
+  }
+
+  // Create the parent directories if they don't exist.
+  std::filesystem::create_directories(path.parent_path(), ec);
+  if (ec)
+    return Error(ec.message());
+
   int fd;
   SmallString<0> outFilePathVec;
   std::error_code err =
-      llvm::sys::fs::createUniqueFile(model, fd, outFilePathVec);
+      llvm::sys::fs::createUniqueFile(path.string(), fd, outFilePathVec);
   if (err)
     return Error(err.message());
 
