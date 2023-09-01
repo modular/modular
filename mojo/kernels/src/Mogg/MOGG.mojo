@@ -18,6 +18,7 @@ from math import (
     greater,
     greater_equal,
     isnan,
+    log,
     logical_and,
     logical_not,
     logical_xor,
@@ -158,6 +159,7 @@ fn MOGGExport():
     alias _logical_and = logical_and
     alias _logical_not = logical_not
     alias _logical_xor = logical_xor
+    alias _log = log
     alias _log1p = log1p
     alias _logsoftmax = logsoftmax
     alias _pack_b_ndbuffer = pack_b_ndbuffer
