@@ -383,13 +383,6 @@ private:
   /// references to them so they aren't deallocated underneath our feet.
   SmallVector<Cache::BufferRef> archiveBuffers;
 };
-
-/// This function is used to ensure the components of the orc are properly
-/// linked.
-LLVM_ATTRIBUTE_USED inline uintptr_t llvm_orc_dummyinit() {
-  return (uintptr_t)&llvm_orc_registerJITLoaderGDBAllocAction +
-         (uintptr_t)&llvm_orc_registerJITLoaderGDBWrapper;
-}
 } // namespace M::KGEN
 
 #endif // KGEN_EXECUTION_ENGINE_H
