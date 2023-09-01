@@ -16,6 +16,7 @@ add_modular_library(MojoLLDB SHARED
   ExpressionParser/MojoUserExpression.cpp
   Language/MojoLanguage.cpp
   REPL/MojoREPL.cpp
+  TypeSystem/MojoTypeDataLayout.cpp
   TypeSystem/MojoTypeSystem.cpp
 
   DEPENDS
