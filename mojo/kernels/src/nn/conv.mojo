@@ -2521,10 +2521,13 @@ struct ConvDirectNHWC[
 
         # Number of partitions in n_ho_wo, c, f dimensions.
         let num_threads = out_chain.get_runtime().parallelism_level()
-        let num_tasks = get_conv_num_tasks(num_threads, conv_shape)
+        let max_num_tasks = get_conv_num_tasks(num_threads, conv_shape)
         let num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
-        ](num_tasks, conv_shape)
+        ](max_num_tasks, conv_shape)
+        let num_tasks = num_partitions[0] * num_partitions[1] * num_partitions[
+            2
+        ] * num_partitions[3]
 
         # Wrap the pointer inside NDBuffer so it can be properly captured by async closure.
         var output_ptr = output.data
@@ -2538,9 +2541,15 @@ struct ConvDirectNHWC[
         @always_inline
         fn task_func(task_id: Int):
             let task_id_f = task_id % num_partitions[2]
-            let quotient = task_id // num_partitions[2]
+            var quotient = task_id // num_partitions[2]
             let task_id_c = quotient % num_partitions[1]
-            let task_id_nhowo = quotient // num_partitions[1]
+            quotient = quotient // num_partitions[1]
+            let task_id_howo = quotient % num_partitions[3]
+            let task_id_n = quotient // num_partitions[3]
+
+            let n_range = partition_work(
+                task_id_n, num_partitions[0], conv_shape.n, 1
+            )
 
             let c_range = partition_work(
                 task_id_c, num_partitions[1], conv_shape.c, 1
@@ -2551,6 +2560,28 @@ struct ConvDirectNHWC[
                 conv_shape.f,
                 micro_kernel_f_size,
             )
+
+            let has_padding = conv_shape.pad_h != Index(
+                0, 0
+            ) or conv_shape.pad_w != Index(0, 0)
+
+            # Merge wo and ho loops when there is no padding.
+            # Otherwise the partition granularity is a row.
+            let work_unit = conv_shape.out_w if has_padding else micro_kernel_height
+            let work_load = conv_shape.out_h if has_padding else conv_shape.out_h * conv_shape.out_w
+            let howo_range = partition_work(
+                task_id_howo, num_partitions[3], work_load, work_unit
+            )
+
+            # Short circuit when a task gets no work. This could happen when
+            # the previous tasks get more work due to alignment requirement.
+            if (
+                n_range[1] <= 0
+                or c_range[1] <= 0
+                or f_range[1] <= 0
+                or howo_range[1] <= 0
+            ):
+                return
 
             let task_tile_size = Index(
                 min(cf_tile_size[0], c_range[1]), cf_tile_size[1]
@@ -2566,96 +2597,25 @@ struct ConvDirectNHWC[
                 ),
             )
 
-            # Indicate if the kernel adds padding.
-            let is_any_padding = conv_shape.pad_h != Index(
-                0, 0
-            ) or conv_shape.pad_w != Index(0, 0)
-
-            # No padding.
-            # The partition is similar to matmul. N, HO, WO are merged to form
-            # a large "M" dimension.
-            if not is_any_padding:
-                let nhowo_range = partition_work(
-                    task_id_nhowo,
-                    num_partitions[0],
-                    conv_shape.n * conv_shape.out_h * conv_shape.out_w,
-                    micro_kernel_height,
-                )
-
-                # Short circuit when a task gets no work. This could happen when
-                # the previous tasks get more work due to alignment requirement.
-                if nhowo_range[1] <= 0 or c_range[1] <= 0 or f_range[1] <= 0:
-                    return
-
-                let instance = ConvDirectNHWC[
-                    filter_rank,
-                    shape_input,
-                    shape_filter,
-                    shape_output,
-                    type,
-                    filter_packed,
-                    elementwise_epilogue_enabled,
-                ](
-                    task_output,
-                    input,
-                    filter,
-                    conv_shape,
-                    Index(nhowo_range[0], c_range[0], f_range[0], 0),
-                    Index(nhowo_range[1], c_range[1], f_range[1], 0),
-                    task_tile_size,
-                    elementwise_epilogue_fn,
-                )
-                instance.direct_conv()
-            # There are padding layers.
-            # N, HO, WO can't be merged as there can be padding at each row.
-            # Only N and HO are partitioned, WO is not split across tasks.
-            else:
-                # Partition the batch dimension if there is at least one image
-                # per task.
-                let partition_batch = conv_shape.n >= num_tasks
-                let num_partitions_ho = 1 if partition_batch else num_partitions[
-                    0
-                ]
-                let num_partitions_n = num_partitions[
-                    0
-                ] if partition_batch else 1
-                let task_id_ho = 0 if partition_batch else task_id_nhowo
-                let task_id_n = task_id_nhowo - task_id_ho
-                # Prioritize partitioning the batch dimension
-                let n_range = partition_work(
-                    task_id_n, num_partitions_n, conv_shape.n, 1
-                )
-                let ho_range = partition_work(
-                    task_id_ho, num_partitions_ho, conv_shape.out_h, 1
-                )
-
-                if (
-                    n_range[1] <= 0
-                    or c_range[1] <= 0
-                    or f_range[1] <= 0
-                    or ho_range[1] <= 0
-                ):
-                    return
-
-                let instance = ConvDirectNHWC[
-                    filter_rank,
-                    shape_input,
-                    shape_filter,
-                    shape_output,
-                    type,
-                    filter_packed,
-                    elementwise_epilogue_enabled,
-                ](
-                    task_output,
-                    input,
-                    filter,
-                    conv_shape,
-                    Index(n_range[0], c_range[0], f_range[0], ho_range[0]),
-                    Index(n_range[1], c_range[1], f_range[1], ho_range[1]),
-                    task_tile_size,
-                    elementwise_epilogue_fn,
-                )
-                instance._n_loop()
+            let instance = ConvDirectNHWC[
+                filter_rank,
+                shape_input,
+                shape_filter,
+                shape_output,
+                type,
+                filter_packed,
+                elementwise_epilogue_enabled,
+            ](
+                task_output,
+                input,
+                filter,
+                conv_shape,
+                Index(n_range[0], c_range[0], f_range[0], howo_range[0]),
+                Index(n_range[1], c_range[1], f_range[1], howo_range[1]),
+                task_tile_size,
+                elementwise_epilogue_fn,
+            )
+            instance._n_loop()
 
         if num_partitions[1] > 1:
             # Finish the conv computation and sync at the end.
@@ -2711,8 +2671,23 @@ struct ConvDirectNHWC[
             # Use sync to work around #12624
             sync_parallelize[task_func](out_chain, num_tasks)
 
-    fn direct_conv(self):
-        self._c_tile_loop[False](0, self.cf_tile_size[0])
+    fn _n_loop(self):
+        """Loop over the batch size.
+        This is the outermost loop and is used with padding."""
+
+        @always_inline
+        @parameter
+        fn body[has_padding: Bool]():
+            for n in range(
+                self.partition_offsets[0],
+                self.partition_offsets[0] + self.partition_sizes[0],
+            ):
+                self._c_tile_loop[has_padding](n, self.cf_tile_size[0])
+
+        unswitch[body](
+            self.conv_shape.pad_h != Index(0, 0)
+            or self.conv_shape.pad_w != Index(0, 0)
+        )
 
     fn _c_tile_loop[padded: Bool](self, n: Int, tile_size: Int):
         """Loop over C tiles."""
@@ -2759,8 +2734,8 @@ struct ConvDirectNHWC[
                 ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
 
             else:
-                self._n_wo_ho_tile_loop[size, False, last_c_tile](
-                    f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
+                self._ho_wo_tile_loop[size, False, last_c_tile](
+                    n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size
                 )
 
         let f_round_by_simd = (
@@ -2802,23 +2777,15 @@ struct ConvDirectNHWC[
                     n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size
                 )
             else:
-                self._n_wo_ho_tile_loop[simd_size, True, last_c_tile](
-                    f_round_by_simd, simd_size, c_tile_offset, c_tile_size
+                self._ho_wo_tile_loop[simd_size, True, last_c_tile](
+                    n, f_round_by_simd, simd_size, c_tile_offset, c_tile_size
                 )
 
-    fn _n_loop(self):
-        """Loop over the batch size.
-        This is the outermost loop and is used with padding."""
-        for n in range(
-            self.partition_offsets[0],
-            self.partition_offsets[0] + self.partition_sizes[0],
-        ):
-            self._c_tile_loop[True](n, self.cf_tile_size[0])
-
-    fn _n_wo_ho_tile_loop[
+    fn _ho_wo_tile_loop[
         micro_kernel_f_size: Int, has_residual: Bool, last_c_tile: Bool
     ](
         self,
+        n: Int,
         f_tile_offset: Int,
         f_tile_size: Int,
         c_tile_offset: Int,
@@ -2833,22 +2800,23 @@ struct ConvDirectNHWC[
 
         @always_inline
         @parameter
-        fn n_ho_wo_iteration[n_ho_wo_tile_size: Int](n_ho_wo: Int):
+        fn ho_wo_iteration[ho_wo_tile_size: Int](ho_wo: Int):
             @always_inline
             @parameter
             fn body[c_fully_cached: Bool]():
                 self._inner_loops[
-                    n_ho_wo_tile_size,
+                    ho_wo_tile_size,  # micro kernel height
                     micro_kernel_width,
                     c_fully_cached,
                     has_residual,
                     last_c_tile,
                 ](
+                    n,
                     f_tile_offset,
                     f_tile_size,
                     c_tile_offset,
                     c_tile_size,
-                    n_ho_wo,
+                    ho_wo,
                 )
 
             # c_fully_cached means the C dimension is fully covered in the
@@ -2859,11 +2827,11 @@ struct ConvDirectNHWC[
         # it will step by 5, 4, 3, 2, 1. This works with micro_kernel_height > 6
         # but maybe not very efficient.
         tile[
-            n_ho_wo_iteration,
+            ho_wo_iteration,
             VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
         ](
-            self.partition_offsets[0],
-            self.partition_offsets[0] + self.partition_sizes[0],
+            self.partition_offsets[3],
+            self.partition_offsets[3] + self.partition_sizes[3],
         )
 
     fn _inner_loops[
@@ -2874,11 +2842,12 @@ struct ConvDirectNHWC[
         last_c_tile: Bool,
     ](
         self,
+        n: Int,
         f_tile_offset: Int,
         f_tile_size: Int,
         c_tile_offset: Int,
         c_tile_size: Int,
-        n_ho_wo: Int,
+        ho_wo: Int,
     ):
         constrained[
             not has_residual or (has_residual and micro_kernel_width == 1),
@@ -2896,12 +2865,9 @@ struct ConvDirectNHWC[
         @always_inline
         @parameter
         fn set_input_base_offsets[idx: Int]():
-            let HO_WO = self.conv_shape.out_h * self.conv_shape.out_w
-            let n = (n_ho_wo + idx) // HO_WO
-            let ho_wo = (n_ho_wo + idx) % HO_WO
             # Global wo, ho index.
-            let ho = ho_wo // self.conv_shape.out_w
-            let wo = ho_wo % self.conv_shape.out_w
+            let ho = (ho_wo + idx) // self.conv_shape.out_w
+            let wo = (ho_wo + idx) % self.conv_shape.out_w
             # Translate ho, wo to hi, wi/range
             let h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
             let w = wo * self.conv_shape.stride[1] - self.conv_shape.pad_w[0]
@@ -2924,6 +2890,7 @@ struct ConvDirectNHWC[
         for f in range(
             f_tile_offset, f_tile_offset + f_tile_size, micro_kernel_f_size
         ):
+            let n_ho_wo = n * self.conv_shape.out_h * self.conv_shape.out_w + ho_wo
             if c_tile_offset == self.partition_offsets[1]:
                 self._init_output_micro_tile[
                     micro_kernel_height, micro_kernel_width, simd_size
@@ -3046,17 +3013,16 @@ struct ConvDirectNHWC[
 
         @parameter
         if elementwise_epilogue_enabled and last_c_tile:
-            for m in range(n_ho_wo, n_ho_wo + micro_kernel_height):
+            for m in range(ho_wo, ho_wo + micro_kernel_height):
                 # If has residual, the tile size has been extended to a simd_size.
                 # Here needs to use the real bound F.
                 let f_tile_size_bounded = self.conv_shape.f - f_tile_offset if has_residual else f_tile_size
                 # The micro tile may cover points in different rows/images.
                 # Convert the 1D index back to (n, ho, wo).
-                let offsets = _m_to_n_ho_wo_nhwc(m, self.conv_shape)
                 self.elementwise_epilogue_fn(
-                    offsets[0],
-                    offsets[1],
-                    offsets[2],
+                    n,
+                    m // self.conv_shape.out_w,
+                    m % self.conv_shape.out_w,
                     f_tile_offset,
                     f_tile_size_bounded,
                 )

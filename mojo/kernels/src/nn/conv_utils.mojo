@@ -317,7 +317,12 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
 
 fn get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
-](num_tasks: Int, conv_shape: ConvShape) -> StaticIntTuple[3]:
+](max_num_tasks: Int, conv_shape: ConvShape) -> StaticIntTuple[4]:
+    """Partition the worload in (batch, C, F, HOWO) dimensions.
+    HOWO is the combination of HO and WO dimensions.
+    The actual number of tasks are the product of return num_partitions.
+    """
+
     @always_inline
     @noncapturing
     fn int_sqrt_floor(val: Int) -> Int:
@@ -342,28 +347,30 @@ fn get_conv_num_partitions[
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
     let ideal_num_col_tasks = int_sqrt_floor(
-        div_ceil(matmul_N * num_tasks, matmul_M_biased)
+        div_ceil(matmul_N * max_num_tasks, matmul_M_biased)
     )
-    var num_row_tasks = num_tasks // ideal_num_col_tasks
+    var num_row_tasks = max_num_tasks // ideal_num_col_tasks
     var num_col_tasks = ideal_num_col_tasks
 
     # There must at least have enough elements to support a micro kernel.
-    var max_num_col_tasks = min(div_ceil(matmul_N, micro_kernel_f), num_tasks)
+    var max_num_col_tasks = min(
+        div_ceil(matmul_N, micro_kernel_f), max_num_tasks
+    )
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
-        num_row_tasks = num_tasks // num_col_tasks
+        num_row_tasks = max_num_tasks // num_col_tasks
     # In this branch, not all threads get used for ideal_num_col_tasks
     # Check for alternative factorizations use the most threads.
-    elif num_tasks % ideal_num_col_tasks != 0:
+    elif max_num_tasks % ideal_num_col_tasks != 0:
         # Set 20% deviation.
         let eps = div_ceil(2 * ideal_num_col_tasks, 10)
         max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
         var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
         var num_threads_used = (
-            num_tasks // ideal_num_col_tasks
+            max_num_tasks // ideal_num_col_tasks
         ) * ideal_num_col_tasks
         while num_col_tasks_tmp <= max_num_col_tasks:
-            let num_row_tasks_tmp = num_tasks // num_col_tasks_tmp
+            let num_row_tasks_tmp = max_num_tasks // num_col_tasks_tmp
             if num_row_tasks_tmp * num_col_tasks_tmp > num_threads_used:
                 num_col_tasks = num_col_tasks_tmp
                 num_row_tasks = num_row_tasks_tmp
@@ -376,10 +383,16 @@ fn get_conv_num_partitions[
     let max_num_channel_tasks = max(conv_shape.c // min_c_per_task, 1)
     let num_channel_tasks = min(
         max_num_channel_tasks,
-        num_tasks // (num_row_tasks * num_col_tasks),
+        max_num_tasks // (num_row_tasks * num_col_tasks),
     )
 
-    return Index(num_row_tasks, num_channel_tasks, num_col_tasks)
+    let num_batch_tasks = min(conv_shape.n, num_row_tasks)
+
+    num_row_tasks = num_row_tasks // num_batch_tasks
+
+    return Index(
+        num_batch_tasks, num_channel_tasks, num_col_tasks, num_row_tasks
+    )
 
 
 # ===----------------------------------------------------------------------===#

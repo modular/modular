@@ -89,12 +89,12 @@ fn static_conv(
         filter,
         conv_shape,
         Index(0, 0, 0, 0),
-        Index(N * HO * WO, C, F, 0),
+        Index(N, C, F, HO * WO),
         tile_size,
         direct_null_elementwise_epilogue,
     )
 
-    instance.direct_conv()
+    instance._n_loop()
 
 
 # CHECK-LABEL: test_static_conv
