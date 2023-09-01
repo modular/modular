@@ -521,14 +521,12 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       ee->objectLayer->addPlugin(std::move(*plugin));
     } else if (tt.isOSBinFormatELF()) {
       // Register the DebugObjectManagerPlugin.
-      auto registrar =
-          toModularErrorOr(llvm::orc::createJITLoaderGDBRegistrar(session));
-      if (registrar.isError())
-        return registrar.takeError();
-
       ee->objectLayer->addPlugin(
           std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
-              session, std::move(*registrar)));
+              session,
+              std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
+                  session, llvm::orc::ExecutorAddr::fromPtr(
+                               &llvm_orc_registerJITLoaderGDBWrapper))));
     }
   }
 

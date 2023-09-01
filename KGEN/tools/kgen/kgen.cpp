@@ -183,6 +183,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   CompilationOptions options = clOptions.getCompilationOptions();
   ExecutionEngineOptions eeOptions;
   eeOptions.sanitizers = options.sanitizers;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
+
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename.getValue());
 
@@ -311,7 +314,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (tmOr.isError())
     return failure(clOptions.reportError(tmOr.getError()));
 
-  // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed
   auto engineOr =
       ExecutionEngine::createWithStandardLayers(std::move(eeOptions), **tmOr);
   if (failed(engineOr))

@@ -192,12 +192,14 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          TargetInfoAttr target,
                          ArrayRef<const char *> arguments) {
   mlir::PassManager pm(&context);
-  // TODO(#16772): set registerDebugPlugins flag when debuginfo is needed.
+
+  ExecutionEngineOptions eeOptions;
+  eeOptions.sanitizers = options.sanitizers;
+  if (options.debugLevel != CompilationOptions::kNoDebug)
+    eeOptions.registerDebugPlugins = true;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(
-          runtime, pm, options,
-          {/*registerDebugPlugins=*/false, /*sanitizers=*/options.sanitizers},
-          /*isJIT=*/true, target);
+      initializeExecutionEngine(runtime, pm, options, std::move(eeOptions),
+                                /*isJIT=*/true, target);
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());
   std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
