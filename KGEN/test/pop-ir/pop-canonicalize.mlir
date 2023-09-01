@@ -426,8 +426,8 @@ kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
 
 // CHECK-LABEL: @pointer_bitcast
 kgen.func @pointer_bitcast() -> !kgen.pointer<si32> {
-  // CHECK-NEXT: pointer<si32> = <#M.pointer<0>>
-  %0 = kgen.param.constant: pointer<si64> = <#M.pointer<0>>
+  // CHECK-NEXT: pointer<si32> = <0>
+  %0 = kgen.param.constant: pointer<si64> = <0>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<si64> to !kgen.pointer<si32>
   kgen.return %1 : !kgen.pointer<si32>
 }
@@ -699,7 +699,7 @@ kgen.func @variant_create_get(%a: i32) -> i32 {
 
 // CHECK-LABEL: @index_to_pointer
 kgen.func @index_to_pointer() -> (!kgen.pointer<i8>, !pop.scalar<address>) {
-  // CHECK-DAG: #M.pointer<1>
+  // CHECK-DAG: pointer<i8> = <1>
   // CHECK-DAG: scalar<address> = <2>
   %0 = kgen.param.constant: scalar<index> = <<1>>
   %1 = kgen.param.constant: scalar<index> = <<2>>

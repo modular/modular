@@ -1410,9 +1410,9 @@ kgen.generator @caller() {
 
 // CHECK-LABEL: kgen.func @pointer_attr_elaborate
 kgen.generator @pointer_attr_elaborate() {
-  // CHECK-NEXT: kgen.param.constant: pointer<i8> = <#M.pointer<0>>
+  // CHECK-NEXT: kgen.param.constant: pointer<i8> = <0>
   kgen.param.declare type1: type = <i8>
-  %0 = kgen.param.constant: pointer<type1> = <#M.pointer<0>>
+  %0 = kgen.param.constant: pointer<type1> = <0>
   kgen.return
 }
 

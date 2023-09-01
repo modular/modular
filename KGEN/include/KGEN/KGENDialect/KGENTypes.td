@@ -271,7 +271,8 @@ def CalleeResultTypes : TypesMatchWith<"results match callee result types",
 
 def PointerType : KGENType<"Pointer", "pointer", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
