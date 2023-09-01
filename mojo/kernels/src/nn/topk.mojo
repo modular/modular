@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from algorithm.sort import _quicksort
+from algorithm.sort import _quicksort, sort
 from math import iota
 
 
@@ -34,16 +34,20 @@ fn top_k[
         )
         iota[DType.int64](idxs)
 
+        @parameter
+        @always_inline
+        fn indices_to_val(idx: Int64) -> SIMD[type, 1]:
+            indices[axis] = idx.__int__()
+            return input[indices]
+
         if largest:
 
             @parameter
             @always_inline
             fn _val_greater_than[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
-                indices[axis] = rebind[Int64](lhs).__int__()
-                let lhs_val = input[indices]
-                indices[axis] = rebind[Int64](rhs).__int__()
-                let rhs_val = input[indices]
-                return lhs_val > rhs_val
+                return indices_to_val(rebind[Int64](lhs)) > indices_to_val(
+                    rebind[Int64](rhs)
+                )
 
             _quicksort[Int64, _val_greater_than](idxs.data, idxs.__len__())
         else:
@@ -51,18 +55,11 @@ fn top_k[
             @parameter
             @always_inline
             fn _val_less_than_eq[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
-                indices[axis] = rebind[Int64](lhs).__int__()
-                let lhs_val = input[indices]
-                indices[axis] = rebind[Int64](rhs).__int__()
-                let rhs_val = input[indices]
-                return lhs_val <= rhs_val
+                return indices_to_val(rebind[Int64](lhs)) <= indices_to_val(
+                    rebind[Int64](rhs)
+                )
 
             _quicksort[Int64, _val_less_than_eq](idxs.data, idxs.__len__())
-
-        @parameter
-        @always_inline
-        fn _idx_less_than[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
-            return rebind[Int64](lhs) < rebind[Int64](rhs)
 
         # for duplicate vals, the smaller index needs to appear first
         # _quicksort is not stable, so do another pass to enforce this
@@ -81,9 +78,8 @@ fn top_k[
                     break
                 num_equal += 1
             if num_equal > 1:
-                _quicksort[Int64, _idx_less_than](
-                    idxs.data.offset(i), num_equal
-                )
+                var ptr = rebind[Pointer[Int64]](idxs.data.offset(i))
+                sort[DType.int64](ptr, num_equal)
             i += num_equal
 
         for i in range(k):

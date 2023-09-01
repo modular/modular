@@ -12,22 +12,28 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from TopK import top_k
 
 
-fn get_tensor_storage[
-    rank: Int, type: DType
-](shape: StaticIntTuple[rank]) -> DynamicVector[SIMD[type, 1]]:
-    var ret = DynamicVector[SIMD[type, 1]](shape.flattened_length())
-    ret.resize(shape.flattened_length())
-    return ret
+struct TestTensor[rank: Int, type: DType]:
+    var storage: DynamicVector[SIMD[type, 1]]
+    var shape: StaticIntTuple[rank]
 
+    fn __init__(inout self, shape: StaticIntTuple[rank]):
+        self.storage = DynamicVector[SIMD[type, 1]](shape.flattened_length())
+        self.storage.resize(shape.flattened_length())
+        self.shape = shape
 
-fn to_ndbuffer[
-    rank: Int, type: DType
-](
-    storage: DynamicVector[SIMD[type, 1]], shape: StaticIntTuple[rank]
-) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
-    return NDBuffer[rank, DimList.create_unknown[rank](), type](
-        rebind[DTypePointer[type]](storage.data), shape
-    )
+    fn __copyinit__(inout self, existing: Self):
+        self.storage = existing.storage
+        self.shape = existing.shape
+
+    fn to_ndbuffer(
+        self,
+    ) -> NDBuffer[rank, DimList.create_unknown[rank](), type]:
+        return NDBuffer[rank, DimList.create_unknown[rank](), type](
+            rebind[DTypePointer[type]](self.storage.data), self.shape
+        )
+
+    fn __del__(owned self):
+        self.storage._del_old()
 
 
 fn test_case[
@@ -37,36 +43,35 @@ fn test_case[
         inout NDBuffer[rank, DimList.create_unknown[rank](), type]
     ) capturing -> None,
 ](K: Int, axis: Int, input_shape: StaticIntTuple[rank], largest: Bool = True):
-    var input_storage = get_tensor_storage[rank, type](input_shape)
+    var input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape
     output_shape[axis] = K
-    var out_vals_storage = get_tensor_storage[rank, type](output_shape)
-    var out_idxs_storage = get_tensor_storage[rank, DType.int64](output_shape)
+    var out_vals = TestTensor[rank, type](output_shape)
+    var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
-    alias unknown_shape = DimList.create_unknown[rank]()
+    var input_buf = input.to_ndbuffer()
+    fill_fn[rank, type](input_buf)
 
-    var input = to_ndbuffer[rank, type](input_storage, input_shape)
-    fill_fn[rank, type](input)
-    let output_vals = to_ndbuffer[rank, type](out_vals_storage, output_shape)
-    let output_idxs = to_ndbuffer[rank, DType.int64](
-        out_idxs_storage, output_shape
+    top_k(
+        input.to_ndbuffer(),
+        K,
+        axis,
+        largest,
+        out_vals.to_ndbuffer(),
+        out_idxs.to_ndbuffer(),
     )
 
-    top_k(input, K, axis, largest, output_vals, output_idxs)
+    let xxx_no_lifetimes = input  # intentionally bad name
 
-    for i in range(out_vals_storage.size):
-        print_no_newline(out_vals_storage[i])
+    for i in range(out_vals.storage.size):
+        print_no_newline(out_vals.storage[i])
         print_no_newline(",")
     print("")
-    for i in range(out_idxs_storage.size):
-        print_no_newline(out_idxs_storage[i])
+    for i in range(out_idxs.storage.size):
+        print_no_newline(out_idxs.storage[i])
         print_no_newline(",")
     print("")
-
-    input_storage._del_old()
-    out_vals_storage._del_old()
-    out_idxs_storage._del_old()
 
 
 fn main():
