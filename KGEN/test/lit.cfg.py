@@ -6,7 +6,6 @@
 
 import os
 import platform
-import subprocess
 
 from lit.llvm import llvm_config
 

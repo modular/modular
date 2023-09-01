@@ -18,7 +18,6 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "Lexer.h"
 #include "ParserDriverImpl.h"
-#include "ParserParamEvaluator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Verifier.h"
@@ -722,20 +721,4 @@ void MojoParserContext::removeLastREPLExpression() {
   ASTDecl *moduleDecl = impl->replModuleDecls.pop_back_val();
   impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
   moduleDecl->getIfOperation()->remove();
-}
-
-MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
-  return type.getDecl(impl->sharedState);
-}
-
-MojoASTTypeRef
-MojoParserContext::concretizeType(KGEN::ParamBindArrayAttr params,
-                                  MojoASTTypeRef type) {
-  KGEN::LIT::ParserParamEvaluator evaluator(*(impl->sharedState.declResolver));
-  for (KGEN::ParamBindAttr paramVal : params)
-    evaluator.setParameterValue(paramVal.getName(), paramVal.getValue());
-
-  MojoASTTypeRef concreteType = evaluator.getReboundType(type.getMLIRType());
-  concreteType = evaluator.refineType(concreteType.getMLIRType());
-  return concreteType;
 }

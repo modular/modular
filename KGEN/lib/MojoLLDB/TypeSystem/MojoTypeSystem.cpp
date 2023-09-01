@@ -127,12 +127,6 @@ TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;
 }
 
-lldb_private::CompilerType
-MojoTypeSystem::getCompilerTypeFromType(mlir::Type type) {
-  return lldb_private::CompilerType(
-      weak_from_this(), const_cast<void *>(type.getAsOpaquePointer()));
-}
-
 LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->runtime; }
 
 //===----------------------------------------------------------------------===//
@@ -685,4 +679,14 @@ bool MojoTypeSystem::DumpTypeValue(
       data, &s, dataOffset, format, dataByteSize,
       /*itemCount=*/1, UINT32_MAX, LLDB_INVALID_ADDRESS, bitfieldBitSize,
       bitfieldBitOffset, exeScope);
+}
+
+//===--------------------------------------------------------------------===//
+// Utils
+//===--------------------------------------------------------------------===//
+
+lldb_private::CompilerType
+MojoTypeSystem::getCompilerTypeFromType(mlir::Type type) {
+  return lldb_private::CompilerType(
+      weak_from_this(), const_cast<void *>(type.getAsOpaquePointer()));
 }
