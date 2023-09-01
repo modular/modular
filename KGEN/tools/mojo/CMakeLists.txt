@@ -40,7 +40,7 @@ add_modular_tool(mojo
   OrcTargetProcess
 
   LINK_LIBS PRIVATE
-  LITDialect
+  InitAllKGENDialects
   LLCLRuntimeGlobals
   LLCLRuntime
   MArchTarget

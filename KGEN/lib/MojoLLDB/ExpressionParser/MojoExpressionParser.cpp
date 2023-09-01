@@ -8,6 +8,7 @@
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "JITExecutionUnit.h"
 #include "KGEN/KGENCompiler.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"

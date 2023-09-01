@@ -32,6 +32,7 @@ add_modular_conversion_library(KGENTransforms
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  HLCFAnalysis
   KGENDialect
   POPDialect
 )

@@ -12,6 +12,7 @@
 #include "KGEN/CompilationOptions.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"

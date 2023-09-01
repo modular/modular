@@ -345,7 +345,7 @@ private:
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
-#include "Support/Interpreter/InterpreterOpInterface.h.inc"
-#include "Support/Interpreter/MemoryableTypeInterface.h.inc"
+#include "KGEN/Interpreter/InterpreterOpInterface.h.inc"
+#include "KGEN/Interpreter/MemoryableTypeInterface.h.inc"
 
 #endif // SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H

@@ -8,7 +8,6 @@
 #define KGEN_CLOPTIONS_H
 
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/KGENDialect/KGENOps.h"
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"

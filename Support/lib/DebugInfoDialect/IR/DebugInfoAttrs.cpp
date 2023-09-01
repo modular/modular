@@ -6,6 +6,7 @@
 
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"

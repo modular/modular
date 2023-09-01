@@ -4,14 +4,17 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(HLCFAnalysis
-  CFG.cpp
-  ControlFlowTree.cpp
-  DataFlow.cpp
+add_modular_library(InitAllKGENDialects
+  InitAllDialects.cpp
 
   LINK_LIBS PUBLIC
+  DebugInfoDialect
   HLCFDialect
-  MDialect
-  MLIRIR
-  MLIRPass
+  KGENDialect
+  LITDialect
+  POPDialect
+  CacheDialect
+
+  MLIRIndexDialect
+  MLIRLLVMDialect
 )
