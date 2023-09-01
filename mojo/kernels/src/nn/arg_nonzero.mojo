@@ -14,12 +14,12 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
-# where
+# arg_nonzero
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline
-fn where[
+fn arg_nonzero[
     type: DType,
     output_type: DType,
     rank: Int,
@@ -42,7 +42,7 @@ fn where[
         out_chain: The our chain to attach results to.
     """
 
-    out_chain.trace[TraceLevel.OP]("mojo.where")
+    out_chain.trace[TraceLevel.OP]("mojo.arg_nonzero")
 
     let numel = input_buffer.dynamic_shape.flattened_length()
     if numel == 0:
@@ -59,7 +59,7 @@ fn where[
             out_indices[0] = j
             j += 1
 
-            # Write each of the output values to the where output.
+            # Write each of the output values to the output buffer.
             @unroll
             for k in range(rank):
                 out_indices[1] = k
@@ -70,7 +70,7 @@ fn where[
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
 @always_inline
-fn where_shape[
+fn arg_nonzero_shape[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
@@ -89,7 +89,7 @@ fn where_shape[
         input_buffer: The tensor to count the non-zeros in.
 
     Returns:
-        Shape of the where kernel for this input [NumNonZeros, InputRank].
+        Shape of the arg_nonzero kernel for this input [NumNonZeros, InputRank].
     """
 
     var shape = StaticIntTuple[2]()
