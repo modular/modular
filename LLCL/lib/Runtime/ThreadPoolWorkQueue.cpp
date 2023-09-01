@@ -49,7 +49,7 @@ using namespace M::LLCL;
 constexpr size_t kMinTaskListCapacity = 128;
 
 /// Number of task list slots per thread.
-constexpr size_t kTaskListSlotsPerThread = 16;
+constexpr size_t kTaskListSlotsPerThread = 1024;
 
 /// Max number of worker threads.
 constexpr size_t kMaxWorkers = 1024;
@@ -267,6 +267,12 @@ struct WorkQueueThread {
   std::mutex &overflowMutex; // Protects overflowTaskList
   SmallVectorImpl<WorkItem> &overflowTaskList;
 
+  /// Spill queue for the affinityTaskList and its mutex. If the
+  /// affinityTaskList is full, we spill over to this queue and later execute
+  /// from the localTaskList maintaining the affinity. This is assumed to be
+  /// a rare event and hence okay with slow handling like overflowTaskList.
+  std::mutex localSpillQueueMutex; // Protects localSpillQueue
+  SmallVector<WorkItem> localSpillQueue;
   /// Unique index for this thread.
   size_t workerID;
 
@@ -320,7 +326,10 @@ struct WorkQueueThread {
 
   ~WorkQueueThread() {
     assert(localTaskList.empty() &&
-           "destroying WorkQueueThread with pending local work items");
+           "destroying workqueuethread with pending local work items");
+    std::lock_guard<std::mutex> guard(localSpillQueueMutex);
+    assert(localSpillQueue.empty() &&
+           "destroying Workqueuethread with pending fallback work items");
   }
 
   /// Schedule this work item on the localTaskList to be executed on the next
@@ -329,9 +338,13 @@ struct WorkQueueThread {
     localTaskList.emplace_back(std::move(workItem));
   }
 
-  /// Schedules work on to the thread local queue of this worker.
-  bool addAffinityTask(WorkItem &work) {
-    return affinityTaskList.enqueue(work);
+  /// Schedules work on to the thread local queue of this worker. If the
+  /// lockFreeRignBuffer is full, enqueue into the spill queue.
+  void addAffinityTask(WorkItem &work) {
+    if (!affinityTaskList.enqueue(work)) {
+      std::lock_guard<std::mutex> guard(localSpillQueueMutex);
+      localSpillQueue.emplace_back(std::move(work));
+    }
   }
   /// Joins the thread. Asserts that `sharedState.done` is true because
   /// otherwise the thread will never join.
@@ -536,9 +549,20 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     // The lock-free task queue appears to be empty. Since we're about to go
     // to sleep anyway, we can justify the expense of pumping any items out
-    // of the overflow task queue into the lock-free queue.
+    // of the overflow/localSpill task queues into the lock-free queues.
     // Note we don't worry about preserving order for the overflow tasks since
     // there's no guarantee of fairness anyway.
+    {
+      std::lock_guard<std::mutex> guard(localSpillQueueMutex);
+      if (!localSpillQueue.empty()) {
+        while (!localSpillQueue.empty()) {
+          WorkItem workItem = localSpillQueue.pop_back_val();
+          localTaskList.emplace_back(std::move(workItem));
+        }
+        goto KeepRunning;
+      }
+    }
+
     {
       std::lock_guard<std::mutex> guard(overflowMutex);
       if (!overflowTaskList.empty()) {
@@ -821,22 +845,24 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 #endif
   if (taskId >= 0) {
     auto workThread = getWorkQueueThread(taskId);
-    if (workThread->addAffinityTask(workItem)) {
-      // Wake up the thread just in case.
-      // NOTE: This may be a spurious post() because the thread may already be
-      // awake. It does not cause any harm because the worst that can happen
-      // is that the thread goes to sleep the next iteration of runItemsImpl
-      // rather than now.
-      if (multicastFactor == 0) {
-        if (sharedState.takeSuspendedThread(taskId))
-          workThread->sema.post();
-      } else {
-        // TODO: post() should be low overhead if thread is already awake.
-        // Nevertheless profile and check.
+    // Either add to thread local lock-free queues or to its spill queue.
+    // Any task with taskId >=0 always finds a place in either of these
+    // two queues.
+    workThread->addAffinityTask(workItem);
+    // Wake up the thread just in case.
+    // NOTE: This may be a spurious post() because the thread may already be
+    // awake. It does not cause any harm because the worst that can happen
+    // is that the thread goes to sleep the next iteration of runItemsImpl
+    // rather than now.
+    if (multicastFactor == 0) {
+      if (sharedState.takeSuspendedThread(taskId))
         workThread->sema.post();
-      }
-      return;
+    } else {
+      // TODO: post() should be low overhead if thread is already awake.
+      // Nevertheless profile and check.
+      workThread->sema.post();
     }
+    return;
   }
   // Try to add this work to the lock-free queue.
   if (taskList.enqueue(workItem)) {

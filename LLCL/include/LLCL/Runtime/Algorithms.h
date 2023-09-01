@@ -272,8 +272,9 @@ andThenAsyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
 
 /// Add some non-blocking work to the WorkQueue managed by the specified
 /// Runtime.
-inline static void addTask(Runtime &runtime, WorkItem &&workItem) {
-  runtime.getWorkQueue()->addTask(std::move(workItem));
+inline static void addTask(Runtime &runtime, WorkItem &&workItem,
+                           int taskId = -1) {
+  runtime.getWorkQueue()->addTask(std::move(workItem), taskId);
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
@@ -285,14 +286,16 @@ inline static void addTask(Runtime &runtime, WorkItem &&workItem) {
 ///
 template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
-[[nodiscard]] inline static AsyncValueRef<ResultTy> addTask(Runtime &runtime,
-                                                            FnTy work) {
+[[nodiscard]] inline static AsyncValueRef<ResultTy>
+addTask(Runtime &runtime, FnTy work, int taskId = -1) {
   auto result = AsyncValueRef<ResultTy>::allocate(runtime);
 
-  addTask(runtime,
-          [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
-            std::move(result).template emplace<ResultTy>(work());
-          });
+  addTask(
+      runtime,
+      [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
+        std::move(result).template emplace<ResultTy>(work());
+      },
+      taskId);
   return result;
 }
 
