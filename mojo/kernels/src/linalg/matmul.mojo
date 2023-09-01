@@ -904,81 +904,6 @@ struct MatmulInnerLoopBPacked[
         tile_n_k_idx: StaticIntTuple[2],
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
-        local accumulation buffer while processing `a_col_size` columns of A.
-
-        Args:
-            c_local: Pre-allocated local buffer for c partial sums.
-            tile_n_k_idx: Index tuple with (n, k)
-                coordinates within the current processing tile to index the
-                packed B matrix.
-        """
-        constrained[a_col_size > 1]()
-
-        # Seek outer indices in packed layout.
-        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
-
-        # Global K index.
-        let global_k = self.global_offset.K + tile_n_k_idx[1]
-
-        # Prefetch B matrix.
-        @parameter
-        if prefetch_b_distance > 0:
-
-            @always_inline
-            @parameter
-            fn prefetch_body[idx: Int]():
-                self.b_packed.prefetch[
-                    PrefetchOptions().for_read().high_locality().to_data_cache()
-                ](
-                    n_outer_idx,
-                    tile_n_k_idx[1] + prefetch_b_distance,
-                    idx * simd_size,
-                )
-
-            unroll[pack_inner_size // simd_size, prefetch_body]()
-
-        # Loop over local accumulator tiles.
-        @always_inline
-        @parameter
-        fn _do[idx: Int]():
-            alias idx_outer = idx
-            let global_m = self.global_offset.M + idx_outer
-            let a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
-                c_type
-            ]()
-
-            @always_inline
-            @parameter
-            fn outer_body[idx0: Int, idx1: Int]():
-                let b_val = self.b_packed.simd_load[simd_size](
-                    n_outer_idx,
-                    tile_n_k_idx[1] + idx0,
-                    idx1 * simd_size,
-                ).cast[c_type]()
-
-                let c_idx = Index(idx_outer, idx1 * simd_size)
-                var c_val = c_local.simd_load[simd_size](c_idx)
-
-                c_val = fma[c_type, simd_size](a_val[idx0], b_val, c_val)
-                c_local.simd_store[simd_size](c_idx, c_val)
-
-            unroll[a_col_size, pack_inner_size // simd_size, outer_body]()
-
-        unroll[a_row_size, _do]()
-
-    @adaptive
-    fn _accumulate[
-        a_col_size: Int
-    ](
-        self,
-        c_local: NDBuffer[
-            2,
-            DimList(a_row_size, pack_inner_size),
-            c_type,
-        ],
-        tile_n_k_idx: StaticIntTuple[2],
-    ):
-        """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
 
         Args:
@@ -1137,7 +1062,7 @@ struct MatmulInnerLoopBPacked[
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        constrained[not Self.use_vnni and (not has_neon() or critical_stride)]()
+        constrained[not Self.use_vnni and not has_neon()]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -1161,12 +1086,71 @@ struct MatmulInnerLoopBPacked[
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
+    fn _accumulate_lane[
+        a_col_size: Int
+    ](
+        self,
+        c_local: NDBuffer[
+            2,
+            DimList(a_row_size, pack_inner_size),
+            c_type,
+        ],
+        tile_n_k_idx: StaticIntTuple[2],
+    ):
+        """Utility function on the inner loop. Launch one tile of fma on the
+        local accumulation buffer while processing `a_col_size` columns of A.
+
+        Args:
+            c_local: Pre-allocated local buffer for c partial sums.
+            tile_n_k_idx: Index tuple with (n, k)
+                coordinates within the current processing tile to index the
+                packed B matrix.
+        """
+        # Seek outer indices in packed layout.
+        let n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+
+        # Global K index.
+        let global_k = self.global_offset.K + tile_n_k_idx[1]
+
+        var b_ptr = self.b_packed._offset(
+            Index(n_outer_idx, tile_n_k_idx[1], 0)
+        )
+
+        let a_vals = stack_allocation[a_row_size, SIMD[c_type, a_col_size]]()
+
+        @unroll
+        for row in range(a_row_size):
+            let global_m = self.global_offset.M + row
+            let a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
+                c_type
+            ]()
+            a_vals.store(row, a_val)
+
+        @unroll
+        for lane in range(a_col_size):
+
+            @unroll
+            for col in range(pack_inner_size // simd_size):
+                let b_val = b_ptr.offset(col * simd_size).simd_load[
+                    simd_size
+                ]().cast[c_type]()
+
+                @unroll
+                for row in range(a_row_size):
+                    let a_val = a_vals[row]
+                    let c_idx = Index(row, col * simd_size)
+                    var c_val = c_local.simd_load[simd_size](c_idx)
+                    c_val = fma[c_type, simd_size](a_val[lane], b_val, c_val)
+                    c_local.simd_store[simd_size](c_idx, c_val)
+
+            b_ptr = b_ptr.offset(pack_inner_size)
+
     @adaptive
     fn _run_inner_loop(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
-        constrained[has_neon() and not critical_stride]()
+        constrained[has_neon()]()
         # Allocate accumulation buffer.
         let c_local = NDBuffer[
             2,
@@ -1184,11 +1168,11 @@ struct MatmulInnerLoopBPacked[
 
             let partition_end = simd_size * (self.tile_n_k[1] // simd_size)
             for idx_k0 in range(0, partition_end, simd_size):
-                self._accumulate[simd_size](c_local, Index(idx_n, idx_k0))
+                self._accumulate_lane[simd_size](c_local, Index(idx_n, idx_k0))
 
             for idx_k1 in range(partition_end, self.tile_n_k[1]):
                 # accumulate data for this (n, k) index
-                self._accumulate[1](c_local, Index(idx_n, idx_k1))
+                self._accumulate_lane[1](c_local, Index(idx_n, idx_k1))
 
             self._store_c_tile(c_local, Index(0, idx_n))
 
