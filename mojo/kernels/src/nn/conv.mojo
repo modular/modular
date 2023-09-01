@@ -1196,7 +1196,6 @@ struct ConvIm2ColNCHW[
                 m_loop_pack_inner_size,
                 skip_col_bound,
                 prefetch_b_distance_k,  # prefetch distance
-                False,  # critical_stride
             ].run(
                 self.c,
                 self.a,
