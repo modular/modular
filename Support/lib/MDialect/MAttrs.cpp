@@ -19,6 +19,7 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/JSON.h"
@@ -1034,6 +1035,29 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                              tuneCpu);
 }
 
+ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
+  TargetInfo result;
+  result.triple = targetInfoAttr.getTriple();
+  result.cpu = targetInfoAttr.getCpu();
+
+  auto errOr = decodeFeatures(targetInfoAttr.getFeatures());
+  if (errOr)
+    return errOr.takeError();
+  result.features = std::move(*errOr);
+
+  return result;
+}
+
+/// Returns attribute representing runtime target info.
+TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
+                                        const TargetInfo &runtimeTargetInfo) {
+  return TargetInfoAttr::get(
+      ctx, runtimeTargetInfo.triple, runtimeTargetInfo.cpu,
+      encodeFeatures(runtimeTargetInfo.features),
+      /*data_layout=*/{}, /*simd_bit_width=*/0, /*tune_cpu=*/{});
+}
+
+// CAUTION: About to be removed.
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             HostMachineInfo &hostMachineInfo) {
   // Leave the data layout empty.
@@ -1044,10 +1068,11 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 
   return TargetInfoAttr::get(
       ctx, llvm::Triple(hostMachineInfo.triple), hostMachineInfo.cpuArch,
-      getCPUFeatures(hostMachineInfo),
+      encodeFeatures(hostMachineInfo.cpuFeatures),
       /*data_layout=*/empty, /*simd_bit_width=*/0, /*tuneCpu=*/"");
 }
 
+// CAUTION: About to be removed.
 ErrorOr<std::string>
 M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
   // CAUTION:
@@ -1121,6 +1146,141 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
   return os << '"' << triple.normalize() << '"';
 }
 } // namespace llvm
+
+//===----------------------------------------------------------------------===//
+// DeviceRefAttr
+//===----------------------------------------------------------------------===//
+
+std::string DeviceRefAttr::toString() const {
+  return toRuntimeDeviceRef(*this)->toString();
+}
+
+ErrorOr<DeviceRef> M::toRuntimeDeviceRef(DeviceRefAttr deviceRefAttr) {
+  DeviceRef result;
+  result.label = deviceRefAttr.getLabel();
+  result.id = deviceRefAttr.getId();
+  return result;
+}
+
+DeviceRefAttr M::fromRuntimeDeviceRef(MLIRContext *ctx,
+                                      const DeviceRef &runtimeDeviceRef) {
+  return DeviceRefAttr::get(ctx, runtimeDeviceRef.label, runtimeDeviceRef.id);
+}
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecAttr
+//===----------------------------------------------------------------------===//
+
+ErrorOr<DeviceSpec> M::toRuntimeDeviceSpec(DeviceSpecAttr deviceAttr) {
+  DeviceSpec result;
+  auto refOr = toRuntimeDeviceRef(deviceAttr.getRef());
+  if (refOr)
+    return refOr.takeError();
+  result.ref = *refOr;
+  auto targetOr = toRuntimeTargetInfo(deviceAttr.getTarget());
+  if (targetOr)
+    return targetOr.takeError();
+  result.target = *targetOr;
+  return result;
+}
+
+DeviceSpecAttr M::fromRuntimeDeviceSpec(MLIRContext *ctx,
+                                        const DeviceSpec &runtimeDeviceSpec) {
+  return DeviceSpecAttr::get(
+      ctx, fromRuntimeDeviceRef(ctx, runtimeDeviceSpec.ref),
+      fromRuntimeTargetInfo(ctx, runtimeDeviceSpec.target));
+}
+
+//===----------------------------------------------------------------------===//
+// DeviceSpecsAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseDeviceSpecAttrArray(AsmParser &p, SmallVector<DeviceSpecAttr> &devices) {
+  return p.parseCommaSeparatedList(
+      AsmParser::Delimiter::Square, [&]() -> ParseResult {
+        auto deviceSpecAttr = llvm::dyn_cast_if_present<DeviceSpecAttr>(
+            DeviceSpecAttr::parse(p, /*odsType=*/{}));
+        if (!deviceSpecAttr)
+          return failure();
+        devices.emplace_back(deviceSpecAttr);
+        return success();
+      });
+}
+
+static void printDeviceSpecAttrArray(AsmPrinter &p,
+                                     ArrayRef<DeviceSpecAttr> devices) {
+  p << "[";
+  llvm::interleaveComma(devices, p.getStream(),
+                        [&p](const DeviceSpecAttr &attr) { attr.print(p); });
+  p << "]";
+}
+
+ErrorOr<DeviceSpecAttr>
+DeviceSpecCollectionAttr::findDeviceSpec(DeviceRefAttr deviceReference) const {
+  auto itr =
+      llvm::find_if(getDevices(), [&deviceReference](DeviceSpecAttr device) {
+        return device.getRef() == deviceReference;
+      });
+  if (itr == getDevices().end())
+    return Error(Twine("no such device spec for reference '" +
+                       deviceReference.toString() + "'"));
+  return *itr;
+}
+
+DeviceSpecAttr DeviceSpecCollectionAttr::getHostDeviceSpec() const {
+  auto specOr = findDeviceSpec(getHost());
+  assert(!specOr.isError() && "no such host device spec");
+  return *specOr;
+}
+
+LogicalResult DeviceSpecCollectionAttr::verify(
+    function_ref<mlir::InFlightDiagnostic()> emitError, DeviceRefAttr host,
+    ArrayRef<M::DeviceSpecAttr> devices) {
+  llvm::DenseSet<DeviceRefAttr> deviceReferences;
+  for (const auto &deviceSpec : devices) {
+    if (!deviceReferences.insert(deviceSpec.getRef()).second)
+      return emitError()
+             << "#M.device_spec_collection contains duplicate device specs "
+                "for the device reference '" +
+                    deviceSpec.getRef().toString() + "'.";
+  }
+  if (!deviceReferences.contains(host))
+    return emitError()
+           << "#M.device_spec_collection does not contain a device spec with "
+              "the host device reference '" +
+                  host.toString() + "'.";
+  return success();
+}
+
+ErrorOr<DeviceSpecCollection>
+M::toRuntimeDeviceSpecs(DeviceSpecCollectionAttr deviceSpecCollectionAttr) {
+  DeviceSpecCollection result;
+  auto refOr = toRuntimeDeviceRef(deviceSpecCollectionAttr.getHost());
+  if (refOr)
+    return refOr.takeError();
+  result.host = *refOr;
+
+  result.devices.reserve(deviceSpecCollectionAttr.getDevices().size());
+  for (auto &deviceAttr : deviceSpecCollectionAttr.getDevices()) {
+    auto deviceOr = toRuntimeDeviceSpec(deviceAttr);
+    if (deviceOr)
+      return deviceOr.takeError();
+    result.devices.emplace_back(*deviceOr);
+  }
+  return result;
+}
+
+DeviceSpecCollectionAttr M::fromRuntimeDeviceSpecs(
+    MLIRContext *ctx, const DeviceSpecCollection &runtimeDeviceSpecCollection) {
+  std::vector<DeviceSpecAttr> deviceAttrs;
+  deviceAttrs.reserve(runtimeDeviceSpecCollection.devices.size());
+  for (auto &device : runtimeDeviceSpecCollection.devices)
+    deviceAttrs.emplace_back(fromRuntimeDeviceSpec(ctx, device));
+  return DeviceSpecCollectionAttr::get(
+      ctx, fromRuntimeDeviceRef(ctx, runtimeDeviceSpecCollection.host),
+      deviceAttrs);
+}
 
 //===----------------------------------------------------------------------===//
 // MemorySpaceAttr

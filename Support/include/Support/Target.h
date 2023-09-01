@@ -19,8 +19,13 @@ class TargetMachine;
 } // namespace llvm
 
 namespace M {
-// Forward declare.
-struct HostMachineInfo;
+
+/// Returns the LLVM CPU features for the given individual features.
+/// The result is of the form "+feature1,+feature2".
+std::string encodeFeatures(ArrayRef<std::string> features);
+
+/// Decodes the result of encodeFeatures.
+ErrorOr<std::vector<std::string>> decodeFeatures(StringRef encodedFeatures);
 
 /// Construct a TargetMachine for the current host. This is by far the most
 /// common case in our stack, so this provides a convenient utility for many
@@ -28,10 +33,6 @@ struct HostMachineInfo;
 ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
     bool isJIT = true,
     llvm::CodeGenOpt::Level optLevel = llvm::CodeGenOpt::Aggressive);
-
-/// Returns the LLVM CPU features for the given HostMachineInfo. The result
-/// is of the form "+feature1,+feature2".
-std::string getCPUFeatures(HostMachineInfo &hostMachineInfo);
 
 /// Returns the LLVM CPU features for the host.
 std::string getHostCPUFeatures();
