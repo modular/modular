@@ -17,13 +17,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/TargetParser/Triple.h"
 #include <cstdint>
 #include <string>
 #include <variant>
 
 namespace M::Cache::Keys {
-
 template <typename T>
 struct TypeKey : std::false_type {};
 
@@ -43,17 +41,6 @@ struct TypeKey<llvm::ArrayRef<uint8_t>> {
     llvm::BLAKE3 hashState{};
     hashState.update(key);
 
-    auto hash = hashState.final();
-    return {hash.begin(), hash.end()};
-  }
-};
-
-struct StringHashedKey {
-public:
-  using KeyTy = StringRef;
-  static std::string hashKey(KeyTy key) {
-    llvm::BLAKE3 hashState{};
-    hashState.update(key);
     auto hash = hashState.final();
     return {hash.begin(), hash.end()};
   }
@@ -122,43 +109,6 @@ struct HostStaticInfoWrapper {
   }
 };
 
-struct CPUFeatureWrapper {
-  /// Matrix of supported targets is ARCHS * FEATURES
-  /// User is responsible for not tagging with incompatible combinations
-  /// (`apple-m1` is omitted as an arch, we cannot access it's cpu features to
-  /// cache artifacts)
-  static constexpr std::array<StringLiteral, 2> SUPPORTED_ARCHS = {"x86_64",
-                                                                   "arm64"};
-
-  /// These advanced CPU features are sorted in decreasing order of "strength".
-  /// If multiple CPU features exist we choose the strongest one. These features
-  /// are for retrieving hardware-specific libs and CXXDriverAPI has in place a
-  /// mechanism for gracefully downgrading to less performant libs in the
-  /// absence of these features (See CXXDriverAPI.cpp : getDriverWithPreference)
-  static constexpr std::array<StringLiteral, 3> SUPPORTED_FEATURES = {
-      "avx512f", "avx2", "avx"};
-
-  static std::string wrapKey(const std::string &keyToBeWrapped) {
-    auto machineInfoOr = M::getHostMachineInfo();
-    if (machineInfoOr.isError())
-      return "";
-    auto machineInfo = *machineInfoOr;
-    auto features = machineInfo.cpuFeatures;
-
-    auto cpuArchWDelimiter =
-        llvm::Triple(machineInfo.triple).getArchName().str() + ":";
-
-    /// We iterate on features in decreasing order of strength. We wrap with the
-    /// strongest feature found on the target machine.
-    for (auto supportedFeature : SUPPORTED_FEATURES) {
-      if (llvm::is_contained(features, supportedFeature))
-        return (keyToBeWrapped + cpuArchWDelimiter + supportedFeature).str();
-    }
-
-    return keyToBeWrapped;
-  }
-};
-
 /// Wrap a given key generator with one or more wrappers. Wrappers need to
 /// implement a static function wrapKey which takes a string and returns a
 /// string back. Wrapping works like this.
@@ -204,14 +154,8 @@ using KeyWithHostInfo = WrappedKey<TyKey, HostInfoWrapper>;
 template <typename TyKey>
 using KeyWithStaticHostInfo = WrappedKey<TyKey, HostStaticInfoWrapper>;
 
-/// This is a key that is wrapped based on CPU features detected at runtime.
-/// This is useful for retrieving artifacts that are optimized for that CPU
-/// feature. Currently supports detection of features AVX2 and AVX512 only.
-template <typename TyKey>
-using CPUFeatureWrappedKey = WrappedKey<TyKey, CPUFeatureWrapper>;
-
-/// Provide a key that doesn't do any hashing - we only want to read things
-/// from keys provided to this.
+/// Provide a key that doesn't do any hashing - we only want to read things from
+/// keys provided to this.
 using ReadOnlyKey = TypeKey<llvm::StringRef>;
 } // namespace M::Cache::Keys
 

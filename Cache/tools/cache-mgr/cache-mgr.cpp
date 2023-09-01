@@ -29,6 +29,17 @@ namespace {
 /// this tool, and it should be simple to read/write.
 using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 
+/// This provides the list of available targets for which we can generate target
+/// specific keys. A value of None(Default) means the binary is target agnostic
+/// and add it to cache with key. Host means this binary is specific to current
+/// machine, and hence when generating key wrap it with host info.
+enum class BinaryTarget {
+  None = 0,
+  Host,      // Specific to current machines.
+  HostStatic // Specific to current machine, but no info about
+             // thread affinities/number of cores.
+};
+
 /// Provides the CLOptions for this tool.
 class CLOptions : public CLOptionsBase {
 public:
@@ -43,13 +54,17 @@ public:
       cl::desc("Explicitly Specify key. In this case instead of binary hash, "
                "this key will be used for adding object to cache.")};
 
-  cl::opt<std::string> target{
+  cl::opt<BinaryTarget> target{
       "target",
-      cl::desc("Augment key with information specific to a target hardware "
-               "(optional). Accepted values: host, host-static, or a custom "
-               "target of the format arch:feature. e.g. x86_64:avx2 or "
-               "x86_64:avx512f"),
-      cl::init("none")};
+      cl::values(
+          clEnumValN(BinaryTarget::None, "none", "Key is target agnostic"),
+          clEnumValN(BinaryTarget::Host, "host",
+                     "Wrap the key with current host information."),
+          clEnumValN(BinaryTarget::HostStatic, "host-static",
+                     "Wrap the key with current host information, but don't "
+                     "consider number of cores or affinities.")),
+      cl::desc("Augment key with information specific to a target hardware."),
+      cl::init(BinaryTarget::None)};
 
   cl::opt<std::string> backendVersion{
       "backend-version", cl::desc("Set the version for the local backend."),
@@ -99,33 +114,13 @@ static std::optional<std::string> decodeHash(StringRef encoded) {
   return hash;
 }
 
-static bool isCustomTargetValid(const llvm::StringRef &customTarget) {
-  using namespace M::Cache::Keys;
-  auto [uarch, feature] = customTarget.split(':');
-  return !feature.empty() &&
-         llvm::is_contained(CPUFeatureWrapper::SUPPORTED_ARCHS, uarch) &&
-         llvm::is_contained(CPUFeatureWrapper::SUPPORTED_FEATURES, feature);
-}
-
 /// Wrap the given key with appropriate target info.
-static std::string wrapKey(BinaryBlobCacheKey::KeyTy key,
-                           const std::string &target) {
-  if (target == "none")
-    return BinaryBlobCacheKey::hashKey(std::move(key));
-  if (target == "host")
+static std::string wrapKey(BinaryBlobCacheKey::KeyTy key, BinaryTarget target) {
+  if (target == BinaryTarget::Host)
     return Keys::KeyWithHostInfo<BinaryBlobCacheKey>::hashKey(std::move(key));
-  if (target == "host-static")
+  if (target == BinaryTarget::HostStatic)
     return Keys::KeyWithStaticHostInfo<BinaryBlobCacheKey>::hashKey(
         std::move(key));
-
-  // `target` must be a custom target
-  if (isCustomTargetValid(target)) {
-    std::string hashedKey = BinaryBlobCacheKey::hashKey(std::move(key));
-    return Keys::StringHashedKey::hashKey(hashedKey + target);
-  }
-
-  llvm::errs() << "[WARNING] Unable to understand custom target " << target
-               << " defaulting to unwrapped key.";
   return BinaryBlobCacheKey::hashKey(std::move(key));
 }
 
