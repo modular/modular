@@ -311,9 +311,10 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   //
   //   { void(i8*)*, { void(i8*)*, i8* }, ResTs..., ArgTs..., FrameT }
   //
+  MLIRContext *ctx = b.getContext();
   SmallVector<Type, 16> contextTypes{
-      cache.asyncFnType, LLVMStructType::getLiteral(
-                             b.getContext(), {cache.ptrType, cache.ptrType})};
+      cache.asyncFnType,
+      LLVMStructType::getLiteral(ctx, {cache.ptrType, cache.ptrType})};
   for (Type resultType : coroType.getResultTypes()) {
     resultType = b.convertType(resultType);
     if (!resultType)
@@ -322,7 +323,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
     contextTypes.push_back(resultType);
   }
   llvm::append_range(contextTypes, func.getArgumentTypes());
-  auto contextType = LLVMStructType::getLiteral(b.getContext(), contextTypes);
+  auto contextType = LLVMStructType::getLiteral(ctx, contextTypes);
   auto contextPtrType = LLVMPointerType::get(contextType);
   // Compute the base size of the context to populate into the global async
   // function pointer as required by the LLVM async coroutine intrinsics. LLVM's
@@ -336,14 +337,14 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // the ramp function as the resume function.
   LLVMFuncOp asyncFn = b.createFunc(
       (func.getSymName() + "_af").str(),
-      LLVMFunctionType::get(LLVMVoidType::get(b.getContext()), cache.i8PtrType),
+      LLVMFunctionType::get(LLVMVoidType::get(ctx), cache.i8PtrType),
       func.getLinkage());
   symtab.insert(asyncFn, func->getIterator());
 
   // Construct the async function pointer. We have to synthesize this massive
   // global constant.
-  auto afpType = LLVMStructType::getLiteral(b.getContext(),
-                                            {cache.i32Type, cache.i32Type});
+  auto afpType =
+      LLVMStructType::getLiteral(ctx, {cache.i32Type, cache.i32Type});
   // constant struct <{ i32, i32 }>
   auto afp = b.create<GlobalOp>(
       afpType, /*isConstant=*/true, /*linkage=*/Linkage::Internal,
@@ -411,13 +412,24 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // all uses the context and arguments to the latest use sites to prevent them
   // from being put on the coroutine frame.
 
+  // We'll use the debug scope if available when replacing argument uses below.
+  DebugInfo::DIScopeAttr asyncFnScope;
+  if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
+          asyncFn.getLoc()))
+    asyncFnScope = fusedLoc.getMetadata();
+
   // Replace argument uses with values from the async context. Arguments are
   // located at the end.
   constexpr int64_t resOffset = 2;
   int64_t argOffset = resOffset + coroType.getResultTypes().size();
   for (auto [idx, arg] :
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
-    b.setLoc(arg.getLoc());
+    if (auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
+        asyncFnScope && argLoc) {
+      b.setLoc(FusedLoc::get(ctx, {argLoc}, asyncFnScope));
+    } else {
+      b.setLoc(arg.getLoc());
+    }
     for (OpOperand &use : llvm::make_early_inc_range(arg.getUses())) {
       // If the coroutine does not suspend, we want to load as early as possible
       // to avoid generating these loads inside of nested loops.

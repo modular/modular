@@ -1,7 +1,5 @@
 // RUN: kgen-opt %s -split-input-file -lower-coroutines-async -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
-// CHECK: #[[SUSPEND_LOC:.*]] = loc("foo.mlir":10:5)
-
 module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func @coro_promise
@@ -32,6 +30,26 @@ llvm.func @coro_destroy() {
   llvm.return
 }
 
+}
+
+// -----
+
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = "async_fn_af", linkageName = "async_fn_af", file = #file, line = 17, scopeLine = 17, subprogramFlags = "Definition|Optimized">
+
+!subroutine = !debuginfo.subroutine<(i32) -> (!llvm.ptr<i8>): DW_CC_normal>
+#file = #debuginfo.file<"foo.mlir" in "/">
+#compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_C, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
+#subprogram = #debuginfo.subprogram<
+  compileUnit = #compile_unit, scope = #file, name = "async_fn", linkageName = "async_fn", file = #file, line = 17, scopeLine = 17, subprogramFlags = "Definition|Optimized"
+> : !subroutine
+
+
+// CHECK-DAG: #[[SUSPEND_LOC:.*]] = loc("foo.mlir":10:5)
+
+#loc = loc(fused<#subprogram>["foo.mlir":17:8])
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="", data_layout="", simd_bit_width=128>} {
+
 // CHECK-LABEL: llvm.func internal @async_fn_af.suspend
 // CHECK-SAME: (%arg0: i64 loc({{.*}}))
 // CHECK-NEXT:   %0 = builtin.unrealized_conversion_cast %arg0 : i64 to index
@@ -55,9 +73,9 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[CTXT_PTR_HDL:.*]] = llvm.bitcast %[[BASE_CTXT_HDL]]
   // CHECK-NEXT: unrealized_conversion_cast %[[CTXT_PTR_HDL]]
   %0 = builtin.unrealized_conversion_cast %hdl : !pop.coroutine<() -> (i64)> to !llvm.ptr<i8>
-  // CHECK: %[[BASE_CTXT_ARG:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
-  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_ARG]][0, 3]
-  // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]]
+  // CHECK: %[[BASE_CTXT_ARG:.*]] = llvm.getelementptr inbounds %[[HDL]][-40] {{.*}} loc(#[[LOC_ARG:.*]])
+  // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_ARG]][0, 3] {{.*}} loc(#[[LOC_ARG]])
+  // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]] {{.*}} loc(#[[LOC_ARG]])
   // CHECK: "use"(%[[ARG]])
   "use"(%arg0) : (i32) -> ()
   %idx1 = index.constant 1
@@ -81,7 +99,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK: %[[END_FN:.*]] = llvm.mlir.addressof @__kgen_coro_end_fn
   // CHECK: llvm.call_intrinsic "llvm.coro.end.async"(%[[HDL]], %[[FALSE]], %[[END_FN]], %[[BASE_CTXT]])
   llvm.return %0 : !llvm.ptr<i8>
-}
+} loc(#loc)
 
 // CHECK-LABEL: llvm.mlir.global internal constant @async_fn_afp
 // CHECK-SAME: !llvm.struct<(i32, i32)> {
@@ -133,6 +151,8 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
 // CHECK-NEXT: llvm.return %arg0 : !llvm.ptr<i8>
 
 }
+
+// CHECK: #[[LOC_ARG]] = loc(fused<#[[SP]]>
 
 // -----
 

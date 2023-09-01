@@ -588,7 +588,8 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
                   resultBuf->getBuffer(), archiveMemberNames[index]));
             }
             auto result = llvm::writeArchiveToBuffer(
-                archiveMembers, /*WriteSymtab=*/true,
+                archiveMembers,
+                /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
                 archiveMembers.front().detectKindFromObject(),
                 /*Deterministic=*/false, /*Thin=*/false);
             if (!result) {
