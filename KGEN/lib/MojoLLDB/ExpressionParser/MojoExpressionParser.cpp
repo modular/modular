@@ -122,13 +122,10 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   MLIRContext *ctx = typeSystem->getMLIRContext();
   llvmContext = std::make_unique<llvm::LLVMContext>();
 
-  // Compute the target info to use for compilation.
-  ErrorOr<TargetInfoAttr> targetInfoOr = getTargetInfoFor(
-      ctx, compilationOptions->targetTriple, compilationOptions->targetCpu,
-      compilationOptions->targetFeatures);
-  if (targetInfoOr.isError())
+  // Get the target info to use for compilation.
+  TargetInfoAttr targetInfo = typeSystem->GetTargetInfo();
+  if (!targetInfo)
     return;
-  auto targetInfo = targetInfoOr.takeValue();
 
   // Build the compilation pipeline.
   BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);

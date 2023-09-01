@@ -71,6 +71,12 @@ struct MojoTypeSystem::Impl {
     parserConfig.moduleCachingLevel = MojoParserConfig::kCacheNone;
     parserContext =
         std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
+
+    auto targetInfoOr = M::getTargetInfoFor(
+        &mlirContext, compilationOptions.targetTriple,
+        compilationOptions.targetCpu, compilationOptions.targetFeatures);
+    if (succeeded(targetInfoOr))
+      targetInfo = *targetInfoOr;
   }
 
   /// The MLIR context to use for compilation/processing associated with this
@@ -95,6 +101,9 @@ struct MojoTypeSystem::Impl {
 
   /// The persistent state for this typesystem.
   MojoPersistentExpressionState persistentState;
+
+  /// The target info of the current LLDB Target.
+  TargetInfoAttr targetInfo;
 };
 
 //===----------------------------------------------------------------------===//
@@ -112,6 +121,10 @@ MLIRContext *MojoTypeSystem::getMLIRContext() { return &impl->mlirContext; }
 
 MojoParserContext &MojoTypeSystem::getParserContext() {
   return *impl->parserContext;
+}
+
+TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
+  return impl->targetInfo;
 }
 
 lldb_private::CompilerType
