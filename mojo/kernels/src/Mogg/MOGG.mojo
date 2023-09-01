@@ -39,6 +39,7 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
 from Activations import gelu, relu, sigmoid
+from ArgNonzero import arg_nonzero, arg_nonzero_shape
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import (
@@ -99,7 +100,6 @@ from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
 from Softmax import softmax as _softmax
 from Split import split as _split
-from Where import where, where_shape
 
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList, VariadicList
@@ -217,8 +217,8 @@ fn MOGGExport():
     alias _tensor_to_shape = tensor_to_shape
     alias _print_shape_info = print_buffer_info
     alias _mark_output_chain_ready = mark_output_chain_ready
-    alias _where = where
-    alias _where_shape = where_shape
+    alias _arg_nonzero = arg_nonzero
+    alias _arg_nonzero_shape = arg_nonzero_shape
 
 
 # ===----------------------------------------------------------------------===#
