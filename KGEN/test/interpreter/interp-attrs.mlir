@@ -6,7 +6,7 @@
 
 {-#
   dialect_resources: {
-    M: {
+    interp: {
       // CHECK: my_blob: "0x1000
       my_blob: "0x10000000FFFEFDFC",
       // CHECK: string_blob: "hello world"
