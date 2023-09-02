@@ -135,7 +135,8 @@ private:
 static bool canExternalize(LIT::FuncOp func) {
   // If the function is marked as always inline, we can't externalize it.
   if (func.getInlineLevel() == InlineLevel::Always ||
-      func.getInlineLevel() == InlineLevel::AlwaysNoDebug)
+      func.getInlineLevel() == InlineLevel::AlwaysNoDebug ||
+      func.getIsAdaptive())
     return false;
 
   // Check for parameters.
