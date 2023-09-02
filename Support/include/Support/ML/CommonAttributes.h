@@ -13,11 +13,13 @@
 
 namespace M {
 
-/// Binds to a string in json syntax encoding the expected MachineInfoAttr
-/// properties of the runtime host.
-constexpr const char *kMgpModelTargetInfo = "target_info";
+//===----------------------------------------------------------------------===//
+// MGP::ModelOp 'extra' attributes
+//===----------------------------------------------------------------------===//
+
 /// Binds to an array of strings of model tensor argument names.
 constexpr const char *kMgpModelArgumentNames = "argument_names";
+
 /// Binds to an array of strings for model tensor result names.
 constexpr const char *kMgpModelResultNames = "result_names";
 
