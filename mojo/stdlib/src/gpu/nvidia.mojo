@@ -410,7 +410,7 @@ struct DevicePointer[type: AnyType, address_space: AddressSpace]:
         Returns:
             Constructed nullptr Pointer object.
         """
-        return __mlir_attr[`#M.pointer<0> : `, Self.pointer_type]
+        return __mlir_attr[`#interp.pointer<0> : `, Self.pointer_type]
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -703,7 +703,7 @@ struct DTypeDevicePointer[type: DType, address_space: AddressSpace]:
         Returns:
             Constructed *nullptr* `DTypePointer` object.
         """
-        return __mlir_attr[`#M.pointer<0> : `, Self.pointer_type]
+        return __mlir_attr[`#interp.pointer<0> : `, Self.pointer_type]
 
     @always_inline
     fn __bool__(self) -> Bool:
