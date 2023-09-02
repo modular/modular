@@ -631,6 +631,7 @@ ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
 OptionalParseResult PointerType::parseValue(AsmParser &p,
                                             TypedAttr &value) const {
   int64_t addr;
+  // Parse an integer as a raw pointer attribute.
   if (OptionalParseResult result = p.parseOptionalInteger(addr);
       result.has_value()) {
     if (failed(*result))
@@ -639,12 +640,31 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
     return mlir::success();
   }
 
+  // Parse a `store_to_mem` directive.
+  if (succeeded(p.parseOptionalKeyword("store_to_mem"))) {
+    TypedAttr memValue;
+    if (p.parseLParen() || parseParamValue(p, memValue, getElementAsType()) ||
+        p.parseRParen())
+      return failure();
+    value = StoreToMemAttr::get(memValue, *this);
+    return mlir::success();
+  }
+
   return {};
 }
 
 LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
+  // Print a raw pointer attribute as an integer.
   if (auto ptrAttr = ::dyn_cast<PointerAttr>(value)) {
     p << ptrAttr.getAddr();
+    return success();
+  }
+
+  // Print a `store_to_mem` directive.
+  if (auto memAttr = ::dyn_cast<StoreToMemAttr>(value)) {
+    p << "store_to_mem(";
+    printParamValue(p, memAttr.getValue());
+    p << ')';
     return success();
   }
 

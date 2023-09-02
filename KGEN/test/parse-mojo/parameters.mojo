@@ -269,7 +269,7 @@ fn callMemoryValueParam():
     # CHECK: pop.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
-    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}}, #M.store_to_mem<{{.*}}paramValue
+    # CHECK: copy: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}}, store_to_mem({{.*}}paramValue
     alias copy = passMemoryValue(paramValue)
     # CHECK: lit.varlet.decl
     # CHECK: %[[MVALUE:.*]] = lit.varlet.decl
