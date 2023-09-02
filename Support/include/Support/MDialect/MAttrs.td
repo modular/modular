@@ -305,7 +305,7 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
   let summary = "Refers to a device spec a value or operation occupies";
   let description = [{
     The `#M.device_ref` attribute refers to a unique `#M.device_spec` within the
-    overall `#M.device_specs` for a model. It contain a label and id.
+    overall model `#M.device_spec_collection`. It contain a label and id.
 
     Example:
     ```mlir
