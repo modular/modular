@@ -94,8 +94,8 @@ z.push_back(3)
 # CHECK:   (Int) x = {
 # CHECK:     (index) value = 101
 # CHECK:   }
-# CHECK:   (Int) y = {
-# CHECK:     (index) value = 202
+# CHECK:   (StringLiteral) y = {
+# CHECK:     (string) value = "fofofo"
 # CHECK:   }
 # CHECK:   (SIMD[f32, 4]) z = {
 # CHECK:     (simd<4, f32>) value = {
@@ -112,14 +112,27 @@ struct Foo:
   var v: Int
   var w: SIMD[DType.int8, 2]
   var x: Int
-  var y: Int
+  var y: StringLiteral
   var z: SIMD[DType.float32, 4]
   fn __init__() -> Self:
     return Self {
       v: -101,
       w: SIMD[DType.int8, 2](-50, 31),
       x: 101,
-      y: 202,
+      y: "fofofo",
       z:  SIMD[DType.float32, 4](1, 2, 3, 4)
     }
 let f = Foo()
+
+# CHECK: (StringLiteral) empty = {
+# CHECK:   (string) value =
+# CHECK: }
+# CHECK: (StringLiteral) long = {
+# CHECK:   (string) value = "abcdefghijklmnopqrstuvwxyz1234567890"
+# CHECK: }
+# CHECK: (StringLiteral) short = {
+# CHECK:   (string) value = "123"
+# CHECK: }
+let empty = ""
+let long = "abcdefghijklmnopqrstuvwxyz1234567890"
+let short = "123"

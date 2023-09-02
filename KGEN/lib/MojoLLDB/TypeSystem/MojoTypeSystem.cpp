@@ -413,6 +413,9 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   if (isa<POP::SIMDType>(astType))
     return lldb::eTypeHasChildren | lldb::eTypeIsArray;
 
+  if (isa<KGEN::StringType>(astType))
+    return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
+
   if (impl->getIfStructDecl(astType))
     return lldb::eTypeHasChildren | lldb::eTypeIsClass;
 
@@ -425,8 +428,11 @@ lldb::Format MojoTypeSystem::GetFormat(lldb::opaque_compiler_type_t type) {
     return lldb::eFormatDecimal;
   if (flags & lldb::eTypeIsFloat)
     return lldb::eFormatFloat;
-  if (flags & lldb::eTypeIsPointer)
+  if (flags & lldb::eTypeIsPointer) {
+    if (isa<KGEN::StringType>(MojoASTTypeRef(type)))
+      return lldb::eFormatCString;
     return lldb::eFormatAddressInfo;
+  }
   if (flags & lldb::eTypeIsClass)
     return lldb::eFormatHex;
   if (flags & lldb::eTypeIsFuncPrototype || flags & lldb::eTypeIsBlock)
