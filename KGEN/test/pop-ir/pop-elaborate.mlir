@@ -231,44 +231,44 @@ kgen.generator export @do_it() {
   kgen.param.constant: struct<scalar<ui8>, scalar<ui8>> = <apply(
     :() -> !pop.struct<scalar<ui8>, scalar<ui8>> @bitcast_offset)>
 
-  // CHECK-NEXT: <{ #M.memref<[([[RETURN_HEAP:.*]], heap, [])], 0, 0>,
-  // CHECK-SAME:    #M.memref<[([[RETURN_HEAP]], heap, [])], 0, 2> }>
+  // CHECK-NEXT: <{ #interp.memref<[([[RETURN_HEAP:.*]], heap, [])], 0, 0>,
+  // CHECK-SAME:    #interp.memref<[([[RETURN_HEAP]], heap, [])], 0, 2> }>
   kgen.param.constant: struct<pointer<i16>, pointer<i16>> = <apply(
     :(i16, i16) -> !pop.struct<pointer<i16>, pointer<i16>> @return_heap, 0xDEAD, 0xBEEF)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
     :(!kgen.pointer<i16>, !kgen.pointer<i16>) -> i16 @copy_load,
-    #M.memref<[(mem, heap, [])], 0, 2>, #M.memref<[(mem, heap, [])], 0, 0>)>
+    #interp.memref<[(mem, heap, [])], 0, 2>, #interp.memref<[(mem, heap, [])], 0, 0>)>
 
-  // CHECK-NEXT: <#M.memref<[([[MODIFY_STACK_MEM:.*]], stack, [])], 0, 0>>
+  // CHECK-NEXT: <#interp.memref<[([[MODIFY_STACK_MEM:.*]], stack, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(
     :(!kgen.pointer<i16>) -> !kgen.pointer<i16> @modify_stack_mem,
-    #M.memref<[(stack, stack, [])], 0, 0>)>
+    #interp.memref<[(stack, stack, [])], 0, 0>)>
 
-  // CHECK-NEXT: <#M.memref<[([[RETURN_POINTER:.*]], heap, [(8, 1, 0)]),
+  // CHECK-NEXT: <#interp.memref<[([[RETURN_POINTER:.*]], heap, [(8, 1, 0)]),
   // CHECK-SAME:             ([[RETURN_POINTER_1:.*]], stack, [])], 0, 8>>
   kgen.param.constant: !kgen.pointer<pointer<i16>> = <apply(
     :(!kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> @return_pointer_to_pointer,
-    #M.memref<[(some_ptr, stack, [])], 0, 0>)>
+    #interp.memref<[(some_ptr, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <-8531>
   kgen.param.constant: i16 = <apply(
     :(!kgen.pointer<pointer<i16>>) -> i16 @load_pointer_to_pointer,
-    #M.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
+    #interp.memref<[(pointer, stack, [(8, 1, 0)]), (stack, stack, [])], 0, 0>)>
 
   // CHECK-NEXT: <0>
   kgen.param.constant: index = <apply(
-    :(!kgen.pointer<i16>) -> index @free_null, #M.pointer<0>)>
+    :(!kgen.pointer<i16>) -> index @free_null, #interp.pointer<0>)>
 
-  // CHECK-NEXT: <#M.memref<[([[FREED_CONCRETE_MEM:.*]], heap, [])], 0, 0>>
+  // CHECK-NEXT: <#interp.memref<[([[FREED_CONCRETE_MEM:.*]], heap, [])], 0, 0>>
   kgen.param.constant: pointer<i16> = <apply(:() -> !kgen.pointer<i16> @freed_memory)>
 
   // COM: `ord("hello world"[2]) -> 108`.
-  // CHECK-NEXT: <{ 108, #M.memref<[(string, const_global, [])], 0, 4> }>
+  // CHECK-NEXT: <{ 108, #interp.memref<[(string, const_global, [])], 0, 4> }>
   kgen.param.constant: struct<i8, pointer<i8>> = <apply(
     :(!kgen.pointer<i8>) -> !pop.struct<i8, pointer<i8>> @const_string,
-    #M.memref<[(string, const_global, [])], 0, 2>)>
+    #interp.memref<[(string, const_global, [])], 0, 2>)>
 
   // CHECK-NEXT: <1>
   kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>

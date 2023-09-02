@@ -8,6 +8,7 @@
 
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
+#include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/LITDialect/LITDialect.h"
@@ -92,6 +93,7 @@ public:
 void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
   registry.insert<
       // clang-format off
+      InterpreterDialect,
       HLCF::HLCFDialect,
       KGEN::KGENDialect,
       KGEN::LIT::LITDialect,

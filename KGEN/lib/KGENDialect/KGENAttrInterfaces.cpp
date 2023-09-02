@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "Support/MDialect/MAttrs.h"
 
 using namespace M;
 using namespace KGEN;

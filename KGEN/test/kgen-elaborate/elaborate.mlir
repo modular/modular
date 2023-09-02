@@ -596,7 +596,7 @@ kgen.generator @byref_result(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<i
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant = <2048>
   kgen.param.declare value = <apply_result_slot(:(!kgen.pointer<index>, index) -> () @init_self, 1023)>
-  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index>, !kgen.pointer<index>) -> () @byref_result, #M.store_to_mem<#kgen.param.decl.ref<"value"> : index>)>
+  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index>, !kgen.pointer<index>) -> () @byref_result, store_to_mem(value))>
   kgen.return
 }
 

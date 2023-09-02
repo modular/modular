@@ -7,9 +7,9 @@
 #ifndef KGEN_LLVM_LOWERING_UTILS_H
 #define KGEN_LLVM_LOWERING_UTILS_H
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"

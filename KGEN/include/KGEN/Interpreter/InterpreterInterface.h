@@ -7,14 +7,11 @@
 #ifndef SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 #define SUPPORT_INTERPRETER_INTERPRETERINTERFACE_H
 
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "Support/ADT/SmartVariant.h"
 #include "Support/Compiler/ErrorTree.h"
-#include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/MDialect/MDialect.h"
-#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/OpDefinition.h"
-#include "mlir/Support/DebugStringHelper.h"
 
 //===----------------------------------------------------------------------===//
 // InterpreterState

@@ -5,6 +5,8 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(InterpreterInterface
+  InterpreterAttrs.cpp
+  InterpreterDialect.cpp
   InterpreterInterface.cpp
 
   DEPENDS

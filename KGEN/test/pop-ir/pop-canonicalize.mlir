@@ -712,7 +712,7 @@ kgen.func @index_to_pointer() -> (!kgen.pointer<i8>, !pop.scalar<address>) {
 kgen.func @pointer_to_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // CHECK-DAG: <1>
   // CHECK-DAG: <2>
-  %0 = kgen.param.constant: pointer<i8> = <#M.pointer<1>>
+  %0 = kgen.param.constant: pointer<i8> = <#interp.pointer<1>>
   %1 = kgen.param.constant: scalar<address> = <<2>>
   %2 = pop.pointer_to_index %0 : !kgen.pointer<i8> to !pop.scalar<index>
   %3 = pop.pointer_to_index %1 : !pop.scalar<address> to !pop.scalar<index>

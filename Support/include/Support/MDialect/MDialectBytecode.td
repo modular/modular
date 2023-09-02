@@ -63,28 +63,6 @@ def MultiLineStringAttr : DialectAttribute<(attr
   StringAttrArray:$value
 )>;
 
-def PointerAttr : DialectAttribute<(attr
-  SignedVarInt:$addr,
-  Type:$type
-)>;
-
-def MemoryBlobArray :
-  WithParser<"succeeded(readMemoryBlobs($_reader, $_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"writeMemoryBlobs($_writer, $_getter)",
-  WithType<"SmallVector<MemoryBlob>">>>>;
-
-def MemorySpaceAttr : DialectAttribute<(attr
-  MemoryBlobArray:$value
-)>;
-
-def MemRefAttr : DialectAttribute<(attr
-  MemorySpaceAttr:$memory,
-  SignedVarInt:$index,
-  SignedVarInt:$offset,
-  Type:$type
-)>;
-
 def LLVMTriple :
   WithParser<"succeeded(parseTriple($_reader, $_var))",
   WithBuilder<"$_args",
@@ -118,9 +96,6 @@ def MDialectAttributes : DialectAttributes<"M"> {
     ArrayElementsAttr,
     AlignedBytesAttr,
     MultiLineStringAttr,
-    PointerAttr,
-    MemorySpaceAttr,
-    MemRefAttr,
     TargetInfoAttr,
     BuildInfoAttr
   ];
