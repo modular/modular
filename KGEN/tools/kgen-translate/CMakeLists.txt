@@ -12,6 +12,7 @@ add_modular_tool(kgen-translate
   LLCLRuntimeGlobals
   MSupportGlobals
   MojoParser
+  MArchTarget
   MLIRBuiltinToLLVMIRTranslation
   MLIRTranslateLib
   MLIRTargetLLVMIRExport

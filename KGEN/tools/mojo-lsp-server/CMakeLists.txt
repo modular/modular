@@ -12,6 +12,7 @@ add_modular_tool(mojo-lsp-server
   LINK_LIBS PRIVATE
   KGENCLOptions
   LLCLRuntimeGlobals
+  MArchTarget
   MSupportGlobals
   MojoParser
   MLIRLspServerSupportLib

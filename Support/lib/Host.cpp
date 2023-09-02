@@ -7,9 +7,7 @@
 #include "Support/Host.h"
 #include "Support/ErrorOr.h"
 #include "Support/PlatformUtils.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
@@ -794,6 +792,15 @@ void HostMachineInfo::printStaticInfo(raw_ostream &os) const {
   print(HostProperty::L4CacheSize, os);
 }
 
+HostMachineInfo HostMachineInfo::fromTargetInfo(const TargetInfo &targetInfo) {
+  HostMachineInfo result;
+  result.triple = targetInfo.triple.str();
+  result.osName = llvm::Triple::getOSTypeName(targetInfo.triple.getOS());
+  result.cpuArch = targetInfo.cpu;
+  result.cpuFeatures = targetInfo.features;
+  return result;
+}
+
 M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   HostMachineInfo machineInfo;
 
@@ -806,6 +813,7 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
     return cpuModelNameOr.takeError();
   machineInfo.cpuModelName = std::move(*cpuModelNameOr);
 
+  // TODO: Reconcile with getHostCPUFeatures() in MArchTarget.
   llvm::StringMap<bool> features;
   auto gotfeatures = llvm::sys::getHostCPUFeatures(features);
   if (!gotfeatures) {
@@ -861,68 +869,6 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   }
 
   return std::move(machineInfo);
-}
-
-ErrorOr<HostMachineInfo>
-HostMachineInfo::deserializeTargetInfoFromJSON(StringRef serializedTargetInfo) {
-  llvm::Expected<llvm::json::Value> errOrValue =
-      llvm::json::parse(serializedTargetInfo);
-  if (llvm::Error err = errOrValue.takeError())
-    return Error(Twine("ill-formed serialized target info: ") +
-                 toString(std::move(err)));
-  llvm::json::Object *object = errOrValue->getAsObject();
-  if (!object)
-    return Error("ill-formed serialized target info: expecting json object");
-
-  return deserializeTargetInfoFromJSON(object);
-}
-
-ErrorOr<HostMachineInfo> HostMachineInfo::deserializeTargetInfoFromJSON(
-    const llvm::json::Object *serializedTargetInfo) {
-  // CAUTION:
-  // Keep in sync with serializeTargetInfoAttrToJSON in
-  // Support/lib/MDialect/MAttrs.cpp.
-
-  std::optional<StringRef> optTriple =
-      serializedTargetInfo->getString("triple");
-  std::optional<StringRef> optCpu = serializedTargetInfo->getString("cpu");
-  const llvm::json::Array *array = serializedTargetInfo->getArray("features");
-  if (!optTriple || !optCpu || !array)
-    return Error("ill-formed serialized target info: missing attributes");
-
-  HostMachineInfo info;
-  info.triple = *optTriple;
-  info.cpuArch = *optCpu;
-  for (const llvm::json::Value &v : *array) {
-    std::optional<StringRef> optFeature = v.getAsString();
-    if (!optFeature)
-      return Error("ill-formed serialized target info feature");
-    info.cpuFeatures.emplace_back(*optFeature);
-  }
-  return info;
-}
-
-ErrorOrSuccess HostMachineInfo::checkSatisfiesRequirements(
-    const HostMachineInfo &required) const {
-  if (!required.triple.empty() && triple != required.triple)
-    return Error(Twine("host has arch-vendor-os triple of '") + triple +
-                 "' but model requires '" + required.triple + "'");
-  if (!required.cpuArch.empty() && cpuArch != required.cpuArch)
-    return Error(Twine("host has CPU architecture of '") + cpuArch +
-                 "' but model requires '" + required.cpuArch + "'");
-  DenseSet<StringRef> actualFeatures(cpuFeatures.begin(), cpuFeatures.end());
-  DenseSet<StringRef> requiredFeatures(required.cpuFeatures.begin(),
-                                       required.cpuFeatures.end());
-  if (!llvm::set_is_subset(requiredFeatures, actualFeatures)) {
-    std::string str;
-    llvm::raw_string_ostream os(str);
-    os << "host is missing CPU feature(s) required by model: ";
-    llvm::interleaveComma(
-        llvm::set_difference(requiredFeatures, actualFeatures), os);
-    return Error(str);
-  }
-
-  return success();
 }
 
 //===----------------------------------------------------------------------===//

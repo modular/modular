@@ -11,7 +11,6 @@
 #include "Support/Host.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
-#include "Support/Target.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -1055,56 +1054,6 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
       ctx, runtimeTargetInfo.triple, runtimeTargetInfo.cpu,
       encodeFeatures(runtimeTargetInfo.features),
       /*data_layout=*/{}, /*simd_bit_width=*/0, /*tune_cpu=*/{});
-}
-
-// CAUTION: About to be removed.
-ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
-                                            HostMachineInfo &hostMachineInfo) {
-  // Leave the data layout empty.
-  auto emptyOr = DataLayout::parse("");
-  if (emptyOr.isError())
-    return emptyOr.takeError();
-  auto empty = std::move(*emptyOr);
-
-  return TargetInfoAttr::get(
-      ctx, llvm::Triple(hostMachineInfo.triple), hostMachineInfo.cpuArch,
-      encodeFeatures(hostMachineInfo.cpuFeatures),
-      /*data_layout=*/empty, /*simd_bit_width=*/0, /*tuneCpu=*/"");
-}
-
-// CAUTION: About to be removed.
-ErrorOr<std::string>
-M::serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr) {
-  // CAUTION:
-  // Keep in sync with HostMachineInfo::deserializeTargetInfoFromJSON in
-  // Support/lib/Host.cpp.
-
-  // Somewhat frustratingly we need to recover the original HostMachineInfo
-  // features from their encoded form, eg "+foo,+bar".
-  SmallVector<StringRef> plusFeatureCommas;
-  targetInfoAttr.getFeatures().split(plusFeatureCommas, ',', /*MaxSplit=*/-1,
-                                     /*KeepEmpty=*/false);
-  std::vector<std::string> features;
-  for (StringRef plusFeatureComma : plusFeatureCommas) {
-    if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
-      return Error(Twine("ill-formed serialized target info features: '") +
-                   targetInfoAttr.getFeatures() + "'");
-    StringRef feature = plusFeatureComma.trim("+,");
-    if (feature.empty())
-      return Error("ill-formed serialized target info features: " +
-                   targetInfoAttr.getFeatures() + "'");
-    features.emplace_back(feature);
-  }
-
-  std::string str;
-  llvm::raw_string_ostream os(str);
-  llvm::json::OStream json(os);
-  json.objectBegin();
-  json.attribute("triple", targetInfoAttr.getTriple().str());
-  json.attribute("cpu", targetInfoAttr.getCpu());
-  json.attribute("features", features);
-  json.objectEnd();
-  return str;
 }
 
 namespace mlir {

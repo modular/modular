@@ -11,6 +11,7 @@
 #ifndef SUPPORT_HOST_H
 #define SUPPORT_HOST_H
 
+#include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -181,20 +182,6 @@ struct HostMachineInfo {
   // and thread affinities are supported. Otherwise empty.
   std::optional<std::vector<size_t>> affinities;
 
-  /// Returns a HostMachineInfo representing assumptions about the host machine
-  /// encoded by serializedTargetInfo, which should be the result of
-  /// M::serializeTargetInfoAttr in MAttrs.h. Only some fields of the result are
-  /// filled in:
-  ///  - triple
-  ///  - cpuArch
-  ///  - cpuFeatures
-  /// The remainder are empty/zero.
-  static ErrorOr<HostMachineInfo>
-  deserializeTargetInfoFromJSON(StringRef serializedTargetInfo);
-
-  static ErrorOr<HostMachineInfo>
-  deserializeTargetInfoFromJSON(const llvm::json::Object *serializedTargetInfo);
-
   void print(llvm::raw_ostream &os) const;
   void print(llvm::json::OStream &json) const;
   void print(HostProperty property, llvm::raw_ostream &os) const;
@@ -204,19 +191,21 @@ struct HostMachineInfo {
   /// threading configuration, such as number of cores and affinities.
   void printStaticInfo(llvm::raw_ostream &os) const;
 
-  /// Returns error if this host machine does not satisfy the assumptions
-  /// in required. Only the following fields are checked:
-  ///  - triple: if required non-empty, actual must be string equal.
-  ///  - cpuArch: if required non-empty, actual must be string equal.
-  ///  - cpuFeatures: actual must be superset of required.
+  /// Returns a HostMachineInfo matching target info. Only some fields
+  /// are captured:
+  ///  - triple (captured as triple and osName)
+  ///  - cpu (captured as cpuArch)
+  ///  - features (captured as cpuFeatures)
   ///
-  /// NOTE: We may need to do some canonicalization on triples and cpuArch
-  ///       to remove unnecessary detail.
-  ErrorOrSuccess
-  checkSatisfiesRequirements(const HostMachineInfo &required) const;
+  /// CAUTION: Temporary while we unravel the TargetInfoAttr/HostMachineInfo
+  ///          confusion.
+  HostMachineInfo static fromTargetInfo(const TargetInfo &targetInfo);
 };
 
 /// Get information about the host machine.
+///
+/// CAUTION: Use getHostTargetInfo from MArchTarget if you only need a
+/// triple, cpu and features.
 ErrorOr<HostMachineInfo> getHostMachineInfo();
 
 //===----------------------------------------------------------------------===//

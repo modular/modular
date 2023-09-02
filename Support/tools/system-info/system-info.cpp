@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/CommandLine.h"
+#include "Support/ErrorOr.h"
 #include "Support/Host.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
@@ -119,17 +120,10 @@ int main(int argc, char **argv) {
     std::string cpu = cli.cpu;
     if (cpu.empty())
       cpu = cli.arch;
-    auto targetInfoAttrOr = M::getMArchFeatures(&ctx, cli.arch, cpu, "");
-    if (targetInfoAttrOr.isError())
-      return reportError(targetInfoAttrOr.getError());
-    TargetInfoAttr targetInfoAttr = targetInfoAttrOr.takeValue();
-    auto jsonOr = serializeTargetInfoAttrToJSON(targetInfoAttr);
-    if (jsonOr.isError())
-      return reportError(jsonOr.getError());
-    auto hostInfoOr =
-        HostMachineInfo::deserializeTargetInfoFromJSON(jsonOr.takeValue());
-    hostInfo = hostInfoOr.takeValue();
-    hostInfo.osName = targetInfoAttr.getOS().str();
+    auto targetInfoOr = M::getMArchTargetInfo(cli.arch, cpu, /*mtune=*/{});
+    if (targetInfoOr.isError())
+      return reportError(targetInfoOr.getError());
+    hostInfo = HostMachineInfo::fromTargetInfo(*targetInfoOr);
   } else {
     // Get info from host machine.
     auto hostMachineOr = getHostMachineInfo();
