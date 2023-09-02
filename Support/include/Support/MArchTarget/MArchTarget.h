@@ -7,14 +7,38 @@
 #ifndef SUPPORT_MARCHTARGET_H
 #define SUPPORT_MARCHTARGET_H
 
+#include "Support/DeviceSpecs.h"
 #include "Support/MDialect/MAttrs.h"
+#include "llvm/Support/CodeGen.h"
+
+namespace llvm {
+// Forward declare.
+class TargetMachine;
+} // namespace llvm
 
 namespace M {
-/// Construct a TargetInfoAttr given `-march` and `-mcpu`. These flags have
-/// target-dependent behaviour as described in
-/// https://gcc.gnu.org/onlinedocs/gcc/.
+
+/// Returns a TargetInfo describing the host.
+ErrorOr<TargetInfo> getHostTargetInfo();
+
+/// Returns the features for the host in "+feature1,+feature2" form.
+std::string getHostCPUFeatures();
+
+/// As for getHostTargetInfo, but returns as a DeviceSpecCollection with
+/// a single device specification.
+ErrorOr<DeviceSpecCollection> getHostDeviceSpecCollection();
+
+/// Returns a TargetMachine for the current host.
+ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
+    bool isJIT = true,
+    llvm::CodeGenOpt::Level optLevel = llvm::CodeGenOpt::Aggressive);
+
+/// Returns a TargetInfo describing the consequences of the given `-march`,
+/// `-mcpu` and `-mtune` settings. These flags have target-dependent behaviour
+/// as described in https://gcc.gnu.org/onlinedocs/gcc/. Note that the `-mtune`
+/// flag is not captured in the result.
 ///
-/// This method will construct a minium target triple and feature set using the
+/// This method will construct a minimum target triple and feature set using the
 /// provided architecture and CPU. Both are optional.
 ///
 /// `-march=native` will use all the features of the host system.
@@ -32,8 +56,18 @@ namespace M {
 /// specified, `-mcpu=generic` will be used.
 ///
 /// `-mtune` will specify the CPU to specifically tune code for.
+ErrorOr<TargetInfo> getMArchTargetInfo(StringRef march, StringRef mcpu,
+                                       StringRef mtune);
+
+/// As for `getMArchTargetInfo`, but returned as TargetInfoAttr. The `-mtune`
+/// flag is captured in the result, and derived information such as for
+/// data layout and SIMD width is filled in.
+///
+/// TODO: Split into separate MLIR-dependent library. All other functions
+/// depend only on LLVMTarget and (unfortunately) clang.
 ErrorOr<TargetInfoAttr> getMArchFeatures(MLIRContext *ctx, StringRef march,
                                          StringRef mcpu, StringRef mtune);
+
 } // namespace M
 
 #endif // SUPPORT_MARCHTARGET_H

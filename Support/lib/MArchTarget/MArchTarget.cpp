@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/MArchTarget.h"
-#include "Support/Target.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
@@ -20,15 +19,135 @@
 
 using namespace M;
 
-ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
-                                            StringRef mcpu, StringRef mtune) {
+/// Returns the feature set according to clang for the given options, which
+/// should include the Triple and CPU.
+static ErrorOr<std::vector<std::string>>
+getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts) {
+  // Intercept diagnostics from Clang and then bundle them up in an `Error` if
+  // something bad happens.
+  struct DiagInterceptor : public clang::DiagnosticConsumer {
+    void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                          const clang::Diagnostic &info) override {
+      if (level >= clang::DiagnosticsEngine::Level::Error) {
+        // Keep the last message.
+        msg.clear();
+        info.FormatDiagnostic(msg);
+      }
+    }
+
+    SmallString<64> msg;
+  };
+
+  // Instantiate the Clang diagnostic engine. Pass in our interceptor.
+  clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
+      new clang::DiagnosticIDs());
+  clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagOpts(
+      new clang::DiagnosticOptions());
+  DiagInterceptor interceptor;
+  clang::DiagnosticsEngine diags(std::move(ids), std::move(diagOpts),
+                                 &interceptor, /*ShouldOwnClient=*/false);
+
+  // Ask Clang to create the target info for the architecture and CPU. This will
+  // populate `opts` with the full target triple and feature set.
+  auto targetInfo = std::unique_ptr<clang::TargetInfo>(
+      clang::TargetInfo::CreateTargetInfo(diags, opts));
+  if (!targetInfo)
+    return Error("failed to create target info: " + interceptor.msg);
+
+  // Concat the features together, only keeping included '+' features.
+  std::vector<std::string> features;
+  for (StringRef feature : opts->Features) {
+    if (feature.front() == '+')
+      features.emplace_back(feature.drop_front());
+  }
+  llvm::sort(features);
+
+  return features;
+}
+
+/// Returns feature set for host, falling back to clang using triple and cpu
+/// options if the native LLVM helper fails.
+static ErrorOr<std::vector<std::string>> getHostFeatures(StringRef triple,
+                                                         StringRef cpu) {
+  llvm::StringMap<bool> featureMap;
+  bool gotFeatures = llvm::sys::getHostCPUFeatures(featureMap);
+  if (!gotFeatures) {
+    // getHostCPUFeatures doesn't do anything for M1. So let's ask clang.
+    auto opts = std::make_shared<clang::TargetOptions>();
+    opts->Triple = triple;
+    opts->CPU = cpu;
+    return getFeaturesFromClang(opts);
+  }
+
+  std::vector<std::string> features;
+  for (const auto &[key, value] : featureMap) {
+    if (value)
+      features.push_back(key.str());
+  }
+  llvm::sort(features);
+
+  return features;
+}
+
+ErrorOr<TargetInfo> M::getHostTargetInfo() {
+  std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+  std::string hostCpu(llvm::sys::getHostCPUName());
+  auto featuresOr = getHostFeatures(hostTriple, hostCpu);
+  if (featuresOr)
+    return featuresOr.takeError();
+  return TargetInfo(llvm::Triple(hostTriple), hostCpu, *featuresOr);
+}
+
+std::string M::getHostCPUFeatures() {
+  auto targetInfoOr = getHostTargetInfo();
+  if (targetInfoOr)
+    return "";
+  return encodeFeatures(targetInfoOr->features);
+}
+
+ErrorOr<std::unique_ptr<llvm::TargetMachine>>
+M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOpt::Level optLevel) {
+  std::string hostTriple = llvm::sys::getDefaultTargetTriple();
+  std::string hostCpu(llvm::sys::getHostCPUName());
+  std::string targetFeatures = getHostCPUFeatures();
+
+  std::string errorMessage;
+  const llvm::Target *target =
+      llvm::TargetRegistry::lookupTarget(hostTriple, errorMessage);
+  if (!target)
+    return Error("no target exists for '" + hostTriple + "': " + errorMessage);
+
+  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+      hostTriple, hostCpu, targetFeatures,
+      /*Options=*/{},
+      /*RM=*/llvm::Reloc::Model::PIC_,
+      /*CM=*/std::nullopt, /*OL=*/optLevel, /*JIT=*/isJIT));
+  if (!machine)
+    return Error("unable to create target machine");
+
+  return machine;
+}
+
+ErrorOr<DeviceSpecCollection> M::getHostDeviceSpecCollection() {
+  auto targetInfoOr = getHostTargetInfo();
+  if (targetInfoOr)
+    return targetInfoOr.takeError();
+
+  DeviceSpecCollection result;
+  result.host.label = "host";
+  DeviceSpec &deviceSpec = result.devices.emplace_back();
+  deviceSpec.ref.label = result.host.label;
+  deviceSpec.target = std::move(*targetInfoOr);
+  return result;
+}
+
+ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
+                                          StringRef mtune) {
   using namespace llvm;
 
   // Handle -march=native.
-  if (march == "native") {
-    return getTargetInfoFor(ctx, sys::getDefaultTargetTriple(),
-                            sys::getHostCPUName(), getHostCPUFeatures());
-  }
+  if (march == "native")
+    return getHostTargetInfo();
 
   // `-march` has different meaning depending on the architecture. Determine the
   // LLVM target triple and CPU from it.
@@ -128,48 +247,22 @@ ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
 
   opts->Triple = triple.str();
 
-  // Intercept diagnostics from Clang and then bundle them up in an `Error` if
-  // something bad happens.
-  struct DiagInterceptor : public clang::DiagnosticConsumer {
-    void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
-                          const clang::Diagnostic &info) override {
-      if (level >= clang::DiagnosticsEngine::Level::Error) {
-        // Keep the last message.
-        msg.clear();
-        info.FormatDiagnostic(msg);
-      }
-    }
+  // Gather features from clang.
+  auto featuresOr = getFeaturesFromClang(opts);
+  if (featuresOr)
+    return featuresOr.takeError();
 
-    SmallString<64> msg;
-  };
+  return TargetInfo(std::move(triple), std::move(opts->CPU),
+                    std::move(*featuresOr));
+}
 
-  // Instantiate the Clang diagnostic engine. Pass in our interceptor.
-  clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
-      new clang::DiagnosticIDs());
-  clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagOpts(
-      new clang::DiagnosticOptions());
-  DiagInterceptor interceptor;
-  clang::DiagnosticsEngine diags(std::move(ids), std::move(diagOpts),
-                                 &interceptor, /*ShouldOwnClient=*/false);
+ErrorOr<TargetInfoAttr> M::getMArchFeatures(MLIRContext *ctx, StringRef march,
+                                            StringRef mcpu, StringRef mtune) {
+  auto runtimeTargetInfoOr = getMArchTargetInfo(march, mcpu, mtune);
+  if (runtimeTargetInfoOr)
+    return runtimeTargetInfoOr.takeError();
 
-  // Ask Clang to create the target info for the architecture and CPU. This will
-  // populate `opts` with the full target triple and feature set.
-  auto targetInfo = std::unique_ptr<clang::TargetInfo>(
-      clang::TargetInfo::CreateTargetInfo(diags, opts));
-  if (!targetInfo)
-    return Error("failed to create target info: " + interceptor.msg);
-
-  // Concat the features together, only keeping included '+' features.
-  std::string featureStr;
-  llvm::raw_string_ostream os(featureStr);
-  for (StringRef feature : opts->Features)
-    if (feature.front() == '+')
-      os << feature << ',';
-  // Drop the extra comma.
-  if (!featureStr.empty())
-    featureStr.pop_back();
-
-  // Use this to create the target info.
-  return getTargetInfoFor(ctx, opts->Triple, opts->CPU, featureStr,
-                          opts->TuneCPU);
+  return getTargetInfoFor(ctx, runtimeTargetInfoOr->triple.str(),
+                          runtimeTargetInfoOr->cpu,
+                          encodeFeatures(runtimeTargetInfoOr->features), mtune);
 }

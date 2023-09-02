@@ -19,6 +19,7 @@ add_modular_mlir_library(KGENElaborator
   KGENDialect
   LITDialect
   InterpreterInterface
+  MArchTarget
   MLIRIR
   MLIRSupport
   MSupport

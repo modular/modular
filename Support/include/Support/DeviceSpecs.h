@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Runtime representation of TargetInfoAttr, DeviceAttr and
-// ArrayRef<DeviceAttr>. This can be used at runtime to both confirm the
+// Runtime representation of TargetInfoAttr, DeviceRefAttr, DeviceSpecAttr and
+// DeviceCollectionAttr. These can be used at runtime to both confirm the
 // runtime environment matches that expected at compile time, and help
 // models establish which actual runtime devices correspond to each
 // 'abstract' device they assumed at compile time.
@@ -15,12 +15,23 @@
 #ifndef SUPPORT_DEVICE_SPECS_H
 #define SUPPORT_DEVICE_SPECS_H
 
-#include "Support/Host.h"
+#include "Support/ErrorOr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/TargetParser/Triple.h"
 
 namespace M {
+
+//===----------------------------------------------------------------------===//
+// Helpers
+//===----------------------------------------------------------------------===//
+
+/// Returns the given features in "+feature1,+feature2" form.
+std::string encodeFeatures(ArrayRef<std::string> features);
+
+/// Decodes the result of encodeFeatures.
+ErrorOr<std::vector<std::string>> decodeFeatures(StringRef encodedFeatures);
 
 //===----------------------------------------------------------------------===//
 // TargetInfo
@@ -35,34 +46,18 @@ struct TargetInfo {
   std::string cpu;
   std::vector<std::string> features;
 
-  /// Returns the target info partially describing the given HostMachineInfo.
-  /// Only some fields are captured:
-  ///  - triple (captured as triple)
-  ///  - cpuArch (captured as cpu)
-  ///  - cpuFeatures (captured as features)
-  ///
-  /// CAUTION: Temporary while we unravel the TargetInfoAttr/HostMachineInfo
-  ///          confusion.
-  static TargetInfo fromHostMachineInfo(const HostMachineInfo &hostMachineInfo);
-
-  /// Returns the target info describing the current CPU host.
-  static ErrorOr<TargetInfo> fromCPUHost();
-
-  /// Returns a HostMachineInfo matching this target info. Only some fields
-  /// are captured:
-  ///  - triple (captured as triple and osName)
-  ///  - cpu (captured as cpuArch)
-  ///  - features (captured as cpuFeatures)
-  ///
-  /// CAUTION: Temporary while we unravel the TargetInfoAttr/HostMachineInfo
-  ///          confusion.
-  HostMachineInfo toHostMachineInfo() const;
+  TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string cpu = {},
+             std::vector<std::string> features = {})
+      : triple(std::move(triple)), cpu(std::move(cpu)),
+        features(std::move(features)) {}
 
   /// Serializes this target info to JSON.
   void serializeToJSON(llvm::json::OStream &json) const;
+  std::string serializeToJSON() const;
 
   /// Returns the target info deserialized from JSON.
   static ErrorOr<TargetInfo> deserializeFromJSON(const llvm::json::Value *json);
+  static ErrorOr<TargetInfo> deserializeFromJSON(StringRef json);
 
   /// Returns error if this target info does not satisfy the assumptions
   /// in required.
@@ -157,11 +152,6 @@ struct DeviceSpecCollection {
   deserializeFromJSON(const llvm::json::Value *json);
   static ErrorOr<DeviceSpecCollection> deserializeFromJSON(StringRef json);
 
-  /// Returns the device spec collection describing the current CPU host.
-  /// It will contain only a single device. The caller is responsible for
-  /// dealing with more exotic devices (eg all the available CUDA devices).
-  static ErrorOr<DeviceSpecCollection> fromCPUHost();
-
   /// Returns a map from each device reference in required to the corresponding
   /// device specification in this collection which meets the required device's
   /// requirements. Returns an error if there's a target in required which has
@@ -182,7 +172,8 @@ struct DeviceSpecCollection {
   /// no match.
   ErrorOr<const DeviceSpec *> findDeviceSpec(const DeviceRef &ref) const;
 
-  /// Returns the device spec for the host.
+  /// Returns the device spec corresponding to the 'host' in this collection.
+  /// (Not to be confused with the actual host machine.)
   const DeviceSpec &getHostDeviceSpec() const;
 };
 

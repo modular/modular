@@ -16,33 +16,36 @@
 using namespace M;
 
 //===----------------------------------------------------------------------===//
-// TargetInfo
+// Helpers
 //===----------------------------------------------------------------------===//
 
-TargetInfo
-TargetInfo::fromHostMachineInfo(const HostMachineInfo &hostMachineInfo) {
-  TargetInfo result;
-  result.triple = llvm::Triple(hostMachineInfo.triple);
-  result.cpu = hostMachineInfo.cpuArch;
-  result.features = hostMachineInfo.cpuFeatures;
-  return result;
+std::string M::encodeFeatures(ArrayRef<std::string> features) {
+  std::string featureStr;
+  llvm::raw_string_ostream os(featureStr);
+  llvm::interleave(
+      features, os, [&](auto &f) { os << '+' << f; }, ",");
+  return featureStr;
 }
 
-ErrorOr<TargetInfo> TargetInfo::fromCPUHost() {
-  ErrorOr<HostMachineInfo> hostMachineInfoOr = getHostMachineInfo();
-  if (hostMachineInfoOr)
-    return hostMachineInfoOr.takeError();
-  return fromHostMachineInfo(*hostMachineInfoOr);
+ErrorOr<std::vector<std::string>> M::decodeFeatures(StringRef encodedFeatures) {
+  std::vector<std::string> features;
+  SmallVector<StringRef> plusFeatureCommas;
+  encodedFeatures.split(plusFeatureCommas, ',', /*MaxSplit=*/-1,
+                        /*KeepEmpty=*/false);
+  for (StringRef plusFeatureComma : plusFeatureCommas) {
+    if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
+      return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
+    StringRef feature = plusFeatureComma.trim("+,");
+    if (feature.empty())
+      return Error("ill-formed features: " + encodedFeatures + "'");
+    features.emplace_back(feature);
+  }
+  return features;
 }
 
-HostMachineInfo TargetInfo::toHostMachineInfo() const {
-  HostMachineInfo result;
-  result.triple = triple.str();
-  result.osName = llvm::Triple::getOSTypeName(triple.getOS());
-  result.cpuArch = cpu;
-  result.cpuFeatures = features;
-  return result;
-}
+//===----------------------------------------------------------------------===//
+// TargetInfo
+//===----------------------------------------------------------------------===//
 
 void TargetInfo::serializeToJSON(llvm::json::OStream &json) const {
   json.objectBegin();
@@ -50,6 +53,14 @@ void TargetInfo::serializeToJSON(llvm::json::OStream &json) const {
   json.attribute("cpu", cpu);
   json.attribute("features", features);
   json.objectEnd();
+}
+
+std::string TargetInfo::serializeToJSON() const {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvm::json::OStream json(os);
+  serializeToJSON(json);
+  return str;
 }
 
 ErrorOr<TargetInfo>
@@ -77,6 +88,15 @@ TargetInfo::deserializeFromJSON(const llvm::json::Value *json) {
   return result;
 }
 
+ErrorOr<TargetInfo> TargetInfo::deserializeFromJSON(StringRef json) {
+  llvm::Expected<llvm::json::Value> errOrValue = llvm::json::parse(json);
+  if (llvm::Error err = errOrValue.takeError()) {
+    return Error(Twine("ill-formed serialized target info: ") +
+                 toString(std::move(err)));
+  }
+  return deserializeFromJSON(&errOrValue.get());
+}
+
 /// Returns canonicalized architecture name.
 static std::string canonArchName(StringRef archName) {
   // arm64 can also mean aarch64.
@@ -97,9 +117,13 @@ static llvm::Triple::OSType canonOSType(llvm::Triple::OSType type) {
 /// heuristics to account for version numbers, vendor names, etc.
 static ErrorOrSuccess satisfiesTriple(const llvm::Triple &provided,
                                       const llvm::Triple &required) {
-  if (required == llvm::Triple(""))
+  LLVM_DEBUG(llvm::dbgs() << "provided: " << provided.str() << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "required: " << required.str() << "\n");
+
+  if (required.str().empty()) {
     // No constraint.
     return success();
+  }
 
   std::string providedArch = canonArchName(provided.getArchName());
   std::string requiredArch = canonArchName(required.getArchName());
@@ -155,6 +179,9 @@ satisfiesFeatures(const std::vector<std::string> &provided,
 
 ErrorOrSuccess
 TargetInfo::checkSatisfiesRequirements(const TargetInfo &required) const {
+  LLVM_DEBUG(llvm::dbgs() << "provided:\n" << serializeToJSON() << "\n\n");
+  LLVM_DEBUG(llvm::dbgs() << "required:\n"
+                          << required.serializeToJSON() << "\n\n");
   if (auto errOr = satisfiesTriple(triple, required.triple))
     return errOr.takeError();
   if (auto errOr = satisfiesCPU(cpu, required.cpu))
@@ -312,21 +339,6 @@ DeviceSpecCollection::deserializeFromJSON(StringRef json) {
                  toString(std::move(err)));
   }
   return deserializeFromJSON(&errOrValue.get());
-}
-
-ErrorOr<DeviceSpecCollection> DeviceSpecCollection::fromCPUHost() {
-  ErrorOr<HostMachineInfo> hostMachineInfoOr = getHostMachineInfo();
-  if (hostMachineInfoOr)
-    return hostMachineInfoOr.takeError();
-
-  DeviceSpec deviceSpec;
-  deviceSpec.ref.label = "cpu";
-  deviceSpec.target = TargetInfo::fromHostMachineInfo(*hostMachineInfoOr);
-
-  DeviceSpecCollection result;
-  result.host.label = deviceSpec.ref.label;
-  result.devices.emplace_back(std::move(deviceSpec));
-  return result;
 }
 
 ErrorOr<DeviceSpecMap> DeviceSpecCollection::reconcileDeviceSpecs(

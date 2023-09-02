@@ -10,7 +10,7 @@
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/Target.h"
+#include "Support/MArchTarget/MArchTarget.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Host.h"

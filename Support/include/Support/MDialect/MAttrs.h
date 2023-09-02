@@ -385,31 +385,6 @@ ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);
 TargetInfoAttr fromRuntimeTargetInfo(MLIRContext *ctx,
                                      const TargetInfo &runtimeTargetInfo);
 
-/// Returns the target info partially describing the given HostMachineInfo.
-/// Only some fields are captured:
-///  - triple (captured as triple)
-///  - cpuArch (captured as cpu)
-///  - cpuFeatures (captured as features, with each feature prefixed by '+'
-///    and features separated by ',')
-/// Note that the data_layout and simd_bit_width fields of the result are
-/// left empty/zero.
-///
-/// Unlike the above getTargetInfoFor/4, this method does not depend on any
-/// LLVM target management infrastructure and can be used outside of a
-/// jit context.
-///
-/// CAUTION: About to be removed.
-ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
-                                         HostMachineInfo &hostMachineInfo);
-/// Return a serialized representation of targetInfoAttr which can be
-/// deserialized by M::recoverHostMachineInfo in Support/Host.h. This can
-/// be used to capture assumptions about the runtime host machine architecture
-/// with generated artifacts such as MEF files.
-///
-/// CAUTION: About to be removed.
-ErrorOr<std::string>
-serializeTargetInfoAttrToJSON(TargetInfoAttr targetInfoAttr);
-
 //===----------------------------------------------------------------------===//
 // DeviceRefAttr
 //===----------------------------------------------------------------------===//
