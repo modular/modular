@@ -87,7 +87,7 @@ kgen.func @string() {
 
 {-#
   dialect_resources: {
-    M: {
+    interp: {
       mem_stack: "0x20000000ADDE",
       mem_heap: "0x20000000EFBE",
       mem_global: "0x2000000001020304",

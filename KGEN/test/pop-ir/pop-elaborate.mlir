@@ -280,8 +280,8 @@ kgen.generator export @do_it() {
 {-#
   // CHECK: dialect_resources
   dialect_resources: {
-    // CHECK-NEXT: M: {
-    M: {
+    // CHECK-NEXT: interp: {
+    interp: {
       mem: "0x20000000ADDEEFBE",
       stack: "0x20000000ADDE",
       some_ptr: "0x20000000EFBE",
