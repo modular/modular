@@ -26,7 +26,7 @@ def KGENDialect : Dialect {
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
 
-  let dependentDialects = ["MDialect"];
+  let dependentDialects = ["MDialect", "InterpreterDialect"];
 
   let extraClassDeclaration = [{
     /// Register all KGEN attributes.

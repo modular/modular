@@ -18,6 +18,7 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/TypeSwitch.h"

@@ -10,6 +10,7 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 
 using namespace M;

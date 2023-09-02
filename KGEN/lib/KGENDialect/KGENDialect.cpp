@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"

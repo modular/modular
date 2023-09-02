@@ -15,6 +15,7 @@
 #include "KGEN/POPDialect/POPEnums.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/CopyOpInterface.h"
