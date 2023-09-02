@@ -345,7 +345,7 @@ void MojoTypeSystem::handleEvent(
 bool MojoTypeSystem::IsPointerOrReferenceType(
     lldb::opaque_compiler_type_t type,
     lldb_private::CompilerType *pointeeType) {
-  return IsReferenceType(type, pointeeType, nullptr) ||
+  return IsReferenceType(type, pointeeType, /*isRValue=*/nullptr) ||
          IsPointerType(type, pointeeType);
 }
 
@@ -386,9 +386,8 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     pointeeOrElementCompilerType->Clear();
 
   MojoASTTypeRef astType = dereferenceType(type);
-  Type mlirType = astType.getMLIRType();
 
-  if (auto ptrType = dyn_cast<PointerType>(mlirType)) {
+  if (auto ptrType = dyn_cast<PointerType>(astType)) {
     if (pointeeOrElementCompilerType) {
       *pointeeOrElementCompilerType =
           createCompilerType(ptrType.getElementAsType());
@@ -396,18 +395,18 @@ uint32_t MojoTypeSystem::GetTypeInfo(
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
   }
 
-  if (isa<IndexType>(mlirType))
+  if (isa<IndexType>(astType))
     return lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
-  if (isa<IntegerType>(mlirType)) {
+  if (auto intType = dyn_cast<IntegerType>(astType)) {
     auto result =
         lldb::eTypeIsInteger | lldb::eTypeHasValue | lldb::eTypeIsScalar;
-    if (mlirType.isSignedInteger())
+    if (intType.isSignedInteger())
       return result | lldb::eTypeIsSigned;
     return result;
   }
 
-  if (isa<FloatType>(mlirType))
+  if (isa<FloatType>(astType))
     return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
   if (isa<POP::SIMDType>(astType))
@@ -520,11 +519,16 @@ bool MojoTypeSystem::IsFloatingPointType(lldb::opaque_compiler_type_t type,
 
 bool MojoTypeSystem::IsIntegerType(lldb::opaque_compiler_type_t type,
                                    bool &isSigned) {
-  return (GetTypeInfo(type) & lldb::eTypeIsInteger);
+  auto flags = GetTypeInfo(type);
+  if (flags & lldb::eTypeIsInteger) {
+    isSigned = flags & lldb::eTypeIsSigned;
+    return true;
+  }
+  return false;
 }
 
 bool MojoTypeSystem::IsScalarType(lldb::opaque_compiler_type_t type) {
-  return (GetTypeInfo(type) & lldb::eTypeIsScalar);
+  return GetTypeInfo(type) & lldb::eTypeIsScalar;
 }
 
 //===--------------------------------------------------------------------===//
@@ -620,24 +624,31 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
 size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     lldb::opaque_compiler_type_t type, llvm::StringRef name,
     bool omitEmptyBaseClasses, std::vector<uint32_t> &childIndices) {
-  // Check if the name is an index into a collection
-  unsigned long index;
-  if (name.consume_front("[") && name.consumeInteger(10, index) &&
-      name.consume_front("]") && name.empty()) {
-    childIndices.push_back(index);
-    return 1;
+  // This method should return the total number of indices in `childIndices` in
+  // the case of success. As a remark, the `childIndices` vector passed in might
+  // not be empty.
+  MojoASTTypeRef astType = dereferenceType(type);
+
+  // Check if the name is an index of a SIMD.
+  if (isa<POP::SIMDType>(astType)) {
+    unsigned long index;
+    if (name.consume_front("[") && !name.consumeInteger(10, index) &&
+        name.consume_front("]") && name.empty()) {
+      childIndices.push_back(index);
+      return childIndices.size();
+    }
+    return 0;
   }
 
-  // Find the index of the field name
-  if (LIT::StructDeclOp structDeclOp =
-          impl->getIfStructDecl(dereferenceType(type))) {
+  // Check if it's a field of a struct.
+  if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType)) {
     for (auto field : llvm::enumerate(structDeclOp.getFieldDecls())) {
       if (field.value().getName() == name) {
         childIndices.push_back(field.index());
-        // Return the total number of indices.
         return childIndices.size();
       }
     }
+    return 0;
   }
   return 0;
 }
