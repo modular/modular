@@ -39,7 +39,7 @@ enum class Precedence {
   kInvalid, // No precedence
 
   kAssignExpr,     // infix: := (walrus)
-  kIfElse,         // infix: if - else + lambda.
+  kIfElse,         // infix: if - else
   kBoolOr,         // infix: or
   kBoolAnd,        // infix: and
   kBoolNot,        // prefix: not
@@ -54,9 +54,9 @@ enum class Precedence {
   kPower,          // infix: **
   kAwaitOwnership, // prefix: await, borrowed[], owned[], inout[]
   kPrimary,        // prefix: foo, "123", 123, 1.23, True, False, foo(1),
-                   //         foo.bar, foo[bar]
+                   //         foo.bar, foo[bar], lambda
 
-  kExpression = kIfElse, // "expression" precedence is if/else + lambda.
+  kExpression = kIfElse, // "expression" precedence is if/else.
   kHighest = kPrimary
 };
 
@@ -113,6 +113,7 @@ private:
   ParseResult parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
                                   ExprNode::Kind kind, SMLoc loc);
   ParseResult parseFunctionType(ExprNode *&result);
+  ParseResult parseLambda(ExprNode *&result);
   ParseResult parseAddressConvert(ExprNode *&result);
 
   /// This specifies the indentation level of the start of the statement that
@@ -376,6 +377,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::l_brace:
   case Token::kw_async:
   case Token::kw_def:
+  case Token::kw_lambda:
   case Token::kw_fn:
   case Token::kw_ref:
   case Token::kw_mutref:
@@ -512,6 +514,13 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     if (failed(parseFunctionType(result)))
       return failure();
     break;
+
+  case Token::kw_lambda:
+    // We parse lambda as part of primary expressions to simplify the grammar.
+    // They end on an 'expression' production though, and thus should not / can
+    // not / will not consume any postfix attachments - the expression suffix
+    // will have handled that, so we can return here.
+    return parseLambda(result);
 
   case Token::kw_ref:      // ref [lifetime] type
   case Token::kw_mutref: { // mutref [lifetime] type
@@ -922,14 +931,14 @@ parseOptionalFunctionParameters(ParserBase &p,
   } else {
     // Parse an actual parameter list.
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, inputParams, /*isParameterList=*/true))
+            p, inputParams, ParsedArgument::ArgListKind::kParamList))
       return failure();
   }
 
   // Parse result parameters if present.
   if (p.consumeIf(Token::minus_greater)) {
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, resultParams, /*isParameterList=*/true))
+            p, resultParams, ParsedArgument::ArgListKind::kParamList))
       return failure();
   }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -950,41 +959,12 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
     isDef = true;
   }
 
-  // Parameter signature.
-  if (parseOptionalFunctionParameters(*this, inputParams, resultParams))
+  // Parameter signature, argument list and the function effects next.
+  if (parseOptionalFunctionParameters(*this, inputParams, resultParams) ||
+      ParsedArgument::parseAndResolveParenthesizedArgumentList(
+          *this, arguments, ParsedArgument::ArgListKind::kFnTypeArgList,
+          &effects))
     return failure();
-
-  // Parse the argument list next if present.
-  if (parseToken(Token::l_paren, "expected '(' for argument list"))
-    return failure();
-  if (!consumeIf(Token::r_paren)) {
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            *this, arguments, /*isParameterList=*/false, /*omitNames=*/true) ||
-        parseToken(Token::r_paren, "expected ')' in argument list"))
-      return failure();
-  }
-
-  // Parse other function effects.
-  while (getToken().is(Token::identifier)) {
-    SMLoc loc = getToken().getLoc();
-    if (getToken().getSpelling() == "raises") {
-      if (bitEnumContainsAny(effects, FnEffects::Throws))
-        emitError(loc, "function effect 'raises' was already specified");
-      effects = effects | FnEffects::Throws;
-    } else if (getToken().getSpelling() == "capturing") {
-      if (bitEnumContainsAny(effects, FnEffects::Capturing))
-        emitError(loc, "function effect 'capturing' was already specified");
-      effects = effects | FnEffects::Capturing;
-    } else if (getToken().getSpelling() == "escaping") {
-      if (bitEnumContainsAny(effects, FnEffects::Escaping))
-        emitError(loc, "function effect 'escaping' was already specified");
-      effects = effects | FnEffects::Escaping;
-    } else {
-      emitError(loc, "unknown function effect '")
-          << getToken().getSpelling() << "', expected 'raises' or 'capturing'";
-    }
-    consumeToken();
-  }
 
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
@@ -1001,6 +981,44 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       copyArrayRef<ParsedArgument>(arguments), resultTypeExpr, effects, endLoc,
       isDef, resultLoc);
   return success();
+}
+
+/// lambda_expr ::= "lambda" [parameter_list] argument_list ":" expression
+ParseResult ExprParser::parseLambda(ExprNode *&result) {
+  SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
+
+  SmallVector<ParsedArgument> inputParams, resultParams, arguments;
+  FnEffects effects = FnEffects::None;
+
+  // Parameter signature, argument list and the function effects next.
+  if (parseOptionalFunctionParameters(*this, inputParams, resultParams))
+    return failure();
+
+  // Mojo supports naked parameters without type annotations for compatibility
+  // with Python, but also supports parethesized ones.  We can only support
+  // type annotations in parentheses since we'd otherwise have ambiguity with
+  // the ":" in the lambda expression.
+  if (getToken().is(Token::l_paren)) {
+    // Parse general parenthesized argument list.
+    if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
+            *this, arguments, ParsedArgument::ArgListKind::kArgList, &effects))
+      return failure();
+  } else if (getToken().isNot(Token::colon)) {
+    // Parse non-typed non-parenthesized argument list.
+    if (ParsedArgument::parseAndResolvePresentArgumentList(
+            *this, arguments, ParsedArgument::ArgListKind::kBareLambdaArgList))
+      return failure();
+  }
+
+  ExprNode *bodyExpr = nullptr;
+  if (parseToken(Token::colon, "expected ':' in lambda expression") ||
+      ParserBase::parseExpression(bodyExpr, stmtIndent))
+    return failure();
+
+  // Ok, we have a syntactically correct lambda, but we still don't support
+  // them yet.
+  emitError(lambdaLoc, "Mojo doesn't support lambda expressions yet");
+  return failure();
 }
 
 ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {

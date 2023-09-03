@@ -320,8 +320,15 @@ struct ParsedArgument {
     kStar,      //< This argument is a standalone '*' marker.
   };
 
+  enum class ArgListKind {
+    kParamList,         //< parameter list like `[x: Int, y: Int]`
+    kArgList,           //< argument list like `(x: Int, y: Int)`
+    kFnTypeArgList,     //< fn type, like `fn (Int, y: Float)`
+    kBareLambdaArgList, //< argument list like `lambda x, y: x+y`
+  };
+
   ParseResult parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                    bool omitName = false);
+                    ArgListKind kind);
 
   /// This method handles the function argument list for a Python function.
   /// Python has some pretty interesting rules where standalone '*' and '/'
@@ -334,8 +341,14 @@ struct ParsedArgument {
   ///   https://peps.python.org/pep-0570/#how-to-teach-this
   ///
   static ParseResult parseAndResolvePresentArgumentList(
-      ParserBase &p, SmallVectorImpl<ParsedArgument> &args,
-      bool isParameterList, bool omitNames = false);
+      ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind);
+
+  /// Parse an argument list, including the parentheses around them.  The
+  /// argument list is allowed to be empty.  If `fnEffects` is non-null, then
+  /// this parses 'raises' and other effects.
+  static ParseResult parseAndResolveParenthesizedArgumentList(
+      ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
+      FnEffects *fnEffects);
 
   /// Process parsed parameter arguments into input or result parameters by
   /// determining the correct parameter types and conventions.

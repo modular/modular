@@ -419,3 +419,16 @@ fn test_int_to_int_error(a: Int):
 
   # expected-error @+1 {{cannot construct 'GetAttrNotString' from 'Int' value in assignment}}
   _ = GetAttrNotString(a)
+
+
+##===----------------------------------------------------------------------===##
+# lambda not supported yet
+##===----------------------------------------------------------------------===##
+
+def testLambda():
+  # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
+  _ = lambda x, y: x+y
+
+def testLambda2():
+  # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
+  _ = lambda (x: Int, y: Float) raises: x+y

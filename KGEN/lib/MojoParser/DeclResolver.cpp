@@ -1077,7 +1077,7 @@ Type ParserParamEvaluator::refineType(Type type) {
 //===----------------------------------------------------------------------===//
 
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                                  bool omitName) {
+                                  ArgListKind kind) {
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
@@ -1115,7 +1115,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   }
 
   // When parsing a function type, the name is optional.
-  if (!omitName) {
+  if (kind != ArgListKind::kFnTypeArgList) {
     // If the argument has an identifier, use its location for better
     // diagnostics.
     if (p.parseIdentifier(name, "expected parameter name", &loc)) {
@@ -1125,24 +1125,26 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   }
 
   // Parse an optional type annotation: `":" ["*"] expression`. Omit the colon
-  // if a name was not specified.
-  if (!name || p.consumeIf(Token::colon)) {
-    SMLoc starLoc = p.getToken().getLoc();
-    if (p.getToken().getKind() == Token::star) {
-      if (vararg != VarArgKind::VarArg) {
-        InflightDiag diag = p.emitError(
-            starLoc, "only variadic arguments' types can be unpacked");
-        if (name) {
-          diag.attachNote(loc)
-              << "'" << name.getValue() << "' is not a variadic argument";
+  // if a name was not specified.  Bare lambda arg lists do not allow types.
+  if (kind != ArgListKind::kBareLambdaArgList) {
+    if (!name || p.consumeIf(Token::colon)) {
+      SMLoc starLoc = p.getToken().getLoc();
+      if (p.getToken().getKind() == Token::star) {
+        if (vararg != VarArgKind::VarArg) {
+          InflightDiag diag = p.emitError(
+              starLoc, "only variadic arguments' types can be unpacked");
+          if (name) {
+            diag.attachNote(loc)
+                << "'" << name.getValue() << "' is not a variadic argument";
+          }
         }
+        vararg = VarArgKind::PackVarArg;
       }
-      vararg = VarArgKind::PackVarArg;
+      ExprNode *typeExprNode;
+      if (p.parseStarredItem(typeExprNode))
+        return failure();
+      typeExpr = typeExprNode;
     }
-    ExprNode *typeExprNode;
-    if (p.parseStarredItem(typeExprNode))
-      return failure();
-    typeExpr = typeExprNode;
   }
 
   // Parse an optional default argument value: `"=" expression`.
@@ -1162,14 +1164,21 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 }
 
 ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
-    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, bool isParameterList,
-    bool omitNames) {
+    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
-  if (isParameterList)
+  switch (kind) {
+  case ArgListKind::kParamList:
     stopTokens.append({Token::r_square, Token::minus_greater});
-  else
+    break;
+  case ArgListKind::kFnTypeArgList:
+  case ArgListKind::kArgList:
     stopTokens.push_back(Token::r_paren);
+    break;
+  case ArgListKind::kBareLambdaArgList:
+    stopTokens.push_back(Token::colon);
+    break;
+  }
 
   // As we parse all of the arguments and the keyword arguments and markers, we
   // resolve the markers and check the invariants.  Python's parameter grammar
@@ -1226,7 +1235,7 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
     KWArgMarkerInfo marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker, omitNames))
+    if (arg.parse(p, marker, kind))
       return failure();
 
     // If this argument is just a marker, process it.
@@ -1270,6 +1279,53 @@ ParseResult ParsedArgument::parseAndResolvePresentArgumentList(
       args.pop_back();
     } while (trailingKwarg());
   }
+  return success();
+}
+
+/// Parse an argument list, including the parentheses around them.  The
+/// argument list is allowed to be empty.  If `fnEffects` is non-null, then this
+/// parses 'raises' and other effects.
+ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
+    ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
+    FnEffects *fnEffects) {
+
+  if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
+    return failure();
+
+  if (!p.consumeIf(Token::r_paren)) {
+    if (parseAndResolvePresentArgumentList(p, args, kind) ||
+        p.parseToken(Token::r_paren, "expected ')' in argument list"))
+      return failure();
+  }
+
+  // If the client supports function effects, parse them as well.
+  if (fnEffects) {
+    // Parse other function effects.
+    while (p.getToken().is(Token::identifier)) {
+      SMLoc loc = p.getToken().getLoc();
+      StringRef spelling = p.getToken().getSpelling();
+
+      auto handleEffect = [&](FnEffects effect) {
+        if (bitEnumContainsAny(*fnEffects, effect))
+          p.emitError(loc, "function effect '")
+              << spelling << "' was already specified";
+        *fnEffects = *fnEffects | effect;
+      };
+
+      if (spelling == "raises")
+        handleEffect(FnEffects::Throws);
+      else if (spelling == "capturing")
+        handleEffect(FnEffects::Capturing);
+      else if (spelling == "escaping")
+        handleEffect(FnEffects::Escaping);
+      else
+        p.emitError(loc, "unknown function effect '")
+            << spelling << "', expected 'raises' or 'capturing'";
+
+      p.consumeToken(Token::identifier);
+    }
+  }
+
   return success();
 }
 
@@ -1346,7 +1402,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
   } else {
     // Parse an actual parameter list.
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, args, /*isParameterList=*/true))
+            p, args, ParsedArgument::ArgListKind::kParamList))
       return failure();
   }
 
@@ -1360,7 +1416,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
     args.clear();
     // Parse a result parameter list.
     if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, args, /*isParameterList=*/true))
+            p, args, ParsedArgument::ArgListKind::kParamList))
       return failure();
     ParsedArgument::processParameterArgs(emitter, declScope, args, resultParams,
                                          /*isResultParams=*/true, paramVararg);
@@ -2347,37 +2403,22 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // value signature list so the types and parameters can resolve to the bound
   // values.
   if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramVararg) ||
-      p.parseToken(Token::l_paren, "expected '(' for parameter list"))
+                                      resultParamDecls, paramVararg))
+    return failure();
+
+  // Parse the argument list next if present.
+  if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
+          p, args, ParsedArgument::ArgListKind::kArgList, &effects))
     return failure();
 
   if (paramVararg)
     effects = effects | FnEffects::ParamVararg;
 
-  // Parse the argument list next if present.
-  if (!p.consumeIf(Token::r_paren)) {
-    if (ParsedArgument::parseAndResolvePresentArgumentList(
-            p, args, /*isParameterList=*/false) ||
-        p.parseToken(Token::r_paren, "expected ')' in argument list"))
-      return failure();
-  }
-
-  // Check for function effects.
-  while (p.getToken().is(Token::identifier)) {
-    SMLoc loc = p.getToken().getLoc();
-    if (p.getToken().getSpelling() == "raises") {
-      if (bitEnumContainsAny(effects, FnEffects::Throws))
-        p.emitError(loc, "function effect 'raises' was already specified");
-      effects = effects | FnEffects::Throws;
-    } else if (p.getToken().getSpelling() == "escaping") {
-      if (bitEnumContainsAny(effects, FnEffects::Escaping))
-        emitError(loc, "function effect 'escaping' was already specified");
-      effects = effects | FnEffects::Escaping;
-    } else {
-      emitError(loc, "unknown function effect '")
-          << p.getToken().getSpelling() << "', expected 'raises' or 'escaping'";
-    }
-    p.consumeToken();
+  // This doesn't support the capturing effect, reject it.
+  if (bitEnumContainsAny(effects, FnEffects::Capturing)) {
+    emitError(decl.getLoc(),
+              "'capturing' effect not supported on this declaration");
+    effects = bitEnumClear(effects, FnEffects::Capturing);
   }
 
   // Parse the result type if present.
