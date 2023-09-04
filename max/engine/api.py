@@ -36,11 +36,6 @@ class TensorFlowLoadOptions:
     """The exported name from the TensorFlow model's signature."""
 
 
-@dataclass
-class TorchLoadOptions:
-    """Configures how to load PyTorch models."""
-
-
 class Model:
     """A loaded model that you can execute.
 
