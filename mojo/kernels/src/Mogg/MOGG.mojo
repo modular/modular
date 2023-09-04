@@ -30,10 +30,13 @@ from math import (
     not_equal,
     pow,
     rsqrt,
+    round,
+    roundeven,
     select,
     sqrt,
     sub,
     tanh,
+    trunc,
 )
 from math.limit import isinf, max_or_inf, min_or_neginf
 from sys.info import simdwidthof
@@ -210,10 +213,13 @@ fn MOGGExport():
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
     alias _reduce_mul = reduce_mul
+    alias _round = round
+    alias _roundeven = roundeven
     alias _slice_shape = slice_shape
     alias _splat = splat
     alias _transpose = transpose
     alias _transpose_shape = transpose_shape
+    alias _trunc = trunc
     alias _elementwise = elementwise_wrapper
     alias _get_int_from_shape = get_int_from_shape
     alias _tensor_to_shape = tensor_to_shape
@@ -1412,6 +1418,7 @@ fn transpose_shape[
 # ===----------------------------------------------------------------------===#
 # Gather
 # ===----------------------------------------------------------------------===#
+
 
 # TODO(#20442): Remove with generic fusion.
 @mogg_register("mo.gather_sum")
