@@ -733,3 +733,21 @@ lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
   lit.return %0 : !pop.scalar<index>
   lit.end_func
 }
+
+// CHECK-LABEL: lit.func @coroutine_await
+lit.func @coroutine_await(%arg0: i1) {
+  // CHECK-NEXT: pop.coroutine.await
+  pop.coroutine.await {
+    hlcf.if %arg0 {
+      // CHECK: kgen.return
+      lit.return
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    // CHECK: pop.coroutine.await.end
+    pop.coroutine.await.end
+  }
+  lit.return
+  lit.end_func
+}
