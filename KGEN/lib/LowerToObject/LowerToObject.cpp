@@ -380,15 +380,16 @@ static ExportMap getAllSymbols(ModuleOp theModule) {
 void ObjectCompilerLayer::emit(
     std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
     const SymbolTable &symtab, const ExportMap &exports) {
-  if (auto err = emitImpl(std::move(mr), symtab, exports)) {
+  if (auto err = emitImpl(*mr, symtab, exports)) {
     error = err.takeError();
     mr->failMaterialization();
   }
 }
 
-ErrorOrSuccess ObjectCompilerLayer::emitImpl(
-    std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-    const SymbolTable &symtab, const ExportMap &exports) {
+ErrorOrSuccess
+ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
+                              const SymbolTable &symtab,
+                              const ExportMap &exports) {
   auto theModule = cast<ModuleOp>(symtab.getOp());
 
   ErrorOr<Cache::BufferRef> bufOr = Error(" ");
@@ -420,7 +421,7 @@ ErrorOrSuccess ObjectCompilerLayer::emitImpl(
 
   // Set up a worklist that starts from the set of requested symbols.
   SmallVector<llvm::orc::SymbolStringPtr> worklist;
-  llvm::append_range(worklist, llvm::make_first_range(mr->getSymbols()));
+  llvm::append_range(worklist, llvm::make_first_range(mr.getSymbols()));
   LLVM_DEBUG(llvm::dbgs() << "Initial lookup worklist: [";
              llvm::interleaveComma(worklist, llvm::dbgs(),
                                    [](auto ptr) { llvm::dbgs() << *ptr; });
@@ -517,14 +518,14 @@ ErrorOrSuccess ObjectCompilerLayer::emitImpl(
     // Get all new symbols defined by the object file by removing the existing
     // symbols from the MU's symbol map.
     SmallVector<llvm::orc::SymbolFlagsMap::value_type> existing;
-    for (auto &[symbol, flags] : mr->getSymbols()) {
+    for (auto &[symbol, flags] : mr.getSymbols()) {
       if (itf->SymbolFlags.erase(symbol))
         existing.emplace_back(symbol, flags);
     }
 
     // Ask the MR to define the new symbols as materializing. The MR may reject
     // some of the symbols.
-    if (auto err = toModularErrorOr(mr->defineMaterializing(itf->SymbolFlags)))
+    if (auto err = toModularErrorOr(mr.defineMaterializing(itf->SymbolFlags)))
       return err.takeError();
     itf->SymbolFlags.insert(existing.begin(), existing.end());
 
@@ -533,12 +534,12 @@ ErrorOrSuccess ObjectCompilerLayer::emitImpl(
     llvm::orc::SymbolNameSet delegatedSymbols;
     llvm::orc::SymbolFlagsMap symbolFlags;
     for (auto &[symbol, flags] : itf->SymbolFlags) {
-      if (!mr->getSymbols().contains(symbol))
+      if (!mr.getSymbols().contains(symbol))
         continue;
       delegatedSymbols.insert(symbol);
       symbolFlags.try_emplace(symbol, flags);
     }
-    auto delMr = toModularErrorOr(mr->delegate(delegatedSymbols));
+    auto delMr = toModularErrorOr(mr.delegate(delegatedSymbols));
     if (delMr.isError())
       return delMr.takeError();
     itf->SymbolFlags = std::move(symbolFlags);
@@ -554,7 +555,7 @@ ErrorOrSuccess ObjectCompilerLayer::emitImpl(
   LLVM_DEBUG(
       llvm::dbgs() << "MaterializationResponsibility leftover symbols (should "
                       "be empty): [";
-      llvm::interleaveComma(mr->getSymbols(), llvm::dbgs(),
+      llvm::interleaveComma(mr.getSymbols(), llvm::dbgs(),
                             [](auto ptr) { llvm::dbgs() << *ptr.getFirst(); });
       llvm::dbgs() << "]\n";);
   return success();
