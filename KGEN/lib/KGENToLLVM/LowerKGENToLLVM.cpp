@@ -508,7 +508,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
   // Convert the calling convention.
   SmallVector<Value> newArgs;
   convertArgCallingConvention(loc, body, func.getArguments(), newArgs);
-  Type resultType = func.getResultTypes().front();
+  Type resultType = func.getFunctionType().getReturnType();
   ArrayRef<BlockArgument> results =
       convertResultCallingConvention(loc, body, resultType);
 
@@ -544,7 +544,7 @@ static void processCExportedFunction(LLVM::LLVMFuncOp func,
   // Check if we need to update the function arguments or results to be
   // C-compatible.
   ArrayRef<Type> currentFunctionTypes = func.getArgumentTypes();
-  Type resultType = func.getResultTypes().front();
+  Type resultType = func.getFunctionType().getReturnType();
   bool needUpdatedArgTypes = llvm::any_of(currentFunctionTypes, [](Type type) {
     return isa<LLVM::LLVMArrayType, LLVM::LLVMStructType>(type);
   });

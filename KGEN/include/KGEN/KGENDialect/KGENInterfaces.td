@@ -159,16 +159,6 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     void setFunctionTypeAttr(TypeAttr type) {
       llvm_unreachable("can't opaquely set the function type");
     }
-    ArrayAttr getArgAttrsAttr() { return {}; }
-    ArrayAttr getResAttrsAttr() { return {}; }
-    Attribute removeArgAttrsAttr() { llvm_unreachable("no argument attrs"); }
-    Attribute removeResAttrsAttr() { llvm_unreachable("no result attrs"); }
-    void setArgAttrsAttr(ArrayAttr attrs) {
-      llvm_unreachable("no argument attrs");
-    }
-    void setResAttrsAttr(ArrayAttr attrs) {
-      llvm_unreachable("no result attrs");
-    }
   }];
 
   let dependentTraits = [DeclInterface];

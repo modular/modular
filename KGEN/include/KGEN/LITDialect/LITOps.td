@@ -21,11 +21,11 @@ include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
-include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/RegionKindInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -40,7 +40,6 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 
 def LIT_FuncOp : LITOp<"func", [
     FunctionLike, FunctionOpInterface, Symbol, SymbolTable, SingleBlock,
-    DeclareOpInterfaceMethods<CallableOpInterface>,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
     ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface]> {
@@ -84,6 +83,7 @@ def LIT_FuncOp : LITOp<"func", [
 
   let extraClassDeclaration = [{
     Block *getBody() { return &getFunctionBody().back(); }
+    Region *getCallableRegion() { return &getBodyRegion(); }
 
     /// Returns the result type of the MLIR function (not the user defined
     /// result type).  This is guaranteed to be present.
