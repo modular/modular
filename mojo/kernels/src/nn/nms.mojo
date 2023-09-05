@@ -8,8 +8,10 @@ from math import max, min
 from tensor import Tensor, TensorShape
 from algorithm.sort import _quicksort
 from utils.vector import DynamicVector
+from utils.index import Index
 from math import iota, abs
 from math.limit import min_or_neginf
+from memory.buffer import NDBuffer
 
 
 @value
@@ -50,7 +52,11 @@ struct BoundingBox[type: DType]:
 @always_inline
 fn _get_bounding_box[
     type: DType
-](batch_size: Int, box_idx: Int, boxes: Tensor[type]) -> BoundingBox[type]:
+](
+    batch_size: Int,
+    box_idx: Int,
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+) -> BoundingBox[type]:
     let y1 = boxes[batch_size, box_idx, 0]
     let x1 = boxes[batch_size, box_idx, 1]
     let y2 = boxes[batch_size, box_idx, 2]
@@ -61,25 +67,114 @@ fn _get_bounding_box[
 fn non_max_suppression[
     type: DType
 ](
-    boxes: Tensor[type],
-    scores: Tensor[type],
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
 ) -> Tensor[DType.int64]:
+    """Value semantic overload. Graph compiler does not support this yet."""
+    var output_predictions = DynamicVector[Int64]()
+
+    @parameter
+    @always_inline
+    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+        output_predictions.push_back(batch_idx)
+        output_predictions.push_back(class_idx)
+        output_predictions.push_back(box_idx)
+
+    non_max_suppression[type, store_to_outputs](
+        boxes,
+        scores,
+        max_output_boxes_per_class,
+        iou_threshold,
+        score_threshold,
+    )
+
+    # note that the output tensor takes ownership of output_predictions.data
+    # output_predictions.data may be larger than the actual tensor size indicated
+    # by the shape, but that is OK since the tensor.__del__() frees the pointer
+    let output_shape = TensorShape(output_predictions.__len__() // 3, 3)
+    return Tensor[DType.int64](
+        rebind[DTypePointer[DType.int64]](output_predictions.data), output_shape
+    )
+
+
+fn non_max_suppression[
+    type: DType
+](
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
+    max_output_boxes_per_class: Int,
+    iou_threshold: Float32,
+    score_threshold: Float32,
+):
+    """Buffer semantic overload."""
+    var pred_count = 0
+
+    @parameter
+    @always_inline
+    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+        output[Index(pred_count, 0)] = batch_idx
+        output[Index(pred_count, 1)] = class_idx
+        output[Index(pred_count, 2)] = box_idx
+        pred_count += 1
+
+    non_max_suppression[type, store_to_outputs](
+        boxes,
+        scores,
+        max_output_boxes_per_class,
+        iou_threshold,
+        score_threshold,
+    )
+
+
+fn non_max_suppression_shape_func[
+    type: DType
+](
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    max_output_boxes_per_class: Int,
+    iou_threshold: Float32,
+    score_threshold: Float32,
+) -> StaticIntTuple[2]:
+    """Overload to compute the output shape. Can be removed once the graph compiler
+    supports value semantic kernels that allocate their own output."""
+    var box_pred_count: Int64 = 0
+
+    @parameter
+    @always_inline
+    fn incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+        box_pred_count += 1
+
+    non_max_suppression[type, incr_pred_count](
+        boxes,
+        scores,
+        max_output_boxes_per_class,
+        iou_threshold,
+        score_threshold,
+    )
+
+    return StaticIntTuple[2](box_pred_count.__int__(), 3)
+
+
+fn non_max_suppression[
+    type: DType,
+    func: fn (Int64, Int64, Int64) capturing -> None,
+](
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    max_output_boxes_per_class: Int,
+    iou_threshold: Float32,
+    score_threshold: Float32,
+):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression"""
 
     let batch_size = boxes.dim(0)
     let num_boxes = boxes.dim(1)
     let num_classes = scores.dim(1)
 
-    debug_assert(
-        boxes.rank() == 3, "boxes rank must be 3 ([batch_size, num_boxes, 4])"
-    )
-    debug_assert(
-        scores.rank() == 3,
-        "scores rank must be 3 ([batch_size, num_classes, num_boxes])",
-    )
     debug_assert(
         boxes.dim(2) == 4,
         (
@@ -96,7 +191,7 @@ fn non_max_suppression[
     )
 
     if max_output_boxes_per_class == 0:
-        return Tensor[DType.int64]()
+        return
 
     var box_idxs = DynamicVector[Int64](num_boxes)
     box_idxs.resize(num_boxes)
@@ -104,17 +199,14 @@ fn non_max_suppression[
     var per_class_scores = DynamicVector[SIMD[type, 1]](num_boxes)
     per_class_scores.resize(num_boxes)
 
-    var output_predictions = DynamicVector[Int64]()
-
     for b in range(batch_size):
         for c in range(num_classes):
-            let offset = scores._compute_linear_offset(b, c, 0)
             # entries of per_class_scores_ptr are set to neginf when they no longer
             # correspond to an eligible box
             # this happens when:
             #   1. score does not meet score threshold
             #   2. iou with an existing prediction is above the IOU threshold
-            let per_class_scores_ptr = scores.data().offset(offset)
+            let per_class_scores_ptr = scores._offset(Index(b, c, 0))
 
             # filter so that we only consider scores above the threshold
             # reduces the number of box_idxs to sort
@@ -150,9 +242,7 @@ fn non_max_suppression[
                 )
                 num_boxes_remaining -= 1
                 # each output prediction contains 3 values: [batch_index, class_index, box_index]
-                output_predictions.push_back(b)
-                output_predictions.push_back(c)
-                output_predictions.push_back(box_idxs[pred_idx])
+                func(b, c, box_idxs[pred_idx])
 
                 # at the beginning of this loop box_idxs are sorted such that scores[box_idxs] looks like this:
                 # [1st best score, 2nd best score, ..., num_boxes_remaining'th best score, -inf, ..., -inf]
@@ -183,11 +273,3 @@ fn non_max_suppression[
 
     box_idxs._del_old()
     per_class_scores._del_old()
-
-    let output_shape = TensorShape(output_predictions.__len__() // 3, 3)
-    # note that the output tensor takes ownership of output_predictions.data
-    # output_predictions.data may be larger than the actual tensor size indicated
-    # by the shape, but that should be OK since the tensor.__del__() frees the pointer
-    return Tensor[DType.int64](
-        rebind[DTypePointer[DType.int64]](output_predictions.data), output_shape
-    )
