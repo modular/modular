@@ -126,8 +126,11 @@ static void propagateTrivialParameters(Region *region,
     if (!isa<DeclInterface>(op))
       op.setLoc(rebindLoc(op.getLoc()));
   }
-  if (auto declScope = dyn_cast<DeclInterface>(region->getParentOp()))
-    declScope->setLoc(rebindLoc(declScope->getLoc()));
+  // Don't process the top-level decl operation. It cannot reference
+  // declarations in its body and its location is shared across threads.
+  if (region->getParentOp() != topLevel.scope->getParentOp())
+    if (auto declScope = dyn_cast<DeclInterface>(region->getParentOp()))
+      declScope->setLoc(rebindLoc(declScope->getLoc()));
 
   // Recurse into nested parameter scopes.
   for (Region *region : graph.nestedDecls)
