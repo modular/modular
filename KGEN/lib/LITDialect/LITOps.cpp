@@ -21,8 +21,8 @@
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/AsmParser/AsmParser.h"
-#include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -533,20 +533,6 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
        llvm::zip(bodyBlock->getArguments(), getValueParamNames()))
     setNameFn(arg, name);
 }
-
-Region *LIT::FuncOp::getCallableRegion() {
-  // If the body is empty, return null to indicate that this is an "external"
-  // callable.
-  if (getBody()->empty())
-    return nullptr;
-  return &getBodyRegion();
-}
-
-ArrayRef<Type> LIT::FuncOp::getCallableResults() { return getResultTypes(); }
-
-ArrayAttr LIT::FuncOp::getCallableArgAttrs() { return nullptr; }
-
-ArrayAttr LIT::FuncOp::getCallableResAttrs() { return nullptr; }
 
 LogicalResult LIT::FuncOp::verify() {
   // Check that the number of argument labels matches the number of argument

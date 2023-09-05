@@ -21,8 +21,8 @@
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -635,16 +635,6 @@ void GeneratorOp::print(OpAsmPrinter &p) {
 
 LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
 
-Region *GeneratorOp::getCallableRegion() { return &getBodyRegion(); }
-
-ArrayRef<Type> GeneratorOp::getCallableResults() {
-  return getFunctionType().getResults();
-}
-
-ArrayAttr GeneratorOp::getCallableArgAttrs() { return nullptr; }
-
-ArrayAttr GeneratorOp::getCallableResAttrs() { return nullptr; }
-
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
@@ -719,16 +709,6 @@ LogicalResult FuncOp::verify() {
     return emitOpError("can only have default value input conventions");
   return verifyOneBlockOrCached(*this);
 }
-
-Region *FuncOp::getCallableRegion() { return &getBodyRegion(); }
-
-ArrayRef<Type> FuncOp::getCallableResults() {
-  return getFunctionType().getResults();
-}
-
-ArrayAttr FuncOp::getCallableArgAttrs() { return nullptr; }
-
-ArrayAttr FuncOp::getCallableResAttrs() { return nullptr; }
 
 //===----------------------------------------------------------------------===//
 // ExternFuncOp

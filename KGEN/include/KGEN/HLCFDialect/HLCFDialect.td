@@ -132,6 +132,8 @@ def HLCFDialect : Dialect {
     /// Register all HLCF attributes.
     void registerAttributes();
   }];
+  // TODO: Remove this once dialects have been updated to use properties.
+  let usePropertiesForAttributes = 0;
 }
 
 #endif // HLCFDIALECT_TD

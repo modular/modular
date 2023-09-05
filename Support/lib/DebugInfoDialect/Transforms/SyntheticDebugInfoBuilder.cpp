@@ -14,7 +14,7 @@
 #include "mlir/AsmParser/AsmParserState.h"
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/FunctionInterfaces.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Support/FileUtilities.h"

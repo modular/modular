@@ -25,6 +25,7 @@ def KGENDialect : Dialect {
   let cppNamespace = "::M::KGEN";
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
+  let usePropertiesForAttributes = 0;
 
   let dependentDialects = ["MDialect", "InterpreterDialect"];
 

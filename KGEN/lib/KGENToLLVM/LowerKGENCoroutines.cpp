@@ -729,9 +729,8 @@ void LowerKGENCoroutinesAsyncPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
-  POPToLLVMTypeConverter typeConverter(target);
   ImplicitLocOpBuilder opBuilder(getOperation().getLoc(), &getContext());
-  LLVMBuilder b(opBuilder, typeConverter);
+  LLVMBuilder b(opBuilder, target);
 
   // Initialize the type cache.
   TypeAttrCache cache = {b.getI1Type(),

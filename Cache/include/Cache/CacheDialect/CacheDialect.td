@@ -35,6 +35,8 @@ def CacheDialect : Dialect {
 
   let cppNamespace = "::M::Cache";
   let useDefaultAttributePrinterParser = 1;
+  // TODO: Remove this once dialects have been updated to use properties.
+  let usePropertiesForAttributes = 0;
 }
 
 #endif // CACHEDIALECT_TD

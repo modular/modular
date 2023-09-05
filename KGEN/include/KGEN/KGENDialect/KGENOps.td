@@ -16,11 +16,11 @@ include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/HLCFDialect/HLCFInterfaces.td"
 include "KGEN/Interpreter/InterpreterInterface.td"
 include "mlir/IR/BuiltinAttributes.td"
-include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -34,9 +34,8 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 
 def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>, DeclInterface,
-    FuncInterface, FunctionLike, ExportInterface]> {
+    SingleBlock, DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+    DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no
@@ -86,6 +85,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     FunctionType getFunctionType() { return getSignature().getValues(); }
+    Region *getCallableRegion() { return &getBodyRegion(); }
   }];
 
   let builders = [
@@ -157,8 +157,7 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
 
 def KGEN_GeneratorOp : KGENOp<"generator", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlock, DeclareOpInterfaceMethods<CallableOpInterface>, DeclInterface,
-    FuncInterface, FunctionLike, ExportInterface]> {
+    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
   let summary = "Function generator definition.";
   let description = [{
     The `kgen.generator` operation defines a function generator. A generator is
@@ -195,6 +194,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<GeneratorOp>::getBody;
+    Region *getCallableRegion() { return &getBodyRegion(); }
   }];
 
   let builders = [
@@ -509,6 +509,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let extraClassDeclaration = [{
     bool isIsolatedFromAbove(unsigned regionNum);
     void notifyKnownIsolatedFromAbove(unsigned regionNum);
+    Region *getCallableRegion() { return &getBodyRegion(); }
 
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }

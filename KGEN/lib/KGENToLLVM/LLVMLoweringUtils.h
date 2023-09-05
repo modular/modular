@@ -114,8 +114,8 @@ auto createLLVMFunc(OpBuilder &b, TargetInfoAttr target, Location loc,
 /// This class is a builder, type converter, and data layout bundled together.
 struct LLVMBuilder : public ImplicitLocOpBuilder,
                      public POPToLLVMTypeConverter {
-  LLVMBuilder(ImplicitLocOpBuilder &b, POPToLLVMTypeConverter &tc)
-      : ImplicitLocOpBuilder(b), POPToLLVMTypeConverter(tc) {}
+  LLVMBuilder(ImplicitLocOpBuilder &b, TargetInfoAttr target)
+      : ImplicitLocOpBuilder(b), POPToLLVMTypeConverter(target) {}
 
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
