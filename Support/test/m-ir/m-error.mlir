@@ -45,3 +45,8 @@
 "M"() {a = #M.device_spec_collection<host = <"cpu", 1>,
                                      devices = [<ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver3", features="+avx2">>,
                                                 <ref = <"cpu", 1>, target = <triple="x86_64-unknown-linux-gnu", cpu="znver4", features="+avx2">>]>} : () -> ()
+
+// -----
+
+// expected-error@+1 {{invalid #M.inout_sig at operand 3.}}
+"M"() {a = #M.inout_sig<"iioxm">} : () -> ()

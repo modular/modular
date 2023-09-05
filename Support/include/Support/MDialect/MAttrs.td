@@ -226,8 +226,10 @@ def M_MultiLineStringAttr
   let summary = "An array of strings which is encoded as a multi-line "
                 "null-terminated string in MEF.";
   let description = [{
-    An array of strings which is encoded as a multi-line null-terminated string
-    in MEF.
+    An array of strings.
+
+    Encoded into MEF as a multi-line null-terminated string using `\n` as
+    the line terminator.
 
     Example: The attribute
     ```mlir
@@ -389,6 +391,8 @@ def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_coll
                   target = <triple="nvptx64-nvidia-cuda", features="+compute_80">>]>
     ```
 
+    Encoded into MEF as JSON in string form.
+
     Can be represented at runtime by M::DeviceSpecCollection.
   }];
 
@@ -442,5 +446,64 @@ def KGEN_BuildInfoAttr : MAttr<"BuildInfo", "build_info"> {
     static BuildInfoAttr getForCurrentBuild(MLIRContext *ctx);
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// InOutSignatureAttr
+//===----------------------------------------------------------------------===//
+
+def M_InOutSignatureAttr : MAttr<"InOutSignature", "inout_sig"> {
+  let summary = "Describes the in/out/mut intended semantics for "
+                "pointer-like operands.";
+  let description = [{
+    This attribute captures the intended semantics for each pointer-like
+    operand of a primitive or kernel.
+     - '.': Operand is a value.
+     - 'i': Operand is only read.
+     - 'o': Operand is only written.
+     - 'm': Operand is mutated in-place.
+
+    May be used to distinguish buffer-like operands on generic ops during
+    compilation, in which case the attribute can be erased before conversion
+    to MEF etc. May also be made available at runtime to help in runtime
+    assertions and safety checks.
+
+    Encoded into MEF as a string.
+
+    Example:
+    ```mlir
+    #M.inout_sig<"ii.mo">
+    ```
+  }];
+
+  let parameters = (ins StringRefParameter<>:$signature);
+  let assemblyFormat = "`<` $signature `>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+     /// The in/out/mut semantics of a single operand.
+     enum InOutSemantics : char {
+       kNone = '.',
+       kIn = 'i',
+       kOut = 'o',
+       kMut = 'm'
+     };
+
+     /// Returns the arity of the signature.
+     size_t size() const { return getSignature().size(); }
+
+     /// Returns the semantics for the i'th operand.
+     InOutSemantics operator[](size_t i) const {
+       const StringRef& sig = getSignature();
+       assert(i < sig.size() && "operand index out of range");
+       return static_cast<InOutSemantics>(sig[i]);
+     }
+  }];
+
+  let builders = [
+    AttrBuilder<(ins "ArrayRef<InOutSemantics>":$signature)>
+  ];
+}
+
+
 
 #endif // MATTRS_TD

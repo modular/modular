@@ -53,3 +53,6 @@
 
 // CHECK: #M<multiline["a", "b", "c"]>
 "some.op"() {a = #M<multiline["a", "b", "c"]>} : () -> ()
+
+// CHECK: #M.inout_sig<"ii.mo">
+"some.op"() {a = #M.inout_sig<"ii.mo">} : () -> ()
