@@ -242,6 +242,7 @@ struct Task[type: AnyType]:
                 cur_hdl,
                 AsyncContext.get_chain(self.handle.get_ctx[AsyncContext]()),
             )
+            __mlir_op.`pop.coroutine.await.end`()
 
         __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
         return self.get()
@@ -337,6 +338,7 @@ struct TaskGroup:
 
         __mlir_region await_body():
             Self.await_body_impl(cur_hdl, self)
+            __mlir_op.`pop.coroutine.await.end`()
 
         __mlir_op.`pop.coroutine.await`[_region : "await_body".value]()
 
