@@ -9,7 +9,8 @@
 from math import iota
 from memory.buffer import NDBuffer
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from TopK import top_k
+from TopK import _top_k
+from runtime.llcl import Runtime, OwningOutputChainPtr
 
 
 struct TestTensor[rank: Int, type: DType]:
@@ -53,14 +54,19 @@ fn test_case[
     var input_buf = input.to_ndbuffer()
     fill_fn[rank, type](input_buf)
 
-    top_k(
-        input.to_ndbuffer(),
-        K,
-        axis,
-        largest,
-        out_vals.to_ndbuffer(),
-        out_idxs.to_ndbuffer(),
-    )
+    with Runtime() as rt:
+        let out_chain = OwningOutputChainPtr(rt)
+        _top_k(
+            input.to_ndbuffer(),
+            K,
+            axis,
+            largest,
+            out_vals.to_ndbuffer(),
+            out_idxs.to_ndbuffer(),
+            out_chain.borrow(),
+            1,  # force multithreading for small test cases
+        )
+        out_chain.wait()
 
     let xxx_no_lifetimes = input  # intentionally bad name
 
