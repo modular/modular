@@ -17,7 +17,7 @@ from algorithm import (
 )
 from algorithm.functional import _elementwise_impl
 from memory.buffer import Buffer, NDBuffer, prod_dims
-from runtime.llcl import OutputChainPtr
+from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import StaticIntTuple
@@ -434,25 +434,32 @@ fn gather[
 
 @always_inline
 fn scatter_nd[
-    type: DType,
+    output_type: DType,
+    indices_type: DType,
     updates_rank: Int,
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
 ](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), type
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), DType.int32
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
     out_chain: OutputChainPtr,
 ):
     """A specialized scatter for updates[i0][i1][i2][i3], indices[i0][i1][1],
     output[o0][i2][i3]. TODO(#15445): Make this general."""
 
-    constrained[type.is_float64(), "scatter_nd only supports F64 currently"]()
     constrained[
         updates_rank == 4, "scatter_nd updates rank must be 4 currently"
     ]()
@@ -483,13 +490,30 @@ fn scatter_nd[
     let N = updates_shape[0] * updates_shape[1]
     let D = updates_shape[2] * updates_shape[3]
 
-    output.zero()
+    # Lambda for copying elements from input buffer into output buffer.
+    @always_inline
+    @parameter
+    fn copy[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
+        let index = rebind[StaticIntTuple[output_rank]](idx)
+        output.simd_store[simd_width](index, input.simd_load[simd_width](index))
 
-    let output_1d = Buffer[Dim(), type](output.data, output.num_elements())
-    let indices_1d = Buffer[Dim(), DType.int32](
+    # Invoke copy lambda TODO simd_width
+    alias simd_width = simdwidthof[output_type]().value
+    let elemwise_chain = OwningOutputChainPtr(out_chain.get_runtime())
+    elementwise[output_rank, simd_width, copy](
+        output.dynamic_shape, elemwise_chain.borrow()
+    )
+    elemwise_chain.wait()
+
+    let output_1d = Buffer[Dim(), output_type](
+        output.data, output.num_elements()
+    )
+    let indices_1d = Buffer[Dim(), indices_type](
         indices.data, indices.num_elements()
     )
-    let updates_1d = Buffer[Dim(), type](updates.data, updates.num_elements())
+    let updates_1d = Buffer[Dim(), output_type](
+        updates.data, updates.num_elements()
+    )
 
     for n in range(N):
         let index = indices_1d[n].to_int()
