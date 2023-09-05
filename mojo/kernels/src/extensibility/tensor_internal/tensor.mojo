@@ -39,6 +39,7 @@ print(gray_scale_image.shape().__str__())
 
 from .tensor_shape import TensorShape
 from .tensor_spec import TensorSpec
+from memory.buffer import NDBuffer
 
 # ===----------------------------------------------------------------------===#
 # Tensor
@@ -490,3 +491,20 @@ struct Tensor[dtype: DType]:
         for i in range(rank - 1):
             result = self.dim(i + 1) * result + indices[i + 1]
         return result
+
+    # @always_inline
+    fn _to_ndbuffer[
+        rank: Int
+    ](self) -> NDBuffer[rank, DimList.create_unknown[rank](), dtype]:
+        debug_assert(
+            rank == self.rank(), "to_ndbuffer rank must match Tensor rank"
+        )
+        var shape = StaticIntTuple[rank](0)
+
+        @unroll
+        for i in range(rank):
+            shape[i] = self.dim(i)
+
+        return NDBuffer[rank, DimList.create_unknown[rank](), dtype](
+            self._ptr, shape
+        )
