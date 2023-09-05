@@ -520,7 +520,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   mlir::getUsedValuesDefinedAbove(op->getRegions(), uniqueCaptures);
   SmallVector<Value, 0> captures = uniqueCaptures.takeVector();
 
-  Block *awaitBody = &op.getBody().front();
+  Region &awaitBody = op.getBody();
   SmallVector<Type> captureTypes;
   for (Value &capture : captures) {
     Type captureType = b.convertType(capture.getType());
@@ -528,10 +528,10 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       return op.emitError("failed to convert captured value type");
     captureTypes.push_back(captureType);
 
-    Value arg = awaitBody->addArgument(capture.getType(), op.getLoc());
+    Value arg = awaitBody.addArgument(capture.getType(), op.getLoc());
     Value valueInBody = capture;
     if (arg.getType() != captureType) {
-      b.setInsertionPointToStart(&op.getBody().front());
+      b.setInsertionPointToStart(&awaitBody.front());
       // Materialize source and destination conversions.
       Type srcType = arg.getType();
       arg.setType(captureType);
@@ -549,7 +549,8 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                    LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
                    Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
-  suspendFn.getBody().takeBody(op.getBody());
+  cast<POP::CoroutineAwaitEndOp>(awaitBody.front().getTerminator()).erase();
+  suspendFn.getBody().takeBody(awaitBody);
 
   // If possible, we need to add a subprogram scope to the new function.
   ErrorOr<DebugInfo::DIScopeAttr> scopeOr =

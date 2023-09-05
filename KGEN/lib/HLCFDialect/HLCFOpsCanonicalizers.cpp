@@ -223,12 +223,6 @@ struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
     Block &parentBlock = op->getParentRegion()->front();
-
-    // FIXME(19819): Workaround pop.coroutine.await not having a terminator
-    if (op->getParentOp()->hasTrait<OpTrait::NoTerminator>())
-      return rewriter.notifyMatchFailure(
-          op, "IfOp's parent block doesn't have a terminator.");
-
     Operation *parentBlockTerm = parentBlock.getTerminator();
 
     Operation *thenTerm = op.getThenTerminator();

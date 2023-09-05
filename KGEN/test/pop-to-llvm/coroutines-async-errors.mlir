@@ -6,7 +6,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
 llvm.func @not_a_coroutine() {
   // expected-error @below {{coroutine await operation is not contained inside an async function}}
   pop.coroutine.await {
-  ^bb0:
+    pop.coroutine.await.end
   }
   llvm.return
 }
