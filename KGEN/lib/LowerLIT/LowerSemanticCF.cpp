@@ -353,11 +353,17 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
     // Most ops don't have regions and are just fallthrough.
     // TODO: Add support for noreturn calls.
-    if (!op.getNumRegions() ||
-        // FIXME: pop.coroutine.await doesn't have a terminator and we don't
-        // know how to check it.  We should regularize this.
-        isa<POP::CoroutineAwaitOp>(op))
+    if (!op.getNumRegions())
       continue;
+
+    // Coroutine await regions are fallthrough only.
+    if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+      bool awaitRaises = false, awaitBreaks = false, awaitFallsThrough = false;
+      lowerSemanticCFForBlock(await.getBody().front(), awaitRaises, awaitBreaks,
+                              awaitFallsThrough);
+      // The verifier will catch any invalid control-flow structure.
+      continue;
+    }
 
     // Ignore nested functions, they are handled (and lowered) separately by the
     // outer walker, which we are recursing within post-order.
@@ -520,10 +526,6 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
     }
   }
 
-  // FIXME: CoroutineAwaitOp doesn't have a terminator??
-  if (isa<POP::CoroutineAwaitOp>(block.getParentOp()))
-    return;
-
   auto *terminator = &block.back();
   if (isa<HLCF::BreakOp>(terminator)) {
     doesBreak = true;
@@ -536,7 +538,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp,
-              LIT::YieldOp>(block.back())));
+              LIT::YieldOp, POP::CoroutineAwaitEndOp>(block.back())));
   doesFallThrough = true;
 }
 
