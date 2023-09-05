@@ -198,6 +198,9 @@ void KGEN::populateElaborateModulePasses(
   // Only outline closures just before elaboration - they aren't really
   // necessary until elaboration happens.
   pm.addPass(createOutlineClosures());
+  // TODO issue-#20717: Run CSE before createOutlineClosures if there is a
+  // dynamic version of IsIsolatedFromAbove trait.
+  pm.addPass(mlir::createCSEPass());
   pm.addPass(createVerifyParameters());
   pm.addPass(createLiftAndFoldApply());
 
