@@ -77,7 +77,8 @@ static void propagateTrivialParameters(Region *region,
       // The type of the parameter may change. Try to rebind it.
       auto decl = cast<ParamDeclAttr>(
           evaluator.getReboundAttribute(declare.getParamDecl()));
-      if (ParameterAttr::isSimpleConstant(value)) {
+      if (isa<ParamDeclRefAttr>(value) ||
+          ParameterAttr::isSimpleConstant(value)) {
         evaluator.setOrOverwriteParameterValue(decl, value);
         declare.erase();
       } else {
@@ -101,8 +102,15 @@ static void propagateTrivialParameters(Region *region,
     }
   }
 
-  for (Operation *op : graph.paramOps)
+  for (Operation *op : graph.paramOps) {
     processOp(op, evaluator);
+    // Peephole rebinds that have been resolved to the same types.
+    if (auto rebind = dyn_cast<RebindOp>(op);
+        rebind && rebind.getInput().getType() == rebind.getType()) {
+      rebind.replaceAllUsesWith(rebind.getInput());
+      rebind.erase();
+    }
+  }
 
   // Any op might contain a parametric location, so we go through all of them.
   auto rebindLoc = [&](Location loc) {
