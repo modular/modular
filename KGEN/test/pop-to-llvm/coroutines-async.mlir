@@ -91,8 +91,8 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr<i8> {
   // CHECK-NEXT: external_call @llvm.coro.suspend.async.sl_p0p0p0s
   // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[CAPTURED]])
   pop.coroutine.await {
-  ^bb0:
     "do_something"(%idx1) : (index) -> ()
+    pop.coroutine.await.end
   } loc(callsite("foo.mlir":10:5 at "bar.mlir":12:7))
   // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
@@ -180,6 +180,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
     pop.coroutine.await {
       %2 = llvm.mlir.constant(1 : i64) : i64 loc(#loc11)
+      pop.coroutine.await.end
     } loc(#loc11)
 
     // CHECK-LABEL: llvm.func internal @foo_af.suspend_0()
@@ -188,6 +189,7 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
     pop.coroutine.await {
       %2 = llvm.mlir.constant(2 : i64) : i64 loc(#loc13)
+      pop.coroutine.await.end
     } loc(#loc13)
 
     llvm.return %1 : !llvm.ptr<i8> loc(#loc8)

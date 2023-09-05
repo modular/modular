@@ -29,7 +29,7 @@ llvm.func @spilled_alloca() {
     llvm.intr.lifetime.start 4, %1 : !llvm.ptr<i32>
     hlcf.loop {
       pop.coroutine.await {
-      ^bb0:
+        pop.coroutine.await.end
       }
       hlcf.break
     }
@@ -47,7 +47,7 @@ llvm.func @not_spilled_alloca() {
   // CHECK: hlcf.loop
   hlcf.loop {
     pop.coroutine.await {
-    ^bb0:
+      pop.coroutine.await.end
     }
     // CHECK: %1 = llvm.alloca
     %1 = llvm.alloca %0 x i32 : (i32) -> !llvm.ptr<i32>
@@ -58,7 +58,7 @@ llvm.func @not_spilled_alloca() {
     llvm.intr.lifetime.end 4, %1 : !llvm.ptr<i32>
     // CHECK-NEXT: pop.coroutine.await
     pop.coroutine.await {
-    ^bb0:
+      pop.coroutine.await.end
     }
     hlcf.break
   }
@@ -73,7 +73,7 @@ llvm.func @remove_alloca_from_frame(%cond: i1) {
   hlcf.if %cond {
     // CHECK-NEXT: pop.coroutine.await
     pop.coroutine.await {
-    ^bb0:
+      pop.coroutine.await.end
     }
     // CHECK: %1 = llvm.alloca
     // CHECK-NEXT: llvm.intr.lifetime.start 4, %1

@@ -2103,7 +2103,7 @@ def POP_CoroutineOpaqueHandleOp : POPOp<"coroutine.opaque_handle"> {
 // CoroutineAwaitOp
 //===----------------------------------------------------------------------===//
 
-def POP_CoroutineAwaitOp : POPOp<"coroutine.await", [NoTerminator]> {
+def POP_CoroutineAwaitOp : POPOp<"coroutine.await", [SingleBlock]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
     The `pop.coroutine.await` operation suspends the current coroutine function
@@ -2117,12 +2117,31 @@ def POP_CoroutineAwaitOp : POPOp<"coroutine.await", [NoTerminator]> {
     %hdl = pop.coroutine.handle : <i32, index>
     pop.coroutine.await {
       pop.coroutine.resume %hdl : <i32>
+      pop.coroutine.await.end
     }
     ```
   }];
 
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "$body attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineAwaitEndOp
+//===----------------------------------------------------------------------===//
+
+def POP_CoroutineAwaitEndOp : POPOp<"coroutine.await.end", [Terminator,
+    HasParent<"CoroutineAwaitOp">]> {
+  let summary = "terminator for `pop.coroutine.await`";
+  let description = [{
+    The `pop.coroutine.await.end` operation is the terminator for the
+    `pop.coroutine.await` operation. The operation signifies the end of the
+    coroutine suspension function denoted by the surrounding
+    `pop.coroutine.await` operation. In an async function, it is semantically
+    a fallthrough.
+  }];
+
+  let assemblyFormat = "attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

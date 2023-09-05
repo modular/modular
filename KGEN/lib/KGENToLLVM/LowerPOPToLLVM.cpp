@@ -1529,6 +1529,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<CoroutineHandleOp>();
   target.addLegalOp<CoroutineOpaqueHandleOp>();
   target.addLegalOp<CoroutineAwaitOp>();
+  target.addLegalOp<CoroutineAwaitEndOp>();
   target.addLegalOp<CoroutinePromiseOp>();
   target.addLegalOp<CoroutineResumeOp>();
   target.addLegalOp<CoroutineDestroyOp>();

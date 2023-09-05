@@ -1006,6 +1006,8 @@ kgen.func @async_coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
     pop.coroutine.resume %calleeHdl : !pop.coroutine<() -> i32>
     // CHECK-NEXT: pop.coroutine.resume %[[OPAQUE]] : !kgen.pointer<i8>
     pop.coroutine.resume %opaque : !kgen.pointer<i8>
+    // CHECK-NEXT: pop.coroutine.await.end
+    pop.coroutine.await.end
   // CHECK-NEXT: }
   }
   // CHECK-NEXT: pop.coroutine.destroy %[[CALLEE_HDL]] : <() -> i32>
