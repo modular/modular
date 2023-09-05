@@ -650,8 +650,8 @@ kgen.generator @stack_allocation<size, ty: type, address_space_val>() {
   %3 = pop.stack_allocation 16 x !pop.simd<4, f32> align size
   // CHECK: pop.stack_allocation 16 x simd<4, f32> address_space 5
   %4 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5
-  // CHECK: pop.stack_allocation 16 x simd<4, f32> align 8 address_space 5
-  %5 = pop.stack_allocation 16 x !pop.simd<4, f32> align 8 address_space 5
+  // CHECK: pop.stack_allocation 16 x simd<4, f32> address_space 5 align 8
+  %5 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space 5 align 8
   // CHECK: pop.stack_allocation 16 x simd<4, f32> address_space address_space_val
   %6 = pop.stack_allocation 16 x !pop.simd<4, f32> address_space address_space_val
   kgen.return
@@ -681,8 +681,8 @@ kgen.generator @global_constant() {
 
 // CHECK-LABEL: @global_alloc
 kgen.generator @global_alloc() {
-  // CHECK-NEXT: pop.global_alloc 2 x scalar<si32> align 32 address_space 3
-  %0 = pop.global_alloc 2 x !pop.scalar<si32> align 32 address_space 3
+  // CHECK-NEXT: pop.global_alloc 2 x scalar<si32> address_space 3 align 32
+  %0 = pop.global_alloc 2 x !pop.scalar<si32> address_space 3 align 32
   kgen.return
 }
 

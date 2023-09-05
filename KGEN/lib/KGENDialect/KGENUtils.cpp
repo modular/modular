@@ -1725,28 +1725,6 @@ void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
   }
 }
 
-/// Parse an align parameter if present.
-void KGEN::printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
-                                            TypedAttr alignment) {
-  if (!alignment)
-    return;
-
-  p << " align ";
-  printParamValue(p, alignment);
-  p << " ";
-}
-
-/// Parse a parameter value that is known to be an alignment type.
-ParseResult KGEN::parseOptionalAlignmentParamValue(AsmParser &p,
-                                                   TypedAttr &result) {
-  if (p.parseOptionalKeyword("align")) {
-    result = TypedAttr();
-    return success();
-  }
-
-  return parseIndexParamValue(p, result);
-}
-
 /// Parse an address space parameter if present.
 void KGEN::printOptionalAddressSpaceParamValue(AsmPrinter &p, Operation *op,
                                                TypedAttr addressSpace) {

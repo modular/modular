@@ -216,11 +216,6 @@ ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
 void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
                            ParamDeclArrayAttr paramDecls);
 
-/// Parse an align parameter if present.
-ParseResult parseOptionalAlignmentParamValue(AsmParser &p, TypedAttr &result);
-void printOptionalAlignmentParamValue(AsmPrinter &p, Operation *op,
-                                      TypedAttr alignment);
-
 /// Parse an address space parameter if present.
 ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,
                                                 TypedAttr &result);

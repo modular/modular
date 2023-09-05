@@ -720,7 +720,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                        OptionalAttr<AttrOfType<Index>>:$alignment);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $ptr `` custom<OptionalAlignmentParamValue>($alignment) attr-dict `:`
+    $ptr (`align` custom<IndexParamValue>($alignment)^)? attr-dict `:`
     qualified(type($ptr))
   }];
 
@@ -757,7 +757,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        UnitAttr:$nonTemporal);
   let assemblyFormat = [{
-    $arg `,` $ptr `` custom<OptionalAlignmentParamValue>($alignment)
+    $arg `,` $ptr (`align` custom<IndexParamValue>($alignment)^)?
     (`nontemporal` $nonTemporal^)? attr-dict `:` qualified(type($ptr))
   }];
 
@@ -1454,7 +1454,8 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $alignment, $address_space) `` attr-dict
+    custom<PointerOf>(type($result), $address_space) 
+    (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 
   let builders = [
@@ -1608,7 +1609,8 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $alignment, $address_space) `` attr-dict
+    custom<PointerOf>(type($result), $address_space) 
+    (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 }
 
@@ -1640,7 +1642,7 @@ def POP_GlobalConstantOp : POPOp<"global_constant", [Pure]> {
 
   let assemblyFormat = [{
     `` custom<GlobalConstantOpValue>($value, type($result))
-        custom<OptionalAlignmentParamValue>($alignment) attr-dict
+    (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 
   let builders = [
