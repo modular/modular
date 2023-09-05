@@ -8,6 +8,7 @@
 #include "Support/MDialect/MDialect.h"
 #include "Support/PlatformUtils.h"
 #include "llvm/Support/TargetSelect.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 using namespace mlir;
@@ -34,4 +35,17 @@ TEST(ArchTarget, GetFeatures) {
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
   EXPECT_EQ(targetInfo->getCpu(), "apple-m1");
 #endif
+}
+
+TEST(ArchTarget, getMArchTargetInfo) {
+  llvm::InitializeAllTargets();
+
+  ErrorOr<TargetInfo> info =
+      M::getMArchTargetInfo("armv8.2-a", "neoverse-n1", "");
+  ASSERT_FALSE(info.isError()) << info.getError();
+  EXPECT_EQ(info->cpu, "neoverse-n1");
+  // FIXME(#17421): The triple's OS name is set to the host machine's OS name,
+  // which is incorrect for cross-compilation. So here we only test the first 2
+  // components of the triple, so as not to include the host OS mame.
+  EXPECT_THAT(info->triple.str(), testing::StartsWith("aarch64-unknown-"));
 }
