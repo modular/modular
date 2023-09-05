@@ -1264,6 +1264,36 @@ BuildInfoAttr BuildInfoAttr::getForCurrentBuild(MLIRContext *ctx) {
 }
 
 //===----------------------------------------------------------------------===//
+// InOutSignatureAttr
+//===----------------------------------------------------------------------===//
+
+InOutSignatureAttr InOutSignatureAttr::get(MLIRContext *context,
+                                           ArrayRef<InOutSemantics> signature) {
+  std::string str;
+  str.resize(signature.size());
+  for (size_t i = 0, n = signature.size(); i < n; ++i)
+    str[i] = static_cast<char>(signature[i]);
+  return InOutSignatureAttr::get(context, str);
+}
+
+LogicalResult
+InOutSignatureAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                           StringRef signature) {
+  for (size_t i = 0, n = signature.size(); i < n; ++i) {
+    switch (signature[i]) {
+    case kNone:
+    case kIn:
+    case kOut:
+    case kMut:
+      break;
+    default:
+      return emitError() << "invalid #M.inout_sig at operand " << i << ".";
+    }
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
