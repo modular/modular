@@ -553,11 +553,9 @@ LogicalResult VariantGetOp::verify() {
 
 /// Parse the element type of the allocated pointer type.
 static ParseResult parsePointerOf(AsmParser &p, Type &result,
-                                  TypedAttr &alignment,
                                   TypedAttr &addressSpace) {
   TypedAttr elementType;
   if (parseTypeParamValue(p, elementType) ||
-      KGEN::parseOptionalAlignmentParamValue(p, alignment) ||
       KGEN::parseOptionalAddressSpaceParamValue(p, addressSpace))
     return failure();
 
@@ -567,9 +565,8 @@ static ParseResult parsePointerOf(AsmParser &p, Type &result,
 
 /// Print the element type of the allocated pointer type.
 static void printPointerOf(AsmPrinter &p, Operation *op, Type result,
-                           TypedAttr alignment, TypedAttr addressSpace) {
+                           TypedAttr addressSpace) {
   printTypeParamValue(p, cast<PointerType>(result).getElementType());
-  KGEN::printOptionalAlignmentParamValue(p, op, alignment);
   KGEN::printOptionalAddressSpaceParamValue(p, op, addressSpace);
 }
 

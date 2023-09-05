@@ -52,7 +52,7 @@ kgen.func @stack_allocation_with_align_and_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<f32, 3>
   // CHECK: llvm.intr.lifetime.start 64, %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> align 8 address_space 3
+  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> address_space 3 align 8
   // CHECK-NEXT: llvm.intr.lifetime.end 64, %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
