@@ -893,24 +893,23 @@ fn tile_and_unswitch[
 
 
 @always_inline
-fn _get_num_workers(problem_size: Int, runtime: Runtime) -> Int:
+fn _get_num_workers(
+    problem_size: Int, runtime: Runtime, grain_size: Int = 32768
+) -> Int:
     """Returns a number of workers to run in parallel.
 
     Args:
         problem_size: The number of parallel tasks.
         runtime: Runtime object.
+        grain_size: Minimum number of elements to warrant an additional thread.
 
     Returns:
         The number of workers to run in parallel.
     """
-    # Minimum number of elements to warrant an additional thread.
-    # copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
-    # TODO: refine this heuristic. It may not be appropriate for more compute-heavy
-    # ops like gelu.
+    # default grain_size copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # Ensure at least one worker is always returned to avoid division by zero.
-    alias GRAIN_SIZE = 32768
     return max(
-        1, min(runtime.parallelism_level(), div_ceil(problem_size, GRAIN_SIZE))
+        1, min(runtime.parallelism_level(), div_ceil(problem_size, grain_size))
     )
 
 
@@ -1188,3 +1187,44 @@ fn _elementwise_impl[
             ](shape[rank - 1])
 
     async_parallelize[task_func](out_chain, num_workers)
+
+
+fn parallelize_over_rows[
+    rank: Int,
+    func: fn (Int, Int) capturing -> None,
+](
+    shape: StaticIntTuple[rank],
+    axis: Int,
+    out_chain: OutputChainPtr,
+    grain_size: Int,
+):
+    """Parallelize func over non-axis dims of shape.
+
+    Parameters:
+        rank: Rank of shape.
+        func: Function to call on range of rows.
+
+    Args:
+        shape: Shape to parallelize over.
+        axis: Rows are slices along the axis dimension of shape.
+        out_chain: The out chain to attach results to.
+        grain_size: The minimum number of elements to warrant using an additional thread.
+    """
+    let total_size = shape.flattened_length()
+    let num_rows = total_size // shape[axis]
+
+    let num_workers = min(
+        num_rows,
+        _get_num_workers(total_size, out_chain.get_runtime(), grain_size),
+    )
+    let chunk_size = div_ceil(num_rows, num_workers)
+
+    @always_inline
+    @parameter
+    fn task_func(task_id: Int):
+        let start_row = task_id * chunk_size
+        let end_row = min((task_id + 1) * chunk_size, num_rows)
+
+        func(start_row, end_row)
+
+    sync_parallelize[task_func](out_chain, num_workers)
