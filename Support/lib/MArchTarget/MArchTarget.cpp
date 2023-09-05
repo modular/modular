@@ -231,7 +231,10 @@ ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
     opts->CPU = "generic";
   }
 
-  if (triple.getVendorName().empty())
+  // Reset the vendor name if it's not one known to LLVM. This can occur when
+  // the triple arch name is set to a value containing hyphens, such as
+  // "armv8.2-a". In this case, the vendor is set to "a", which is unknown.
+  if (triple.getVendor() == Triple::UnknownVendor)
     triple.setVendor(Triple::VendorType::UnknownVendor);
 
     // Set the OS name (see #17241).
