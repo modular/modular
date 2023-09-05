@@ -66,7 +66,7 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 
 // Base class for binary arithmetic pop operations.
 class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
-    POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
+    POPOp<mnemonic, traits # [SameOperandsAndResultType]> {
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
                        UnboundOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
@@ -79,7 +79,7 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative]> {
+def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure]> {
   let summary = "addition";
   let description = [{
     The `pop.add` operation takes two `!pop.simd` values and returns their sum.
@@ -99,7 +99,7 @@ def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative]> {
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def POP_SubOp : POP_ArithmeticBinaryOp<"sub"> {
+def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure]> {
   let summary = "subtraction";
   let description = [{
     The `pop.sub` operation takes two `!pop.simd` values and returns their
@@ -119,7 +119,7 @@ def POP_SubOp : POP_ArithmeticBinaryOp<"sub"> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative]> {
+def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure]> {
   let summary = "multiplication";
   let description = [{
     The `pop.mul` operation takes two `!pop.simd` values and returns their
@@ -139,13 +139,14 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative]> {
 // DivOp
 //===----------------------------------------------------------------------===//
 
-def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
+def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect]> {
   let summary = "divide";
   let description = [{
     The `pop.div` operation takes two `!pop.simd` values and divides them. The
     operand and result types must be the same. This operation is only valid on
     integer, index, and floating point dtypes. The signedness of integer
     division is determined by the dtype. Index is always treated as signed.
+    Division by zero is undefined behaviour.
 
     Example:
 
@@ -160,14 +161,14 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div"> {
 // RemOp
 //===----------------------------------------------------------------------===//
 
-def POP_RemOp : POP_ArithmeticBinaryOp<"rem"> {
+def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect]> {
   let summary = "remainder";
   let description = [{
     The `pop.rem` operation takes two `!pop.simd` values and returns their
     remainder. The operand and result types must be the same. This operation is
     only valid on integer, index, and floating point dtypes. The signedness of
     integer remainder is determined by the dtype. Index is always treated as
-    signed.
+    signed. Division by zero is undefined behaviour.
 
     Example:
 
@@ -182,7 +183,7 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem"> {
 // MaxOp
 //===----------------------------------------------------------------------===//
 
-def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative]> {
+def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative, Pure]> {
   let summary = "max";
   let description = [{
     The `pop.max` operation takes two `!pop.simd` values and returns their
@@ -204,7 +205,7 @@ def POP_MaxOp : POP_ArithmeticBinaryOp<"max", [Commutative]> {
 // MinOp
 //===----------------------------------------------------------------------===//
 
-def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative]> {
+def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative, Pure]> {
   let summary = "min";
   let description = [{
     The `pop.min` operation takes two `!pop.simd` values and returns their
@@ -226,7 +227,7 @@ def POP_MinOp : POP_ArithmeticBinaryOp<"min", [Commutative]> {
 // ShlOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
+def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure]> {
   let summary = "shift left";
   let description = [{
     The `pop.shl` operation returns the first operand shifted to the left a
@@ -234,7 +235,7 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
     integer or index dtype. The RHS value is always treated as unsigned.
 
     If the RHS value is equal to or larger than the number of bits in LHS, the
-    results of this operation are undefined.
+    results of this operation is a poison value.
 
     Example:
 
@@ -251,7 +252,7 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl"> {
 // ShrOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
+def POP_ShrOp : POP_ArithmeticBinaryOp<"shr", [Pure]> {
   let summary = "shift right";
   let description = [{
     The `pop.shr` operation returns the first operand shifted to the right a
@@ -266,9 +267,10 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr"> {
     if the dtype is unsigned. The most significant bits of the result will be
     filled with zero bits after the shift.
 
-    If `rhs` is equal to or larger than the number of bits in `lhs`, the results
-    of this operation are undefined. If the arguments are vectors, each vector
-    element of `lhs` is shifted by the corresponding shift amount in `rhs`.
+    If `rhs` is equal to or larger than the number of bits in `lhs`, the result
+    of this operation is a poison value. If the arguments are vectors, each
+    vector element of `lhs` is shifted by the corresponding shift amount in
+    `rhs`.
 
     ```mlir
     %0 = pop.shr %val, %shft: !pop.scalar<type>
@@ -549,7 +551,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     Takes a SIMD vector and an index position and extracts the `!pop.scalar` at
     that position. The position must be of type index.
 
-    If the position is out-of-bounds, the behavior is undefined.
+    If the position is out-of-bounds, the result is a poison value.
 
     Example:
 
@@ -581,7 +583,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     source value into the vector at the proper position. The position must be
     of type index.
 
-    If the position is out-of-bounds, the behavior is undefined.
+    If the position is out-of-bounds, the result is a poison value.
 
     Example:
 
@@ -612,8 +614,6 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     The `pop.simd.shuffle` operation constructs a permutation of two vectors of
     the same length and returns a vector of the same element type with the same
     length as the provided mask, and thus must be a non-parametric constant.
-
-    If any of the indices is out-of-bounds, the behavior is undefined.
 
     Example:
 
@@ -1138,8 +1138,8 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
   let summary = "array get element pointer";
   let description = [{
     The `pop.array.gep` operation takes a pointer to a `!pop.array` and an index
-    and returns a pointer to the array element at that index. The behaviour is
-    undefined if the index is out-of-bounds.
+    and returns a pointer to the array element at that index. If the index is
+    out-of-bounds, the result of the operation is a poison value.
 
     Example:
 
@@ -1351,7 +1351,7 @@ def VariantGetOp : POPOp<"variant.get", [Pure]> {
     The `pop.variant.get` operation interprets the given variant as one of its
     possible types and gets it as that type. This operation does NOT check
     whether the variant is that type. If the result type does not match the
-    actual type of the variant, the operation's result is undefined.
+    actual type of the variant, the operation's result is a poison value.
 
     Example:
 
