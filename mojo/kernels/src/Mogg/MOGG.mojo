@@ -1671,25 +1671,36 @@ fn scatter_nd[
     output_rank: Int,
     updates_rank: Int,
     indices_rank: Int,
-    type: DType,
+    output_type: DType,
+    indices_type: DType,
     single_thread_blocking_override: Bool,
 ](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
     updates: NDBuffer[
-        updates_rank, DimList.create_unknown[updates_rank](), type
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
     ],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), DType.int32
+        indices_rank,
+        DimList.create_unknown[indices_rank](),
+        indices_type,
     ],
-    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
     out_chain: OutputChainPtr,
 ):
     return _scatter_nd[
-        type,
+        output_type,
+        indices_type,
         updates_rank,
         indices_rank,
         output_rank,
         single_thread_blocking_override,
-    ](updates, indices, output, out_chain)
+    ](input, updates, indices, output, out_chain)
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
