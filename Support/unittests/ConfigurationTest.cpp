@@ -130,6 +130,7 @@ key3 = value3
   EXPECT_EQ(cfg.getValue("akey"), "foo");
   EXPECT_EQ(cfg.getValue("section.key2"), "value2");
   EXPECT_EQ(cfg.getValue("section.subsection.key3"), "bar");
+  EXPECT_EQ(cfg.getValueOr("only.default.value", "default"), "default");
 }
 
 TEST(Configuration, SetValue) {
