@@ -158,11 +158,13 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 /// Parse and print an operand and result type list with metadata.
 OptionalParseResult parseOptionalSignature(AsmParser &p,
                                            SignatureType &signature);
+ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
 ParseResult parseSignature(AsmParser &p, SignatureType &signature);
 ParseResult parseSignatureValues(AsmParser &p, TypeArrayAttr inputParamTypes,
                                  TypeArrayAttr resultParamTypes,
                                  SignatureType &signature);
 void printSignature(AsmPrinter &p, SignatureType signature);
+void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, SignatureType signature);
 
 /// Parse and print a function signature with optional metadata.
