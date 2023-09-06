@@ -94,17 +94,11 @@ public:
   attachCompiledArchiveBytes(ModuleOp theModule, Cache::BufferRef archive,
                              const CompilationOptions &compilationOptions);
 
-  /// Write the package - this takes the ToolOutputFile because if we're
-  /// printing to the stdout we want to print the full module (so the dialect
-  /// resource is printed), but if we're printing to a file, we simply print
-  /// the package bytecode, which will include the resources.
-  ErrorOrSuccess writePackage(llvm::ToolOutputFile &out) {
-    if (out.getFilename() == "-")
-      packageModule->print(out.os());
-    else if (failed(mlir::writeBytecodeToFile(thePackage, out.os())))
-      return Error("failed to write package bytecode to a file");
-
-    return success();
+  /// Returns an owning reference to the module that contains the newly created
+  /// package, as well as the package itself. This releases the builer's owning
+  /// reference to the module, and thus invalidates the builder.
+  std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp> build() {
+    return {packageModule.release(), thePackage};
   }
 
   /// Get the MLIRContext.
@@ -541,13 +535,19 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   return std::make_pair(std::move(symtab), std::move(exportedSymbols));
 }
 
-/// We have all the arguments and all the state we need, we can now start
-/// building the package itself.
-static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
-                                   ModuleOp theModule,
-                                   LIT::PackageOp parsedPackageOp,
-                                   llvm::ToolOutputFile &out,
-                                   LLCL::Runtime &runtime) {
+/// Given parsed module and package ops, returns either a module and package op
+/// "built" for the given target, or an error.
+///
+/// Here, "building" a package means:
+/// 1. Running the package through both the pre-elaboration and elaboration
+///    phases of the KGEN compiler, and setting the resulting MLIR bytecode of
+///    each of these as attributes on the generated package op.
+/// 2. Generating a standalone archive that can be included in a final Mojo
+///    program, and setting those bytes as an attribute on the generated package
+///    op.
+static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
+buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
+             LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
   PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target);
   mlir::MLIRContext *ctx = packageBuilder.getContext();
@@ -589,12 +589,7 @@ static ErrorOrSuccess buildPackage(const PackageArgs &packageArgs,
           theModule, std::move(archive), compilationOptions))
     return err.takeError();
 
-  // Write the module to the output. We write the whole module because we have
-  // to get the resources as well.
-  if (auto err = packageBuilder.writePackage(out))
-    return err.takeError();
-
-  return success();
+  return packageBuilder.build();
 }
 
 //===----------------------------------------------------------------------===//
@@ -676,8 +671,18 @@ static int package(const State &state) {
 
   // Build the package from the inputs we just parsed, and write the output to
   // `out`.
-  if (auto err = buildPackage(packageArgs, **module, packageOp, *out, runtime))
-    return state.reportError(err.getError());
+  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, runtime);
+  if (failed(builtOrErr))
+    return state.reportError(builtOrErr.getError());
+  auto [builtModule, builtPackage] = builtOrErr.takeValue();
+
+  // If we're printing to stdout we want to print the full module (so the
+  // dialect resource is printed), but if we're printing to a file, we simply
+  // print the package bytecode, which will include the resources.
+  if (out->getFilename() == "-")
+    builtModule->print(out->os());
+  else if (failed(mlir::writeBytecodeToFile(builtPackage, out->os())))
+    return state.reportError("failed to write package bytecode to a file");
 
   out->keep();
   return EXIT_SUCCESS;
