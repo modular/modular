@@ -29,7 +29,7 @@ fn testMLIR():
   var y : __mlir_type.`kgen.dtype`  # should be !kgen.dtype
 
   # expected-error @+1 {{unable to infer result type from MLIR operation 'index.castu'}}
-  __mlir_op.`index.castu`(x, __mlir_type.i1)
+  __mlir_op.`index.castu`(x, a)
   # expected-error @+1 {{unable to infer result type from MLIR operation 'index.castu'}}
   __mlir_op.`index.castu`(x)
   # expected-error @+1 {{'index.castu' op result #0 must be integer or index, but got 'f32'}}
