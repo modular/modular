@@ -507,7 +507,7 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   else
     p.printSymbolName(getSymName());
 
-  printFunctionSignature(p, getBodyRegion(), getInputParams(),
+  printFunctionSignature(p, &getBodyRegion(), getInputParams(),
                          getResultParams(), getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());

@@ -167,14 +167,18 @@ void printSignature(AsmPrinter &p, SignatureType signature);
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, SignatureType signature);
 
-/// Parse and print a function signature with optional metadata.
+/// Parse a function signature with optional metadata. In the assembly format,
+/// the SSA value names are optional in the argument list. If they are present,
+/// they are populated in `args`.
 ParseResult parseFunctionSignature(OpAsmParser &p,
                                    SmallVectorImpl<OpAsmParser::Argument> &args,
                                    ParamDeclArrayAttr &inputParams,
                                    ParamDeclArrayAttr &resultParams,
                                    FunctionType &functionType,
                                    SignatureType &signature);
-void printFunctionSignature(OpAsmPrinter &p, Region &region,
+/// Print a function signature with optional metadata. If `region` is non-null,
+/// then the SSA value names of the region arguments are printed.
+void printFunctionSignature(OpAsmPrinter &p, Region *region,
                             ArrayRef<ParamDeclAttr> inputParams,
                             ArrayRef<ParamDeclAttr> resultParams,
                             FunctionType functionType, SignatureType signature,
