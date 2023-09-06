@@ -18,10 +18,12 @@ add_modular_tool(mojo
   mojo.cpp
   Build/mojo-build.cpp
   Common/Compilation.cpp
+  Common/LLDB.cpp
   Common/Telemetry.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
   Format/mojo-format.cpp
+  LLDB/mojo-lldb.cpp
   Package/mojo-package.cpp
   REPL/mojo-repl.cpp
   Run/mojo-run.cpp
@@ -90,6 +92,7 @@ add_subdirectory(Build)
 add_subdirectory(Demangle)
 add_subdirectory(Doc)
 add_subdirectory(Format)
+add_subdirectory(LLDB)
 add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)

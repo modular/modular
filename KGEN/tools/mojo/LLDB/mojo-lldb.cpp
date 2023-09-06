@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mojo-repl.h"
+#include "mojo-lldb.h"
 #include "../Common/LLDB.h"
 #include "llvm/Option/ArgList.h"
 
@@ -14,33 +14,30 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct REPLOptTable : public llvm::opt::PrecomputedOptTable {
-  REPLOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+struct LLDBOptTable : public llvm::opt::PrecomputedOptTable {
+  LLDBOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
 };
 } // namespace
 
-/// Launches the Mojo REPL, which is in fact an invocation of
-/// `lldb --repl-language mojo`. Exits unsuccessfully if LLDB could not be found
-/// in the user's PATH.
-static int repl(const State &state) {
+/// Launches Mojo within the LLDB debugger.
+/// Exits unsuccessfully if LLDB could not be found in the user's PATH.
+static int lldb(const State &state) {
   // Parse command line arguments. We forward most arguments to the underlying
   // invocation of lldb, and so don't check for invalid options.
-  REPLOptTable options;
+  LLDBOptTable options;
   unsigned unused = 0;
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, unused, unused);
 
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
-#include "REPL/REPLOptionsHelpText.inc"
+#include "LLDB/LLDBOptionsHelpText.inc"
     );
   }
-  return invokeLLDB(state, args,
-                    {"--one-line-before-file",
-                     "settings set show-progress false", "--repl-language",
-                     "mojo", "--repl"});
+
+  return invokeLLDB(state, args, {});
 }
 
-void M::registerREPLSubcommand(SubcommandRegistry &registry) {
-  registry.addCallback("repl", repl);
+void M::registerLLDBSubcommand(SubcommandRegistry &registry) {
+  registry.addCallback("lldb", lldb);
 }
