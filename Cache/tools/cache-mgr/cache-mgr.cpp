@@ -29,17 +29,6 @@ namespace {
 /// this tool, and it should be simple to read/write.
 using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
 
-/// This provides the list of available targets for which we can generate target
-/// specific keys. A value of None(Default) means the binary is target agnostic
-/// and add it to cache with key. Host means this binary is specific to current
-/// machine, and hence when generating key wrap it with host info.
-enum class BinaryTarget {
-  None = 0,
-  Host,      // Specific to current machines.
-  HostStatic // Specific to current machine, but no info about
-             // thread affinities/number of cores.
-};
-
 /// Provides the CLOptions for this tool.
 class CLOptions : public CLOptionsBase {
 public:
@@ -53,18 +42,6 @@ public:
       "key",
       cl::desc("Explicitly Specify key. In this case instead of binary hash, "
                "this key will be used for adding object to cache.")};
-
-  cl::opt<BinaryTarget> target{
-      "target",
-      cl::values(
-          clEnumValN(BinaryTarget::None, "none", "Key is target agnostic"),
-          clEnumValN(BinaryTarget::Host, "host",
-                     "Wrap the key with current host information."),
-          clEnumValN(BinaryTarget::HostStatic, "host-static",
-                     "Wrap the key with current host information, but don't "
-                     "consider number of cores or affinities.")),
-      cl::desc("Augment key with information specific to a target hardware."),
-      cl::init(BinaryTarget::None)};
 
   cl::opt<std::string> backendVersion{
       "backend-version", cl::desc("Set the version for the local backend."),
@@ -112,16 +89,6 @@ static std::optional<std::string> decodeHash(StringRef encoded) {
     return hash;
   }
   return hash;
-}
-
-/// Wrap the given key with appropriate target info.
-static std::string wrapKey(BinaryBlobCacheKey::KeyTy key, BinaryTarget target) {
-  if (target == BinaryTarget::Host)
-    return Keys::KeyWithHostInfo<BinaryBlobCacheKey>::hashKey(std::move(key));
-  if (target == BinaryTarget::HostStatic)
-    return Keys::KeyWithStaticHostInfo<BinaryBlobCacheKey>::hashKey(
-        std::move(key));
-  return BinaryBlobCacheKey::hashKey(std::move(key));
 }
 
 //===----------------------------------------------------------------------===//
@@ -217,7 +184,7 @@ int main(int argc, char **argv) {
     // Attempt to find the value in the cache, if it exists, write it out.
     // If the key is specified, use it directly.
     std::string keyToFind =
-        key.empty() ? wrapKey(*hash, clOptions.target) : key;
+        key.empty() ? BinaryBlobCacheKey::hashKey(*hash) : key;
     auto result = cache->find(keyToFind);
     auto outCh = AsyncValueRef<BufferRef>::allocate(runtime);
     std::move(result).andThenSync(
@@ -252,7 +219,7 @@ int main(int argc, char **argv) {
     if (bufOr.isError())
       return clOptions.reportError(bufOr.getError());
     std::string keyToWrite =
-        key.empty() ? wrapKey((*bufOr).copy(), clOptions.target) : key;
+        key.empty() ? BinaryBlobCacheKey::hashKey((*bufOr).copy()) : key;
     AsyncValueRef<std::string> outCh =
         putObjectsIntoCache(keyToWrite, (*bufOr).copy(), clOptions.input, cache,
                             runtime, clOptions.outputHex);
