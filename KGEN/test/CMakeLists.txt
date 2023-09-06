@@ -18,7 +18,7 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
 )
 
-add_modular_testsuite(check-kgen
+add_modular_testsuite(check-mojo
   TOOLS
   llvm-objdump
   kgen
@@ -29,5 +29,5 @@ add_modular_testsuite(check-kgen
 )
 
 if(LLDB_FOUND)
-  add_dependencies(check-kgen MojoLLDB mojo-jupyter-executor)
+  add_dependencies(check-mojo MojoLLDB mojo-jupyter-executor)
 endif()

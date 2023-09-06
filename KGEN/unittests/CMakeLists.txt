@@ -13,7 +13,7 @@ add_kgen_kernel(test_kernels
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
-  check-kgen
+  check-mojo
 
   SUITE_NAME
   KGENUnitTests
