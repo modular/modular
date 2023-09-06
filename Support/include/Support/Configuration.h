@@ -71,6 +71,9 @@ public:
   /// Get a value with a possible override from the environment.
   StringRef getValue(StringRef key);
 
+  /// Get a value, and if that's missing return the default value.
+  StringRef getValueOr(StringRef key, StringRef defaultValue);
+
   /// Get a boolean value with possible override from the environment.  Default
   /// is returned if not set.  Error is returned if set, but to a value that
   /// cannot be interpreted as a boolean.

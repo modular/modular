@@ -189,6 +189,14 @@ StringRef Config::getValue(StringRef key) {
   return kv[key.lower()];
 }
 
+StringRef Config::getValueOr(llvm::StringRef key,
+                             llvm::StringRef defaultValue) {
+  StringRef stringValue = getValue(key);
+  if (stringValue.empty())
+    return defaultValue;
+  return stringValue;
+}
+
 ErrorOr<bool> Config::getValueAsBool(StringRef key, bool defaultValue) {
   auto stringValue = getValue(key);
   if (stringValue.empty())
