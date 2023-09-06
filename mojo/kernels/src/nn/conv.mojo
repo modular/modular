@@ -2566,7 +2566,7 @@ struct ConvDirectNHWC[
 
             # Merge wo and ho loops when there is no padding.
             # Otherwise the partition granularity is a row.
-            let work_unit = conv_shape.out_w if has_padding else micro_kernel_height
+            let work_unit = 1 if has_padding else micro_kernel_height
             let work_load = conv_shape.out_h if has_padding else conv_shape.out_h * conv_shape.out_w
             let howo_range = partition_work(
                 task_id_howo, num_partitions[3], work_load, work_unit
@@ -2973,11 +2973,11 @@ struct ConvDirectNHWC[
                             output_micro_tile,
                         )
 
-                        # FRSCf: micro f segments are packed continously.
+                        # FRSCf: micro f segments are packed continuously.
                         @parameter
                         if filter_packed:
                             filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-                        # RSCF: jump to the next row for the next f segement.
+                        # RSCF: jump to the next row for the next f segment.
                         else:
                             filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
@@ -3404,9 +3404,10 @@ struct ConvDirectNHWC[
                 )
                 output_base = output_base.offset(height * self.conv_shape.f)
 
-            tile[update_middle, VariadicList[Int](5, 4, 3, 2, 1)](
-                left_pad_impact_end, right_pad_impact_start
-            )
+            tile[
+                update_middle,
+                VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+            ](left_pad_impact_end, right_pad_impact_start)
 
             # region effected by right padding, [right_pad_impact_start, WO)
             for wo in range(right_pad_impact_start, self.conv_shape.out_w):
