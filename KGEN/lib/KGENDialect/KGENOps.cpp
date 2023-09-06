@@ -202,7 +202,7 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionSignature(p, body, inputParams, resultParams,
+  printFunctionSignature(p, &body, inputParams, resultParams,
                          cast<FunctionType>(functionType.getValue()),
                          cast<SignatureType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
@@ -726,6 +726,34 @@ ExternFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
+// ExternGeneratorOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
+                                        TypeAttr &functionType,
+                                        ParamDeclArrayAttr &inputParams,
+                                        ParamDeclArrayAttr &resultParams) {
+  SmallVector<OpAsmParser::Argument> args;
+  FunctionType funcType;
+  SignatureType sigType;
+  if (parseFunctionSignature(p, args, inputParams, resultParams, funcType,
+                             sigType))
+    return failure();
+  functionType = TypeAttr::get(funcType);
+  signature = TypeAttr::get(sigType);
+  return success();
+}
+
+static void printExternGenerator(OpAsmPrinter &p, Operation *op,
+                                 TypeAttr signature, TypeAttr functionType,
+                                 ParamDeclArrayAttr inputParams,
+                                 ParamDeclArrayAttr resultParams) {
+  printFunctionSignature(p, /*region=*/nullptr, inputParams, resultParams,
+                         cast<FunctionType>(functionType.getValue()),
+                         cast<SignatureType>(signature.getValue()));
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
@@ -998,7 +1026,7 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
 static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
                                 SignatureType resultType, Region &body) {
   p << "= ";
-  printFunctionSignature(p, body, {}, {}, resultType.getValues(), resultType);
+  printFunctionSignature(p, &body, {}, {}, resultType.getValues(), resultType);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }

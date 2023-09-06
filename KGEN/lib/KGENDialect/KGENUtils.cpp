@@ -1226,7 +1226,7 @@ ParseResult KGEN::parseFunctionSignature(
   return success(!!signature);
 }
 
-void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
+void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
                                   ArrayRef<ParamDeclAttr> inputParams,
                                   ArrayRef<ParamDeclAttr> resultParams,
                                   FunctionType functionType,
@@ -1235,11 +1235,11 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region &region,
   printOptionalParameterSpec(p, inputParams, resultParams);
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
-    if (region.empty())
+    if (!region)
       p << (valueParamNames ? "%" + valueParamNames[i].getValue() + ": " : "")
         << functionType.getInput(i);
     else
-      p.printRegionArgument(region.getArgument(i));
+      p.printRegionArgument(region->getArgument(i));
   };
   printSignatureValuesElt</*optionalResultList=*/true>(p, printElt,
                                                        functionType, signature);
@@ -1568,7 +1568,7 @@ void KGEN::printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op) {
 
   p.printSymbolName(funcName);
   auto decl = cast<DeclInterface>(*op);
-  printFunctionSignature(p, func.getFunctionBody(), decl.getInputParams(),
+  printFunctionSignature(p, &func.getFunctionBody(), decl.getInputParams(),
                          decl.getResultParams(), op.getFunctionType(),
                          op.getSignature());
 
