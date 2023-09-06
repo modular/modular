@@ -2973,16 +2973,11 @@ struct ConvDirectNHWC[
                             output_micro_tile,
                         )
 
-                        # Packed Version: filter elements are accessed contiguously
-                        # This assumption is violated when there is residual blocks
-                        # in F. The residual block has a smaller micro kernel
-                        # width but the buffer is padded with zero to fill the
-                        # default micro kernel width, e.x., 4 for Intel.
+                        # FRSCf: micro f segments are packed continously.
                         @parameter
                         if filter_packed:
                             filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-                        # Unpacked Version. Each c is mapped to F elements.
-                        # Hence the stride between each micro tile is also F.
+                        # RSCF: jump to the next row for the next f segement.
                         else:
                             filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
@@ -3278,7 +3273,13 @@ struct ConvDirectNHWC[
                         i * micro_kernel_f_size + j * simd_size
                     ).aligned_simd_store[simd_size, alignment](output_vec)
 
-            filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+            # FRSCf: micro f segments are packed continously.
+            @parameter
+            if filter_packed:
+                filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+            # RSCF: jump to the next row for the next f segement.
+            else:
+                filter_ptr = filter_ptr.offset(self.conv_shape.f)
 
     @always_inline
     fn _h_loop[
@@ -3316,11 +3317,21 @@ struct ConvDirectNHWC[
             - self.conv_shape.s * self.conv_shape.dilation[1]
         ) // self.conv_shape.stride[1] + 1
 
-        # fmt: off
-        let filter_base = self.filter.data.offset(
-            f_tile_offset * self.conv_shape.c * self.conv_shape.r * self.conv_shape.s + c_tile_offset * micro_kernel_f_size
-        )
-        # fmt: on
+        let filter_base: DTypePointer[type]
+
+        @parameter
+        if filter_packed:
+            filter_base = self.filter.data.offset(
+                f_tile_offset
+                * self.conv_shape.c
+                * self.conv_shape.r
+                * self.conv_shape.s
+                + c_tile_offset * micro_kernel_f_size
+            )
+        else:
+            filter_base = self.filter.data.offset(
+                c_tile_offset * self.conv_shape.f + f_tile_offset
+            )
 
         let input_curr_image = self.input.data.offset(
             n * self.conv_shape.w * self.conv_shape.h * self.conv_shape.c
@@ -3459,10 +3470,26 @@ struct ConvDirectNHWC[
         let input_shift = self.conv_shape.dilation[1] * self.conv_shape.c
         # WO dimension stride mapped in input.
         let wo_stride_in_input = self.conv_shape.stride[1] * self.conv_shape.c
-        # Filter stride in S dimension in FRSCf
-        let filter_S_stride = self.conv_shape.c * micro_kernel_f_size
+
+        # Filter stride in S dimension
+        let filter_S_stride: Int
+
+        @parameter
+        if filter_packed:  # FRSCf layout
+            filter_S_stride = self.conv_shape.c * micro_kernel_f_size
+        else:  # RSCF layout
+            filter_S_stride = self.conv_shape.c * self.conv_shape.f
+
         # Filter stride in F dimension in FRSCf
-        let filter_F_stride = self.conv_shape.r * self.conv_shape.s * filter_S_stride
+        let filter_F_stride: Int
+
+        @parameter
+        if filter_packed:  # FRSCf layout
+            filter_F_stride = (
+                self.conv_shape.r * self.conv_shape.s * filter_S_stride
+            )
+        else:
+            filter_F_stride = micro_kernel_f_size
 
         # This will be all lifted to simd registers for FMA unless the micro
         # kernel is too large that spills named registers.

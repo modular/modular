@@ -619,6 +619,99 @@ fn main():
         # Test with padding
         # This is a fallback implementation assuming all shapes are dynamic.
 
+        test[DType.float32, False](
+            1,  # N
+            56,  # H
+            56,  # W
+            64,  # C
+            3,  # R
+            3,  # S
+            1024,  # F
+            Index(2, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(0, 0),  # pad_h
+            Index(0, 0),  # pad_w
+            rt,
+        )
+
+        # Test with padding
+        # This is a fallback implementation assuming all shapes are dynamic.
+
+        test[DType.float32, False](
+            1,  # N
+            5,  # H
+            5,  # W
+            3,  # C
+            3,  # R
+            3,  # S
+            1,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, False](
+            2,  # N
+            12,  # H
+            11,  # W
+            5,  # C
+            4,  # R
+            3,  # S
+            2,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, False](
+            1,  # N
+            8,  # H
+            12,  # W
+            6,  # C
+            2,  # R
+            5,  # S
+            3,  # F
+            Index(1, 3),  # stride
+            Index(1, 1),  # dilation
+            Index(1, 0),  # pad_h
+            Index(2, 2),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, False](
+            1,  # N
+            9,  # H
+            7,  # W
+            1,  # C
+            5,  # R
+            4,  # S
+            3,  # F
+            Index(1, 1),  # stride
+            Index(1, 1),  # dilation
+            Index(2, 2),  # pad_h
+            Index(2, 1),  # pad_w
+            rt,
+        )
+
+        test[DType.float32, False](
+            1,  # N
+            10,  # H
+            5,  # W
+            2,  # C
+            4,  # R
+            3,  # S
+            6,  # F
+            Index(3, 2),  # stride
+            Index(1, 1),  # dilation
+            Index(2, 1),  # pad_h
+            Index(1, 1),  # pad_w
+            rt,
+        )
+
         test[DType.float32, True](
             1,  # N
             224,  # H
