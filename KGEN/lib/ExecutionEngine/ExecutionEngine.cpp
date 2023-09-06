@@ -375,21 +375,18 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, Config &cfg,
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
   libJD->addGenerator(std::move(*generatorOr));
 
-  // Pull in sanitizers if requested. These are pulled from the current process,
-  // as we currently can't activate any of these runtimes otherwise (they must
+  // Allow pulling in sanitizer methods from the current process, as we
+  // currently can't activate any of these runtimes otherwise (they must
   // generally be loaded first in the host process).
-  auto addGeneratorForSanitizer = [&](const char *sanitizerSymbolPrefix) {
-    libJD->addGenerator(llvm::cantFail(
-        llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            layout.getGlobalPrefix(),
-            [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
-              return (*symbolStringPtr).starts_with(sanitizerSymbolPrefix);
-            })));
-  };
-  if (options.sanitizers.has(Sanitizers::kAddress))
-    addGeneratorForSanitizer("__asan");
-  else if (options.sanitizers.has(Sanitizers::kThread))
-    addGeneratorForSanitizer("__tsan");
+  libJD->addGenerator(llvm::cantFail(
+      llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          layout.getGlobalPrefix(),
+          [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+            return llvm::any_of(ArrayRef<StringRef>{"__asan", "__tsan"},
+                                [&](StringRef prefix) {
+                                  return (*symbolStringPtr).startswith(prefix);
+                                });
+          })));
 
   return success();
 }
