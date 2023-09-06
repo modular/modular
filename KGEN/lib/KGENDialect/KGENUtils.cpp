@@ -10,7 +10,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -1246,7 +1245,7 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
 }
 
 OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
-                                                 SignatureType &signature) {
+                                                 Type &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   SmallVector<Type> inputParamTypes, resultParamTypes;
   if (succeeded(p.parseOptionalLess())) {
@@ -1293,7 +1292,7 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
   return result;
 }
 
-ParseResult KGEN::parseSignature(AsmParser &p, SignatureType &signature) {
+ParseResult KGEN::parseSignature(AsmParser &p, Type &signature) {
   OptionalParseResult result = parseOptionalSignature(p, signature);
   if (result.has_value())
     return *result;
@@ -1309,7 +1308,8 @@ ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
   return success();
 }
 
-void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
+void KGEN::printSignature(AsmPrinter &p, Type signatureType) {
+  auto signature = cast<SignatureType>(signatureType);
   if (!signature.getInputParamTypes().empty() ||
       !signature.getResultParamTypes().empty()) {
     p << '<';
@@ -1334,8 +1334,8 @@ void KGEN::printSignature(AsmPrinter &p, Operation *op, TypeAttr signature) {
 }
 
 ParseResult KGEN::parseSignatureValues(AsmParser &p,
-                                       TypeArrayAttr inputParamTypes,
-                                       TypeArrayAttr resultParamTypes,
+                                       ParamDeclArrayAttr resultParamDecls,
+                                       FunctionType &functionType,
                                        SignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   auto parseElt = [&]() -> FailureOr<Type> {
@@ -1344,21 +1344,21 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
       return failure();
     return type;
   };
-  FunctionType functionType;
   FnMetadataAttr metadata;
   if (parseSignatureValuesElt</*optionalResultList=*/false>(
           p, parseElt, functionType, metadata))
     return failure();
-  signature = SignatureType::getChecked([&] { return p.emitError(loc); },
-                                        inputParamTypes, resultParamTypes,
-                                        functionType, metadata);
+  signature = IndexRefRemapper::remapToSignature(
+      {}, resultParamDecls, functionType, metadata,
+      [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
-void KGEN::printSignatureValues(AsmPrinter &p, SignatureType signature) {
-  auto printElt = [&](unsigned i) { p << signature.getValueInputs()[i]; };
+void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
+                                SignatureType signature) {
+  auto printElt = [&](unsigned i) { p << functionType.getInput(i); };
   printSignatureValuesElt</*optionalResultList=*/false>(
-      p, printElt, signature.getValues(), signature);
+      p, printElt, functionType, signature);
 }
 
 /// Parse a constraint specification if
@@ -1551,10 +1551,6 @@ ParseResult KGEN::parseGeneratorOrFunc(OpAsmParser &parser,
 
   // Parse the required function body.
   Region *region = result.addRegion();
-
-  // If this is cached, no body block is allowed.
-  if (parsedAttributes.get(Cache::getRegionHashAttrName()))
-    return success();
 
   return parser.parseRegion(*region, entryArgs, /*enableNameShadowing=*/true);
 }
@@ -1898,18 +1894,6 @@ KGEN::verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                           originatorName, originatorLoc, targetName, targetLoc,
                           paramKind, "type"))
     return failure();
-  return success();
-}
-
-/// Verify that the provided operation has exactly one block in its body
-/// region, or that region was cached.
-LogicalResult KGEN::verifyOneBlockOrCached(Operation *op) {
-  size_t numBlocks = op->getRegion(0).getBlocks().size();
-  if (numBlocks == 0) {
-    if (!op->hasAttr(Cache::getRegionHashAttrName()))
-      return op->emitError()
-             << "must have a body region or it must be elided into the cache";
-  }
   return success();
 }
 

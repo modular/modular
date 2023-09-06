@@ -206,7 +206,46 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ExternGeneratorOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
+    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
+    ExportInterface]> {
+  let summary = "External generator declaration.";
+  let description = [{
+    The `kgen.extern.generator` operation declares a KGEN generator with a
+    external definition. The definition and its dependencies must be made
+    available prior to elaboration, but this operations allows manipulating
+    sections of IR without requiring all transitive dependencies be present in
+    the module.
+
+    Example:
+
+    ```mlir
+    kgen.extern.generator @kernel<simd_width>(!pop.simd<simd_width, f32>)
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
+                       TypeAttrOf<FunctionType>:$functionType,
+                       KGEN_ParamDeclArrayAttr:$inputParams,
+                       KGEN_ParamDeclArrayAttr:$resultParams,
+                       KGEN_ExportKindAttr:$exportKind);
+
+  let extraClassDeclaration = [{
+    InlineLevel getInlineLevel() { return InlineLevel::Never; }
+  }];
+
+  let assemblyFormat = [{
+    custom<SymbolExport>($exportKind) $sym_name ``
+    custom<ExternGenerator>($signature, $functionType, $inputParams,
+                            $resultParams) attr-dict-with-keyword
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -265,8 +304,8 @@ class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
 // CallOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallOp : KGEN_CallOpBase<"call", [CalleeArgumentTypes,
-    CalleeResultTypes, DeclareOpInterfaceMethods<CallOpInterface>]> {
+def KGEN_CallOp : KGEN_CallOpBase<"call",
+    [DeclareOpInterfaceMethods<CallOpInterface>]> {
   let summary = "Call a func, generator, or generator interface";
   let description = [{
     The `kgen.call` operation invokes a parametric function. The callee must be
@@ -980,7 +1019,7 @@ def KGEN_UndefOp : KGENOp<"undef", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_CallSignatureOp : KGENOp<"call_signature", [
-    TypesMatchWith<"operands match callee argument types","callee",
+    TypesMatchWith<"operands match callee argument types", "callee",
     "arguments", "cast<SignatureType>($_self).getValueInputs()">,
     CalleeResultTypes]> {
   let summary = "Call a signature typed instance";
@@ -1000,9 +1039,7 @@ def KGEN_CallSignatureOp : KGENOp<"call_signature", [
                        Variadic<AnyType>:$arguments);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    $callee `(` $arguments `)` `:`
-    custom<CallSignature>(type($callee), type($arguments), type($results))
-    attr-dict
+    $callee `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
   }];
 }
 

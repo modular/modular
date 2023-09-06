@@ -368,6 +368,9 @@ LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypeArrayAttr inputParams, TypeArrayAttr resultParams,
                       FunctionType values, FnMetadataAttr metadata) {
+  if (!inputParams || !resultParams || !values || !metadata)
+    return emitError() << "signature type parameters cannot be null";
+
   // Check we have the right number of conventions.
   if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";

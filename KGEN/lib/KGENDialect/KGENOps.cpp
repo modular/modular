@@ -9,7 +9,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "Cache/CacheDialect/CacheOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -542,15 +541,13 @@ bool ParamAssertOp::isImplicitlyParametric() { return true; }
 /// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
 static ParseResult parseCallOpParams(OpAsmParser &p,
                                      ParameterExprArrayAttr &paramValues,
-                                     ParamDeclArrayAttr &resultDecls,
-                                     TypeArrayAttr &resultParamTypes) {
+                                     ParamDeclArrayAttr &resultDecls) {
 
   if (p.parseOptionalLess()) {
     // If there is no <, then the params of the call op are empty, so set
     // paramValues and paramDecls to empty and return.
     paramValues = ParameterExprArrayAttr::get(p.getContext(), {});
     resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-    resultParamTypes = TypeArrayAttr::get(p.getContext(), {});
     return success();
   }
 
@@ -569,25 +566,21 @@ static ParseResult parseCallOpParams(OpAsmParser &p,
   // Check to see if we have results and parse them if so.
   if (p.parseOptionalArrow()) {
     resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-    resultParamTypes = TypeArrayAttr::get(p.getContext(), {});
     return p.parseGreater();
   }
 
   SmallVector<ParamDeclAttr> decls;
-  SmallVector<Type> paramTypes;
   auto parseElt = [&]() -> ParseResult {
     StringAttr declName;
     Type type;
     if (parseParamName(p, declName) || parseColonTypeOrIndex(p, type))
       return failure();
     decls.push_back(ParamDeclAttr::get(declName, type));
-    paramTypes.push_back(type);
     return success();
   };
   if (p.parseCommaSeparatedList(parseElt))
     return failure();
   resultDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
-  resultParamTypes = TypeArrayAttr::get(p.getContext(), paramTypes);
   return p.parseGreater();
 }
 
@@ -632,8 +625,6 @@ void GeneratorOp::print(OpAsmPrinter &p) {
   printSymbolExport(p, *this, getExportKindAttr());
   printGeneratorOrFunc(p, *this);
 }
-
-LogicalResult GeneratorOp::verify() { return verifyOneBlockOrCached(*this); }
 
 //===----------------------------------------------------------------------===//
 // FuncOp
@@ -707,7 +698,7 @@ LogicalResult FuncOp::verify() {
                       return inputConv == ValueInputConvention::OwnedInReg;
                     }))
     return emitOpError("can only have default value input conventions");
-  return verifyOneBlockOrCached(*this);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -765,20 +756,19 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
             SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
   ParameterExprArrayAttr paramValues;
-  TypeArrayAttr resultParamTypes;
   if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls, resultParamTypes) ||
+      parseCallOpParams(p, paramValues, paramDecls) ||
       p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
       p.parseColon())
     return failure();
 
   SignatureType signature;
-  if (parseSignatureValues(p, TypeArrayAttr::get(p.getContext(), {}),
-                           resultParamTypes, signature))
+  FunctionType functionType;
+  if (parseSignatureValues(p, paramDecls, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
-  llvm::append_range(operandTypes, signature.getValueInputs());
-  llvm::append_range(resultTypes, signature.getValueResults());
+  llvm::append_range(operandTypes, functionType.getInputs());
+  llvm::append_range(resultTypes, functionType.getResults());
   return success();
 }
 
@@ -792,7 +782,9 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << '(';
   p.printOperands(operands);
   p << ") : ";
-  printSignatureValues(p, calleeCst.getType());
+  printSignatureValues(
+      p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
+      calleeCst.getType());
 }
 
 OperandRange CallOp::getArgOperands() { return getOperands(); }
@@ -965,36 +957,6 @@ LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
     return failure();
   rewriter.updateRootInPlace(op, [&] { op.setOperand(cur.getOperand()); });
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// CallSignatureOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseCallSignature(OpAsmParser &p, Type &typeOfCallee,
-                                      SmallVectorImpl<Type> &argumentTypes,
-                                      SmallVectorImpl<Type> &resultTypes) {
-  TypeArrayAttr resultParams;
-  TypeArrayAttr parameterValues;
-  // We expect the following syntax: call_signature callee(dynamic args) :
-  // (argTypes...) -> resultType
-
-  SignatureType signature;
-  if (parseSignatureValues(p, parameterValues, resultParams, signature))
-    return failure();
-  typeOfCallee = signature;
-  llvm::append_range(argumentTypes, signature.getValueInputs());
-  llvm::append_range(resultTypes, signature.getValueResults());
-  return success();
-}
-
-static void printCallSignature(OpAsmPrinter &p, Operation *op, Type calleeType,
-                               TypeRange argumentTypes, TypeRange resultTypes) {
-  // We expect the following syntax: call_signature callee(dynamic args) :
-  // (argTypes...) capturing -> calleeResultType
-  if (SignatureType sigType = cast<SignatureType>(calleeType)) {
-    printSignature(p, sigType);
-  }
 }
 
 //===----------------------------------------------------------------------===//
