@@ -129,7 +129,7 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<KGEN_SignatureType>:$signature,
                        KGEN_ExportKindAttr:$exportKind,
-                       SymbolRefAttr:$importedFrom);
+                       OptionalAttr<SymbolRefAttr>:$importedFrom);
 
   let extraClassDeclaration = [{
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
@@ -140,7 +140,7 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
 
   let assemblyFormat = [{
     custom<SymbolExport>($exportKind) $sym_name `` custom<Signature>($signature)
-    `from` $importedFrom attr-dict-with-keyword
+    (`from` $importedFrom^)? attr-dict-with-keyword
   }];
 }
 

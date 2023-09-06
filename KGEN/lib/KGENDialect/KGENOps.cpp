@@ -716,14 +716,13 @@ LogicalResult FuncOp::verify() {
 
 LogicalResult
 ExternFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // Find the link op that we're being imported from.
-  Operation *linkOp =
-      symbolTable.lookupNearestSymbolFrom(*this, getImportedFrom());
-  if (llvm::isa_and_present<LinkOp>(linkOp))
-    return success();
-
-  return emitError("expected '")
-         << getImportedFrom() << "' to reference a valid kgen.link directive";
+  if (SymbolRefAttr importedFrom = getImportedFromAttr()) {
+    // Find the link op that we're being imported from.
+    if (!symbolTable.lookupNearestSymbolFrom<LinkOp>(*this, importedFrom))
+      return emitError("expected '")
+             << importedFrom << "' to reference a valid kgen.link directive";
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
