@@ -63,8 +63,8 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<8>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-D foo=42` defines a name `foo` "
-           "that, when queried with the `ParamEnv` module from within the Mojo "
-           "program, would yield the compile-time value `42`.">;
+           "that, when queried with the `sys.param_env` module from within the "
+           "Mojo program, would yield the compile-time value `42`.">;
 
 def parsing_stdlib : Flag<["--", "-"], "parsing-stdlib">,
   Group<CompilationOptionGroup>, Index<9>,
