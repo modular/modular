@@ -180,6 +180,12 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   // Parse the expression text.
   Process *process = exeCtx.GetProcessPtr();
+  // Check that there actually is a process that can parse the expression.
+  if (!process) {
+    diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
+        "target mojo process does not exist", eDiagnosticSeverityError, false));
+    return false;
+  }
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
 
   // On exit, log all of the diagnostics that were collected.

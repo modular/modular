@@ -31,6 +31,12 @@ def configure_lldb_tests(config):
     )
     config.substitutions.append(
         (
+            "%lldb",
+            f"{lldb_env} mojo lldb --source-quietly -S {config.lit_lldb_init}",
+        )
+    )
+    config.substitutions.append(
+        (
             "%mojo_jupyter_executor",
             (
                 f"{lldb_env} mojo-jupyter-executor --lldb-init-file"
