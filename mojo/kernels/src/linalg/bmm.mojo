@@ -26,11 +26,29 @@ from runtime.llcl import OutputChainPtr, OwningOutputChainPtr
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+# Similar to _get_start_indices_of_nth_subvolume but returns only the batch
+# dimensions for matmul, skipping the last 2 dimsnions.
+@always_inline
+fn _get_batch_dims[
+    rank: Int
+](flat_index: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
+    var out = StaticIntTuple[rank]()
+    var curr_index = flat_index
+
+    @always_inline
+    @parameter
+    fn compute_shape[idx: Int]():
+        # Count from the back, skipping last two dims.
+        alias i = rank - idx - 3
+        out[i] = curr_index % shape[i]
+        curr_index //= shape[i]
+
+    unroll[rank - 2, compute_shape]()
+    return out
+
 
 @always_inline
 fn _small_batched_matmul[
-    adj_a: Bool,
-    adj_b: Bool,
     elementwise_epilogue_enabled: Bool,
     elementwise_epilogue_fn: fn[type: DType, width: Int, rank: Int] (
         StaticIntTuple[rank], SIMD[type, width]
@@ -43,19 +61,24 @@ fn _small_batched_matmul[
     b_buf: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_chain: OutputChainPtr,
 ):
-    constrained[
-        rank == 3 and not adj_a and not adj_b,
-        "_small_batched_matmul only supports rank 3 non-transposed inputs",
-    ]()
     alias simd_width = simdwidthof[type]()
 
-    let B = a_buf.dim[0]()
-    let M = a_buf.dim[1]()
-    let N = b_buf.dim[2]()
-    let K = a_buf.dim[2]()
+    # Get the flattened batch.
+    var batch_shape = c_buf.dynamic_shape
+    batch_shape[rank - 2] = 1
+    batch_shape[rank - 1] = 1
+    let B = batch_shape.flattened_length()
+
+    let M = a_buf.dim[rank - 2]()
+    let N = b_buf.dim[rank - 1]()
+    let K = a_buf.dim[rank - 1]()
 
     if M == 1 and N == 1:
         for batch in range(B):
+            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
+            # each trailing batch dimension.
+            var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
+
             let a_view = NDBuffer[1, DimList.create_unknown[1](), type](
                 a_buf.data + batch * K, Index(K)
             )
@@ -77,17 +100,16 @@ fn _small_batched_matmul[
             @parameter
             fn output_fn[
                 out_type: DType, width: Int, r: Int
-            ](indices: StaticIntTuple[r], value: SIMD[out_type, width]):
+            ](i: StaticIntTuple[r], value: SIMD[out_type, width]):
                 @parameter
                 if elementwise_epilogue_enabled:
                     elementwise_epilogue_fn[out_type, width, rank](
-                        StaticIntTuple[rank](batch, 0, 0), value
+                        indices, value
                     )
                 else:
-                    c_buf.simd_store[width](
-                        StaticIntTuple[rank](batch, 0, 0),
-                        rebind[SIMD[type, width]](value),
-                    )
+                    # This will store only once as it is a 1D reduction.
+                    # Just use the original [B, B1,...,BN, 0, 0] indices.
+                    c_buf.simd_store[width](indices, value.cast[type]())
 
             @always_inline
             fn reduce_impl[
@@ -108,37 +130,49 @@ fn _small_batched_matmul[
 
     else:
         for batch in range(B):
+            # Get the indices as (B1, B2, ..., BN, 0, 0) where B is
+            # each trailing batch dimension.
+            var indices = _get_batch_dims[rank](batch, c_buf.dynamic_shape)
+            var b_buf_index = indices
+
             memset_zero(c_buf.data + batch * M * N, M * N)
             for m in range(M):
+                indices[rank - 2] = m
+
                 for k in range(K):
-                    let a_val = a_buf[batch, m, k]
+                    indices[rank - 1] = k
+                    b_buf_index[rank - 2] = k
+
+                    let a_val = a_buf[indices]
 
                     @always_inline
                     @parameter
                     fn compute_fn[simd_width: Int](n: Int):
+                        indices[rank - 1] = n
+                        b_buf_index[rank - 1] = n
+
+                        let b_val = b_buf.simd_load[simd_width](b_buf_index)
+
                         c_buf.simd_store[simd_width](
-                            StaticIntTuple[rank](batch, m, n),
-                            c_buf.simd_load[simd_width](batch, m, n)
-                            + a_val * b_buf.simd_load[simd_width](batch, k, n),
+                            indices,
+                            c_buf.simd_load[simd_width](indices)
+                            + a_val * b_val,
                         )
 
                     alias unroll_factor = 2
-
                     vectorize_unroll[simd_width, unroll_factor, compute_fn](N)
 
             @parameter
             if elementwise_epilogue_enabled:
                 for m in range(M):
+                    indices[rank - 2] = m
 
                     @always_inline
                     @parameter
                     fn apply_epilogue[width: Int](n: Int):
-                        let val = c_buf.simd_load[width](
-                            StaticIntTuple[rank](batch, m, n)
-                        )
-                        elementwise_epilogue_fn[type, width, rank](
-                            StaticIntTuple[rank](batch, m, n), val
-                        )
+                        indices[rank - 1] = n
+                        let val = c_buf.simd_load[width](indices)
+                        elementwise_epilogue_fn[type, width, rank](indices, val)
 
                     vectorize_unroll[simd_width, 1, apply_epilogue](N)
 
@@ -164,14 +198,9 @@ fn batched_matmul[
 ):
     # TODO: generalize to > rank 3
     @parameter
-    if (
-        single_thread_blocking_override
-        and rank == 3
-        and not adj_a
-        and not adj_b
-    ):
+    if single_thread_blocking_override and not adj_a and not adj_b:
         return _small_batched_matmul[
-            adj_a, adj_b, elementwise_epilogue_enabled, elementwise_epilogue_fn
+            elementwise_epilogue_enabled, elementwise_epilogue_fn
         ](c_buf, a_buf, b_buf, out_chain)
 
     @closure
