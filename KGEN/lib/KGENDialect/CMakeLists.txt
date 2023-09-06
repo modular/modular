@@ -27,7 +27,6 @@ add_modular_dialect_library(KGENDialect
   Support
 
   LINK_LIBS PUBLIC
-  CacheDialect
   DebugInfoDialect
   HLCFDialect
   InterpreterInterface

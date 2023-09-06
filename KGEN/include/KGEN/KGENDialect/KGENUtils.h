@@ -156,16 +156,20 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
 /// Parse and print an operand and result type list with metadata.
-OptionalParseResult parseOptionalSignature(AsmParser &p,
-                                           SignatureType &signature);
+OptionalParseResult parseOptionalSignature(AsmParser &p, Type &signature);
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
-ParseResult parseSignature(AsmParser &p, SignatureType &signature);
-ParseResult parseSignatureValues(AsmParser &p, TypeArrayAttr inputParamTypes,
-                                 TypeArrayAttr resultParamTypes,
+ParseResult parseSignature(AsmParser &p, Type &signature);
+ParseResult parseSignatureValues(AsmParser &p,
+                                 ParamDeclArrayAttr resultParamDecls,
+                                 FunctionType &functionType,
                                  SignatureType &signature);
-void printSignature(AsmPrinter &p, SignatureType signature);
+void printSignature(AsmPrinter &p, Type signatureType);
+inline void printSignature(AsmPrinter &p, Operation *op, Type signatureType) {
+  printSignature(p, signatureType);
+}
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
-void printSignatureValues(AsmPrinter &p, SignatureType signature);
+void printSignatureValues(AsmPrinter &p, FunctionType functionType,
+                          SignatureType signature);
 
 /// Parse a function signature with optional metadata. In the assembly format,
 /// the SSA value names are optional in the argument list. If they are present,
@@ -283,9 +287,6 @@ verifyParamDeclsMatch(StringRef paramKind, StringRef originatorName,
                       ArrayRef<ParamBindAttr> binds, Location originatorLoc,
                       StringRef targetName, ArrayRef<ParamDeclAttr> decls,
                       Location targetLoc);
-
-/// Check that the op has exactly one block in its region, or it's been cached.
-LogicalResult verifyOneBlockOrCached(Operation *op);
 
 /// Check the parameter result types.
 LogicalResult checkResultParameterTypes(Operation *op,
