@@ -167,6 +167,10 @@ def no_unused_values_in_def():
 
   _ # expected-error {{discard pattern requires an initializing expression}}
 
+fn dynamic_type_value():
+  # expected-error @below {{cannot use type value as dynamic value}}
+  let some_type = Int
+
 ##===----------------------------------------------------------------------===##
 # Keyword arguments
 ##===----------------------------------------------------------------------===##
