@@ -310,6 +310,7 @@ fn pool_shape[
     filter_type: DType,
     strides_type: DType,
     dilations_type: DType,
+    paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
@@ -318,6 +319,7 @@ fn pool_shape[
     filter_buf: NDBuffer[1, DimList.create_unknown[1](), filter_type],
     strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
     dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+    paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
 ) -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
@@ -329,6 +331,7 @@ fn pool_shape[
         filter_type: Type of the filter tensor.
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
+        paddings_type: Type of the paddings tensor.
         single_thread_blocking_override: Whether this function can block.
 
     Args:
@@ -336,6 +339,7 @@ fn pool_shape[
         filter_buf: The filter size buffer.
         strides_buf: The strides size buffer.
         dilations_buf: The dilations size buffer.
+        paddings_buf: The paddings size buffer.
 
     Returns:
         The output shape.
@@ -347,6 +351,10 @@ fn pool_shape[
         and strides_buf.dim(0) == input_rank - 2
         and dilations_buf.dim(0) == input_rank - 2,
         "strides and dilations size must be input rank - 2",
+    )
+    debug_assert(
+        paddings_buf.dim(0) == 2 * (input_rank - 2),
+        "paddings size must be 2 * (input rank - 2)",
     )
 
     # Assume input has layout NHWC
@@ -364,16 +372,19 @@ fn pool_shape[
     let dilation_height = dilations_buf[0].to_int()
     let dilation_width = dilations_buf[1].to_int()
 
+    let pad_height = paddings_buf[0].to_int() + paddings_buf[1].to_int()
+    let pad_width = paddings_buf[2].to_int() + paddings_buf[3].to_int()
+
     var output_shape = StaticIntTuple[input_rank]()
 
     output_shape[0] = batch_size
     output_shape[3] = input_channels
 
     output_shape[1] = get_sliding_window_out_dim(
-        input_height, filter_height, dilation_height, stride_height
+        input_height, filter_height, dilation_height, stride_height, pad_height
     )
     output_shape[2] = get_sliding_window_out_dim(
-        input_width, filter_width, dilation_width, stride_width
+        input_width, filter_width, dilation_width, stride_width, pad_width
     )
 
     return output_shape
@@ -441,6 +452,7 @@ fn max_pool[
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
     strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[4, DimList.create_unknown[4](), type],
     out_chain: OutputChainPtr,
 ):
@@ -454,9 +466,17 @@ fn max_pool[
             tuple def (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
             tuple def (dilation_h, dilation_w).
+        paddings: Paddings on height and width dimensions with assumed
+            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
         out_chain: OutputChain.
     """
+
+    for i in range(paddings.size()):
+        if paddings[i] != 0:
+            return out_chain.mark_error(
+                "Non-zero padding is not supported yet."
+            )
 
     _pool_dispatcher[
         type,
@@ -475,6 +495,7 @@ fn avg_pool[
     filter: NDBuffer[1, DimList.create_unknown[1](), int_type],
     strides: NDBuffer[1, DimList.create_unknown[1](), int_type],
     dilations: NDBuffer[1, DimList.create_unknown[1](), int_type],
+    paddings: NDBuffer[1, DimList.create_unknown[1](), int_type],
     output: NDBuffer[4, DimList.create_unknown[4](), type],
     out_chain: OutputChainPtr,
 ):
@@ -488,9 +509,17 @@ fn avg_pool[
             tuple def (stride_h, stride_w).
         dilations: Dilations on height and width dimensions with assumed
             tuple def (dilation_h, dilation_w).
+        paddings: Paddings on height and width dimensions with assumed
+            tuple def (pad_h_before, pad_h_after, pad_w_before, pad_w_after)).
         output: Pre-allocated output tensor space.
         out_chain: OutputChain.
     """
+
+    for i in range(paddings.size()):
+        if paddings[i] != 0:
+            return out_chain.mark_error(
+                "Non-zero padding is not supported yet."
+            )
 
     _pool_dispatcher[
         type,

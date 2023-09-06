@@ -3799,6 +3799,7 @@ fn conv_shape[
     filter_type: DType,
     strides_type: DType,
     dilations_type: DType,
+    paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[
@@ -3809,6 +3810,7 @@ fn conv_shape[
     ],
     strides_buf: NDBuffer[1, DimList.create_unknown[1](), strides_type],
     dilations_buf: NDBuffer[1, DimList.create_unknown[1](), dilations_type],
+    paddings_buf: NDBuffer[1, DimList.create_unknown[1](), paddings_type],
 ) -> StaticIntTuple[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
@@ -3821,13 +3823,15 @@ fn conv_shape[
         filter_type: Type of the filter tensor.
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
+        paddings_type: Type of the paddings tensor.
         single_thread_blocking_override: Whether this function can block.
 
     Args:
         input_buf: The input tensor.
         filter_buf: The filter tensor.
-        strides_buf: The filter tensor.
-        dilations_buf: The filter tensor.
+        strides_buf: The strides tensor.
+        dilations_buf: The dilations tensor.
+        paddings_buf: The paddings tensor.
 
     Returns:
         The output shape.
@@ -3840,6 +3844,10 @@ fn conv_shape[
         strides_buf.dim(0) == input_rank - 2
         and dilations_buf.dim(0) == input_rank - 2,
         "strides and dilations size must be input rank - 2",
+    )
+    debug_assert(
+        paddings_buf.dim(0) == 2 * (input_rank - 2),
+        "paddings size must be 2 * (input rank - 2)",
     )
 
     # Assume input has layout NHWC
@@ -3854,7 +3862,6 @@ fn conv_shape[
         input_channels == filter_channels,
         "channel dimension of input and filter must match",
     )
-
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
     output_shape[0] = batch_size
@@ -3863,12 +3870,14 @@ fn conv_shape[
         filter_buf.dim(0),
         dilations_buf[0].to_int(),
         strides_buf[0].to_int(),
+        paddings_buf[0].to_int() + paddings_buf[1].to_int(),
     )
     output_shape[2] = get_sliding_window_out_dim(
         input_buf.dim(2),
         filter_buf.dim(1),
         dilations_buf[1].to_int(),
         strides_buf[1].to_int(),
+        paddings_buf[2].to_int() + paddings_buf[3].to_int(),
     )
     output_shape[3] = output_channels
 
