@@ -1794,10 +1794,12 @@ fn conv[
     filter_rank: Int,
     strides_rank: Int,
     dilation_rank: Int,
+    padding_rank: Int,
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
     dilation_type: DType,
+    padding_type: DType,
     output_type: DType,
     filter_packed: Bool,
     lambdas_have_fusion: Bool,
@@ -1814,6 +1816,9 @@ fn conv[
     ],
     dilation: NDBuffer[
         dilation_rank, DimList.create_unknown[dilation_rank](), dilation_type
+    ],
+    paddings: NDBuffer[
+        padding_rank, DimList.create_unknown[padding_rank](), padding_type
     ],
     output: NDBuffer[4, DimList.create_unknown[4](), output_type],
     out_chain: OutputChainPtr,
@@ -1833,8 +1838,13 @@ fn conv[
     if dilation.size() != 2:
         return out_chain.mark_error("2 values expected in dilation input")
 
+    if paddings.size() != 4:
+        return out_chain.mark_error("4 values expected in paddings input")
+
     let strides_flat = strides.flatten()
     let dilation_flat = dilation.flatten()
+    let paddings_flat = paddings.flatten()
+
     let strides_tuple = Index(
         strides_flat[0].to_int(), strides_flat[1].to_int()
     )
@@ -1844,10 +1854,12 @@ fn conv[
     if dilation_tuple != Index(1, 1):
         return out_chain.mark_error("Non-unit dilation is not supported yet.")
 
-    # fused padding not supported yet
-    # assume that input has been pre-padded in a separate op
-    let pad_h_tuple = Index(0, 0)
-    let pad_w_tuple = Index(0, 0)
+    let pad_h_tuple = Index(
+        paddings_flat[0].to_int(), paddings_flat[1].to_int()
+    )
+    let pad_w_tuple = Index(
+        paddings_flat[2].to_int(), paddings_flat[3].to_int()
+    )
 
     # TODO: eventually padding, strides and dilation will be passed in as
     # parameters here when they are constant in the graph
