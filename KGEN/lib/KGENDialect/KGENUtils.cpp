@@ -1301,6 +1301,14 @@ ParseResult KGEN::parseSignature(AsmParser &p, SignatureType &signature) {
                      "expected '<' or '(' to begin a signature");
 }
 
+ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
+  SignatureType type;
+  if (parseSignature(p, type))
+    return failure();
+  signature = TypeAttr::get(type);
+  return success();
+}
+
 void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
   if (!signature.getInputParamTypes().empty() ||
       !signature.getResultParamTypes().empty()) {
@@ -1319,6 +1327,10 @@ void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
   auto printElt = [&](unsigned i) { p << signature.getValueInputs()[i]; };
   printSignatureValuesElt</*optionalResultList=*/false>(
       p, printElt, signature.getValues(), signature);
+}
+
+void KGEN::printSignature(AsmPrinter &p, Operation *op, TypeAttr signature) {
+  printSignature(p, cast<SignatureType>(signature.getValue()));
 }
 
 ParseResult KGEN::parseSignatureValues(AsmParser &p,

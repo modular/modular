@@ -127,26 +127,19 @@ def KGEN_ExternFuncOp : KGENOp<"extern.func", [
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<FunctionType>:$function_type,
+                       TypeAttrOf<KGEN_SignatureType>:$signature,
                        KGEN_ExportKindAttr:$exportKind,
                        SymbolRefAttr:$importedFrom);
 
   let extraClassDeclaration = [{
-    /// Functions required to conform to FuncInterface and DeclInterface.
-    /// Those interfaces are required because otherwise SymbolConstantAttr
-    /// doesn't verify.
+    InlineLevel getInlineLevel() { return InlineLevel::Never; }
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-    SignatureType getSignature() {
-      return SignatureType::get(getFunctionType());
-    }
-    InlineLevel getInlineLevel() {
-      return InlineLevel::Never;
-    }
+    FunctionType getFunctionType() { return getSignature().getValues(); }
   }];
 
   let assemblyFormat = [{
-    custom<SymbolExport>($exportKind) $sym_name `` $function_type
+    custom<SymbolExport>($exportKind) $sym_name `` custom<Signature>($signature)
     `from` $importedFrom attr-dict-with-keyword
   }];
 }
