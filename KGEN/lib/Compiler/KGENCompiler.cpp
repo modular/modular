@@ -292,6 +292,16 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
   pm.addNestedPass<FuncOp>(createLowerLoops());
 
+  // TODO: Remove these once we move unrolling earlier in the pipeline.
+  if (options.optimizationLevel >= 1) {
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createCanonicalizer());
+    pm.addPass(createSROA());
+    pm.addPass(createMem2Reg());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(createCanonicalizer());
+  }
+
   // At the end of the pipeline, externalize any functions that have been
   // precompiled so that they aren't sent to LLVM again.
   pm.addPass(createExternalizePrecompiledFunctions());
