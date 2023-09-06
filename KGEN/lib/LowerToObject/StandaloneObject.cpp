@@ -355,9 +355,8 @@ collectLinksAndUsers(ModuleOp theModule, const SymbolTable &symtab,
   // kgen.extern.func.
   for (Operation &op : theModule.getOps()) {
     if (auto func = dyn_cast<ExternFuncOp>(op)) {
-      SymbolRefAttr linkRef = func.getImportedFrom();
-      assert(linkRef && "kgen.extern.func must have an importedFrom");
-      addLinkOp(linkRef, func.getSymName());
+      if (SymbolRefAttr ref = func.getImportedFromAttr())
+        addLinkOp(ref, func.getSymName());
     } else if (auto func = dyn_cast<FuncOp>(op)) {
       if (SymbolRefAttr ref = func.getPrecompiledBodyRefAttr())
         addLinkOp(ref, func.getLinkageNameAttr());
