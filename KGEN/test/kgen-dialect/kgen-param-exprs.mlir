@@ -747,15 +747,3 @@ kgen.generator @apply_result_slot() {
   kgen.param.constant: pointer<index> = <apply_result_slot(:<>(!kgen.pointer<index> byref_result, index) -> () @result_slot, 2)>
   kgen.return
 }
-
-kgen.extern.func @external_func() -> index
-kgen.extern.generator @external_generator<width>(%arg0: index) -> !pop.simd<width, f32>
-
-// CHECK-LABEL: kgen.generator @call_extern_funcs
-kgen.generator @call_extern_funcs<width>() -> !pop.simd<width, f32> {
-  // CHECK-NEXT: call @external_func() : () -> index
-  %0 = kgen.call @external_func() : () -> index
-  // CHECK-NEXT: call @external_generator<width>(%{{.*}}) : (index) -> !pop.simd<width, f32>
-  %1 = kgen.call @external_generator<width>(%0) : (index) -> !pop.simd<width, f32>
-  kgen.return %1 : !pop.simd<width, f32>
-}

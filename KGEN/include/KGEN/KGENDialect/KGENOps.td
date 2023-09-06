@@ -249,46 +249,6 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 }
 
 //===----------------------------------------------------------------------===//
-// ExternGeneratorOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
-    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
-    ExportInterface]> {
-  let summary = "External generator declaration.";
-  let description = [{
-    The `kgen.extern.generator` operation declares a KGEN generator with a
-    external definition. The definition and its dependencies must be made
-    available prior to elaboration, but this operations allows manipulating
-    sections of IR without requiring all transitive dependencies be present in
-    the module.
-
-    Example:
-
-    ```mlir
-    kgen.extern.generator @kernel<simd_width>(!pop.simd<simd_width, f32>)
-    ```
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       TypeAttrOf<FunctionType>:$functionType,
-                       KGEN_ParamDeclArrayAttr:$inputParams,
-                       KGEN_ParamDeclArrayAttr:$resultParams,
-                       KGEN_ExportKindAttr:$exportKind);
-
-  let extraClassDeclaration = [{
-    InlineLevel getInlineLevel() { return InlineLevel::Never; }
-  }];
-
-  let assemblyFormat = [{
-    custom<SymbolExport>($exportKind) $sym_name ``
-    custom<ExternGenerator>($signature, $functionType, $inputParams,
-                            $resultParams) attr-dict-with-keyword
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // CallOpBase
 //===----------------------------------------------------------------------===//
 
