@@ -104,6 +104,8 @@ from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
 from Softmax import softmax as _softmax
 from Split import split as _split
+from TopK import top_k as _top_k
+from TopK import top_k_shape
 
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList, VariadicList
@@ -227,6 +229,9 @@ fn MOGGExport():
     alias _mark_output_chain_ready = mark_output_chain_ready
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
+    alias _top_k = top_k
+    alias _bottom_k = bottom_k
+    alias _top_k_shape = top_k_shape
 
 
 # ===----------------------------------------------------------------------===#
@@ -2041,3 +2046,58 @@ fn print_buffer_info[
     print("Rank:", rank)
     print("Shape:", buffer.dynamic_shape)
     print("Strides:", buffer.dynamic_stride)
+
+
+# ===----------------------------------------------------------------------===#
+# TopK/BottomK
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn bottom_k[
+    type: DType,
+    rank: Int,
+    out_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    out_chain: OutputChainPtr,
+):
+    _top_k[rank, type](
+        input,
+        k_buf[0].to_int(),
+        axis_buf[0].to_int(),
+        False,
+        rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
+        out_idxs,
+        out_chain,
+    )
+
+
+@always_inline
+fn top_k[
+    type: DType,
+    rank: Int,
+    out_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
+    out_chain: OutputChainPtr,
+):
+    _top_k[rank, type](
+        input,
+        k_buf[0].to_int(),
+        axis_buf[0].to_int(),
+        True,
+        rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
+        out_idxs,
+        out_chain,
+    )
