@@ -33,6 +33,7 @@ add_modular_unittest(
   JSONTest.cpp
   MathExtras.cpp
   MicroBenchmarkTest.cpp
+  RandomTest.cpp
   TelemetryTest.cpp
   TensorShapeTest.cpp
   TensorSpecTest.cpp
