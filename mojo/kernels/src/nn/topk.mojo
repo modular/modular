@@ -12,6 +12,52 @@ from math import iota
 from algorithm.functional import parallelize_over_rows
 
 
+fn top_k_shape[
+    type: DType,
+    rank: Int,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
+    k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[rank]:
+    """
+    Compute the output shape of a  top/bottom k operation.
+
+    Parameters:
+        type: Data type of the input buffer.
+        rank: Rank of the input.
+        axis_type: Type of the axis and K arguments.
+        single_thread_blocking_override: If this function can block.
+
+    Args:
+        input: The input tensor.
+        k_buf: The K value in a tensor.
+        axis_buf: The axis value in a tensor.
+
+    Returns:
+        The output shape.
+    """
+    debug_assert(k_buf.size() == 1, "k_buf must be a scalar")
+    debug_assert(axis_buf.size() == 1, "axis_buf must be a scalar")
+
+    let axis = axis_buf[0].to_int()
+    let k = k_buf[0].to_int()
+
+    debug_assert(axis < rank, "Axis should be less than the rank of the input")
+    debug_assert(
+        k <= input.get_shape()[axis],
+        "K should be less or equal to the size of the axis",
+    )
+
+    var shape = input.get_shape()
+
+    shape[axis] = k
+
+    return shape
+
+
 fn top_k[
     rank: Int, type: DType
 ](
@@ -39,6 +85,26 @@ fn _top_k[
     out_chain: OutputChainPtr,
     parallelism_grain_size: Int,  # impl detail, exposed for testing
 ):
+    """
+    Implementation of the Top K algorithm. Returns the top or bottom K elements
+    and their index along a specified axis.
+
+    Parameters:
+        type: Data type of the input buffer.
+        rank: Rank of the input.
+
+    Args:
+        input: The input tensor.
+        k: Represents the K largest/smallest value.
+        axis: On which axis it should operate.
+        largest: If true, acts like top K. Otherwise, bottom K.
+        out_vals: Output values.
+        out_idx: Output indices.
+        out_chain: Output chain to notify for errors and ready states.
+
+    Returns:
+        The output shape.
+    """
     let shape = input.get_shape()
 
     @parameter
