@@ -159,6 +159,7 @@ struct TestGeneratePreElaboratedBody
           stream.str(), func.getSymName() + "_generated_body_attr");
       linkBuilder.create<KGEN::LIT::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr, funcTarget,
+          M::KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
           bytecodeBufferAttr, bytecodeBufferAttr);
     }
   }

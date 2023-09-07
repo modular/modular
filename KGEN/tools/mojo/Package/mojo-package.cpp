@@ -74,7 +74,8 @@ namespace {
 class PackageBuilder {
 public:
   /// Construct the PackageBuilder from the parsed package op.
-  PackageBuilder(LIT::PackageOp parsedPackageOp, TargetInfoAttr target);
+  PackageBuilder(LIT::PackageOp parsedPackageOp, TargetInfoAttr target,
+                 EnvAttr env);
 
   /// Given a pre-elaboration module, attach the bytecode for the pre-elaborated
   /// versions of each non-parametric function to the high level lit.func in
@@ -150,7 +151,7 @@ static bool canExternalize(LIT::FuncOp func) {
 }
 
 PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
-                               TargetInfoAttr target) {
+                               TargetInfoAttr target, EnvAttr env) {
   packageModule = ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
 
@@ -188,6 +189,7 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
   // Clone the parsed package operation and push its ops onto the worklist.
   thePackage = cloneWithoutRegions(parsedPackageOp);
   thePackage.setCompiledForAttr(target);
+  thePackage.setCompiledEnvAttr(env);
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
   while (!worklist.empty()) {
@@ -549,7 +551,8 @@ static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
   // Set up the package builder.
-  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target);
+  PackageBuilder packageBuilder(parsedPackageOp, packageArgs.target,
+                                packageArgs.env);
   mlir::MLIRContext *ctx = packageBuilder.getContext();
   const CompilationOptions &compilationOptions = packageArgs.compileOptions;
 
