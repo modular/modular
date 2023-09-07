@@ -292,31 +292,33 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
 
   FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   assert(nestedFunction && "a function must back the nestedFunctionDecl");
+
+  SignatureType closureWrapperSignature = nestedFunction.getSignature();
+  size_t wrapperNumArgs = closureWrapperSignature.getNumInputs();
+
   auto captureRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
+  unsigned captureCount = std::distance(
+      captureRange.begin(), captureRange.end()); // TODO: use llvm::size
+
   SmallVector<Type> closureImplSigTypes;
+  closureImplSigTypes.reserve(captureCount + wrapperNumArgs);
   SmallVector<ValueInputConvention> closureImplSigConventions;
+  closureImplSigConventions.reserve(captureCount + wrapperNumArgs);
   SmallVector<StringAttr> closureImplSigArgNames;
+  closureImplSigArgNames.reserve(captureCount + wrapperNumArgs);
 
-  unsigned captureCount =
-      std::distance(captureRange.begin(), captureRange.end());
-  unsigned initArgCount = captureCount + 1;
   SmallVector<Type> fieldTypes;
-  SmallVector<Type> initSigTypes(initArgCount);
-  SmallVector<ValueInputConvention> initSigConventions(initArgCount);
-  SmallVector<StringAttr> initSigNames(initArgCount);
-  ExprEmitter emitter(shared, nestedFunctionDecl, EC_Type);
+  fieldTypes.reserve(captureCount);
   // TODO: Enable expression of how to capture.
-  unsigned i = 0;
-  for (auto &declCaptureIter : captureRange) {
+  for (const auto &[i, declCaptureIter] : llvm::enumerate(captureRange)) {
     Capture capture = declCaptureIter.second;
-    Type fieldType = capture.getFieldType();
-    Type initType = capture.getInitType();
+    closureImplSigTypes.push_back(capture.getInitType());
 
-    ValueInputConvention inputConvention;
+    Type fieldType = capture.getFieldType();
     if (ASTType(fieldType).isRegisterPassable(location, shared))
-      inputConvention = ValueInputConvention::OwnedInReg;
+      closureImplSigConventions.push_back(ValueInputConvention::OwnedInReg);
     else
-      inputConvention = ValueInputConvention::OwnedInMem;
+      closureImplSigConventions.push_back(ValueInputConvention::OwnedInMem);
 
     if (auto signatureType = dyn_cast<SignatureType>(fieldType)) {
       if (signatureType.isCapturing())
@@ -328,22 +330,14 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
                          "TODO: Cannot capture a signature type that escapes "
                          "until new closures are turned on.");
     }
-
-    auto argName = StringAttr::get(ctx, "field" + std::to_string(i));
-
     fieldTypes.push_back(fieldType);
-    closureImplSigConventions.push_back(inputConvention);
-    closureImplSigTypes.push_back(initType);
-    closureImplSigArgNames.push_back(argName);
 
-    initSigTypes[i + 1] = initType;
-    initSigConventions[i + 1] = inputConvention;
-    initSigNames[i + 1] = argName;
-    i++;
+    closureImplSigArgNames.push_back(
+        StringAttr::get(ctx, "field" + std::to_string(i)));
   }
+
   // Create the closure impl signature from the captures and the wrapper
   // signature.
-  SignatureType closureWrapperSignature = nestedFunction.getSignature();
   llvm::append_range(closureImplSigTypes,
                      closureWrapperSignature.getValueInputs());
   llvm::append_range(
@@ -382,14 +376,25 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
     shared.declResolver->addFullyResolvedDecl(
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
+  // Build the init method. This only needs the captured arguments, so we drop
+  // the args from the wrapper.
   auto ptrToClosureImplType =
       PointerType::get(ASTDecl::computeSelfTypeForStruct(declOp));
-  initSigTypes[0] = ptrToClosureImplType;
-  initSigConventions[0] = ValueInputConvention::InitSelf;
-  initSigNames[0] = StringAttr::get(ctx, "self");
+  SmallVector<Type> initSigTypes{ptrToClosureImplType};
+  llvm::append_range(initSigTypes,
+                     llvm::drop_end(closureImplSigTypes, wrapperNumArgs));
+
+  SmallVector<ValueInputConvention> initSigConventions{
+      ValueInputConvention::InitSelf};
+  llvm::append_range(initSigConventions,
+                     llvm::drop_end(closureImplSigConventions, wrapperNumArgs));
+
+  SmallVector<StringAttr> initSigNames{StringAttr::get(ctx, "self")};
+  llvm::append_range(initSigNames,
+                     llvm::drop_end(closureImplSigArgNames, wrapperNumArgs));
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit*/ false);
+      declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit=*/false);
   structEmitter.synthesizeMemberwiseInit(astDecl.getLoc(), declOp, initSigTypes,
                                          initSigConventions, initSigNames);
 
