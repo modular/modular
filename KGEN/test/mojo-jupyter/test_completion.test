@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+// UNSUPPORTED: system-darwin
 // RUN: %mojo_jupyter_executor %S/test_completion.ipynb | FileCheck %s
 
 // Check completions for `builtin.`.
