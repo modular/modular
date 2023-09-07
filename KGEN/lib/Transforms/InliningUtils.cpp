@@ -128,7 +128,7 @@ static void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
                                      bool stripValues) {
   // Unpack the bits.
   auto value = static_cast<uint8_t>(tag.getInt());
-  auto singleExit = static_cast<bool>(value);
+  auto singleExit = static_cast<bool>(value & 1);
   auto noDebug = static_cast<bool>(value >> 1);
 
   // The scope operations contains the location of the call.
