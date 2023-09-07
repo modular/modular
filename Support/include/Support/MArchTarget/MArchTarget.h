@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_MARCHTARGET_H
-#define SUPPORT_MARCHTARGET_H
+#ifndef SUPPORT_MARCHTARGET_MARCHTARGET_H
+#define SUPPORT_MARCHTARGET_MARCHTARGET_H
 
 #include "Support/DeviceSpecs.h"
 #include "Support/MDialect/MAttrs.h"
@@ -23,10 +23,6 @@ ErrorOr<TargetInfo> getHostTargetInfo();
 
 /// Returns the features for the host in "+feature1,+feature2" form.
 std::string getHostCPUFeatures();
-
-/// As for getHostTargetInfo, but returns as a DeviceSpecCollection with
-/// a single device specification.
-ErrorOr<DeviceSpecCollection> getHostDeviceSpecCollection();
 
 /// Returns a TargetMachine for the current host.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
@@ -70,4 +66,4 @@ ErrorOr<TargetInfoAttr> getMArchFeatures(MLIRContext *ctx, StringRef march,
 
 } // namespace M
 
-#endif // SUPPORT_MARCHTARGET_H
+#endif // SUPPORT_MARCHTARGET_MARCHTARGET_H

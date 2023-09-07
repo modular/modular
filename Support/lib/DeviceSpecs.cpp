@@ -128,17 +128,18 @@ static ErrorOrSuccess satisfiesTriple(const llvm::Triple &provided,
   std::string providedArch = canonArchName(provided.getArchName());
   std::string requiredArch = canonArchName(required.getArchName());
   if (!requiredArch.empty() && providedArch != requiredArch) {
-    return Error(Twine("host architecture '") + provided.getArchName() +
+    return Error(Twine("Provided architecture '") + provided.getArchName() +
                  "' does not match required architecture '" +
-                 required.getArchName() + "'");
+                 required.getArchName() + "'.");
   }
 
   llvm::Triple::OSType providedOS = canonOSType(provided.getOS());
   llvm::Triple::OSType requiredOS = canonOSType(required.getOS());
   if (requiredOS != llvm::Triple::OSType::UnknownOS &&
       providedOS != requiredOS) {
-    return Error(Twine("host OS '") + provided.getOSName() +
-                 "' does not match required OS '" + required.getOSName() + "'");
+    return Error(Twine("Provided OS '") + provided.getOSName() +
+                 "' does not match required OS '" + required.getOSName() +
+                 "'.");
   }
 
   return success();
@@ -151,30 +152,75 @@ static ErrorOrSuccess satisfiesCPU(StringRef provided, StringRef required) {
     return success();
 
   if (provided != required) {
-    return Error(Twine("host CPU '") + provided +
-                 "' does not match required CPU '" + required + "'");
+    return Error(Twine("Provided CPU '") + provided +
+                 "' does not match required CPU '" + required + "'.");
   }
   return success();
 }
 
-/// Returns success if provided features are a superset of required features.
+/// Adds feature to map. If feature supports multiple versions, map will
+/// contain base feature as key and version as value. Otherwise the
+/// entire feature will be the key and 0 the value.
+static void parseFeature(StringRef feature, llvm::StringMap<int> &map) {
+  static StringRef prefix("compute_");
+  if (feature.find(prefix) == 0) {
+    StringRef suffix = feature.drop_front(prefix.size());
+    int version;
+    if (!suffix.getAsInteger(10, version)) {
+      map[prefix] = version;
+      return;
+    }
+  }
+  map[feature] = 0;
+}
+
+/// Returns features parsed into map form, where the map domain is the base
+/// feature name and the map range is the feature's level (or just 0 if the
+/// feature is boolean).
+static llvm::StringMap<int>
+parseFeatures(const std::vector<std::string> &features) {
+  llvm::StringMap<int> map;
+  for (const auto &feature : features)
+    parseFeature(feature, map);
+  return map;
+}
+
+/// Returns success if provided features are a superset of required
+/// features.
 static ErrorOrSuccess
 satisfiesFeatures(const std::vector<std::string> &provided,
                   const std::vector<std::string> &required) {
   if (required.empty())
-    // No constraint (following code would also return false).
+    // No constraint (following code would also return success).
     return success();
 
-  DenseSet<StringRef> providedSet(provided.begin(), provided.end());
-  DenseSet<StringRef> requiredSet(required.begin(), required.end());
-  bool superset = llvm::set_is_subset(requiredSet, providedSet);
-  if (superset)
-    return success();
+  llvm::StringMap<int> providedMap = parseFeatures(provided);
+  llvm::StringMap<int> requiredMap = parseFeatures(required);
   std::string str;
   llvm::raw_string_ostream os(str);
-  os << "host is missing the following feature(s) required by model: ";
-  llvm::interleaveComma(llvm::set_difference(requiredSet, providedSet), os);
-  return Error(str);
+  os << "The following features are required but not provided: ";
+  bool anyMissing = false;
+  for (const auto &[requiredBase, requiredVersion] : requiredMap) {
+    auto providedItr = providedMap.find(requiredBase);
+    if (providedItr == providedMap.end()) {
+      if (anyMissing)
+        os << ", ";
+      os << requiredBase;
+      if (requiredVersion)
+        os << requiredVersion;
+      anyMissing = true;
+    } else if (providedItr->second < requiredVersion) {
+      if (anyMissing)
+        os << ", ";
+      os << requiredBase << requiredVersion;
+      os << " (only have " << providedItr->getKey() << providedItr->second
+         << ")";
+      anyMissing = true;
+    }
+  }
+  if (anyMissing)
+    return Error(str);
+  return success();
 }
 
 ErrorOrSuccess
@@ -347,12 +393,6 @@ ErrorOr<DeviceSpecMap> DeviceSpecCollection::reconcileDeviceSpecs(
   LLVM_DEBUG(llvm::dbgs() << "required:\n"
                           << required.serializeToJSON() << "\n\n");
 
-  if (required.devices.size() > devices.size()) {
-    return Error(Twine("model requires ") + Twine(required.devices.size()) +
-                 " devices but only " + Twine(devices.size()) +
-                 " are provided.");
-  }
-
   DeviceSpecMap result;
   std::vector<DeviceSpec> unusedProvidedDevices(devices.begin(), devices.end());
 
@@ -363,7 +403,7 @@ ErrorOr<DeviceSpecMap> DeviceSpecCollection::reconcileDeviceSpecs(
                    "' is shared between required device specifications.");
     }
 
-    auto itr = llvm::find_if(
+    auto providedItr = llvm::find_if(
         unusedProvidedDevices, [&](const DeviceSpec &providedDevice) {
           if (auto errOr = providedDevice.target.checkSatisfiesRequirements(
                   requiredDevice.target)) {
@@ -374,23 +414,38 @@ ErrorOr<DeviceSpecMap> DeviceSpecCollection::reconcileDeviceSpecs(
           return true;
         });
 
-    if (itr == unusedProvidedDevices.end()) {
+    if (providedItr == unusedProvidedDevices.end()) {
       std::string str;
       llvm::raw_string_ostream os(str);
-      os << "unable to find a runtime device to match the requirements for '";
+      os << "Cannot find an available device matching the required device '";
       os << requiredDevice.ref.toString();
-      os << "' from amongst the yet-to-be matched devices ";
-      llvm::interleaveComma(unusedProvidedDevices, os,
-                            [&](const DeviceSpec &unusedProvidedDevice) {
-                              os << "'" << unusedProvidedDevice.ref.toString()
-                                 << "'";
-                            });
-      os << ".";
+      os << "'.";
+
+      if (unusedProvidedDevices.empty()) {
+        os << " Require " << required.devices.size() << " devices but only "
+           << devices.size() << " are provided.";
+      } else if (unusedProvidedDevices.size() == 1) {
+        auto errOr =
+            unusedProvidedDevices.front().target.checkSatisfiesRequirements(
+                requiredDevice.target);
+        assert(errOr);
+        os << " " << errOr.getError();
+      } else {
+        os << " No match was found from the available provided devices: ";
+        llvm::interleaveComma(unusedProvidedDevices, os,
+                              [&](const DeviceSpec &unusedProvidedDevice) {
+                                os << "'" << unusedProvidedDevice.ref.toString()
+                                   << "'";
+                              });
+        os << ".";
+      }
+
       return Error(str);
     }
 
-    result.insert(std::make_pair(requiredDevice.ref, *itr));
-    unusedProvidedDevices.erase(itr);
+    result.insert(std::make_pair(requiredDevice.ref,
+                                 std::make_pair(requiredDevice, *providedItr)));
+    unusedProvidedDevices.erase(providedItr);
   }
 
   return result;
