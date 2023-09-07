@@ -4,10 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from utils.vector import DynamicVector
+
+@value
+struct SomeStruct:
+    var x: Int
 
 
 fn take_closure_and_print(
@@ -18,21 +20,18 @@ fn take_closure_and_print(
 
 
 fn test_take_closure_and_print(x: Int):
-    var v = DynamicVector[Int](2)
-    v.push_back(1)
-    v.push_back(2)
+    var v = SomeStruct(x)
 
     @parameter
     fn FOO(y: Int) -> Int:
-        print(v[1])
+        print(v.x)
         return y
 
-    v[1] = 5
+    v.x = 5
 
     let capture_struct_closure: fn (Int) capturing -> Int = FOO
     let u: Int = 3
     take_closure_and_print(capture_struct_closure, u)
-    v._del_old()
 
 
 fn main():

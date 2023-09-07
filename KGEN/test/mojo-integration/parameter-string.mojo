@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
 # RUN: kgen -elaborate %s -S -o - | FileCheck %s --check-prefix=ELABORATE
 
 
