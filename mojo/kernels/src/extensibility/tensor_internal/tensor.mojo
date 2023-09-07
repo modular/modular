@@ -492,7 +492,7 @@ struct Tensor[dtype: DType]:
             result = self.dim(i + 1) * result + indices[i + 1]
         return result
 
-    # @always_inline
+    @always_inline
     fn _to_ndbuffer[
         rank: Int
     ](self) -> NDBuffer[rank, DimList.create_unknown[rank](), dtype]:
@@ -508,3 +508,7 @@ struct Tensor[dtype: DType]:
         return NDBuffer[rank, DimList.create_unknown[rank](), dtype](
             self._ptr, shape
         )
+
+    @always_inline
+    fn _to_buffer(self) -> Buffer[Dim(), dtype]:
+        return Buffer[Dim(), dtype](self._ptr, self.num_elements())
