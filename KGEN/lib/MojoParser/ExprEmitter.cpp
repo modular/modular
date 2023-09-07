@@ -897,6 +897,36 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
 // emitResult(ValueDest) Implementation
 //===----------------------------------------------------------------------===//
 
+/// Helper to rebind a value to a new type.
+static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
+                            ExprEmitter &emitter) {
+  // Materialize a parameter rebind.
+  if (auto pvalue = value.getIfPValue())
+    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), newType));
+
+  // Materialize a rebind operation.
+  auto rebind = [&](Value v) -> Value {
+    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
+                                             newType, v);
+  };
+  if (auto slValue = value.getIfSLValue())
+    return SLValue(rebind(slValue));
+  if (auto mrValue = value.getIfMRValue())
+    return MRValue(rebind(mrValue));
+  if (auto mbValue = value.getIfMBValue())
+    return MBValue(rebind(mbValue));
+  if (auto sbValue = value.getIfSBValue())
+    return SBValue(rebind(sbValue));
+  if (auto dlValue = value.getIfDLValue()) {
+    dlValue->elementType = newType;
+    return dlValue;
+  }
+
+  auto srValue = value.getIfSRValue();
+  assert(srValue && "Unknown value kind");
+  return SRValue(rebind(srValue));
+}
+
 /// When emitting a result value, attempt to "refine" the value type by
 /// evaluating 'apply' expressions in its type. Rebind the value if the type can
 /// be further specialized.
@@ -914,32 +944,7 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
   if (refinedType == valueType)
     return value;
 
-  // Materialize a parameter rebind.
-  if (auto pvalue = value.getIfPValue())
-    return PValue(
-        ParamOperatorAttr::get(POC::Rebind, pvalue.get(), refinedType));
-
-  // Materialize a rebind operation.
-  auto rebind = [&](Value value) -> Value {
-    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
-                                             refinedType, value);
-  };
-  if (auto slValue = value.getIfSLValue())
-    return SLValue(rebind(slValue));
-  if (auto mrValue = value.getIfMRValue())
-    return MRValue(rebind(mrValue));
-  if (auto mbValue = value.getIfMBValue())
-    return MBValue(rebind(mbValue));
-  if (auto sbValue = value.getIfSBValue())
-    return SBValue(rebind(sbValue));
-  if (auto dlValue = value.getIfDLValue()) {
-    dlValue->elementType = refinedType;
-    return dlValue;
-  }
-
-  auto srValue = value.getIfSRValue();
-  assert(srValue && "Unknown value kind");
-  return SRValue(rebind(srValue));
+  return rebindValue(value, refinedType, loc, emitter);
 }
 
 /// Emit the specified value into the current destination if present.  This
@@ -1000,26 +1005,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
       // If we are dealing with signatures that differ only in argument names,
       // we insert a rebind.
-      auto rebind = [&](Value value) -> Value {
-        return builder->create<RebindOp>(translateLocation(expr->getLoc()),
-                                         requiredSig, value);
-      };
-      if (auto pvalue = value.getIfPValue()) {
-        value = PValue(
-            ParamOperatorAttr::get(POC::Rebind, pvalue.get(), requiredSig));
-      } else if (auto slValue = value.getIfSLValue()) {
-        value = SLValue(rebind(slValue));
-      } else if (auto mrValue = value.getIfMRValue()) {
-        value = MRValue(rebind(mrValue));
-      } else if (auto mbValue = value.getIfMBValue()) {
-        value = MBValue(rebind(mbValue));
-      } else if (auto sbValue = value.getIfSBValue()) {
-        value = SBValue(rebind(sbValue));
-      } else {
-        auto srValue = value.getIfSRValue();
-        assert(srValue && "Unknown value kind");
-        value = SRValue(rebind(srValue));
-      }
+      value = rebindValue(value, requiredSig, expr->getLoc(), *this);
       return emitCValue({value, expr}, dest);
     }
   }
