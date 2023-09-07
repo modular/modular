@@ -103,6 +103,20 @@ public:
   // Contexts
   //===--------------------------------------------------------------------===//
 
+  /// Transfers ptr into runtime as a new context object of type T. The runtime
+  /// can hold at most one context object per T. Thread safe, though the caller
+  /// is responsible for thread safe access to the context object itself.
+  template <typename T>
+  void setContext(std::unique_ptr<T> ptr) {
+    std::lock_guard<std::recursive_mutex> lock(mu);
+    GenericUniquePtr genericPtr;
+    genericPtr.reset(std::move(ptr));
+    auto denseIndex = genericPtr.getTypeID().getDenseIndex();
+    assert(!contexts.contains(denseIndex) &&
+           "Runtime already holds context of type");
+    contexts.insert({denseIndex, std::move(genericPtr)});
+  }
+
   /// Emplaces a new global context object of type T into the runtime's set of
   /// contexts and returns a reference to it. The runtime can hold at
   /// most one context object per T. The returned reference is stable for the
@@ -110,7 +124,7 @@ public:
   /// thread safe access to the context object itself.
   template <typename T, typename... Args>
   T &emplaceContext(Args &&...args) {
-    std::lock_guard<std::mutex> lock(mu);
+    std::lock_guard<std::recursive_mutex> lock(mu);
     auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
     auto denseIndex = genericPtr.getTypeID().getDenseIndex();
     assert(!contexts.contains(denseIndex) &&
@@ -127,7 +141,7 @@ public:
   /// thread safe access to the context object itself.
   template <typename T, typename... Args>
   T &emplaceContextIfMissing(Args &&...args) {
-    std::lock_guard<std::mutex> lock(mu);
+    std::lock_guard<std::recursive_mutex> lock(mu);
     auto denseIndex = TypeID::get<T>().getDenseIndex();
     auto itr = contexts.find(denseIndex);
     if (itr == contexts.end()) {
@@ -145,7 +159,7 @@ public:
   /// caller is responsible for thread safe access to the context object itself.
   template <typename T>
   T *getContext() {
-    std::lock_guard<std::mutex> lock(mu);
+    std::lock_guard<std::recursive_mutex> lock(mu);
     auto denseIndex = TypeID::get<T>().getDenseIndex();
     auto itr = contexts.find(denseIndex);
     if (itr == contexts.end())
@@ -161,7 +175,7 @@ public:
   template <typename T>
   ErrorOr<T *> createContextIfMissing(
       llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
-    std::lock_guard<std::mutex> lock(mu);
+    std::lock_guard<std::recursive_mutex> lock(mu);
     auto denseIndex = TypeID::get<T>().getDenseIndex();
     auto itr = contexts.find(denseIndex);
     if (itr != contexts.end())
@@ -211,8 +225,9 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
-  /// Protects contexts.
-  std::mutex mu;
+  /// Protects contexts. Recursive so that the creator in
+  /// createContextIfMissing may also add context objects.
+  std::recursive_mutex mu;
 
   /// A map from globally unique type identifiers TypeID::get<T>() (using
   /// their 'dense index' form) to GenericUniquePtr holding the global context

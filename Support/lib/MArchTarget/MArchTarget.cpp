@@ -128,19 +128,6 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOpt::Level optLevel) {
   return machine;
 }
 
-ErrorOr<DeviceSpecCollection> M::getHostDeviceSpecCollection() {
-  auto targetInfoOr = getHostTargetInfo();
-  if (targetInfoOr)
-    return targetInfoOr.takeError();
-
-  DeviceSpecCollection result;
-  result.host.label = "host";
-  DeviceSpec &deviceSpec = result.devices.emplace_back();
-  deviceSpec.ref.label = result.host.label;
-  deviceSpec.target = std::move(*targetInfoOr);
-  return result;
-}
-
 ErrorOr<TargetInfo> M::getMArchTargetInfo(StringRef march, StringRef mcpu,
                                           StringRef mtune) {
   using namespace llvm;

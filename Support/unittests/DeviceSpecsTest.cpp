@@ -100,15 +100,19 @@ TEST(DeviceSpecs, ReconcileDeviceSpecs) {
   {
     auto itr = mapOr->find(DeviceRef("cuda"));
     ASSERT_TRUE(itr != mapOr->end());
-    ASSERT_EQ(itr->second.ref.label, "cudax");
-    ASSERT_EQ(itr->second.ref.id, 3);
+    ASSERT_EQ(itr->second.first.ref.label, "cuda");
+    ASSERT_EQ(itr->second.first.ref.id, 0);
+    ASSERT_EQ(itr->second.second.ref.label, "cudax");
+    ASSERT_EQ(itr->second.second.ref.id, 3);
   }
 
   {
     auto itr = mapOr->find(DeviceRef("cuda", 1));
     ASSERT_TRUE(itr != mapOr->end());
-    ASSERT_EQ(itr->second.ref.label, "cudax");
-    ASSERT_EQ(itr->second.ref.id, 7);
+    ASSERT_EQ(itr->second.first.ref.label, "cuda");
+    ASSERT_EQ(itr->second.first.ref.id, 1);
+    ASSERT_EQ(itr->second.second.ref.label, "cudax");
+    ASSERT_EQ(itr->second.second.ref.id, 7);
   }
 }
 

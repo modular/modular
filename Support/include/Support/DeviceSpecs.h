@@ -131,8 +131,11 @@ struct DeviceSpec {
   static ErrorOr<DeviceSpec> deserializeFromJSON(const llvm::json::Value *json);
 };
 
-/// A map from device references to their corresponding device spec.
-using DeviceSpecMap = llvm::DenseMap<DeviceRef, DeviceSpec>;
+/// A map from device references (from the 'required' devices) to
+/// the pair of device specs (required, provided), where provided is the
+/// matching devices spec available in the runtime environment.
+using DeviceSpecMap =
+    llvm::DenseMap<DeviceRef, std::pair<DeviceSpec, DeviceSpec>>;
 
 //===----------------------------------------------------------------------===//
 // DeviceSpecCollection
@@ -152,19 +155,21 @@ struct DeviceSpecCollection {
   deserializeFromJSON(const llvm::json::Value *json);
   static ErrorOr<DeviceSpecCollection> deserializeFromJSON(StringRef json);
 
-  /// Returns a map from each device reference in required to the corresponding
-  /// device specification in this collection which meets the required device's
-  /// requirements. Returns an error if there's a target in required which has
-  /// no satisfying target in this collection. A device specification in this
-  /// collection can appear in the result map at most once. It is ok for this
-  /// collection to have more device specifications than required.
+  /// Returns a map from each device reference in required to the pair of
+  /// devices specs (requiredSpec, providedSpec) where:
+  ///  - requiredSpec is the device spec in the required collection.
+  ///  - providedSpec is the matching device spec in this collection which
+  ///    meets the requiredSpec's requirements.
   ///
-  /// This method is generally called on the (augmented) result of
-  /// fromCPUHost(), with required equal to the device specifications recovered
-  /// from the model being setup for execution. The result can be used by
-  /// primitives within the model's 'init' block to guide which 'physical'
-  /// devices (eg a CUDA device id) to use for each 'virtual' device needed by
-  /// the model.
+  /// Returns an error if there's a target in required which has no satisfying
+  /// target in this collection. A device specification in this collection can
+  /// appear in the result map at most once. It is ok for this collection to
+  /// have more device specifications than required.
+  ///
+  /// This method is generally called on a collection representing all the
+  /// available devices on the host. The result can be used by primitives within
+  /// the model's 'init' block to guide which 'physical' devices (eg a CUDA
+  /// device id) to use for each 'virtual' device used in the model.
   ErrorOr<DeviceSpecMap>
   reconcileDeviceSpecs(const DeviceSpecCollection &required) const;
 
