@@ -178,11 +178,14 @@ def PackageOp : LITOp<"package", [
   let summary = "mojo source package";
   let description = [{
     A `lit.package` models a mojo package. It contains a set of additional
-    `lit.file_module` and `lit.package` operations. If the package was
-    precompiled it may also contain the the full pre-elaboration IR module,
-    `preElaborationModule`, target it was compiled for, `compiledFor`, the full
-    post-elaboration IR module, `postElaborationModule`, and the compiled static
-    archive, `archiveBytes`.
+    `lit.file_module` and `lit.package` operations.
+
+    If the package was precompiled it may also contain:
+    - The full pre-elaboration IR module, `preElaborationModule`.
+    - The target it was compiled for, `compiledFor`.
+    - The definitions used at compile time, `compiledEnv`.
+    - The full post-elaboration IR module, `postElaborationModule`.
+    - The compiled static archive, `archiveBytes`.
 
     Example:
 
@@ -202,6 +205,7 @@ def PackageOp : LITOp<"package", [
 
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     OptionalAttr<M_TargetInfoAttr>:$compiledFor,
+    OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$archiveBytes,
     // The module containing the post-elaboration of this package when it was
     // compiled.
@@ -253,6 +257,7 @@ def PackageLinkOp : LITOp<"package_link", [Symbol]> {
 
     // FIXME(#17326): This should be a map of precompiled targets, not one.
     M_TargetInfoAttr:$compiledFor,
+    KGEN_EnvAttr:$compiledEnv,
     Builtin_DenseResourceElementsAttr:$archiveBytes,
     Builtin_DenseResourceElementsAttr:$postElaborationModule
   );
