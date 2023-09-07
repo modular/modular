@@ -21,6 +21,12 @@ def configure_lldb_tests(config):
         if platform.system() == "Darwin":
             lldb_env += " " + config.asan_lib_inject_env
 
+    config.substitutions.append(
+        (
+            "%lldb",
+            f"{lldb_env} lldb --source-quietly -S {config.lit_lldb_init}",
+        )
+    )
     # lit_lldb_init is a file with a list of commands to be executed by LLDB
     # during initialization that set it up for a correct execution during tests.
     config.substitutions.append(
