@@ -1027,29 +1027,28 @@ LogicalResult CreateClosureOp::inferReturnTypes(
     DictionaryAttr attributes, mlir::OpaqueProperties properties,
     RegionRange regions, SmallVectorImpl<Type> &results) {
   auto callee = dyn_cast_or_null<TypedAttr>(attributes.get("callee"));
-  if (!callee)
+  if (!callee) {
     return mlir::emitOptionalError(
         loc, "'create_closure' expected TypedAttr 'callee'");
+  }
   auto sig = dyn_cast<SignatureType>(callee.getType());
-  if (!sig)
+  if (!sig) {
     return mlir::emitOptionalError(
         loc, "'create_closure' attribute 'callee' must have SignatureType");
+  }
 
-  unsigned numArgs = captures.size();
-  if (numArgs > sig.getNumInputs()) {
-    return mlir::emitOptionalError(loc, "provided ", numArgs,
+  unsigned numCaptures = captures.size();
+  if (numCaptures > sig.getNumInputs()) {
+    return mlir::emitOptionalError(loc, "provided ", numCaptures,
                                    " operands but callee only has ",
                                    sig.getNumInputs(), " to bind");
   }
 
-  SmallVector<Type> newArgTypes;
-  SmallVector<ValueInputConvention> newInputConvs;
-  SmallVector<StringAttr> newArgNames;
-  for (unsigned i = numArgs, e = sig.getNumInputs(); i != e; ++i) {
-    newArgTypes.push_back(sig.getValueInputs()[i]);
-    newInputConvs.push_back(sig.getValueInputConventions()[i]);
-    newArgNames.push_back(sig.getMetadata().getArgNames()[i]);
-  }
+  ArrayRef<Type> newArgTypes = sig.getValueInputs().drop_front(numCaptures);
+  ArrayRef<ValueInputConvention> newInputConvs =
+      sig.getValueInputConventions().drop_front(numCaptures);
+  ArrayRef<StringAttr> newArgNames =
+      sig.getArgNames().getValue().drop_front(numCaptures);
 
   ArrayRef<TypedAttr> newDefaultArgs = sig.getDefaultArguments();
   if (newArgTypes.size() < newDefaultArgs.size())
@@ -1071,19 +1070,20 @@ parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
                          ArrayRef<OpAsmParser::UnresolvedOperand> captures,
                          SmallVectorImpl<Type> &captureTypes) {
   auto sig = dyn_cast<SignatureType>(callee.getType());
-  if (!sig)
+  if (!sig) {
     return p.emitError(p.getCurrentLocation(),
                        "expected type of callee to be SignatureType");
-
-  unsigned numArgs = captures.size();
-  if (numArgs > sig.getNumInputs()) {
-    return p.emitError(p.getCurrentLocation(), "provided ")
-           << numArgs << " operands but callee only has " << sig.getNumInputs()
-           << " to bind";
   }
 
-  for (unsigned i = 0; i != numArgs; ++i)
-    captureTypes.push_back(sig.getValueInputs()[i]);
+  unsigned numCaptures = captures.size();
+  if (numCaptures > sig.getNumInputs()) {
+    return p.emitError(p.getCurrentLocation(), "provided ")
+           << numCaptures << " operands but callee only has "
+           << sig.getNumInputs() << " to bind";
+  }
+
+  ArrayRef<mlir::Type> inputs = sig.getValueInputs().take_front(numCaptures);
+  captureTypes.append(inputs.begin(), inputs.end());
   return success();
 }
 
@@ -1133,11 +1133,13 @@ LogicalResult CreateClosureOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult GlobalOp::verify() {
-  if (getCtor() || getDtor() || getPriority())
-    if (!getCtor() || !getDtor() || !getPriority())
+  if (getCtor() || getDtor() || getPriority()) {
+    if (!getCtor() || !getDtor() || !getPriority()) {
       return emitOpError("does not define all of the constructor, destructor, "
                          "or priority values, if one of these values is "
                          "defined, then all must be defined");
+    }
+  }
   return success();
 }
 
@@ -1165,9 +1167,10 @@ LogicalResult GlobalOp::verifySymbolUses(SymbolTableCollection &symtab) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LinkOp::verify() {
-  if (getLinkPath().has_value() == getLinkBytes().has_value())
+  if (getLinkPath().has_value() == getLinkBytes().has_value()) {
     return emitError(
         "expected either a path or the bytes of an object or archive");
+  }
   return success();
 }
 
