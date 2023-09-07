@@ -786,6 +786,10 @@ ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
   if (!value || !ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
 
+  // Don't store undef values. Just leave the memory as-is.
+  if (isa<UnknownAttr>(value))
+    return success();
+
   ErrorOrSuccess result = state.writeAttributeToMemory(ptr.getAddr(), value);
   if (result.isError())
     return ErrorTree(getLoc(), result.takeError());

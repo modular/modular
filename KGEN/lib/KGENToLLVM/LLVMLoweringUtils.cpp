@@ -794,15 +794,23 @@ Value KGEN::convertParameterToLLVM(
   //===--------------------------------------------------------------------===//
   // builtin
 
-  // Truncate index constants if required.
-  if (isa<IndexType>(attr.getType())) {
-    return b.create<LLVM::ConstantOp>(b.getIntegerAttr(
-        cast<IntegerType>(tc.getIndexType()),
-        cast<IntegerAttr>(attr).getValue().trunc(tc.getIndexTypeBitwidth())));
+  // Convert unknown values to undef.
+  if (isa<UnknownAttr>(attr)) {
+    Type type = tc.convertType(attr.getType());
+    if (!type)
+      return {};
+    return b.create<LLVM::UndefOp>(type);
   }
 
-  // Drop the sign on integer attributes; LLVM is signless.
   if (auto intCst = dyn_cast<IntegerAttr>(attr)) {
+    // Check for index types a truncate index constants if required.
+    if (isa<IndexType>(attr.getType())) {
+      return b.create<LLVM::ConstantOp>(
+          b.getIntegerAttr(cast<IntegerType>(tc.getIndexType()),
+                           intCst.getValue().trunc(tc.getIndexTypeBitwidth())));
+    }
+
+    // Drop the sign on integer attributes; LLVM is signless.
     return b.create<LLVM::ConstantOp>(
         b.getIntegerAttr(cast<IntegerType>(tc.convertType(intCst.getType())),
                          intCst.getValue()));

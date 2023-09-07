@@ -858,7 +858,6 @@ kgen.func @extract_addr(%a: !kgen.string) -> !kgen.pointer<scalar<si8>> {
   kgen.return %1: !kgen.pointer<scalar<si8>>
 }
 
-
 // CHECK-LABEL: kgen.func @fence
 kgen.func @fence() {
   // CHECK: llvm.fence acquire
