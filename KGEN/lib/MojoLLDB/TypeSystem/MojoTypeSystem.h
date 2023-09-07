@@ -505,9 +505,7 @@ public:
   }
 
   lldb_private::CompilerType
-  GetPointerType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  GetPointerType(lldb::opaque_compiler_type_t type) override;
 
   //===--------------------------------------------------------------------===//
   // Type Navigation
