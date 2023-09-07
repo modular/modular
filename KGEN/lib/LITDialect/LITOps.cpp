@@ -403,14 +403,12 @@ TypedAttr LIT::FuncOp::getBoundReference(ParameterExprArrayAttr bindings) {
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
     "exportKind",  "isCExported",  "constraints", "implements",
-    "signature",   "functionType", "sym_name",    "valueParamNames",
+    "signature",   "functionType", "sym_name",    "argNames",
     "evaluator",   "defaultImpl",  "inlineLevel", "paramDecl",
-    "inputParams", "resultParams", "decorators"};
+    "inputParams", "resultParams", "decorators",  "posArgNames"};
 
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  Builder &builder = parser.getBuilder();
-
   ExportKindAttr exportKind;
   if (parseSymbolExport(parser, exportKind))
     return failure();
@@ -432,12 +430,18 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   ParamDeclArrayAttr inputParams, resultParams;
   FunctionType functionType;
   SignatureType signature;
+  if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
+                             functionType, signature, /*parseNames=*/true))
+    return failure();
+  for (StringAttr name : signature.getArgNames())
+    if (!name.size())
+      return parser.emitError(sigLoc, "arguments require SSA names");
+
+  // Parse additional function attributes.
   ConstraintArrayAttr constraints;
   InlineLevelAttr inlineLevel;
   DecoratorsAttr decorators;
-  if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
-                             functionType, signature) ||
-      parseOptionalInline(parser, inlineLevel) ||
+  if (parseOptionalInline(parser, inlineLevel) ||
       parseOptionalConstraints(parser, constraints) ||
       parseOptionalDecorators(parser, decorators))
     return failure();
@@ -448,33 +452,47 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   result.addAttribute(getResultParamsAttrName(result.name), resultParams);
   result.addAttribute(getFunctionTypeAttrName(result.name),
                       TypeAttr::get(functionType));
-  result.addAttribute(getSignatureAttrName(result.name),
-                      TypeAttr::get(signature));
   if (isParamDecl)
     result.addAttribute(getParamDeclAttrName(result.name),
                         ParamDeclAttr::get(nameAttr, signature));
-
-  // Handle keyword argument names.
-  SmallVector<StringAttr> names;
-  for (OpAsmParser::Argument &arg : entryArgs) {
-    StringRef spelling;
-    if (arg.ssaName.name.size() < 2)
-      return parser.emitError(sigLoc, "arguments requires SSA names");
-    if (isdigit(arg.ssaName.name[1])) // %42 -> no name.
-      spelling = "";
-    else
-      spelling = arg.ssaName.name.drop_front();
-    names.push_back(builder.getStringAttr(spelling));
-  }
-
-  result.addAttribute(getValueParamNamesAttrName(result.name),
-                      StringArrayAttr::get(builder.getContext(), names));
 
   // If function attributes are present, parse them.
   NamedAttrList parsedAttributes;
   llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
   if (parser.parseOptionalAttrDictWithKeyword(parsedAttributes))
     return failure();
+
+  // We store positional-only argument names separately.
+  MLIRContext *ctx = parser.getContext();
+  StringArrayAttr posArgNames;
+  if (Attribute numPosArgsAttr = parsedAttributes.get("numPosArgs")) {
+    int64_t numPosArgs = cast<IntegerAttr>(numPosArgsAttr).getInt();
+
+    FnMetadataAttr metadata = signature.getMetadata();
+    ArrayRef<StringAttr> argNames = metadata.getArgNames();
+
+    posArgNames = StringArrayAttr::get(ctx, argNames.take_front(numPosArgs));
+
+    SmallVector<StringAttr> newArgNames(argNames);
+    for (size_t i = 0; i < (size_t)numPosArgs; ++i)
+      newArgNames[i] = StringAttr::get(ctx);
+
+    auto newMetadata = FnMetadataAttr::get(
+        ctx, StringArrayAttr::get(ctx, newArgNames),
+        metadata.getInputConventions(), metadata.getDefaultArguments(),
+        metadata.getFnEffects());
+
+    signature = SignatureType::get(signature.getInputParamTypes(),
+                                   signature.getResultParamTypes(),
+                                   signature.getValues(), newMetadata);
+
+    parsedAttributes.erase("numPosArgs");
+  } else {
+    posArgNames = StringArrayAttr::get(ctx, {});
+  }
+  result.addAttribute(getPosArgNamesAttrName(result.name), posArgNames);
+  result.addAttribute(getSignatureAttrName(result.name),
+                      TypeAttr::get(signature));
 
   // Disallow attributes that are inferred from elsewhere in the attribute
   // dictionary.
@@ -495,6 +513,13 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   return success();
 }
 
+SmallVector<StringAttr> LIT::FuncOp::getArgNames() {
+  SmallVector<StringAttr> argNames(getSignature().getArgNames().getValue());
+  for (auto [i, posArgName] : llvm::enumerate(getPosArgNames()))
+    argNames[i] = posArgName;
+  return argNames;
+};
+
 // Print the LIT::FuncOp using the shared printing logic.
 void LIT::FuncOp::print(OpAsmPrinter &p) {
   using namespace mlir::function_interface_impl;
@@ -507,8 +532,13 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   else
     p.printSymbolName(getSymName());
 
-  printFunctionSignature(p, &getBodyRegion(), getInputParams(),
-                         getResultParams(), getFunctionType(), getSignature());
+  // Print the function arguments.
+  SmallVector<StringAttr> argNames = getArgNames();
+  auto printElt = [&](unsigned i) {
+    p.printRegionArgument(getBodyRegion().getArgument(i));
+  };
+  printFunctionSignature(p, printElt, getInputParams(), getResultParams(),
+                         getFunctionType(), getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());
@@ -516,28 +546,35 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
   // Don't print the following in lit.func.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-  printFunctionAttributes(p, *this, ignoredAttrNames);
+  ignoredAttrNames.emplace_back(mlir::SymbolTable::getSymbolAttrName());
+
+  MLIRContext *ctx = getContext();
+  SmallVector<mlir::NamedAttribute> dict(getOperation()->getAttrs());
+  if (size_t numPosArgs = getPosArgNames().size()) {
+    dict.emplace_back(NamedAttribute(StringAttr::get(ctx, "numPosArgs"),
+                                     OpBuilder(ctx).getIndexAttr(numPosArgs)));
+  }
+  p.printOptionalAttrDictWithKeyword(dict, ignoredAttrNames);
 
   p << ' ';
   p.printRegion(getBodyRegion(), /*printEntryBlockArgs=*/false);
 }
 
-// Name the arguments of the region with the valueParamNames.
+// Name the arguments of the region with the argument names.
 void LIT::FuncOp::getAsmBlockArgumentNames(
-    Region &body, llvm::function_ref<void(Value, StringRef)> setNameFn) {
+    Region &region, llvm::function_ref<void(Value, StringRef)> setNameFn) {
   // Set a name for each argument.
-  if (body.empty())
+  if (region.empty())
     return;
   Block *bodyBlock = getBody();
-  for (auto [arg, name] :
-       llvm::zip(bodyBlock->getArguments(), getValueParamNames()))
+  for (auto [arg, name] : llvm::zip(bodyBlock->getArguments(), getArgNames()))
     setNameFn(arg, name);
 }
 
 LogicalResult LIT::FuncOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
-  if (getValueParamNames().size() != getFunctionType().getNumInputs())
+  if (getMetadata().getArgNames().size() != getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
   if (isExternal()) {
@@ -603,7 +640,6 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
 
   result.addAttribute(getExportKindAttrName(result.name),
                       ExportKindAttr::get(context, ExportKind::NotExported));
-  result.addAttribute(getValueParamNamesAttrName(result.name), emptyParamNames);
   result.addAttribute(getSignatureAttrName(result.name),
                       TypeAttr::get(signatureType));
   result.addAttribute(getFunctionTypeAttrName(result.name),
@@ -618,6 +654,8 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
                       builder.getI8IntegerAttr(0));
   result.addAttribute(getInlineLevelAttrName(result.name),
                       InlineLevelAttr::get(context, InlineLevel::Automatic));
+  result.addAttribute(getPosArgNamesAttrName(result.name),
+                      StringArrayAttr::get(context, {}));
 
   result.addRegion()->push_back(new Block());
 }
@@ -625,17 +663,15 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
 /// Build a function in a default configuration, used by member synthesization.
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name, SignatureType signature,
-                        ArrayRef<StringAttr> argNames,
                         SpecialFunctionKind specialFnKind) {
   MLIRContext *ctx = builder.getContext();
-  build(builder, result, name, ParamDeclAttr(),
-        StringArrayAttr::get(ctx, argNames), TypeAttr::get(signature),
-        TypeAttr::get(signature.getValues()),
-        /*paramDecls=*/ParamDeclArrayAttr::get(ctx, {}),
+  build(builder, result, name, ParamDeclAttr(), StringArrayAttr::get(ctx, {}),
+        TypeAttr::get(signature), TypeAttr::get(signature.getValues()),
+        /*inputParams=*/ParamDeclArrayAttr::get(ctx, {}),
         /*resultParams=*/ParamDeclArrayAttr::get(ctx, {}),
         ConstraintArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/mlir::UnitAttr(), /*isAdaptive=*/mlir::UnitAttr(),
-        /*isParameter=*/mlir::UnitAttr(), /*isDef=*/mlir::UnitAttr(),
+        /*isParametric=*/mlir::UnitAttr(), /*isDef=*/mlir::UnitAttr(),
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),

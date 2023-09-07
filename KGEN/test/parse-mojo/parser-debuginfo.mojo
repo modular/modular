@@ -134,7 +134,7 @@ struct MyValueStruct:
 # CHECK-DAG:        lit.return %[[W4]] : index
 # CHECK-DAG:        lit.end_func loc(#[[NESTED_FUNC_LOC]])
 # CHECK-DAG:      } loc(#[[NESTED_FUNC_LOC]])
-# CHECK-DAG:      %[[V2:.*]] = kgen.create_closure [<>(index borrow) capturing -> index: *"myclosure(__mlir_type.index)"]()  loc(#[[PARENT_FUNC_LOC0]])
+# CHECK-DAG:      %[[V2:.*]] = kgen.create_closure [<>("n": index borrow) capturing -> index: *"myclosure(__mlir_type.index)"]()  loc(#[[PARENT_FUNC_LOC0]])
 # CHECK-DAG:      lit.return %[[V2]]
 # CHECK-DAG:      lit.end_func loc(#[[PARENT_FUNC_LOC0]])
 # CHECK-DAG:    } loc(#[[PARENT_FUNC_LOC0]])

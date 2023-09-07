@@ -527,7 +527,7 @@ kgen.generator @caller(%arg: !kgen.pointer<i32>) {
   // Ok
   kgen.call @callee(%arg) : (!kgen.pointer<i32> byref) -> ()
 
-  // expected-error @+1 {{symbol use metadata is #kgen.fn_metadata<[owned], [], none> but @callee expected #kgen.fn_metadata<[byref], [], none>}}
+  // expected-error @+1 {{symbol use metadata is #kgen.fn_metadata<[""], [owned], [], none> but @callee expected #kgen.fn_metadata<[""], [byref], [], none>}}
   kgen.call @callee(%arg) : (!kgen.pointer<i32>) -> ()
   kgen.return
 }

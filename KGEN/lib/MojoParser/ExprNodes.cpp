@@ -2548,8 +2548,17 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ParsedArgument::computeArgumentConventions(emitter.shared, args, argTypes,
                                              defaults);
 
+  Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
       args, [](const ParsedArgument &arg) { return arg.kgenConvention; });
+  SmallVector<StringAttr> argNames =
+      llvm::map_to_vector(args, [&](const ParsedArgument &arg) {
+        if (arg.kwArgHandling ==
+                ParsedArgument::KWArgHandling::kPositionalOnly ||
+            !arg.name)
+          return b.getStringAttr("");
+        return arg.name;
+      });
 
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
     Type errorType =
@@ -2568,7 +2577,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Build the signature type.
-  Builder b(emitter.getContext());
   auto inputParamsAttr = b.getAttr<ParamDeclArrayAttr>(inputParamDecls);
   auto resultParamsAttr = b.getAttr<ParamDeclArrayAttr>(resultParamDecls);
   FunctionType functionType =
@@ -2577,7 +2585,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType,
-      b.getAttr<FnMetadataAttr>(inputConventions, defaults, effects),
+      b.getAttr<FnMetadataAttr>(b.getAttr<StringArrayAttr>(argNames),
+                                inputConventions, defaults, effects),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

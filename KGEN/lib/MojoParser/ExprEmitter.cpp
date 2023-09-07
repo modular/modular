@@ -924,8 +924,8 @@ static AnyValue refineResultValue(AnyValue value, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              refinedType, value);
   };
-  if (auto lvalue = value.getIfSLValue())
-    return SLValue(rebind(lvalue));
+  if (auto slValue = value.getIfSLValue())
+    return SLValue(rebind(slValue));
   if (auto mrValue = value.getIfMRValue())
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
@@ -987,11 +987,40 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       return {};
 
     if (!requiredType.isEqualCanon(rvalueType)) {
-      // We disable implicit conversions  prevent converting T -> S -> U in one
-      // step, and to avoid infinite conversion cycles.
-      return emitConstructorCall(requiredType, {{cValue, expr}}, expr,
-                                 CallSyntax::kImplicitConvert, dest,
-                                 /*allowImplicitConversion=*/false);
+      auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
+      auto valueSig = dyn_cast<SignatureType>(rvalueType.mlirType);
+      if (!requiredSig || !valueSig ||
+          !canZeroCostConvertSignature(valueSig, requiredSig)) {
+        // We disable implicit conversions to prevent converting T -> S -> U in
+        // one step, and to avoid infinite conversion cycles.
+        return emitConstructorCall(requiredType, {{cValue, expr}}, expr,
+                                   CallSyntax::kImplicitConvert, dest,
+                                   /*allowImplicitConversion=*/false);
+      }
+
+      // If we are dealing with signatures that differ only in argument names,
+      // we insert a rebind.
+      auto rebind = [&](Value value) -> Value {
+        return builder->create<RebindOp>(translateLocation(expr->getLoc()),
+                                         requiredSig, value);
+      };
+      if (auto pvalue = value.getIfPValue()) {
+        value = PValue(
+            ParamOperatorAttr::get(POC::Rebind, pvalue.get(), requiredSig));
+      } else if (auto slValue = value.getIfSLValue()) {
+        value = SLValue(rebind(slValue));
+      } else if (auto mrValue = value.getIfMRValue()) {
+        value = MRValue(rebind(mrValue));
+      } else if (auto mbValue = value.getIfMBValue()) {
+        value = MBValue(rebind(mbValue));
+      } else if (auto sbValue = value.getIfSBValue()) {
+        value = SBValue(rebind(sbValue));
+      } else {
+        auto srValue = value.getIfSRValue();
+        assert(srValue && "Unknown value kind");
+        value = SRValue(rebind(srValue));
+      }
+      return emitCValue({value, expr}, dest);
     }
   }
 
@@ -1230,14 +1259,21 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 // Function Calls
 //===----------------------------------------------------------------------===//
 
-/// Return true if 'value' may be implicitly converted to 'requiredType'
-/// by invoking (one level of) conversion operations.  This does not generate
-/// any IR.
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                             ASTType requiredType) {
+                                             ASTType requiredType,
+                                             bool allowArgNameCheck) {
   // If it already matches, then we're done.
-  if (value.ir.getRValueType().isEqualCanon(requiredType))
+  ASTType rvType = value.ir.getRValueType();
+  if (rvType.isEqualCanon(requiredType))
     return true;
+
+  if (allowArgNameCheck) {
+    auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
+    auto valueSig = dyn_cast<SignatureType>(rvType.mlirType);
+    if (requiredSig && valueSig &&
+        canZeroCostConvertSignature(valueSig, requiredSig))
+      return true;
+  }
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.

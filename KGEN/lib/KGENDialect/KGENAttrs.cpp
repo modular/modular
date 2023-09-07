@@ -93,12 +93,16 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
                                    FnEffects effects) {
-  return get(ctx, SmallVector<ValueInputConvention>(numInputs), {}, effects);
+  auto emptyStr = StringAttr::get(ctx);
+  return get(
+      ctx,
+      StringArrayAttr::get(ctx, SmallVector<StringAttr>(numInputs, emptyStr)),
+      SmallVector<ValueInputConvention>(numInputs), {}, effects);
 }
 
 /// Get this metadata attr with the effects swapped out.
 FnMetadataAttr FnMetadataAttr::getWithFnEffects(FnEffects effects) {
-  return FnMetadataAttr::get(getContext(), getInputConventions(),
+  return FnMetadataAttr::get(getContext(), getArgNames(), getInputConventions(),
                              getDefaultArguments(), effects);
 }
 
@@ -110,15 +114,23 @@ bool FnMetadataAttr::isDefault() {
                       });
 }
 
-LogicalResult
-FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       ArrayRef<ValueInputConvention> inputConventions,
-                       ArrayRef<TypedAttr> defaultArguments,
-                       FnEffects effects) {
-  if (defaultArguments.size() > inputConventions.size()) {
+LogicalResult FnMetadataAttr::verify(
+    function_ref<InFlightDiagnostic()> emitError, StringArrayAttr argNames,
+    ArrayRef<ValueInputConvention> inputConventions,
+    ArrayRef<TypedAttr> defaultArguments, FnEffects effects) {
+  for (StringAttr name : argNames)
+    if (!name)
+      return emitError() << "arg name cannot be null";
+  size_t numInputConv = inputConventions.size();
+  if (argNames.size() != numInputConv) {
+    return emitError() << "number of argument names does not match number of "
+                          "input conventions: "
+                       << argNames.size() << " != " << numInputConv;
+  }
+  if (defaultArguments.size() > numInputConv) {
     return emitError()
            << "there are more default arguments than value input conventions: "
-           << defaultArguments.size() << " > " << inputConventions.size();
+           << defaultArguments.size() << " > " << numInputConv;
   }
   return success();
 }
