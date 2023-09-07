@@ -160,6 +160,32 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   return std::nullopt;
 }
 
+#if defined(__APPLE__)
+/// Generate a dSYM bundle for the given binary in the same directory.
+static int generateDSYM(const State &state, StringRef binaryOutputPath) {
+  // Resolve the xcrun path.
+  llvm::ErrorOr<std::string> xcrun = llvm::sys::findProgramByName("xcrun");
+  if (!xcrun)
+    return state.reportError("unable to find xcrun");
+
+  std::string errorMsg;
+  // Note: this .dSYM bundle is tied to the specific executable generated
+  // above via an embedded UUID.
+  std::string dsymBundle = (binaryOutputPath + ".dSYM").str();
+  SmallVector<StringRef> xcrunArgs = {*xcrun, "dsymutil", binaryOutputPath,
+                                      "-o", dsymBundle};
+  int xcrunExitCode = llvm::sys::ExecuteAndWait(
+      *xcrun, xcrunArgs, /*Env=*/std::nullopt, /*Redirects=*/{},
+      /*SecondsToWait=*/0, /*MemoryLimit=*/0, /*ErrMsg=*/&errorMsg);
+  if (xcrunExitCode) {
+    if (!errorMsg.empty())
+      errorMsg.insert(0, ": ");
+    return state.reportError("failed to create dSYM bundle" + errorMsg);
+  }
+  return EXIT_SUCCESS;
+}
+#endif
+
 /// Given a static archive generated from a mojo module, link an executable from
 /// that archive. Returns a successful exit code if the executable was linked
 /// successfully, otherwise returns a failure code.
@@ -276,6 +302,14 @@ static int linkExecutable(const State &state,
       errorMsg.insert(0, ": ");
     return state.reportError("failed to link executable" + errorMsg);
   }
+
+#if defined(__APPLE__)
+  // On macOS, the debug info needs to be generated at link time using dsymutil.
+  if (options.debugLevel != CompilationOptions::kNoDebug) {
+    if (int code = generateDSYM(state, outputName))
+      return code;
+  }
+#endif
 
   return EXIT_SUCCESS;
 }
