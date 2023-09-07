@@ -2,7 +2,7 @@
   "name": "vscode-mojo",
   "displayName": "Mojo 🔥",
   "description": "Mojo language support",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "modular-mojotools",
   "icon": "icon.png",
   "engines": {
