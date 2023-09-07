@@ -52,6 +52,14 @@ export class MojoDebugContext extends DisposableContext {
         MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
         new MojoDebugAdapterDescriptorFactory(context)));
 
+    this.pushSubscription(vscode.debug.onDidStartDebugSession(listener => {
+      if (listener.configuration.type !=
+          MojoDebugAdapterDescriptorFactory.DEBUG_TYPE)
+        return;
+      if (!listener.configuration.runInTerminal)
+        vscode.commands.executeCommand("workbench.debug.action.focusRepl");
+    }));
+
     // Register the URI-based debug launcher.
     this.pushSubscription(vscode.window.registerUriHandler(
         new UriLaunchServer(context.getLoggingService())));

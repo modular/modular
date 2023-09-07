@@ -9,11 +9,9 @@ import * as vscodelc from 'vscode-languageclient/node';
 
 import {activateRunCommands} from './commands/run';
 import {MojoDebugContext} from './debug/debug';
-import {RpcLaunchServer} from './debug/externalDebugLauncher';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
-import * as config from './utils/config';
 import * as configWatcher from './utils/configWatcher';
 import {DisposableContext} from './utils/disposableContext';
 
