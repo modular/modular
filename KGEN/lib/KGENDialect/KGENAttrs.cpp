@@ -193,7 +193,7 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 // UnknownAttr
 //===----------------------------------------------------------------------===//
 
-bool UnknownAttr::isConstant() const { return true; }
+bool UnknownAttr::isConstant() const { return !isParameterizedType(getType()); }
 
 //===----------------------------------------------------------------------===//
 // UnboundAttr

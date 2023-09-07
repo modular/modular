@@ -956,7 +956,7 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 // UndefOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_UndefOp : KGENOp<"undef", [Pure]> {
+def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
   let summary = "Return an undefined value.";
   let description = [{
     The `kgen.undef` operation returns an undefined value of a given type.
@@ -972,6 +972,7 @@ def KGEN_UndefOp : KGENOp<"undef", [Pure]> {
 
   let results = (outs AnyType:$value);
   let assemblyFormat = "attr-dict `:` type($value)";
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

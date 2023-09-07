@@ -154,6 +154,14 @@ kgen.generator @region_parameter(%arg0: index) -> index {
   kgen.return %0 : index
 }
 
+kgen.generator @store_undef() -> index {
+  %0 = pop.stack_allocation 1 x index
+  %1 = kgen.undef : index
+  pop.store %1, %0 : !kgen.pointer<index>
+  %2 = pop.load %0 : !kgen.pointer<index>
+  kgen.return %2 : index
+}
+
 // CHECK-LABEL: kgen.func export @do_it
 kgen.generator export @do_it() {
   // CHECK-NEXT: <555>
@@ -272,6 +280,10 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <1>
   kgen.param.constant = <apply(:(index) -> index @region_parameter, 1)>
+
+  // COM: The value is garbage. Just make sure the function interprets.
+  // CHECK-NEXT: <{{.*}}>
+  kgen.param.constant = <apply(:() -> index @store_undef)>
 
   kgen.return
 }

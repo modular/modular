@@ -37,6 +37,18 @@ kgen.generator @parameter_use_chain() {
   kgen.return
 }
 
+// CHECK-LABEL: @"unknown_attr,width=4"
+kgen.generator @unknown_attr<width>() {
+  // CHECK-NEXT: constant: simd<4, f32> = <?>
+  %0 = kgen.param.constant: simd<width, f32> = <?>
+  kgen.return
+}
+
+kgen.generator @call_unknown_attr() {
+  kgen.call @unknown_attr<4>() : () -> ()
+  kgen.return
+}
+
 // CHECK-NOT: kgen.generator @trivial_generator
 // This gets "specialized" into a kernel.
 kgen.generator @trivial_generator(%arg0: si32) -> si32 {

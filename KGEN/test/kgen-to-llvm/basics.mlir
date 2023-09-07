@@ -61,6 +61,13 @@ kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, add
   kgen.return
 }
 
+// CHECK-LABEL: @unknown
+kgen.func @unknown() -> index {
+  // CHECK-NEXT: llvm.mlir.undef : i64
+  %0 = kgen.param.constant = <?>
+  kgen.return %0 : index
+}
+
 kgen.func @constant_str() -> !kgen.string {
   // CHECK: %[[LENGTH:.*]] = llvm.mlir.constant(2 : i64) : i64
   // CHECK: %[[STRUCT:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<i8>, i64)>
