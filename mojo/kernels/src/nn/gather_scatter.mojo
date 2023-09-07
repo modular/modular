@@ -599,3 +599,70 @@ fn gather_shape[
         next_out_dim += 1
 
     return output_shape
+
+
+fn scatter_elements[
+    reduce_fn: fn[type: DType, width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) capturing -> SIMD[type, width],
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    _axis: Int,
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    """Implements ONNX scatter_elements op which is equivalent to Pytorch scatter."""
+    constrained[
+        indices_type == DType.int32 or indices_type == DType.int64,
+        "indices in scatter elements must be int32 or int64",
+    ]()
+
+    debug_assert(
+        input.get_shape() == output.get_shape(),
+        "input and output shape in scatter_elements must be the same",
+    )
+    debug_assert(
+        indices.get_shape() == updates.get_shape(),
+        "inidices and updates shape in scatter_elements must be the same",
+    )
+
+    let axis = _axis if _axis >= 0 else _axis + rank
+
+    # TODO: multithread
+    memcpy(output.flatten(), input.flatten())
+
+    let input_ax_dim = input.get_shape()[axis]
+
+    @parameter
+    fn update_func[
+        simd_width: Int, _rank: Int
+    ](_indices_coords: StaticIntTuple[_rank]):
+        let indices_coords = rebind[StaticIntTuple[rank]](_indices_coords)
+        let idx_on_axis = indices[indices_coords]
+        var output_coords = indices_coords
+        # need to convert negative indices to positive equivalent
+        debug_assert(
+            -Int64(input_ax_dim)
+            <= idx_on_axis.cast[DType.int64]()
+            < Int64(input_ax_dim),
+            (
+                "indices value must be in range [-input_shape[axis],"
+                " input_shape[axis)"
+            ),
+        )
+        output_coords[axis] = (
+            idx_on_axis.__int__() if idx_on_axis
+            >= 0 else (idx_on_axis + input_ax_dim).__int__()
+        )
+        let curr = output[output_coords]
+        output[output_coords] = reduce_fn[input_type, 1](
+            curr, updates[indices_coords]
+        )
+
+    # cannot use simd_width > 1 here because consecutive updates are not contiguous
+    elementwise[rank, 1, update_func](indices.get_shape(), out_chain)
