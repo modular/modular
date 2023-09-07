@@ -583,6 +583,10 @@ void KGENBytecodeInterface::write(ExportKindAttr attr,
 
 FnMetadataAttr
 KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
+  StringArrayAttr argNames;
+  if (failed(reader.readAttribute(argNames)))
+    return FnMetadataAttr();
+
   SmallVector<ValueInputConvention> inputConventions;
   auto parseConvention = [&](ValueInputConvention &convention) {
     uint64_t value;
@@ -602,13 +606,15 @@ KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
   if (failed(reader.readVarInt(fnEffects)))
     return FnMetadataAttr();
 
-  return FnMetadataAttr::get(getContext(), inputConventions, defaultArguments,
+  return FnMetadataAttr::get(getContext(), argNames, inputConventions,
+                             defaultArguments,
                              static_cast<FnEffects>(fnEffects));
 }
 
 void KGENBytecodeInterface::write(FnMetadataAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kFnMetadataAttr);
+  writer.writeAttribute(attr.getArgNames());
   writer.writeList(attr.getInputConventions(), [&](ValueInputConvention value) {
     writer.writeVarInt(static_cast<uint64_t>(value));
   });

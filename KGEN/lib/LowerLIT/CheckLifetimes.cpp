@@ -504,7 +504,7 @@ void ValueSet::dump() const {
     if (auto bbArg = dyn_cast<BlockArgument>(info.value)) {
       if (auto fn =
               dyn_cast_or_null<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
-        os << fn.getValueParamNames()[bbArg.getArgNumber()] << " ";
+        os << fn.getSignature().getArgName(bbArg.getArgNumber()) << " ";
     }
 
     os << info.value << "\n";

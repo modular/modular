@@ -407,7 +407,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     auto sig = SignatureType::get(ctx, {}, {});
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
-      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, sig, std::nullopt);
+      auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, sig);
       fn.getBodyRegion().takeBody(body);
 
       // If we have a debuginfo scope available, we update the ops in the body.

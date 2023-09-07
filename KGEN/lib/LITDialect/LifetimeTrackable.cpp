@@ -84,17 +84,15 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   SignatureType signature;
   Operation *parentOp = bbArg.getOwner()->getParentOp();
-  StringArrayAttr valueNames;
   if (auto func = dyn_cast<LIT::FuncOp>(parentOp)) {
     signature = func.getSignature();
-    valueNames = func.getValueParamNamesAttr();
   } else if (auto func = dyn_cast<ParamDeclareRegionOp>(parentOp)) {
     signature = func.getSignature();
-    // FIXME(Issue #11918): Need valueNames for nested functions.
   } else
     return;
 
-  switch (signature.getValueInputConventions()[bbArg.getArgNumber()]) {
+  unsigned argIdx = bbArg.getArgNumber();
+  switch (signature.getValueInputConventions()[argIdx]) {
   case ValueInputConvention::OwnedInReg: // This gets an LValue slot.
   case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::BorrowedInMem:
@@ -130,10 +128,13 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     break;
   }
 
-  // FIXME(Issue #11918): Need valueNames for nested functions.
-  name = valueNames
-             ? valueNames[bbArg.getArgNumber()]
-             : StringAttr::get(bbArg.getContext(), "FIXME(Issue #11918)");
+  StringArrayAttr argNames = signature.getArgNames();
+  assert(argNames && "missing argument names");
+  name = argNames[argIdx];
+  if (!name.size()) {
+    name = StringAttr::get(v.getContext(), "(positional-only argument # " +
+                                               Twine(argIdx) + ")");
+  }
 }
 
 /// This constructor checks to see if the value is trackable or a field of a

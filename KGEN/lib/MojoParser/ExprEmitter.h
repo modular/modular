@@ -347,10 +347,12 @@ public:
                            ValueDest &dest, const ExprNode *callExpr);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
-  /// by invoking (one level of) conversion operations.  This does not generate
-  /// any IR.
+  /// by invoking (one level of) conversion operations. A flag can be specified
+  /// to allow argument name mismatches when comparing signature types. This
+  /// does not generate any IR.
   bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                  ASTType requiredType);
+                                  ASTType requiredType,
+                                  bool allowArgNameCheck = true);
 
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns

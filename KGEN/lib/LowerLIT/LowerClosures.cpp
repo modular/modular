@@ -145,12 +145,21 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
               body.getArguments().begin() + numArgs, body.getArguments().end());
 
   // Construct the signature of the lifted body.
-  ImplicitLocOpBuilder b(op.getLoc(), op.getContext());
-  auto functionType = b.getFunctionType(body.getArgumentTypes(),
-                                        op.getType().getValueResults());
-  auto none = TypeArrayAttr::get(op.getContext(), {});
-  auto metadata = FnMetadataAttr::get(op.getContext(), body.getNumArguments(),
-                                      op.getResult().getType().getFnEffects());
+  MLIRContext *ctx = op.getContext();
+  ImplicitLocOpBuilder b(op.getLoc(), ctx);
+  SignatureType oldSig = op.getType();
+  auto functionType =
+      b.getFunctionType(body.getArgumentTypes(), oldSig.getValueResults());
+
+  SmallVector<StringAttr> newArgNames(captures.size(), b.getStringAttr(""));
+  ArrayRef<StringAttr> argNames = oldSig.getArgNames().getValue();
+  newArgNames.append(argNames.begin(), argNames.end());
+
+  auto none = TypeArrayAttr::get(ctx, {});
+  auto metadata = FnMetadataAttr::get(
+      ctx, StringArrayAttr::get(ctx, newArgNames),
+      SmallVector<ValueInputConvention>(body.getNumArguments()), {},
+      op.getResult().getType().getFnEffects());
   auto sig = SignatureType::get(none, none, functionType, metadata);
 
   // Create the lifted function. Make sure it doesn't get inlined back.

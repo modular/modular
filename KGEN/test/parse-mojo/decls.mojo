@@ -76,10 +76,11 @@ fn take_closure_no_param_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: %0 = kgen.create_closure [<>(index borrow) capturing -> index: *"g(__mlir_type.index)"]()
-    # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<(index borrow) capturing -> index>
+    # CHECK: %0 = kgen.create_closure [<>("y": index borrow) capturing -> index: *"g(__mlir_type.index)"]()
+    # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<("y": index borrow) capturing -> index>
+    # CHECK: %1 = kgen.rebind %W : !kgen.signature<("y": index borrow) capturing -> index> to !kgen.signature<(index borrow) capturing -> index>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%W, %idx3) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %idx3) : ("g": !kgen.signature<(index borrow) capturing -> index> borrow, "x": index borrow) -> !lit.none
     take_closure(W, (3).value)
 
 
@@ -97,17 +98,18 @@ fn take_closure_with_param_main():
     fn g[N: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: lit.alias.decl [[BOUND:.*]]: <>(index borrow) capturing -> index = <bind_signature(:<index>(index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
-    # CHECK: %0 = kgen.create_closure [<>(index borrow) capturing -> index: [[BOUND]]]()
+    # CHECK: lit.alias.decl [[BOUND:.*]]: <>("y": index borrow) capturing -> index = <bind_signature(:<index>("y": index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
+    # CHECK: %0 = kgen.create_closure [<>("y": index borrow) capturing -> index: [[BOUND]]]()
     alias Bound = g[(3).value]
 
-    # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<(index borrow) capturing -> index>
+    # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<("y": index borrow) capturing -> index>
     let value = Bound
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%value, %x) : (!kgen.signature<(index borrow) capturing -> index> borrow, index borrow) -> !lit.none
+    # CHECK: %1 = kgen.rebind %value : !kgen.signature<("y": index borrow) capturing -> index> to !kgen.signature<(index borrow) capturing -> index>
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %x) : ("g": !kgen.signature<(index borrow) capturing -> index> borrow, "x": index borrow) -> !lit.none
     take_closure(value, x)
 
-    # CHECK: %2 = kgen.create_closure [<>(index borrow) capturing -> index: bind_signature(:<index, index>(index borrow) capturing -> index *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
-    # CHECK: %Q = lit.letreg.decl "Q" = %2 : !kgen.signature<(index borrow) capturing -> index>
+    # CHECK: %3 = kgen.create_closure [<>("y": index borrow) capturing -> index: bind_signature(:<index, index>("y": index borrow) capturing -> index *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
+    # CHECK: %Q = lit.letreg.decl "Q" = %3 : !kgen.signature<("y": index borrow) capturing -> index>
     let Q = h[(1).value, (8).value]
     take_closure(Q, x)
 
@@ -309,17 +311,17 @@ fn callOverload(a: Int):
     # CHECK: kgen.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: %2 = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$int::Int)"]()
+    # CHECK: %2 = kgen.create_closure [<>(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:<>("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: %3 = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$int::Int)"]()
+    # CHECK: %3 = kgen.create_closure [<>(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:<>("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     # CHECK-NEXT: pop.store %3, %float1
     float1 = testThing
 
-    # CHECK: = kgen.create_closure [{{.*}}: @"$decls"::@"testThing({{.*}}$int::Int)"]()
+    # CHECK: %4 = kgen.create_closure [<>(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:<>("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:<>(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)">()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:<>(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> rebind(:<>("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -560,7 +562,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type <>(index borrow) -> index>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type <>("x": index borrow) -> index>
     paramRefFunc(func)
 
 
@@ -668,7 +670,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int borrow = apply(:<>(!Int borrow, !Int borrow)
+# CHECK-SAME: (%a: !Int borrow = apply(:<>("self": !Int borrow, "rhs": !Int borrow)
 # CHECK-SAME: -> !Int {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
@@ -700,7 +702,7 @@ fn callNonRegisterDefaultArg():
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f {{.*}} : !kgen.signature<(!Int borrow, !Int borrow = #lit.struct<{value = 3}>, {{.*}} = 5}>)
+    # CHECK: %f = lit.letreg.decl "f" = %0 : !kgen.signature<("a": !Int borrow, "b": !Int borrow = #lit.struct<{value = 3}>, "c": !Int borrow = #lit.struct<{value = 5}>)
     let f = defaultArgument
 
 

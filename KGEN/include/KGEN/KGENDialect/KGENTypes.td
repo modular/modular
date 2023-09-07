@@ -159,6 +159,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<ValueInputConvention> getValueInputConventions() {
       return getMetadata().getInputConventions();
     }
+    /// Get the function input argument names.
+    StringArrayAttr getArgNames() { return getMetadata().getArgNames(); }
     /// Returns true if the argument at this index is a vararg.
     bool isVararg(size_t index);
     /// Returns true if the argument at this index is a pack vararg.
@@ -214,10 +216,13 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return bitEnumContainsAny(getFnEffects(), FnEffects::OwnedResult);
     }
 
-    /// Return the convention for the specified value input parameter.
+    /// Return the convention for the specified value input argument.
     ValueInputConvention getInputConvention(size_t inputNo) {
       return getValueInputConventions()[inputNo];
     }
+
+    /// Return the name for the specified value input argument.
+    StringAttr getArgName(size_t inputNo) { return getArgNames()[inputNo]; }
 
     /// Set a function convention.
     SignatureType getWithFnEffects(FnEffects effect);

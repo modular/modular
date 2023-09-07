@@ -464,7 +464,7 @@ private:
                     ValidationKind validation) {
     // In general, each function argument must be documented, but exceptions are
     // pruned from the list below.
-    ArrayRef<StringAttr> argNames = funcOp.getValueParamNames();
+    ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
     // The compiler can insert an implicit `__result__` argument, which stores
     // memory-only results, at the beginning of an argument list.  Because these
     // arguments are hidden artifacts of the compiler, they don't need to be

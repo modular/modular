@@ -851,11 +851,19 @@ OverloadFitness::evaluate(SignatureType signature, const OverloadSet &callable,
         if (argType.isEqualCanon(expectedType))
           break;
 
+        // Argument name mismatches don't count as implicit conversions.
+        auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
+        auto argSig = dyn_cast<SignatureType>(argType.mlirType);
+        if (expectedSig && argSig &&
+            canZeroCostConvertSignature(expectedSig, argSig))
+          break;
+
         // If we lack an exact match and conversions are disabled, this
         // candidate fails.
         if (!allowImplicitConversions ||
             !emitter.canImplicitlyConvertToType({argVal, operand.expr},
-                                                expectedType))
+                                                expectedType,
+                                                /*allowArgNameCheck=*/false))
           return {kArgWrongType, providedValueIdx, expectedType, newBindings};
 
         // If we had one, this bumps our # implicit conversions.
@@ -1208,6 +1216,18 @@ PValue OverloadSet::filterOverloadSet(
   return {};
 }
 
+bool LIT::canZeroCostConvertSignature(SignatureType from, SignatureType to) {
+  if (from.getArgNames().size() != to.getValueInputConventions().size())
+    return false;
+  auto newMetadata = FnMetadataAttr::get(
+      from.getContext(), from.getArgNames(), to.getValueInputConventions(),
+      to.getDefaultArguments(), to.getFnEffects());
+  auto newSig =
+      SignatureType::get(to.getInputParamTypes(), to.getResultParamTypes(),
+                         to.getValues(), newMetadata);
+  return newSig == from;
+}
+
 /// Filter down and complete this overload set based on knowledge that we need
 /// to produce a function pointer with the specified type.
 PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
@@ -1273,7 +1293,9 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
       }
     }
 
-    return functionType.isEqualCanon(candidateType);
+    return functionType.isEqualCanon(candidateType) ||
+           canZeroCostConvertSignature(
+               cast<SignatureType>(functionType.mlirType), candidateType);
   };
 
   // Evaluate the fitness of each candidate in our overload set.

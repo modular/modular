@@ -1044,9 +1044,11 @@ LogicalResult CreateClosureOp::inferReturnTypes(
 
   SmallVector<Type> newArgTypes;
   SmallVector<ValueInputConvention> newInputConvs;
+  SmallVector<StringAttr> newArgNames;
   for (unsigned i = numArgs, e = sig.getNumInputs(); i != e; ++i) {
     newArgTypes.push_back(sig.getValueInputs()[i]);
     newInputConvs.push_back(sig.getValueInputConventions()[i]);
+    newArgNames.push_back(sig.getMetadata().getArgNames()[i]);
   }
 
   ArrayRef<TypedAttr> newDefaultArgs = sig.getDefaultArguments();
@@ -1059,7 +1061,8 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   results.push_back(SignatureType::get(
       sig.getInputParamTypes(), sig.getResultParamTypes(),
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
-      FnMetadataAttr::get(ctx, newInputConvs, newDefaultArgs, effects)));
+      FnMetadataAttr::get(ctx, StringArrayAttr::get(ctx, newArgNames),
+                          newInputConvs, newDefaultArgs, effects)));
   return mlir::success();
 }
 

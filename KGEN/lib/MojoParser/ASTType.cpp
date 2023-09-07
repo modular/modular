@@ -403,8 +403,9 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     Type inMemResult;
-    for (auto [i, type, convention] : llvm::enumerate(
-             sig.getValueInputs(), sig.getValueInputConventions())) {
+    for (auto [i, type, convention, name] :
+         llvm::enumerate(sig.getValueInputs(), sig.getValueInputConventions(),
+                         sig.getArgNames())) {
       if (i > (inMemResult ? 1 : 0))
         os << ", ";
       if (convention == ValueInputConvention::ByRefResult) {
@@ -412,6 +413,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         inMemResult = type;
         continue;
       }
+      if (name.size())
+        os << name.getValue() << " = ";
       bool needSpace = false;
       if (convention == ValueInputConvention::OwnedInMem ||
           convention == ValueInputConvention::OwnedInReg) {

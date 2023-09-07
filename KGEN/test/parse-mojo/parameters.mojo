@@ -60,8 +60,8 @@ fn call_generic[dt: DType]():
   # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int {{.*}}42{{.*}}, :type !DType>(%[[C57]])
   generic_fn[dt, 42, DType](57)
 
-  # CHECK: %[[TMP:.*]] = {{.*}}constant{{.*}} 57
-  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = #lit.struct<{value = 4}>, {{.*}}dt: !DType = [[DT]]>>(%2) : (!Int borrow) -> !lit.none
+  # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}} 57
+  # CHECK: kgen.call @"$parameters"::@"generic_fn{{.*}}"<:!DType [[DT]], :!Int #lit.struct<{value = 13}>, :type @"$parameters"::@OurSIMD<[[SIMDSIZE:.*]]: !Int = #lit.struct<{value = 4}>, {{.*}}dt: !DType = [[DT]]>>(%[[C57_2]])
   generic_fn[dt, 13, OurSIMD[4, dt]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
@@ -411,7 +411,7 @@ fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK: %0 = kgen.call @"$parameters"::@"takeCallable{{.*}}<:<>(index borrow) -> index {{.*}}@"takeAndReturnIndex{{.*}}">(%a)
+  # CHECK: %0 = kgen.call @"$parameters"::@"takeCallable{{.*}}<:<>(index borrow) -> index rebind(:<>("x": index borrow) -> index @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 ##===--------------------Test function with parameters---------------------===##

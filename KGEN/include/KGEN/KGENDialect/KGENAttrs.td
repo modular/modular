@@ -219,8 +219,9 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
   let description = [{
     The `#kgen.fn_metadata` attribute contains additional information about a
     function, such as its argument calling conventions (pass-by-value or
-    pass-by-reference), any default argument values, and the effects of the
-    function itself: none or throws.
+    pass-by-reference), any default argument values, the argument names and
+    kinds (e.g. positional or keyword-only), and the effects of the function
+    itself (e.g. none or throws).
 
     Example:
 
@@ -237,12 +238,14 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
   }];
 
   let parameters = (ins
+    "StringArrayAttr":$argNames,
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
     "FnEffects":$fnEffects
   );
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($inputConventions^ `]`)? `,`
+    `<` $argNames `,`
+        `[` (`]`) : ($inputConventions^ `]`)? `,`
         `[` (`]`) : ($defaultArguments^ `]`)? `,`
     $fnEffects `>`
   }];

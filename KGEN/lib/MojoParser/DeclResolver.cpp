@@ -1444,6 +1444,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.loc = resultLoc;
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
       resultArg.convention = ParsedArgument::kConventionInOutResult;
+      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       args.insert(args.begin(), resultArg);
       skipIndex = 1;
       argTypes.push_back(shared.lookupObjectType(resultLoc, scope));
@@ -1478,6 +1479,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       resultArg.loc = resultTypeExpr->getLoc();
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
       resultArg.convention = ParsedArgument::kConventionInOutResult;
+      resultArg.kwArgHandling = ParsedArgument::KWArgHandling::kPositionalOnly;
       resultArg.typeExpr = resultTypeExpr;
       args.insert(args.begin(), resultArg);
       argTypes.push_back(resultType);
@@ -2470,11 +2472,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Finally now that the full signature has been resolved, build our IR.
 
-  // Handle function effects.
-  SmallVector<Location> argLocs;
-  SmallVector<StringAttr> argNames;
-
-  // If the function raises, it implicitly gets a variant result type.
+  // First, handle function effects. If the function raises, it implicitly gets
+  // a variant result type.
   if (bitEnumContainsAny(effects, FnEffects::Throws)) {
     ASTType errorType =
         shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc());
@@ -2497,10 +2496,19 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Handle argument effects and build the ASTDecls for the arguments.
+  SmallVector<Location> argLocs;
+  SmallVector<StringAttr> argNames;
+  SmallVector<StringAttr> posArgNames;
   SmallVector<ValueInputConvention> inputConventions;
   for (const ParsedArgument &arg : args) {
     argLocs.push_back(shared.diags.translateLocation(arg.loc));
-    argNames.push_back(arg.name);
+    if (arg.kwArgHandling == ParsedArgument::KWArgHandling::kPositionalOnly) {
+      argNames.push_back(StringAttr::get(funcOp.getContext()));
+      posArgNames.push_back(arg.name);
+    } else {
+      argNames.push_back(arg.name);
+    }
+
     inputConventions.push_back(arg.kgenConvention);
 
     // Add an ASTDecl for the argument.  This will actually be set up during
@@ -2517,8 +2525,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   NamedAttrList attrs = funcOp->getAttrDictionary();
   auto inputParamsAttr = builder.getAttr<ParamDeclArrayAttr>(inputParamDecls);
   auto resultParamsAttr = builder.getAttr<ParamDeclArrayAttr>(resultParamDecls);
-  attrs.set(funcOp.getValueParamNamesAttrName(),
-            builder.getAttr<StringArrayAttr>(argNames));
+
+  attrs.set(funcOp.getPosArgNamesAttrName(),
+            builder.getAttr<StringArrayAttr>(posArgNames));
   attrs.set(funcOp.getInputParamsAttrName(), inputParamsAttr);
   attrs.set(funcOp.getResultParamsAttrName(), resultParamsAttr);
   FunctionType functionType =
@@ -2528,7 +2537,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType,
-      builder.getAttr<FnMetadataAttr>(inputConventions, defaults, effects),
+      builder.getAttr<FnMetadataAttr>(
+          builder.getAttr<StringArrayAttr>(argNames), inputConventions,
+          defaults, effects),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -2779,7 +2790,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
-  // Set up information about for value arguments.
+  // Set up information about value arguments.
   Block *bodyBlock = funcOp.getBody();
   auto builder = OpBuilder::atBlockEnd(bodyBlock);
 
@@ -2788,7 +2799,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
   for (auto [argName, bbArg, convention] :
-       llvm::zip(funcOp.getValueParamNames(), funcOp.getBody()->getArguments(),
+       llvm::zip(funcOp.getArgNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getValueInputConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
     if (convention == ValueInputConvention::ByRefResult)
@@ -3357,14 +3368,14 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
 
   // TODO: Should raise if anything we invoke raises.
   auto metadata = builder.getAttr<FnMetadataAttr>(
-      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
+      builder.getAttr<StringArrayAttr>(argNames), argConventions,
+      /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
   auto signature = SignatureType::get({}, {}, fnType, metadata);
 
   // Create the empty function.
   StringAttr nameAttr =
       DeclResolver::getMangledName(builder.getStringAttr(name), signature);
-  auto funcOp =
-      builder.create<LIT::FuncOp>(nameAttr, signature, argNames, specialFnID);
+  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;

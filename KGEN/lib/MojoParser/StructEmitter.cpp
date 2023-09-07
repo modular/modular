@@ -44,15 +44,15 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
     fnEffects = fnEffects | FnEffects::OwnedResult;
 
   auto metadata = builder.getAttr<FnMetadataAttr>(
-      argConventions, /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
+      builder.getAttr<StringArrayAttr>(argNames), argConventions,
+      /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
   auto none = TypeArrayAttr::get(builder.getContext(), {});
   auto signature = SignatureType::get(none, none, fnType, metadata);
 
   // Create the empty function.
   StringAttr nameAttr =
       DeclResolver::getMangledName(builder.getStringAttr(name), signature);
-  auto funcOp =
-      builder.create<LIT::FuncOp>(nameAttr, signature, argNames, specialFnID);
+  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
 
   // Generate a debug subprogram for this function.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;

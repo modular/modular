@@ -427,13 +427,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}c: !Boolish = <cond(apply(:<>(!Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:<>(!Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
+  # CHECK: lit.alias.decl {{.*}}c: !Boolish = <cond(apply(:<>("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:<>("self": !Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}d: !Boolish = <cond(apply(:<>(!Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:<>(!Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
+  # CHECK: lit.alias.decl {{.*}}d: !Boolish = <cond(apply(:<>("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:<>("self": !Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -514,10 +514,10 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(apply(:<>(!Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
+  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(apply(:<>("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply(:<>(!Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply(:<>("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <[[I_ALIAS]]>

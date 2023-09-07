@@ -90,7 +90,7 @@ std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
     auto func = cast<FuncOp>(*decl.getParentDecl());
-    return func.getValueParamNames()[bbArg.getArgNumber()];
+    return func.getSignature().getArgName(bbArg.getArgNumber());
   }
 
   if (auto paramRef = getIfParameter(*this))
@@ -139,7 +139,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
     auto func = cast<FuncOp>(*decl.getParentDecl());
-    return func.getValueParamNames()[bbArg.getArgNumber()];
+    return func.getSignature().getArgName(bbArg.getArgNumber());
   }
 
   if (auto paramRef = getIfParameter(*this))
