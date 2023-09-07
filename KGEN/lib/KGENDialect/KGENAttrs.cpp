@@ -141,7 +141,8 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 /// The variadic attribute is a constant if all element values are constants.
 bool VariadicAttr::isConstant() const {
-  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant) &&
+         !isParameterizedType(getType());
 }
 
 LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,

@@ -40,12 +40,21 @@ kgen.generator @parameter_use_chain() {
 // CHECK-LABEL: @"unknown_attr,width=4"
 kgen.generator @unknown_attr<width>() {
   // CHECK-NEXT: constant: simd<4, f32> = <?>
-  %0 = kgen.param.constant: simd<width, f32> = <?>
+  kgen.param.constant: simd<width, f32> = <?>
   kgen.return
 }
 
+// CHECK-LABEL: @"empty_variadic,T=i32"
+kgen.generator @empty_variadic<T: type>() {
+  // CHECK-NEXT: constant: variadic<i32> = <[]>
+  kgen.param.constant: variadic<T> = <[]>
+  kgen.return
+}
+
+// CHECK-LABEL: @call_unknown_attr
 kgen.generator @call_unknown_attr() {
   kgen.call @unknown_attr<4>() : () -> ()
+  kgen.call @empty_variadic<:type i32>() : () -> ()
   kgen.return
 }
 
