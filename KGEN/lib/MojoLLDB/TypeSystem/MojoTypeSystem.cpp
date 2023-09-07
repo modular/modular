@@ -376,6 +376,14 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
   return false;
 }
 
+lldb_private::CompilerType
+MojoTypeSystem::GetPointerType(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return {};
+  MojoASTTypeRef astType(type);
+  return createCompilerType(KGEN::PointerType::get(astType.getMLIRType()));
+}
+
 uint32_t MojoTypeSystem::GetTypeInfo(
     lldb::opaque_compiler_type_t type,
     lldb_private::CompilerType *pointeeOrElementCompilerType) {
@@ -576,8 +584,16 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
   MojoASTTypeRef astType = dereferenceType(type);
 
   // Pointer only has one child, so just return the unwrapped pointer type
-  if (isa<KGEN::PointerType>(astType))
-    return createCompilerType(astType.getPointerElementType());
+  if (isa<KGEN::PointerType>(astType)) {
+    MojoASTTypeRef eltType(astType.getPointerElementType());
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(eltType)) {
+      childByteSize = layout->getByteSize();
+      childByteOffset = 0;
+      return createCompilerType(astType.getPointerElementType());
+    }
+    return {};
+  }
 
   if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
     if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
