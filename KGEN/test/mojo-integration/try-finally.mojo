@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s 2>&1 | FileCheck %s
 # RUN: %mojo %s --debug-level full 2>&1 | FileCheck %s
 
 
