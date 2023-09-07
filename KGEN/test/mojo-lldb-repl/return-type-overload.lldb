@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
 # RUN: %repl <%s | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.

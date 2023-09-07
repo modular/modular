@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
 # REQUIRES: darwin
 # RUN: %repl <%s 2>&1 | FileCheck %s
 

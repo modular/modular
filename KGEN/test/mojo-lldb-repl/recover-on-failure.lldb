@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
 # RUN: %repl <%s 2>%t | FileCheck %s -check-prefix=CHECK
 # RUN: cat %t | FileCheck %s -check-prefix=CHECK-STDERR
 
