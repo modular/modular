@@ -64,6 +64,7 @@ unset(BUILD_INFO_DEFINITIONS)
 unset(LLVM_TARGETS_BUILT)
 
 add_subdirectory(ADT)
+add_subdirectory(ASN1)
 add_subdirectory(Benchmark)
 add_subdirectory(CrashReporting)
 add_subdirectory(Driver)
