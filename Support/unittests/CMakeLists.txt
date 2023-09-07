@@ -18,6 +18,7 @@ add_modular_unittest(
   SupportTests
 
   AlignedAllocTest.cpp
+  ASN1Test.cpp
   BCastTest.cpp
   Base64Test.cpp
   ConfigurationTest.cpp
@@ -41,6 +42,7 @@ add_modular_unittest(
 
   LINK_LIBS PRIVATE
   MSupport
+  MSupportASN1
   MSupportML
   MSupportGlobals
   MTelemetry
