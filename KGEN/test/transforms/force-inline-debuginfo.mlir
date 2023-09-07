@@ -157,9 +157,35 @@ kgen.func @call_async_no_debuginfo() -> !pop.coroutine<() -> (index)> {
   kgen.return %0 : !pop.coroutine<() -> (index)>
 }
 
+// -------------------------------------------------------------------------- //
+// Test nodebug behavior for func with multiple exists.
+// -------------------------------------------------------------------------- //
+
+kgen.func @nodebug_inline_me_multiple_exits(%arg0: index) -> index always_inline_no_debug {
+  %idx1 = index.constant 1 loc(#valueLoc)
+  %0 = index.add %arg0, %arg0 loc(#valueLoc)
+  %1 = index.cmp sgt (%arg0, %idx1) loc(#valueLoc)
+  hlcf.if %1 {
+    kgen.return %0: index loc(#valueLoc)
+  } else  {
+    hlcf.yield loc(#valueLoc)
+  } loc(#valueLoc)
+  kgen.return %arg0: index loc(#valueLoc)
+} loc(#valueLoc)
+
+// CHECK-LABEL: kgen.func @call_nodebug_inline_me_multiple_exits
+kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
+  %0 = index.constant 3
+  // hlcf.loop should not be folded away since inlined function has multiple exits.
+  // CHECK-DAG: %[[V0:.*]] = hlcf.loop "inlined_cf_scope" () -> index {
+  %1 = kgen.call @nodebug_inline_me_multiple_exits(%0) : (index) -> index
+  kgen.return %1 : index
+}
+
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
 // CHECK-DAG: #[[LOC_ARG:loc[0-9]+]] = loc("foo.mlir":13:12)
 
 // CHECK-DAG: #[[LOC_VALUE_INLINED]] = loc(callsite(#[[LOC_VALUE:loc[0-9]+]] at #[[LOC_CALLSITE]]))
 // CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#[[SP]]>[#[[LOC_ARG]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[SP]]>[#[[LOC]]])
+
