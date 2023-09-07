@@ -98,16 +98,18 @@ kgen.func @hoist_nested_funcs(%arg0: index) {
     %1 = index.sub %arg0, %arg0
     // CHECK-NEXT: stage_closure
     %2 = kgen.stage_closure = (%arg1: index) -> () {
-      // CHECK-NEXT: index.divs
       // CHECK-NEXT: index.sub
       // CHECK-NEXT: index.constant 1
       %idx1 = index.constant 1
       // CHECK-NEXT: index.mul
       // CHECK-NEXT: index.add
+      // CHECK-NEXT: hlcf.loop
       hlcf.loop {
         %3 = index.add %arg1, %idx1
         %4 = index.sub %arg0, %idx0
         %5 = index.mul %idx1, %idx0
+        // Note that divs is not pure and should not be hoisted
+        // CHECK-NEXT: index.divs
         %6 = index.divs %arg1, %arg0
         hlcf.continue
       }
