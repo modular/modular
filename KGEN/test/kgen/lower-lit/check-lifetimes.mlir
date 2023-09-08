@@ -52,7 +52,7 @@ lit.file_module @check_lifetimes {
 
     // var c = Struct()
     // expected-warning @+1 {{'c' was declared as a 'var' but never mutated, consider switching to a 'let'}}
-    %c = lit.varlet.decl "c", var = true, synth = false : <@check_lifetimes::@Struct>
+    %c = lit.varlet.decl "c" var : <@check_lifetimes::@Struct>
     %0 = kgen.call @check_lifetimes::@Struct::@"__init__check_lifetimes:Struct=&)"(%c) : (!kgen.pointer<@check_lifetimes::@Struct> byref_result) -> !lit.none
 
     %none = kgen.param.constant: !lit.none = <#lit.none>
@@ -75,7 +75,7 @@ lit.file_module @check_lifetimes {
     %callee = kgen.create_closure[(
         !kgen.pointer<@check_lifetimes::@Struct> byref_result,
         !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> (): byrefResultFn]()
-    %c = lit.varlet.decl "c", var = true, synth = false : <@check_lifetimes::@Struct>
+    %c = lit.varlet.decl "c" var : <@check_lifetimes::@Struct>
     kgen.call_signature %callee(%c, %a) :
         (!kgen.pointer<@check_lifetimes::@Struct> byref_result,
          !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) -> ()
@@ -106,7 +106,7 @@ lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@"__del__"
 
 lit.func @verify_destructor_post_throw() -> !lit.none {
   lit.try {
-    %x = lit.varlet.decl "x", var = false, synth = false : <@S>
+    %x = lit.varlet.decl "x" : <@S>
     %1 = kgen.call @foo(%x) : (!kgen.pointer<@S> byref_result) throws -> !pop.variant<@Error, !lit.none>
     // CHECK: %[[VAR0:.*]] = lit.handle_variant %1, %x : (!pop.variant<@Error, !lit.none>, !kgen.pointer<@S>) -> !lit.none {
     // CHECK: %[[VAR1:.*]] = pop.variant.get %1 : !pop.variant<@Error, !lit.none> as !lit.none
@@ -138,7 +138,7 @@ lit.func @verify_destructor_post_throw() -> !lit.none {
 }
 
 lit.func @verify_callee_destroys(%c: i1) -> !lit.none {
-  %s = lit.varlet.decl "s", var = false, synth = false : <@S>
+  %s = lit.varlet.decl "s" : <@S>
   %2 = kgen.call @S::@__init__(%s) : (!kgen.pointer<@S> init_self) -> !lit.none
   lit.try {
     hlcf.if %c {
@@ -371,7 +371,7 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
     } else {
       hlcf.yield
     }
-    %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@MyStruct>
+    %anonymous2A = lit.varlet.decl "anonymous*" var synth : <@MyStruct>
     %3 = kgen.call @MyStruct::@__init__(%anonymous2A) : (!kgen.pointer<@MyStruct> init_self) -> !lit.none
     %6 = kgen.call @use(%anonymous2A) : (!kgen.pointer<@MyStruct> borrow_in_mem) -> !lit.none
     // CHECK: kgen.call @MyStruct::@__del__(%anonymous2A) : (!kgen.pointer<@MyStruct> owned_in_mem) -> !lit.none

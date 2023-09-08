@@ -740,34 +740,36 @@ def LIT_LetRegDeclOp : LITOp<"letreg.decl", [
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-def LIT_VarLetDeclOp : LITOp<"varlet.decl", [
-    ASTDeclInterface,
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>
-  ]> {
+def LIT_VarLetDeclOp : LITOp<"varlet.decl", [ASTDeclInterface,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]> ]> {
   let summary = "Addressible local let or var declaration";
   let description = [{
     This declaration is used for var and let declarations with an exposed
     address.  `isVar` indicates if this is mutable at the source level, and
     `isSynthesized` bit indicates whether this was created internally, which
     supresses some warnings.
-  }];
-  let arguments = (ins
-    StrAttr:$name, BoolAttr:$isVar, BoolAttr:$isSynthesized,
-    OptionalAttr<LIT_DocStringAttr>:$docString
-  );
 
+    Example:
+
+    ```mlir
+    %foo = lit.varlet.decl "foo" isVar, synth : <index>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
+                       OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs PointerType:$result);
+
   let assemblyFormat = [{
-    $name `,` `var``=`$isVar`,` `synth``=`$isSynthesized
-          `:` type($result) attr-dict
+    $name (`var` $isVar^)? (`synth` $isSynthesized^)?  `:` type($result)
+    attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$type, "StringRef":$name, "bool":$isVar,
                    "bool":$isSynthesized), [{
       build($_builder, $_state, type, $_builder.getStringAttr(name),
-            $_builder.getBoolAttr(isVar), $_builder.getBoolAttr(isSynthesized),
-            /*docString=*/{});
+            isVar, isSynthesized, /*docString=*/{});
     }]>
   ];
 }

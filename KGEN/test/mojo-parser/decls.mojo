@@ -222,9 +222,9 @@ def let_decls() -> None:
 # CHECK-LABEL:  lit.func @"var_decls()
 def var_decls() -> None:
     # Implicit declaration is mutable.
-    # CHECK: %x = lit.varlet.decl "x", var = true
+    # CHECK: %x = lit.varlet.decl "x" var
     x = (123).value
-    # CHECK: %y = lit.varlet.decl "y", var = true
+    # CHECK: %y = lit.varlet.decl "y" var
     var y: Int
 
     # CHECK: [[Y:%.*]] = pop.load %y
@@ -608,7 +608,7 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.varlet.decl "a", var = true
+    # CHECK: %a_0 = lit.varlet.decl "a" var
     # CHECK: pop.store %a, %a_0 : !kgen.pointer<!RPStructWithInit>
 
     # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
@@ -691,7 +691,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1): pass
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*", var = false, synth = true : <!MemoryType>
+    # CHECK: %[[ANON:.*]] = lit.varlet.decl "anonymous*" synth : <!MemoryType>
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}value = 1
     # CHECK: pop.store %[[VALUE]], %[[ANON]]
     # CHECK: call {{.*}}defaultArgumentNonRegisterType{{.*}}(%[[ANON]])

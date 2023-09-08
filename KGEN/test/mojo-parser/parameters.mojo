@@ -38,7 +38,7 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
 fn fancy_signature[dt: DType, size: Int]
   (x: OurSIMD[size, dt], exp: (OurSIMD)[size, dt]) -> Int:
 
-  # CHECK: %local = lit.varlet.decl "local", var = true
+  # CHECK: %local = lit.varlet.decl "local" var
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <[[SIZE]]>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant: !Int = <[[SIZE]]>

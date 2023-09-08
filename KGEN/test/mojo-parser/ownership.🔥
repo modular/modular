@@ -34,7 +34,7 @@ struct RegExample:
     return RegExample{}
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
   # CHECK-NEXT: pop.store %self, %self_0
   # CHECK-NEXT: %0 = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: lit.ownership.mark.destroyed %self_0
@@ -52,13 +52,13 @@ fn consume(owned a: RegExample): pass
 fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%arg0)
 
-  # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1", var = true
+  # CHECK-NEXT: %mem1 = lit.varlet.decl "mem1" var
   var mem1 = MemExample() # expected-warning {{consider switching to a 'let'}}
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem1)
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}(%mem1)
 
   var mem2 = MemExample()
-  # CHECK-NEXT: %mem2 = lit.varlet.decl "mem2", var = true
+  # CHECK-NEXT: %mem2 = lit.varlet.decl "mem2" var
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%mem2)
   mem2.noop()
   # CHECK-NEXT: kgen.call {{.*}}noop{{.*}}(%mem2)
@@ -501,7 +501,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
-  # CHECK-NEXT: %x_0 = lit.varlet.decl "x", var = true, synth = true
+  # CHECK-NEXT: %x_0 = lit.varlet.decl "x" var synth
   # CHECK-NEXT: pop.store %x, %x_0
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}(%x_0)
   x.mutate()
@@ -663,7 +663,7 @@ struct BigRegExample:
     return BigRegExample{a: self.a, b: self.b }
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+  # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
   # CHECK-NEXT: pop.store %self, %self_0
 
   # CHECK-NEXT: %0 = lit.struct.gep %self_0[a]
@@ -714,7 +714,7 @@ struct ExoticDelExample:
 
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
-    # CHECK-NEXT: %self_0 = lit.varlet.decl "self", var = true
+    # CHECK-NEXT: %self_0 = lit.varlet.decl "self" var
     # CHECK-NEXT: pop.store %self, %self_0
 
     # self.b gets destroyed ASAP since it isn't used.
@@ -857,7 +857,7 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0
   # CHECK-NEXT: %1 = lit.load.consume %0
@@ -866,7 +866,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %0 = pop.load %a_0
   # CHECK-NEXT: kgen.return %0
@@ -874,7 +874,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: pop.store %a, %a_0
   # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0
   # CHECK-NEXT: %1 = lit.load.consume %0
@@ -883,7 +883,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-  # CHECK-NEXT: %a_0 = lit.varlet.decl "a", var = true
+  # CHECK-NEXT: %a_0 = lit.varlet.decl "a" var
   # CHECK-NEXT: pop.store %a, %a_0
 
   # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a_0

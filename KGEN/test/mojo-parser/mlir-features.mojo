@@ -12,9 +12,9 @@ fn mlirMagicTest(
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = (1).value
-    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <f64>
+    # CHECK: %b = lit.varlet.decl "b" var : <f64>
     var b: __mlir_type.f64
-    # CHECK: %c = lit.varlet.decl "c", var = true, synth = false : <pointer<pointer<float32>>>
+    # CHECK: %c = lit.varlet.decl "c" var : <pointer<pointer<float32>>>
     var c: __mlir_type.`!kgen.pointer<!kgen.pointer<float32>>`
 
     # CHECK: %d = lit.varlet.decl
@@ -52,9 +52,9 @@ fn mlirMagicTest(
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
 # CHECK-SAME: [[DTYPE:.*]]: dtype>()
 fn mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
-    # CHECK: %a = lit.varlet.decl "a", var = true, synth = false : <scalar<[[DTYPE]]>>
+    # CHECK: %a = lit.varlet.decl "a" var : <scalar<[[DTYPE]]>>
     var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
-    # CHECK: %b = lit.varlet.decl "b", var = true, synth = false : <simd<4, [[DTYPE]]>>
+    # CHECK: %b = lit.varlet.decl "b" var : <simd<4, [[DTYPE]]>>
     var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
 
 

@@ -361,7 +361,7 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
 lit.struct.decl @StructWithNestedFn<a_param> {
   // CHECK-NEXT: lit.func @topLevelFunction<b_param>() -> index
   lit.func @topLevelFunction<b_param>() -> index {
-    %a = lit.varlet.decl "a", var = true, synth=false : <index>
+    %a = lit.varlet.decl "a" var : <index>
     %idx0 = index.constant 0
     pop.store %idx0, %a : !kgen.pointer<index>
 

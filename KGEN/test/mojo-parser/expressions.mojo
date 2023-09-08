@@ -76,7 +76,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v1, %a)
   var v1 = a
 
-  # CHECK-NEXT: %v2 = lit.varlet.decl "v2", var = false
+  # CHECK-NEXT: %v2 = lit.varlet.decl "v2"
   # CHECK-NEXT: kgen.call {{.*}}__copyinit__{{.*}}(%v2, %a)
   let v2 : MemoryOnlyPair = a
 
@@ -189,7 +189,7 @@ fn simpleMath(a: Int, b: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"precedence_associativity
 fn precedence_associativity(a: Int):
-  # CHECK: %z = lit.varlet.decl "z", var = true
+  # CHECK: %z = lit.varlet.decl "z" var
   var z: Int = 0
 
   # CHECK: [[SEVENTEENINT:%.*]] = kgen{{.*}}#lit.struct<{value = 17}>
@@ -438,7 +438,7 @@ fn paramAndOr[a: Boolish, b: Boolish]():
 
 # CHECK-LABEL: lit.func @"do_math
 fn do_math(a: Int, b: Int, c: Int) -> Int:
-  # CHECK-NEXT: %z = lit.varlet.decl "z", var = true
+  # CHECK-NEXT: %z = lit.varlet.decl "z" var
   var z : Int
   # CHECK-NEXT: %[[INT_5:.*]] = kgen{{.*}}#lit.struct<{value = 5}>
   # CHECK-NEXT: %[[MUL:.*]] = kgen.call {{.*}}Int::@"__mul__{{.*}}(%[[INT_5]], %a)
@@ -447,7 +447,7 @@ fn do_math(a: Int, b: Int, c: Int) -> Int:
   # CHECK-NEXT: pop.store %[[ADD]], %z
   z = 42 + 5*a
 
-  # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
+  # CHECK-NEXT: %x = lit.varlet.decl "x" var
   # CHECK-NEXT: [[TMP:%.*]] = pop.load %z
   # CHECK-NEXT: pop.store [[TMP]], %x
   # This is checking the lexer handles \ at end of line correctly.
@@ -572,7 +572,7 @@ fn parameterExprs[a: Int, a2: Int]():
 
 # CHECK-LABEL: lit.func @"patterns()
 fn patterns():
-  # CHECK: %z2 = lit.varlet.decl "z2", var = true
+  # CHECK: %z2 = lit.varlet.decl "z2" var
   var z2: Int
 
   (((z2))) = 42  # Paren patterns
@@ -581,7 +581,7 @@ fn patterns():
 
   var someInt : Int
   (someInt) += someInt
-  # CHECK: %someInt = lit.varlet.decl "someInt", var = true
+  # CHECK: %someInt = lit.varlet.decl "someInt" var
   # CHECK:  %1 = pop.load %someInt
   # CHECK:  %2 = kgen.call {{.*}}Int::@"__iadd__{{.*}}(%someInt, %1)
 
@@ -591,13 +591,13 @@ fn patterns():
 
   (_) = 1.0
 
-  # CHECK: %someFloat32 = lit.varlet.decl "someFloat32", var = true
+  # CHECK: %someFloat32 = lit.varlet.decl "someFloat32" var
   # CHECK: [[Float32:%.*]] = pop.load %someFloat32
   # CHECK: {{%.*}} = kgen.call {{.*}}__iadd__{{.*}}(%someFloat32, [[Float32]])
   var someFloat32 : Float32
   (someFloat32) += someFloat32
 
-  # CHECK: %someSIMD = lit.varlet.decl "someSIMD", var = true
+  # CHECK: %someSIMD = lit.varlet.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = pop.load %someSIMD
   # CHECK: {{%.*}} = kgen.call @"$builtin"::@"$simd"::@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
   var someSIMD : SIMD[DType.float64, 4]
@@ -608,7 +608,7 @@ fn byval_byref_function(a: Int, inout b: Int):
   # CHECK-NEXT: pop.store %a, %b
   b = a
 
-  # CHECK-NEXT: %x = lit.varlet.decl "x", var = true
+  # CHECK-NEXT: %x = lit.varlet.decl "x" var
   var x : Int
   # This needs to load 'b' to pass it by value for the first arg, but pass its
   # address in directly for the second.
@@ -641,8 +641,8 @@ def defTests(a: Int, b: Int, untyped) -> None:
 ##===----------------------------------------------------------------------===##
 
 def basic_assignments(a: Int, b: Int, c: M, d: M):
-  # CHECK:      %a_0 = lit.varlet.decl "a", var = true
-  # CHECK:      %b_1 = lit.varlet.decl "b", var = true
+  # CHECK:      %a_0 = lit.varlet.decl "a" var
+  # CHECK:      %b_1 = lit.varlet.decl "b" var
   # CHECK:      [[LOAD_B:%.*]] = pop.load %b_1
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__iadd__({{.*}}$int::Int&,{{.*}}$int::Int)"(%a_0, [[LOAD_B]])
   a += b
@@ -1018,7 +1018,7 @@ fn takeInOutInt(inout a: Int): pass
 
  # CHECK-LABEL: lit.func @"testWritebacks
 fn testWritebacks(inout a: IndexArray, inout b: IndexArrayArray):
-  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true
+  # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var
   # CHECK-NEXT: %[[V0:.*]] = {{.*}}constant{{.*}} = 0
   # CHECK-NEXT: %[[V1:.*]] = kgen.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
   # CHECK-NEXT: pop.store %[[V1]], %anonymous2A
