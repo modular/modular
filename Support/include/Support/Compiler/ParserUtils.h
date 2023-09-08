@@ -8,6 +8,7 @@
 #define SUPPORT_COMPILER_COMPILERUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 
@@ -66,6 +67,27 @@ void printParenOperandListWithDefaultType(OpAsmPrinter &printer,
 /// of operands.
 void printRegionWithShadowing(OpAsmPrinter &printer,
                               const OperandRange &operands, Region &region);
+
+/// Parses a 'buffer signature' of the form:
+///    ( in|out|mut %x : type, ... )
+/// The SSA values will be added to buffers, their types to bufferTypes,
+/// and the inOutSignatureAttr will have matching arity and capture the
+/// in/out/mut keywords.
+///
+/// Note that the types are unconstrained and need not be any particular
+/// 'buffer' type. However generally they are pointer-like for the in/out/mut
+/// keyword to be necessary.
+ParseResult
+parseBufferSignature(OpAsmParser &parser,
+                     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &buffers,
+                     SmallVectorImpl<Type> &bufferTypes,
+                     InOutSignatureAttr &inOutSignatureAttr);
+
+/// Prints a 'buffer signature', matching the syntax parsed by
+/// parseBufferSignature.
+void printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
+                          ValueRange buffers, TypeRange bufferTypes,
+                          InOutSignatureAttr inOutSignatureAttr);
 
 } // namespace M
 
