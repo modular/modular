@@ -630,6 +630,9 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
 
+/// A shorthand to make function operand handling more readable.
+using FuncOperand = ASTExprAnd<AnyValue>;
+
 //===----------------------------------------------------------------------===//
 // BaseDLValue classes.
 //===----------------------------------------------------------------------===//
@@ -694,12 +697,12 @@ public:
   const ExprNode *expr;
   // This is the self+name values for property access and the self+key values
   // for a subscript.
-  std::vector<ASTExprAnd<AnyValue>> selfAndIndicesValue;
+  std::vector<FuncOperand> selfAndIndicesValue;
 
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
-  SubscriptDLValue(ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue,
+  SubscriptDLValue(ArrayRef<FuncOperand> selfAndIndicesValue,
                    ASTType elementType, const ExprNode *expr);
 
   virtual void print(raw_ostream &os) const override;
@@ -713,9 +716,9 @@ class TupleDLValue : public BaseDLValue {
 public:
   const ExprNode *expr;
   // These are the LValues for the sub-elements.
-  std::vector<ASTExprAnd<AnyValue>> eltLValues;
+  std::vector<FuncOperand> eltLValues;
 
-  TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues, ASTType tupleType,
+  TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
                const ExprNode *expr);
 
   virtual void print(raw_ostream &os) const override;

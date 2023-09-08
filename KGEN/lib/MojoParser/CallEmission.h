@@ -205,6 +205,11 @@ public:
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
+  PValue
+  filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+                    bool allowImplicitConversions, bool emitDiagnosticOnFailure,
+                    ExprEmitter &emitter) const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
@@ -226,8 +231,9 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> posOperands, ValueDest &dest,
-                  ExprEmitter &emitter);
+  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+                  ValueDest &dest, ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a

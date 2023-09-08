@@ -1464,11 +1464,11 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 /// Emit a call __init__, returning an instance of the specified
 /// type.  If `allowImplicitConversion` is true, the provided args are allowed
 /// to implicitly convert to the expectations of the constructor signatures.
-CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        ArrayRef<ASTExprAnd<AnyValue>> origArgs,
-                                        const ExprNode *expr, CallSyntax syntax,
-                                        ValueDest &dest,
-                                        bool allowImplicitConversion) {
+CValue ExprEmitter::emitConstructorCall(
+    ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+    const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
+    bool allowImplicitConversion) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType())
     return {};
@@ -1479,7 +1479,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Init for memory-only types get their self argument implicitly initialized
   // and passed in as the first argument.
-  ArrayRef<ASTExprAnd<AnyValue>> args = origArgs;
+  ArrayRef<ASTExprAnd<AnyValue>> args = posOperands;
   bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
   SmallVector<ASTExprAnd<AnyValue>> argsWithSelf;
   if (isMemoryOnly) {
@@ -1499,14 +1499,14 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Try to resolve the overload set to exactly one candidate, but don't emit an
   // error on failure (we typically want to customize the error).
   PValue calleeFn =
-      callee.filterOverloadSet(args, allowImplicitConversion,
+      callee.filterOverloadSet(args, kwOperands, allowImplicitConversion,
                                /*emitDiagnosticOnFailure=*/false, *this);
   if (!calleeFn) {
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).
-    if (origArgs.size() == 1 && origArgs[0].ir.getIfCValue()) {
-      ASTType operandType = origArgs[0].ir.getIfCValue().getRValueType();
+    if (posOperands.size() == 1 && posOperands[0].ir.getIfCValue()) {
+      ASTType operandType = posOperands[0].ir.getIfCValue().getRValueType();
 
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
@@ -1517,7 +1517,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
         emitError(expr->getLoc())
             << "cannot construct " << type
             << " with itself, you can remove the constructor call"
-            << origArgs[0].expr->getRange()
+            << posOperands[0].expr->getRange()
             << FixIt::remove(callNode.callee->getRange());
         return {};
       }
@@ -1566,7 +1566,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
     // Otherwise, do it again to emit a generic overload set error.
     calleeFn =
-        callee.filterOverloadSet(args, allowImplicitConversion,
+        callee.filterOverloadSet(args, kwOperands, allowImplicitConversion,
                                  /*emitDiagnosticOnFailure=*/true, *this);
     assert(!calleeFn && "This should fail if it failed before");
     return {};
@@ -1576,10 +1576,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // do it. Register-passable and parameter constructor calls do not require
   // result slot allocation.
   if (!isMemoryOnly)
-    return emitCallUnchecked(calleeFn, args, {}, dest, expr);
+    return emitCallUnchecked(calleeFn, args, kwOperands, {}, dest, expr);
   if (!builder) {
     args = args.drop_front();
-    return emitCallUnchecked(calleeFn, args, {}, dest, expr);
+    return emitCallUnchecked(calleeFn, args, kwOperands, {}, dest, expr);
   }
 
   // We need to invoke memory-only constructors specially since the buffer is
@@ -1605,6 +1605,15 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // if the expected type and the actual type differ.  This can happen when the
   // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
   return emitCResult(MRValue(destSLValue), expr, dest);
+}
+
+CValue ExprEmitter::emitConstructorCall(
+    ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+    const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
+    bool allowImplicitConversion) {
+  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
+  return emitConstructorCall(type, posOperands, kwOperands, expr, syntax, dest,
+                             allowImplicitConversion);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -1808,7 +1817,9 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 
-    if (!getDecl.emitCall({{value.ir, value.expr}}, eltDest, emitter)) {
+    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
+    if (!getDecl.emitCall({{value.ir, value.expr}}, kwOperands, eltDest,
+                          emitter)) {
       eltDest.resetForError();
       return;
     }

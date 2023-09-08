@@ -48,7 +48,7 @@ public:
 
   /// Construct a signature from named parameter declarations, a function type,
   /// and metadata. This helper is used to convert between a named signature
-  /// structure to a nameness `SignatureType` representation.
+  /// structure to a nameless `SignatureType` representation.
   static SignatureType
   remapToSignature(ArrayRef<ParamDeclAttr> inputParams,
                    ArrayRef<ParamDeclAttr> resultParams,

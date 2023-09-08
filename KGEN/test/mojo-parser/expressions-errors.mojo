@@ -354,7 +354,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'FloatLiteral' to 'Int'}}
   _ = a[1.0]
 
-  # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 were specified}}
+  # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 positional arguments, but 3 were specified}}
   _ = a[1, 2]
 
   # expected-error @+1 {{expression must be mutable in assignment}}

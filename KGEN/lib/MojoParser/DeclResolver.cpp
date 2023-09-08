@@ -3119,7 +3119,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
     emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
     MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     PValue callee = dtorFn.filterOverloadSet(
-        {{owned, initExpr}}, /*allowImplicitConversion=*/true,
+        {{owned, initExpr}}, /*allowImplicitConversions=*/true,
         /*emitDiagnosticOnFailure=*/true, emitter);
     if (!callee)
       return failure();
