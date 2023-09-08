@@ -1207,6 +1207,7 @@ struct ParamType[a: Int]: pass
 # CHECK-SAME: %float10: {{.*}}<<!Int, @"$expressions"::@ParamType<[[A]]: !Int = *(0,0)>>() throws -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float11: {{.*}}<<variadic<type>>(!pop.pack<*(0,0)>) throws|async|packvararg|param_vararg -> !pop.variant<!Error, !lit.none>
 # CHECK-SAME: %float12: {{.*}}<(!Int borrow = #lit.struct<{value = 10}>, !StringLiteral borrow = #lit.struct<{value: string = "foo"}>) -> !lit.none>
+# CHECK-SAME: %named: {{.*}}<("x": !kgen.pointer<!String> borrow_in_mem) capturing -> !Int>
 fn function_types(
   float0: fn(Int) -> Int,
   float1: fn(MemoryType) -> MemoryType,
@@ -1221,7 +1222,15 @@ fn function_types(
   float10: def[a: Int, b: ParamType[a]]() -> None,
   float11: async def[*Ts: AnyType](* *Ts) -> None,
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
+  named: fn(x:String) escaping -> Int
 ): pass
+
+# CHECK-LABEL: lit.struct.decl @Mem
+# CHECK-NEXT: lit.alias.decl _{{.*}}_x: type = <i8>
+# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <<>("foo": i8 borrow) -> !lit.none>
+struct Mem:
+   alias x = __mlir_type.i8
+   alias B = fn (foo: Self.x) -> None
 
 alias fn_type_alias = fn() -> None
 

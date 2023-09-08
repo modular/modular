@@ -1081,6 +1081,21 @@ ParseResult ParserBase::parseExpressionList(ExprNode *&result,
   return success();
 }
 
+ParseResult ParserBase::parseOptionalIdentifier(StringAttr &result,
+                                                Token::Kind delimiter,
+                                                SMLoc *loc) {
+  LexerCursor cursor(lexer);
+  result = StringAttr::get(getContext(), getToken().getSpelling());
+  if (consumeIf(Token::identifier, loc)) {
+    if (loc)
+      *loc = getToken().getLoc();
+    if (getToken().is(delimiter))
+      return success();
+  }
+  cursor.restore(lexer);
+  return failure();
+}
+
 /// Expression parsing.  Each of these take a `stmtIndent` specifier that
 /// indicates the indentation level of the start of the statement that
 /// contains this expression if the expression can exist at the end of the

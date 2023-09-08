@@ -128,6 +128,12 @@ public:
   ParseResult parseIdentifier(StringAttr &result, const Twine &message,
                               SMLoc *loc = nullptr);
 
+  /// Consume an identifier token if delimiter is the next token and the parsed
+  /// identifier is not a keyword. The location is set to the delimiter (the
+  /// delimiter is not consumed)
+  ParseResult parseOptionalIdentifier(StringAttr &result, Token::Kind delimiter,
+                                      SMLoc *loc = nullptr);
+
   /// Parse a list of elements continued with commas.  If a set of terminators
   /// are specified, then the list ends when one is encountered (but it is not
   /// consumed).  If no terminators are specified, the list ends at end of the
