@@ -19,6 +19,8 @@
 #endif // __APPLE__
 
 #ifdef _WIN32
+#include <windows.h>
+
 #include <wincrypt.h>
 #endif // _WIN32
 
@@ -188,7 +190,7 @@ static ErrorOrSuccess getSystemRootCerts(mbedtls_x509_crt *list) {
 #endif // __linux__
 
 #ifdef _WIN32
-  HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
+  HCERTSTORE hStore = CertOpenSystemStore(0, (LPCWSTR)L"ROOT");
   if (hStore == nullptr)
     return Error("could not open system root certificate store");
 
@@ -213,7 +215,7 @@ static ErrorOrSuccess getSystemRootCerts(mbedtls_x509_crt *list) {
   if (numCertsParsed == 0) {
     std::string outErr;
     llvm::raw_string_ostream errStream(outErr);
-    llvm::interleaveComma(err, errStream);
+    llvm::interleaveComma(errs, errStream);
     return Error(outErr);
   }
 
