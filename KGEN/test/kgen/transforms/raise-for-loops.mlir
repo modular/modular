@@ -89,17 +89,17 @@ kgen.func @strided_range() {
 
 // CHECK-LABEL: @nested_unroll_loops
 kgen.func @nested_unroll_loops() {
+  %idx0 = index.constant 0
+  %index1 = index.constant 1
   %index2 = index.constant 2
   %index4 = index.constant 4
   %index8 = index.constant 8
-  %idx0 = index.constant 0
-  %index1 = index.constant 1
 
-  // CHECK:      [[INDEX2:%.*]] = index.constant 2
+  // CHECK:      [[INDEX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
   // CHECK-NEXT: [[INDEX4:%.*]] = index.constant 4
   // CHECK-NEXT: [[INDEX8:%.*]] = index.constant 8
-  // CHECK-NEXT: [[INDEX0:%.*]] = index.constant 0
-  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
   // CHECK-NEXT:   [[IDX0:%.*]] = index.sub %arg0, [[INDEX1]]
   // CHECK-NEXT:   [[V0:%.*]]  = index.sub [[INDEX2]], %arg0
@@ -315,5 +315,51 @@ kgen.func @negative_step() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %4 : index
   } {unrollFactor = #hlcf<loop_unroll_full full>}
+  kgen.return
+}
+
+// CHECK-LABEL: @nested_loops_no_unroll_inner
+kgen.func @nested_loops_no_unroll_inner() {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index2 = index.constant 2
+
+  // CHECK:      [[INDEX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
+  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT:   [[IDX0:%.*]] = index.sub %arg0, [[INDEX1]]
+  // CHECK-NEXT:   [[V0:%.*]]  = index.sub [[INDEX2]], %arg0
+  // CHECK-NEXT:   kgen.call @foo([[V0]]) : (index) -> ()
+  // CHECK-NOT:    hlcf.for
+  // CHECK-DAG:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NEXT: } {unrollFactor = #hlcf<loop_unroll_full none>}
+
+  hlcf.loop (%arg0 = %index2 : index) {
+    %0 = index.cmp sgt(%arg0, %index0)
+    hlcf.if %0 {
+      hlcf.yield
+    } else {
+      hlcf.break
+    }
+    %1 = index.sub %arg0, %index1
+    %2 = index.sub %index2, %arg0
+    kgen.call @foo(%2) : (index) -> ()
+    // Cannot raise this loop to a for-loop because the upper bound is %arg0 which changes
+    // over parent loop's iterations.
+    hlcf.loop (%arg1 = %index1 : index) {
+      %4 = index.cmp slt(%arg1, %arg0)
+      hlcf.if %4 {
+        hlcf.yield
+      } else {
+        hlcf.break
+      }
+      %5 = index.add %arg1, %index2
+      %6 = index.add %2, %arg1
+      kgen.call @foo(%6) : (index) -> ()
+      hlcf.continue %5 : index
+    } {unrollFactor = #hlcf<loop_unroll_full none>}
+    hlcf.continue %1 : index
+  } {unrollFactor = #hlcf<loop_unroll_full none>}
   kgen.return
 }

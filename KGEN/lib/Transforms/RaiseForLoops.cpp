@@ -115,14 +115,17 @@ SmallVector<OpT> getOps(ArrayRef<ET> vec) {
 }
 
 static Value
-getValueIfConstInteger(Value v, std::optional<int64_t> &inductionVarArgNumber) {
+getValueIfConstInteger(Value v, std::optional<int64_t> &inductionVarArgNumber,
+                       LoopOp currLoop) {
   Value result;
   if (auto arg = dyn_cast<BlockArgument>(v)) {
     // Return the initial value of a block argument if it is constant.
     inductionVarArgNumber = arg.getArgNumber();
     if (auto p = dyn_cast<LoopOp>(arg.getParentBlock()->getParentOp())) {
-      Value input = p->getOperand(arg.getArgNumber());
-      result = getValueIfConstInteger(input, inductionVarArgNumber);
+      if (p == currLoop) {
+        Value input = p->getOperand(arg.getArgNumber());
+        result = getValueIfConstInteger(input, inductionVarArgNumber, currLoop);
+      }
     }
   } else if (mlir::matchPattern(v, mlir::m_Constant())) {
     // If the value v is a constant get the value.
@@ -205,12 +208,12 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     // The operand who is a block argument is the induction variable, and its
     // initial value is the start value of the loop; the other operand (if a
     // constant) is the end of the loop.
-    start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber);
+    start = getValueIfConstInteger(cmp.getLhs(), inductionVarArgNumber, loop);
     if (inductionVarArgNumber.has_value()) {
-      end = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
+      end = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber, loop);
     } else {
       end = start;
-      start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber);
+      start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber, loop);
       cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
                          ? HLCF::ForLoopBoundCmpPredicate::SLTRHS
                          : HLCF::ForLoopBoundCmpPredicate::SGTRHS;
@@ -229,7 +232,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
     Value input0 = nextIterOp->getOperand(0);
     Value input1 = nextIterOp->getOperand(1);
     if (auto blockArg = dyn_cast<BlockArgument>(input0)) {
-      stride = getValueIfConstInteger(input1, argNum);
+      stride = getValueIfConstInteger(input1, argNum, loop);
       indVarCompute = isa<mlir::index::AddOp>(nextIterOp)
                           ? HLCF::ForLoopIndVarCompute::ADD
                           : HLCF::ForLoopIndVarCompute::SUB;
