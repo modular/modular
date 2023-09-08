@@ -1005,7 +1005,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", {{SLValue(rangeRef), seqExp}}, ValueDest::none(),
+      "__len__", CallOperands({{SLValue(rangeRef), seqExp}}), ValueDest::none(),
       CallSyntax::kImplicitConvert, seqExp);
   SRValue lengthSRVal =
       getEmitter().emitSRValue({currentLength, seqExp}, EC_ForIterator);
@@ -1041,9 +1041,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // scope.
   builder.setInsertionPointAfter(condOp);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
-  if (!getEmitter().emitNamedMethodCall("__next__",
-                                        {{SLValue(rangeRef), seqExp}}, ivarDest,
-                                        CallSyntax::kImplicitConvert, seqExp)) {
+  if (!getEmitter().emitNamedMethodCall(
+          "__next__", CallOperands({{SLValue(rangeRef), seqExp}}), ivarDest,
+          CallSyntax::kImplicitConvert, seqExp)) {
     ivarDest.resetForError();
     return {};
   }
@@ -1261,7 +1261,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
   CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", {{contextRV, contextExp}}, enterDest,
+      "__enter__", CallOperands({{contextRV, contextExp}}), enterDest,
       CallSyntax::kMethodCall, contextExp);
   if (!enterResult)
     enterDest.resetForError();
@@ -1283,7 +1283,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // managers in the normal path.
   auto emitNormalExitLogic = [&]() {
     (void)getEmitter().emitNamedMethodCall(
-        "__exit__", {{contextRV, contextExp}}, ValueDest::none(),
+        "__exit__", CallOperands({{contextRV, contextExp}}), ValueDest::none(),
         CallSyntax::kMethodCall, contextExp);
   };
 
@@ -1401,7 +1401,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // overloading though and this is going to be way better for anything real
   // that wants to implement this. We can support both styles when we need to.
   CValue exitResult = getEmitter().emitNamedMethodCall(
-      "__exit__", {{contextRV, contextExp}, {errorVal, contextExp}},
+      "__exit__",
+      CallOperands({{contextRV, contextExp}, {errorVal, contextExp}}),
       ValueDest::none(), CallSyntax::kMethodCall, contextExp);
   RValue exitI1RVal = getEmitter().emitI1({exitResult, contextExp});
   SRValue exitI1Val =

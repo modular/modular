@@ -2347,7 +2347,7 @@ static void emitClosureInstance(SignatureType closureSignature,
   ValueDest closureDest;
   Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), closureImplInitArgs, &node,
+      ASTType(closureImplType), CallOperands(closureImplInitArgs), &node,
       CallSyntax::kTypeCall, closureDest, false);
   // Emit the Closure Wrapper instance.
   ValueDest closureWrapperDest;
@@ -2355,7 +2355,7 @@ static void emitClosureInstance(SignatureType closureSignature,
   closureWrapperInitArgs.push_back({value, &node});
   Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  closureWrapperInitArgs, &node,
+                                  CallOperands(closureWrapperInitArgs), &node,
                                   CallSyntax::kTypeCall, closureWrapperDest);
 }
 
@@ -3119,12 +3119,13 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
     emitter.builder = OpBuilder::atBlockBegin(&op.getDtor().front());
     MRValue owned(emitter.builder->create<GlobalVarRefOp>(op.getLoc(), op));
     PValue callee = dtorFn.filterOverloadSet(
-        {{owned, initExpr}}, /*allowImplicitConversions=*/true,
+        CallOperands({{owned, initExpr}}), /*allowImplicitConversions=*/true,
         /*emitDiagnosticOnFailure=*/true, emitter);
     if (!callee)
       return failure();
     ValueDest dest(EC_Destructor);
-    if (!emitter.emitIndirectCall(callee, {{owned, initExpr}}, dest, initExpr))
+    if (!emitter.emitIndirectCall(callee, CallOperands({{owned, initExpr}}),
+                                  dest, initExpr))
       return failure();
   }
 
