@@ -331,6 +331,10 @@ public:
                              ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                              ValueDest &dest, CallSyntax syntax,
                              const ExprNode *callNode);
+  CValue emitNamedMethodCall(
+      StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+      SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+      ValueDest &dest, CallSyntax syntax, const ExprNode *callNode);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
@@ -338,13 +342,18 @@ public:
   CValue emitIndirectCall(CValue callee,
                           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                           ValueDest &dest, const ExprNode *callExpr);
+  CValue
+  emitIndirectCall(CValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                   SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+                   ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
-  CValue emitCallUnchecked(CRValue callee,
-                           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                           ArrayRef<ParamDeclAttr> resultParams,
-                           ValueDest &dest, const ExprNode *callExpr);
+  CValue
+  emitCallUnchecked(CRValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+                    ArrayRef<ParamDeclAttr> resultParams, ValueDest &dest,
+                    const ExprNode *callExpr);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations. A flag can be specified
@@ -409,10 +418,16 @@ public:
   /// failure.
   ASTType emitExprType(const ExprNode *expr);
 
-  /// Emit a call to __new__ or __init__, returning an instance of the specified
-  /// type.  If `allowImplicitConversion` is true, the provided args are allowed
-  /// to implicitly convert to the expectations of the constructor signatures.
-  CValue emitConstructorCall(ASTType type, ArrayRef<ASTExprAnd<AnyValue>> args,
+  /// Emit a call __init__, returning an instance of the specified type. If
+  /// `allowImplicitConversion` is true, the provided args are allowed to
+  /// implicitly convert to the expectations of the constructor signatures.
+  CValue emitConstructorCall(
+      ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+      SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
+      const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
+      bool allowImplicitConversion = true);
+  CValue emitConstructorCall(ASTType type,
+                             ArrayRef<ASTExprAnd<AnyValue>> posOperands,
                              const ExprNode *expr, CallSyntax syntax,
                              ValueDest &dest,
                              bool allowImplicitConversion = true);

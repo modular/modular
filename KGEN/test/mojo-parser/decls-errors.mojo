@@ -315,9 +315,9 @@ fn packArgOverload(x: Int):
   pass
 
 fn badPackCalls():
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 positional argument, but 2 were specified}}
   examplePack[Int](1, 2)
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 positional arguments, but 1 was specified}}
   examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, Float32](1, (2).value)
@@ -360,21 +360,21 @@ def fn_redecl2() -> Float32: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
-# expected-note @below {{candidate not viable: callee expects 1 argument}}
+# expected-note @below {{candidate not viable: callee expects 1 positional argument}}
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
-# expected-note @below {{candidate not viable: callee expects 1 argument}}
+# expected-note @below {{candidate not viable: callee expects 1 positional argument}}
 fn overloadIntFloat32(a: Float32): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{candidate not viable: callee expects 2 positional arguments}}
 # expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 arguments}}
+# expected-note @below {{candidate not viable: callee expects 2 positional arguments}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntFloat32(a: Int, inout b: Float32): pass
 

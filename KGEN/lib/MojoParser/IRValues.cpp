@@ -255,9 +255,8 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(
-    ArrayRef<ASTExprAnd<AnyValue>> selfAndIndicesValue, ASTType elementType,
-    const ExprNode *expr)
+SubscriptDLValue::SubscriptDLValue(ArrayRef<FuncOperand> selfAndIndicesValue,
+                                   ASTType elementType, const ExprNode *expr)
     : BaseDLValue(elementType), expr(expr),
       selfAndIndicesValue(selfAndIndicesValue.begin(),
                           selfAndIndicesValue.end()) {}
@@ -276,8 +275,8 @@ void SubscriptDLValue::print(raw_ostream &os) const {
 // TupleDLValue
 //===----------------------------------------------------------------------===//
 
-TupleDLValue::TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues,
-                           ASTType tupleType, const ExprNode *expr)
+TupleDLValue::TupleDLValue(ArrayRef<FuncOperand> eltLValues, ASTType tupleType,
+                           const ExprNode *expr)
     : BaseDLValue(tupleType), expr(expr),
       eltLValues(eltLValues.begin(), eltLValues.end()) {
   for (auto &elt : eltLValues)

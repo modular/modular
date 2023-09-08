@@ -931,7 +931,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   for (CallArgument argument : call.args) {
     if (argument.kind != CallArgument::kPositional) {
       emitter.emitError(argument.getLoc(),
-                        "MLIR operators only support position arguments");
+                        "MLIR operators only support positional arguments");
       return {};
     }
     Value value = emitter.emitExprSRValue(argument.expr, EC_MLIRMagic);
@@ -1134,22 +1134,26 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   /// Emit all the operands that we'll need.
-  SmallVector<ASTExprAnd<AnyValue>> operands;
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
+  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands;
   for (CallArgument arg : args) {
-    if (arg.kind == CallArgument::kKeyword) {
-      emitter.emitError(arg.getLoc(),
-                        "keyword arguments are not supported yet");
-      return {};
-    }
-    if (arg.kind != CallArgument::kPositional) {
+    if (arg.kind == CallArgument::kStar ||
+        arg.kind == CallArgument::kStarStar) {
       emitter.emitError(arg.getLoc(),
                         "unpacked arguments are not supported yet");
       return {};
     }
-    ExprNode *expr = arg.expr;
-    operands.push_back({expr->emitIR(ValueDest::none(), emitter), expr});
-    if (!operands.back())
+    ASTExprAnd<AnyValue> exprAndVal = {
+        arg.expr->emitIR(ValueDest::none(), emitter), arg.expr};
+    if (!exprAndVal)
       return {};
+    if (arg.kind == CallArgument::kPositional) {
+      posOperands.emplace_back(std::move(exprAndVal));
+    } else {
+      assert(arg.kind == CallArgument::kKeyword);
+      // TODO: catch duplicates
+      kwOperands.try_emplace(arg.name, std::move(exprAndVal));
+    }
   }
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
@@ -1160,20 +1164,19 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << calledType << callee->getRange();
       return {};
     }
-
-    return emitter.emitConstructorCall(calledType, operands, this,
-                                       CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(calledType, posOperands, kwOperands,
+                                       this, CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfORValue()) {
     overloads->expr = this;
-    return overloads->emitCall(operands, dest, emitter);
+    return overloads->emitCall(posOperands, kwOperands, dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   auto crVal = calleeVal.getIfCValue();
-  return emitter.emitIndirectCall(crVal, operands, dest, this);
+  return emitter.emitIndirectCall(crVal, posOperands, kwOperands, dest, this);
 }
 
 AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
