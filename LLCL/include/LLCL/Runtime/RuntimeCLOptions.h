@@ -12,7 +12,9 @@
 #ifndef LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 #define LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 
+#include "LLCL/Support/GenericUniquePtrSet.h"
 #include "LLCL/Support/Profiling.h"
+#include "LLCL/Support/RCRef.h"
 #include "Support/CommandLine.h"
 #include "llvm/Support/Threading.h"
 #include <chrono>
@@ -141,7 +143,9 @@ public:
   }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(StringRef profileName = {}) const;
+  std::unique_ptr<Runtime> createRuntime(
+      StringRef profileName = {},
+      RCRef<SharedGenericUniquePtrSet> globalContextObjects = {}) const;
 };
 
 /// Contains a number of command-line options that are shared among binaries
@@ -240,7 +244,8 @@ public:
   }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime() const;
+  std::unique_ptr<Runtime> createRuntime(
+      RCRef<SharedGenericUniquePtrSet> globalContextObjects = {}) const;
 
   //===--------------------------------------------------------------------===//
   // Behavior indicating what to do when a test fails.

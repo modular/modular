@@ -9,8 +9,9 @@
 
 using namespace M::LLCL;
 
-std::unique_ptr<Runtime>
-RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
+std::unique_ptr<Runtime> RuntimeWorkQueueCLOptions::createRuntime(
+    StringRef profileName,
+    RCRef<SharedGenericUniquePtrSet> globalContextObjects) const {
   // Create the allocator based on command line settings.
   std::unique_ptr<Allocator> allocator;
   switch (allocatorType) {
@@ -54,9 +55,12 @@ RuntimeWorkQueueCLOptions::createRuntime(StringRef profileName) const {
     break;
   }
   return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
-                                   profileName);
+                                   profileName,
+                                   std::move(globalContextObjects));
 }
 
-std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime() const {
-  return RuntimeWorkQueueCLOptions::createRuntime(getProfileFilename());
+std::unique_ptr<Runtime> RuntimeCLOptions::createRuntime(
+    RCRef<SharedGenericUniquePtrSet> globalContextObjects) const {
+  return RuntimeWorkQueueCLOptions::createRuntime(
+      getProfileFilename(), std::move(globalContextObjects));
 }

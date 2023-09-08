@@ -21,7 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "LLCL/Support/GenericUniquePtr.h"
+#include "LLCL/Support/GenericUniquePtrSet.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -37,14 +37,20 @@ class WorkQueue;
 
 /// This represents one instance of the LLCL runtime, which can have multiple
 /// threads, a private heap for data, a way of reporting errors, and other
-/// global context objects. This is also the natural unit for task cancellation.
+/// context objects. This is also the natural unit for task cancellation.
 class Runtime final {
 public:
-  /// Construct runtime with allocator and workQueue. If profileFilename is
-  /// non-empty then time profiling will be activated and the profile JSON
-  /// will be written to that file.
+  /// Construct runtime with allocator and workQueue.
+  ///
+  /// If profileFilename is non-empty then time profiling will be activated
+  /// and the profile JSON will be written to files with that prefix.
+  ///
+  /// If globalContextObjects is non-null then its objects may be retrieved
+  /// via the context object API of this runtime. However the set will never
+  /// be mutated.
   Runtime(std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {});
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
+          RCRef<SharedGenericUniquePtrSet> globalContextObjects = {});
   ~Runtime();
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.
@@ -100,94 +106,64 @@ public:
   }
 
   //===--------------------------------------------------------------------===//
-  // Contexts
+  // Context Objects
   //===--------------------------------------------------------------------===//
 
-  /// Transfers ptr into runtime as a new context object of type T. The runtime
-  /// can hold at most one context object per T. Thread safe, though the caller
-  /// is responsible for thread safe access to the context object itself.
+  /// Transfers ptr into the local context object set.
   template <typename T>
   void setContext(std::unique_ptr<T> ptr) {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    GenericUniquePtr genericPtr;
-    genericPtr.reset(std::move(ptr));
-    auto denseIndex = genericPtr.getTypeID().getDenseIndex();
-    assert(!contexts.contains(denseIndex) &&
-           "Runtime already holds context of type");
-    contexts.insert({denseIndex, std::move(genericPtr)});
+    // We don't allow 'overriding' of the global by the local.
+    assert(!globalContextObjects || globalContextObjects->get<T>() == nullptr &&
+                                        "set already holds object of type");
+    localContextObjects.set<T>(std::move(ptr));
   }
 
-  /// Emplaces a new global context object of type T into the runtime's set of
-  /// contexts and returns a reference to it. The runtime can hold at
-  /// most one context object per T. The returned reference is stable for the
-  /// life of the runtime. Thread safe, though the caller is responsible for
-  /// thread safe access to the context object itself.
+  /// Emplaces a new object of type T into the local context object set and
+  /// returns a reference to it.
   template <typename T, typename... Args>
   T &emplaceContext(Args &&...args) {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
-    auto denseIndex = genericPtr.getTypeID().getDenseIndex();
-    assert(!contexts.contains(denseIndex) &&
-           "Runtime already holds context of type");
-    T &result = *genericPtr.template get<T>();
-    contexts.insert({denseIndex, std::move(genericPtr)});
-    return result;
+    // We don't allow 'overriding' of the global by the local.
+    assert(!globalContextObjects || globalContextObjects->get<T>() == nullptr &&
+                                        "set already holds object of type");
+    return localContextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
   }
 
-  /// Returns a reference to the global context object of type T held by the
-  /// runtime if it exists, or otherwise it emplaces a new global context
-  /// object and returns a reference to it. The returned reference is stable for
-  /// the life of the runtime. Thread safe, though the caller is responsible for
-  /// thread safe access to the context object itself.
+  /// Returns a reference to the object of type T held by the local or global
+  /// context object sets. If neither contain such an object, emplaces a new
+  /// object into the local context object set and returns a reference to it.
   template <typename T, typename... Args>
   T &emplaceContextIfMissing(Args &&...args) {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    auto denseIndex = TypeID::get<T>().getDenseIndex();
-    auto itr = contexts.find(denseIndex);
-    if (itr == contexts.end()) {
-      auto genericPtr = makeGenericUniquePtr<T>(std::forward<Args>(args)...);
-      T &result = *genericPtr.template get<T>();
-      contexts.insert({denseIndex, std::move(genericPtr)});
-      return result;
-    } else {
-      return *(itr->second.template get<T>());
+    if (globalContextObjects) {
+      if (auto *ptr = globalContextObjects->get<T>())
+        return *ptr;
     }
+    return localContextObjects.emplaceIfMissing<T, Args...>(
+        std::forward<Args>(args)...);
   }
 
-  /// Returns a pointer to the global context object of type T held by the
-  /// runtime, or nullptr if no such object is held. Thread safe, though the
-  /// caller is responsible for thread safe access to the context object itself.
-  template <typename T>
-  T *getContext() {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    auto denseIndex = TypeID::get<T>().getDenseIndex();
-    auto itr = contexts.find(denseIndex);
-    if (itr == contexts.end())
-      return nullptr;
-    return itr->second.template get<T>();
-  }
-
-  /// If the runtime does not already hold a global context object of type T,
-  /// calls the creator function to create one and installs it. Returns either
-  /// the existing or freshly created object. Returns any error the creator
-  /// function returns. Thread safe, though the caller is responsible for
-  /// thread safe access to the context object itself.
+  /// Returns a pointer to the object of type T held by the local or global
+  /// context object sets. If their contain such an object, calls the creator
+  /// function to create one and install it in the local context object set.
+  /// Returns any error the creator function returns.
   template <typename T>
   ErrorOr<T *> createContextIfMissing(
       llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    auto denseIndex = TypeID::get<T>().getDenseIndex();
-    auto itr = contexts.find(denseIndex);
-    if (itr != contexts.end())
-      return itr->second.template get<T>();
-    ErrorOr<std::unique_ptr<T>> errOr = creator();
-    if (errOr.isError())
-      return errOr.takeError();
-    T *result = errOr->get();
-    GenericUniquePtr genericPtr;
-    genericPtr.reset(std::move(*errOr));
-    contexts.insert({denseIndex, std::move(genericPtr)});
-    return result;
+    if (globalContextObjects) {
+      if (auto *ptr = globalContextObjects->get<T>())
+        return ptr;
+    }
+    return localContextObjects.createIfMissing<T>(std::move(creator));
+  }
+
+  /// Returns a pointer to the context object of type T held by the local or
+  /// global context object sets, or nullptr if no such object exists.
+  template <typename T>
+  T *getContext() {
+    if (globalContextObjects) {
+      if (auto *ptr = globalContextObjects->get<T>())
+        return ptr;
+    }
+    return localContextObjects.get<T>();
   }
 
 private:
@@ -225,14 +201,11 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
-  /// Protects contexts. Recursive so that the creator in
-  /// createContextIfMissing may also add context objects.
-  std::recursive_mutex mu;
+  /// Reference to a set of 'global context objects' which may be accessed.
+  RCRef<SharedGenericUniquePtrSet> globalContextObjects;
 
-  /// A map from globally unique type identifiers TypeID::get<T>() (using
-  /// their 'dense index' form) to GenericUniquePtr holding the global context
-  /// object of type T.
-  DenseMap<size_t, GenericUniquePtr> contexts;
+  /// Set of 'local context objects' owned by this runtime.
+  GenericUniquePtrSet localContextObjects;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
   friend void checkKnownCallingThread(const Runtime &runtime);
