@@ -595,6 +595,25 @@ fn test_truncated_last_dim():
     )
 
 
+# CHECK-LABEL: == test_truncated_first_and_last_dim
+fn test_truncated_first_and_last_dim():
+    print("== test_truncated_first_and_last_dim")
+
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (0, 0)
+    # CHECK-NEXT: New strides: (3, 2)
+
+    # print(torch.arange(0, 9).reshape(3,3)[3:56:1, 60:234567:2])
+    test_slice[DType.float32, 9, 2, DimList.create_unknown[2]()](
+        DimList(3, 3),
+        Index(3, 60),
+        Index(56, 234567),
+        Index(1, 2),
+        False,
+    )
+
+
 # CHECK-LABEL: == test_truncated_last_dim_reverse
 fn test_truncated_last_dim_reverse():
     print("== test_truncated_last_dim_reverse")
@@ -615,6 +634,25 @@ fn test_truncated_last_dim_reverse():
     test_slice[DType.float32, 9, 2, DimList.create_unknown[2]()](
         DimList(3, 3),
         Index(323534, 435432),
+        Index(-242, -3242),
+        Index(-1, -2),
+        False,
+    )
+
+
+# CHECK-LABEL: == test_truncated_first_and_last_dim_reverse
+fn test_truncated_first_and_last_dim_reverse():
+    print("== test_truncated_first_and_last_dim_reverse")
+
+    # CHECK: In shape: (3, 3)
+    # CHECK-NEXT: In strides: (3, 1)
+    # CHECK-NEXT: New shape: (0, 0)
+    # CHECK-NEXT: New strides: (-3, -2)
+
+    # print(np.arange(0, 9).reshape(3,3)[-30:-242:-1, -40:-3242:-2])
+    test_slice[DType.float32, 9, 2, DimList.create_unknown[2]()](
+        DimList(3, 3),
+        Index(-30, -40),
         Index(-242, -3242),
         Index(-1, -2),
         False,
@@ -766,7 +804,9 @@ fn main():
     test_slice_negative_step_4()
 
     test_truncated_last_dim()
+    test_truncated_first_and_last_dim()
     test_truncated_last_dim_reverse()
+    test_truncated_first_and_last_dim_reverse()
     test_last_dim_edge()
     test_last_dim_edge_2()
     test_last_dim_edge_3()

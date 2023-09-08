@@ -43,25 +43,29 @@ fn slice_as_view[
         var start = starts[i].to_int()
         var stop = ends[i].to_int()
         let step = steps[i].to_int()
+        let dim_i = tensor.dim(i)
+        debug_assert(step != 0, "step must be nonzero")
 
+        # Normalize the start/stop indices
         if start < 0:
-            start = start + tensor.dim(i)
-
+            start = start + dim_i
         if stop < 0:
-            stop = stop + tensor.dim(i)
+            stop = stop + dim_i
+
+        # Compute the min/max for clamping start/end
+        let idx_min = 0 if step > 0 else -1
+        let idx_max = dim_i if step > 0 else dim_i - 1
 
         # Allow start and stop to truncate like numpy and torch allow.
-        if start < 0:
-            start = 0
-        elif start >= tensor.dim(i):
-            start = tensor.dim(i) - 1
+        if start < idx_min:
+            start = idx_min
+        elif start > idx_max:
+            start = idx_max
 
-        if stop < 0:
-            stop = -1
-        elif stop >= tensor.dim(i) and step > 0:
-            stop = tensor.dim(i)
-        elif stop >= tensor.dim(i) and step < 0:
-            stop = tensor.dim(i) - 1
+        if stop < idx_min:
+            stop = idx_min
+        elif stop > idx_max:
+            stop = idx_max
 
         let new_offset = start * tensor.stride(i)
         new_data = new_data.offset(new_offset)
