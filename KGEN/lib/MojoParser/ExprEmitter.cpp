@@ -998,8 +998,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           !canZeroCostConvertSignature(valueSig, requiredSig)) {
         // We disable implicit conversions to prevent converting T -> S -> U in
         // one step, and to avoid infinite conversion cycles.
-        return emitConstructorCall(requiredType, {{cValue, expr}}, expr,
-                                   CallSyntax::kImplicitConvert, dest,
+        return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
+                                   expr, CallSyntax::kImplicitConvert, dest,
                                    /*allowImplicitConversion=*/false);
       }
 
@@ -1122,9 +1122,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`
   // or
   // `(inout self, owned existing: Self)`.
-  ASTExprAnd<AnyValue> operands[] = {ASTExprAnd<AnyValue>{destPtr, value.expr},
-                                     value};
-  if (!emitNamedMethodCall("__moveinit__", operands,
+  SmallVector<ASTExprAnd<AnyValue>> posOperands{
+      ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
+  if (!emitNamedMethodCall("__moveinit__", CallOperands(posOperands),
                            ValueDest::none(/*these return None*/),
                            CallSyntax::kImplicitConvert, value.expr))
     return {};
@@ -1180,7 +1180,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     }
 
     // Register passable __copyinit__ has signature `(self)->Self`.
-    return emitNamedMethodCall("__copyinit__", {value}, dest,
+    return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
                                CallSyntax::kImplicitConvert, value.expr);
 
   case StructDeclOp::RP_MemoryOnly:
@@ -1192,9 +1192,6 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     if (auto pValue = value.ir.getIfPValue())
       return emitPValueToSLValue({pValue, value.expr}, destBuffer,
                                  dest.context);
-
-    ASTExprAnd<AnyValue> operands[] = {
-        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
 
     if (!valueType.isCopyable(exprLoc, shared)) {
       if (valueType.isMovableFrom(value, shared)) {
@@ -1210,7 +1207,9 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       return {};
     }
 
-    if (!emitNamedMethodCall("__copyinit__", operands,
+    SmallVector<ASTExprAnd<AnyValue>> posOperands{
+        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
+    if (!emitNamedMethodCall("__copyinit__", CallOperands(posOperands),
                              ValueDest::none(/*these return None*/),
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
@@ -1274,12 +1273,12 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // If this is a memory-only type, then we'll pass a self argument with the
   // destination when invoking the method, use a temporary so we can
   // conveniently type check this.
-  SmallVector<ASTExprAnd<AnyValue>> args;
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
   if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
     auto attr = UnknownAttr::get(PointerType::get(requiredType));
-    args.push_back({PValue(attr), value.expr});
+    posOperands.push_back({PValue(attr), value.expr});
   }
-  args.push_back(value);
+  posOperands.push_back(value);
 
   // If we have at least one candidate, we check to see if any of them can
   // work. We disable implicit conversions though, to prevent converting
@@ -1288,7 +1287,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // This needs to call filterOverloadSet manually because we cannot allow
   // implicit conversions here.
   PValue calleeFn =
-      callee.filterOverloadSet(args,
+      callee.filterOverloadSet(CallOperands(posOperands),
                                /*allowImplicitConversions=*/false,
                                /*emitDiagnosticOnFailure=*/false, *this);
   return !calleeFn.isNull();
@@ -1318,14 +1317,14 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
                    [&]() { /*no error*/ })) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
-    value.ir = emitNamedMethodCall("__bool__", {{value.ir, value.expr}},
-                                   ValueDest::none(),
-                                   CallSyntax::kImplicitConvert, value.expr);
+    value.ir = emitNamedMethodCall(
+        "__bool__", CallOperands({{value.ir, value.expr}}), ValueDest::none(),
+        CallSyntax::kImplicitConvert, value.expr);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
   CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", {{value.ir, value.expr}}, ValueDest::none(),
+      "__mlir_i1__", CallOperands({{value.ir, value.expr}}), ValueDest::none(),
       CallSyntax::kImplicitConvert, value.expr);
 
   return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
@@ -1464,11 +1463,11 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
 /// Emit a call __init__, returning an instance of the specified
 /// type.  If `allowImplicitConversion` is true, the provided args are allowed
 /// to implicitly convert to the expectations of the constructor signatures.
-CValue ExprEmitter::emitConstructorCall(
-    ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-    const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
-    bool allowImplicitConversion) {
+CValue ExprEmitter::emitConstructorCall(ASTType type,
+                                        const CallOperands &callOperands,
+                                        const ExprNode *expr, CallSyntax syntax,
+                                        ValueDest &dest,
+                                        bool allowImplicitConversion) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType())
     return {};
@@ -1479,11 +1478,12 @@ CValue ExprEmitter::emitConstructorCall(
 
   // Init for memory-only types get their self argument implicitly initialized
   // and passed in as the first argument.
-  ArrayRef<ASTExprAnd<AnyValue>> args = posOperands;
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  CallOperands operands = callOperands;
   bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
-  SmallVector<ASTExprAnd<AnyValue>> argsWithSelf;
+  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
   if (isMemoryOnly) {
-    argsWithSelf.reserve(args.size() + 1);
+    posOperandsWithSelf.reserve(posOperands.size() + 1);
 
     // Unfortunately, we can't just use 'type' or the dest LValue as the buffer
     // to initialize, because the concrete result type might need parameters to
@@ -1491,15 +1491,15 @@ CValue ExprEmitter::emitConstructorCall(
     // by setting up a placeholder with the type we know so far, and use that to
     // filter the overload set.
     auto attr = UnknownAttr::get(PointerType::get(type));
-    argsWithSelf.push_back({PValue(attr), expr});
-    argsWithSelf.append(args.begin(), args.end());
-    args = argsWithSelf;
+    posOperandsWithSelf.push_back({PValue(attr), expr});
+    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
+    operands.posOperands = posOperandsWithSelf;
   }
 
   // Try to resolve the overload set to exactly one candidate, but don't emit an
   // error on failure (we typically want to customize the error).
   PValue calleeFn =
-      callee.filterOverloadSet(args, kwOperands, allowImplicitConversion,
+      callee.filterOverloadSet(operands, allowImplicitConversion,
                                /*emitDiagnosticOnFailure=*/false, *this);
   if (!calleeFn) {
     // If we failed to resolve the set, then try to emit a tailored error.  If
@@ -1566,7 +1566,7 @@ CValue ExprEmitter::emitConstructorCall(
 
     // Otherwise, do it again to emit a generic overload set error.
     calleeFn =
-        callee.filterOverloadSet(args, kwOperands, allowImplicitConversion,
+        callee.filterOverloadSet(operands, allowImplicitConversion,
                                  /*emitDiagnosticOnFailure=*/true, *this);
     assert(!calleeFn && "This should fail if it failed before");
     return {};
@@ -1576,10 +1576,10 @@ CValue ExprEmitter::emitConstructorCall(
   // do it. Register-passable and parameter constructor calls do not require
   // result slot allocation.
   if (!isMemoryOnly)
-    return emitCallUnchecked(calleeFn, args, kwOperands, {}, dest, expr);
+    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
   if (!builder) {
-    args = args.drop_front();
-    return emitCallUnchecked(calleeFn, args, kwOperands, {}, dest, expr);
+    operands = callOperands;
+    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
   }
 
   // We need to invoke memory-only constructors specially since the buffer is
@@ -1592,12 +1592,12 @@ CValue ExprEmitter::emitConstructorCall(
   // actual destination lvalue to use.
   SLValue destSLValue =
       dest.getSLValueForResult(expr->getLoc(), firstArgRVType, *this);
-  argsWithSelf[0].ir = destSLValue;
+  posOperandsWithSelf[0].ir = destSLValue;
   if (!destSLValue)
     return {};
 
   // Emit the call, but not into 'dest', typically init will return None.
-  CValue result = emitIndirectCall(calleeFn, args, ValueDest::none(), expr);
+  CValue result = emitIndirectCall(calleeFn, operands, ValueDest::none(), expr);
   if (!result)
     return {};
 
@@ -1605,15 +1605,6 @@ CValue ExprEmitter::emitConstructorCall(
   // if the expected type and the actual type differ.  This can happen when the
   // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
   return emitCResult(MRValue(destSLValue), expr, dest);
-}
-
-CValue ExprEmitter::emitConstructorCall(
-    ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
-    bool allowImplicitConversion) {
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
-  return emitConstructorCall(type, posOperands, kwOperands, expr, syntax, dest,
-                             allowImplicitConversion);
 }
 
 /// Emit the specified expression as a condition, converting it to an MLIR I1
@@ -1635,8 +1626,8 @@ SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
   assert(numberValue.getType().isa<KGEN::DeclRefType>() &&
          "number value must be a struct");
   AnyValue index = emitNamedMethodCall(
-      "__mlir_index__", {{SRValue(numberValue), source}}, ValueDest::none(),
-      CallSyntax::kImplicitConvert, source);
+      "__mlir_index__", CallOperands({{SRValue(numberValue), source}}),
+      ValueDest::none(), CallSyntax::kImplicitConvert, source);
   if (!index)
     return {};
   auto popscalar = builder->create<POP::CastFromBuiltinOp>(
@@ -1711,8 +1702,9 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
-  auto result = emitter.emitNamedMethodCall(methodName, selfAndIndicesValue,
-                                            dest, CallSyntax::kSubscript, expr);
+  auto result =
+      emitter.emitNamedMethodCall(methodName, CallOperands(selfAndIndicesValue),
+                                  dest, CallSyntax::kSubscript, expr);
   // TODO: The result could be another LValue in the future.
   assert(!result || result.getIfRValue() || result.getIfBValue());
   return result;
@@ -1722,18 +1714,18 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__setitem__") : StringRef("__setattr__");
-  SmallVector<ASTExprAnd<AnyValue>> operands(selfAndIndicesValue.begin(),
-                                             selfAndIndicesValue.end());
-  operands.push_back(value);
-  emitter.emitNamedMethodCall(methodName, operands, ValueDest::none(),
-                              CallSyntax::kSubscript, expr);
+  SmallVector<ASTExprAnd<AnyValue>> posOperands(selfAndIndicesValue.begin(),
+                                                selfAndIndicesValue.end());
+  posOperands.push_back(value);
+  emitter.emitNamedMethodCall(methodName, CallOperands(posOperands),
+                              ValueDest::none(), CallSyntax::kSubscript, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
 CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the tuple type constructor as an implicit conversion.
-  return emitter.emitConstructorCall(elementType, eltLValues, expr,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(elementType, CallOperands(eltLValues),
+                                     expr, CallSyntax::kImplicitConvert, dest);
 }
 
 /// Storing to a tuple LValue extracts the elements out of the provided value
@@ -1817,8 +1809,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
-    if (!getDecl.emitCall({{value.ir, value.expr}}, kwOperands, eltDest,
+    if (!getDecl.emitCall(CallOperands({{value.ir, value.expr}}), eltDest,
                           emitter)) {
       eltDest.resetForError();
       return;

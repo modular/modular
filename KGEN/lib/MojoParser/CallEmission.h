@@ -132,6 +132,26 @@ enum class CallSyntax : uint8_t {
   kTupleGetItem,     //< Call to getitem in a tuple assignment.
 };
 
+// Struct to that carries both positional and keyword operands for a call. This
+// does not own any values, only references and pointers to their containers.
+struct CallOperands {
+  CallOperands() : posOperands({}){};
+  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands)
+      : posOperands(posOperands){};
+  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+               const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands)
+      : posOperands(posOperands), kwOperands(kwOperands) {}
+
+  /// Return if there are any keyword operands specified.
+  bool hasKwOperands() const { return kwOperands && !kwOperands->empty(); }
+
+  /// The values passed as positional operands.
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands;
+
+  /// The values passed as keyword operands.
+  const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands = nullptr;
+};
+
 /// This class represents an unresolved overload set with partially bound
 /// callees, e.g. "foo" or "a.foo" where "foo" is an overloaded declaration or
 /// an incompletely bound function (e.g. one with result parameters).  This is
@@ -182,7 +202,7 @@ public:
   /// concrete operand set. If successful, this provides a non-null PValue for a
   /// single callee.
   static PValue lookup(ASTType type, StringRef methodName,
-                       ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                       const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
                        ExprEmitter &emitter,
                        std::function<void()> errorHandler);
@@ -201,15 +221,10 @@ public:
   /// candidate that works with the specified parameter bindings and provided
   /// arguments.  If so, return the single entry that works.  If not, generate a
   /// diagnostic (when `emitDiagnosticOnFailure` is true) and return null.
-  PValue filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+  PValue filterOverloadSet(const CallOperands &operands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
-  PValue
-  filterOverloadSet(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-                    bool allowImplicitConversions, bool emitDiagnosticOnFailure,
-                    ExprEmitter &emitter) const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
@@ -231,9 +246,8 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-                  ValueDest &dest, ExprEmitter &emitter);
+  CValue emitCall(const CallOperands &callOperands, ValueDest &dest,
+                  ExprEmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a

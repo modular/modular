@@ -23,6 +23,7 @@ enum class SpecialFunctionKind : uint8_t;
 enum class CallSyntax : uint8_t;
 class ExprEmitter;
 class VarLetDeclOp;
+struct CallOperands;
 
 /// This enum is used to pass down a bit of context information to make
 /// diagnostics more specific.  Each comment gives an example where the
@@ -229,9 +230,8 @@ public:
   /// Create an ExprEmitter for a dynamic context with a builder.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, OpBuilder builder,
               std::optional<OpBuilder> varDeclCursor = {})
-      : SharedStateUser(shared), builder(std::move(builder)),
-        paramContext(EC_Unknown), declScope(declScope),
-        varDeclCursor(varDeclCursor) {}
+      : SharedStateUser(shared), builder(builder), paramContext(EC_Unknown),
+        declScope(declScope), varDeclCursor(varDeclCursor) {}
 
   /// Create an ExprEmitter for a parameter context.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext,
@@ -318,42 +318,30 @@ public:
   //===--------------------------------------------------------------------===//
   // Function Calls
 
-  /// This helper emits a named method call with the provided `posOperands`,
-  /// where the first operand is the receiver of the call. This emits an error
-  /// if the call is invalid and returns null.  The `posOperands` list may not
-  /// be empty.
+  /// This helper emits a named method call with the provided `operands`,
+  /// where the first positional operand is the receiver of the call. This emits
+  /// an error if the call is invalid and returns null. The `operands` must
+  /// contain at least one positional operand.
   ///
   /// `callNode` is the call like expression (e.g. a CallNode, binary operator,
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitNamedMethodCall(StringRef methodName,
-                             ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+  CValue emitNamedMethodCall(StringRef methodName, const CallOperands &operands,
                              ValueDest &dest, CallSyntax syntax,
                              const ExprNode *callNode);
-  CValue emitNamedMethodCall(
-      StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-      SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-      ValueDest &dest, CallSyntax syntax, const ExprNode *callNode);
 
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
-  CValue emitIndirectCall(CValue callee,
-                          ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+  CValue emitIndirectCall(CValue callee, const CallOperands &operands,
                           ValueDest &dest, const ExprNode *callExpr);
-  CValue
-  emitIndirectCall(CValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                   SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-                   ValueDest &dest, const ExprNode *callExpr);
 
   /// Emit call to a resolved and /already type checked/ callee. This does not,
   /// check for compatibility and isn't prepared to emit errors.
-  CValue
-  emitCallUnchecked(CRValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-                    ArrayRef<ParamDeclAttr> resultParams, ValueDest &dest,
-                    const ExprNode *callExpr);
+  CValue emitCallUnchecked(CRValue callee, const CallOperands &operands,
+                           ArrayRef<ParamDeclAttr> resultParams,
+                           ValueDest &dest, const ExprNode *callExpr);
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations. A flag can be specified
@@ -421,13 +409,7 @@ public:
   /// Emit a call __init__, returning an instance of the specified type. If
   /// `allowImplicitConversion` is true, the provided args are allowed to
   /// implicitly convert to the expectations of the constructor signatures.
-  CValue emitConstructorCall(
-      ASTType type, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-      SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-      const ExprNode *expr, CallSyntax syntax, ValueDest &dest,
-      bool allowImplicitConversion = true);
-  CValue emitConstructorCall(ASTType type,
-                             ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+  CValue emitConstructorCall(ASTType type, const CallOperands &callOperands,
                              const ExprNode *expr, CallSyntax syntax,
                              ValueDest &dest,
                              bool allowImplicitConversion = true);
@@ -469,7 +451,7 @@ public:
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                const ASTDecl &funcDecl);
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                               const FuncOp funcDecl);
+                               FuncOp funcDecl);
 
   /// Given a AliasDeclOp, return the value that should be used in a reference
   /// to it.  This currently fully substitutes members unless they are in a

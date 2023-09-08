@@ -280,8 +280,9 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Int. Int must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinIntType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(attr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -293,8 +294,9 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Double.
   ASTType type =
       emitter.shared.getBuiltinDoubleType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(attr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -306,8 +308,9 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
   ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, {{AnyValue(boolAttr), this}}, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(boolAttr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
@@ -363,8 +366,9 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
   // Convert this to an instance of StringLiteral.
   ASTType type =
       emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
-                                     CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(attr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 /// Return true if this is a positional argument with a string literal
@@ -841,9 +845,9 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto attr =
         StringAttr::get(attrSpelling, StringType::get(emitter.getContext()));
     ValueDest keyDest(EC_AttributeRefBase);
-    AnyValue key =
-        emitter.emitConstructorCall(type, {{AnyValue(attr), this}}, this,
-                                    CallSyntax::kImplicitConvert, keyDest);
+    AnyValue key = emitter.emitConstructorCall(
+        type, CallOperands({{AnyValue(attr), this}}), this,
+        CallSyntax::kImplicitConvert, keyDest);
     if (!key)
       return {};
 
@@ -1163,6 +1167,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       }
     }
   }
+  CallOperands operands(posOperands, &kwOperands);
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
   // invocation of the initializer for the type.
@@ -1172,34 +1177,34 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << calledType << callee->getRange();
       return {};
     }
-    return emitter.emitConstructorCall(calledType, posOperands, kwOperands,
-                                       this, CallSyntax::kTypeCall, dest);
+    return emitter.emitConstructorCall(calledType, operands, this,
+                                       CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfORValue()) {
     overloads->expr = this;
-    return overloads->emitCall(posOperands, kwOperands, dest, emitter);
+    return overloads->emitCall(operands, dest, emitter);
   }
 
   // Otherwise, we must have a concrete RValue, emit an indirect call.
   auto crVal = calleeVal.getIfCValue();
-  return emitter.emitIndirectCall(crVal, posOperands, kwOperands, dest, this);
+  return emitter.emitIndirectCall(crVal, operands, dest, this);
 }
 
 AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit the slice index expressions as values. Any one of them could be null
   // if they were not present. Emit them as `None` in that case.
-  SmallVector<ASTExprAnd<AnyValue>> ctorArgs;
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
   auto emitOrNone = [&](ExprNode *const expr, llvm::SMLoc loc) -> ParseResult {
     if (!expr) {
-      ctorArgs.push_back({NoneAttr::get(emitter.getContext()), this});
+      posOperands.push_back({NoneAttr::get(emitter.getContext()), this});
       return success();
     }
     AnyValue value = emitter.emitExpr(expr, EC_SliceIndex);
     if (!value)
       return failure();
-    ctorArgs.push_back({value, expr});
+    posOperands.push_back({value, expr});
     return success();
   };
 
@@ -1212,7 +1217,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin slice type and emit a constructor call.
   ASTType type =
       emitter.shared.getBuiltinSliceType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, ctorArgs, this,
+  return emitter.emitConstructorCall(type, CallOperands(posOperands), this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1435,15 +1440,15 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
     ValueDest indexDest(EC_Subscript);
     const ExprNode *indexExpr = indexValues.back().expr;
-    CValue index =
-        emitter.emitNamedMethodCall("__index__", indexValues.back(), indexDest,
-                                    CallSyntax::kMethodCall, indexExpr);
+    CValue index = emitter.emitNamedMethodCall(
+        "__index__", CallOperands(indexValues.back()), indexDest,
+        CallSyntax::kMethodCall, indexExpr);
     if (!index)
       return {};
     // Convert the index value to an MLIR index type.
     indexDest = {EC_Subscript};
     CValue mlirIndex = emitter.emitNamedMethodCall(
-        "__mlir_index__", {{index, indexExpr}}, indexDest,
+        "__mlir_index__", CallOperands({{index, indexExpr}}), indexDest,
         CallSyntax::kMethodCall, indexExpr);
     if (!mlirIndex)
       return {};
@@ -1626,7 +1631,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(type, elements, node,
+  return emitter.emitConstructorCall(type, CallOperands(elements), node,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1864,11 +1869,12 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   // Check to see if we have a forward version of this function on the primary
   // receiver.
   if (auto lhsCV = lhs.ir.getIfCValue()) {
+    CallOperands operands(argValues);
     if (PValue callee = OverloadSet::lookup(
-            lhsCV.getRValueType(), specialFnInfo.name, argValues, callExpr,
+            lhsCV.getRValueType(), specialFnInfo.name, operands, callExpr,
             CallSyntax::kOperator, emitter,
             /*no error*/ {}))
-      return emitter.emitIndirectCall(callee, argValues, dest, callExpr);
+      return emitter.emitIndirectCall(callee, operands, dest, callExpr);
   }
 
   // Check to see if we have the reverse version of this operator.
@@ -1877,11 +1883,12 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     // Swap the operand order.
     std::swap(argValues[0], argValues[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
+      CallOperands operands(argValues);
       if (PValue callee = OverloadSet::lookup(
-              rhsCV.getRValueType(), reversedFnInfo.name, argValues, callExpr,
+              rhsCV.getRValueType(), reversedFnInfo.name, operands, callExpr,
               CallSyntax::kReversedOperator, emitter,
               /*no error*/ {}))
-        return emitter.emitIndirectCall(callee, argValues, dest, callExpr);
+        return emitter.emitIndirectCall(callee, operands, dest, callExpr);
     }
 
     // Swap these back so we emit the right error.
@@ -1889,7 +1896,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
+  return emitter.emitNamedMethodCall(specialFnInfo.name,
+                                     CallOperands(argValues), dest,
                                      CallSyntax::kOperator, callExpr);
 }
 
@@ -2264,9 +2272,9 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   Kind kindToEmit = kind;
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
-    argValue.ir =
-        emitter.emitNamedMethodCall("__bool__", argValue, ValueDest::none(),
-                                    CallSyntax::kImplicitConvert, this);
+    argValue.ir = emitter.emitNamedMethodCall(
+        "__bool__", CallOperands(argValue), ValueDest::none(),
+        CallSyntax::kImplicitConvert, this);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -2311,8 +2319,8 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   assert(specialFnInfo.kind != SpecialFunctionKind::kNormal &&
          "Unary operators are implemented via special methods");
 
-  return emitter.emitNamedMethodCall(specialFnInfo.name, argValue, dest,
-                                     CallSyntax::kOperator, this);
+  return emitter.emitNamedMethodCall(specialFnInfo.name, CallOperands(argValue),
+                                     dest, CallSyntax::kOperator, this);
 }
 
 AnyValue OwnershipOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

@@ -624,11 +624,11 @@ struct OverloadFitness {
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
   /// `operands`.
-  static OverloadFitness
-  evaluate(SignatureType signature, const OverloadSet &callable,
-           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-           SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-           bool allowImplicitConversions, ExprEmitter &emitter);
+  static OverloadFitness evaluate(SignatureType signature,
+                                  const OverloadSet &callable,
+                                  const CallOperands &callOperands,
+                                  bool allowImplicitConversions,
+                                  ExprEmitter &emitter);
 
   /// Add explanation for why this candidate doesn't work to the specified
   /// diagnostic.
@@ -640,14 +640,15 @@ struct OverloadFitness {
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `posOperands`.
-OverloadFitness OverloadFitness::evaluate(
-    SignatureType signature, const OverloadSet &callable,
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-    bool allowImplicitConversions, ExprEmitter &emitter) {
+OverloadFitness OverloadFitness::evaluate(SignatureType signature,
+                                          const OverloadSet &callable,
+                                          const CallOperands &callOperands,
+                                          bool allowImplicitConversions,
+                                          ExprEmitter &emitter) {
   // TODO: normalize keyword/positional args based on signature info.
-  assert(kwOperands.empty() && "keyword arguments not yet supported");
-  ArrayRef<ASTExprAnd<AnyValue>> operands = posOperands;
+  assert(!callOperands.hasKwOperands() &&
+         "keyword arguments not yet supported");
+  ArrayRef<ASTExprAnd<AnyValue>> operands = callOperands.posOperands;
 
   SMLoc callLoc = callable.expr->getLoc();
 
@@ -1079,13 +1080,12 @@ void OverloadFitness::diagnose(SignatureType signature,
   }
 }
 
-PValue OverloadSet::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-    bool allowImplicitConversions, bool emitDiagnosticOnFailure,
-    ExprEmitter &emitter) const {
-  if (!kwOperands.empty()) {
-    emitter.emitError(kwOperands.begin()->second.expr->getLoc(),
+PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
+                                      bool allowImplicitConversions,
+                                      bool emitDiagnosticOnFailure,
+                                      ExprEmitter &emitter) const {
+  if (operands.hasKwOperands()) {
+    emitter.emitError(operands.kwOperands->begin()->second.expr->getLoc(),
                       "keyword arguments are not supported yet");
     return {};
   }
@@ -1095,14 +1095,14 @@ PValue OverloadSet::filterOverloadSet(
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
     auto signature = cast<LIT::FuncOp>(*candidate).getFullSignature();
-    evaluations.push_back(
-        OverloadFitness::evaluate(signature, *this, posOperands, kwOperands,
-                                  allowImplicitConversions, emitter));
+    evaluations.push_back(OverloadFitness::evaluate(
+        signature, *this, operands, allowImplicitConversions, emitter));
     anyValid |= evaluations.back().kind == OverloadFitness::kValid;
   }
 
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
+    ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
     if (emitDiagnosticOnFailure) {
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
@@ -1221,14 +1221,6 @@ PValue OverloadSet::filterOverloadSet(
     }
   }
   return {};
-}
-
-PValue OverloadSet::filterOverloadSet(
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands, bool allowImplicitConversions,
-    bool emitDiagnosticOnFailure, ExprEmitter &emitter) const {
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
-  return filterOverloadSet(posOperands, kwOperands, allowImplicitConversions,
-                           emitDiagnosticOnFailure, emitter);
 }
 
 bool LIT::canZeroCostConvertSignature(SignatureType from, SignatureType to) {
@@ -1547,7 +1539,7 @@ OverloadSet::OverloadSet(ASTType type, StringRef methodName,
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
 PValue OverloadSet::lookup(ASTType type, StringRef methodName,
-                           ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                           const CallOperands &callOperands,
                            const ExprNode *callExpr, CallSyntax syntax,
                            ExprEmitter &emitter,
                            std::function<void()> errorHandler) {
@@ -1562,9 +1554,9 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
   // report an error (if we have an error handler) and reset to a null state so
   // the client can check this.
   bool shouldPrintError = bool(errorHandler);
-  return ovSet.filterOverloadSet(posOperands, /*allowImplicitConversions=*/true,
-                                 /*emitDiagnosticOnFailure=*/shouldPrintError,
-                                 emitter);
+  return ovSet.filterOverloadSet(
+      callOperands, /*allowImplicitConversions=*/true,
+      /*emitDiagnosticOnFailure=*/shouldPrintError, emitter);
 }
 
 PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
@@ -1705,30 +1697,30 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands, ValueDest &dest,
-    ExprEmitter &emitter) {
+CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
+                             ExprEmitter &emitter) {
   if (isNull()) // Base was already diagnosed as an error.
     return {};
 
   // Used in some cases below, lifetime needs to exist for this whole method.
-  SmallVector<ASTExprAnd<AnyValue>> operandsWithSelf;
+  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
 
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
+  CallOperands operands = callOperands;
   if (baseValue) {
-    operandsWithSelf.reserve(posOperands.size() + 1);
-    operandsWithSelf.push_back(baseValue);
-    operandsWithSelf.append(posOperands.begin(), posOperands.end());
-    posOperands = operandsWithSelf;
+    ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
+    posOperandsWithSelf.reserve(posOperands.size() + 1);
+    posOperandsWithSelf.push_back(baseValue);
+    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
     baseValue = {};
     assert(syntax == CallSyntax::kMethodCall && "Unexpected syntax form");
+    operands.posOperands = posOperandsWithSelf;
   }
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  PValue callee = filterOverloadSet(posOperands, kwOperands,
+  PValue callee = filterOverloadSet(operands,
                                     /*allowImplicitConversions=*/true,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee)
@@ -1777,26 +1769,28 @@ CValue OverloadSet::emitCall(
     return {};
   }
 
-  return emitter.emitCallUnchecked(callee, posOperands, kwOperands,
-                                   resultParamDecls, dest, expr);
+  return emitter.emitCallUnchecked(callee, operands, resultParamDecls, dest,
+                                   expr);
 }
 
-CValue ExprEmitter::emitIndirectCall(
-    CValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands, ValueDest &dest,
-    const ExprNode *callExpr) {
-  if (!kwOperands.empty())
+CValue ExprEmitter::emitIndirectCall(CValue callee,
+                                     const CallOperands &callOperands,
+                                     ValueDest &dest,
+                                     const ExprNode *callExpr) {
+  if (callOperands.hasKwOperands())
     return {};
 
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType().mlirType);
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
-    SmallVector<ASTExprAnd<AnyValue>> callOperands;
-    callOperands.push_back({callee, callExpr});
-    llvm::append_range(callOperands, posOperands);
-    return emitNamedMethodCall("__call__", callOperands, kwOperands, dest,
-                               CallSyntax::kDirectCall, callExpr);
+    SmallVector<ASTExprAnd<AnyValue>> posOperandsWithCallee;
+    posOperandsWithCallee.push_back({callee, callExpr});
+    llvm::append_range(posOperandsWithCallee, callOperands.posOperands);
+    return emitNamedMethodCall(
+        "__call__",
+        CallOperands(posOperandsWithCallee, callOperands.kwOperands), dest,
+        CallSyntax::kDirectCall, callExpr);
   }
 
   if (calleeSig.getNumResultParams()) {
@@ -1815,25 +1809,17 @@ CValue ExprEmitter::emitIndirectCall(
   OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindArrayAttr(), callExpr,
                        CallSyntax::kIndirectCall};
   auto fitness =
-      OverloadFitness::evaluate(calleeSig, bindings, posOperands, kwOperands,
+      OverloadFitness::evaluate(calleeSig, bindings, callOperands,
                                 /*allowImplicitConversions=*/true, *this);
   if (fitness.kind != OverloadFitness::kValid) {
     // If not, diagnose it with an error.
     auto diag = emitError(callExpr->getLoc(), "invalid indirect call: ");
-    fitness.diagnose(calleeSig, bindings, posOperands, diag);
+    fitness.diagnose(calleeSig, bindings, callOperands.posOperands, diag);
     return {};
   }
 
-  return emitCallUnchecked(calleeRV, posOperands, kwOperands,
+  return emitCallUnchecked(calleeRV, callOperands,
                            /*resultParams=*/{}, dest, callExpr);
-}
-
-CValue ExprEmitter::emitIndirectCall(CValue callee,
-                                     ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-                                     ValueDest &dest,
-                                     const ExprNode *callExpr) {
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
-  return emitIndirectCall(callee, posOperands, kwOperands, dest, callExpr);
 }
 
 /// folded into a PValue.
@@ -1950,12 +1936,14 @@ static bool isSafeToUseValueDestForDirectResult(
   return true;
 }
 
-CValue ExprEmitter::emitCallUnchecked(
-    CRValue callee, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands,
-    ArrayRef<ParamDeclAttr> resultParams, ValueDest &dest,
-    const ExprNode *callExpr) {
-  assert(kwOperands.empty() && "keyword arguments not yet supported");
+CValue ExprEmitter::emitCallUnchecked(CRValue callee,
+                                      const CallOperands &callOperands,
+                                      ArrayRef<ParamDeclAttr> resultParams,
+                                      ValueDest &dest,
+                                      const ExprNode *callExpr) {
+  assert(!callOperands.hasKwOperands() &&
+         "keyword arguments not yet supported");
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
 
   SignatureType calleeSig = cast<SignatureType>(callee.getType().mlirType);
   Location loc = translateLocation(callExpr->getLoc());
@@ -2400,10 +2388,10 @@ CValue ExprEmitter::emitCallUnchecked(
                   "type", TypeConstantAttr::get(resultTypes.front()))}));
       ValueDest dest;
       // Emit the implicit conversion.
-      callResult =
-          emitConstructorCall(coroType, {{SBValue(call), callExpr}}, callExpr,
-                              CallSyntax::kImplicitConvert, dest)
-              .getIfSRValue();
+      callResult = emitConstructorCall(
+                       coroType, CallOperands({{SBValue(call), callExpr}}),
+                       callExpr, CallSyntax::kImplicitConvert, dest)
+                       .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
       auto call = builder->create<CallOp>(loc, resultTypes, symbol,
@@ -2475,27 +2463,30 @@ CValue ExprEmitter::emitCallUnchecked(
   return emitCResult(SRValue(callResult), callExpr, dest);
 }
 
-CValue ExprEmitter::emitNamedMethodCall(
-    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> &kwOperands, ValueDest &dest,
-    CallSyntax syntax, const ExprNode *callNode) {
+CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
+                                        const CallOperands &callOperands,
+                                        ValueDest &dest, CallSyntax syntax,
+                                        const ExprNode *callNode) {
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   assert(!posOperands.empty() &&
          "Cannot emit a method call without a receiver!");
 
   // Emit the first/self operand to a CValue so we can figure out which type to
   // lookup on.
   CValue selfVal = posOperands[0].ir.getIfCValue();
-  SmallVector<ASTExprAnd<AnyValue>> updatedArgValues;
+  SmallVector<ASTExprAnd<AnyValue>> updatedPosOperands;
   if (!selfVal) {
     selfVal = emitCValue(posOperands[0], ValueDest::none());
     if (!selfVal)
       return {};
     // We can't mutate posOperands because it's an ArrayRef.  If something
     // changed, recurse with a temporary buffer.
-    updatedArgValues.append(posOperands.begin(), posOperands.end());
-    updatedArgValues[0].ir = selfVal;
-    posOperands = updatedArgValues;
+    updatedPosOperands.append(posOperands.begin(), posOperands.end());
+    updatedPosOperands[0].ir = selfVal;
+    posOperands = updatedPosOperands;
   }
+
+  CallOperands operands(posOperands, callOperands.kwOperands);
 
   ASTType type = selfVal.getRValueType();
 
@@ -2518,18 +2509,10 @@ CValue ExprEmitter::emitNamedMethodCall(
   };
 
   // If the type doesn't have the specified method, emit an error.
-  PValue callee = OverloadSet::lookup(type, methodName, posOperands, callNode,
+  PValue callee = OverloadSet::lookup(type, methodName, operands, callNode,
                                       syntax, *this, emitNoMethodError);
   if (!callee)
     return {};
 
-  return emitIndirectCall(callee, posOperands, dest, callNode);
-}
-
-CValue ExprEmitter::emitNamedMethodCall(
-    StringRef methodName, ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-    ValueDest &dest, CallSyntax syntax, const ExprNode *callNode) {
-  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> kwOperands{};
-  return emitNamedMethodCall(methodName, posOperands, kwOperands, dest, syntax,
-                             callNode);
+  return emitIndirectCall(callee, operands, dest, callNode);
 }
