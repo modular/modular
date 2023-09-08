@@ -601,6 +601,7 @@ fn gather_shape[
     return output_shape
 
 
+@always_inline
 fn scatter_elements[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
@@ -616,10 +617,10 @@ fn scatter_elements[
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     out_chain: OutputChainPtr,
 ):
-    """Implements ONNX scatter_elements op which is equivalent to Pytorch scatter."""
+    """Implements ONNX ScatterElements op which is equivalent to Pytorch scatter."""
     constrained[
         indices_type == DType.int32 or indices_type == DType.int64,
-        "indices in scatter elements must be int32 or int64",
+        "indices in scatter_elements must be int32 or int64",
     ]()
 
     debug_assert(
@@ -629,6 +630,11 @@ fn scatter_elements[
     debug_assert(
         indices.get_shape() == updates.get_shape(),
         "inidices and updates shape in scatter_elements must be the same",
+    )
+
+    debug_assert(
+        -rank <= _axis < rank,
+        "axis in scatter_elements must be in the range [-rank, rank)",
     )
 
     let axis = _axis if _axis >= 0 else _axis + rank
@@ -666,3 +672,62 @@ fn scatter_elements[
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[rank, 1, update_func](indices.get_shape(), out_chain)
+
+
+@always_inline
+fn gather_elements[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
+    _axis: Int,
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    """Implements ONNX GatherElements op which is equivalent to Pytorch gather."""
+    constrained[
+        indices_type == DType.int32 or indices_type == DType.int64,
+        "indices in gather_elements must be int32 or int64",
+    ]()
+
+    debug_assert(
+        indices.get_shape() == output.get_shape(),
+        "indices and output shape in gather_elements must be the same",
+    )
+
+    debug_assert(
+        -rank <= _axis < rank,
+        "axis in gather_elements must be in the range [-rank, rank)",
+    )
+
+    let axis = _axis if _axis >= 0 else _axis + rank
+
+    let input_ax_dim = input.get_shape()[axis]
+
+    @parameter
+    fn gather_func[
+        simd_width: Int, _rank: Int
+    ](_output_coords: StaticIntTuple[_rank]):
+        let output_coords = rebind[StaticIntTuple[rank]](_output_coords)
+        let idx_on_axis = indices[output_coords]
+        var input_coords = output_coords
+        # need to convert negative indices to positive equivalent
+        debug_assert(
+            -Int64(input_ax_dim)
+            <= idx_on_axis.cast[DType.int64]()
+            < Int64(input_ax_dim),
+            (
+                "indices value must be in range [-input_shape[axis],"
+                " input_shape[axis])"
+            ),
+        )
+        input_coords[axis] = (
+            idx_on_axis.__int__() if idx_on_axis
+            >= 0 else (idx_on_axis + input_ax_dim).__int__()
+        )
+        output[output_coords] = input[input_coords]
+
+    # cannot use simd_width > 1 here because consecutive updates are not contiguous
+    elementwise[rank, 1, gather_func](output.get_shape(), out_chain)
