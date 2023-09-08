@@ -9,16 +9,7 @@ from GatherScatter import scatter_elements
 from tensor import Tensor, TensorShape
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import max
-
-
-fn fill[type: DType](t: Tensor[type], elems: VariadicList[SIMD[type, 1]]):
-    debug_assert(
-        t.num_elements() == elems.__len__(), "must fill all elements of tensor"
-    )
-
-    let buf = t._to_buffer()
-    for i in range(t.num_elements()):
-        buf[i] = elems[i]
+from test_utils import linear_fill
 
 
 fn test_case[
@@ -67,11 +58,11 @@ fn test_case[
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ):
     let data = Tensor[type](input_shape)
-    fill(data, data_vals)
+    linear_fill(data, data_vals)
     let indices = Tensor[DType.int32](indices_shape)
-    fill(indices, indices_vals)
+    linear_fill(indices, indices_vals)
     let updates = Tensor[type](indices_shape)
-    fill(updates, updates_vals)
+    linear_fill(updates, updates_vals)
     let output = Tensor[type](input_shape)
 
     with Runtime() as rt:
@@ -91,7 +82,7 @@ fn test_case[
     _ = updates
 
     let output_ref = Tensor[type](input_shape)
-    fill(output_ref, output_ref_vals)
+    linear_fill(output_ref, output_ref_vals)
 
     for i in range(output.num_elements()):
         if output_ref._to_buffer()[i] != output._to_buffer()[i]:

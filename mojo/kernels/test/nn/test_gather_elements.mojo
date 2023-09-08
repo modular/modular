@@ -9,7 +9,7 @@ from GatherScatter import gather_elements
 from tensor import Tensor, TensorShape
 from runtime.llcl import Runtime, OwningOutputChainPtr
 from math import max
-from test_scatter_elements import fill
+from test_utils import linear_fill
 
 
 fn test_case[
@@ -23,9 +23,9 @@ fn test_case[
     output_ref_vals: VariadicList[SIMD[type, 1]],
 ):
     let data = Tensor[type](input_shape)
-    fill(data, data_vals)
+    linear_fill(data, data_vals)
     let indices = Tensor[DType.int32](indices_shape)
-    fill(indices, indices_vals)
+    linear_fill(indices, indices_vals)
     let output = Tensor[type](indices_shape)
 
     with Runtime() as rt:
@@ -43,7 +43,7 @@ fn test_case[
     _ = indices
 
     let output_ref = Tensor[type](indices_shape)
-    fill(output_ref, output_ref_vals)
+    linear_fill(output_ref, output_ref_vals)
 
     for i in range(output.num_elements()):
         if output_ref._to_buffer()[i] != output._to_buffer()[i]:
