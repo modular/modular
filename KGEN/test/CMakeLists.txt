@@ -31,3 +31,7 @@ add_modular_testsuite(check-mojo
 if(LLDB_FOUND)
   add_dependencies(check-mojo MojoLLDB mojo-jupyter-executor)
 endif()
+
+add_subdirectory(kgen)
+add_subdirectory(mojo-parser)
+add_subdirectory(mojo-integration)
