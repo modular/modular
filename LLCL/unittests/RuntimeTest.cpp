@@ -11,13 +11,6 @@
 using namespace M;
 using namespace M::LLCL;
 
-std::unique_ptr<Runtime> createRuntime() {
-  std::unique_ptr<Allocator> allocator =
-      createLeakCheckAllocator(createMallocAllocator());
-  std::unique_ptr<WorkQueue> workQueue = createSingleThreadWorkQueue();
-  return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue));
-}
-
 //===----------------------------------------------------------------------===//
 // Runtime contexts
 //===----------------------------------------------------------------------===//
@@ -40,23 +33,45 @@ struct ContextC {
   char c = 'a';
 };
 
+struct ContextD {
+  int x = 1;
+  int y = 2;
+};
+
+std::unique_ptr<Runtime> createRuntime() {
+  auto globalContextObjects = RCRef<SharedGenericUniquePtrSet>::create();
+  auto &dRef = globalContextObjects->emplace<ContextD>();
+  dRef.x = 3;
+
+  std::unique_ptr<Allocator> allocator =
+      createLeakCheckAllocator(createMallocAllocator());
+  std::unique_ptr<WorkQueue> workQueue = createSingleThreadWorkQueue();
+  return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
+                                   /*profileFilename=*/"",
+                                   std::move(globalContextObjects));
+}
+
 TEST(RuntimeTest, Contexts) {
   auto runtime = createRuntime();
 
-  ContextA &ContextARef = runtime->emplaceContext<ContextA>(5);
+  ContextD *contextDPtr = runtime->getContext<ContextD>();
+  ASSERT_NE(contextDPtr, nullptr);
+  ASSERT_EQ(contextDPtr->x, 3);
+
+  ContextA &contextARef = runtime->emplaceContext<ContextA>(5);
   runtime->emplaceContext<ContextB>();
 
-  ++ContextARef.i;
+  ++contextARef.i;
 
-  ContextA *ContextAPtr = runtime->getContext<ContextA>();
-  ContextB *ContextBPtr = runtime->getContext<ContextB>();
-  ContextC *ContextCPtr = runtime->getContext<ContextC>();
+  ContextA *contextAPtr = runtime->getContext<ContextA>();
+  ContextB *contextBPtr = runtime->getContext<ContextB>();
+  ContextC *contextCPtr = runtime->getContext<ContextC>();
 
-  ASSERT_NE(ContextAPtr, nullptr);
-  EXPECT_EQ(ContextAPtr->i, 6);
-  ASSERT_NE(ContextBPtr, nullptr);
-  EXPECT_EQ(ContextBPtr->b, true);
-  EXPECT_EQ(ContextCPtr, nullptr);
+  ASSERT_NE(contextAPtr, nullptr);
+  EXPECT_EQ(contextAPtr->i, 6);
+  ASSERT_NE(contextBPtr, nullptr);
+  EXPECT_EQ(contextBPtr->b, true);
+  EXPECT_EQ(contextCPtr, nullptr);
 
   bool created = false;
   ErrorOr<ContextC *> contextCOr = runtime->createContextIfMissing<ContextC>(
@@ -87,6 +102,9 @@ TEST(RuntimeTest, Contexturations_ExpectDeath) {
   runtime->emplaceContext<ContextA>();
 
   ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextA>(),
-                            "Runtime already holds context of type");
+                            "set already holds object of type");
+
+  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextD>(),
+                            "set already holds object of type");
 }
 #endif

@@ -43,14 +43,16 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 
 Runtime::Runtime(std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
-                 StringRef profileFilename)
+                 StringRef profileFilename,
+                 RCRef<SharedGenericUniquePtrSet> globalContextObjects)
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename),
       runtimeIndex(M::LLCL::Globals::addRuntime(this)),
-      readyChain(createReadyChain(*this)) {
-  // NOTE: Users can't pass in profileFilename AND activate the time profiler in
-  // the caller.
+      readyChain(createReadyChain(*this)),
+      globalContextObjects(std::move(globalContextObjects)) {
+  // NOTE: Users can't pass in profileFilename AND activate the time
+  // profiler in the caller.
   if (!profileFilename.empty())
     profiler.emplace(/*timeTraceGranularity=*/0, "Main");
 }
