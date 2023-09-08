@@ -4,12 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test that the default value for `--max-notes-per-diagnostic` is 10.
-# RUN: not %mojo %s 2>&1 | FileCheck %s
-
-# Test that the option controls this setting.
-# RUN: not %mojo --max-notes-per-diagnostic 5 %s \
-# RUN:   2>&1 | FileCheck %s --check-prefix CHECK-FIVE
+# RUN: not kgen-translate --max-notes-per-diagnostic=2 --use-mlir-diagnostics=false -import-mojo %s 2>&1 | FileCheck %s
 
 # fmt: off
 struct s1: pass
@@ -48,9 +43,7 @@ fn go11(x: s10): pass
 fn go11(x: s11): pass
 
 fn main():
-  # CHECK-NOT: {{.*}} (0 more notes omitted.)
-  # CHECK-FIVE: {{.*}} (5 more notes omitted.)
+  # CHECK: 8 more notes omitted
   go10(0)
-  # CHECK: {{.*}} (1 more notes omitted.)
-  # CHECK-FIVE: {{.*}} (6 more notes omitted.)
+  # CHECK: 9 more notes omitted
   go11(0)
