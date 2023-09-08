@@ -42,6 +42,15 @@ int main(int argc, char *argv[]) {
       cl::desc("Enable experimental new lifetimes generation."),
       cl::init(false)};
 
+  cl::opt<unsigned> maxNotesPerDiagnostic{
+      "max-notes-per-diagnostic",
+      cl::desc("Maximum number of notes emitted per diagnostic."),
+      cl::init(10)};
+
+  cl::opt<bool> useMLIRDiagnostics{"use-mlir-diagnostics",
+                                   cl::desc("Whether to use MLIR diagnostics."),
+                                   cl::init(true)};
+
   mlir::TranslateToMLIRRegistration fromMojo(
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
@@ -52,9 +61,12 @@ int main(int argc, char *argv[]) {
         mlir::TimingScope ts;
         KGEN::CompilationOptions options = clOptions.getCompilationOptions();
         MojoParserConfig config(context, *runtime, options);
-        config.useMLIRDiagnostics = true;
+        config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
+        config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
+        // Disable binary packages when using `kgen-translate`.
+        config.parsingStandardLibrary = true;
         if (disableParserCaching)
           config.moduleCachingLevel = MojoParserConfig::kCacheNone;
         return importMojoFile(sourceMgr, config, ts);
