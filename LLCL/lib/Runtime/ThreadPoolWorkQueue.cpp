@@ -757,7 +757,7 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(const std::vector<size_t> &cpuIDs,
   for (size_t workerID = 0; workerID < numWorkers; ++workerID)
     new (workers + workerID)
         WorkQueueThread(sharedState, taskList, overflowMutex, overflowTaskList,
-                        workerID, cpuIDs[workerID], poolName);
+                        workerID, cpuIDs[workerID], this->poolName);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
