@@ -173,12 +173,12 @@ value in Mojo.  You can see this most easily when materializing a constant
 value into a dynamic one, e.g. when storing into a variable:
 
 ```mlir
-  # CHECK: %d = lit.varlet.decl "d", var = true : <i17>
+  # CHECK: %d = lit.varlet.decl "d" var : <i17>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: i17 = <4>
   # CHECK: pop.store [[TMP]], %d : !kgen.pointer<i17>
   var d = __mlir_attr.`4: i17`
 
-  # CHECK: %dt = lit.varlet.decl "dt", var = true : <dtype>
+  # CHECK: %dt = lit.varlet.decl "dt" var : <dtype>
   # CHECK: [[TMP:%.*]] = kgen.param.constant: dtype = <f32>
   # CHECK: pop.store [[TMP]], %dt  : !kgen.pointer<dtype>
   var dt = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
@@ -211,7 +211,7 @@ subscript syntax (including specifying multiple attributes such as
 you can use:
 
 ```mlir
-  # CHECK: %idxConstant = lit.varlet.decl "idxConstant", var = true, var = true : <index>
+  # CHECK: %idxConstant = lit.varlet.decl "idxConstant" var var = true : <index>
   # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
   # CHECK-NEXT: pop.store [[TMP]], %idxConstant : !kgen.pointer<index>
   var idxConstant = __mlir_op.`index.constant`[value: 42]()

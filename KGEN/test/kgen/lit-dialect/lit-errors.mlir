@@ -2,7 +2,7 @@
 
 lit.struct.decl @SomeStruct {
   // expected-error @+1 {{invalid use of parameter with no declaration "ty"}}
-  %size = lit.varlet.decl "size", var = true, synth = false : !kgen.pointer<simd<1, ty>>
+  %size = lit.varlet.decl "size" var : !kgen.pointer<simd<1, ty>>
 }
 
 // -----
@@ -284,7 +284,7 @@ lit.func @caller() -> !lit.none attributes {isParametric} {
 // -----
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> attributes {isParametric} {
-    %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
+    %y = lit.varlet.decl "y" : <@MyStruct>
     %0 = kgen.call @throwing_callee(%y) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, index, !lit.none>
     // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
     %1 = lit.handle_variant %0, %y : (!pop.variant<@Error, index, !lit.none>, !kgen.pointer<@MyStruct>) -> !lit.none

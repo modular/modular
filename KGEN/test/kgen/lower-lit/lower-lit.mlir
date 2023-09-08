@@ -19,7 +19,7 @@ lit.func @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:  }
 
 lit.func @varDecl(%arg0: index) -> index {
-  %a = lit.varlet.decl "a", var = true, synth=false : <index>
+  %a = lit.varlet.decl "a" var : <index>
   kgen.return %arg0 : index
 }
 
@@ -68,7 +68,7 @@ lit.struct.decl @Adder<size> {
   // CHECK-NEXT:    %[[ONE:.*]] = pop.stack_allocation 1 x index
   // CHECK:       }
   lit.func @__add__(%self: !kgen.declref<@Adder<size = size>>)  {
-    %0 = lit.varlet.decl "a", var = true, synth=false : <index>
+    %0 = lit.varlet.decl "a" var : <index>
     %one = index.constant 1
     pop.store %one, %0 : !kgen.pointer<index>
     kgen.return
@@ -181,7 +181,7 @@ lit.struct.decl @foo {
 //===----------------------------------------------------------------------===//
 
 lit.func @throwing_caller() throws -> !pop.variant<@Error, !lit.none> {
-  %y = lit.varlet.decl "y", var = false, synth = false : <@MyStruct>
+  %y = lit.varlet.decl "y" : <@MyStruct>
   %0 = kgen.call @throwing_callee(%y) : (!kgen.pointer<@MyStruct> byref_result) throws -> !pop.variant<@Error, !lit.none>
   // CHECK: %2 = pop.variant.is !pop.array<0, i1>, %1 : !pop.variant<@Error, array<0, i1>>
   // CHECK: %3 = hlcf.if %2 -> !pop.array<0, i1> {

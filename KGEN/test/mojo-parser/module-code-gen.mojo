@@ -382,7 +382,7 @@ fn foo(owned y:Int):
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<@{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !lit.none
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT: %q_0 = lit.varlet.decl "q", var = true, synth = true : <!Int>
+# CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth : <!Int>
 # CHECK-NEXT: pop.store %q, %q_0 : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
@@ -413,7 +413,7 @@ fn foo(owned y:Int):
 
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}"(%__result__: !kgen.pointer<!String> byref_result, %self: !kgen.pointer<{{.*}}> borrow_in_mem, %y: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]] = lit.struct.gep %self[field0] : <!String>
-# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__", var = true, synth = true : <!String>
+# CHECK-NEXT: %__call_result_tmp__ = lit.varlet.decl "__call_result_tmp__" var synth : <!String>
 # CHECK-NEXT: %[[W2:.*]] = kgen.call @{{.*}}__add__{{.*}}(%__call_result_tmp__, %[[W0]], %y)
 # CHECK-NEXT: %[[W3:.*]] = kgen.call @{{.*}}__copyinit__{{.*}}(%__result__, %__call_result_tmp__)
 # CHECK-NEXT: %[[W4:.*]] = kgen.param.constant: !lit.none = <#lit.none>
@@ -468,11 +468,11 @@ fn makes_escaping_closure(m: String):
 ##===----------------------------------------------------------------------===##
 
 fn makes_escaping_closure(m: String):
-   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}"::@"_CI_{{.*}}">
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*", var = true, synth = true : <!String>
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth : <@"{{.*}}"::@"_CI_{{.*}}">
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <!String>
    # CHECK-NEXT: kgen.call @"{{.*}}@"__copyinit__{{.*}}"(%anonymous2A_0, %m)
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %anonymous2A_0)
-   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}"::@"_CW_{{.*}}">
+   # CHECK-NEXT: %anonymous2A_1 = lit.varlet.decl "anonymous*" var synth : <@"{{.*}}"::@"_CW_{{.*}}">
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A_1, %anonymous2A)
    fn myclosure_with_mem_types(n:String) escaping -> String:
       return n+m
@@ -482,10 +482,10 @@ fn makes_escaping_closure(m: String):
 fn makes_escaping_closure(z: Int):
    let w = z * z
    var a = w
-   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22">
+   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22">
    # CHECK-NEXT: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int>
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w)
-   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}"::@"_CW_{{.*}}">
+   # CHECK-NEXT: %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <@"{{.*}}"::@"_CW_{{.*}}">
    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A_0, %anonymous2A)
    fn myclosure_with_reg_types(x:Int) escaping -> Int:
       a = a + 1

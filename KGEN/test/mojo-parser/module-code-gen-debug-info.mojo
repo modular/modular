@@ -76,7 +76,7 @@ fn makes_escaping_closure(m:  InMemType, z: __mlir_type.index) -> fn( __mlir_typ
 fn makes_escaping_closure(z: Int):
    let w = z * z
    var a = w
-   # CHECK-DAG: %anonymous2A = lit.varlet.decl "anonymous*", var = true, synth = true : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22"> loc(#[[LOC:loc[0-9]*]])
+   # CHECK-DAG: %anonymous2A = lit.varlet.decl "anonymous*" var synth : <@"{{.*}}_CI_{{.*}}({{.*}}::Int,{{.*}}::Int,{{.*}}::Int)\22"> loc(#[[LOC:loc[0-9]*]])
    # CHECK-DAG: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int> loc(#[[LOC]])
    # CHECK-DAG: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w) : ("self": !kgen.pointer<@"{{.*}}"::@"_CI_${{.*}}_\22($builtin::$int::Int,$builtin::$int::Int,$builtin::$int::Int)\22"> init_self, "field0": !Int, "field1": !Int) -> !lit.none loc(#[[LOC]])
    fn myclosure_with_reg_types(x:Int) escaping -> Int:
