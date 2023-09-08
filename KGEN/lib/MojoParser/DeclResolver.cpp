@@ -1115,9 +1115,15 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   }
 
   // When parsing a function type, the name is optional.
-  if (kind != ArgListKind::kFnTypeArgList) {
-    // If the argument has an identifier, use its location for better
-    // diagnostics.
+  if (kind == ArgListKind::kFnTypeArgList) {
+    StringAttr maybeArgName;
+    SMLoc nextLocation;
+    if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon,
+                                            &nextLocation))) {
+      name = maybeArgName;
+      loc = nextLocation;
+    }
+  } else {
     if (p.parseIdentifier(name, "expected parameter name", &loc)) {
       // TODO: Scan ahead for better recovery.
       return failure();
