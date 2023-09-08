@@ -53,10 +53,10 @@ def configure_lldb_tests(config):
 
 
 # name: The name of this test suite.
-config.name = "KGEN"
+config.name = "mojo"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mlir", ".mojo", ".test", ".🔥", ".lldb", ".td"]
+config.suffixes = [".mlir", ".mojo", ".test", ".🔥", ".lldb"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -67,6 +67,11 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 # python tests shouldn't be handled by llvm-lit directly
 config.excludes.add("pytests")
 
+# These directories have their own test targets.
+config.excludes.add("mojo-parser")
+config.excludes.add("mojo-integration")
+config.excludes.add("kgen")
+
 configure_lldb_tests(config)
 
 tool_dirs = [
@@ -76,9 +81,6 @@ tool_dirs = [
 ]
 tools = [
     "llvm-objdump",
-    "kgen",
-    "kgen-opt",
-    "kgen-translate",
     "mojo",
     "mojo-lsp-server",
 ]
