@@ -159,3 +159,79 @@ void M::printRegionWithShadowing(OpAsmPrinter &printer,
     printer.printRegion(region, /*printEntryBlockArgs=*/false);
   }
 }
+
+ParseResult M::parseBufferSignature(
+    OpAsmParser &parser,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &buffers,
+    SmallVectorImpl<Type> &bufferTypes,
+    InOutSignatureAttr &inOutSignatureAttr) {
+  SmallVector<InOutSignatureAttr::InOutSemantics> semantics;
+  auto parseOperandFn = [&]() -> ParseResult {
+    llvm::SMLoc loc;
+
+    // Parse the in/out/mut keyword.
+    StringRef inOutMut;
+    if (parser.getCurrentLocation(&loc) || parser.parseKeyword(&inOutMut))
+      return failure();
+    if (inOutMut == "in")
+      semantics.emplace_back(InOutSignatureAttr::kIn);
+    else if (inOutMut == "out")
+      semantics.emplace_back(InOutSignatureAttr::kOut);
+    else if (inOutMut == "mut")
+      semantics.emplace_back(InOutSignatureAttr::kMut);
+    else
+      return parser.emitError(loc) << "expecting 'in', 'out' or 'mut' keyword";
+
+    // Parse the operand proper.
+    OpAsmParser::UnresolvedOperand &unresolvedOperand = buffers.emplace_back();
+    if (parser.parseOperand(unresolvedOperand))
+      return failure();
+
+    // Parse the type annotation.
+    Type &bufferType = bufferTypes.emplace_back();
+    if (parser.parseColon() || parser.parseType(bufferType))
+      return failure();
+
+    return success();
+  };
+
+  if (parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Paren,
+                                     parseOperandFn, "in buffer operand list"))
+    return failure();
+
+  inOutSignatureAttr = InOutSignatureAttr::get(parser.getContext(), semantics);
+
+  return success();
+}
+
+void M::printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
+                             ValueRange buffers, TypeRange bufferTypes,
+                             InOutSignatureAttr inOutSignatureAttr) {
+  size_t arity = inOutSignatureAttr.size();
+  assert(buffers.size() == arity);
+  assert(bufferTypes.size() == arity);
+  printer << "(";
+  for (size_t i = 0; i < arity; ++i) {
+    if (i > 0)
+      printer << ", ";
+    switch (inOutSignatureAttr[i]) {
+    case InOutSignatureAttr::kNone:
+      llvm::llvm_unreachable_internal(
+          "unexpected kNone buffer semantics in signature");
+      break;
+    case InOutSignatureAttr::kIn:
+      printer << "in ";
+      break;
+    case InOutSignatureAttr::kOut:
+      printer << "out ";
+      break;
+    case InOutSignatureAttr::kMut:
+      printer << "mut ";
+      break;
+    }
+    printer << buffers[i];
+    printer << " : ";
+    printer << bufferTypes[i];
+  }
+  printer << ")";
+}
