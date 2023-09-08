@@ -178,6 +178,9 @@ fn dynamic_type_value():
 fn takeKeywordArgs(i: Int, j: Int): pass
 
 def testKWargs():
+  # expected-error @+2 {{duplicate keyword argument 'j'}}
+  # expected-note @+1 {{previously specified here}}
+  takeKeywordArgs(j = 42, j = 43)
   # expected-error @+1 {{keyword arguments are not supported yet}}
   takeKeywordArgs(j = 42, i = 1)
   # expected-error @+1 {{positional argument follows keyword argument}}
