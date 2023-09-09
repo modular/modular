@@ -30,7 +30,6 @@ using llvm::SourceMgr;
 class InflightDiag;
 class SourceRange;
 class FixIt;
-class SharedState;
 
 class Diags {
 public:
@@ -241,8 +240,7 @@ public:
 
   /// This constructor creates a fixit that inserts some text after the token
   /// at the specified location.
-  static FixIt insertAfterToken(SMLoc loc, const Twine &text,
-                                SharedState &shared);
+  static FixIt insertAfterToken(SMLoc loc, const Twine &text, Diags &diags);
 
   /// This is the source range to remove.
   SourceRange range;
