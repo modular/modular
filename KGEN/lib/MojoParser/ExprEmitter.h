@@ -419,9 +419,13 @@ public:
   /// on error.
   RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
 
-  /// Given a value convertable to a pop int via index conversion, emit
-  /// the casting code and return the pop scalar index value
-  SRValue emitBoxedIntAsPopScalar(Value numberValue, const ExprNode *source);
+  /// Given a value, emit it into an index value by invoking its `__index__`
+  /// method.
+  CValue emitIndex(ASTExprAnd<AnyValue> value, ExprContext context);
+
+  /// Given a value, emit it into an MLIR value by convert it to an index value
+  /// and then invoking its `__mlir_index__` method.
+  CValue emitMLIRIndex(ASTExprAnd<AnyValue> value, ExprContext context);
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.  The

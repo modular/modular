@@ -136,7 +136,7 @@ fn main():
     for item in my_list_no_iter:
         pass
 
-    # expected-error @+1 {{'SIMD[f32, 1]' does not implement the '__mlir_index__' method}}
+    # expected-error @+1 {{'SIMD[f32, 1]' does not implement the '__index__' method}}
     for item in my_list_invalid_int:
         pass
 
