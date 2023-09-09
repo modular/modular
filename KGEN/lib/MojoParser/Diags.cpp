@@ -374,11 +374,10 @@ FixIt FixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
 
 /// This constructor creates a fixit that inserts some text after the token
 /// at the specified location.
-FixIt FixIt::insertAfterToken(SMLoc loc, const Twine &text,
-                              SharedState &shared) {
-  // Find end of token.
-  size_t tokenSize = Lexer::getTokenLength(shared, loc);
-  loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
+FixIt FixIt::insertAfterToken(SMLoc loc, const Twine &text, Diags &diags) {
+  // Find end of token if we have a token end point adjustment function.
+  if (diags.tokenEndPointAdjustmentFn)
+    diags.tokenEndPointAdjustmentFn(loc);
   return FixIt(SourceRange::getByteLevel(loc, loc), text);
 }
 

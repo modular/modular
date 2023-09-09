@@ -2074,7 +2074,7 @@ static void verifyFunctionNameBinding(
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
                   << name << " must be passed as mutable reference";
       if (args[0].convention == ParsedArgument::kConventionUnspec)
-        diag << FixIt::insertAfterToken(selfArgLoc, "&", shared);
+        diag << FixIt::insertAfterToken(selfArgLoc, "&", shared.diags);
     }
 
     // Regardless force it to init_self so recovery follows the fix-it.

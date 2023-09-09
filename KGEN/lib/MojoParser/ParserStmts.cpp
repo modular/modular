@@ -300,7 +300,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
           << expr->getRange()
-          << FixIt::insertAfterToken(expr->getRange().getEnd(), "()", shared);
+          << FixIt::insertAfterToken(expr->getRange().getEnd(), "()",
+                                     shared.diags);
       return;
     }
   }
