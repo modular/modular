@@ -286,7 +286,7 @@ static bool isSLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
   return false;
 }
 
-StructDeclOp ClosureEmitter::createClosureImplStructDecl(
+StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     SMLoc location, ASTDecl &nestedFunctionDecl, ClosureCache &cache) {
   MLIRContext *ctx = shared.getContext();
 
@@ -358,8 +358,11 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
 
   std::pair<SignatureType, StringAttr> key(closureImplSignature,
                                            fileModuleOp.getSymNameAttrName());
-  if (auto existing = cache.getExisting(key))
+  if (auto existing = cache.getExisting(key)) {
+    nestedFunction->erase();
     return existing;
+  }
+
   bool hasByRefReturn = closureWrapperSignature.hasMemoryOnlyResult();
 
   StringAttr name =
@@ -465,7 +468,7 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
   // to preserve the old pipeline we leave the original nested function intact.
   IRMapping mapping;
   callFunc.getBody()->erase();
-  nestedFunction.getBodyRegion().cloneInto(&callFunc.getBodyRegion(), mapping);
+  callFunc.getBodyRegion().takeBody(nestedFunction.getBodyRegion());
   Location callFuncLocation = callFunc.getLoc();
   DebugInfo::DISubprogramAttr subprogramAttrOfCallFunc;
 
@@ -512,6 +515,7 @@ StructDeclOp ClosureEmitter::createClosureImplStructDecl(
                                callFunc.getBodyRegion());
   }
   cache.storeClosure(key, declOp);
+  nestedFunction->erase();
   return declOp;
 }
 

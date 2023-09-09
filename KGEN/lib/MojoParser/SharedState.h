@@ -350,9 +350,8 @@ public:
                                                  FileModuleOp fileModuleOp);
 
   /// Emitters invoke this method to get a closure declaration.
-  StructDeclOp getOrGenerateClosureImplStruct(llvm::SMLoc location,
-                                              ASTDecl &nestedFunction,
-                                              FileModuleOp fileModuleOp);
+  StructDeclOp replaceNestedFunctionWithGeneratedClosureImplStruct(
+      llvm::SMLoc location, ASTDecl &nestedFunction, FileModuleOp fileModuleOp);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values in the form of a range: the begin and end iterators of the capture

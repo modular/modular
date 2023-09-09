@@ -2614,18 +2614,9 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (fileModuleOp) {
       StructDeclOp declOp = emitter.shared.getOrGenerateClosureWrapperStruct(
           this->getLoc(), signature, fileModuleOp);
-      ASTType result(DeclRefType::get(
-          SymbolRefAttr::get(SymbolTable::getSymbolName(declOp))));
-      // TODO: uncomment (https://github.com/modularml/modular/issues/17073).
-      // emitter.emitResult(result, this, dest);
+      Type selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+      return emitter.emitResult(ASTType(selfType), this, dest);
     }
-
-    // TODO: remove (https://github.com/modularml/modular/issues/17073).
-    FnEffects newFn =
-        bitEnumSet(bitEnumClear(signature.getFnEffects(), FnEffects::Escaping),
-                   FnEffects::Capturing);
-    return emitter.emitResult(ASTType(signature.getWithFnEffects(newFn)), this,
-                              dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
 }

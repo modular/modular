@@ -26,26 +26,9 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
 ##===----------------------------------------------------------------------===##
 
 fn captures_closure(x:Int):
-   fn closure1(y:Int) escaping -> Int:
-      return x + y
    fn closure2(y: Int) -> Int:
       return x * y
-   # expected-error @below {{TODO: Cannot capture a signature type that escapes until new closures are turned on.}}
    # expected-error @below {{TODO: Cannot capture a signature type that captures until new closures are turned on.}}
    fn closure3(y:Int) escaping -> Int:
-      let z = closure1(x)
-      let w = closure2(z)
+      let w = closure2(y)
       return w
-
-# // -----
-
-##===----------------------------------------------------------------------===##
-# Deeply Nested Escaping Closures
-##===----------------------------------------------------------------------===##
-
-fn makes_escaping_closure(m: String):
-   fn myclosure(n:String) escaping -> String:
-      # expected-error @below {{TODO: nested escaping closures deeper than 1 level are not supported yet}}
-      fn nested_nested(k:String) escaping -> String:
-         return n+k
-      return n+m
