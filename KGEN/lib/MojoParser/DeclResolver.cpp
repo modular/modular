@@ -2679,65 +2679,6 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   return SLValue(varDecl);
 };
 
-void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                                   const ASTDecl &funcDecl) {
-  auto func = cast<LIT::FuncOp>(funcDecl);
-  emitNormalReturn(builder, value, func);
-}
-
-/// Emit a normal return (not a 'raise' return) out of the function, along with
-/// any special logic that goes with it.
-void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                                   LIT::FuncOp func) {
-  switch (func.getSpecialFunctionKind()) {
-  default:
-    break;
-
-  /// In the __del__ method for a struct, we need to mark 'self' as being
-  /// destroyed before any return operation.
-  case SpecialFunctionKind::kDel: {
-    assert(func.getBody()->getNumArguments() == 1 &&
-           "__del__ should have one argument");
-    Value selfArg = func.getBody()->getArgument(0);
-
-    // If this is a @register_passable type, the value will be stored in a
-    // box and we want to treat the box as the thing that we track.
-    if (func.getSignature().getInputConvention(0) ==
-        ValueInputConvention::OwnedInReg) {
-      // Find the single store and ignore debug.value operations.
-      POP::StoreOp store;
-      for (auto user : selfArg.getUsers()) {
-        if (isa<DebugInfo::ValueOp>(user))
-          continue;
-        assert(!store && "Should only have a single store");
-        store = cast<POP::StoreOp>(user);
-      }
-      selfArg = store.getPtr();
-    }
-    builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
-    break;
-  }
-
-  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
-  /// being destroyed before any return operation if it is owned convention.
-  case SpecialFunctionKind::kMoveInit: {
-    assert(func.getBody()->getNumArguments() == 2 &&
-           "__moveinit__ should have to arguments");
-    // Don't change `__moveinit__(owned self, inout existing: Self)`.
-    if (func.getSignature().getInputConvention(1) !=
-        ValueInputConvention::OwnedInMem)
-      break;
-
-    Value existingArg = func.getBody()->getArgument(1);
-    builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
-    break;
-  }
-  }
-
-  // Finally we emit a normal return with lit.return.
-  builder.create<LIT::ReturnOp>(value);
-}
-
 /// This adds a default return (lit.return of None, potentially converted
 /// to a variant) and emits a EndFuncOp.
 static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,

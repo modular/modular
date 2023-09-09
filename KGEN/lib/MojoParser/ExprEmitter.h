@@ -25,6 +25,10 @@ class ExprEmitter;
 class VarLetDeclOp;
 struct CallOperands;
 
+//===----------------------------------------------------------------------===//
+// ExprContext
+//===----------------------------------------------------------------------===//
+
 /// This enum is used to pass down a bit of context information to make
 /// diagnostics more specific.  Each comment gives an example where the
 /// expression is named "x".
@@ -68,6 +72,10 @@ enum ExprContext {
   EC_LifetimeSpec,          // ref[x] y
 };
 const char *getContextMessage(ExprContext context);
+
+//===----------------------------------------------------------------------===//
+// ValueDest
+//===----------------------------------------------------------------------===//
 
 /// This is used in ValueDest when emitting an LValue expression whose type may
 /// be inferred from the RHS value in an assignment.  This allows implicitly
@@ -223,6 +231,10 @@ private:
   ExprContext context;
 };
 
+//===----------------------------------------------------------------------===//
+// ExprEmitter
+//===----------------------------------------------------------------------===//
+
 /// This class is the main driver for expression emission, providing helper
 /// functions used by the individual node emission hooks.
 class ExprEmitter : public SharedStateUser {
@@ -267,9 +279,14 @@ public:
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
-  // This emits the value to the specified value dest, transfering ownership to
-  // the destination and returning a reference if dest consumes it, or the
-  // RValue directly if not.
+  /// This emits the value to the specified value dest, transfering ownership to
+  /// the destination and returning a reference if dest consumes it, or the
+  /// RValue directly if not.
+
+  /// This emits the value to the specified destination as a concrete RValue.
+  /// This transfers ownership to the destination, and it will return a
+  /// reference if the destination consumes the RValue or the RValue itself if
+  /// not. This method will also emit a copy if required to obtain and RValue.
   CValue emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   CRValue emitCRValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
@@ -277,14 +294,13 @@ public:
   /// ORValue.
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
-
   CValue emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
   CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
-  LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
+  LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
@@ -310,13 +326,26 @@ public:
   /// returns null if emission fails.
   MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
-  /// This helper emits the specified value as a PValue. This returns null if
-  /// emission fails.
+  /// This helper emits the specified expression as a parameter value,
+  /// diagnosing the problem if the expression is only valid as a runtime value.
+  /// This returns null if emission fails.
   PValue emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
 
   //===--------------------------------------------------------------------===//
   // Function Calls
+
+  /// Emit call to a resolved and /already type checked/ callee. This does not,
+  /// check for compatibility and isn't prepared to emit errors.
+  CValue emitCallUnchecked(CRValue callee, const CallOperands &operands,
+                           ArrayRef<ParamDeclAttr> resultParams,
+                           ValueDest &dest, const ExprNode *callExpr);
+
+  /// Emit an indirect call to a resolved value, checking for compatibility and
+  /// then generating the call logic.  This emits an error and returns null on
+  /// failure.
+  CValue emitIndirectCall(CValue callee, const CallOperands &operands,
+                          ValueDest &dest, const ExprNode *callExpr);
 
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
@@ -331,17 +360,16 @@ public:
                              ValueDest &dest, CallSyntax syntax,
                              const ExprNode *callNode);
 
-  /// Emit an indirect call to a resolved value, checking for compatibility and
-  /// then generating the call logic.  This emits an error and returns null on
-  /// failure.
-  CValue emitIndirectCall(CValue callee, const CallOperands &operands,
-                          ValueDest &dest, const ExprNode *callExpr);
+  /// Emit a call to __new__ or __init__, returning an instance of the specified
+  /// type.  If `allowImplicitConversion` is true, the provided args are allowed
+  /// to implicitly convert to the expectations of the constructor signatures.
+  CValue emitConstructorCall(ASTType type, const CallOperands &operands,
+                             const ExprNode *expr, CallSyntax syntax,
+                             ValueDest &dest,
+                             bool allowImplicitConversion = true);
 
-  /// Emit call to a resolved and /already type checked/ callee. This does not,
-  /// check for compatibility and isn't prepared to emit errors.
-  CValue emitCallUnchecked(CRValue callee, const CallOperands &operands,
-                           ArrayRef<ParamDeclAttr> resultParams,
-                           ValueDest &dest, const ExprNode *callExpr);
+  //===--------------------------------------------------------------------===//
+  // Type conversion helpers.
 
   /// Return true if 'value' may be implicitly converted to 'requiredType'
   /// by invoking (one level of) conversion operations. A flag can be specified
@@ -351,16 +379,15 @@ public:
                                   ASTType requiredType,
                                   bool allowArgNameCheck = true);
 
-  /// Emit the specified expression as a condition, converting it to an MLIR
-  /// I1 value that we can test directly.  This reports and error and returns
-  /// null on error.
-  RValue emitI1(ASTExprAnd<CValue> expr);
-
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
   /// Emit the specified value into the current destination if present.  This
   /// accepts (and silently propagates) null values.
+  ///
+  /// Note that the `value` provided here may require an implicit conversion
+  /// into the destination slot, so the input may be memory-only and result be
+  /// register-passable (and visa-versa).
   AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
   CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
 
@@ -401,18 +428,34 @@ public:
     return emitExprLValue(expr, dest);
   }
 
+  /// Emit a call to the getter of the specified LValue, loading the value into
+  /// dest (if specified) or returning it if not.  This returns an RValue if
+  /// there is no consuming dest, otherwise a BValue.
+  CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
+
+  /// Emit a copy of the specified value, producing a new owned instance of the
+  /// value in the specified destination.  This returns an RValue if
+  /// there is no consuming dest, otherwise a BValue.
+  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
+
+  /// Given a value with a known type, emit a store to the specified LValue.
+  /// This returns an borrowed reference to the value after it is done.  The
+  /// types must match for this call.
+  BValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                           ExprContext context);
+
+  //===--------------------------------------------------------------------===//
+  // Emission helpers for specific value types.
+
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on
   /// failure.
   ASTType emitExprType(const ExprNode *expr);
 
-  /// Emit a call __init__, returning an instance of the specified type. If
-  /// `allowImplicitConversion` is true, the provided args are allowed to
-  /// implicitly convert to the expectations of the constructor signatures.
-  CValue emitConstructorCall(ASTType type, const CallOperands &callOperands,
-                             const ExprNode *expr, CallSyntax syntax,
-                             ValueDest &dest,
-                             bool allowImplicitConversion = true);
+  /// Emit the specified expression as a condition, converting it to an MLIR
+  /// I1 value that we can test directly.  This reports and error and returns
+  /// null on error.
+  RValue emitI1(ASTExprAnd<CValue> expr);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
@@ -427,21 +470,8 @@ public:
   /// and then invoking its `__mlir_index__` method.
   CValue emitMLIRIndex(ASTExprAnd<AnyValue> value, ExprContext context);
 
-  /// Given a value with a known type, emit a store to the specified LValue.
-  /// This returns an borrowed reference to the value after it is done.  The
-  /// types must match for this call.
-  BValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                           ExprContext context);
-
-  /// Emit a call to the getter of the specified LValue, loading the value into
-  /// dest (if specified) or returning it if not.  This returns an RValue if
-  /// there is no consuming dest, otherwise a BValue.
-  CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
-
-  /// Emit a copy of the specified value, producing a new owned instance of the
-  /// value in the specified destination.  This returns an RValue if
-  /// there is no consuming dest, otherwise a BValue.
-  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
+  //===--------------------------------------------------------------------===//
+  // Return emission helpers.
 
   /// Emit the logic to raise from the current scope, returning failure (but NOT
   /// emitting an error) if it is invalid to return from the current context,
@@ -456,6 +486,9 @@ public:
                                const ASTDecl &funcDecl);
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                FuncOp funcDecl);
+
+  //===--------------------------------------------------------------------===//
+  // Declaration reference emission helpers.
 
   /// Given a AliasDeclOp, return the value that should be used in a reference
   /// to it.  This currently fully substitutes members unless they are in a

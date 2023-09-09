@@ -19,12 +19,19 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/Compiler/OperationUtils.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// ExprContext
+//===----------------------------------------------------------------------===//
 
 const char *LIT::getContextMessage(ExprContext context) {
   switch (context) {
@@ -107,7 +114,7 @@ const char *LIT::getContextMessage(ExprContext context) {
 }
 
 //===----------------------------------------------------------------------===//
-// ValueDest implementation
+// ValueDest
 //===----------------------------------------------------------------------===//
 
 ValueDest::ValueDest(VarLetDeclOp dest, ExprContext context)
@@ -326,7 +333,7 @@ SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
 }
 
 //===----------------------------------------------------------------------===//
-// ExprEmitter implementation
+// ExprEmitter
 //===----------------------------------------------------------------------===//
 
 /// Emit an error about use of a dynamic value (the expression) in a context
@@ -342,35 +349,9 @@ PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
   return {};
 }
 
-RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
-                               ASTType resultType) {
-  // If we have no contextual type and the operand is a ORValue, then we cannot
-  // resolve it and have to pass up the ambiguous value.  This is needed for
-  // things like `(((overloadset)))` for example.
-  if (!resultType)
-    if (auto orVal = value.ir.getIfORValue())
-      return orVal;
+//===----------------------------------------------------------------------===//
+// Emission helpers for various value classifications.
 
-  ValueDest dest(resultType, context);
-  CValue result = emitCRValue(value, dest);
-  while (1) {
-    if (!result) {
-      dest.resetForError();
-      return {};
-    }
-    // Typically emitCRValue will return an RValue.
-    if (auto rv = result.getIfCRValue())
-      return rv;
-
-    // It may return a BValue though (e.g. when accessing subfields with
-    // computed lvalue bases), in which case we'll emit a copy of it.
-    result = emitCopyOfValue({result, value.expr}, ValueDest::none());
-  }
-}
-
-/// This helper emits the specified value rep as an SSA value, materializing
-/// it as a parameter constant if it is a parameter.  This returns null if
-/// emission fails.
 CValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
@@ -402,6 +383,32 @@ CRValue ExprEmitter::emitCRValue(ASTExprAnd<AnyValue> value,
     return {};
   assert(cr.getIfCRValue() && "Should return a CRValue");
   return cr.getIfCRValue();
+}
+
+RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                               ASTType resultType) {
+  // If we have no contextual type and the operand is a ORValue, then we cannot
+  // resolve it and have to pass up the ambiguous value.  This is needed for
+  // things like `(((overloadset)))` for example.
+  if (!resultType)
+    if (auto orVal = value.ir.getIfORValue())
+      return orVal;
+
+  ValueDest dest(resultType, context);
+  CValue result = emitCRValue(value, dest);
+  while (1) {
+    if (!result) {
+      dest.resetForError();
+      return {};
+    }
+    // Typically emitCRValue will return an RValue.
+    if (auto rv = result.getIfCRValue())
+      return rv;
+
+    // It may return a BValue though (e.g. when accessing subfields with
+    // computed lvalue bases), in which case we'll emit a copy of it.
+    result = emitCopyOfValue({result, value.expr}, ValueDest::none());
+  }
 }
 
 CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -502,7 +509,6 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return {};
 }
 
-/// Emit a register primary PValue to an SRValue.
 SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   TypedAttr attr = value.ir.get();
@@ -593,7 +599,6 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-/// Emit any kind of PValue to an SLValue.
 MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
@@ -609,10 +614,25 @@ MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
   return MBValue(dest);
 }
 
-/// This helper emits the specified value as a SRValue which has an SSA
-/// value representation, materializing PValues and loading LValues as
-/// needed.  This returns null if emission fails, and should never be used with
-/// values that are memory-only.
+MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
+                                         ExprContext context) {
+  PValue pvalue = value.ir;
+  // FIXME: This is a hack around default arguments requiring types to match.
+  if (auto memWrapper = dyn_cast<StoreToMemAttr>(pvalue.get()))
+    pvalue = memWrapper.getValue();
+
+  // We model this as an immutable let value with a separately stored
+  // initializer.
+  auto var = builder->create<VarLetDeclOp>(
+      translateLocation(value.expr->getLoc()),
+      PointerType::get(pvalue.getType()),
+      StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
+      /*isSynth=*/true);
+  if (!emitPValueToSLValue({pvalue, value.expr}, SLValue(var), context))
+    return {};
+  return MRValue(var);
+}
+
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
                                  ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
@@ -649,25 +669,6 @@ SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
   return emitPValueToSRValue({pValue, expr}, context);
 }
 
-MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
-                                         ExprContext context) {
-  PValue pvalue = value.ir;
-  // FIXME: This is a hack around default arguments requiring types to match.
-  if (auto memWrapper = dyn_cast<StoreToMemAttr>(pvalue.get()))
-    pvalue = memWrapper.getValue();
-
-  // We model this as an immutable let value with a separately stored
-  // initializer.
-  auto var = builder->create<VarLetDeclOp>(
-      translateLocation(value.expr->getLoc()),
-      PointerType::get(pvalue.getType()),
-      StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
-      /*isSynth=*/true);
-  if (!emitPValueToSLValue({pvalue, value.expr}, SLValue(var), context))
-    return {};
-  return MRValue(var);
-}
-
 MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
   if (auto mr = value.ir.getIfMRValue())
@@ -687,9 +688,6 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
 }
 
-/// This helper emits the specified expression as a parameter value, diagnosing
-/// the problem if the expression is only valid as a runtime value.  This
-/// returns null if emission fails.
 PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                ASTType resultType) {
   if (!value)
@@ -733,6 +731,629 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   emitErrorForDynamicValueInParameter(value.expr);
   return {};
 }
+
+//===----------------------------------------------------------------------===//
+// Type conversion helpers.
+
+bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
+                                             ASTType requiredType,
+                                             bool allowArgNameCheck) {
+  // If it already matches, then we're done.
+  ASTType rvType = value.ir.getRValueType();
+  if (rvType.isEqualCanon(requiredType))
+    return true;
+
+  if (allowArgNameCheck) {
+    auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
+    auto valueSig = dyn_cast<SignatureType>(rvType.mlirType);
+    if (requiredSig && valueSig &&
+        canZeroCostConvertSignature(valueSig, requiredSig))
+      return true;
+  }
+
+  // Check to see if we can do an implicit conversion by invoking a `__init__`
+  // method on the expected type.
+  OverloadSet callee(requiredType, "__init__", value.expr,
+                     CallSyntax::kImplicitConvert, shared,
+                     /*no error emission on failure */ {});
+
+  // If there are no viable candidates for the implicit conversion, we fail.
+  if (!callee)
+    return false;
+
+  // If this is a memory-only type, then we'll pass a self argument with the
+  // destination when invoking the method, use a temporary so we can
+  // conveniently type check this.
+  SmallVector<ASTExprAnd<AnyValue>> args;
+  if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
+    auto attr = UnknownAttr::get(PointerType::get(requiredType));
+    args.push_back({PValue(attr), value.expr});
+  }
+  args.push_back(value);
+
+  // If we have at least one candidate, we check to see if any of them can
+  // work. We disable implicit conversions though, to prevent converting
+  // T -> S -> U in one step.
+
+  // This needs to call filterOverloadSet manually because we cannot allow
+  // implicit conversions here.
+  PValue calleeFn =
+      callee.filterOverloadSet({args}, /*allowImplicitConversions=*/false,
+                               /*emitDiagnosticOnFailure=*/false, *this);
+  return !calleeFn.isNull();
+}
+
+//===----------------------------------------------------------------------===//
+// Emission helpers for various value classifications.
+
+/// Helper to rebind a value to a new type.
+static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
+                            ExprEmitter &emitter) {
+  // Materialize a parameter rebind.
+  if (auto pvalue = value.getIfPValue())
+    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), newType));
+
+  // Materialize a rebind operation.
+  auto rebind = [&](Value v) -> Value {
+    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
+                                             newType, v);
+  };
+  if (auto slValue = value.getIfSLValue())
+    return SLValue(rebind(slValue));
+  if (auto mrValue = value.getIfMRValue())
+    return MRValue(rebind(mrValue));
+  if (auto mbValue = value.getIfMBValue())
+    return MBValue(rebind(mbValue));
+  if (auto sbValue = value.getIfSBValue())
+    return SBValue(rebind(sbValue));
+  if (auto dlValue = value.getIfDLValue()) {
+    dlValue->elementType = newType;
+    return dlValue;
+  }
+
+  auto srValue = value.getIfSRValue();
+  assert(srValue && "Unknown value kind");
+  return SRValue(rebind(srValue));
+}
+
+/// When emitting a result value, attempt to "refine" the value type by
+/// evaluating 'apply' expressions in its type. Rebind the value if the type can
+/// be further specialized.
+static AnyValue refineResultValue(AnyValue value, SMLoc loc,
+                                  ExprEmitter &emitter) {
+  Type valueType;
+  // Only CValues can be specialized. ORValues don't have a type.
+  if (auto cValue = value.getIfCValue())
+    valueType = cValue.getType();
+  else
+    return value;
+
+  ParserParamEvaluator evaluator(emitter.getDeclResolver());
+  Type refinedType = evaluator.refineType(valueType);
+  if (refinedType == valueType)
+    return value;
+
+  return rebindValue(value, refinedType, loc, emitter);
+}
+
+AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
+                                 ValueDest &dest) {
+  if (!value)
+    return {};
+
+  // Attempt to further specialize the result value.
+  value = refineResultValue(value, expr->getLoc(), *this);
+
+  // If no destination is specified or it is just a contextual type hint, then
+  // we can propagate the value directly.
+  if (!dest.isSpecified() || isa<LValueInitializerType>(dest.representation)) {
+    dest.representation = NullRepresentation();
+    return value;
+  }
+
+  // OK, if there is a destination specified, handle them by converging the set
+  // of value types we have.
+
+  // If the value being materialized is an unresolved overload set, try to
+  // materialize it.
+  if (auto overloads = value.getIfORValue())
+    return overloads->emitAsCValue(*this, dest);
+
+  auto cValue = value.getIfCValue();
+  assert(cValue && "Must be a CValue if not an ORValue");
+  auto rvalueType = cValue.getRValueType();
+
+  // If there is a known type for the destination but the value disagrees, emit
+  // an implicit conversion directly into the destination.  This keeps values in
+  // registers and avoids a "convert + clone" pair for memory->memory
+  // conversions.
+  if (ASTType requiredType =
+          dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
+    // If converting to a TypeCheckError type, then there is an
+    // already-diagnosed error about this expression.
+    if (requiredType.isTypeCheckErrorType())
+      return {};
+
+    if (!requiredType.isEqualCanon(rvalueType)) {
+      auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
+      auto valueSig = dyn_cast<SignatureType>(rvalueType.mlirType);
+      if (!requiredSig || !valueSig ||
+          !canZeroCostConvertSignature(valueSig, requiredSig)) {
+        // We disable implicit conversions to prevent converting T -> S -> U in
+        // one step, and to avoid infinite conversion cycles.
+        return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
+                                   expr, CallSyntax::kImplicitConvert, dest,
+                                   /*allowImplicitConversion=*/false);
+      }
+
+      // If we are dealing with signatures that differ only in argument names,
+      // we insert a rebind.
+      value = rebindValue(value, requiredSig, expr->getLoc(), *this);
+      return emitCValue({value, expr}, dest);
+    }
+  }
+
+  // If the destination is just a required type, then we now know it must agree
+  // and therefore don't need to do anything more.
+  if (isa<ASTType>(dest.representation)) {
+    dest = ValueDest(); // Resolved the ValueDest;
+    return cValue;
+  }
+
+  // If this destination was an LValue whose buffer was already taken to be
+  // filled in by a client, then this is just completing the transaction.
+  if (isa<LValueBufferTaken>(dest.representation)) {
+    dest = ValueDest(); // Resolved the ValueDest;
+    // The client directly filled in an LValue we provided which is great, but
+    // that LValue we provided took ownership of the value, so we need to return
+    // the result as a borrow, not an owned reference.
+    auto memValue = value.getIfMRValue();
+    assert(memValue && "Must be an MRValue providing result");
+    return MBValue(memValue);
+  }
+
+  // We know we have an CRValue/BValue and the destination is some kind of
+  // LValue.  Emit the dest to figure out where to store it.
+  LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
+                                          /*allowIncompatibleTypes=*/true,
+                                          /*requireSLValue=*/false, *this);
+  if (!destLV)
+    return {};
+
+  // This will have completely resolved all the ValueDest possibilities.
+  assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
+  dest = ValueDest();
+
+  // Finally, store the value into the lvalue.
+  return emitStoreToLValue({cValue, expr}, destLV, dest.getContext());
+}
+
+CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
+                                ValueDest &dest) {
+  // Emitting a CValue always produces a CValue.
+  auto result = emitResult(value, expr, dest);
+  assert((!result || result.getIfCValue()) &&
+         "emitting a CValue as a result should always produce a CValue");
+  return result.getIfCValue();
+}
+
+AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
+                               ASTType resultType) {
+  ValueDest dest(resultType, context);
+  if (auto result = expr->emitIR(dest, *this))
+    return result;
+  dest.resetForError();
+  return {};
+}
+
+RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
+                                   ASTType resultType) {
+  return emitRValue({emitExpr(expr, context, resultType), expr}, context);
+}
+
+CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
+  assert(expr && "cannot emit a null node");
+  return emitCValue({emitExpr(expr, context), expr}, context);
+}
+
+SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
+                                     ASTType resultType) {
+  assert(expr && "cannot emit a null node");
+  return emitSRValue({emitExpr(expr, context, resultType), expr}, context);
+}
+
+PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
+                                   ASTType resultType) {
+  // Clear the builder to indicate that an PValue must be emitted.
+  llvm::SaveAndRestore savedBuilder(builder, {});
+  llvm::SaveAndRestore savedContext(paramContext, context);
+
+  // Emit the expression using the contextual type if present.
+  AnyValue rep = emitExpr(expr, context, resultType);
+  return emitPValue({rep, expr}, context);
+}
+
+LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
+  AnyValue anyValue = expr->emitIR(dest, *this);
+  if (!anyValue)
+    return {}; // Error already diagnosed.
+  return emitLValue({anyValue, expr}, dest);
+}
+CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
+                                     ValueDest &dest) {
+  // If this is a computed LValue emit call to the "getter".
+  if (auto dlValue = value.ir.getIfDLValue())
+    return dlValue->emitLoad(dest, *this);
+
+  // Decay a stored LValue to an MBValue.
+  auto slValue = value.ir.getIfSLValue();
+  assert(slValue && "unknown lvalue kind");
+
+  // Emit a non-consuming __copyinit__ or load of the value.
+  return emitCopyOfValue({MBValue(slValue), value.expr}, dest);
+}
+
+CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
+  ASTType valueType = value.ir.getRValueType();
+  SMLoc exprLoc = value.expr->getLoc();
+  if (!value.ir)
+    return {};
+
+  // Resolve away DLValue's.
+  if (auto dlValue = value.ir.getIfDLValue())
+    return dlValue->emitLoad(dest, *this);
+
+  switch (valueType.getRegisterPassability(exprLoc, shared)) {
+  case StructDeclOp::RP_RegisterPassableTrivial:
+    if (auto pValue = value.ir.getIfPValue()) {
+      value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
+      if (!value.ir)
+        return {};
+    }
+    break;
+  case StructDeclOp::RP_RegisterPassable:
+    if (auto pValue = value.ir.getIfPValue()) {
+      value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
+      if (!value.ir)
+        return {};
+      break;
+    }
+
+    // Register passable __copyinit__ has signature `(self)->Self`.
+    return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
+                               CallSyntax::kImplicitConvert, value.expr);
+
+  case StructDeclOp::RP_MemoryOnly:
+    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
+    SLValue destBuffer = dest.getSLValueForResult(exprLoc, valueType, *this);
+    if (!destBuffer)
+      return {};
+
+    if (auto pValue = value.ir.getIfPValue())
+      return emitPValueToSLValue({pValue, value.expr}, destBuffer,
+                                 dest.context);
+
+    if (!valueType.isCopyable(exprLoc, shared)) {
+      if (valueType.isMovableFrom(value, shared)) {
+        emitError(exprLoc, "value of type ")
+            << valueType
+            << " can only be moved, but source value can only be copied"
+            << value.expr->getRange();
+      } else {
+        emitError(exprLoc, "value of type ")
+            << valueType << " cannot be copied into its destination"
+            << value.expr->getRange();
+      }
+      return {};
+    }
+
+    SmallVector<ASTExprAnd<AnyValue>> posOperands{
+        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
+    if (!emitNamedMethodCall("__copyinit__", CallOperands(posOperands),
+                             ValueDest::none(/*these return None*/),
+                             CallSyntax::kImplicitConvert, value.expr))
+      return {};
+    // If we required an implicit conversion, make sure it happens.
+    return emitCResult(MRValue(destBuffer), value.expr, dest);
+  }
+
+  // Otherwise we can emit a direct use/load for trivial types.
+  // Is is ok to upgrade SBValue to SRValue for trivial types.
+  if (auto sbVal = value.ir.getIfSBValue())
+    value.ir = SRValue(sbVal);
+  if (auto srVal = value.ir.getIfSRValue())
+    return emitCResult(srVal, value.expr, dest);
+
+  if (!builder) {
+    emitErrorForDynamicValueInParameter(value.expr);
+    return {};
+  }
+  Value address = value.ir.getIfMBValue();
+  if (!address)
+    address = value.ir.getIfMRValue();
+  if (!address)
+    address = value.ir.getIfSLValue();
+  assert(address && "Unknown BValue/RValue/SLValue");
+  Value result =
+      builder->create<POP::LoadOp>(value.expr->getLocation(*this), address,
+                                   /*alignment=*/std::nullopt);
+  return emitCResult(SRValue(result), value.expr, dest);
+}
+
+BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                                      ExprContext context) {
+  assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
+         "Types should match");
+
+  // If this is a computed LValue, then perform a writeback.
+  if (auto dlValue = destLV.getIfDLValue()) {
+    // If the value itself is an LValue, emit a load so we can call the setter.
+    if (auto valueLV = value.ir.getIfLValue()) {
+      value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
+      if (!value)
+        return {};
+    }
+
+    // Then store into the dest DLValue.
+    dlValue->emitStore(value, *this);
+
+    // Decay the input value to a BValue since ownership was taken by the store.
+    return emitBValue(value, context, {});
+  }
+
+  // Otherwise we have an SLValue destination.
+  SLValue destPtr = destLV.getIfSLValue();
+  assert(destPtr && "No other known LValue");
+
+  ASTType valueType = value.ir.getRValueType();
+  SMLoc exprLoc = value.expr->getLoc();
+
+  // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
+  // isn't movable, then copy it the destination.
+  if (!valueType.isMovableFrom(value, shared)) {
+    ValueDest dest(destPtr, context);
+    auto result = emitCopyOfValue(value, dest);
+    assert((!result || result.getIfBValue()) &&
+           "dest specified, so this should return BValue");
+    dest.resetForError();
+    return result.getIfBValue();
+  }
+
+  // Otherwise this is a movable CRValue that we own.
+
+  // If it is a register passable, assign with a store.
+  if (valueType.isRegisterPassable(exprLoc, shared)) {
+    // Materialize a PValue or load a MRValue if present.
+    SRValue val = emitSRValue(value, context, valueType);
+    if (!val)
+      return {};
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    // Store the value to memory.  StoreOp takes ownership of the input SRValue.
+    auto loc = translateLocation(value.expr->getLoc());
+    builder->create<POP::StoreOp>(loc, val, destPtr,
+                                  /*alignment=*/std::nullopt);
+    return SBValue(val);
+  }
+
+  if (auto pvalue = value.ir.getIfPValue())
+    return emitPValueToSLValue({pvalue, value.expr}, destPtr, context);
+
+  // Otherwise, assign with a move constructor.
+  // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`
+  // or
+  // `(inout self, owned existing: Self)`.
+  ASTExprAnd<AnyValue> operands[] = {ASTExprAnd<AnyValue>{destPtr, value.expr},
+                                     value};
+  if (!emitNamedMethodCall("__moveinit__", {operands},
+                           ValueDest::none(/*these return None*/),
+                           CallSyntax::kImplicitConvert, value.expr))
+    return {};
+
+  // If we required an implicit conversion, make sure it happens.
+  return MBValue(destPtr);
+}
+
+//===----------------------------------------------------------------------===//
+// Emission helpers for specific value types.
+
+ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
+  // We have two ambiguous expressions that can either be types or dynamic
+  // values: an empty tuple () and None.  In a type context, we want to treat
+  // these as types, and not dynamic values.  Sniff these out to see if we have
+  // them.
+  const ExprNode *innerExpr = expr->getWithoutParens();
+  if (innerExpr->kind == ExprNode::kNoneLiteral)
+    return shared.getNoneType();
+  if (innerExpr->isEmptyTuple())
+    return shared.getBuiltinTupleInstantion(declScope, expr->getLoc(), {});
+
+  auto value = emitExprPValue(expr, EC_Type);
+  if (!value)
+    return {};
+
+  ASTType type = value.getIfTypeValue();
+  if (!type) {
+    emitError(expr->getLoc(), "expected a type, not a value")
+        << expr->getRange();
+    return {};
+  }
+
+  // Verify that all of the parameters for this type are bound.  We allow
+  // PValues to refer to parameteric type, but anything calling `emitType`
+  // can only handle fully bound types.
+  auto *decl = type.getDecl(shared);
+  if (!decl) // MLIR types are never parameterized.
+    return type;
+
+  auto structDecl = cast<StructDeclOp>(*decl);
+
+  // Build up a InputParamBindings set to validate and check the bindings.
+  InputParamBindings paramBindings;
+  for (ParamBindAttr binding : type.getParamBindings())
+    paramBindings.addPrechecked(binding.getValue());
+
+  // Check the bindings.
+  ssize_t incorrectBindingNo = 0;
+  ASTType incorrectBindingExpectedType;
+  SmallVector<Type> paramTypes;
+  for (ParamDeclAttr decl : structDecl.getInputParams())
+    paramTypes.push_back(decl.getType());
+  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
+      paramTypes, structDecl.getInputParamsAttr(), structDecl.getName(),
+      expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
+      structDecl, structDecl.getParamVarargs());
+  if (!bindingValuesAttr)
+    return {};
+  SmallVector<ParamBindAttr> bindingValues;
+  for (auto [decl, value] :
+       llvm::zip(structDecl.getInputParams(), bindingValuesAttr))
+    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
+  auto bindingAttr =
+      ParamBindArrayAttr::get(structDecl.getContext(), bindingValues);
+
+  // If verifyBindings changed the bindings set, then we may have had an
+  // empty varargs list or something.  Rebind the DeclRefType.
+  if (bindingAttr != type.getParamBindings()) {
+    auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
+    type = DeclRefType::get(symbol, bindingAttr);
+  }
+  return type;
+}
+
+RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
+  if (!value.ir)
+    return {};
+
+  ASTType valueRValueType = value.ir.getRValueType();
+
+  // If this is already an 'i1', then we're done.
+  if (valueRValueType.mlirType.isInteger(1))
+    return emitRValue(value, EC_BoolCondition);
+
+  // TODO: Python manual includes this off-hand comment:
+  // Also, an object that doesn’t define a __bool__() method and whose __len__()
+  // method returns zero is considered to be false in a Boolean context.
+
+  // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
+  // a redundant call to __bool__ for Bool types.
+  if (!OverloadSet(valueRValueType, "__mlir_i1__", value.expr,
+                   CallSyntax::kImplicitConvert, shared,
+                   [&]() { /*no error*/ })) {
+    // Use the __bool__ method to convert the user defined type to
+    // something that is a Bool or other type that implements __mlir_i1__.
+    value.ir = emitNamedMethodCall("__bool__", {{{value.ir, value.expr}}},
+                                   ValueDest::none(),
+                                   CallSyntax::kImplicitConvert, value.expr);
+  }
+
+  // Then we use __mlir_i1__ to convert to an i1 value.
+  CValue litBoolCall = emitNamedMethodCall(
+      "__mlir_i1__", {{{value.ir, value.expr}}}, ValueDest::none(),
+      CallSyntax::kImplicitConvert, value.expr);
+
+  return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
+}
+
+RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
+  return emitI1({emitExprCValue(condExpr, context), condExpr});
+}
+
+CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
+  ValueDest dest(context);
+  return emitNamedMethodCall("__index__", {value}, dest,
+                             CallSyntax::kMethodCall, value.expr);
+}
+
+CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
+                                  ExprContext context) {
+  CValue index = emitIndex(value, context);
+  if (!index)
+    return {};
+  ValueDest dest(context);
+  return emitNamedMethodCall("__mlir_index__", {{{index, value.expr}}}, dest,
+                             CallSyntax::kMethodCall, value.expr);
+}
+
+//===----------------------------------------------------------------------===//
+// Return emission helpers.
+
+LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
+  // Cannot raise in a parameter expression.
+  if (!builder)
+    return failure();
+  // If the raise is not in a try and the parent doesn't throw, it is not valid
+  // syntax.
+  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
+  if (!findTryBlock(builder->getInsertionBlock()) &&
+      (!funcOp || !funcOp.isThrows()))
+    return failure();
+
+  builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
+  return success();
+}
+
+void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                                   const ASTDecl &funcDecl) {
+  auto func = cast<LIT::FuncOp>(funcDecl);
+  emitNormalReturn(builder, value, func);
+}
+
+void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
+                                   LIT::FuncOp func) {
+  switch (func.getSpecialFunctionKind()) {
+  default:
+    break;
+
+  /// In the __del__ method for a struct, we need to mark 'self' as being
+  /// destroyed before any return operation.
+  case SpecialFunctionKind::kDel: {
+    assert(func.getBody()->getNumArguments() == 1 &&
+           "__del__ should have one argument");
+    Value selfArg = func.getBody()->getArgument(0);
+
+    // If this is a @register_passable type, the value will be stored in a
+    // box and we want to treat the box as the thing that we track.
+    if (func.getSignature().getInputConvention(0) ==
+        ValueInputConvention::OwnedInReg) {
+      // Find the single store and ignore debug.value operations.
+      POP::StoreOp store;
+      for (auto user : selfArg.getUsers()) {
+        if (isa<DebugInfo::ValueOp>(user))
+          continue;
+        assert(!store && "Should only have a single store");
+        store = cast<POP::StoreOp>(user);
+      }
+      selfArg = store.getPtr();
+    }
+    builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
+    break;
+  }
+
+  /// In the __moveinit__ method for a struct, we need to mark 'existing' as
+  /// being destroyed before any return operation if it is owned convention.
+  case SpecialFunctionKind::kMoveInit: {
+    assert(func.getBody()->getNumArguments() == 2 &&
+           "__moveinit__ should have to arguments");
+    // Don't change `__moveinit__(owned self, inout existing: Self)`.
+    if (func.getSignature().getInputConvention(1) !=
+        ValueInputConvention::OwnedInMem)
+      break;
+
+    Value existingArg = func.getBody()->getArgument(1);
+    builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
+    break;
+  }
+  }
+
+  // Finally we emit a normal return with lit.return.
+  builder.create<LIT::ReturnOp>(value);
+}
+
+//===----------------------------------------------------------------------===//
+// Declaration reference emission helpers.
 
 PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
                                              ParamBindArrayAttr bindings,
@@ -891,740 +1512,6 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
   Capture capture = {};
   return emitDeclReference(spelling, decls, &dummyNode, ValueDest::none(),
                            capture);
-}
-
-//===----------------------------------------------------------------------===//
-// emitResult(ValueDest) Implementation
-//===----------------------------------------------------------------------===//
-
-/// Helper to rebind a value to a new type.
-static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
-                            ExprEmitter &emitter) {
-  // Materialize a parameter rebind.
-  if (auto pvalue = value.getIfPValue())
-    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), newType));
-
-  // Materialize a rebind operation.
-  auto rebind = [&](Value v) -> Value {
-    return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
-                                             newType, v);
-  };
-  if (auto slValue = value.getIfSLValue())
-    return SLValue(rebind(slValue));
-  if (auto mrValue = value.getIfMRValue())
-    return MRValue(rebind(mrValue));
-  if (auto mbValue = value.getIfMBValue())
-    return MBValue(rebind(mbValue));
-  if (auto sbValue = value.getIfSBValue())
-    return SBValue(rebind(sbValue));
-  if (auto dlValue = value.getIfDLValue()) {
-    dlValue->elementType = newType;
-    return dlValue;
-  }
-
-  auto srValue = value.getIfSRValue();
-  assert(srValue && "Unknown value kind");
-  return SRValue(rebind(srValue));
-}
-
-/// When emitting a result value, attempt to "refine" the value type by
-/// evaluating 'apply' expressions in its type. Rebind the value if the type can
-/// be further specialized.
-static AnyValue refineResultValue(AnyValue value, SMLoc loc,
-                                  ExprEmitter &emitter) {
-  Type valueType;
-  // Only CValues can be specialized. ORValues don't have a type.
-  if (auto cValue = value.getIfCValue())
-    valueType = cValue.getType();
-  else
-    return value;
-
-  ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  Type refinedType = evaluator.refineType(valueType);
-  if (refinedType == valueType)
-    return value;
-
-  return rebindValue(value, refinedType, loc, emitter);
-}
-
-/// Emit the specified value into the current destination if present.  This
-/// accepts (and silently propagates) null values.
-///
-/// Note that the `value` provided here may require an implicit conversion into
-/// the destination slot, so the input may be memory-only and result be
-/// register-passable (and visa-versa).
-AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
-                                 ValueDest &dest) {
-  if (!value)
-    return {};
-
-  // Attempt to further specialize the result value.
-  value = refineResultValue(value, expr->getLoc(), *this);
-
-  // If no destination is specified or it is just a contextual type hint, then
-  // we can propagate the value directly.
-  if (!dest.isSpecified() || isa<LValueInitializerType>(dest.representation)) {
-    dest.representation = NullRepresentation();
-    return value;
-  }
-
-  // OK, if there is a destination specified, handle them by converging the set
-  // of value types we have.
-
-  // If the value being materialized is an unresolved overload set, try to
-  // materialize it.
-  if (auto overloads = value.getIfORValue())
-    return overloads->emitAsCValue(*this, dest);
-
-  auto cValue = value.getIfCValue();
-  assert(cValue && "Must be a CValue if not an ORValue");
-  auto rvalueType = cValue.getRValueType();
-
-  // If there is a known type for the destination but the value disagrees, emit
-  // an implicit conversion directly into the destination.  This keeps values in
-  // registers and avoids a "convert + clone" pair for memory->memory
-  // conversions.
-  if (ASTType requiredType =
-          dest.resolveImpliedType(expr->getLoc(), rvalueType, *this)) {
-    // If converting to a TypeCheckError type, then there is an
-    // already-diagnosed error about this expression.
-    if (requiredType.isTypeCheckErrorType())
-      return {};
-
-    if (!requiredType.isEqualCanon(rvalueType)) {
-      auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
-      auto valueSig = dyn_cast<SignatureType>(rvalueType.mlirType);
-      if (!requiredSig || !valueSig ||
-          !canZeroCostConvertSignature(valueSig, requiredSig)) {
-        // We disable implicit conversions to prevent converting T -> S -> U in
-        // one step, and to avoid infinite conversion cycles.
-        return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                   expr, CallSyntax::kImplicitConvert, dest,
-                                   /*allowImplicitConversion=*/false);
-      }
-
-      // If we are dealing with signatures that differ only in argument names,
-      // we insert a rebind.
-      value = rebindValue(value, requiredSig, expr->getLoc(), *this);
-      return emitCValue({value, expr}, dest);
-    }
-  }
-
-  // If the destination is just a required type, then we now know it must agree
-  // and therefore don't need to do anything more.
-  if (isa<ASTType>(dest.representation)) {
-    dest = ValueDest(); // Resolved the ValueDest;
-    return cValue;
-  }
-
-  // If this destination was an LValue whose buffer was already taken to be
-  // filled in by a client, then this is just completing the transaction.
-  if (isa<LValueBufferTaken>(dest.representation)) {
-    dest = ValueDest(); // Resolved the ValueDest;
-    // The client directly filled in an LValue we provided which is great, but
-    // that LValue we provided took ownership of the value, so we need to return
-    // the result as a borrow, not an owned reference.
-    auto memValue = value.getIfMRValue();
-    assert(memValue && "Must be an MRValue providing result");
-    return MBValue(memValue);
-  }
-
-  // We know we have an CRValue/BValue and the destination is some kind of
-  // LValue.  Emit the dest to figure out where to store it.
-  LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
-                                          /*allowIncompatibleTypes=*/true,
-                                          /*requireSLValue=*/false, *this);
-  if (!destLV)
-    return {};
-
-  // This will have completely resolved all the ValueDest possibilities.
-  assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
-  dest = ValueDest();
-
-  // Finally, store the value into the lvalue.
-  return emitStoreToLValue({cValue, expr}, destLV, dest.getContext());
-}
-
-// Emitting a CValue always produces a CValue.
-CValue ExprEmitter::emitCResult(CValue value, const ExprNode *expr,
-                                ValueDest &dest) {
-  auto result = emitResult(value, expr, dest);
-  assert((!result || result.getIfCValue()) &&
-         "emitting a CValue as a result should always produce a CValue");
-  return result.getIfCValue();
-}
-
-/// Given a value with a known type, emit a store to the specified LValue.  This
-/// returns an borrowed reference to the value after it is done.  The types must
-/// match for this call.
-BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                      ExprContext context) {
-  assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
-         "Types should match");
-
-  // If this is a computed LValue, then perform a writeback.
-  if (auto dlValue = destLV.getIfDLValue()) {
-    // If the value itself is an LValue, emit a load so we can call the setter.
-    if (auto valueLV = value.ir.getIfLValue()) {
-      value.ir = emitLoadOfLValue({valueLV, value.expr}, ValueDest::none());
-      if (!value)
-        return {};
-    }
-
-    // Then store into the dest DLValue.
-    dlValue->emitStore(value, *this);
-
-    // Decay the input value to a BValue since ownership was taken by the store.
-    return emitBValue(value, context, {});
-  }
-
-  // Otherwise we have an SLValue destination.
-  SLValue destPtr = destLV.getIfSLValue();
-  assert(destPtr && "No other known LValue");
-
-  ASTType valueType = value.ir.getRValueType();
-  SMLoc exprLoc = value.expr->getLoc();
-
-  // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
-  // isn't movable, then copy it the destination.
-  if (!valueType.isMovableFrom(value, shared)) {
-    ValueDest dest(destPtr, context);
-    auto result = emitCopyOfValue(value, dest);
-    assert((!result || result.getIfBValue()) &&
-           "dest specified, so this should return BValue");
-    dest.resetForError();
-    return result.getIfBValue();
-  }
-
-  // Otherwise this is a movable CRValue that we own.
-
-  // If it is a register passable, assign with a store.
-  if (valueType.isRegisterPassable(exprLoc, shared)) {
-    // Materialize a PValue or load a MRValue if present.
-    SRValue val = emitSRValue(value, context, valueType);
-    if (!val)
-      return {};
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-    // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    auto loc = translateLocation(value.expr->getLoc());
-    builder->create<POP::StoreOp>(loc, val, destPtr,
-                                  /*alignment=*/std::nullopt);
-    return SBValue(val);
-  }
-
-  if (auto pvalue = value.ir.getIfPValue())
-    return emitPValueToSLValue({pvalue, value.expr}, destPtr, context);
-
-  // Otherwise, assign with a move constructor.
-  // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`
-  // or
-  // `(inout self, owned existing: Self)`.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands{
-      ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
-  if (!emitNamedMethodCall("__moveinit__", CallOperands(posOperands),
-                           ValueDest::none(/*these return None*/),
-                           CallSyntax::kImplicitConvert, value.expr))
-    return {};
-
-  // If we required an implicit conversion, make sure it happens.
-  return MBValue(destPtr);
-}
-
-/// Emit a call to the getter of the specified LValue, loading the value into
-/// dest (if specified) or returning it if not.  This returns an RValue if
-/// there is no consuming dest, otherwise a BValue.
-CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
-                                     ValueDest &dest) {
-  // If this is a computed LValue emit call to the "getter".
-  if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(dest, *this);
-
-  // Decay a stored LValue to an MBValue.
-  auto slValue = value.ir.getIfSLValue();
-  assert(slValue && "unknown lvalue kind");
-
-  // Emit a non-consuming __copyinit__ or load of the value.
-  return emitCopyOfValue({MBValue(slValue), value.expr}, dest);
-}
-
-/// Emit a copy of the specified value, producing a new owned instance of the
-/// value in the specified destination.  This returns an RValue if
-/// there is no consuming dest, otherwise a BValue.
-CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
-  ASTType valueType = value.ir.getRValueType();
-  SMLoc exprLoc = value.expr->getLoc();
-  if (!value.ir)
-    return {};
-
-  // Resolve away DLValue's.
-  if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(dest, *this);
-
-  switch (valueType.getRegisterPassability(exprLoc, shared)) {
-  case StructDeclOp::RP_RegisterPassableTrivial:
-    if (auto pValue = value.ir.getIfPValue()) {
-      value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
-      if (!value.ir)
-        return {};
-    }
-    break;
-  case StructDeclOp::RP_RegisterPassable:
-    if (auto pValue = value.ir.getIfPValue()) {
-      value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
-      if (!value.ir)
-        return {};
-      break;
-    }
-
-    // Register passable __copyinit__ has signature `(self)->Self`.
-    return emitNamedMethodCall("__copyinit__", CallOperands({value}), dest,
-                               CallSyntax::kImplicitConvert, value.expr);
-
-  case StructDeclOp::RP_MemoryOnly:
-    // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
-    SLValue destBuffer = dest.getSLValueForResult(exprLoc, valueType, *this);
-    if (!destBuffer)
-      return {};
-
-    if (auto pValue = value.ir.getIfPValue())
-      return emitPValueToSLValue({pValue, value.expr}, destBuffer,
-                                 dest.context);
-
-    if (!valueType.isCopyable(exprLoc, shared)) {
-      if (valueType.isMovableFrom(value, shared)) {
-        emitError(exprLoc, "value of type ")
-            << valueType
-            << " can only be moved, but source value can only be copied"
-            << value.expr->getRange();
-      } else {
-        emitError(exprLoc, "value of type ")
-            << valueType << " cannot be copied into its destination"
-            << value.expr->getRange();
-      }
-      return {};
-    }
-
-    SmallVector<ASTExprAnd<AnyValue>> posOperands{
-        ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
-    if (!emitNamedMethodCall("__copyinit__", CallOperands(posOperands),
-                             ValueDest::none(/*these return None*/),
-                             CallSyntax::kImplicitConvert, value.expr))
-      return {};
-    // If we required an implicit conversion, make sure it happens.
-    return emitCResult(MRValue(destBuffer), value.expr, dest);
-  }
-
-  // Otherwise we can emit a direct use/load for trivial types.
-  // Is is ok to upgrade SBValue to SRValue for trivial types.
-  if (auto sbVal = value.ir.getIfSBValue())
-    value.ir = SRValue(sbVal);
-  if (auto srVal = value.ir.getIfSRValue())
-    return emitCResult(srVal, value.expr, dest);
-
-  if (!builder) {
-    emitErrorForDynamicValueInParameter(value.expr);
-    return {};
-  }
-  Value address = value.ir.getIfMBValue();
-  if (!address)
-    address = value.ir.getIfMRValue();
-  if (!address)
-    address = value.ir.getIfSLValue();
-  assert(address && "Unknown BValue/RValue/SLValue");
-  Value result =
-      builder->create<POP::LoadOp>(value.expr->getLocation(*this), address,
-                                   /*alignment=*/std::nullopt);
-  return emitCResult(SRValue(result), value.expr, dest);
-}
-
-//===----------------------------------------------------------------------===//
-// Function Calls
-//===----------------------------------------------------------------------===//
-
-bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
-                                             ASTType requiredType,
-                                             bool allowArgNameCheck) {
-  // If it already matches, then we're done.
-  ASTType rvType = value.ir.getRValueType();
-  if (rvType.isEqualCanon(requiredType))
-    return true;
-
-  if (allowArgNameCheck) {
-    auto requiredSig = dyn_cast<SignatureType>(requiredType.mlirType);
-    auto valueSig = dyn_cast<SignatureType>(rvType.mlirType);
-    if (requiredSig && valueSig &&
-        canZeroCostConvertSignature(valueSig, requiredSig))
-      return true;
-  }
-
-  // Check to see if we can do an implicit conversion by invoking a `__init__`
-  // method on the expected type.
-  OverloadSet callee(requiredType, "__init__", value.expr,
-                     CallSyntax::kImplicitConvert, shared,
-                     /*no error emission on failure */ {});
-
-  // If there are no viable candidates for the implicit conversion, we fail.
-  if (!callee)
-    return false;
-
-  // If this is a memory-only type, then we'll pass a self argument with the
-  // destination when invoking the method, use a temporary so we can
-  // conveniently type check this.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  if (!requiredType.isRegisterPassable(value.expr->getLoc(), shared)) {
-    auto attr = UnknownAttr::get(PointerType::get(requiredType));
-    posOperands.push_back({PValue(attr), value.expr});
-  }
-  posOperands.push_back(value);
-
-  // If we have at least one candidate, we check to see if any of them can
-  // work. We disable implicit conversions though, to prevent converting
-  // T -> S -> U in one step.
-
-  // This needs to call filterOverloadSet manually because we cannot allow
-  // implicit conversions here.
-  PValue calleeFn =
-      callee.filterOverloadSet(CallOperands(posOperands),
-                               /*allowImplicitConversions=*/false,
-                               /*emitDiagnosticOnFailure=*/false, *this);
-  return !calleeFn.isNull();
-}
-
-/// Emit the specified expression as a condition, converting it to an MLIR I1
-/// value that we can test directly (note it may be either an dynamic or
-/// PValue). This reports and error and returns null on error.
-RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value) {
-  if (!value.ir)
-    return {};
-
-  ASTType valueRValueType = value.ir.getRValueType();
-
-  // If this is already an 'i1', then we're done.
-  if (valueRValueType.mlirType.isInteger(1))
-    return emitRValue(value, EC_BoolCondition);
-
-  // TODO: Python manual includes this off-hand comment:
-  // Also, an object that doesn’t define a __bool__() method and whose __len__()
-  // method returns zero is considered to be false in a Boolean context.
-
-  // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
-  // a redundant call to __bool__ for Bool types.
-  if (!OverloadSet(valueRValueType, "__mlir_i1__", value.expr,
-                   CallSyntax::kImplicitConvert, shared,
-                   [&]() { /*no error*/ })) {
-    // Use the __bool__ method to convert the user defined type to
-    // something that is a Bool or other type that implements __mlir_i1__.
-    value.ir = emitNamedMethodCall(
-        "__bool__", CallOperands({{value.ir, value.expr}}), ValueDest::none(),
-        CallSyntax::kImplicitConvert, value.expr);
-  }
-
-  // Then we use __mlir_i1__ to convert to an i1 value.
-  CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", CallOperands({{value.ir, value.expr}}), ValueDest::none(),
-      CallSyntax::kImplicitConvert, value.expr);
-
-  return emitRValue({litBoolCall, value.expr}, EC_BoolCondition);
-}
-
-//===----------------------------------------------------------------------===//
-// ExprEmitter implementation
-//===----------------------------------------------------------------------===//
-
-/// Emit the specified node with the indicated expression context and an
-/// optional contextual type.
-AnyValue ExprEmitter::emitExpr(const ExprNode *expr, ExprContext context,
-                               ASTType resultType) {
-  ValueDest dest(resultType, context);
-  if (auto result = expr->emitIR(dest, *this))
-    return result;
-  dest.resetForError();
-  return {};
-}
-
-/// This helper emits the specified value rep as an RValue.
-RValue ExprEmitter::emitExprRValue(const ExprNode *expr, ExprContext context,
-                                   ASTType resultType) {
-  return emitRValue({emitExpr(expr, context, resultType), expr}, context);
-}
-
-/// This helper emits the specified value rep as an CRValue.
-CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
-  assert(expr && "cannot emit a null node");
-  return emitCValue({emitExpr(expr, context), expr}, context);
-}
-
-/// This helper emits the specified value rep as an SRValue, materializing
-/// it as a parameter constant if it is a parameter.  This returns null if
-/// emission fails.
-SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
-                                     ASTType resultType) {
-  assert(expr && "cannot emit a null node");
-  return emitSRValue({emitExpr(expr, context, resultType), expr}, context);
-}
-
-/// This helper emits the specified expression as a parameter value, diagnosing
-/// the problem if the expression is only valid as a runtime value.  This
-/// returns null if emission fails.
-PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
-                                   ASTType resultType) {
-  // Clear the builder to indicate that an PValue must be emitted.
-  llvm::SaveAndRestore savedBuilder(builder, {});
-  llvm::SaveAndRestore savedContext(paramContext, context);
-
-  // Emit the expression using the contextual type if present.
-  AnyValue rep = emitExpr(expr, context, resultType);
-  return emitPValue({rep, expr}, context);
-}
-
-/// Emit the specified expression as an LValue which can be loaded and stored.
-/// If contextualType is non-null, then an implicitly declared LValue will be
-/// assigned that type.
-///
-/// This diagnoses the expression with the specified message if it isn't a
-/// valid LValue.
-LValue ExprEmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
-  AnyValue anyValue = expr->emitIR(dest, *this);
-  if (!anyValue)
-    return {}; // Error already diagnosed.
-  return emitLValue({anyValue, expr}, dest);
-}
-
-/// This helper emits the specified expression tree as a type, e.g. turning
-/// "Int" into the type for it.  This emits an error and returns null on
-/// failure.
-ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
-  // We have two ambiguous expressions that can either be types or dynamic
-  // values: an empty tuple () and None.  In a type context, we want to treat
-  // these as types, and not dynamic values.  Sniff these out to see if we have
-  // them.
-  const ExprNode *innerExpr = expr->getWithoutParens();
-  if (innerExpr->kind == ExprNode::kNoneLiteral)
-    return shared.getNoneType();
-  if (innerExpr->isEmptyTuple())
-    return shared.getBuiltinTupleInstantion(declScope, expr->getLoc(), {});
-
-  auto value = emitExprPValue(expr, EC_Type);
-  if (!value)
-    return {};
-
-  ASTType type = value.getIfTypeValue();
-  if (!type) {
-    emitError(expr->getLoc(), "expected a type, not a value")
-        << expr->getRange();
-    return {};
-  }
-
-  // Verify that all of the parameters for this type are bound.  We allow
-  // PValues to refer to parameteric type, but anything calling `emitType`
-  // can only handle fully bound types.
-  auto *decl = type.getDecl(shared);
-  if (!decl) // MLIR types are never parameterized.
-    return type;
-
-  auto structDecl = cast<StructDeclOp>(*decl);
-
-  // Build up a InputParamBindings set to validate and check the bindings.
-  InputParamBindings paramBindings;
-  for (ParamBindAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(binding.getValue());
-
-  // Check the bindings.
-  ssize_t incorrectBindingNo = 0;
-  ASTType incorrectBindingExpectedType;
-  SmallVector<Type> paramTypes;
-  for (ParamDeclAttr decl : structDecl.getInputParams())
-    paramTypes.push_back(decl.getType());
-  auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structDecl.getInputParamsAttr(), structDecl.getName(),
-      expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
-      structDecl, structDecl.getParamVarargs());
-  if (!bindingValuesAttr)
-    return {};
-  SmallVector<ParamBindAttr> bindingValues;
-  for (auto [decl, value] :
-       llvm::zip(structDecl.getInputParams(), bindingValuesAttr))
-    bindingValues.push_back(ParamBindAttr::get(decl.getName(), value));
-  auto bindingAttr =
-      ParamBindArrayAttr::get(structDecl.getContext(), bindingValues);
-
-  // If verifyBindings changed the bindings set, then we may have had an
-  // empty varargs list or something.  Rebind the DeclRefType.
-  if (bindingAttr != type.getParamBindings()) {
-    auto symbol = cast<DeclRefType>(type.mlirType).getSymbol();
-    type = DeclRefType::get(symbol, bindingAttr);
-  }
-  return type;
-}
-
-/// Emit a call __init__, returning an instance of the specified
-/// type.  If `allowImplicitConversion` is true, the provided args are allowed
-/// to implicitly convert to the expectations of the constructor signatures.
-CValue ExprEmitter::emitConstructorCall(ASTType type,
-                                        const CallOperands &callOperands,
-                                        const ExprNode *expr, CallSyntax syntax,
-                                        ValueDest &dest,
-                                        bool allowImplicitConversion) {
-  // If the dest type is invalid, then an error has already been reported.
-  if (type.isTypeCheckErrorType())
-    return {};
-
-  // Check to see if we can invoke an __init__ method to convert it.
-  OverloadSet callee(type, "__init__", expr, syntax, shared,
-                     /*errorHandler*/ {});
-
-  // Init for memory-only types get their self argument implicitly initialized
-  // and passed in as the first argument.
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
-  CallOperands operands = callOperands;
-  bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
-  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
-  if (isMemoryOnly) {
-    posOperandsWithSelf.reserve(posOperands.size() + 1);
-
-    // Unfortunately, we can't just use 'type' or the dest LValue as the buffer
-    // to initialize, because the concrete result type might need parameters to
-    // be inferred, and those may depend on other value arguments.  Handle this
-    // by setting up a placeholder with the type we know so far, and use that to
-    // filter the overload set.
-    auto attr = UnknownAttr::get(PointerType::get(type));
-    posOperandsWithSelf.push_back({PValue(attr), expr});
-    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    operands.posOperands = posOperandsWithSelf;
-  }
-
-  // Try to resolve the overload set to exactly one candidate, but don't emit an
-  // error on failure (we typically want to customize the error).
-  PValue calleeFn =
-      callee.filterOverloadSet(operands, allowImplicitConversion,
-                               /*emitDiagnosticOnFailure=*/false, *this);
-  if (!calleeFn) {
-    // If we failed to resolve the set, then try to emit a tailored error.  If
-    // constructing from one value, then this is a type conversion (either
-    // implicit or explicit).
-    if (posOperands.size() == 1 && posOperands[0].ir.getIfCValue()) {
-      ASTType operandType = posOperands[0].ir.getIfCValue().getRValueType();
-
-      // Reject Int(x) where x is already an Int with an error + fixit.
-      if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
-          isa<CallNode>(expr)) {
-        const CallNode &callNode = *cast<CallNode>(expr);
-        // This removes the constructor call, but does not remove the parens
-        // because we don't want to introduce precedence problems.
-        emitError(expr->getLoc())
-            << "cannot construct " << type
-            << " with itself, you can remove the constructor call"
-            << posOperands[0].expr->getRange()
-            << FixIt::remove(callNode.callee->getRange());
-        return {};
-      }
-
-      if (syntax != CallSyntax::kImplicitConvert) {
-        emitError(expr->getLoc())
-            << "cannot construct " << type << " from " << operandType
-            << " value" << getContextMessage(dest.getContext())
-            << expr->getRange();
-        return {};
-      }
-
-      // Handle common type mismatches with a tailored error.
-      if (dest.getContext() == EC_CallParamValue ||
-          dest.getContext() == EC_CallArgValue) {
-        auto diag = emitError(expr->getLoc())
-                    << "cannot pass " << operandType << " value, "
-                    << ((dest.getContext() == EC_CallParamValue) ? "parameter"
-                                                                 : "argument")
-                    << " expected " << type << expr->getRange();
-        return {};
-      }
-
-      emitError(expr->getLoc())
-          << "cannot implicitly convert " << operandType << " value to " << type
-          << getContextMessage(dest.getContext()) << expr->getRange();
-      return {};
-    }
-
-    // If the type has no candidates, complain about that.
-    if (callee.isNull()) {
-      if (!type.getDecl(shared)) {
-        emitError(expr->getLoc(), "MLIR type ")
-            << type
-            << " must be created with an MLIR operation, not constructor "
-               "syntax"
-            << getContextMessage(dest.getContext()) << expr->getRange();
-        return {};
-      }
-
-      emitError(expr->getLoc(), "")
-          << type << " does not implement any '__init__' methods"
-          << getContextMessage(dest.getContext()) << expr->getRange();
-      return {};
-    }
-
-    // Otherwise, do it again to emit a generic overload set error.
-    calleeFn =
-        callee.filterOverloadSet(operands, allowImplicitConversion,
-                                 /*emitDiagnosticOnFailure=*/true, *this);
-    assert(!calleeFn && "This should fail if it failed before");
-    return {};
-  }
-
-  // If we successfully resolve the overload set, we know the call will succeed,
-  // do it. Register-passable and parameter constructor calls do not require
-  // result slot allocation.
-  if (!isMemoryOnly)
-    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
-  if (!builder) {
-    operands = callOperands;
-    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
-  }
-
-  // We need to invoke memory-only constructors specially since the buffer is
-  // exposed.
-  auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
-  auto firstArgRVType =
-      ASTType(calleeSig.getValueInputs()[0]).getPointerElementType();
-
-  // For a memory-only call, we need to replace the destination buffer with the
-  // actual destination lvalue to use.
-  SLValue destSLValue =
-      dest.getSLValueForResult(expr->getLoc(), firstArgRVType, *this);
-  posOperandsWithSelf[0].ir = destSLValue;
-  if (!destSLValue)
-    return {};
-
-  // Emit the call, but not into 'dest', typically init will return None.
-  CValue result = emitIndirectCall(calleeFn, operands, ValueDest::none(), expr);
-  if (!result)
-    return {};
-
-  // Now that we've emitted the result into the result buffer, emit a conversion
-  // if the expected type and the actual type differ.  This can happen when the
-  // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
-  return emitCResult(MRValue(destSLValue), expr, dest);
-}
-
-RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
-  return emitI1({emitExprCValue(condExpr, context), condExpr});
-}
-
-CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
-  ValueDest dest(context);
-  return emitNamedMethodCall("__index__", {value}, dest,
-                             CallSyntax::kMethodCall, value.expr);
-}
-
-CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
-                                  ExprContext context) {
-  CValue index = emitIndex(value, context);
-  if (!index)
-    return {};
-  ValueDest dest(context);
-  return emitNamedMethodCall("__mlir_index__", {{{index, value.expr}}}, dest,
-                             CallSyntax::kMethodCall, value.expr);
 }
 
 //===----------------------------------------------------------------------===//

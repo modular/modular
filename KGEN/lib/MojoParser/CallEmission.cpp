@@ -23,6 +23,7 @@
 #include "Support/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+
 #include <limits>
 
 #define DEBUG_TYPE "LITEXPRCALLS"
@@ -1870,4 +1871,148 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     return {};
 
   return emitIndirectCall(callee, operands, dest, callNode);
+}
+
+CValue ExprEmitter::emitConstructorCall(ASTType type,
+                                        const CallOperands &callOperands,
+                                        const ExprNode *expr, CallSyntax syntax,
+                                        ValueDest &dest,
+                                        bool allowImplicitConversion) {
+  // If the dest type is invalid, then an error has already been reported.
+  if (type.isTypeCheckErrorType())
+    return {};
+
+  // Check to see if we can invoke an __init__ method to convert it.
+  OverloadSet callee(type, "__init__", expr, syntax, shared,
+                     /*errorHandler*/ {});
+
+  // Init for memory-only types get their self argument implicitly initialized
+  // and passed in as the first argument.
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  CallOperands operands = callOperands;
+  bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
+  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
+  if (isMemoryOnly) {
+    posOperandsWithSelf.reserve(posOperands.size() + 1);
+
+    // Unfortunately, we can't just use 'type' or the dest LValue as the buffer
+    // to initialize, because the concrete result type might need parameters to
+    // be inferred, and those may depend on other value arguments.  Handle this
+    // by setting up a placeholder with the type we know so far, and use that to
+    // filter the overload set.
+    auto attr = UnknownAttr::get(PointerType::get(type));
+    posOperandsWithSelf.push_back({PValue(attr), expr});
+    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
+    operands.posOperands = posOperandsWithSelf;
+  }
+
+  // Try to resolve the overload set to exactly one candidate, but don't emit an
+  // error on failure (we typically want to customize the error).
+  PValue calleeFn =
+      callee.filterOverloadSet(operands, allowImplicitConversion,
+                               /*emitDiagnosticOnFailure=*/false, *this);
+  if (!calleeFn) {
+    // If we failed to resolve the set, then try to emit a tailored error.  If
+    // constructing from one value, then this is a type conversion (either
+    // implicit or explicit).
+    if (posOperands.size() == 1 && posOperands[0].ir.getIfCValue()) {
+      ASTType operandType = posOperands[0].ir.getIfCValue().getRValueType();
+
+      // Reject Int(x) where x is already an Int with an error + fixit.
+      if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
+          isa<CallNode>(expr)) {
+        const CallNode &callNode = *cast<CallNode>(expr);
+        // This removes the constructor call, but does not remove the parens
+        // because we don't want to introduce precedence problems.
+        emitError(expr->getLoc())
+            << "cannot construct " << type
+            << " with itself, you can remove the constructor call"
+            << posOperands[0].expr->getRange()
+            << FixIt::remove(callNode.callee->getRange());
+        return {};
+      }
+
+      if (syntax != CallSyntax::kImplicitConvert) {
+        emitError(expr->getLoc())
+            << "cannot construct " << type << " from " << operandType
+            << " value" << getContextMessage(dest.getContext())
+            << expr->getRange();
+        return {};
+      }
+
+      // Handle common type mismatches with a tailored error.
+      if (dest.getContext() == EC_CallParamValue ||
+          dest.getContext() == EC_CallArgValue) {
+        auto diag = emitError(expr->getLoc())
+                    << "cannot pass " << operandType << " value, "
+                    << ((dest.getContext() == EC_CallParamValue) ? "parameter"
+                                                                 : "argument")
+                    << " expected " << type << expr->getRange();
+        return {};
+      }
+
+      emitError(expr->getLoc())
+          << "cannot implicitly convert " << operandType << " value to " << type
+          << getContextMessage(dest.getContext()) << expr->getRange();
+      return {};
+    }
+
+    // If the type has no candidates, complain about that.
+    if (callee.isNull()) {
+      if (!type.getDecl(shared)) {
+        emitError(expr->getLoc(), "MLIR type ")
+            << type
+            << " must be created with an MLIR operation, not constructor "
+               "syntax"
+            << getContextMessage(dest.getContext()) << expr->getRange();
+        return {};
+      }
+
+      emitError(expr->getLoc(), "")
+          << type << " does not implement any '__init__' methods"
+          << getContextMessage(dest.getContext()) << expr->getRange();
+      return {};
+    }
+
+    // Otherwise, do it again to emit a generic overload set error.
+    calleeFn =
+        callee.filterOverloadSet(operands, allowImplicitConversion,
+                                 /*emitDiagnosticOnFailure=*/true, *this);
+    assert(!calleeFn && "This should fail if it failed before");
+    return {};
+  }
+
+  // If we successfully resolve the overload set, we know the call will succeed,
+  // do it. Register-passable and parameter constructor calls do not require
+  // result slot allocation.
+  if (!isMemoryOnly)
+    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
+  if (!builder) {
+    operands = callOperands;
+    return emitCallUnchecked(calleeFn, operands, {}, dest, expr);
+  }
+
+  // We need to invoke memory-only constructors specially since the buffer is
+  // exposed.
+  auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
+  auto firstArgRVType =
+      ASTType(calleeSig.getValueInputs()[0]).getPointerElementType();
+
+  // For a memory-only call, we need to replace the destination buffer with the
+  // actual destination lvalue to use.
+  SLValue destSLValue =
+      dest.getSLValueForResult(expr->getLoc(), firstArgRVType, *this);
+  posOperandsWithSelf[0].ir = destSLValue;
+  if (!destSLValue)
+    return {};
+
+  // Emit the call, but not into 'dest', typically init will return None.
+  CValue result = emitIndirectCall(calleeFn, operands, ValueDest::none(), expr);
+  if (!result)
+    return {};
+
+  // Now that we've emitted the result into the result buffer, emit a conversion
+  // if the expected type and the actual type differ.  This can happen when the
+  // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
+  return emitCResult(MRValue(destSLValue), expr, dest);
 }
