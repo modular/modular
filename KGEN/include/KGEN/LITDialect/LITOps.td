@@ -757,20 +757,19 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [ASTDeclInterface,
   }];
 
   let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
+                       OptionalAttr<KGEN_ParamDeclAttr>:$lifetimeDecl,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs PointerType:$result);
 
   let assemblyFormat = [{
-    $name (`var` $isVar^)? (`synth` $isSynthesized^)?  `:` type($result)
-    attr-dict
+    $name (`var` $isVar^)? (`synth` $isSynthesized^)?
+    (`lifetime` `(` custom<LifetimeDecl>($lifetimeDecl)^ `)`)?
+    `:` type($result) attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$type, "StringRef":$name, "bool":$isVar,
-                   "bool":$isSynthesized), [{
-      build($_builder, $_state, type, $_builder.getStringAttr(name),
-            isVar, isSynthesized, /*docString=*/{});
-    }]>
+                   "bool":$isSynth, CArg<"StringRef", "{}">:$lifetimeDecl)>
   ];
 }
 

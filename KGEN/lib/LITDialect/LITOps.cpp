@@ -1151,6 +1151,30 @@ OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseLifetimeDecl(AsmParser &p, ParamDeclAttr &decl) {
+  StringAttr name;
+  if (parseParamName(p, name))
+    return failure();
+  decl = ParamDeclAttr::get(name, LifetimeType::get(p.getContext()));
+  return success();
+}
+
+static void printLifetimeDecl(AsmPrinter &p, Operation *op,
+                              ParamDeclAttr decl) {
+  printParamName(p, decl.getName());
+}
+
+void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type type,
+                         StringRef name, bool isVar, bool isSynth,
+                         StringRef lifetimeDecl) {
+  build(
+      b, state, type, name, isVar, isSynth,
+      lifetimeDecl.empty()
+          ? ParamDeclAttr()
+          : ParamDeclAttr::get(lifetimeDecl, LifetimeType::get(b.getContext())),
+      /*docString=*/{});
+}
+
 void VarLetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
