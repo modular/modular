@@ -9,13 +9,14 @@ add_modular_conversion_library(MojoParser
   ASTDeclRef.cpp
   ASTType.cpp
   CallEmission.cpp
+  ClosureEmitter.cpp
   CodeComplete.cpp
   DeclResolver.cpp
   Diags.cpp
   DocString.cpp
   ExprEmitter.cpp
-  IRValues.cpp
   ExprNodes.cpp
+  IRValues.cpp
   Lexer.cpp
   ParserBase.cpp
   ParserDriver.cpp
@@ -23,8 +24,8 @@ add_modular_conversion_library(MojoParser
   ParserExprs.cpp
   ParserStmts.cpp
   SharedState.cpp
-  ClosureEmitter.cpp
   StructEmitter.cpp
+  UncheckedCallEmission.cpp
 
   DEPENDS
   KGENVersion
