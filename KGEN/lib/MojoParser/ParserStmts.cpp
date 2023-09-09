@@ -720,25 +720,6 @@ static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
   return {TryOp(), false};
 }
 
-/// Emit the logic to raise from the current scope, returning failure (but NOT
-/// emitting an error) if it is invalid to return from the current context,
-/// or emitting a TryRaise/return if it is valid.
-/// TODO: Generalize to support memory-only errors.
-LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
-  // Cannot raise in a parameter expression.
-  if (!builder)
-    return failure();
-  // If the raise is not in a try and the parent doesn't throw, it is not valid
-  // syntax.
-  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
-  if (!findTryBlock(builder->getInsertionBlock()) &&
-      (!funcOp || !funcOp.isThrows()))
-    return failure();
-
-  builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
-  return success();
-}
-
 ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   llvm::SMRange loc = consumeToken(Token::kw_raise).getLocRange();
 
