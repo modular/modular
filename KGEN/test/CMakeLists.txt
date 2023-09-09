@@ -24,14 +24,12 @@ add_modular_testsuite(check-mojo
   kgen
   kgen-opt
   kgen-translate
-  mojo-lsp-server
   mojo-sdk
 )
 
-if(LLDB_FOUND)
-  add_dependencies(check-mojo MojoLLDB mojo-jupyter-executor)
-endif()
-
 add_subdirectory(kgen)
-add_subdirectory(mojo-parser)
 add_subdirectory(mojo-integration)
+add_subdirectory(mojo-jupyter)
+add_subdirectory(mojo-lldb-repl)
+add_subdirectory(mojo-lsp-server)
+add_subdirectory(mojo-parser)

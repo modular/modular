@@ -5,6 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 # Invoking the subcommand with `--help` prints its help text.
-# RUN: %repl -invalid-option --help | FileCheck %s
+# RUN: mojo repl -invalid-option --help | FileCheck %s
 
 # CHECK: mojo-repl
