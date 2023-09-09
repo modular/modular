@@ -2297,9 +2297,9 @@ void DeclResolver::setLocationDebugScope(
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
 
-static void emitClosureInstance(SignatureType closureSignature,
-                                SharedState &shared,
-                                ASTDecl &nestedFunctionDecl, SMLoc location) {
+static Value emitClosureInstance(SignatureType closureSignature,
+                                 SharedState &shared,
+                                 ASTDecl &nestedFunctionDecl, SMLoc location) {
   LIT::FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   auto parentFunction = nestedFunction->getParentOfType<LIT::FuncOp>();
   assert(parentFunction &&
@@ -2309,15 +2309,25 @@ static void emitClosureInstance(SignatureType closureSignature,
   if (!symbol) {
     shared.emitError(location, "TODO: nested escaping closures deeper than 1 "
                                "level are not supported yet");
-    return;
+    return {};
   }
+  // Save the insertion point before closure creation since closure creation
+  // nukes the nested function.
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      parentFunction.getLoc(), parentFunction.getBody());
+  builder.setInsertionPointAfter(nestedFunction);
+  auto insertPoint = builder.saveInsertionPoint();
+
   ASTDecl *parentFunctionDecl =
       shared.declResolver->getDeclForFuncSymbol(symbol.getSymbol());
   FileModuleOp fileModuleOp = nestedFunction->getParentOfType<FileModuleOp>();
-  StructDeclOp closureImpl = shared.getOrGenerateClosureImplStruct(
-      location, nestedFunctionDecl, fileModuleOp);
-  auto closureWrapper = shared.getOrGenerateClosureWrapperStruct(
+  // Create ClosureWrapper first. Nested function cannot be referenced after the
+  // Closure Impl replaces it.
+  StructDeclOp closureWrapper = shared.getOrGenerateClosureWrapperStruct(
       location, nestedFunction.getSignature(), fileModuleOp);
+  StructDeclOp closureImpl =
+      shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
+          location, nestedFunctionDecl, fileModuleOp);
   ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
                          shared.getNoneType(), shared);
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
@@ -2327,14 +2337,12 @@ static void emitClosureInstance(SignatureType closureSignature,
   // we need the captures and in order to compute the captures we need to
   // resolve the body.
   if (failed(shared.declResolver->resolveFully(nestedFunctionDecl, location)))
-    return;
+    return {};
   auto captureIteratorRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = parentFunction.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
-      parentFunction.getLoc(), parentFunction.getBody());
-  builder.setInsertionPointAfter(nestedFunction);
+  builder.restoreInsertionPoint(insertPoint);
 
   ExprEmitter exprEmitter(shared, *parentFunctionDecl, builder);
   SyntheticNode node(location);
@@ -2354,9 +2362,10 @@ static void emitClosureInstance(SignatureType closureSignature,
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
   closureWrapperInitArgs.push_back({value, &node});
   Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
-  exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
-                                  CallOperands(closureWrapperInitArgs), &node,
-                                  CallSyntax::kTypeCall, closureWrapperDest);
+  CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
+      ASTType(closureWrapperType), CallOperands(closureWrapperInitArgs), &node,
+      CallSyntax::kTypeCall, closureWrapperDest);
+  return closureWrapperInstance.getIfMRValue();
 }
 
 /// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
@@ -2643,11 +2652,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       // Emit Closure structures necessary for instantiating an escaping
       // closure.
       if (signature.isEscaping())
-        emitClosureInstance(signature, shared, decl, decl.getLoc());
-
-      decl.irValue = SBValue(b.create<CreateClosureOp>(
-          parent.getLoc(), funcOp.getSignature(),
-          ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
+        decl.irValue = MBValue(
+            emitClosureInstance(signature, shared, decl, decl.getLoc()));
+      else
+        decl.irValue = SBValue(b.create<CreateClosureOp>(
+            parent.getLoc(), signature,
+            ParamDeclRefAttr::get(*funcOp.getParamDecl()), ValueRange()));
     }
   }
 

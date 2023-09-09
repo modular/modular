@@ -52,9 +52,8 @@ public:
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
-  StructDeclOp createClosureImplStructDecl(SMLoc loc,
-                                           ASTDecl &nestedFunctionDecl,
-                                           ClosureCache &cache);
+  StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
+      SMLoc loc, ASTDecl &nestedFunctionDecl, ClosureCache &cache);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.

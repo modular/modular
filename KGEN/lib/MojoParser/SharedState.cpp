@@ -1787,10 +1787,12 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
   return existing;
 }
 
-LIT::StructDeclOp SharedState::getOrGenerateClosureImplStruct(
+LIT::StructDeclOp
+SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
     llvm::SMLoc location, ASTDecl &nestedFunc, FileModuleOp fileModuleOp) {
   ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
-  return emitter.createClosureImplStructDecl(location, nestedFunc, *this->impl);
+  return emitter.replaceNestedFunctionWithClosureImplStructDecl(
+      location, nestedFunc, *this->impl);
 }
 
 iterator_range<llvm::MapVector<ASTDecl *, Capture>::const_iterator>
