@@ -1438,32 +1438,21 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << "variadic can only be subscripted with a single index";
       return {};
     }
-    ValueDest indexDest(EC_Subscript);
-    const ExprNode *indexExpr = indexValues.back().expr;
-    CValue index = emitter.emitNamedMethodCall(
-        "__index__", CallOperands(indexValues.back()), indexDest,
-        CallSyntax::kMethodCall, indexExpr);
+    CValue index = emitter.emitMLIRIndex(indexValues.back(), EC_Subscript);
     if (!index)
-      return {};
-    // Convert the index value to an MLIR index type.
-    indexDest = {EC_Subscript};
-    CValue mlirIndex = emitter.emitNamedMethodCall(
-        "__mlir_index__", CallOperands({{index, indexExpr}}), indexDest,
-        CallSyntax::kMethodCall, indexExpr);
-    if (!mlirIndex)
       return {};
     // Inside a parameter context, emit a parameter operator.
     if (!emitter.builder) {
       return ParamOperatorAttr::get(
           POC::VariadicGet,
           {emitter.emitPValue(indexValues.front(), EC_Subscript),
-           mlirIndex.getIfPValue()});
+           index.getIfPValue()});
     }
     // Otherwise, emit an MLIR operation.
     Value value = emitter.builder->create<POP::VariadicGetOp>(
         emitter.translateLocation(getLoc()),
         emitter.emitSRValue(indexValues.front(), EC_Subscript),
-        emitter.emitSRValue({mlirIndex, indexExpr}, EC_Subscript));
+        emitter.emitSRValue({index, indexValues.back().expr}, EC_Subscript));
     // FIXME: Should not be doing a bare `!kgen.pointer` type check.
     if (auto ptrType = dyn_cast<PointerType>(
             ASTType(variadic.getElementType()).mlirType)) {

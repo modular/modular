@@ -311,8 +311,14 @@ fn for_range_loop():
     let my_list = MyList()
 
     # CHECK: %$RANGE = lit.varlet.decl "$RANGE"
-    # CHECK: %[[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
+    # CHECK: [[ITER:.*]] = kgen.call @{{.*}}__iter__{{.*}}(%$RANGE, %my_list)
     for item in my_list:
+        # CHECK: [[LENGTH:%.*]] = kgen.call {{.*}}__len__{{.*}}(%$RANGE)
+        # CHECK: [[INDEX:%.*]] = kgen.call {{.*}}__index__{{.*}}([[LENGTH]])
+        # CHECK: [[MLIR_INDEX:%.*]] = kgen.call {{.*}}__mlir_index__{{.*}}([[INDEX]])
+        # CHECK: [[COND:%.*]] = index.cmp sgt([[MLIR_INDEX]], %idx0)
+        # CHECK: if [[COND]]
+        # CHECK-NEXT: yield
         pass
 
 

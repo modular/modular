@@ -1607,34 +1607,24 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   return emitCResult(MRValue(destSLValue), expr, dest);
 }
 
-/// Emit the specified expression as a condition, converting it to an MLIR I1
-/// value that we can test directly.  This reports and error and returns null on
-/// error.
 RValue ExprEmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   return emitI1({emitExprCValue(condExpr, context), condExpr});
 }
 
-SRValue ExprEmitter::emitBoxedIntAsPopScalar(Value numberValue,
-                                             const ExprNode *source) {
-  if (numberValue.getType().isIndex()) {
-    return SRValue(builder->create<POP::CastFromBuiltinOp>(
-        translateLocation(source->getLoc()),
-        POP::SIMDType::get(builder->getContext(), 1,
-                           KGENDType(KGENDType::index)),
-        numberValue));
-  }
-  assert(numberValue.getType().isa<KGEN::DeclRefType>() &&
-         "number value must be a struct");
-  AnyValue index = emitNamedMethodCall(
-      "__mlir_index__", CallOperands({{SRValue(numberValue), source}}),
-      ValueDest::none(), CallSyntax::kImplicitConvert, source);
+CValue ExprEmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
+  ValueDest dest(context);
+  return emitNamedMethodCall("__index__", {value}, dest,
+                             CallSyntax::kMethodCall, value.expr);
+}
+
+CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
+                                  ExprContext context) {
+  CValue index = emitIndex(value, context);
   if (!index)
     return {};
-  auto popscalar = builder->create<POP::CastFromBuiltinOp>(
-      translateLocation(source->getLoc()),
-      POP::SIMDType::get(builder->getContext(), 1, KGENDType(KGENDType::index)),
-      index.getIfSRValue());
-  return SRValue(popscalar);
+  ValueDest dest(context);
+  return emitNamedMethodCall("__mlir_index__", {{{index, value.expr}}}, dest,
+                             CallSyntax::kMethodCall, value.expr);
 }
 
 //===----------------------------------------------------------------------===//

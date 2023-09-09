@@ -951,8 +951,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                "that target lists are not yet supported."))
     return failure();
 
-  ExprNode *seqExp = nullptr;
-  if (parseExpression(seqExp, std::nullopt) ||
+  ExprNode *seqExpr = nullptr;
+  if (parseExpression(seqExpr, std::nullopt) ||
       parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
@@ -980,7 +980,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // retrieve the iterator object from the sequence expression
   auto tmpEmitter = getEmitter();
   ASTExprAnd<AnyValue> loadedSeq = {
-      seqExp->emitIR(ValueDest::none(), tmpEmitter), seqExp};
+      seqExpr->emitIR(ValueDest::none(), tmpEmitter), seqExpr};
   if (!loadedSeq.ir)
     return {};
 
@@ -990,7 +990,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
       /*isVar*/ true, /*isSynth=*/true);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kImplicitConvert, seqExp)) {
+                                        CallSyntax::kImplicitConvert,
+                                        seqExpr)) {
     rangeDest.resetForError();
     varDeclOp.getResult().setType(
         PointerType::get(shared.getTypeCheckErrorType()));
@@ -1005,32 +1006,22 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{SLValue(rangeRef), seqExp}}), ValueDest::none(),
-      CallSyntax::kImplicitConvert, seqExp);
-  SRValue lengthSRVal =
-      getEmitter().emitSRValue({currentLength, seqExp}, EC_ForIterator);
-  if (!lengthSRVal)
+      "__len__", CallOperands({{SLValue(rangeRef), seqExpr}}),
+      ValueDest::none(), CallSyntax::kImplicitConvert, seqExpr);
+  CValue lengthIndex =
+      getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
+  if (!lengthIndex)
     return {};
-
-  SRValue popLength = getEmitter().emitBoxedIntAsPopScalar(lengthSRVal, seqExp);
-  if (!popLength)
+  SRValue length =
+      getEmitter().emitSRValue({lengthIndex, seqExpr}, EC_ForIterator);
+  if (!length)
     return {};
-
-  Value pop_zero = builder.create<POP::CastFromBuiltinOp>(
-      translateLocation(seqExp->getLoc()),
-      POP::SIMDType::get(builder.getContext(), 1,
-                         KGENDType(KGENDType::ExtraCases::index)),
+  Value shouldContinue = builder.create<mlir::index::CmpOp>(
+      forLoc, mlir::index::IndexCmpPredicate::SGT, length,
       builder.create<mlir::index::ConstantOp>(forLoc, 0));
-  POP::CmpOp cmpOp = builder.create<POP::CmpOp>(
-      forLoc, KGEN::POP::CmpPredicate::GT, popLength, pop_zero);
-  POP::CastToBuiltinOp should_continue =
-      builder.create<POP::CastToBuiltinOp>(forLoc, builder.getI1Type(), cmpOp);
-
-  if (!should_continue)
-    return success(); // IRGen error already emitted; parse succeeded!
 
   // Generate the for condition check.
-  auto condOp = builder.create<HLCF::IfOp>(forLoc, should_continue);
+  auto condOp = builder.create<HLCF::IfOp>(forLoc, shouldContinue);
   builder.createBlock(&condOp.getThenRegion());
   builder.create<HLCF::YieldOp>(forLoc);
   Block *exit = builder.createBlock(&condOp.getElseRegion());
@@ -1042,8 +1033,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   builder.setInsertionPointAfter(condOp);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{SLValue(rangeRef), seqExp}}), ivarDest,
-          CallSyntax::kImplicitConvert, seqExp)) {
+          "__next__", CallOperands({{SLValue(rangeRef), seqExpr}}), ivarDest,
+          CallSyntax::kImplicitConvert, seqExpr)) {
     ivarDest.resetForError();
     return {};
   }

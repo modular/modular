@@ -140,8 +140,8 @@ enum class CallSyntax : uint8_t {
   kTupleGetItem,     //< Call to getitem in a tuple assignment.
 };
 
-// Struct to that carries both positional and keyword operands for a call. This
-// does not own any values, only references and pointers to their containers.
+/// Struct to that carries both positional and keyword operands for a call. This
+/// does not own any values, only references and pointers to their containers.
 struct CallOperands {
   CallOperands() : posOperands({}){};
   CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands)
