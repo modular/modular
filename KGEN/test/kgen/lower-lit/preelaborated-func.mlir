@@ -14,6 +14,23 @@ lit.func @caller() -> index attributes {doNotExtern} {
   kgen.return %1 : index
 }
 
+// When the build target doesn't match the module target ("" in this case), func
+// ops are "inflated." Inflated ops have their `export` attribute removed during
+// pre-elaborated LIT lowering.
+// ATTACH: lit.package_link @link_exported_func
+// ATTACH-SAME: post_elaboration(dense_resource<exported_func_generated_body_attr>
+// ATTACH-LABEL: lit.func export @exported_func
+// ATTACH-SAME: preCompiledModuleRef = @link_exported_func
+
+// LOWER_LIT-LABEL: lit.func export @exported_func_precompiled
+// LOWER_LIT-SAME: preCompiledModuleRef = @link_exported_func
+
+// CHECK: kgen.link dense_resource<exported_func_generated_body_attr> {{.*}} as @link_exported_func
+// CHECK-LABEL: kgen.func @exported_func_precompiled
+lit.func export @exported_func(%arg0: index) -> index {
+  kgen.return %arg0 : index
+}
+
 // ATTACH: lit.package_link @link_precompiled_func
 // ATTACH-SAME: post_elaboration(dense_resource<precompiled_func_generated_body_attr>
 // ATTACH-LABEL: lit.func @precompiled_func

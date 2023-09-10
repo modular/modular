@@ -153,6 +153,19 @@ struct LowerPreElaboratedLITPass
       if (failed(reader.materialize(bytecodeModule)))
         return signalPassFailure();
 
+      // If we're "inflating" pre-elaborated ops into the current module, then
+      // make sure they're not exported -- the user exports their own functions.
+      if (!isPreElaborated) {
+        SmallVector<std::pair<ExportInterface, ExportKind>> exportKinds;
+        for (ExportInterface op : bytecodeModule.getOps<ExportInterface>()) {
+          auto exportKind = op.getExportKind();
+          if (exportKind != ExportKind::NotExported) {
+            exportKinds.push_back({op, exportKind});
+            op.setNotExported();
+          }
+        }
+      }
+
       // Collect the symbols within the bytecode.
       SymbolTable bytecodeSymtab(cast<ModuleOp>(block.front()));
 
