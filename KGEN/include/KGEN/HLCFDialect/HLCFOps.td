@@ -137,6 +137,11 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     bool isFullUnroll();
     /// Get unroll factor if the loop is decorated.
     std::optional<int64_t> getUnrollFactorN();
+    /// Insert variants as operation operands.
+    void insertVariants(ValueRange newOperands);
+    /// Insert argument to region.
+    BlockArgument insertArgumentToRegion(Location loc,
+      Type argType, size_t argIdx, Region &region);
   }];
 
   let hasVerifier = 1;
@@ -538,6 +543,8 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
   let extraClassDeclaration = [{
     /// Get the operand that is used as for-loop's induction variable.
     Value getForInductionVariableOperand();
+    /// Insert variants as operation operands.
+    void insertVariants(ValueRange newOperands);
   }];
 
   let arguments = (ins Index:$inductionVar,
@@ -547,7 +554,8 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
   let assemblyFormat =[{
     ` ``[``induction_var`` ``(`$inductionVar `:` type($inductionVar)`)``]`
     ` ``[``retvals`` ``(`($returnValues `:` type($returnValues)^)?`)``]`
-    `[``iterargs`` ``(`($otherIterValues `:` type($otherIterValues)^)?`)``]` attr-dict
+    `[``iterargs`` ``(`($otherIterValues `:` type($otherIterValues)^)?`)``]`
+    attr-dict
   }];
 
   let hasVerifier = 1;

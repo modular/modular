@@ -6,6 +6,7 @@
 
 #include "ControlFlowUtils.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -131,11 +132,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         newOperands.push_back(
             valueOrUndef(alloc, &op, state.find(alloc)->second));
       }
-      if (!op.hasTrait<OpTrait::VariadicOperands>()) {
-        return op.emitOpError(
-            "must have trailing variadic operands to be used in 'mem-2-reg'");
-      }
-      op.insertOperands(op.getNumOperands(), newOperands);
+      term.insertVariants(newOperands);
       continue;
     }
 
@@ -175,13 +172,10 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     llvm::BitVector parentPred(op.getNumRegions());
     if (!variant.empty()) {
       for (Operation *pred : cfg.predecessors.at({node, {}})) {
-        if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(pred)) {
+        if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(pred))
           termVariants.try_emplace(term, variant);
-        } else {
-          return pred->emitError(
-              "TODO: parent operation that branches to itself");
-        }
       }
+
       for (Region &region : op.getRegions()) {
         ArrayRef<Operation *> preds =
             cfg.predecessors.at({node, region.getRegionNumber()});
@@ -207,10 +201,11 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       if (!variant.empty()) {
         // Determine if there are any region predecessors.
         if (regionPreds[region.getRegionNumber()]) {
-          for (StackAllocationOp alloc : variant) {
+          for (auto [i, alloc] : llvm::enumerate(variant)) {
+            Type allocType = getAllocType(alloc);
             // Bind the block argument to the value of the variant allocation.
             nestedState[alloc] =
-                region.addArgument(getAllocType(alloc), op.getLoc());
+                node.insertArgumentToRegion(op.getLoc(), allocType, i, region);
           }
           // If one of the predecessors is the parent operation, we need to
           // add initializer operands to it if this hasn't already been done.
@@ -221,11 +216,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               initOperands.push_back(
                   valueOrUndef(alloc, &op, state.find(alloc)->second));
             }
-            if (!op.hasTrait<OpTrait::VariadicOperands>()) {
-              return op.emitOpError("must have trailing variadic operands to "
-                                    "be used in 'mem-2-reg'");
-            }
-            op.insertOperands(op.getNumOperands(), initOperands);
+
+            node.insertVariants(initOperands);
           }
         }
       }

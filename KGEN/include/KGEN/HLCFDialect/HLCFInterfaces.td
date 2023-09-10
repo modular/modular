@@ -31,7 +31,23 @@ def ControlFlowNode : OpInterface<"ControlFlowNode"> {
       Return the range of values that should be mapped onto incoming values. By
       default, this returns
     }], "ValueRange", "getEntryArguments",
-      (ins "std::optional<unsigned>":$target)>
+      (ins "std::optional<unsigned>":$target)>,
+    InterfaceMethod<[{
+      Insert variants as operation operands.
+    }], "void", "insertVariants",
+      (ins "ValueRange":$newOperands), [{}], [{
+        $_op.getOperation()->insertOperands(
+            $_op.getOperation()->getNumOperands(), newOperands);
+    }]>,
+    InterfaceMethod<[{
+       Add block arguments to the region.
+    }], "BlockArgument", "insertArgumentToRegion",
+      (ins "Location":$loc,
+           "Type":$argType,
+           "size_t":$argIdx,
+           "Region&":$region), [{}], [{
+        return region.addArgument(argType, loc);
+    }]>
   ];
 
   let verify = [{ return verifyControlFlowNode(cast<ControlFlowNode>($_op)); }];
@@ -59,7 +75,14 @@ def ControlFlowTerminator : OpInterface<"ControlFlowTerminator"> {
       `None`.
     }], "void", "getBranchTargets",
       (ins "ArrayRef<Attribute>":$operands,
-           "SmallVectorImpl<HLCF::ControlFlowTarget> &":$targets)>
+           "SmallVectorImpl<HLCF::ControlFlowTarget> &":$targets)>,
+    InterfaceMethod<[{
+      Insert variants as operation operands.
+    }], "void", "insertVariants",
+      (ins "ValueRange":$newOperands), [{}], [{
+        $_op.getOperation()->insertOperands(
+          $_op.getOperation()->getNumOperands(), newOperands);
+    }]>
   ];
 
   let verify = [{
