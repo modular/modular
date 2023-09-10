@@ -8,8 +8,8 @@
 #define LLCL_SUPPORT_UNKNOWNLOCATIONDECODER_H
 
 #include "LLCL/Support/Location.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/ReferenceCounted.h"
 
 namespace M::LLCL {
 

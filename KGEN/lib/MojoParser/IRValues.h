@@ -44,9 +44,9 @@
 #define IRVALUES_H
 
 #include "ASTType.h"
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ADT/SmartVariant.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Value.h"
 
@@ -169,7 +169,7 @@ class AnyValue;
 class DLValue {
 public:
   DLValue() {}
-  DLValue(LLCL::RCRef<BaseDLValue> storage) : storage(std::move(storage)) {}
+  DLValue(RCRef<BaseDLValue> storage) : storage(std::move(storage)) {}
   DLValue(const DLValue &existing) : storage(existing.storage.copy()) {}
   DLValue &operator=(const DLValue &existing);
   ~DLValue();
@@ -181,7 +181,7 @@ public:
   BaseDLValue *operator->() const { return &*storage; }
 
 private:
-  LLCL::RCRef<BaseDLValue> storage;
+  RCRef<BaseDLValue> storage;
 };
 
 /// Instances of PValue model compile time values that are represented as MLIR
@@ -259,9 +259,9 @@ public:
 
 private:
   struct OverloadSetWrapper;
-  ORValue(LLCL::RCRef<OverloadSetWrapper> storage);
+  ORValue(RCRef<OverloadSetWrapper> storage);
 
-  LLCL::RCRef<OverloadSetWrapper> storage;
+  RCRef<OverloadSetWrapper> storage;
 };
 raw_ostream &operator<<(raw_ostream &os, ORValue value);
 
@@ -639,7 +639,7 @@ using FuncOperand = ASTExprAnd<AnyValue>;
 
 /// Subclasses of BaseDLValue model a dynamic LValue which has a computed getter
 /// and setter.
-class BaseDLValue : public LLCL::NonAtomicallyReferenceCounted<BaseDLValue> {
+class BaseDLValue : public NonAtomicallyReferenceCounted<BaseDLValue> {
 public:
   /// This is the RValue type of the value being accessed if known.  It is
   /// inferred from the get/set.

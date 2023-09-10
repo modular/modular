@@ -235,8 +235,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     assert(isa<UnresolvedType>(globalOp.getType()) &&
            "Cannot resolve an already-resolved global");
     globalOp.setType(resultType);
-    return DLValue(
-        LLCL::RCRef<GlobalDLValue>::create(globalOp, resultType, loc));
+    return DLValue(RCRef<GlobalDLValue>::create(globalOp, resultType, loc));
   }
 
   // Otherwise, we have one of a few cases where we can produce an LValue but

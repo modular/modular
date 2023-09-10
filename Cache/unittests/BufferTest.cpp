@@ -10,7 +10,6 @@
 
 using namespace M;
 using namespace Cache;
-using namespace LLCL;
 
 TEST(BufferTest, RefCountingWorks) {
   auto buffer = Buffer::get("hello");

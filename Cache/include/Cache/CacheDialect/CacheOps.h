@@ -32,13 +32,13 @@ using DataCache = BlobCache<DataCacheKey>;
 /// done by outlining the DenseResourceElementsAttrs on `constant` and replacing
 /// them with a ConstantHashAttr with the same type.
 LLCL::AsyncValueRef<LLCL::Chain> deflateConstant(Operation *constant,
-                                                 LLCL::RCRef<DataCache> cache,
+                                                 RCRef<DataCache> cache,
                                                  LLCL::AnyAsyncValueRef chain);
 
 /// Pull cached constants represented by `ConstantHashAttr` from the cache and
 /// replace them on `constant`.
 LLCL::AsyncValueRef<LLCL::Chain> inflateConstant(Operation *constant,
-                                                 LLCL::RCRef<DataCache> cache,
+                                                 RCRef<DataCache> cache,
                                                  LLCL::AnyAsyncValueRef chain);
 
 /// The Cache dialect can store the region of an op - this struct defines the
@@ -60,7 +60,7 @@ inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 /// no-op. The deflation is implemented as an `andThenSync` on `chain` - this is
 /// to simplify calling code which is also likely async.
 LLCL::AsyncValueRef<LLCL::Chain> deflateOp(Operation *op,
-                                           LLCL::RCRef<RegionCache> cache,
+                                           RCRef<RegionCache> cache,
                                            LLCL::AnyAsyncValueRef chain);
 
 /// This function allows the user to inflate a cached op into its original
@@ -69,7 +69,7 @@ LLCL::AsyncValueRef<LLCL::Chain> deflateOp(Operation *op,
 /// implemented as an `andThenSync` on `chain` - this is to simplify calling
 /// code which is also likely async.
 LLCL::AsyncValueRef<LLCL::Chain> inflateOp(Operation *cached,
-                                           LLCL::RCRef<RegionCache> cache,
+                                           RCRef<RegionCache> cache,
                                            LLCL::AnyAsyncValueRef chain);
 } // namespace M::Cache
 

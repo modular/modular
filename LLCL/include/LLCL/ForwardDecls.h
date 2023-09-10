@@ -21,16 +21,6 @@ namespace M::LLCL {
 // LLCL/Support Declarations
 class Chain;
 
-template <typename T>
-class RCRef;
-template <typename T>
-RCRef<T> copyRCRef(T *ptr);
-template <typename T>
-RCRef<T> takeRCRef(T *ptr);
-
-template <typename SubClass>
-class ReferenceCounted;
-
 class EncodedLocation;
 class EncodedDiagnostic;
 class LocationDecoder;
@@ -53,13 +43,9 @@ class Runtime;
 namespace M {
 // LLCL/Support Declarations
 using LLCL::Chain;
-using LLCL::copyRCRef;
 using LLCL::EncodedDiagnostic;
 using LLCL::EncodedLocation;
 using LLCL::LocationDecoder;
-using LLCL::RCRef;
-using LLCL::ReferenceCounted;
-using LLCL::takeRCRef;
 
 // LLCL/Runtime Declarations
 using LLCL::Allocator;

@@ -11,10 +11,10 @@
 #ifndef LLCL_SUPPORT_RESOURCE_H
 #define LLCL_SUPPORT_RESOURCE_H
 
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "llvm/ADT/AddressRanges.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"

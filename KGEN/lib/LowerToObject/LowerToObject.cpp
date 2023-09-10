@@ -58,10 +58,10 @@ ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
                         std::move(options), isJIT, isSearch);
 }
 
-ObjectCompiler::ObjectCompiler(
-    LLCL::Runtime &runtime, mlir::PassManager &mgr,
-    LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
-    CompilationOptions options, bool isJIT, bool isSearch)
+ObjectCompiler::ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
+                               RCRef<Cache::BlobCacheBackend> transformCache,
+                               CompilationOptions options, bool isJIT,
+                               bool isSearch)
     : transformCache(
           decltype(this->transformCache)::create(std::move(transformCache))),
       runtime(runtime), mgr(&mgr), options(std::move(options)), isJIT(isJIT),

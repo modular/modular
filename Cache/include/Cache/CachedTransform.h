@@ -57,7 +57,7 @@ using CacheHitFn = llvm::unique_function<LLCL::AnyAsyncValueRef(BufferRef)>;
 /// the transform. If the transform is *not* run, then the result
 /// AnyAsyncValueRef simply contains a Chain.
 LLCL::AnyAsyncValueRef
-cachedTransform(EncodedLocation loc, LLCL::RCRef<TransformCache> transformCache,
+cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFn cacheHitFn);
 
@@ -94,7 +94,7 @@ constexpr bool is_result_error_or_v =
 /// API for the cache hit function.
 template <typename CacheHitFnT>
 LLCL::AnyAsyncValueRef
-cachedTransform(EncodedLocation loc, LLCL::RCRef<TransformCache> transformCache,
+cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFn transformFn, CacheHitFnT cacheHitFn) {
   // Get the runtime pointer to hand to the closure.

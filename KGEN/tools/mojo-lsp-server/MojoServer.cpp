@@ -14,8 +14,8 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ReferenceCounted.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
@@ -385,7 +385,7 @@ using SendDiagnosticsFnRef =
 namespace {
 /// This class represents all of the information pertaining to a specific Mojo
 /// document.
-struct MojoDocument : public LLCL::ReferenceCounted<MojoDocument> {
+struct MojoDocument : public ReferenceCounted<MojoDocument> {
 public:
   MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
                int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
@@ -452,7 +452,7 @@ private:
   template <typename FnT>
   void startTaskAfterParsing(FnT &&fn) {
     isDocumentParsed.andThenAsync(
-        [doc = LLCL::RCRef<MojoDocument>::copy(this),
+        [doc = RCRef<MojoDocument>::copy(this),
          fn = std::forward<FnT>(fn)]() mutable { fn(*doc); });
   }
 
@@ -568,7 +568,7 @@ private:
   std::unique_ptr<Context> context;
 };
 
-using MojoDocumentRef = LLCL::RCRef<MojoDocument>;
+using MojoDocumentRef = RCRef<MojoDocument>;
 } // namespace
 
 MojoDocument::MojoDocument(const lsp::URIForFile &uri, std::string &&contents,

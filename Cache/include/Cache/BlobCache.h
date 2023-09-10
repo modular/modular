@@ -28,7 +28,7 @@ namespace M::Cache {
 ///
 /// Conceptually, the backends form a linked-list that's sorted in priority
 /// order that the BlobCache below will use to find an item.
-class BlobCacheBackend : public LLCL::ReferenceCounted<BlobCacheBackend> {
+class BlobCacheBackend : public ReferenceCounted<BlobCacheBackend> {
 public:
   /// Construct a BlobCacheBackend from an LLCL runtime.
   BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {}
@@ -62,7 +62,7 @@ public:
   clear(std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Add delegate to the end of the backend chain.
-  void appendDelegate(LLCL::RCRef<BlobCacheBackend> d);
+  void appendDelegate(RCRef<BlobCacheBackend> d);
 
 protected:
   /// NOTE: The asynchrony of the cache backend is handled by the
@@ -126,7 +126,7 @@ private:
   /// The next backend in the list. The public APIs handle nullptr here
   /// correctly, and the protected APIs (for the subclasses) should ignore the
   /// presence of this delegate entirely.
-  LLCL::RCRef<BlobCacheBackend> delegate;
+  RCRef<BlobCacheBackend> delegate;
 };
 
 class DylibBackendConfig {
@@ -170,9 +170,9 @@ public:
 ///   }
 ///
 template <typename KeyInfo>
-class BlobCache : public LLCL::ReferenceCounted<BlobCache<KeyInfo>> {
+class BlobCache : public ReferenceCounted<BlobCache<KeyInfo>> {
 public:
-  explicit BlobCache(LLCL::RCRef<BlobCacheBackend> backendList)
+  explicit BlobCache(RCRef<BlobCacheBackend> backendList)
       : runtime(backendList->getRuntime()),
         backendList(std::move(backendList)) {}
 
@@ -246,15 +246,15 @@ public:
 private:
   LLCL::Runtime &runtime;
 
-  LLCL::RCRef<BlobCacheBackend> backendList;
+  RCRef<BlobCacheBackend> backendList;
 };
 
 /// Returns an in-memory implementation of the BlobCacheBackend.
-LLCL::RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
+RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD.
-LLCL::RCRef<BlobCacheBackend>
+RCRef<BlobCacheBackend>
 getFilesystemBackend(LLCL::Runtime &runtime,
                      const std::filesystem::path &basePath = "");
 
@@ -282,19 +282,19 @@ public:
 /// Returns a BlobCacheBackend that uses S3 for storage. This accepts the S3
 /// config (which includes the bucket, region and prefix to use inside the
 /// bucket for cached objects).
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
-getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config);
+ErrorOr<RCRef<BlobCacheBackend>> getS3Backend(LLCL::Runtime &runtime,
+                                              const S3BackendConfig &config);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
 /// by the filesystem backend. The `version` specifies the version string of the
 /// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+ErrorOr<RCRef<BlobCacheBackend>>
 getLocalDefaultBackendChain(LLCL::Runtime &runtime,
                             const std::filesystem::path &cacheDir = "",
                             std::string version = "");
 
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+ErrorOr<RCRef<BlobCacheBackend>>
 getDefaultBackendChain(LLCL::Runtime &runtime, const URI &cacheUri,
                        std::string version = "");
 
@@ -305,7 +305,7 @@ getDefaultBackendChain(LLCL::Runtime &runtime, const URI &cacheUri,
 template <typename KeyT>
 class RuntimeAndCache {
 public:
-  using CacheRef = LLCL::RCRef<BlobCache<KeyT>>;
+  using CacheRef = RCRef<BlobCache<KeyT>>;
 
   /// Captures the cache directory and optional existing runtime. However
   /// the object is not valid until setup is called and returns success.

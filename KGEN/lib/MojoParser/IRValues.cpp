@@ -195,7 +195,7 @@ ASTType BValue::getRValueType() const {
 
 ORValue::ORValue() {}
 ORValue::ORValue(const ORValue &existing) : storage(existing.storage.copy()) {}
-ORValue::ORValue(LLCL::RCRef<OverloadSetWrapper> storage)
+ORValue::ORValue(RCRef<OverloadSetWrapper> storage)
     : storage(std::move(storage)) {}
 ORValue::~ORValue() {}
 
@@ -205,7 +205,7 @@ ORValue &ORValue::operator=(const ORValue &existing) {
 }
 
 ORValue ORValue::create(OverloadSet &&set) {
-  return ORValue(LLCL::takeRCRef(new OverloadSetWrapper{std::move(set)}));
+  return ORValue(takeRCRef(new OverloadSetWrapper{std::move(set)}));
 }
 
 //===----------------------------------------------------------------------===//

@@ -4,14 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_REFERENCE_COUNTED_H
-#define LLCL_SUPPORT_REFERENCE_COUNTED_H
+#ifndef SUPPORT_REFERENCECOUNTED_H
+#define SUPPORT_REFERENCECOUNTED_H
 
 #include <atomic>
 #include <cassert>
 #include <cstddef>
 
-namespace M::LLCL {
+namespace M {
 template <typename T>
 class RCRef;
 
@@ -160,6 +160,6 @@ private:
   mutable uint32_t refCount;
 };
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_REFERENCE_COUNTED_H
+#endif // SUPPORT_REFERENCECOUNTED_H

@@ -9,8 +9,8 @@
 
 #include "LLCL/Support/Diagnostic.h"
 #include "LLCL/Support/Location.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/ReferenceCounted.h"
 #include <string>
 
 namespace M::LLCL {

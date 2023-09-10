@@ -60,8 +60,8 @@ void populatePostElaborationPasses(mlir::PassManager &pm,
 
 /// Returns Mojo transform and caching backends, or an error if the backend
 /// objects could not be created.
-ErrorOr<std::pair<LLCL::RCRef<Cache::BlobCacheBackend>,
-                  LLCL::RCRef<Cache::BlobCacheBackend>>>
+ErrorOr<
+    std::pair<RCRef<Cache::BlobCacheBackend>, RCRef<Cache::BlobCacheBackend>>>
 getMojoCacheBackends(LLCL::Runtime &runtime);
 
 //===----------------------------------------------------------------------===//
@@ -84,8 +84,8 @@ public:
                     TargetInfoAttr target, BuildInfoAttr build,
                     const CompilationOptions &options,
                     ObjectCompilerLayer &base,
-                    LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-                    LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
+                    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+                    RCRef<Cache::BlobCacheBackend> regionCacheBackend,
                     llvm::orc::ExecutionSession &sess,
                     const llvm::DataLayout &dl, AddToSearchOrderFn add);
 
@@ -118,8 +118,8 @@ private:
   CompilationOptions options;
   ObjectCompilerLayer &baseLayer;
 
-  LLCL::RCRef<Cache::RegionCache> regionCache;
-  LLCL::RCRef<Cache::TransformCache> transformCache;
+  RCRef<Cache::RegionCache> regionCache;
+  RCRef<Cache::TransformCache> transformCache;
 };
 } // namespace M::KGEN
 

@@ -132,7 +132,7 @@ struct SharedState::Impl : public ClosureCache {
   DenseMap<StringRef, int> existingSourceMgrBuffers;
 
   /// The cache used to store cached transformations within the parser.
-  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
+  RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
   /// The level of module caching enabled for the parser.
   MojoParserConfig::CachingLevel moduleCachingLevel;
@@ -229,7 +229,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
     if (failed(transformCacheBackendOr))
       return;
     impl->transformCache =
-        LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
+        RCRef<Cache::BlobCache<Cache::TransformCacheKey>>::create(
             transformCacheBackendOr.takeValue());
   }
 }
