@@ -256,6 +256,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
 
+  pm.addNestedPass<FuncOp>(createRaiseForLoops());
+
   if (options.optimizationLevel >= 2) {
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
@@ -288,7 +290,6 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
 
   // Loop raising must happen after `hoist-trivial-invariants`.
   // FIXME: Move this earlier in the pipeline.
-  pm.addNestedPass<FuncOp>(createRaiseForLoops());
   pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
   pm.addNestedPass<FuncOp>(createLowerLoops());
 

@@ -120,6 +120,7 @@ void ForOp::getEntryTargets(ArrayRef<Attribute> operands,
   if (!iter || !upperBound || !step) {
     targets.emplace_back(0, getOperands());
     targets.emplace_back(std::nullopt, getResults());
+    return;
   }
 
   if ((step.value() > 0 && iter.getInt() < upperBound.value()) ||
@@ -196,6 +197,27 @@ std::optional<int64_t> ForOp::getUnrollFactorN() {
     return n.getInt();
 
   return {};
+}
+
+void ForOp::insertVariants(ValueRange newOperands) {
+  int32_t retValueSize = getNumResults();
+  int32_t otherIterValueSize = getIterArgs().size() - retValueSize - 1;
+  auto newOperandSegmentSizesAttr = mlir::DenseI32ArrayAttr ::get(
+      getContext(), {1, retValueSize, otherIterValueSize});
+
+  mlir::MutableOperandRangeRange operandSegments = getIterArgsMutable().split(
+      NamedAttribute(StringAttr::get(getContext(), "operandSegmentSizes"),
+                     newOperandSegmentSizesAttr));
+  operandSegments[1].append(newOperands);
+  operandSegments[2].append(newOperands);
+}
+
+BlockArgument ForOp::insertArgumentToRegion(Location loc, Type argType,
+                                            size_t argIdx, Region &region) {
+  // Add argument to match both retValues and otherIterValues segments of the
+  // HLCF::ForOp with variants added as new operands.
+  region.insertArgument(1 + getNumResults() + argIdx, argType, loc);
+  return region.addArgument(argType, loc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -458,7 +480,7 @@ ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// YieldOp
+// ForYieldOp
 //===----------------------------------------------------------------------===//
 
 bool ForYieldOp::isParentNode(Operation *op) { return isa<ForOp>(op); }
@@ -507,6 +529,12 @@ ErrorTreeOrSuccess ForYieldOp::interpret(ArrayRef<Attribute> operands,
 
 Value ForYieldOp::getForInductionVariableOperand() {
   return this->getOperands().front();
+}
+
+void ForYieldOp::insertVariants(ValueRange newOperands) {
+  // Append variants to both retValues and otherIterValues.
+  getReturnValuesMutable().append(newOperands);
+  getOtherIterValuesMutable().append(newOperands);
 }
 
 LogicalResult ForYieldOp::verify() {
