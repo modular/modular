@@ -260,26 +260,11 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
 }
 
 ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
-  // Prepare the operations within the module for use when importing the
-  // package.
-  SmallVector<std::pair<ExportInterface, ExportKind>> exportKinds;
-  for (ExportInterface op : moduleOp.getOps<ExportInterface>()) {
-    auto exportKind = op.getExportKind();
-    if (exportKind != ExportKind::NotExported) {
-      exportKinds.push_back({op, exportKind});
-      op.setNotExported();
-    }
-  }
-
   // Write the package bytecode to the given buffer. This will be attached to
   // the exported high level functions.
   Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
   if (failed(mlir::writeBytecodeToFile(moduleOp, *str)))
     return Error("could not write bytecode for package module");
-
-  // Reset the ops now that we've written to bytecode.
-  for (auto [op, exportKind] : exportKinds)
-    op.setExportKind(exportKind);
 
   // Hash the bytecode itself - this will give us a unique'd attr name that
   // shouldn't clash even when a large number of packages get imported - and
