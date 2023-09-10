@@ -475,11 +475,6 @@ static ErrorOr<std::pair<SymbolTable, ExportMap>>
 elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
                  const CompilationOptions &options, LLCL::Runtime &runtime,
                  BuildInfoAttr build, TargetInfoAttr target, EnvAttr env) {
-  // Set the target and build info now, so it's included in the cache key.
-  theModule->setAttr(EnvAttr::getEnvAttrName(), env);
-  setTargetInfo(theModule, target);
-  setBuildInfo(theModule, build);
-
   // Build the backends used for caching compilation.
   auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
       runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
@@ -512,7 +507,9 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
     return success();
   };
 
-  // Lower the module up to the elaborator.
+  // Lower the module up to the elaborator, and be sure to include the
+  // environment attribute in the pre-elaborated bytecode.
+  theModule->setAttr(EnvAttr::getEnvAttrName(), env);
   mlir::PassManager preElaboratePM(theModule.getContext());
   populateGenerateLibraryFilePasses(preElaboratePM, runtime, options);
   if (auto err = runPipeline(preElaboratePM))
@@ -520,7 +517,9 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   if (auto err = packageBuilder.attachPreElaboratorBytecode(theModule))
     return err.takeError();
 
-  // Elaborate the module.
+  // Elaborate the module for the given target.
+  setTargetInfo(theModule, target);
+  setBuildInfo(theModule, build);
   mlir::PassManager elaboratePM(theModule.getContext());
   populateElaborateModulePasses(elaboratePM, runtime, target, build, options);
   if (auto err = runPipeline(elaboratePM))
