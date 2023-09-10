@@ -1555,6 +1555,8 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
   return resultType;
 }
 
+/// Once the types of arguments and special cases have been sorted out,
+/// compute the final MLIR types and KGEN conventions.
 void ParsedArgument::computeArgumentConventions(
     SharedState &shared, MutableArrayRef<ParsedArgument> args,
     MutableArrayRef<Type> argTypes, MutableArrayRef<TypedAttr> defaults) {
@@ -1562,7 +1564,7 @@ void ParsedArgument::computeArgumentConventions(
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
-      llvm_unreachable("should be resolved above");
+      llvm_unreachable("should be resolved by now");
     case ParsedArgument::kConventionOwned:
       // Memory-only owned argument are passed with a layer of indirection and
       // use a specific convention to model this.
@@ -1590,9 +1592,17 @@ void ParsedArgument::computeArgumentConventions(
       break;
     }
 
-    // Adjust the MLIR type if needed.
+    // Adjust the MLIR type if needed.  Non-register values need to be passed
+    // by pointer/reference.
     if (arg.kgenConvention != ValueInputConvention::OwnedInReg &&
         arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
+
+      // Values passed by memory need an associated lifetime parameter, and need
+      // to be passed by reference.
+      if (shared.useExperimentalLifetimes()) {
+        // TODO: Use lit.ref as well.
+      }
+
       argType = PointerType::get(argType);
       if (i >= defaultOffset) {
         // Add the PValue to LValue conversion in the default value.
@@ -1882,11 +1892,12 @@ void Decorators::applyBodyDecorators(
 ///
 /// This returns failure (after emitting an error) when a type checking problem
 /// is detected.
-static void verifyFunctionNameBinding(
-    ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
-    SmallVector<ParsedArgument> &args, MutableArrayRef<Type> argTypes,
-    MutableArrayRef<TypedAttr> defaults, ASTType &resultType,
-    const FnEffects &effects, SharedState &shared, SpecialFunctionInfo fnInfo) {
+static void
+verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
+                          SmallVector<ParsedArgument> &args,
+                          MutableArrayRef<Type> argTypes, ASTType &resultType,
+                          const FnEffects &effects, SharedState &shared,
+                          SpecialFunctionInfo fnInfo) {
   // On any semantic error we mark the declaration erroneous - so references to
   // it don't type check, and we clear our special function information.  This
   // reduces cascade errors.
@@ -2051,7 +2062,7 @@ static void verifyFunctionNameBinding(
     }
   }
 
-  // Diagnose a common errors and handle other special cases.
+  // Diagnose common errors and handle other special cases.
   switch (fnInfo.kind) {
   default:
     break;
@@ -2098,10 +2109,6 @@ static void verifyFunctionNameBinding(
     break;
   }
   }
-
-  // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types and KGEN conventions.
-  ParsedArgument::computeArgumentConventions(shared, args, argTypes, defaults);
 
   // If we have a special function kind and didn't have any errors with it,
   // remember which kind it is.
@@ -2485,8 +2492,12 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // name-binding specific checks over the declaration.  This happens after
   // decorator processing because that is how defs work in Python.  This also
   // fills in any implicitly declared types.
-  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, defaults,
-                            resultType, effects, shared, fnInfo);
+  verifyFunctionNameBinding(decl, funcOp, baseName, args, argTypes, resultType,
+                            effects, shared, fnInfo);
+
+  // Now that all the types and signature information have been resolved,
+  // compute the final MLIR types and KGEN conventions.
+  ParsedArgument::computeArgumentConventions(shared, args, argTypes, defaults);
 
   // Finally now that the full signature has been resolved, build our IR.
 
