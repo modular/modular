@@ -461,20 +461,13 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
                  const CompilationOptions &options, LLCL::Runtime &runtime,
                  BuildInfoAttr build, TargetInfoAttr target, EnvAttr env) {
   // Build the backends used for caching compilation.
-  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
-      KGEN_VERSION_STRING);
-  if (transformCacheBackend.isError())
-    return transformCacheBackend.takeError();
-  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
-      KGEN_VERSION_STRING);
-  if (regionCacheBackend.isError())
-    return regionCacheBackend.takeError();
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
   auto transformCache = LLCL::RCRef<Cache::TransformCache>::create(
-      std::move(*transformCacheBackend));
+      std::move(cacheBackends->first));
   auto regionCache =
-      LLCL::RCRef<Cache::RegionCache>::create(std::move(*regionCacheBackend));
+      LLCL::RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
 
   // Time the compilation.
   [[maybe_unused]] auto timeScope =

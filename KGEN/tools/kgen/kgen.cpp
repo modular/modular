@@ -332,21 +332,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Add the KGEN compiler layer.
   // First though, get the backend chains to pass into the compile layer.
-  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      *runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
-      KGEN_VERSION_STRING);
-  if (transformCacheBackend.isError())
-    return failure(clOptions.reportError(transformCacheBackend.getError()));
-
-  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      *runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
-      KGEN_VERSION_STRING);
-  if (regionCacheBackend.isError())
-    return failure(clOptions.reportError(transformCacheBackend.getError()));
+  auto cacheBackends = getMojoCacheBackends(*runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
 
   auto &compileLayer = engine->addLayer<KGENCompilerLayer>(
       pm, *runtime, target, build, clOptions.getCompilationOptions(), objLayer,
-      std::move(*transformCacheBackend), std::move(*regionCacheBackend));
+      std::move(cacheBackends->first), std::move(cacheBackends->second));
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
