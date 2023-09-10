@@ -1106,7 +1106,7 @@ struct ValueReg:
 # CHECK: lit.func @"__copyinit__
 # CHECK-SAME: (%existing: !ValueReg borrow)
 # CHECK-SAME:  -> !ValueReg
-# CHECK-SAME: attributes {isStatic, specialFnKind = 6 : i8}
+# CHECK-SAME: attributes {isStatic, specialFnKind = 7 : i8}
 # CHECK-NEXT: %0 = lit.struct.extract %existing[a]
 # CHECK-NEXT: %1 = lit.struct.extract %existing[b]
 # CHECK-NEXT: %2 = kgen.call {{.*}}__copyinit__{{.*}}(%1)

@@ -316,8 +316,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     This includes a 'destructor' field if the type has a non-trivial destructor,
     allowing SSA passes to perform lifetime optimizations.  It includes a
-    'moveInit' field if the type implements either of the __moveinit__ special
-    functions.
+    'moveInit' field if the type implements either the `__moveinit__` or
+    `__takeinit__` special functions.
   }];
 
   let arguments = (ins
