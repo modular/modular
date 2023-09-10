@@ -77,16 +77,18 @@ endmacro()
 # This function reads MODULAR_KERNELS_USE_SANITIZER and sets up the KGEN flags
 # to enable sanitizers.
 macro(_setup_santizer_flags)
-  set(KGEN_SANITIZER_OPTIONS "")
-  set(KGEN_SANITIZER_LIBS "")
+  if (MODULAR_KERNELS_USE_SANITIZER)
+    set(KGEN_SANITIZER_OPTIONS "")
+    set(KGEN_SANITIZER_LIBS "")
 
-  string(TOLOWER ${MODULAR_KERNELS_USE_SANITIZER} lower_MODULAR_KERNELS_USE_SANITIZER)
-  if (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "address")
-    set(KGEN_SANITIZER_OPTIONS "--sanitize=address")
-    set(KGEN_SANITIZER_LIBS ${KGEN_ASAN_LIBRARY})
-  elseif (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "thread")
-    set(KGEN_SANITIZER_OPTIONS "--sanitize=thread")
-    set(KGEN_SANITIZER_LIBS ${KGEN_TSAN_LIBRARY})
+    string(TOLOWER ${MODULAR_KERNELS_USE_SANITIZER} lower_MODULAR_KERNELS_USE_SANITIZER)
+    if (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "address")
+      set(KGEN_SANITIZER_OPTIONS "--sanitize" "address")
+      set(KGEN_SANITIZER_LIBS ${KGEN_ASAN_LIBRARY})
+    elseif (lower_MODULAR_KERNELS_USE_SANITIZER STREQUAL "thread")
+      set(KGEN_SANITIZER_OPTIONS "--sanitize" "thread")
+      set(KGEN_SANITIZER_LIBS ${KGEN_TSAN_LIBRARY})
+    endif()
   endif()
 endmacro()
 
@@ -163,6 +165,7 @@ function(add_mojo_package target)
   _setup_arch()
   _setup_defines()
   _setup_debug_flags()
+  _setup_santizer_flags()
 
   if (NOT KGEN_PACKAGE_DIR)
     set(KGEN_PACKAGE_DIR ${CMAKE_CURRENT_LIST_DIR})
@@ -233,6 +236,7 @@ function(add_mojo_package target)
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
     ${KGEN_OPTIMIZATION_FLAG}
     ${MOJO_FRONTEND_FLAGS}
+    ${KGEN_SANITIZER_OPTIONS}
     --debug-level ${KGEN_DEBUG_LEVEL}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -272,6 +276,7 @@ function(add_kgen_library target)
   _setup_arch()
   _setup_defines()
   _setup_debug_flags()
+  _setup_santizer_flags()
 
   if (NOT KGEN_OUTPUT)
     set(KGEN_OUTPUT ${target}.lib.mlirbc)
@@ -285,6 +290,7 @@ function(add_kgen_library target)
       $<$<BOOL:${KGEN_SAVE_TEMPS}>:-save-temps>
       -gen-lib ${KGEN_UNPARSED_ARGUMENTS} -o ${KGEN_OUTPUT}
       -O${KGEN_OPTIMIZATION_LEVEL}
+      ${KGEN_SANITIZER_OPTIONS}
       -debug-level=${KGEN_DEBUG_LEVEL}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS kgen ${KGEN_LIB_DEPENDS} ${KGEN_UNPARSED_ARGUMENTS} ${KGEN_LINK_LIBS}
@@ -321,10 +327,7 @@ function(add_kgen_kernel target)
   _setup_arch()
   _setup_defines()
   _setup_debug_flags()
-
-  if (MODULAR_KERNELS_USE_SANITIZER)
-    _setup_santizer_flags()
-  endif()
+  _setup_santizer_flags()
 
   # If we built with MODULAR_KGEN_ENABLE_SEARCH=ON, then turn on
   # KGEN_ENABLE_SEARCH unconditionally.
