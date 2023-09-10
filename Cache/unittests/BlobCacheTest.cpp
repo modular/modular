@@ -9,9 +9,9 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
-#include "LLCL/Support/RCRef.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/Preprocessor.h"
+#include "Support/RCRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
@@ -37,11 +37,11 @@ struct StringKeyInfo {
 class BlobCacheTest : public testing::Test {
 protected:
   LLCL::Runtime runtime;
-  LLCL::RCRef<BlobCache<StringKeyInfo>> cache;
+  RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
       : runtime(createLeakCheckAllocator(createMallocAllocator()),
                 createThreadPoolWorkQueue()),
-        cache(LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+        cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
                 .takeValue())) {}
 };
@@ -320,7 +320,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
-  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+  auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
       getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
           .takeValue());
 
@@ -351,7 +351,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
   ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
-  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+  auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
       getLocalDefaultBackendChain(runtime, STRINGIFY(CACHE_TEST_DIR))
           .takeValue());
 
@@ -403,7 +403,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
   // should be deleted.
   LLCL::Runtime runtime(createLeakCheckAllocator(createMallocAllocator()),
                         createThreadPoolWorkQueue());
-  auto fsCache = LLCL::RCRef<BlobCache<StringKeyInfo>>::create(
+  auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
       getLocalDefaultBackendChain(runtime, cacheDir).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";

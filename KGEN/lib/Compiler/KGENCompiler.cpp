@@ -309,8 +309,8 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   pm.addPass(createExternalizePrecompiledFunctions());
 }
 
-ErrorOr<std::pair<LLCL::RCRef<Cache::BlobCacheBackend>,
-                  LLCL::RCRef<Cache::BlobCacheBackend>>>
+ErrorOr<
+    std::pair<RCRef<Cache::BlobCacheBackend>, RCRef<Cache::BlobCacheBackend>>>
 KGEN::getMojoCacheBackends(LLCL::Runtime &runtime) {
   auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
       runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
@@ -385,8 +385,8 @@ KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     BuildInfoAttr build, const CompilationOptions &options,
     ObjectCompilerLayer &base,
-    LLCL::RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-    LLCL::RCRef<Cache::BlobCacheBackend> regionCacheBackend,
+    RCRef<Cache::BlobCacheBackend> transformCacheBackend,
+    RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
@@ -394,10 +394,10 @@ KGENCompilerLayer::KGENCompilerLayer(
       pm(pm), runtime(runtime), target(target), build(build), options(options),
       baseLayer(base) {
   // Construct the caches.
-  transformCache = LLCL::RCRef<Cache::TransformCache>::create(
-      std::move(transformCacheBackend));
+  transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(transformCacheBackend));
   regionCache =
-      LLCL::RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
+      RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
 ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {

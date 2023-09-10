@@ -20,6 +20,16 @@ class DType;
 class ErrorOrSuccess;
 template <typename T>
 class ErrorOr;
+
+template <typename T>
+class RCRef;
+template <typename T>
+RCRef<T> copyRCRef(T *ptr);
+template <typename T>
+RCRef<T> takeRCRef(T *ptr);
+
+template <typename SubClass>
+class ReferenceCounted;
 } // namespace M
 
 #endif // SUPPORT_FORWARD_DECLS_H

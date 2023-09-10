@@ -8,9 +8,9 @@
 #define MODULAR_COMMON_HTTPCLIENT_H
 
 #include "Cache/BlobCache.h"
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ErrorOr.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "Support/Threading/Shared.h"
 #include <filesystem>
 #include <string>
@@ -18,11 +18,11 @@
 namespace M {
 
 class HTTPContext;
-using HTTPContextRef = LLCL::RCRef<HTTPContext>;
+using HTTPContextRef = RCRef<HTTPContext>;
 /// Provides a presistant HTTP context to create HTTPClients.
 /// Initializes and cleans up the global CURL initalization.
 /// Ideally should scope to your applications main method.
-class HTTPContext : public LLCL::ReferenceCounted<HTTPContext> {
+class HTTPContext : public ReferenceCounted<HTTPContext> {
 public:
   ~HTTPContext();
 
@@ -31,7 +31,7 @@ public:
 
 protected:
   // Allow access to protected constructor.
-  friend class LLCL::RCRef<HTTPContext>;
+  friend class RCRef<HTTPContext>;
 
   HTTPContext();
 };
@@ -183,7 +183,7 @@ private:
   Shared<llvm::StringMap<Cache::BufferRef>> localCache;
 };
 
-using HTTPCASBackendRef = LLCL::RCRef<HTTPCASBackend>;
+using HTTPCASBackendRef = RCRef<HTTPCASBackend>;
 
 /// Forward-declaration for the LLCL::Runtime.
 namespace LLCL {

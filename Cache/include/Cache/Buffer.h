@@ -7,12 +7,12 @@
 #ifndef CACHE_BUFFER_H
 #define CACHE_BUFFER_H
 
-#include "LLCL/Support/RCRef.h"
-#include "LLCL/Support/ReferenceCounted.h"
 #include "Support/ADT/SmartVariant.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/RCRef.h"
+#include "Support/ReferenceCounted.h"
 #include "Support/STLExtras.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/FileSystem.h"
@@ -22,7 +22,7 @@
 
 namespace M::Cache {
 class Buffer;
-using BufferRef = LLCL::RCRef<Buffer>;
+using BufferRef = RCRef<Buffer>;
 
 /// Provides a reference-counted version of an LLVM memory buffer that owns its
 /// data. This is useful for caching where you might want to store a buffer
@@ -31,7 +31,7 @@ using BufferRef = LLCL::RCRef<Buffer>;
 /// (defined below).
 // TODO: Should this hold a reference to a LLCL::Allocator and use that to
 //       allocate memory?
-class Buffer : public LLCL::ReferenceCounted<Buffer> {
+class Buffer : public ReferenceCounted<Buffer> {
 public:
   /// Destroy a buffer. Releases any resources associated with that buffer.
   virtual ~Buffer() = default;
@@ -67,7 +67,7 @@ public:
 
 protected:
   /// So RCRef can access protected constructors.
-  friend class LLCL::RCRef<Buffer>;
+  friend class RCRef<Buffer>;
 
   /// Create a Buffer of given size and alignment.
   Buffer(size_t size, std::optional<size_t> alignment,
@@ -132,7 +132,7 @@ protected:
 };
 
 class WriteableBuffer;
-using WriteableBufferRef = LLCL::RCRef<WriteableBuffer>;
+using WriteableBufferRef = RCRef<WriteableBuffer>;
 
 /// Subclass of Buffer that is write-able. It also owns its data in all cases.
 class WriteableBuffer : public Buffer, public llvm::raw_pwrite_stream {
@@ -191,7 +191,7 @@ public:
 
 private:
   /// So RCRef can access protected constructors.
-  friend class LLCL::RCRef<WriteableBuffer>;
+  friend class RCRef<WriteableBuffer>;
 
   /// Construct a WriteableBuffer from a mapped file region, and make sure to
   /// set to unbuffered.

@@ -384,7 +384,7 @@ public:
 private:
   // Reference counting, only accessible to RCRef<>.
   template <typename T>
-  friend class RCRef;
+  friend class M::RCRef;
 
   // Most of the API is accessible via AnyAsyncValueRef and its subclass
   // AsyncValueRef<T>.

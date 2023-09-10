@@ -3044,7 +3044,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
   if (parsedType) {
     op.setType(parsedType);
     DLValue result(
-        LLCL::RCRef<GlobalDLValue>::create(op, parsedType, initExpr->getLoc()));
+        RCRef<GlobalDLValue>::create(op, parsedType, initExpr->getLoc()));
     dest = ValueDest(result, exprContext);
   } else {
     // If we don't, we emit into the varOp itself, because this will infer the

@@ -215,7 +215,7 @@ void BlobCacheBackend::delegateClear(AsyncValueRef<Chain> result,
       });
 }
 
-void BlobCacheBackend::appendDelegate(LLCL::RCRef<BlobCacheBackend> d) {
+void BlobCacheBackend::appendDelegate(RCRef<BlobCacheBackend> d) {
   if (!delegate)
     delegate = std::move(d);
   else
@@ -286,9 +286,8 @@ struct InMemoryBackend : public BlobCacheBackend {
 };
 } // namespace
 
-LLCL::RCRef<BlobCacheBackend>
-M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
-  return LLCL::RCRef<InMemoryBackend>::create(runtime);
+RCRef<BlobCacheBackend> M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
+  return RCRef<InMemoryBackend>::create(runtime);
 }
 
 //===----------------------------------------------------------------------===//
@@ -474,7 +473,7 @@ struct FilesystemBackend : public BlobCacheBackend {
 };
 } // namespace
 
-LLCL::RCRef<BlobCacheBackend>
+RCRef<BlobCacheBackend>
 M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
                                const std::filesystem::path &basePath) {
   return RCRef<FilesystemBackend>::create(runtime, basePath);
@@ -490,7 +489,7 @@ namespace {
 /// to this implementation.
 struct DylibBackendStub : public BlobCacheBackend {
 
-  static ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+  static ErrorOr<RCRef<BlobCacheBackend>>
   create(LLCL::Runtime &runtime, StringRef libPath,
          const DylibBackendConfig *config) {
     auto backendStub = RCRef<DylibBackendStub>::create(runtime);
@@ -528,7 +527,7 @@ struct DylibBackendStub : public BlobCacheBackend {
 
 private:
   /// So RCRef can access private constructor.
-  friend class LLCL::RCRef<DylibBackendStub>;
+  friend class RCRef<DylibBackendStub>;
 
   explicit DylibBackendStub(LLCL::Runtime &runtime)
       : BlobCacheBackend(runtime) {}
@@ -549,18 +548,18 @@ private:
       llvm::sys::DynamicLibrary::closeLibrary(dylib);
       return Error("M_CAS_allocateBackend symbol not found\n");
     }
-    backend = LLCL::RCRef<DylibBlobCacheBackend>::take(allocFunc(&runtime));
+    backend = RCRef<DylibBlobCacheBackend>::take(allocFunc(&runtime));
     return backend->setConfig(config);
   }
 
   /// The dynamic library handle.
   llvm::sys::DynamicLibrary dylib;
   /// The stub delegates all cache-related operations to this backend.
-  LLCL::RCRef<DylibBlobCacheBackend> backend;
+  RCRef<DylibBlobCacheBackend> backend;
 };
 } // namespace
 
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
 #if defined(__linux__)
   constexpr llvm::StringLiteral libPath = "libblobcache_s3.so";
@@ -572,7 +571,7 @@ M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
   return DylibBackendStub::create(runtime, libPath, &config);
 }
 
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
                                       const std::filesystem::path &cacheDir,
                                       std::string version) {
@@ -652,7 +651,7 @@ M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
   return backend;
 }
 
-ErrorOr<LLCL::RCRef<BlobCacheBackend>>
+ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime, const URI &uri,
                                  std::string version) {
   StringRef scheme = uri.getScheme();

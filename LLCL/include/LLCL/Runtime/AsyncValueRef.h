@@ -52,7 +52,7 @@ public:
   /// This constructor forms a reference to the specified pointer, increasing
   /// the underlying reference count by 1.
   static AsyncValueRef<T> copy(AsyncValue *pointer) {
-    auto res = AsyncValueRef<T>(LLCL::copyRCRef(pointer));
+    auto res = AsyncValueRef<T>(copyRCRef(pointer));
     assert(res.template isCompatible<T>() &&
            "Constructing AsyncValueRef<T> from incompatible AsyncValue*");
     return res;

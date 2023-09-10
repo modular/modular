@@ -4,14 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLCL_SUPPORT_RCREF_H
-#define LLCL_SUPPORT_RCREF_H
+#ifndef SUPPORT_RCREF_H
+#define SUPPORT_RCREF_H
 
 #include <cassert>
 #include <cstddef>
 #include <utility>
 
-namespace M::LLCL {
+namespace M {
 
 /// This is a smart pointer that keeps the specified reference counted value
 /// around.  It is move-only to avoid accidental copies, but it can be copied
@@ -139,12 +139,12 @@ inline RCRef<T> takeRCRef(T *ptr) {
   return RCRef<T>::take(ptr);
 }
 
-// For ADL style swap.
+/// For ADL style swap.
 template <typename T>
 inline void swap(RCRef<T> &a, RCRef<T> &b) {
   a.swap(b);
 }
 
-} // namespace M::LLCL
+} // namespace M
 
-#endif // LLCL_SUPPORT_RCREF_H
+#endif // SUPPORT_RCREF_H

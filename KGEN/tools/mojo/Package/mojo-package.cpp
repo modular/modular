@@ -464,10 +464,10 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   auto cacheBackends = getMojoCacheBackends(runtime);
   if (cacheBackends.isError())
     return cacheBackends.takeError();
-  auto transformCache = LLCL::RCRef<Cache::TransformCache>::create(
-      std::move(cacheBackends->first));
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
   auto regionCache =
-      LLCL::RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
+      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
 
   // Time the compilation.
   [[maybe_unused]] auto timeScope =

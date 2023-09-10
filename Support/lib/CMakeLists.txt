@@ -22,6 +22,7 @@ add_modular_library(MSupport
   MicroBenchmark.cpp
   Process.cpp
   Random.cpp
+    ReferenceCounted.cpp
   TimeProfiler.cpp
   URI.cpp
   Version.cpp

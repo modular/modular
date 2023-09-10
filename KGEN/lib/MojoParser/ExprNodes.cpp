@@ -328,7 +328,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
                         "discard pattern requires an initializing expression");
       return {};
     }
-    DLValue result(LLCL::RCRef<DiscardDLValue>::create(initializerType, this));
+    DLValue result(RCRef<DiscardDLValue>::create(initializerType, this));
     return emitter.emitResult(std::move(result), this, dest);
   }
 
@@ -726,8 +726,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
       elementType = elementType.getPointerElementType();
   }
 
-  DLValue result(
-      LLCL::RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
+  DLValue result(RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
   return emitter.emitResult(std::move(result), node, dest);
 }
 
@@ -906,7 +905,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // The base is a known DeclRefType because we got the ASTDecl from it.
       ASTType elementType =
           fieldOp.getReboundType(cast<DeclRefType>(baseRVType.mlirType));
-      DLValue result(LLCL::RCRef<StoredAttributeRefDLValue>::create(
+      DLValue result(RCRef<StoredAttributeRefDLValue>::create(
           ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
       return emitter.emitResult(std::move(result), this, dest);
     }
@@ -1595,7 +1594,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
                                                     node->getLoc(), typeElts);
     if (type.isTypeCheckErrorType())
       return {};
-    DLValue result(LLCL::RCRef<TupleDLValue>::create(elements, type, node));
+    DLValue result(RCRef<TupleDLValue>::create(elements, type, node));
     return emitter.emitResult(std::move(result), node, dest);
   }
 

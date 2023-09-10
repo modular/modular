@@ -7,7 +7,7 @@
 #ifndef LLCL_SUPPORT_LOCATION_H
 #define LLCL_SUPPORT_LOCATION_H
 
-#include "LLCL/Support/RCRef.h"
+#include "Support/RCRef.h"
 
 #include <cstdint>
 #include <string>

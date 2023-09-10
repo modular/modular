@@ -281,7 +281,7 @@ private:
 /// This provides a wrapper around OverloadSet which is reference counted,
 /// allowing ORValue to maintain it while still being copyable.
 struct ORValue::OverloadSetWrapper
-    : public LLCL::NonAtomicallyReferenceCounted<OverloadSetWrapper> {
+    : public NonAtomicallyReferenceCounted<OverloadSetWrapper> {
 
   OverloadSetWrapper(OverloadSet &&overloadSet)
       : overloadSet(std::move(overloadSet)) {}
@@ -298,7 +298,7 @@ bool canZeroCostConvertSignature(SignatureType from, SignatureType to);
 
 template <typename... Args>
 inline ORValue ORValue::create(Args &&...args) {
-  return ORValue(LLCL::takeRCRef(
+  return ORValue(takeRCRef(
       new OverloadSetWrapper(OverloadSet(std::forward<Args>(args)...))));
 }
 

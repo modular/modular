@@ -45,7 +45,7 @@ LogicalResult writeOperationToCacheKey(Operation *op, WriteableBufferRef key);
 /// AnyAsyncValueRef simply contains a Chain.
 template <typename TransformationFnT, typename CacheHitFnT>
 LLCL::AnyAsyncValueRef
-cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
+cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformationFnT &&transformFn, CacheHitFnT &&cacheHitFn) {
   if (failed(writeOperationToCacheKey(target, transformKey.copy()))) {
@@ -77,11 +77,12 @@ cachedTransform(Operation *target, LLCL::RCRef<TransformCache> transformCache,
 /// If `deflate` is set to false, the raw bytecode for `target` is stored in the
 /// cache and read out again. This is typically useful when a lot of code is
 /// being stored, and we are just about to deflate it anyway.
-LLCL::AnyAsyncValueRef
-cachedTransform(Operation *target, LLCL::RCRef<RegionCache> regionCache,
-                LLCL::RCRef<TransformCache> transformCache,
-                LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm,
-                bool deflateTarget = true);
+LLCL::AnyAsyncValueRef cachedTransform(Operation *target,
+                                       RCRef<RegionCache> regionCache,
+                                       RCRef<TransformCache> transformCache,
+                                       LLCL::AnyAsyncValueRef chain,
+                                       mlir::PassManager &pm,
+                                       bool deflateTarget = true);
 } // namespace M::Cache
 
 #endif // CACHE_CACHEDTRANSFORM_H

@@ -87,7 +87,7 @@ public:
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
   ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
-                 LLCL::RCRef<Cache::BlobCacheBackend> transformCache,
+                 RCRef<Cache::BlobCacheBackend> transformCache,
                  CompilationOptions options, bool isJIT, bool isSearch);
 
   /// Produce a standalone MLIR module by slicing out the dependencies of the
@@ -106,7 +106,7 @@ private:
                                                  Location loc);
 
   /// The caches needed for compilation.
-  LLCL::RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
+  RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
   /// The async runtime to use during lowering.
   LLCL::Runtime &runtime;
