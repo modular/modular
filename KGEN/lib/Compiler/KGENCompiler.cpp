@@ -7,6 +7,7 @@
 #include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
+#include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LowerToObject.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -306,6 +307,25 @@ void KGEN::populatePostElaborationPasses(mlir::PassManager &pm,
   // At the end of the pipeline, externalize any functions that have been
   // precompiled so that they aren't sent to LLVM again.
   pm.addPass(createExternalizePrecompiledFunctions());
+}
+
+ErrorOr<std::pair<LLCL::RCRef<Cache::BlobCacheBackend>,
+                  LLCL::RCRef<Cache::BlobCacheBackend>>>
+KGEN::getMojoCacheBackends(LLCL::Runtime &runtime) {
+  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
+      runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
+      KGEN_VERSION_STRING);
+  if (transformCacheBackend.isError())
+    return transformCacheBackend.takeError();
+
+  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
+      runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
+      KGEN_VERSION_STRING);
+  if (regionCacheBackend.isError())
+    return regionCacheBackend.takeError();
+
+  return std::make_pair(transformCacheBackend.takeValue(),
+                        regionCacheBackend.takeValue());
 }
 
 //===----------------------------------------------------------------------===//

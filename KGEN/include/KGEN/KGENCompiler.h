@@ -58,6 +58,12 @@ void populatePostElaborationPasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    const CompilationOptions &options);
 
+/// Returns Mojo transform and caching backends, or an error if the backend
+/// objects could not be created.
+ErrorOr<std::pair<LLCL::RCRef<Cache::BlobCacheBackend>,
+                  LLCL::RCRef<Cache::BlobCacheBackend>>>
+getMojoCacheBackends(LLCL::Runtime &runtime);
+
 //===----------------------------------------------------------------------===//
 // KGENCompilerLayer
 //===----------------------------------------------------------------------===//
