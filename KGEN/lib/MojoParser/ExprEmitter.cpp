@@ -1140,19 +1140,42 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto pvalue = value.ir.getIfPValue())
     return emitPValueToSLValue({pvalue, value.expr}, destPtr, context);
 
-  // Otherwise, assign with a move constructor.
-  // Memory-only __moveinit__ has signature `(inout self, inout existing: Self)`
-  // or
-  // `(inout self, owned existing: Self)`.
-  ASTExprAnd<AnyValue> operands[] = {ASTExprAnd<AnyValue>{destPtr, value.expr},
-                                     value};
-  if (!emitNamedMethodCall("__moveinit__", {operands},
-                           ValueDest::none(/*these return None*/),
-                           CallSyntax::kImplicitConvert, value.expr))
-    return {};
+  // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
+  // to use __moveinit__ if present.
+  if (OverloadSet(valueType, "__moveinit__", value.expr,
+                  CallSyntax::kImplicitConvert, shared,
+                  [&]() { /*no error*/ })) {
 
-  // If we required an implicit conversion, make sure it happens.
-  return MBValue(destPtr);
+    // `__moveinit__(inout self, owned existing: Self)`.
+    ASTExprAnd<AnyValue> operands[] = {
+        ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
+    if (!emitNamedMethodCall("__moveinit__", {operands},
+                             ValueDest::none(/*these return None*/),
+                             CallSyntax::kImplicitConvert, value.expr))
+      return {};
+    return MBValue(destPtr);
+  }
+
+  // If that doesn't work, then we fall back to __takeinit__ which will force
+  // an extra destructor to get run, but still works.
+  if (OverloadSet(valueType, "__takeinit__", value.expr,
+                  CallSyntax::kImplicitConvert, shared,
+                  [&]() { /*no error*/ })) {
+    // `__takeinit__(inout self, inout existing: Self)`.
+    ASTExprAnd<AnyValue> operands[] = {
+        ASTExprAnd<AnyValue>{destPtr, value.expr}, value};
+    if (!emitNamedMethodCall("__takeinit__", {operands},
+                             ValueDest::none(/*these return None*/),
+                             CallSyntax::kImplicitConvert, value.expr))
+      return {};
+    return MBValue(destPtr);
+  }
+
+  // Otherwise, we have to move this thing but don't have a move constructor!
+  emitError(value.expr->getLoc())
+      << "cannot transfer value into destination, because " << valueType
+      << " doesn't implement `__moveinit__` or `__takeinit__`";
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1336,11 +1359,6 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   case SpecialFunctionKind::kMoveInit: {
     assert(func.getBody()->getNumArguments() == 2 &&
            "__moveinit__ should have to arguments");
-    // Don't change `__moveinit__(owned self, inout existing: Self)`.
-    if (func.getSignature().getInputConvention(1) !=
-        ValueInputConvention::OwnedInMem)
-      break;
-
     Value existingArg = func.getBody()->getArgument(1);
     builder.create<LIT::OwnershipMarkDestroyedOp>(existingArg);
     break;

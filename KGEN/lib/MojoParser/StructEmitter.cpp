@@ -303,16 +303,19 @@ struct ValueInfo {
       LookupResult lookupResult =
           shared.lookupAndResolveDecl(name, astDecl.getLoc(), astDecl,
                                       /*searchParentScopes=*/false);
-      if (lookupResult.isSuccess()) {
-        if (lookupResult.getIfSuccess().size() > 1)
-          return failure();
-        else if (lookupResult.getIfSuccess().size() == 1) {
-          ASTDecl *result = lookupResult.getIfSuccess().front();
-          if (auto func = dyn_cast<LIT::FuncOp>(*result))
-            if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
-              existingFunctions[index].flip();
-        }
+      if (!lookupResult.isSuccess())
+        return success();
+      if (lookupResult.getIfSuccess().size() > 1)
+        return shared.emitError(structDeclOp.getLoc())
+               << "multiple overloaded methods named '" << name << "'";
+
+      if (lookupResult.getIfSuccess().size() == 1) {
+        ASTDecl *result = lookupResult.getIfSuccess().front();
+        if (auto func = dyn_cast<LIT::FuncOp>(*result))
+          if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
+            existingFunctions[index].flip();
       }
+
       return success();
     };
     bool isMemoryOnly =
@@ -325,10 +328,11 @@ struct ValueInfo {
                                    : SpecialFunctionKind::kCopyInitReg,
                       FuncIndex::Copy)))
       return {};
-    if (isMemoryOnly)
+    if (isMemoryOnly) {
       if (failed(setBit("__moveinit__", SpecialFunctionKind::kMoveInit,
                         FuncIndex::Move)))
         return {};
+    }
     LookupResult inits =
         shared.lookupAndResolveDecl("__init__", astDecl.getLoc(), astDecl,
                                     /*searchParentScopes=*/false);

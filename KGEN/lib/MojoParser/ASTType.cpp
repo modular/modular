@@ -156,7 +156,8 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
       StructDeclOp::RP_MemoryOnly)
     return true;
 
-  return !typeDecl->lookupInCurrentScope("__moveinit__").empty();
+  return !typeDecl->lookupInCurrentScope("__moveinit__").empty() ||
+         !typeDecl->lookupInCurrentScope("__takeinit__").empty();
 }
 
 /// Return true if this type is movable, either because it is trivial, a
@@ -178,30 +179,18 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
 
   // Check all the available candidate to see if we have one that cooperates
   // with this value kind.
-  auto moveInits =
-      shared.lookupAndResolveDecl("__moveinit__", value.expr->getLoc(),
-                                  *typeDecl, /*searchParentScopes=*/false);
+  StringRef initName;
+  if (value.ir.getIfLValue())
+    initName = "__takeinit__";
+  else if (value.ir.getIfRValue())
+    initName = "__moveinit__";
+  else
+    return false;
 
-  for (ASTDecl *decl : moveInits.getIfSuccess()) {
-    auto func = dyn_cast<LIT::FuncOp>(*decl);
-    if (!func)
-      continue;
-
-    auto signature = func.getSignature();
-    if (signature.getValueInputConventions().size() != 2 ||
-        signature.getValueInputConventions()[0] !=
-            ValueInputConvention::InitSelf)
-      continue;
-    if (signature.getValueInputConventions()[1] ==
-            ValueInputConvention::ByRef &&
-        value.ir.getIfLValue())
-      return true;
-    if (signature.getValueInputConventions()[1] ==
-            ValueInputConvention::OwnedInMem &&
-        value.ir.getIfRValue())
-      return true;
-  }
-  return false;
+  return shared
+      .lookupAndResolveDecl(initName, value.expr->getLoc(), *typeDecl,
+                            /*searchParentScopes=*/false)
+      .isSuccess();
 }
 
 /// Given a PointerType, return the element as an ASTType.  This aborts

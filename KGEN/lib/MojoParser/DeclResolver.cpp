@@ -1928,14 +1928,16 @@ static void verifyFunctionNameBinding(
   // things downstream have stronger invariants.
   if ((fnInfo.kind == SpecialFunctionKind::kInit ||
        fnInfo.kind == SpecialFunctionKind::kCopyInit ||
-       fnInfo.kind == SpecialFunctionKind::kMoveInit) &&
+       fnInfo.kind == SpecialFunctionKind::kMoveInit ||
+       fnInfo.kind == SpecialFunctionKind::kTakeInit) &&
       selfType && ASTType(selfType).isRegisterPassable(decl.getLoc(), shared)) {
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
       fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
     else if (fnInfo.kind == SpecialFunctionKind::kInit)
       fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kInitReg);
     else {
-      assert(fnInfo.kind == SpecialFunctionKind::kMoveInit);
+      assert(fnInfo.kind == SpecialFunctionKind::kMoveInit ||
+             fnInfo.kind == SpecialFunctionKind::kTakeInit);
       emitError() << name
                   << " is not supported for @register_passable types, they "
                      "are always movable by copying a register";
@@ -2062,14 +2064,14 @@ static void verifyFunctionNameBinding(
     break;
   case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
-  case SpecialFunctionKind::kMoveInit: {
+  case SpecialFunctionKind::kMoveInit:
+  case SpecialFunctionKind::kTakeInit: {
     // The first/self argument is syntactically declared as a by-ref argument,
     // but we need to change it to InitSelf since it is not initialized coming
     // in.
     assert(!args.empty() && "arg count already checked above");
     SMLoc selfArgLoc = args[0].loc;
-    // __init__/__copyinit__/__moveinit__ must take their self argument by-ref
-    // syntactically.
+    // __init__ methods must take their self argument by-ref syntactically.
     if (args[0].convention != ParsedArgument::kConventionInOut) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
                   << name << " must be passed as mutable reference";
@@ -2085,12 +2087,13 @@ static void verifyFunctionNameBinding(
         emitErrorLoc(args[1].loc,
                      "existing value argument must be passed as borrowed");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (args[1].convention != ParsedArgument::kConventionInOut &&
-          args[1].convention != ParsedArgument::kConventionOwned) {
-        emitErrorLoc(
-            args[1].loc,
-            "existing value argument must be passed as by-ref or owned");
-      }
+      if (args[1].convention != ParsedArgument::kConventionOwned)
+        emitErrorLoc(args[1].loc,
+                     "existing value argument must be passed as owned");
+    } else if (fnInfo.kind == SpecialFunctionKind::kTakeInit) {
+      if (args[1].convention != ParsedArgument::kConventionInOut)
+        emitErrorLoc(args[1].loc,
+                     "existing value argument must be passed as by-ref");
     }
     break;
   }
@@ -3386,32 +3389,22 @@ static TypedAttr lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   return func.getBoundReference();
 }
 
-/// Look up a __moveinit__ or __copyinit__ impl for the specified `type`.  This
-/// returns the __moveinit__ or __copyinit__ method if successful, and returns
-/// null if there is none.
-static TypedAttr lookupMoveCopyInit(ASTDecl &structDecl, SharedState &shared,
-                                    bool isMove) {
-  StringRef name = isMove ? "__moveinit__" : "__copyinit__";
-  SpecialFunctionKind specialKind =
-      isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit;
+/// Look up a __copyinit__/__moveinit__/__takeinit__  impl for the specified
+/// `type`.  This returns the method if successful, and returns null if there is
+/// none.
+static TypedAttr lookupCopyMoveTakeInit(ASTDecl &structDecl,
+                                        SharedState &shared,
+                                        SpecialFunctionKind specialKind) {
+  const char *name = SpecialFunctionInfo::get(specialKind).name;
   LookupResult inits = shared.lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> entries = inits.getIfSuccess();
-
-  // It is valid to overload __moveinit__ with both inout and consuming version,
-  // for the transfering and destructive move.  The transfering version is more
-  // useful for lifetime optimization so we prefer it.
   TypedAttr result;
   for (auto candidate : entries) {
     LIT::FuncOp func = dyn_cast<LIT::FuncOp>(*candidate);
     if (!func || func.getSpecialFunctionKind() != specialKind)
       continue;
-
-    // If we have multiple __moveinit__ implementations, prefer the owned one.
-    if (isMove && (!result || func.getSignature().getInputConvention(1) ==
-                                  ValueInputConvention::OwnedInMem))
-      result = func.getBoundReference();
-    if (!isMove && !result) {
+    if (!result) {
       result = func.getBoundReference();
       break;
     }
@@ -3671,15 +3664,21 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     structOp.setDestructorAttr(
         synthesizeEmptyDtor(shared, structOp, structDecl, *this));
   }
-  // Similarly, look up a __moveinit__ used by temporary elision.  This can't
-  // be present for @register_passable types.
+  // Look up move and copy constructors.
   if (!structOp.isRegisterPassable()) {
-    if (auto moveInitAttr =
-            lookupMoveCopyInit(structDecl, shared, /*isMove*/ true))
-      structOp.setMoveInitAttr(moveInitAttr);
-    if (auto copyInitAttr =
-            lookupMoveCopyInit(structDecl, shared, /*isMove*/ false))
+    if (auto copyInitAttr = lookupCopyMoveTakeInit(
+            structDecl, shared, SpecialFunctionKind::kCopyInit))
       structOp.setCopyInitAttr(copyInitAttr);
+
+    // We prefer a __moveinit__ over __takeinit__ because that allows copy
+    // elision to completely eliminate the destructor calls.  We'll use
+    // __takeinit__ if that's all we can get though.
+    if (auto moveInitAttr = lookupCopyMoveTakeInit(
+            structDecl, shared, SpecialFunctionKind::kMoveInit))
+      structOp.setMoveInitAttr(moveInitAttr);
+    else if (auto takeInitAttr = lookupCopyMoveTakeInit(
+                 structDecl, shared, SpecialFunctionKind::kTakeInit))
+      structOp.setMoveInitAttr(takeInitAttr);
   }
 
   return success();
