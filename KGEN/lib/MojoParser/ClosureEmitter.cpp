@@ -149,10 +149,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   fieldTypes.push_back(opaquePointer);
   StructDeclOp declOp =
       createStruct(fileModuleOp, name, fieldTypes, fileModuleOp.getLoc());
-  TypedAttr signatureAttr = SymbolConstantAttr::get(
-      SymbolRefAttr::get(
-          StringAttr::get(name.getContext(), name.str() + "_closureSignature")),
-      signatureType);
+  TypeAttr signatureAttr = TypeAttr::get(signatureType);
   declOp.setClosureSignatureAttr(signatureAttr);
 
   StructFieldOp impl = *declOp.getFieldDecls().begin();
@@ -712,7 +709,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   assert(closureWrapper.getClosureSignature().has_value() &&
          "The closure signature should have been set at creation time");
   auto functionSignature =
-      cast<SignatureType>(closureWrapper.getClosureSignatureAttr().getType());
+      cast<SignatureType>(closureWrapper.getClosureSignatureAttr().getValue());
   SignatureType closureSignature =
       addClosureSelfArgToFunctionSignature(opaquePointer, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
