@@ -329,7 +329,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$copyInit,
-    OptionalAttr<AttrOfType<KGEN_SignatureType>>:$closureSignature,
+    OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$fields);
