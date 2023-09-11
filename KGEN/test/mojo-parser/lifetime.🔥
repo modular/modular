@@ -12,3 +12,15 @@ fn borrow[lt: Lifetime](a: ref[lt] MemExample):
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<{{.*}}lt: lifetime>(%a: !lit.ref<mut !MemExample, {{.*}}lt> borrow)
 fn mutate[lt: Lifetime](a: mutref[lt] MemExample):
   pass
+
+# CHECK-LABEL: lit.func @"implicit_borrow
+fn implicit_borrow(a: MemExample):
+  pass
+
+# CHECK-LABEL: lit.func @"implicit_inout
+fn implicit_inout(inout a: MemExample):
+  pass
+
+# CHECK-LABEL: lit.func @"implicit_owned
+fn implicit_owned(owned a: MemExample):
+  pass

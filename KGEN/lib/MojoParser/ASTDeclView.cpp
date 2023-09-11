@@ -91,7 +91,7 @@ static std::string generateTypeString(
     case ValueInputConvention::ByRefResult:
     case ValueInputConvention::OwnedInMem:
     case ValueInputConvention::BorrowedInMem:
-      astType = astType.getPointerElementType();
+      astType = astType.getReferenceElementType();
       break;
     case ValueInputConvention::OwnedInReg:
     case ValueInputConvention::BorrowedInReg:

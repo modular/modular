@@ -199,6 +199,17 @@ ASTType ASTType::getPointerElementType() const {
   return ASTType(cast<PointerType>(mlirType).getElementType());
 }
 
+/// Given a reference, return the element as an ASTType.  This aborts
+/// if the current type isn't a reference.
+///
+ASTType ASTType::getReferenceElementType() const {
+  /// TODO: This accepts pointer types while we're phasing in first class
+  /// references.
+  if (auto refType = dyn_cast<RefType>(mlirType))
+    return ASTType(refType.getElementType());
+  return getPointerElementType();
+}
+
 /// Given a VariadicType, return the element as an ASTType.  This aborts if
 /// the current type isn't a VariadicType.
 ASTType ASTType::getVariadicElementType() const {

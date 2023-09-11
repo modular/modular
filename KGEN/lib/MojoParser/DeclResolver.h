@@ -39,6 +39,7 @@ class LetRegDeclOp;
 class GlobalVarDeclOp;
 class StructDeclOp;
 class StructFieldOp;
+struct ParsedArgument;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver
@@ -184,6 +185,14 @@ public:
   setLocationDebugScope(SharedState &shared,
                         DebugInfo::DIBuilder::ScopeGuard &diScopeGuard,
                         LIT::FuncOp &funcOp, StringRef baseName);
+
+  /// Given a fully resolved signature, compute the final types and KGEN input
+  /// conventions of the arguments.
+  void
+  computeArgumentConventions(SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+                             MutableArrayRef<ParsedArgument> args,
+                             MutableArrayRef<Type> argTypes,
+                             MutableArrayRef<TypedAttr> defaults);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
@@ -367,13 +376,6 @@ struct ParsedArgument {
       bool isDef, SMLoc resultLoc, ASTDecl &Scope,
       SpecialFunctionInfo fnInfo = SpecialFunctionInfo(),
       StringRef funcName = "");
-
-  /// Given a fully resolved signature, compute the final types and KGEN input
-  /// conventions of the arguments.
-  static void computeArgumentConventions(SharedState &shared,
-                                         MutableArrayRef<ParsedArgument> args,
-                                         MutableArrayRef<Type> argTypes,
-                                         MutableArrayRef<TypedAttr> defaults);
 };
 
 } // namespace M::KGEN::LIT

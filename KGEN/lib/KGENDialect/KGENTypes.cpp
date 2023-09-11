@@ -410,6 +410,8 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     case ValueInputConvention::OwnedInMem:
       if (::isa<PointerType>(type))
         break;
+      if (type.getDialect().getNamespace() == "lit")
+        break; // lit.ref is also ok, but we can't check it directly.
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!kgen.pointer` but got: "

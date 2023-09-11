@@ -236,14 +236,14 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
         // By-ref argument types must exactly match, no conversions are allowed.
         return matchTypes(argVal.getRValueType(),
-                          expectedType.getPointerElementType());
+                          expectedType.getReferenceElementType());
       }
 
       case ValueInputConvention::OwnedInMem:
       case ValueInputConvention::BorrowedInMem:
         // Otherwise,we expect an r-value to match up, ignoring the pointer type
         // from the convention.
-        expectedType = expectedType.getPointerElementType();
+        expectedType = expectedType.getReferenceElementType();
         [[fallthrough]];
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::BorrowedInReg:
@@ -817,7 +817,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
 
         // By-ref argument types must exactly match, no conversions are allowed.
         if (!argVal.getRValueType().isEqualCanon(
-                expectedType.getPointerElementType()))
+                expectedType.getReferenceElementType()))
           return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
         break;
       }
@@ -830,7 +830,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         // but we could add this if there is a reason to.
         if (expectedConvention == ValueInputConvention::OwnedInMem ||
             expectedConvention == ValueInputConvention::BorrowedInMem)
-          expectedType = expectedType.getPointerElementType();
+          expectedType = expectedType.getReferenceElementType();
 
         // If the argument is an overload set, see if it can be resolve to the
         // right type.
@@ -1053,7 +1053,7 @@ void OverloadFitness::diagnose(SignatureType signature,
     diag << "l-value of type "
          << posOperands[payload].ir.getIfLValue().getRValueType()
          << " cannot be converted to reference of type "
-         << type.getPointerElementType()
+         << type.getReferenceElementType()
          << posOperands[payload].expr->getRange();
     return;
 
@@ -1996,7 +1996,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // exposed.
   auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
   auto firstArgRVType =
-      ASTType(calleeSig.getValueInputs()[0]).getPointerElementType();
+      ASTType(calleeSig.getValueInputs()[0]).getReferenceElementType();
 
   // For a memory-only call, we need to replace the destination buffer with the
   // actual destination lvalue to use.

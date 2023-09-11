@@ -1920,7 +1920,8 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   // if this was a non-parameteric register-passable `let` declaration with
   // an initializer.  We don't care about the address being available and
   // this produces smaller IR.
-  ASTType inferredRValueType = ASTType(varOp.getType()).getPointerElementType();
+  ASTType inferredRValueType =
+      ASTType(varOp.getType()).getReferenceElementType();
   if (initExpr && !varOp.getIsVar() &&
       // NOTE: This is assuming type parameters are valid register types.  We
       // will need to build out better support when we have traits, but this is
