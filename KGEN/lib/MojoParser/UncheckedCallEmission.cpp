@@ -159,7 +159,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
     if (convention == ValueInputConvention::OwnedInMem ||
         convention == ValueInputConvention::BorrowedInMem)
-      expectedArgType = expectedArgType.getPointerElementType();
+      expectedArgType = expectedArgType.getReferenceElementType();
 
     if (convention == ValueInputConvention::OwnedInReg ||
         convention == ValueInputConvention::OwnedInMem)
@@ -443,7 +443,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ValueInputConvention::ByRefResult: {
     auto tmpSlotAddr = argValAndExpr.ir.getIfSLValue();
     assert(tmpSlotAddr && "byref_result value start in a temp slot");
-    auto rvalueType = ASTType(tmpSlotAddr.getType()).getPointerElementType();
+    auto rvalueType = ASTType(tmpSlotAddr.getType()).getReferenceElementType();
 
     // Often the result of the call will be directly assigned into a
     // user-defined var or other location with existing storage.  In these
@@ -598,7 +598,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
         calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
     Type resultType = hasResultSlot
                           ? ASTType(calleeSig.getValueInputs().front())
-                                .getPointerElementType()
+                                .getReferenceElementType()
                           : ASTType(calleeSig.getValueResults().front());
     TypedAttr result = ParamOperatorAttr::get(
         hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands,

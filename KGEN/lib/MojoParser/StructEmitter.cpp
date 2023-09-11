@@ -364,7 +364,7 @@ struct ValueInfo {
         Type argType = type;
         if (conv != ValueInputConvention::OwnedInReg &&
             conv != ValueInputConvention::BorrowedInReg)
-          argType = ASTType(argType).getPointerElementType();
+          argType = ASTType(argType).getReferenceElementType();
         StructFieldOp op = field;
         if (argType != op.getType()) {
           isMatch = false;

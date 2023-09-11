@@ -1386,9 +1386,9 @@ void ParsedArgument::processParameterArgs(
   }
 }
 
-/// meta_signature    ::= "[" meta_param_list ("->" meta_result_types)? "]"
-/// meta_param_list   ::= argument_list | "(" ")"
-/// meta_result_types ::= expression ("," expression)*
+/// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
+/// param_list   ::= argument_list | "(" ")"
+/// param_result_types ::= expression ("," expression)*
 static ParseResult
 parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
@@ -1557,9 +1557,10 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
 /// Once the types of arguments and special cases have been sorted out,
 /// compute the final MLIR types and KGEN conventions.
-void ParsedArgument::computeArgumentConventions(
-    SharedState &shared, MutableArrayRef<ParsedArgument> args,
-    MutableArrayRef<Type> argTypes, MutableArrayRef<TypedAttr> defaults) {
+void DeclResolver::computeArgumentConventions(
+    SmallVectorImpl<ParamDeclAttr> &inputParamDecls,
+    MutableArrayRef<ParsedArgument> args, MutableArrayRef<Type> argTypes,
+    MutableArrayRef<TypedAttr> defaults) {
   size_t defaultOffset = args.size() - defaults.size();
   for (auto [i, arg, argType] : llvm::enumerate(args, argTypes)) {
     switch (arg.convention) {
@@ -1598,12 +1599,35 @@ void ParsedArgument::computeArgumentConventions(
         arg.kgenConvention != ValueInputConvention::BorrowedInReg) {
 
       // Values passed by memory need an associated lifetime parameter, and need
-      // to be passed by reference.
-      if (shared.useExperimentalLifetimes()) {
-        // TODO: Use lit.ref as well.
+      // to be passed by reference.  Fun fact: explicit ref/mutref arguments
+      // have register conventions, so they won't get these.
+      if (0 &&
+          // FIXME: This is currently disabled because it causes literally
+          // everything to explode.  We'll need to stage stuff in more
+          // aggressively before going down this path and we don't want to
+          // hork useExperimentalLifetimes beyond testing ability.
+          shared.useExperimentalLifetimes()) {
+        // Given a memory argument named "foo" we give the implicit lifetime a
+        // name of "`foo".  We do this because of Rust precedent, but also
+        // because you can't spell this identifier in Mojo, even with backticks!
+        StringAttr lifetimeName;
+        if (arg.name)
+          lifetimeName = StringAttr::get(getContext(), "`" + arg.name.str());
+        else // Used by function types, for example.
+          lifetimeName = StringAttr::get(getContext(), "`" + llvm::utostr(i));
+        auto lifetimeDecl =
+            ParamDeclAttr::get(lifetimeName, shared.getLifetimeType());
+        inputParamDecls.push_back(lifetimeDecl);
+
+        // The parameter implicitly gets a reference type.
+        bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
+        argType = RefType::get(
+            isMutable, argType,
+            ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
+      } else {
+        argType = PointerType::get(argType);
       }
 
-      argType = PointerType::get(argType);
       if (i >= defaultOffset) {
         // Add the PValue to LValue conversion in the default value.
         size_t index = i - defaultOffset;
@@ -2156,7 +2180,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
       type = type.getVariadicElementType();
     if (convention != ValueInputConvention::OwnedInReg &&
         convention != ValueInputConvention::BorrowedInReg)
-      type = type.getPointerElementType();
+      type = type.getReferenceElementType();
     mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
 
     // Add suffix to disambiguate overloadable conventions.
@@ -2378,7 +2402,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
   return closureWrapperInstance.getIfMRValue();
 }
 
-/// funcdef   ::=  [decorators] def_or_fn identifier [meta_signature]
+/// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"
 ///
@@ -2496,8 +2520,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                             effects, shared, fnInfo);
 
   // Now that all the types and signature information have been resolved,
-  // compute the final MLIR types and KGEN conventions.
-  ParsedArgument::computeArgumentConventions(shared, args, argTypes, defaults);
+  // compute the final MLIR types and KGEN conventions.  This also introduces
+  // implicit lifetime parameters for borrows/inout/owned arguments.
+  computeArgumentConventions(inputParamDecls, args, argTypes, defaults);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -3265,7 +3290,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
 }
 
 /// structdef ::=
-///   [decorators] "struct" identifier [meta_signature] ":" suite
+///   [decorators] "struct" identifier [param_signature] ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              Lexer &lexer, ASTDecl &decl) {

@@ -105,6 +105,13 @@ public:
   /// if the current type isn't a pointer.
   ASTType getPointerElementType() const;
 
+  /// Given a reference, return the element as an ASTType.  This aborts
+  /// if the current type isn't a reference.
+  ///
+  /// TODO: This accepts pointer types while we're phasing in first class
+  /// references.
+  ASTType getReferenceElementType() const;
+
   /// Given a VariadicType, return the element as an ASTType.  This aborts if
   /// the current type isn't a VariadicType.
   ASTType getVariadicElementType() const;

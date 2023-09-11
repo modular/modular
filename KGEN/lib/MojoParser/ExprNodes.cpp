@@ -723,7 +723,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     auto setValueConvention = sigType.getInputConvention(setValueIdx);
     if (setValueConvention != ValueInputConvention::OwnedInReg &&
         setValueConvention != ValueInputConvention::BorrowedInReg)
-      elementType = elementType.getPointerElementType();
+      elementType = elementType.getReferenceElementType();
   }
 
   DLValue result(RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
@@ -2552,8 +2552,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!resultType)
     return {};
 
-  ParsedArgument::computeArgumentConventions(emitter.shared, args, argTypes,
-                                             defaults);
+  emitter.getDeclResolver().computeArgumentConventions(inputParamDecls, args,
+                                                       argTypes, defaults);
 
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
@@ -2659,7 +2659,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
 
   // If this is a user defined type with ownership, emit lifetime intrinsics
   // for it, if not, we don't need/want them.
-  auto pointeeType = ASTType(pointerType).getPointerElementType();
+  auto pointeeType = ASTType(pointerType).getReferenceElementType();
   bool needsLifetime = isa<DeclRefType>(pointeeType.mlirType);
 
   /// __get_address_as_owned_value(pop_pointer) # returns RValue
