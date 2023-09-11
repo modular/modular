@@ -433,13 +433,16 @@ fn gather[
 
 
 @always_inline
-fn scatter_nd[
+fn scatter_nd_generator[
     output_type: DType,
     indices_type: DType,
     updates_rank: Int,
     indices_rank: Int,
     output_rank: Int,
     single_thread_blocking_override: Bool,
+    reduce_func: fn (
+        SIMD[output_type, 1], SIMD[output_type, 1]
+    ) capturing -> SIMD[output_type, 1],
 ](
     input: NDBuffer[
         output_rank,
@@ -518,11 +521,58 @@ fn scatter_nd[
     for n in range(N):
         let index = indices_1d[n].to_int()
         for d in range(D):
-            output_1d[index * D + d] = updates_1d[n * D + d]
+            let output_offset = index * D + d
+            output_1d[output_offset] = reduce_func(
+                output_1d[output_offset], updates_1d[n * D + d]
+            )
 
     @parameter
     if not single_thread_blocking_override:
         out_chain.mark_ready()
+
+
+@always_inline
+fn scatter_nd[
+    output_type: DType,
+    indices_type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
+    out_chain: OutputChainPtr,
+):
+    """ScatterND operation without any reduction"""
+
+    @always_inline
+    fn identity_reduction(
+        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
+    ) -> SIMD[output_type, 1]:
+        return rhs  # always return the latest update element
+
+    scatter_nd_generator[
+        output_type,
+        indices_type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+        identity_reduction,
+    ](input, updates, indices, output, out_chain)
 
 
 @always_inline
