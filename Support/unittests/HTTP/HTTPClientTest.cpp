@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Common/HTTPClient.h"
+#include "Support/HTTP/HTTPClient.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/Support/Threading.h"
 

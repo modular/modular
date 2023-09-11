@@ -6,6 +6,7 @@
 
 add_subdirectory(ADT)
 add_subdirectory(Entitlements)
+add_subdirectory(HTTP)
 add_subdirectory(MArchTarget)
 
 add_modular_unittest(
