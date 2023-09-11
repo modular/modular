@@ -33,7 +33,12 @@ void MojoLanguage::Terminate() {
 //===----------------------------------------------------------------------===//
 
 Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
-  return new MojoLanguage();
+  switch (language) {
+  case lldb::eLanguageTypeMojo:
+    return new MojoLanguage();
+  default:
+    return nullptr;
+  }
 }
 
 static void LoadLibMojoFormatters(lldb::TypeCategoryImplSP mojoCategorySP) {
