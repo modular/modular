@@ -14,7 +14,7 @@
 #include <set>
 #include <vector>
 
-namespace lldb_private {
+namespace M::KGEN::Mojo {
 class MojoLanguage : public lldb_private::Language {
 
 public:
@@ -29,12 +29,13 @@ public:
   std::unique_ptr<TypeScavenger> GetTypeScavenger() override { return nullptr; }
   lldb::TypeCategoryImplSP GetFormatters() override;
 
-  HardcodedFormatters::HardcodedSummaryFinder GetHardcodedSummaries() override;
+  lldb_private::HardcodedFormatters::HardcodedSummaryFinder
+  GetHardcodedSummaries() override;
 
-  HardcodedFormatters::HardcodedSyntheticFinder
+  lldb_private::HardcodedFormatters::HardcodedSyntheticFinder
   GetHardcodedSynthetics() override;
 
-  bool IsNilReference(ValueObject &valobj) override {
+  bool IsNilReference(lldb_private::ValueObject &valobj) override {
     if (!(valobj.GetObjectRuntimeLanguage() == lldb::eLanguageTypeMojo) ||
         !valobj.IsPointerType()) {
       return false;
@@ -50,7 +51,9 @@ public:
     return filePath.ends_with(".mojo") || filePath.ends_with("🔥");
   }
 
-  const Highlighter *GetHighlighter() const override { return nullptr; }
+  const lldb_private::Highlighter *GetHighlighter() const override {
+    return nullptr;
+  }
 
   //===--------------------------------------------------------------------===//
   // Static Functions
@@ -64,32 +67,36 @@ public:
 
   static llvm::StringRef GetPluginNameStatic() { return "mojo"; }
 
-  bool SymbolNameFitsToLanguage(Mangled mangled) const override { return true; }
+  bool SymbolNameFitsToLanguage(lldb_private::Mangled mangled) const override {
+    return true;
+  }
 
-  bool DemangledNameContainsPath(llvm::StringRef path,
-                                 ConstString demangled) const override {
+  bool DemangledNameContainsPath(
+      llvm::StringRef path,
+      lldb_private::ConstString demangled) const override {
     return false;
   }
 
-  ConstString
-  GetDemangledFunctionNameWithoutArguments(Mangled mangled) const override {
+  lldb_private::ConstString GetDemangledFunctionNameWithoutArguments(
+      lldb_private::Mangled mangled) const override {
     return {};
   }
 
-  bool GetFunctionDisplayName(const SymbolContext *sc,
-                              const ExecutionContext *exe_ctx,
+  bool GetFunctionDisplayName(const lldb_private::SymbolContext *sc,
+                              const lldb_private::ExecutionContext *exe_ctx,
                               FunctionNameRepresentation representation,
-                              Stream &s) override {
+                              lldb_private::Stream &s) override {
     return false;
   }
 
-  std::vector<ConstString>
-  GenerateAlternateFunctionManglings(const ConstString mangled) const override {
+  std::vector<lldb_private::ConstString> GenerateAlternateFunctionManglings(
+      const lldb_private::ConstString mangled) const override {
     return {};
   }
 
-  ConstString FindBestAlternateFunctionMangledName(
-      const Mangled mangled, const SymbolContext &sym_ctx) const override {
+  lldb_private::ConstString FindBestAlternateFunctionMangledName(
+      const lldb_private::Mangled mangled,
+      const lldb_private::SymbolContext &sym_ctx) const override {
     return {};
   }
 
@@ -98,6 +105,7 @@ public:
   // PluginInterface protocol
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }
 };
-} // namespace lldb_private
+
+} // namespace M::KGEN::Mojo
 
 #endif // KGEN_LIB_MOJOLLDB_LANGUAGE_MOJOLANGUAGE_H

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoLanguage.h"
+#include "MojoDynamicVectorTypeFormatter.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
@@ -14,6 +15,7 @@
 using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::formatters;
+using namespace M::KGEN::Mojo;
 
 LLDB_PLUGIN_DEFINE(MojoLanguage)
 
@@ -34,10 +36,20 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   return new MojoLanguage();
 }
 
-static void LoadLibMojoFormatters(lldb::TypeCategoryImplSP mojoCategorySP) {}
+static void LoadLibMojoFormatters(lldb::TypeCategoryImplSP mojoCategorySP) {
+  if (!mojoCategorySP)
+    return;
+
+  SyntheticChildren::Flags synthFlags;
+  synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
+  AddCXXSynthetic(
+      mojoCategorySP, MojoDynamicVectorSyntheticFrontEndCreator,
+      "mojo DynamicVector synthetic children",
+      "^!kgen.declref<@\"\\$utils\"::@\"\\$vector\"::@DynamicVector<.*>>$",
+      synthFlags, /*regex=*/true);
+}
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
-
   static llvm::once_flag initialize;
   static TypeCategoryImplSP category;
 

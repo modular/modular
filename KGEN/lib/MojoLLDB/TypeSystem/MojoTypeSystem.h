@@ -284,9 +284,7 @@ public:
              lldb_private::ExecutionContextScope *exeScope) override;
 
   lldb::Encoding GetEncoding(lldb::opaque_compiler_type_t type,
-                             uint64_t &count) override {
-    return {};
-  }
+                             uint64_t &count) override;
 
   //===--------------------------------------------------------------------===//
   // DeclContext
@@ -500,9 +498,7 @@ public:
   }
 
   lldb_private::CompilerType
-  GetPointeeType(lldb::opaque_compiler_type_t type) override {
-    return {};
-  }
+  GetPointeeType(lldb::opaque_compiler_type_t type) override;
 
   lldb_private::CompilerType
   GetPointerType(lldb::opaque_compiler_type_t type) override;

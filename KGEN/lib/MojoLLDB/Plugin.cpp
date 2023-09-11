@@ -48,14 +48,14 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
   MojoREPL::Initialize();
-  lldb_private::MojoLanguage::Initialize();
+  MojoLanguage::Initialize();
   return true;
 }
 
 MODULAR_EXPORT void LLDBPluginTerminate() {
   MojoREPL::Terminate();
   MojoTypeSystem::Terminate();
-  lldb_private::MojoLanguage::Terminate();
+  MojoLanguage::Terminate();
 }
 
 namespace lldb {
