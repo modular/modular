@@ -73,7 +73,7 @@ from Conv import (
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
 from GatherScatter import gather_reduce
-from GatherScatter import scatter_nd as _scatter_nd
+from GatherScatter import scatter_nd as _scatter_nd, scatter_nd_generator
 from Matmul import _pack_b_ndbuffer_impl
 from Matmul import matmul as _matmul
 from Matmul import (
@@ -198,6 +198,10 @@ fn MOGGExport():
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_nd = scatter_nd
+    alias _scatter_nd_add = scatter_nd_add
+    alias _scatter_nd_max = scatter_nd_max
+    alias _scatter_nd_min = scatter_nd_min
+    alias _scatter_nd_mul = scatter_nd_mul
     alias _slice = slice
     alias _simd_load = simd_load
     alias _simd_store = simd_store
@@ -1705,6 +1709,174 @@ fn scatter_nd[
         indices_rank,
         output_rank,
         single_thread_blocking_override,
+    ](input, updates, indices, output, out_chain)
+
+
+@always_inline
+fn scatter_nd_add[
+    output_type: DType,
+    indices_type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func(
+        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
+    ) -> SIMD[output_type, 1]:
+        return lhs + rhs
+
+    scatter_nd_generator[
+        output_type,
+        indices_type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+        reduce_func,
+    ](input, updates, indices, output, out_chain)
+
+
+@always_inline
+fn scatter_nd_max[
+    output_type: DType,
+    indices_type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func(
+        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
+    ) -> SIMD[output_type, 1]:
+        return lhs.max(rhs)
+
+    scatter_nd_generator[
+        output_type,
+        indices_type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+        reduce_func,
+    ](input, updates, indices, output, out_chain)
+
+
+@always_inline
+fn scatter_nd_min[
+    output_type: DType,
+    indices_type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func(
+        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
+    ) -> SIMD[output_type, 1]:
+        return lhs.min(rhs)
+
+    scatter_nd_generator[
+        output_type,
+        indices_type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+        reduce_func,
+    ](input, updates, indices, output, out_chain)
+
+
+@always_inline
+fn scatter_nd_mul[
+    output_type: DType,
+    indices_type: DType,
+    updates_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[
+        output_rank,
+        DimList.create_unknown[output_rank](),
+        output_type,
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), output_type
+    ],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[
+        output_rank, DimList.create_unknown[output_rank](), output_type
+    ],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func(
+        lhs: SIMD[output_type, 1], rhs: SIMD[output_type, 1]
+    ) -> SIMD[output_type, 1]:
+        return lhs * rhs
+
+    scatter_nd_generator[
+        output_type,
+        indices_type,
+        updates_rank,
+        indices_rank,
+        output_rank,
+        single_thread_blocking_override,
+        reduce_func,
     ](input, updates, indices, output, out_chain)
 
 
