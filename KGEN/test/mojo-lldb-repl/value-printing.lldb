@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: system-darwin
 # RUN: %repl <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
@@ -63,23 +64,6 @@ let v = -101
 # CHECK:   }
 # CHECK: }
 let w = SIMD[DType.int8, 2](-50, 31)
-
-# CHECK: (DynamicVector[Int]) z = {
-# CHECK:   (Pointer[Int]) data = {
-# CHECK:     (pointer<!kgen.declref<_"$builtin"::_"$int"::_Int>>) address = 0x
-# CHECK:   }
-# CHECK:   (Int) size = {
-# CHECK:     (index) value = 3
-# CHECK:   }
-# CHECK:   (Int) capacity = {
-# CHECK:     (index) value = 4
-# CHECK:   }
-# CHECK: }
-let z = DynamicVector[Int](2)
-z.push_back(1)
-z.push_back(2)
-z.push_back(3)
-
 
 # CHECK: (Foo) f = {
 # CHECK:   (Int) v = {

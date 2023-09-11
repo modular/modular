@@ -377,6 +377,14 @@ bool MojoTypeSystem::IsReferenceType(lldb::opaque_compiler_type_t type,
 }
 
 lldb_private::CompilerType
+MojoTypeSystem::GetPointeeType(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return {};
+  MojoASTTypeRef astType(type);
+  return createCompilerType(astType.getPointerElementType());
+}
+
+lldb_private::CompilerType
 MojoTypeSystem::GetPointerType(lldb::opaque_compiler_type_t type) {
   if (!type)
     return {};
@@ -477,6 +485,31 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
   }
 
   return {};
+}
+
+lldb::Encoding MojoTypeSystem::GetEncoding(lldb::opaque_compiler_type_t type,
+                                           uint64_t &count) {
+  if (!type)
+    return lldb::eEncodingInvalid;
+
+  // Count is the number of elements encoded in the type.
+  count = 1;
+
+  auto flags = GetTypeInfo(type);
+  if (flags & lldb::eTypeIsInteger) {
+    if (flags & lldb::eTypeIsSigned)
+      return lldb::eEncodingSint;
+    return lldb::eEncodingUint;
+  }
+
+  if (flags & lldb::eTypeIsFloat)
+    return lldb::eEncodingIEEE754;
+
+  if (flags & lldb::eTypeIsPointer)
+    return lldb::eEncodingUint;
+
+  count = 0;
+  return lldb::eEncodingInvalid;
 }
 
 ConstString MojoTypeSystem::GetTypeName(lldb::opaque_compiler_type_t type,
