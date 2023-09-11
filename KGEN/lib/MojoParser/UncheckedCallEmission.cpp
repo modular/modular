@@ -72,9 +72,8 @@ public:
   /// things may still be in parameter space.
   bool isSafeToUseValueDestForDirectResult(ASTType destRValueType);
 
-  void addValueToKeepAlive(Value val) {
-    afterCallActions.valuesToKeepAlive.emplace_back(val);
-  }
+  /// Emit a function call in a parameter context.
+  CValue emitCallInParamContext();
 
   void emitAfterCallActions() { afterCallActions.emit(); }
 
@@ -114,6 +113,11 @@ private:
         lvalueWritebacks.pop_back_val().first.resetForError();
     }
   } afterCallActions;
+
+  /// Emit the given (remaining) operands as a variadic or pack sequence.
+  LogicalResult emitRemainingPosOperands(
+      size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
+      ValueInputConvention convention, Type expectedType);
 };
 
 void CallEmitter::AfterCallActions::emit() {
@@ -169,6 +173,65 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("unknown value input convention");
 }
 
+LogicalResult CallEmitter::emitRemainingPosOperands(
+    size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
+    ValueInputConvention convention, Type expectedType) {
+  // Emit all of the remaining values to make sure they're converted to the
+  // right type.
+  for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
+    auto emittedArg =
+        emitOneArgVal(operand, argIdx, convention, expectedType, idx);
+    if (!emittedArg)
+      return failure();
+    operand.ir = emittedArg;
+  }
+
+  // If all of the remaining operands are compile-time values, then we can
+  // represent the sequence as a variadic or pack attribute.
+  if (std::all_of(remainingOperands.begin(), remainingOperands.end(),
+                  [](auto operand) { return operand.ir.getIfPValue(); })) {
+    SmallVector<TypedAttr> args;
+    for (auto operand : remainingOperands)
+      args.push_back(operand.ir.getIfPValue().get());
+    Attribute attr;
+    if (calleeSig.isVararg(argIdx))
+      attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
+    else
+      attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
+    argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
+    return success();
+  }
+
+  // If not all remaining operands are compile-time values, use an operation to
+  // create a variadic or pack sequence.
+  SmallVector<Value> args;
+  for (auto &operand : remainingOperands) {
+    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
+    if (!argVal)
+      return failure();
+    args.push_back(argVal);
+
+    // Make sure the values in the pack stay live across the entire call,
+    // not just the pop.variadic.create op.
+    bool isTrivial = false;
+    if (auto cv = operand.ir.getIfCValue())
+      isTrivial =
+          cv.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared);
+    if (!isTrivial)
+      afterCallActions.valuesToKeepAlive.emplace_back(argVal);
+  }
+
+  Value argVal;
+  if (calleeSig.isVararg(argIdx))
+    argVal =
+        emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
+  else
+    argVal =
+        emitter.builder->create<POP::PackCreateOp>(loc, expectedType, args);
+  argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
+  return success();
+}
+
 FailureOr<ArrayRef<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
   assert(!operands.hasKwOperands() && "keyword arguments not yet supported");
@@ -176,12 +239,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
 
-  for (auto [argIdx, expectedTypeX, conventionX] : llvm::enumerate(
-           calleeSig.getValueInputs(), calleeSig.getValueInputConventions())) {
+  for (auto [argIdx, argName, expectedTypeX, convention] :
+       llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
+                       calleeSig.getValueInputConventions())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
-    ValueInputConvention convention = conventionX;
 
     std::optional<OpBuilder> &builder = emitter.builder;
 
@@ -191,6 +254,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // replace it opportunistically later if we can.
     if (convention == ValueInputConvention::ByRefResult && builder) {
       assert(argIdx == 0 && calleeSig.hasMemoryOnlyResult());
+      assert(argName.empty());
       auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
           /*isSynth=*/true);
@@ -208,28 +272,22 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If we ran out of operands, fulfill this with a default value, empty
     // variadic list, or empty pack.
     if (nextOperandIdx == posOperands.size()) {
-      // Varargs arguments are fulfilled with an empty !kgen.variadic list.
+      Attribute argAttr;
       if (calleeSig.isVararg(argIdx)) {
-        auto variadic = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                          expectedType.cast<VariadicType>());
-        argumentValues.push_back({PValue(variadic), callExpr});
-        continue;
-      }
-
-      // Pack arguments are fulfilled with an empty !pop.pack sequence.
-      if (auto packType = getIfPackType(calleeSig, argIdx)) {
+        // Varargs arguments are fulfilled with an empty !kgen.variadic list.
+        argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
+                                    expectedType.cast<VariadicType>());
+      } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
+        // Pack arguments are fulfilled with an empty !pop.pack sequence.
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
-        auto pack = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
-        argumentValues.push_back({PValue(pack), callExpr});
-        continue;
+        argAttr = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
+      } else {
+        // Otherwise, apply the default argument. We've ensured above that we
+        // have a default argument for each missing operand.
+        argAttr = calleeSig.getDefaultArguments()[nextDefaultIdx++];
       }
-
-      // Otherwise, apply the default argument. We've ensured above that we
-      // have a default argument for each missing operand.
-      argumentValues.push_back(
-          {PValue(calleeSig.getDefaultArguments()[nextDefaultIdx]), callExpr});
-      ++nextDefaultIdx;
+      argumentValues.push_back({PValue(argAttr), callExpr});
       continue;
     } else if (argIdx >= calleeSig.getNumInputs() -
                              calleeSig.getDefaultArguments().size()) {
@@ -251,61 +309,17 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       continue;
     }
 
-    // For a variadic or pack sequence, we need to emit all of the remaining
-    // operands. Emit all of the remaining values to make sure they're
-    // converted to the right type.
+    // At this point, we must be dealing with variadic or pack arguments. We
+    // handle these all at once (or fail).
     SmallVector<ASTExprAnd<AnyValue>> remainingOperands(
         posOperands.begin() + nextOperandIdx, posOperands.end());
-    for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
-      auto emittedArg =
-          emitOneArgVal(operand, argIdx, convention, expectedType, idx);
-      if (!emittedArg)
-        return failure();
-      operand.ir = emittedArg;
-    }
     nextOperandIdx = posOperands.size();
 
-    // If all of the operands are compile-time values, then we can represent
-    // the sequence as an attribute.
-    if (std::all_of(remainingOperands.begin(), remainingOperands.end(),
-                    [](auto operand) { return operand.ir.getIfPValue(); })) {
-      SmallVector<TypedAttr> args;
-      for (auto operand : remainingOperands)
-        args.push_back(operand.ir.getIfPValue().get());
-      Attribute attr;
-      if (calleeSig.isVararg(argIdx))
-        attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
-      else
-        attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
-      argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
-      continue;
-    }
+    if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
+                                           convention, expectedType)))
+      break;
 
-    // If not all operands are compile-time values, use an operation to
-    // create a variadic or pack sequence.
-    SmallVector<Value> args;
-    for (auto &operand : remainingOperands) {
-      Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
-      if (!argVal)
-        return failure();
-      args.push_back(argVal);
-
-      // Make sure the values in the pack stay live across the entire call,
-      // not just the pop.variadic.create op.
-      bool isTrivial = false;
-      if (auto cv = operand.ir.getIfCValue())
-        isTrivial =
-            cv.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared);
-      if (!isTrivial)
-        addValueToKeepAlive(argVal);
-    }
-
-    Value argVal;
-    if (calleeSig.isVararg(argIdx))
-      argVal = builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
-    else
-      argVal = builder->create<POP::PackCreateOp>(loc, expectedType, args);
-    argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
+    return failure();
   }
 
   assert(nextOperandIdx == posOperands.size() &&
@@ -522,6 +536,59 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible() {
   return emitter.emitCResult(*res, callExpr, dest);
 }
 
+CValue CallEmitter::emitCallInParamContext() {
+  assert(!emitter.builder && "not in parameter context");
+
+  // TODO: We can support throwing parameter calls by inserting a 'force to
+  // normal value' check which aborts (at compile time) if interpretation
+  // throws an error.
+  if (calleeSig.isThrows()) {
+    return emitter.emitErrorForDynamicValueInParameter(
+        callExpr, "TODO: cannot call potentially raising function");
+  }
+  if (calleeSig.isAsync()) {
+    return emitter.emitErrorForDynamicValueInParameter(
+        callExpr, "cannot call async function");
+  }
+
+  // Emitting a call in a parameter context. Generate an apply operator.
+  SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
+  bool dropFirst =
+      calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+  for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
+           argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
+           calleeSig.getValueInputConventions().drop_front(dropFirst))) {
+    PValue pValue = argValAndExpr.ir.getIfPValue();
+    if (!pValue) {
+      return emitter.emitErrorForDynamicValueInParameter(
+          argValAndExpr.expr,
+          "cannot use a dynamic value in parameter context");
+    }
+    TypedAttr arg = pValue.get();
+    // Put memory-only arguments into memory ("PRValue" to "PLValue"
+    // conversion).
+    if (!llvm::is_contained({ValueInputConvention::BorrowedInReg,
+                             ValueInputConvention::OwnedInReg},
+                            convention) &&
+        !isa<StoreToMemAttr>(arg))
+      arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
+    // Emit a rebind if the refined type does not match the callee arg type.
+    if (arg.getType() != calleeArgType)
+      arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
+    operands.push_back(arg);
+  }
+
+  bool hasResultSlot =
+      calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
+  Type resultType =
+      hasResultSlot
+          ? ASTType(calleeSig.getValueInputs().front()).getPointerElementType()
+          : ASTType(calleeSig.getValueResults().front());
+  TypedAttr result = ParamOperatorAttr::get(
+      hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands, resultType);
+  return emitter.emitCResult(result, callExpr, dest);
+}
+
 //===----------------------------------------------------------------------===//
 // ExprEmitter::emitCallUnchecked
 //===----------------------------------------------------------------------===//
@@ -537,74 +604,23 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   assert(calleeSig.getNumResultParams() == resultParams.size() &&
          "Type checking should be done");
 
-  // Emit all the arguments.
+  // We first emit all the arguments.
   FailureOr<ArrayRef<ASTExprAnd<AnyValue>>> argumentValuesOr =
       callEmitter.emitArgValues(callOperands);
   if (failed(argumentValuesOr))
     return {};
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
 
-  /// Folding into PValue can fail for a number of reasons, in which case we
-  /// fall back to emitting
-  /// normally.
+  // Folding into PValue can fail for a number of reasons, in which case we
+  // fall back to emitting normally.
   if (FailureOr<CValue> resCValue =
           callEmitter.inlineFunctionCallIntoPValueIfPossible();
       succeeded(resCValue))
     return *resCValue;
 
-  if (!builder) {
-    // TODO: We can support throwing parameter calls by inserting a 'force to
-    // normal value' check which aborts (at compile time) if interpretation
-    // throws an error.
-    if (calleeSig.isThrows()) {
-      emitErrorForDynamicValueInParameter(
-          callExpr, "TODO: cannot call potentially raising function");
-      return {};
-    }
-    if (calleeSig.isAsync()) {
-      emitErrorForDynamicValueInParameter(callExpr,
-                                          "cannot call async function");
-      return {};
-    }
-
-    // Emitting a call in a parameter context. Generate an apply operator.
-    SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
-    bool dropFirst =
-        calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
-    for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
-             argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
-             calleeSig.getValueInputConventions().drop_front(dropFirst))) {
-      if (!argValAndExpr.ir.getIfPValue()) {
-        emitError(argValAndExpr.expr->getLoc(),
-                  "cannot use a dynamic value in parameter context")
-            << argValAndExpr.expr->getRange();
-        return {};
-      }
-      TypedAttr arg = argValAndExpr.ir.getIfPValue().get();
-      // Put memory-only arguments into memory ("PRValue" to "PLValue"
-      // conversion).
-      if (!llvm::is_contained({ValueInputConvention::BorrowedInReg,
-                               ValueInputConvention::OwnedInReg},
-                              convention) &&
-          !isa<StoreToMemAttr>(arg))
-        arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
-      // Emit a rebind if the refined type does not match the callee arg type.
-      if (arg.getType() != calleeArgType)
-        arg = ParamOperatorAttr::get(POC::Rebind, arg, calleeArgType);
-      operands.push_back(arg);
-    }
-
-    bool hasResultSlot =
-        calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
-    Type resultType = hasResultSlot
-                          ? ASTType(calleeSig.getValueInputs().front())
-                                .getReferenceElementType()
-                          : ASTType(calleeSig.getValueResults().front());
-    TypedAttr result = ParamOperatorAttr::get(
-        hasResultSlot ? POC::ApplyResultSlot : POC::Apply, operands,
-        resultType);
-    return emitCResult(result, callExpr, dest);
-  }
+  // If we are in a parameter context, we can now emit the call.
+  if (!builder)
+    return callEmitter.emitCallInParamContext();
 
   Location loc = translateLocation(callExpr->getLoc());
 
