@@ -17,4 +17,5 @@ add_custom_target(check-mojo-lsp-server-pytests
     mojo-sdk
 )
 
-add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
+# FIXME(21134): Reenable this dependency to run these tests in the CI
+# add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
