@@ -17,6 +17,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -89,28 +90,6 @@ struct TestGeneratePreElaboratedBody
     return "test-generate-elaborated-body";
   };
 
-  DenseResourceElementsAttr createResourceAttr(StringRef bytes, Twine name) {
-    mlir::MLIRContext *ctx = &getContext();
-
-    auto resourceManager =
-        mlir::DenseResourceElementsHandle::getManagerInterface(ctx);
-
-    // Pretend this is a "tensor" of data.
-    auto attrType =
-        RankedTensorType::get({(int64_t)bytes.size()},
-                              IntegerType::get(ctx, 8, IntegerType::Unsigned));
-    auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(
-        ArrayRef<char>(bytes.begin(), bytes.size()),
-        /*align=*/8);
-
-    // Some convenience typedefs to simplify this code a little bit.
-    using HandleTy = mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
-    auto *dialect = cast<mlir::BuiltinDialect>(resourceManager.getDialect());
-    return DenseResourceElementsAttr::get(
-        attrType, resourceManager.getBlobManager().insert<HandleTy>(
-                      dialect, name.str(), std::move(blob)));
-  }
-
   void runOnOperation() override {
     ModuleOp theModule = getOperation();
     TargetInfoAttr target = M::lookupTargetInfo(theModule);
@@ -140,8 +119,8 @@ struct TestGeneratePreElaboratedBody
       func.getBodyRegion().cloneInto(&fakeCompiledBody.getBodyRegion(), map);
 
       // Generate the bytecode for the module bytecode.
-      std::string str;
-      llvm::raw_string_ostream stream(str);
+      SmallVector<char> buffer;
+      llvm::raw_svector_ostream stream(buffer);
       if (failed(mlir::writeBytecodeToFile(*fakeModule, stream)))
         return signalPassFailure();
 
@@ -156,7 +135,7 @@ struct TestGeneratePreElaboratedBody
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
-          stream.str(), func.getSymName() + "_generated_body_attr");
+          &getContext(), buffer, func.getSymName() + "_generated_body_attr");
       linkBuilder.create<KGEN::LIT::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr, funcTarget,
           M::KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
