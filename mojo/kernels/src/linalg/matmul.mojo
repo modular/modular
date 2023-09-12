@@ -666,7 +666,8 @@ struct MatmulInnerLoopBPacked[
     """
 
     # Parameters for global reference.
-    var c: NDBuffer[2, shape_c, c_type]
+    var c_stride: Int
+    var c_ptr: DTypePointer[c_type]
     var a: NDBuffer[2, shape_a, a_type]
     var b_packed: NDBuffer[3, packed_shape, b_type]
     # 3D global offset within the whole matmul problem space.
@@ -689,7 +690,10 @@ struct MatmulInnerLoopBPacked[
         tile_n_k: StaticIntTuple[2],
         c_bound: StaticIntTuple[2],
     ):
-        self.c = c
+        self.c_stride = c.dim(1)
+        self.c_ptr = c.data.offset(
+            global_offset.M * self.c_stride + global_offset.N
+        )
         self.a = a
         self.b_packed = b_packed
         self.global_offset = global_offset
@@ -762,8 +766,7 @@ struct MatmulInnerLoopBPacked[
             DimList(a_row_size, pack_inner_size),
             c_type,
         ],
-        # indexing within tile, in (m,n)
-        tile_idx: StaticIntTuple[2],
+        tile_n_idx: Int,
     ):
         """Utility function on the inner loop. Loads a local c_buffer with the
         value stored in the output buffer space, given the indices within the
@@ -771,15 +774,9 @@ struct MatmulInnerLoopBPacked[
 
         Args:
             c_local: pre-allocated local buffer for c partial sums.
-            tile_idx: index tuple with (m,n) coordinates within the current
-                processing tile.
+            tile_n_idx: n coordinate within the current processing tile.
         """
-        let N = self.c.dim(1)
-        var c_ptr = self.c.data.offset(
-            (self.global_offset.M + tile_idx[0]) * N
-            + self.global_offset.N
-            + tile_idx[1]
-        )
+        var c_ptr = self.c_ptr.offset(tile_n_idx)
 
         @parameter
         if has_neon():
@@ -789,8 +786,8 @@ struct MatmulInnerLoopBPacked[
             ].run(
                 c_local,
                 c_ptr,
-                N,
-                min(self.c_bound[1] - tile_idx[1], pack_inner_size),
+                self.c_stride,
+                min(self.c_bound[1] - tile_n_idx, pack_inner_size),
             )
 
         @always_inline
@@ -798,7 +795,7 @@ struct MatmulInnerLoopBPacked[
         fn body[idx0: Int, idx1: Int]():
             var c_data: SIMD[c_type, simd_size] = 0
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_idx[1]
+                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd load if all within bound
                 c_data = c_ptr.offset(idx1 * simd_size).simd_load[simd_size]()
@@ -808,7 +805,7 @@ struct MatmulInnerLoopBPacked[
                 c_data = partial_simd_load[c_type, simd_size](
                     c_ptr.offset(idx1 * simd_size),
                     0,
-                    self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
+                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
                     0,
                 )
             else:
@@ -820,7 +817,7 @@ struct MatmulInnerLoopBPacked[
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr = c_ptr.offset(N)
+                c_ptr = c_ptr.offset(self.c_stride)
 
         unroll[a_row_size, pack_inner_size // simd_size, body]()
 
@@ -832,22 +829,16 @@ struct MatmulInnerLoopBPacked[
             DimList(a_row_size, pack_inner_size),
             c_type,
         ],
-        tile_idx: StaticIntTuple[2],
+        tile_n_idx: Int,
     ):
         """Utility function on the inner loop. Stores the value of a local c
         buffer to the corresponding position in the output buffer space.
 
         Args:
             c_local: pre-allocated local buffer for c partial sums.
-            tile_idx: index tuple with (m,n) coordinates within the current
-                processing tile.
+            tile_n_idx: n coordinate within the current processing tile.
         """
-        let N = self.c.dim(1)
-        var c_ptr = self.c.data.offset(
-            (self.global_offset.M + tile_idx[0]) * N
-            + self.global_offset.N
-            + tile_idx[1]
-        )
+        var c_ptr = self.c_ptr.offset(tile_n_idx)
 
         @parameter
         if has_neon():
@@ -856,8 +847,8 @@ struct MatmulInnerLoopBPacked[
             ].run(
                 c_local,
                 c_ptr,
-                N,
-                min(self.c_bound[1] - tile_idx[1], pack_inner_size),
+                self.c_stride,
+                min(self.c_bound[1] - tile_n_idx, pack_inner_size),
             )
 
         @always_inline
@@ -867,7 +858,7 @@ struct MatmulInnerLoopBPacked[
                 Index(idx0, idx1 * simd_size)
             )
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_idx[1]
+                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd store if all within bound
                 c_ptr.offset(idx1 * simd_size).simd_store[simd_size](c_data)
@@ -876,13 +867,13 @@ struct MatmulInnerLoopBPacked[
                 partial_simd_store(
                     c_ptr.offset(idx1 * simd_size),
                     0,
-                    self.c_bound[1] - tile_idx[1] - idx1 * simd_size,
+                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
                     c_data,
                 )
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr = c_ptr.offset(N)
+                c_ptr = c_ptr.offset(self.c_stride)
 
         unroll[a_row_size, pack_inner_size // simd_size, body]()
 
@@ -1041,7 +1032,7 @@ struct MatmulInnerLoopBPacked[
             if self.global_offset.K == 0:
                 self._initialize_c_tile(c_local)
             else:
-                self._load_c_tile(c_local, Index(0, idx_n))
+                self._load_c_tile(c_local, idx_n)
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
@@ -1050,7 +1041,7 @@ struct MatmulInnerLoopBPacked[
                 # accumulate data for this (n, k) index
                 self._accumulate[0](c_local, Index(idx_n, idx_k))
 
-            self._store_c_tile(c_local, Index(0, idx_n))
+            self._store_c_tile(c_local, idx_n)
 
     @adaptive
     fn _run_inner_loop(self):
@@ -1071,7 +1062,7 @@ struct MatmulInnerLoopBPacked[
             if self.global_offset.K == 0:
                 self._initialize_c_tile(c_local)
             else:
-                self._load_c_tile(c_local, Index(0, idx_n))
+                self._load_c_tile(c_local, idx_n)
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
@@ -1079,7 +1070,7 @@ struct MatmulInnerLoopBPacked[
                 # accumulate data for this (n, k) index
                 self._accumulate[1](c_local, Index(idx_n, idx_k))
 
-            self._store_c_tile(c_local, Index(0, idx_n))
+            self._store_c_tile(c_local, idx_n)
 
     fn _accumulate_lane[
         a_col_size: Int
@@ -1159,7 +1150,7 @@ struct MatmulInnerLoopBPacked[
             if self.global_offset.K == 0:
                 self._initialize_c_tile(c_local)
             else:
-                self._load_c_tile(c_local, Index(0, idx_n))
+                self._load_c_tile(c_local, idx_n)
 
             let partition_end = simd_size * (self.tile_n_k[1] // simd_size)
             for idx_k0 in range(0, partition_end, simd_size):
@@ -1169,7 +1160,7 @@ struct MatmulInnerLoopBPacked[
                 # accumulate data for this (n, k) index
                 self._accumulate_lane[1](c_local, Index(idx_n, idx_k1))
 
-            self._store_c_tile(c_local, Index(0, idx_n))
+            self._store_c_tile(c_local, idx_n)
 
 
 # Tiled Matmul Implementation.
