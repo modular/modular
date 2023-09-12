@@ -316,40 +316,13 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 // InputParamBindings Implementation
 //===----------------------------------------------------------------------===//
 
-/// Check that our set of parameter bindings work with the specified input
-/// parameters and call operands (if any). If so, return a checked
-/// ParamBindArrayAttr, along with information on how closely the bindings fit
-/// the input parameters. If the parameters do not work, this emits an
-/// diagnostic (if `declOp` is non-null) and sets
-/// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
-/// count mismatch).
-///
-/// This rejects the signature list if all the parameters are not bound.
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    StringRef baseName, SMLoc loc, ssize_t &incorrectBindingNo,
-    ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
-    Operation *declOp, bool paramVarargs, bool packVarargs,
-    ArrayRef<ASTExprAnd<AnyValue>> callOperands,
-    ParameterInferenceHookTy parameterInferenceHook) const {
-
-  // If we have an incorrect number of bindings specified, this lambda reports
-  // the problem.
-  auto complainAboutParameterCount = [&]() {
-    // Tell the caller what went wrong.
-    incorrectBindingNo = -1;
-    if (!declOp)
-      return;
-    auto expectedNumParams = actualParamTypes.size();
-    auto actualNumParams = bindings.size();
-    auto diag = emitter.emitError(loc, "'")
-                << baseName << "' expects " << expectedNumParams
-                << " input parameter" << plural(expectedNumParams) << " but "
-                << actualNumParams << plural(actualNumParams, " was", " were")
-                << " provided";
-    diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
-  };
+    ExprEmitter &emitter, bool hasParamVarargs,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVararg,
+    function_ref<void()> emitParamCountDiag,
+    function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
 
   // If we have bound parameters, type check them now and bind names to them.
   SmallVector<TypedAttr> newBindings;
@@ -369,12 +342,9 @@ InputParamBindings::verifyBindings(
   // so far and remap types on demand.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
   size_t nextBinding = 0;
-  bool isPackVararg = packVarargs && !callOperands.empty();
   InputParamBindings::Fitness fitness{0, false};
-  for (auto [idx, typeX] : llvm::enumerate(actualParamTypes)) {
-    Type type = typeX;
-    size_t index = idx;
-    bool isVararg = idx + 1 == actualParamTypes.size() && paramVarargs;
+  for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
+    bool isVararg = idx + 1 == actualParamTypes.size() && hasParamVarargs;
 
     // This lambda installs the decl's value in the parameter evaluator and new
     // binding array.
@@ -399,8 +369,8 @@ InputParamBindings::verifyBindings(
           expectedType =
               ASTType(cast<VariadicType>(expectedType).getElementType());
         }
-        if (auto value = parameterInferenceHook(index, type, expectedType,
-                                                newBindings)) {
+        if (auto value =
+                parameterInferenceHook(idx, type, expectedType, newBindings)) {
           assert(value.getType().mlirType == requestedType &&
                  "inferred a default parameter value of wrong type");
           setParamValue(value);
@@ -423,7 +393,7 @@ InputParamBindings::verifyBindings(
       // TODO: Apply default values for parameters.
 
       // Otherwise, we're simply missing bindings.
-      complainAboutParameterCount();
+      emitParamCountDiag();
       return {};
     }
 
@@ -434,7 +404,7 @@ InputParamBindings::verifyBindings(
       continue;
     }
 
-    auto handleSingleParameterValue = [&](Binding binding,
+    auto handleSingleParameterValue = [&](size_t index, Binding binding,
                                           ASTType expectedType) -> PValue {
       assert(binding.expr &&
              "should always have an expr tree for unchecked bindings");
@@ -460,16 +430,9 @@ InputParamBindings::verifyBindings(
       }
 
       // Handle conversion failure with a custom error.
-      incorrectBindingNo = newBindings.size();
-      incorrectBindingExpectedType = expectedType;
-      if (!declOp)
-        return {};
-      auto diag = emitter.emitError(binding.expr->getLoc(), "'")
-                  << baseName << "' parameter #" << index << " has "
-                  << expectedType << " type, but value has type "
-                  << ASTType(binding.getValue().getType())
-                  << binding.expr->getRange();
-      diag.attachNote(declOp->getLoc()) << "'" << baseName << "' declared here";
+      fitness.expectedBinding =
+          std::make_pair(newBindings.size(), expectedType);
+      emitParamTypeDiag(index, binding, expectedType);
       return {};
     };
 
@@ -478,9 +441,9 @@ InputParamBindings::verifyBindings(
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!isVararg || binding.getValue().getType() == type) {
-      PValue paramValue = handleSingleParameterValue(binding, type);
+      PValue paramValue = handleSingleParameterValue(idx, binding, type);
       if (!paramValue)
-        return {};
+        return {{}, fitness};
       setParamValue(paramValue);
       continue;
     }
@@ -490,15 +453,15 @@ InputParamBindings::verifyBindings(
     fitness.hasVariadicParams = true;
     SmallVector<TypedAttr> elements;
     Type expectedType = ASTType(type).getVariadicElementType();
-    PValue pValue = handleSingleParameterValue(binding, expectedType);
+    PValue pValue = handleSingleParameterValue(idx, binding, expectedType);
     if (!pValue)
-      return {};
+      return {{}, fitness};
     elements.emplace_back(pValue);
     while (nextBinding != bindings.size()) {
       binding = bindings[nextBinding++];
-      PValue pValue = handleSingleParameterValue(binding, expectedType);
+      PValue pValue = handleSingleParameterValue(idx, binding, expectedType);
       if (!pValue)
-        return {};
+        return {{}, fitness};
       elements.emplace_back(pValue);
     }
     setParamValue(VariadicAttr::get(
@@ -507,12 +470,42 @@ InputParamBindings::verifyBindings(
 
   // Check and complain if we have bindings that didn't get used.
   if (nextBinding != bindings.size()) {
-    complainAboutParameterCount();
+    emitParamCountDiag();
     return {};
   }
 
   return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
           fitness};
+}
+
+std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
+InputParamBindings::verifyBindings(
+    ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
+    ExprEmitter &emitter, bool hasParamVarargs, StringRef baseName,
+    Location opLoc, llvm::SMLoc exprLoc,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVararg) const {
+  return verifyBindings(
+      actualParamTypes, actualParamDecls, emitter, hasParamVarargs,
+      parameterInferenceHook, isPackVararg, /*emitParamCountDiag=*/
+      [&]() {
+        auto expectedNumParams = actualParamTypes.size();
+        auto actualNumParams = bindings.size();
+        auto diag = emitter.emitError(exprLoc, "'")
+                    << baseName << "' expects " << expectedNumParams
+                    << " input parameter" << plural(expectedNumParams)
+                    << " but " << actualNumParams
+                    << plural(actualNumParams, " was", " were") << " provided";
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      },
+      /*emitParamTypeDiag=*/
+      [&](size_t index, Binding &binding, ASTType expectedType) {
+        auto diag = emitter.emitError(binding.expr->getLoc(), "'")
+                    << baseName << "' parameter #" << index << " has "
+                    << expectedType << " type, but value has type "
+                    << ASTType(binding.getValue().getType())
+                    << binding.expr->getRange();
+        diag.attachNote(opLoc) << "'" << baseName << "' declared here";
+      });
 }
 
 /// Given a candidate that may or may not be compatible with the given
@@ -527,14 +520,8 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
   // it queries for parameterInferenceHook.
   ASTType nextExpectedType;
 
-  ssize_t incorrectBindingNo;
-  ASTType incorrectBindingExpectedType;
-  (void)verifyBindings(candidateType.getInputParamTypes(), {},
-                       /*no diagnostics*/ "xx", SMLoc(), incorrectBindingNo,
-                       incorrectBindingExpectedType, emitter,
-                       /*don't emit diagnostics*/ nullptr,
+  (void)verifyBindings(candidateType.getInputParamTypes(), {}, emitter,
                        candidateType.hasParamVarargs(),
-                       candidateType.hasPackVarargs(), /*callOperands=*/{},
                        [&](size_t index, Type type, ASTType expectedType,
                            ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
                          nextExpectedType = expectedType;
@@ -645,31 +632,29 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   SMLoc callLoc = callable.expr->getLoc();
 
   // Check that the signature can be rebound with this set of bindings.
-  ssize_t incorrectBindingNo = 0;
-  ASTType incorrectBindingExpectedType;
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
-  auto [newBindings, fitness] = callable.inputParamBindings.verifyBindings(
-      inputParamTypes, {}, callable.baseName, callLoc, incorrectBindingNo,
-      incorrectBindingExpectedType, emitter,
-      /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs(),
-      signature.hasPackVarargs(), operands,
-      [&](size_t index, Type type, ASTType expectedParamType,
-          ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
-        return ParameterInferenceState(emitter.shared, index, type)
-            .infer(signature, bindingsSoFar, operands);
-      });
-
-  // We will accumulate the implicit conversion in arguments to those counted
-  // for the parameter bindings.
-  size_t numImplicitConversions = fitness.numImplicitConversions;
+  auto [newBindings, bindingFitness] =
+      callable.inputParamBindings.verifyBindings(
+          inputParamTypes, {}, emitter, signature.hasParamVarargs(),
+          [&](size_t index, Type type, ASTType expectedParamType,
+              ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
+            return ParameterInferenceState(emitter.shared, index, type)
+                .infer(signature, bindingsSoFar, operands);
+          },
+          /*isPackVararg=*/signature.hasPackVarargs() && !operands.empty());
 
   // If there is an error, return the problem.
   if (!newBindings) {
-    if (incorrectBindingNo == -1)
-      return {kParamCount, 0, ASTType(), newBindings};
-    return {kParamWrongType, static_cast<size_t>(incorrectBindingNo),
-            incorrectBindingExpectedType, newBindings};
+    if (auto expectedBinding = bindingFitness.expectedBinding;
+        expectedBinding.has_value())
+      return {kParamWrongType, expectedBinding->first, expectedBinding->second,
+              newBindings};
+    return {kParamCount, 0, ASTType(), newBindings};
   }
+
+  // We will accumulate the implicit conversion in arguments to those counted
+  // for the parameter bindings.
+  size_t numImplicitConversions = bindingFitness.numImplicitConversions;
 
   // Check the result parameter count.
   if (signature.getNumResultParams() != callable.resultParams.size())
@@ -912,7 +897,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // and both of these more specific than matches with variadic parameters.
   size_t payload = numImplicitConversions * 4;
   payload += (passesVarargArgument ? 2 : 0);
-  payload += (fitness.hasVariadicParams ? 1 : 0);
+  payload += (bindingFitness.hasVariadicParams ? 1 : 0);
   return {kValid, payload, ASTType(), newBindings};
 }
 
@@ -1261,14 +1246,10 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
     // TODO: Parameter inference.
-    ssize_t incorrectBindingNo = 0;
-    ASTType incorrectBindingExpectedType;
-    return inputParamBindings
-        .verifyBindings(
-            candidateType.getInputParamTypes(), {}, baseName, expr->getLoc(),
-            incorrectBindingNo, incorrectBindingExpectedType, emitter,
-            /*don't emit diagnostics*/ nullptr, candidateType.hasParamVarargs())
-        .first;
+    auto [newBindings, _] = inputParamBindings.verifyBindings(
+        candidateType.getInputParamTypes(), {}, emitter,
+        candidateType.hasParamVarargs());
+    return newBindings;
   };
 
   auto isValidCandidate = [&](SignatureType candidateType) -> bool {
@@ -1367,13 +1348,10 @@ static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
-  ssize_t incorrectBindingNo = 0;
-  ASTType incorrectBindingExpectedType;
-
   auto [newBindings, _] = inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParamTypes(), {}, baseName,
-      expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, emitter,
-      /*emit diagnostics*/ funcOp, funcOp.getSignature().hasParamVarargs());
+      funcOp.getFullSignature().getInputParamTypes(), {}, emitter,
+      funcOp.getSignature().hasParamVarargs(), baseName, funcOp.getLoc(),
+      expr->getLoc());
   if (!newBindings)
     return {};
 

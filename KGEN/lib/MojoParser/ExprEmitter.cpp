@@ -535,13 +535,9 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
       InputParamBindings paramBindings;
-      ssize_t incorrectBindingNo = 0;
-      ASTType incorrectBindingExpectedType;
-      auto [bindingAttr, _] = paramBindings.verifyBindings(
-          signature.getInputParamTypes(), {},
-          /*baseName=*/"<<UNUSED>>", expr->getLoc(), incorrectBindingNo,
-          incorrectBindingExpectedType, *this,
-          /*don't emit diagnostics*/ nullptr, signature.hasParamVarargs());
+      auto [bindingAttr, _] =
+          paramBindings.verifyBindings(signature.getInputParamTypes(), {},
+                                       *this, signature.hasParamVarargs());
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -1218,15 +1214,13 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
     paramBindings.addPrechecked(binding.getValue());
 
   // Check the bindings.
-  ssize_t incorrectBindingNo = 0;
-  ASTType incorrectBindingExpectedType;
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structDecl.getInputParams())
     paramTypes.push_back(decl.getType());
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structDecl.getInputParamsAttr(), structDecl.getName(),
-      expr->getLoc(), incorrectBindingNo, incorrectBindingExpectedType, *this,
-      structDecl, structDecl.getParamVarargs());
+      paramTypes, structDecl.getInputParamsAttr(), *this,
+      structDecl.getParamVarargs(), structDecl.getName(), structDecl.getLoc(),
+      expr->getLoc());
   if (!bindingValuesAttr)
     return {};
   SmallVector<ParamBindAttr> bindingValues;

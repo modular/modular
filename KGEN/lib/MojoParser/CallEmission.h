@@ -87,25 +87,41 @@ public:
 
     /// Whether the bindings include variadic parameters.
     bool hasVariadicParams;
+
+    /// Index and type of the expected binding, if it doesn't fit.
+    std::optional<std::pair<size_t, ASTType>> expectedBinding = std::nullopt;
   };
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters and call operands (if any). If so, return a checked
   /// ParamBindArrayAttr, along with information on how closely the bindings fit
-  /// the input parameters. If the parameters do not work, this emits an
-  /// diagnostic (if `declOp` is non-null) and sets
-  /// `incorrectBindingNo/Expectedtype` to the bad binding (or -1 if there is a
-  /// count mismatch).
+  /// the input parameters, or why they don't. If the parameters do not work,
+  /// this emits a diagnostic using the locations and `baseName` provided.
   ///
   /// This rejects the signature list if all the parameters are not bound.
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> actualParamTypes,
-                 ParamDeclArrayAttr actualParamDecls, StringRef baseName,
-                 llvm::SMLoc loc, ssize_t &incorrectBindingNo,
-                 ASTType &incorrectBindingExpectedType, ExprEmitter &emitter,
-                 Operation *declOp, bool paramVarargs, bool packVarargs = false,
-                 ArrayRef<ASTExprAnd<AnyValue>> callOperands = {},
-                 ParameterInferenceHookTy parameterInferenceHook = {}) const;
+                 ParamDeclArrayAttr actualParamDecls, ExprEmitter &emitter,
+                 bool hasParamVarargs, StringRef baseName, Location opLoc,
+                 llvm::SMLoc exprLoc,
+                 ParameterInferenceHookTy parameterInferenceHook = {},
+                 bool isPackVararg = false) const;
+
+  /// Check that our set of parameter bindings work with the specified input
+  /// parameters and call operands (if any). If so, return a checked
+  /// ParamBindArrayAttr, along with information on how closely the bindings fit
+  /// the input parameters, or why they don't. This overload allows passing
+  /// functions for parameter count and type diagnostic emission.
+  ///
+  /// This rejects the signature list if all the parameters are not bound.
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
+      ExprEmitter &emitter, bool hasParamVarargs,
+      ParameterInferenceHookTy parameterInferenceHook = {},
+      bool isPackVararg = false,
+      function_ref<void()> emitParamCountDiag = []() {},
+      function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
+          [](size_t, Binding &, ASTType) {}) const;
 
   /// Given a candidate that may or may not be compatible with the given
   /// parameter set so far, indicate what the next parameter's expected type
