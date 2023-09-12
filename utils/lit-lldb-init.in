@@ -1,5 +1,9 @@
 # LLDB init file for the LIT tests.
 
+# Without this setting, on Linux, the personality syscall is used when launching
+# the inferior, which is forbidden by the security settings of our CI.
+settings set target.disable-aslr false
+
 # Disable Spotlight lookup. The testsuite creates
 # different binaries with the same UUID, because they only
 # differ in the debug info, which is not being hashed.

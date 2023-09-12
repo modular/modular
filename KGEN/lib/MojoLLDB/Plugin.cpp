@@ -58,6 +58,31 @@ MODULAR_EXPORT void LLDBPluginTerminate() {
   MojoLanguage::Terminate();
 }
 
+static void enableJITDebugging(lldb::SBDebugger &debugger) {
+  // FIXME(21178): Implement a smarter JIT loader plugin.
+  // JIT debugging works via the JITLoaderGDB LLDB plugin: whenever a module
+  // is loaded, the plugin will look for some specific symbols in the symbol
+  // table of the module, which causes some computation to be done. Fortunately
+  // this doesn't trigger debug info lookups, but it still might cause some
+  // unwanted performance degradation when doing remote debugging and symbol
+  // tables are not available locally, or when there are individual modules of
+  // tens of GB in size. Two ideas of how to diminish the slowdown when the
+  // time comes:
+  //  - Add a special section in the module in question so that JITLoaderGDB
+  //    filters out modules without this section. This will reduce the amount of
+  //    unneeded lookups.
+  //  - Add a regex feature so that JITLoaderGDB only does the lookup in modules
+  //    whose name matches the regex.
+  lldb::SBExecutionContext exeCtx;
+  lldb::SBCommandReturnObject result;
+  debugger.GetCommandInterpreter().HandleCommand(
+      "settings set plugin.jit-loader.gdb.enable on", exeCtx, result);
+  if (result.GetStatus() == lldb::eReturnStatusFailed) {
+    llvm::errs() << "error: " << result.GetError()
+                 << "\nDebugging of JITted programs might not work.";
+  }
+}
+
 namespace lldb {
 MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
@@ -65,6 +90,9 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
 
   registerMojoCommands(debugger);
   registerLLVMDebugCommands(debugger);
+  // We enable JIT debugging here so that this feature doesn't depend on
+  // lldb init files or how LLDB was launched.
+  enableJITDebugging(debugger);
   return true;
 }
 } // namespace lldb

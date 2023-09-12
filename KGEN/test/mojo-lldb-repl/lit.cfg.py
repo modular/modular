@@ -28,7 +28,10 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 config.substitutions.append(
     (
         "%lldb",
-        f"{config.lldb_env} lldb --source-quietly -S {config.lit_lldb_init}",
+        (
+            f"{config.lldb_env} mojo lldb --source-quietly -S"
+            f" {config.lit_lldb_init}"
+        ),
     )
 )
 config.substitutions.append(
