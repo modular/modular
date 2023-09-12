@@ -1,0 +1,14 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %lldb -b -o 'settings set target.disable-aslr false' -o 'b test.mojo:9' -o run -- mojo run --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
+
+# CHECK-NOT: hello
+# CHECK: Process {{.*}} stopped
+# CHECK: stop reason = breakpoint 1.1
+# CHECK: JIT(0x{{.*}})`$test::jitbp()_concrete at test.mojo:9:10
+# CHECK: -> 9        print("hello\n")
+# CHECK: Process {{.*}} launched: {{.*}}
