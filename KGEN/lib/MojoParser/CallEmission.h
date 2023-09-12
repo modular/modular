@@ -22,16 +22,8 @@ class SymbolConstantAttr;
 class TypeArrayAttr;
 } // namespace M::KGEN
 
-namespace M::KGEN::POP {
-class PackType;
-} // namespace M::KGEN::POP
-
 namespace M::KGEN::LIT {
 class FuncOp;
-
-/// If the argument at the given index is of pack type, returns that type.
-/// therwise, returns null.
-POP::PackType getIfPackType(SignatureType sig, size_t index);
 
 //===----------------------------------------------------------------------===//
 // InputParamBindings
