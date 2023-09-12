@@ -11,6 +11,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
+#include "llvm/ADT/StringExtras.h"
 
 namespace M {
 
@@ -88,6 +89,41 @@ parseBufferSignature(OpAsmParser &parser,
 void printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
                           ValueRange buffers, TypeRange bufferTypes,
                           InOutSignatureAttr inOutSignatureAttr);
+
+/// This is an AsmPrinter implementation that just outputs to an external output
+/// stream.
+class StreamAsmPrinter : public AsmPrinter {
+public:
+  explicit StreamAsmPrinter(raw_ostream &os) : os(os) {}
+
+  /// Implement all the virtual hooks.
+
+  raw_ostream &getStream() const override { return os; }
+
+  /// Trivial hooks
+
+  void printType(Type type) override { os << type; }
+  void printAttribute(Attribute attr) override { os << attr; }
+  void printAttributeWithoutType(Attribute attr) override {
+    attr.print(os, /*elideType=*/true);
+  }
+  LogicalResult printAlias(Attribute attr) override { return failure(); }
+  LogicalResult printAlias(Type type) override { return failure(); }
+
+  /// Less trivial hooks.
+
+  void printKeywordOrString(StringRef keyword) override;
+  void printSymbolName(StringRef symbolRef) override;
+  void
+  printResourceHandle(const mlir::AsmDialectResourceHandle &resource) override;
+
+  /// Print floats like MLIR does.
+  void printFloat(const APFloat &value) override;
+
+private:
+  /// The stream to output to.
+  raw_ostream &os;
+};
 
 } // namespace M
 
