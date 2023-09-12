@@ -336,7 +336,12 @@ TEST(Telemetry, LoggerL2) {
         std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
 
         // Memory buffer must be empty.
-        EXPECT_TRUE(mbuf->getBufferSize() == 0);
+        size_t bufSize = mbuf->getBufferSize();
+        if (bufSize != 0) {
+          fprintf(stderr, "!! Buffer is not empty. Size=%lu file=%s\n", bufSize,
+                  path.string().c_str());
+        }
+        EXPECT_TRUE(bufSize == 0);
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
