@@ -1044,7 +1044,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
     SmallVector<ASTExprAnd<AnyValue>> posOperands{
         ASTExprAnd<AnyValue>{destBuffer, value.expr}, value};
-    if (!emitNamedMethodCall("__copyinit__", CallOperands(posOperands),
+    if (!emitNamedMethodCall("__copyinit__", posOperands,
                              ValueDest::none(/*these return None*/),
                              CallSyntax::kImplicitConvert, value.expr))
       return {};
@@ -1590,9 +1590,8 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   auto methodName =
       isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
-  auto result =
-      emitter.emitNamedMethodCall(methodName, CallOperands(selfAndIndicesValue),
-                                  dest, CallSyntax::kSubscript, expr);
+  auto result = emitter.emitNamedMethodCall(methodName, selfAndIndicesValue,
+                                            dest, CallSyntax::kSubscript, expr);
   // TODO: The result could be another LValue in the future.
   assert(!result || result.getIfRValue() || result.getIfBValue());
   return result;
@@ -1605,15 +1604,15 @@ void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   SmallVector<ASTExprAnd<AnyValue>> posOperands(selfAndIndicesValue.begin(),
                                                 selfAndIndicesValue.end());
   posOperands.push_back(value);
-  emitter.emitNamedMethodCall(methodName, CallOperands(posOperands),
-                              ValueDest::none(), CallSyntax::kSubscript, expr);
+  emitter.emitNamedMethodCall(methodName, posOperands, ValueDest::none(),
+                              CallSyntax::kSubscript, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
 CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the tuple type constructor as an implicit conversion.
-  return emitter.emitConstructorCall(elementType, CallOperands(eltLValues),
-                                     expr, CallSyntax::kImplicitConvert, dest);
+  return emitter.emitConstructorCall(elementType, eltLValues, expr,
+                                     CallSyntax::kImplicitConvert, dest);
 }
 
 /// Storing to a tuple LValue extracts the elements out of the provided value

@@ -151,21 +151,32 @@ enum class CallSyntax : uint8_t {
 /// Struct to that carries both positional and keyword operands for a call. This
 /// does not own any values, only references and pointers to their containers.
 struct CallOperands {
-  CallOperands() : posOperands({}){};
-  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands)
-      : posOperands(posOperands){};
-  CallOperands(ArrayRef<ASTExprAnd<AnyValue>> posOperands,
-               const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands)
+  using PositionalOperands = ArrayRef<ASTExprAnd<AnyValue>>;
+
+  /// Create call operands with positional and optional keyword arguments.
+  CallOperands(PositionalOperands posOperands = {},
+               const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>>
+                   *kwOperands = nullptr)
       : posOperands(posOperands), kwOperands(kwOperands) {}
+
+  /// Create call operands with positional arguments given a value implicitly
+  /// convertible to `ArrayRef`.
+  template <typename OperandsT,
+            typename = std::enable_if_t<
+                !std::is_same_v<OperandsT, PositionalOperands> &&
+                std::is_convertible_v<OperandsT, PositionalOperands>>>
+  CallOperands(OperandsT &&posOperands)
+      : CallOperands(PositionalOperands(std::forward<OperandsT>(posOperands))) {
+  }
 
   /// Return if there are any keyword operands specified.
   bool hasKwOperands() const { return kwOperands && !kwOperands->empty(); }
 
   /// The values passed as positional operands.
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands;
+  PositionalOperands posOperands;
 
   /// The values passed as keyword operands.
-  const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands = nullptr;
+  const SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> *kwOperands;
 };
 
 /// This class represents an unresolved overload set with partially bound

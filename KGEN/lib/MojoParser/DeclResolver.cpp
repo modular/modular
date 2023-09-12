@@ -2389,15 +2389,15 @@ static Value emitClosureInstance(SignatureType closureSignature,
   ValueDest closureDest;
   Type closureImplType = ASTDecl::computeSelfTypeForStruct(closureImpl);
   CValue value = exprEmitter.emitConstructorCall(
-      ASTType(closureImplType), CallOperands(closureImplInitArgs), &node,
-      CallSyntax::kTypeCall, closureDest, false);
+      ASTType(closureImplType), closureImplInitArgs, &node,
+      CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
   // Emit the Closure Wrapper instance.
   ValueDest closureWrapperDest;
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
   closureWrapperInitArgs.push_back({value, &node});
   Type closureWrapperType = ASTDecl::computeSelfTypeForStruct(closureWrapper);
   CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
-      ASTType(closureWrapperType), CallOperands(closureWrapperInitArgs), &node,
+      ASTType(closureWrapperType), closureWrapperInitArgs, &node,
       CallSyntax::kTypeCall, closureWrapperDest);
   return closureWrapperInstance.getIfMRValue();
 }
