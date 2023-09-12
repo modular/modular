@@ -5,7 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import div_ceil, fma, max, min, align_down
-from sys.info import alignof, simd_byte_width, simdwidthof
+from sys.info import (
+    alignof,
+    simd_byte_width,
+    simdwidthof,
+    has_avx2,
+    has_avx512f,
+    has_neon,
+)
 from sys.intrinsics import PrefetchOptions, external_call
 
 from algorithm import (
@@ -2919,7 +2926,7 @@ struct ConvDirectNHWC[
 
             for r in range(self.conv_shape.r):
                 for s in range(self.conv_shape.s):
-                    var input_offset = self.conv_shape.c * (
+                    let input_offset = self.conv_shape.c * (
                         s + self.conv_shape.w * r
                     )
                     # Unpacked version. For each (r, s), we first offset the
@@ -2936,63 +2943,25 @@ struct ConvDirectNHWC[
                             + f
                         )
 
-                    for c in range(c_tile_size):
-                        # Prefetch. The offset specifies how much ahead in terms of
-                        # micro kernel width do we prefetch.
-                        alias prefetch_offset = 4
-                        # fmt: off
-                        let dist = prefetch_offset * micro_kernel_f_size \
-                                    if c_fully_cached or c < c_tile_size - prefetch_offset \
-                                    else ( \
-                                      prefetch_offset + self.conv_shape.c - c_tile_size \
-                                    ) * micro_kernel_f_size
-                        # fmt: on
+                    self._accumulate[
+                        micro_kernel_height,
+                        micro_kernel_width,
+                        simd_size,
+                        c_fully_cached,
+                        has_residual,
+                        4 if not has_neon() else -1,
+                    ](
+                        input_base_offsets,
+                        input_offset,
+                        c_tile_size,
+                        filter_ptr,
+                        output_micro_tile,
+                    )
 
-                        @always_inline
-                        @parameter
-                        fn prefetch_body[idx: Int]():
-                            filter_ptr.offset(dist + idx * simd_size).prefetch[
-                                PrefetchOptions()
-                                .for_read()
-                                .high_locality()
-                                .to_data_cache()
-                            ]()
-
-                        unroll[micro_kernel_width, prefetch_body]()
-
-                        # Accumulate with register blocking.
-                        self._micro_kernel[
-                            micro_kernel_height,
-                            micro_kernel_width,
-                            simd_size,
-                            has_residual,
-                        ](
-                            input_base_offsets,
-                            input_offset,
-                            filter_ptr,
-                            output_micro_tile,
-                        )
-
-                        # FRSCf: micro f segments are packed continuously.
-                        @parameter
-                        if filter_packed:
-                            filter_ptr = filter_ptr.offset(micro_kernel_f_size)
-                        # RSCF: jump to the next row for the next f segment.
-                        else:
-                            filter_ptr = filter_ptr.offset(self.conv_shape.f)
-
-                        input_offset += 1
-
-                    # If the C dimension is fully covered in cache tile, then
-                    # loop nests over RxSxc_tile_size fully covers RSC diemensions.
-                    # With FRSCf layout, this ensures all micro_kernel_f_size
-                    # segments are continuously in memory. If not, we need to
-                    # reset filter_ptr to the next start of c segments in tile.
-                    @parameter
-                    if filter_packed and not c_fully_cached:
+                    # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
+                    if filter_packed:
                         filter_ptr = filter_ptr.offset(
-                            (self.conv_shape.c - c_tile_size)
-                            * micro_kernel_f_size
+                            self.conv_shape.c * micro_kernel_f_size
                         )
 
             self._store_output_micro_tile[
@@ -3102,65 +3071,6 @@ struct ConvDirectNHWC[
             output_ptr = output_ptr.offset(self.conv_shape.f)
 
     @always_inline
-    fn _micro_kernel[
-        micro_kernel_height: Int,
-        micro_kernel_width: Int,
-        simd_size: Int,
-        has_residual: Bool,
-    ](
-        self,
-        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
-        input_offset: Int,
-        filter_ptr: DTypePointer[type],
-        output_micro_tile: NDBuffer[
-            2,
-            DimList(micro_kernel_height, micro_kernel_width * simd_size),
-            type,
-        ],
-    ):
-        alias alignment = alignof[SIMD[type, simd_size]]()
-
-        @parameter
-        @always_inline
-        fn body[idx0: Int, idx1: Int]():
-            # Broadcast a scalar from input to a simd vector.
-            let input_val = self.input.data.offset(
-                input_base_offsets[idx0].value + input_offset
-            ).simd_load[1]()
-            let input_vec = SIMD[type, simd_size](input_val)
-
-            # Load a simd vector from filter.
-            let filter_vec: SIMD[type, simd_size]
-            # Partial load if filter is not multiple of simd_size.
-            @parameter
-            if has_residual and not filter_packed:
-                let residual = self.conv_shape.f - (
-                    self.conv_shape.f // simd_size
-                ) * simd_size
-                filter_vec = partial_simd_load[type, simd_size](
-                    filter_ptr, 0, residual, 0.0
-                )
-            # It's always safe to load a full vector from packed filter because
-            # the filter to padded to multiple simd_size during pre-packing.
-            else:
-                filter_vec = filter_ptr.offset(idx1 * simd_size).simd_load[
-                    simd_size
-                ]()
-
-            # The following should be lifted to registers and show up as
-            # FMA instructions.
-            let output_micro_idx = Index(idx0, idx1 * simd_size)
-            var output_vec = output_micro_tile.aligned_simd_load[
-                simd_size, alignment
-            ](output_micro_idx)
-            output_vec = fma[type, simd_size](input_vec, filter_vec, output_vec)
-            output_micro_tile.aligned_simd_store[simd_size, alignment](
-                output_micro_idx, output_vec
-            )
-
-        unroll[micro_kernel_height, micro_kernel_width, body]()
-
-    @always_inline
     fn _store_output_micro_tile[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
@@ -3212,6 +3122,103 @@ struct ConvDirectNHWC[
                     )
 
             output_ptr = output_ptr.offset(self.conv_shape.f)
+
+    @always_inline
+    @adaptive
+    fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+        c_fully_cached: Bool,
+        has_residual: Bool,
+        prefetch_offset: Int,
+    ](
+        self,
+        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_offset: Int,
+        c_tile_size: Int,
+        filter_base: DTypePointer[type],
+        output_micro_tile: NDBuffer[
+            2,
+            DimList(micro_kernel_height, micro_kernel_width * simd_size),
+            type,
+        ],
+    ):
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        var offset = input_offset
+        var filter_ptr = filter_base
+
+        for c in range(c_tile_size):
+
+            @parameter
+            if prefetch_offset > 0:
+                # fmt: off
+                let dist = prefetch_offset * micro_kernel_f_size \
+                            if c_fully_cached or c < c_tile_size - prefetch_offset \
+                            else ( \
+                                prefetch_offset + self.conv_shape.c - c_tile_size \
+                            ) * micro_kernel_f_size
+                # fmt: on
+                @unroll
+                for idx in range(micro_kernel_width):
+                    filter_ptr.offset(dist + idx * simd_size).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
+
+            # micro kernel with register blocking
+            @unroll
+            for i in range(micro_kernel_height):
+                let input_val = self.input.data.offset(
+                    input_base_offsets[i].value + offset
+                ).simd_load[1]()
+                let input_vec = SIMD[type, simd_size](input_val)
+
+                @unroll
+                for j in range(micro_kernel_width):
+                    # Load a simd vector from filter.
+                    let filter_vec: SIMD[type, simd_size]
+                    # Partial load if filter is not multiple of simd_size.
+                    @parameter
+                    if has_residual and not filter_packed:
+                        let residual = self.conv_shape.f - (
+                            self.conv_shape.f // simd_size
+                        ) * simd_size
+                        filter_vec = partial_simd_load[type, simd_size](
+                            filter_ptr, 0, residual, 0.0
+                        )
+                    # It's always safe to load a full vector from packed filter because
+                    # the filter to padded to multiple simd_size during pre-packing.
+                    else:
+                        filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                            simd_size
+                        ]()
+
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    let output_micro_idx = Index(i, j * simd_size)
+                    var output_vec = output_micro_tile.simd_load[simd_size](
+                        output_micro_idx
+                    )
+                    output_vec = fma[type, simd_size](
+                        input_vec, filter_vec, output_vec
+                    )
+                    output_micro_tile.simd_store[simd_size](
+                        output_micro_idx, output_vec
+                    )
+
+            # FRSCf: micro f segments are packed continuously.
+            @parameter
+            if filter_packed:
+                filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+            # RSCF: jump to the next row for the next f segment.
+            else:
+                filter_ptr = filter_ptr.offset(self.conv_shape.f)
+
+            offset += 1
 
     @always_inline
     fn _accumulate[
