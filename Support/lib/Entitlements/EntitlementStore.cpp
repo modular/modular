@@ -6,6 +6,7 @@
 
 #include "Support/Entitlements/EntitlementStore.h"
 #include "Support/Configuration.h"
+#include "Support/Cryptography/Keypair.h"
 #include "Support/Random.h"
 #include "mbedtls/error.h"
 #include "mbedtls/x509_crt.h"
@@ -299,29 +300,16 @@ EntitlementStore::open(const std::filesystem::path &clientCertPath,
 
   // Now that we know the cert is valid, ensure that we have the private key
   // corresponding to the cert.
-  auto privKeyBufOr =
-      llvm::MemoryBuffer::getFile(clientPrivKeyPath.string(), /*IsText=*/false,
-                                  /*RequiresNullTerminator=*/false);
-  if (!privKeyBufOr)
-    return Error(privKeyBufOr.getError().message());
-  std::unique_ptr<llvm::MemoryBuffer> privKeyBuf = std::move(*privKeyBufOr);
-
-  mbedtls_pk_context priv;
-  mbedtls_pk_init(&priv);
-  auto freePriv = llvm::make_scope_exit([&] { mbedtls_pk_free(&priv); });
-
-  SecureRandomBytesGenerator rng;
-  rc =
-      mbedtls_pk_parse_key(&priv, (const uint8_t *)privKeyBuf->getBufferStart(),
-                           privKeyBuf->getBufferSize(), /*pwd=*/nullptr,
-                           /*pwdlen=*/0, &csprng, &rng);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
+  auto privKeyOr = Keypair::openPrivate(clientPrivKeyPath);
+  if (privKeyOr.isError())
+    return privKeyOr.takeError();
+  Keypair privKey = std::move(*privKeyOr);
 
   // OK - we now have the private key. Ensure the cert was signed by *this*
   // private key. We do this by checking that the public key on the cert matches
   // the private key we just parsed.
-  rc = mbedtls_pk_check_pair(&cert.pk, &priv, &csprng, &rng);
+  SecureRandomBytesGenerator rng;
+  rc = mbedtls_pk_check_pair(&cert.pk, privKey.getRawKey(), &csprng, &rng);
   if (rc != 0)
     return Error(mbedTLSErrorToString(rc));
 

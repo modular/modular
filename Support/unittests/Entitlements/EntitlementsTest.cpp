@@ -14,6 +14,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
 
+#include "Support/Cryptography/Keypair.h"
 #include "gtest/gtest.h"
 
 using namespace M;
@@ -66,18 +67,6 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   return 0;
 }
 
-static mbedtls_pk_context generateKeypair() {
-  mbedtls_pk_context ctx;
-  mbedtls_pk_init(&ctx);
-  EXPECT_TRUE(
-      mbedtls_pk_setup(&ctx, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) == 0);
-
-  SecureRandomBytesGenerator rng;
-  EXPECT_TRUE(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(ctx),
-                                  &csprng, &rng) == 0);
-  return ctx;
-}
-
 /// mbedTLS writes certificates to the *back* of the buffer, so we have to do
 /// some funky pointer gymnastics.
 struct WrittenCert {
@@ -88,9 +77,7 @@ struct WrittenCert {
   size_t bytesWritten = 0;
 
   // This is the keypair used for the CA cert.
-  mbedtls_pk_context keypair;
-
-  ~WrittenCert() { mbedtls_pk_free(&keypair); }
+  Keypair keypair;
 
   ArrayRef<uint8_t> getCertificate() {
     return ArrayRef<uint8_t>(buf.data() + buf.size() - bytesWritten,
@@ -145,11 +132,14 @@ static WrittenCert getCertificate(mbedtls_pk_context *issuer) {
   WrittenCert out;
 
   // Generate the keypair and set it on the cert.
-  out.keypair = generateKeypair();
+  auto keysOr = Keypair::generate();
+  EXPECT_FALSE(keysOr.isError()) << keysOr.getError();
+  out.keypair = keysOr.takeValue();
 
   // Set the subject and issuer keys.
-  mbedtls_x509write_crt_set_subject_key(&cert, &out.keypair);
-  mbedtls_x509write_crt_set_issuer_key(&cert, issuer ? issuer : &out.keypair);
+  mbedtls_x509write_crt_set_subject_key(&cert, out.keypair.getRawKey());
+  mbedtls_x509write_crt_set_issuer_key(&cert, issuer ? issuer
+                                                     : out.keypair.getRawKey());
   EXPECT_EQ(mbedtls_x509write_crt_set_subject_key_identifier(&cert), 0);
   EXPECT_EQ(mbedtls_x509write_crt_set_authority_key_identifier(&cert), 0);
 
@@ -173,7 +163,7 @@ TEST(TestEntitlement, Roundtrip) {
   WrittenCert cert = getCertificate(nullptr);
   ArrayRef<uint8_t> certBuf = cert.getCertificate();
 
-  WrittenCert childCert = getCertificate(&cert.keypair);
+  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
   ArrayRef<uint8_t> childBuf = childCert.getCertificate();
 
   // The cert is now self-signed, so we can parse it and parse out the
@@ -234,7 +224,7 @@ TEST(TestEntitlementStore, Works) {
   WrittenCert cert = getCertificate(nullptr);
   ArrayRef<uint8_t> certBuf = cert.getCertificate();
 
-  WrittenCert childCert = getCertificate(&cert.keypair);
+  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
   ArrayRef<uint8_t> childBuf = childCert.getCertificate();
 
   // Create a tmp dir under the CWD.
@@ -261,8 +251,8 @@ TEST(TestEntitlementStore, Works) {
   err = llvm::writeToOutput(
       clientPrivPath, [&](llvm::raw_ostream &os) -> llvm::Error {
         std::array<uint8_t, 512> buf = {};
-        int bytesWritten = mbedtls_pk_write_key_der(&childCert.keypair,
-                                                    buf.data(), buf.size());
+        int bytesWritten = mbedtls_pk_write_key_der(
+            childCert.keypair.getRawKey(), buf.data(), buf.size());
         if (bytesWritten <= 0)
           return llvm::createStringError(std::errc::interrupted,
                                          "could not write the keypair to DER");
@@ -301,7 +291,7 @@ TEST(TestEntitlementStore, InvalidKey) {
   WrittenCert cert = getCertificate(nullptr);
   ArrayRef<uint8_t> certBuf = cert.getCertificate();
 
-  WrittenCert childCert = getCertificate(&cert.keypair);
+  WrittenCert childCert = getCertificate(cert.keypair.getRawKey());
   ArrayRef<uint8_t> childBuf = childCert.getCertificate();
 
   // Create a tmp dir under the CWD.
@@ -325,22 +315,8 @@ TEST(TestEntitlementStore, InvalidKey) {
   std::string clientPrivPath = (workdir / "client_priv.der").string();
 
   // Write the incorrect key in DER form.
-  mbedtls_pk_context wrong = generateKeypair();
-  err = llvm::writeToOutput(
-      clientPrivPath, [&](llvm::raw_ostream &os) -> llvm::Error {
-        std::array<uint8_t, 512> buf = {};
-        int bytesWritten =
-            mbedtls_pk_write_key_der(&wrong, buf.data(), buf.size());
-        if (bytesWritten <= 0)
-          return llvm::createStringError(std::errc::interrupted,
-                                         "could not write the keypair to DER");
-
-        os.write((const char *)buf.data() + buf.size() - bytesWritten,
-                 bytesWritten);
-        return llvm::Error::success();
-      });
-  EXPECT_FALSE(err) << llvm::toString(std::move(err));
-  mbedtls_pk_free(&wrong);
+  auto wrongOr = Keypair::generate(workdir);
+  EXPECT_FALSE(wrongOr.isError()) << wrongOr.getError();
 
   // The cert is now self-signed, so we can parse it and parse out the
   // entitlements too.
