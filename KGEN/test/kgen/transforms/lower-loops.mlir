@@ -20,7 +20,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
   %idx2 = index.constant 2
   %idx0 = index.constant 0
   %idx1 = index.constant 1
-  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg0 = %idx2 : index) {
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg0 = %idx2 : index) {
     %0 = index.sub %arg0, %idx1
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
@@ -63,10 +63,10 @@ kgen.func @nested_unroll_loops() {
   %idx8 = index.constant 8
   %idx0 = index.constant 0
   %idx1 = index.constant 1
-  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg0 = %idx2 : index) {
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg0 = %idx2 : index) {
     %0 = index.sub %arg0, %idx1
     kgen.call @foo(%0) : (index) -> ()
-    hlcf.for [%idx4 to %idx8 step %idx2 sltlhs add] (%arg1 = %idx4 : index) {
+    hlcf.for [%idx4 to %idx8 step %idx2 slt add] (%arg1 = %idx4 : index) {
       %3 = index.add %arg1, %idx2
       kgen.call @foo(%3) : (index) -> ()
       hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs ()]
@@ -113,10 +113,10 @@ kgen.func @loop_carried_dependency() {
   %idx4 = index.constant 4
   %idx8 = index.constant 8
   %idx0 = index.constant 0
-  %0:2 = hlcf.for [%idx1 to %idx9 step %idx2 sltlhs add] (%arg2 = %idx1 : index, %arg0 = %idx0 : index, %arg1 = %idx0 : index) -> (index, index) {
+  %0:2 = hlcf.for [%idx1 to %idx9 step %idx2 slt add] (%arg2 = %idx1 : index, %arg0 = %idx0 : index, %arg1 = %idx0 : index) -> (index, index) {
     %3 = index.add %arg2, %idx2
     kgen.call @foo(%3, %arg0) : (index, index) -> ()
-    %6 = hlcf.for [%idx4 to %idx8 step %idx2 sltlhs add] (%arg4 = %idx4 : index, %arg3 = %arg1 : index) -> index {
+    %6 = hlcf.for [%idx4 to %idx8 step %idx2 slt add] (%arg4 = %idx4 : index, %arg3 = %arg1 : index) -> index {
       %7 = index.add %arg4, %idx2
       kgen.call @foo(%7, %arg3) : (index, index) -> ()
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%7: index)] [iterargs ()]
@@ -127,3 +127,48 @@ kgen.func @loop_carried_dependency() {
   kgen.call @foo(%0#1) : (index) -> ()
   kgen.return
 }
+
+// CHECK-LABEL: @lower_unrolled_inclusive_cmp
+ kgen.func @lower_unrolled_inclusive_cmp() -> index {
+   // CHECK:      [[IDX0:%.*]] = index.constant 0
+   // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
+   // CHECK-NEXT: [[IDX3:%.*]] = index.constant 3
+   // CHECK-NEXT: [[IDX4:%.*]] = index.constant 4
+   // CHECK-NEXT: [[IDX5:%.*]] = index.constant 5
+   // CHECK-NEXT: hlcf.loop (%arg0 = [[IDX0]] : index) {
+   // CHECK-NEXT:   [[V0:%.*]] = index.cmp sle(%arg0, [[IDX3]])
+   // CHECK-NEXT:   hlcf.if [[V0]] {
+   // CHECK-NEXT:     hlcf.yield
+   // CHECK-NEXT:   } else {
+   // CHECK-NEXT:     hlcf.break
+   // CHECK-NEXT:   }
+   // CHECK-NEXT:   [[V1:%.*]] = index.add %arg0, %idx1
+   // CHECK-NEXT:   kgen.call @foo([[V1]]) : (index) -> ()
+   // CHECK-NEXT:   [[V2:%.*]] = index.add [[V1]], [[IDX1]]
+   // CHECK-NEXT:   kgen.call @foo([[V2]]) : (index) -> ()
+   // CHECK-NEXT:   [[V3:%.*]] = index.add [[V2]], [[IDX1]]
+   // CHECK-NEXT:   kgen.call @foo([[V3]]) : (index) -> ()
+   // CHECK-NEXT:   hlcf.continue [[V3]] : index
+   // CHECK-NEXT: }
+   // CHECK-NEXT: kgen.call @foo([[IDX4]]) : (index) -> ()
+   // CHECK-NEXT: kgen.call @foo([[IDX5]]) : (index) -> ()
+   // CHECK-NEXT: kgen.return [[IDX5]] : index
+
+   %idx0 = index.constant 0
+   %idx1 = index.constant 1
+   %idx3 = index.constant 3
+   %idx4 = index.constant 4
+   %idx5 = index.constant 5
+   %0 = hlcf.for [%idx0 to %idx3 step %idx3 sle add]  (%arg0 = %idx0 : index, %arg1 = %idx0 : index) -> index {
+     %1 = index.add %arg0, %idx1
+     kgen.call @foo(%1) : (index) -> ()
+     %2 = index.add %1, %idx1
+     kgen.call @foo(%2) : (index) -> ()
+     %3 = index.add %2, %idx1
+     kgen.call @foo(%3) : (index) -> ()
+     hlcf.for.yield [induction_var (%3 : index)] [retvals (%3 : index)] [iterargs ()]
+   } {unrollFactor = #hlcf<loop_unroll_full none>}
+   kgen.call @foo(%idx4) : (index) -> ()
+   kgen.call @foo(%idx5) : (index) -> ()
+   kgen.return %idx5 : index
+ }

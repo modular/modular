@@ -341,10 +341,10 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index) -> (index, inde
   //CHECK-NEXT: %[[IDX2:.*]] = index.constant 2
 
   // COM: for i in range(2)
-  // CHECK: %[[V0:.*]]:3 = hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub]
+  // CHECK: %[[V0:.*]]:3 = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
   // CHECK-SAME: (%arg3 = %idx2 : index, %arg4 = %arg0 : index, %arg5 = %arg1 : index, %arg6 = %arg2 : index, %arg7 = %arg0 : index, %arg8 = %arg1 : index, %arg9 = %arg2 : index)
   // CHECK-SAME: -> (index, index, index)
-  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx2 : index) {
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index) {
     // CHECK-NEXT: %[[V1:.*]] = index.sub %arg3, %[[IDX1]]
     %0 = index.sub %arg3, %idx1
     %v00 = pop.load %var0 : !kgen.pointer<index>
@@ -404,10 +404,10 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
   %v0 = pop.stack_allocation 1 x index
   pop.store %arg0, %v0 : !kgen.pointer<index>
 
-  // CHECK:      %[[V0:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub]
+  // CHECK:      %[[V0:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
   // CHECK-SAME: (%arg1 = %idx2 : index, %arg2 = %arg0 : index, %arg3 = %arg0 : index, %arg4 = %idx0 : index)
   // CHECK-SAME: -> index
-  hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg1 = %idx2 : index, %arg2 = %idx0 : index) {
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg1 = %idx2 : index, %arg2 = %idx0 : index) {
     // COM: iter0
     // CHECK-NEXT: %[[V1:.*]] = index.sub %arg1, %[[IDX1]]
     %v00 = index.sub %arg1, %idx1
@@ -421,10 +421,10 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
     %v01 = pop.stack_allocation 1 x index
     pop.store %v03, %v01 : !kgen.pointer<index>
 
-    // CHECK-NEXT: %[[V3:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub]
+    // CHECK-NEXT: %[[V3:.*]] = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
     // CHECK-SAME: (%arg5 = %idx2 : index, %arg6 = %2 : index, %arg7 = %2 : index, %arg8 = %idx0 : index)
     // CHECK-SAME: -> index
-    hlcf.for [%idx2 to %idx0 step %idx1 sgtlhs sub] (%arg3 = %idx2 : index, %arg4 = %idx0 : index) {
+    hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index, %arg4 = %idx0 : index) {
       // COM: iter1
       // CHECK-NEXT: %[[V4:.*]] = index.sub %arg5, %[[IDX1]]
       %v10 = index.sub %arg3, %idx1

@@ -153,6 +153,20 @@ private:
   SmallVector<mlir::index::IndexCmpPredicate> predicateTypes;
 };
 
+static HLCF::ForLoopBoundCmpPredicate
+invertCmpPred(HLCF::ForLoopBoundCmpPredicate pred) {
+  switch (pred) {
+  case HLCF::ForLoopBoundCmpPredicate::SGT:
+    return HLCF::ForLoopBoundCmpPredicate::SLE;
+  case HLCF::ForLoopBoundCmpPredicate::SLT:
+    return HLCF::ForLoopBoundCmpPredicate::SGE;
+  case HLCF::ForLoopBoundCmpPredicate::SGE:
+    return HLCF::ForLoopBoundCmpPredicate::SLT;
+  case HLCF::ForLoopBoundCmpPredicate::SLE:
+    return HLCF::ForLoopBoundCmpPredicate::SGT;
+  }
+}
+
 static std::optional<ForLoopBoundsAndSteps>
 inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // The infer logic here is assuming that for-loop's ranges are:
@@ -198,12 +212,14 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   HLCF::ForLoopBoundCmpPredicate cmpPredicate;
   HLCF::ForLoopIndVarCompute indVarCompute;
 
+  bool invertPred = (&ifOp.getThenRegion() == breakOp->getParentRegion());
+
   if (matcher.match(ifCond.getDefiningOp())) {
     mlir::index::CmpOp cmp = matcher.cmpOp;
 
     cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
-                       ? HLCF::ForLoopBoundCmpPredicate::SLTLHS
-                       : HLCF::ForLoopBoundCmpPredicate::SGTLHS;
+                       ? HLCF::ForLoopBoundCmpPredicate::SLT
+                       : HLCF::ForLoopBoundCmpPredicate::SGT;
 
     // The operand who is a block argument is the induction variable, and its
     // initial value is the start value of the loop; the other operand (if a
@@ -215,8 +231,8 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
       end = start;
       start = getValueIfConstInteger(cmp.getRhs(), inductionVarArgNumber, loop);
       cmpPredicate = cmp.getPred() == mlir::index::IndexCmpPredicate::SLT
-                         ? HLCF::ForLoopBoundCmpPredicate::SLTRHS
-                         : HLCF::ForLoopBoundCmpPredicate::SGTRHS;
+                         ? HLCF::ForLoopBoundCmpPredicate::SGT
+                         : HLCF::ForLoopBoundCmpPredicate::SLT;
     }
   }
 
@@ -242,6 +258,9 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp) {
   // Bail if we can't match pattern to find the stride value.
   if (!stride)
     return {};
+
+  if (invertPred)
+    cmpPredicate = invertCmpPred(cmpPredicate);
 
   return ForLoopBoundsAndSteps{start,        end,
                                stride,       inductionVarArgNumber.value(),

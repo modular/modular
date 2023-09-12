@@ -42,10 +42,10 @@ def HLCF_LoopUnrollFullAttr
 def HLCF_ForLoopBoundCmpPredicate:
     HLCF_Enum<"ForLoopBoundCmpPredicate",
               "loop unroll bound compare predicate type", [
-                           HLCF_EnumCase<"SGTRHS", 0, "sgtrhs">,
-                           HLCF_EnumCase<"SGTLHS", 1, "sgtlhs">,
-                           HLCF_EnumCase<"SLTRHS", 2, "sltrhs">,
-                           HLCF_EnumCase<"SLTLHS", 3, "sltlhs">]>;
+                           HLCF_EnumCase<"SGT", 0, "sgt">,
+                           HLCF_EnumCase<"SLT", 1, "slt">,
+                           HLCF_EnumCase<"SGE", 2, "sge">,
+                           HLCF_EnumCase<"SLE", 3, "sle">]>;
 
 def HLCF_ForLoopBoundCmpPredicateAttr
   : EnumAttr<HLCFDialect,

@@ -47,13 +47,29 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     The `hlcf.for` operation defines a control-flow region taking 3
     operands that represent the lower bound, upper bound and step respectively.
     It has one region capturing the loop body.
-    The lower and upper bounds specify a half-open range:
+
+    The lower and upper bounds specify a half-open range
+    when the `cmpPredicateType` is exclusive (slt, sgt):
     the range includes the lower bound but does not include the upper bound.
+
+    The lower and upper bounds specify a full close range
+    when the `cmpPredicateType` is inclusive (sle, sge):
+    the range includes the lower and the upper bounds.
+
     Note that: lower bound is the initial value of the induction variable;
-    Upper bound is the iteration end of the induction variable. Lower bound's
-    absolute value can be larger than upper bound if step value is negative
+    Upper bound is the iteration end of the induction variable.
+    Lower bound's absolute value can be larger than upper bound if
+    step value is negative
     (positive) and the iteration update the induction variable by
     adding(subtracting) the step value.
+
+    We also use the `cmpPredicateType` to reconstruct loop from for-loop,
+    the predicate constructs the condition for break the loop.
+    The induction variable is always on the left side of the comparison.
+
+    `indVarComputeType` (add or sub) specifies how induction variable
+    progresses over iterations with `step`. We will use this information
+    to reconstruct a general loop lowered from for-loop.
 
     The body region must contain exactly one block that terminates with
     `scf.for.continue`.
@@ -67,7 +83,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     Example:
 
     ```mlir
-     hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
+     hlcf.for [%lb to %up step %step slt add] (%arg0 = %c1: index) {
        %5 = index.add %arg0, %c2
        hlcf.for.yield[induction_var (%5 : index)] [retvals ()] [iterargs ()]
      } {unrollFactor = #hlcf<loop_unroll_full full>}
@@ -76,7 +92,7 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
     or
 
     ```mlir
-     %0 = hlcf.for [%lb to %up step %step]
+     %0 = hlcf.for [%lb to %up step %step sge sub]
                     (%arg1 = %k: index, %arg0 = %i: index) -> (index, index) {
          %3 = index.add %arg1, %index2
          %5 = index.add %arg0, %arg1
