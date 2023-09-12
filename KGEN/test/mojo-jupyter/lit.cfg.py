@@ -26,17 +26,11 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
-lldb_env = ""
-if config.llvm_use_sanitizer:
-    lldb_env = "ASAN_OPTIONS=detect_leaks=0,abort_on_error=1,disable_coredump=0"
-if platform.system() == "Darwin":
-    lldb_env += " " + config.asan_lib_inject_env
-
 config.substitutions.append(
     (
         "%mojo_jupyter_executor",
         (
-            f"{lldb_env} mojo-jupyter-executor --lldb-init-file"
+            f"{config.lldb_env} mojo-jupyter-executor --lldb-init-file"
             f" {config.lit_lldb_init}"
         ),
     )

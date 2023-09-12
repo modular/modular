@@ -25,23 +25,19 @@ config.test_source_root = os.path.dirname(__file__)
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
 
-lldb_env = ""
-if config.llvm_use_sanitizer:
-    lldb_env = "ASAN_OPTIONS=detect_leaks=0,abort_on_error=1,disable_coredump=0"
-if platform.system() == "Darwin":
-    lldb_env += " " + config.asan_lib_inject_env
-
-lit_lldb_init = config.lit_lldb_init
 config.substitutions.append(
     (
         "%lldb",
-        f"{lldb_env} lldb --source-quietly -S {lit_lldb_init}",
+        f"{config.lldb_env} lldb --source-quietly -S {config.lit_lldb_init}",
     )
 )
 config.substitutions.append(
     (
         "%repl",
-        f"{lldb_env} mojo repl --source-quietly -S {lit_lldb_init}",
+        (
+            f"{config.lldb_env} mojo repl --source-quietly -S"
+            f" {config.lit_lldb_init}"
+        ),
     )
 )
 
