@@ -13,6 +13,7 @@ add_modular_library(MSupportEntitlements
   LINK_LIBS PUBLIC
   MSupport
   MSupportASN1
+  MSupportCryptography
   MbedTLS::mbedcrypto
   MbedTLS::mbedx509
 )
