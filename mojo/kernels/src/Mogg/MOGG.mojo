@@ -195,6 +195,7 @@ fn MOGGExport():
     alias _relu = relu
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
+    alias _calculate_unsqueeze_shape = calculate_unsqueeze_shape
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_nd = scatter_nd
@@ -1349,6 +1350,64 @@ fn reshape_shape[
     )
 
     return target_shape
+
+
+# ===----------------------------------------------------------------------===#
+# UnsqueezeShape op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn calculate_unsqueeze_shape[
+    type: DType, indices_type: DType, single_thread_blocking_override: Bool
+](
+    input_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+    padding_indices: NDBuffer[1, DimList.create_unknown[1](), indices_type],
+    output_shape: NDBuffer[1, DimList.create_unknown[1](), type],
+):
+    # padding_indices_buf may not be sorted so our strategy is to use -1 to
+    # represent uninitialized dimensions, add the padding dimensions, and copy
+    # over the remaining dimensions later.
+    let num_input_dims = input_shape.dynamic_shape[0]
+    let num_padding_indices = padding_indices.dynamic_shape[0]
+    let final_rank = num_input_dims + num_padding_indices
+    debug_assert(
+        final_rank == output_shape.dynamic_shape[0],
+        "Incorrect output shape.",
+    )
+    for output_index in range(final_rank):
+        output_shape[output_index] = -1
+
+    for padding_index_index in range(num_padding_indices):
+        let padding_index = padding_indices[padding_index_index].to_int()
+        let padding_index_normalize = padding_index + final_rank * (
+            padding_indices[padding_index_index] < 0
+        ).to_int()
+
+        debug_assert(
+            padding_index_normalize >= 0
+            and padding_index_normalize < final_rank,
+            (
+                "Padding indices must be between [-r, r-1] where r is the final"
+                " output rank."
+            ),
+        )
+        debug_assert(
+            output_shape[padding_index_normalize] == -1,
+            (
+                "Duplicate padding indices point to the same dimension in the"
+                " final output shape."
+            ),
+        )
+        output_shape[padding_index_normalize] = 1
+
+    # Copy over the remaining shapes
+    var orig_shape_index = 0
+    for output_shape_index in range(final_rank):
+        if output_shape[output_shape_index] != -1:
+            continue
+        output_shape[output_shape_index] = input_shape[orig_shape_index]
+        orig_shape_index += 1
 
 
 # ===----------------------------------------------------------------------===#
