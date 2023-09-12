@@ -383,8 +383,8 @@ def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_coll
 
     ```mlir
     #M.device_spec_collection<
-      host = <cpu>,
-      devices = [<ref = <"cpu">,
+      host = <"cpu", 0>,
+      devices = [<ref = <"cpu", 0>,
                   target = <triple="x86_64-unknown-linux-gnu", cpu="znver3",
                             features="+avx2">>,
                  <ref = <"cuda", 1>,
