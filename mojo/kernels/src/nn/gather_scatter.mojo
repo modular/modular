@@ -24,6 +24,9 @@ from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 from utils.optional_param import OptionalParamInt
 
+from memory import stack_allocation, memset_zero
+from MOGG import reshape
+
 
 ## gather_reduce_2D_axis_1
 @adaptive
@@ -667,7 +670,9 @@ fn scatter_elements[
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     out_chain: OutputChainPtr,
 ):
-    """Implements ONNX ScatterElements op which is equivalent to Pytorch scatter."""
+    """
+    Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
+    """
     constrained[
         indices_type == DType.int32 or indices_type == DType.int64,
         "indices in scatter_elements must be int32 or int64",
@@ -736,7 +741,9 @@ fn gather_elements[
     output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
     out_chain: OutputChainPtr,
 ):
-    """Implements ONNX GatherElements op which is equivalent to Pytorch gather."""
+    """
+    Implements ONNX GatherElements op which is equivalent to Pytorch gather.
+    """
     constrained[
         indices_type == DType.int32 or indices_type == DType.int64,
         "indices in gather_elements must be int32 or int64",
@@ -781,3 +788,240 @@ fn gather_elements[
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[rank, 1, gather_func](output.get_shape(), out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# gather_nd op
+# ===----------------------------------------------------------------------===#
+
+
+fn _gather_nd_shape[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    batch_dims: Int,
+](
+    input_buf: NDBuffer[
+        input_rank, DimList.create_unknown[input_rank](), input_type
+    ],
+    indices_buf: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+) -> StaticIntTuple[output_rank]:
+    """
+    Compute the output shape of a `gather` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
+        input_type: Type of the input tensor.
+        indices_type: Type of the indices tensor.
+        batch_dims: Batch dimensions.
+
+    Args:
+        input_buf: The input tensor.
+        indices_buf: The indices tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # compute and return the output shape
+    var output_shape = StaticIntTuple[output_rank]()
+    var next_out_dim = 0
+
+    let input_shape = input_buf.get_shape()
+    let indices_shape = indices_buf.get_shape()
+
+    for i in range(batch_dims):
+        output_shape[next_out_dim] = indices_shape[i]
+        next_out_dim += 1
+
+    for i in range(batch_dims, indices_rank - 1):
+        output_shape[next_out_dim] = indices_shape[i]
+        next_out_dim += 1
+
+    if indices_shape[indices_rank - 1] == input_rank - batch_dims:
+        return output_shape
+
+    for i in range(
+        batch_dims + indices_shape[indices_rank - 1], len(input_shape)
+    ):
+        output_shape[next_out_dim] = input_shape[i]
+        next_out_dim += 1
+
+    return output_shape
+
+
+fn gather_nd[
+    type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    batch_dims: Int,
+](
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+    ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+):
+    """
+    GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
+    Based on reference implementation: https://github.com/onnx/onnx/blob/main/onnx/backend/test/case/node/gathernd.py.
+
+    Parameters:
+        type: Type of data tensor.
+        data_rank: Rank of data tensor (data_rank >= 1).
+        indices_rank: Rank of indices tensor (indices_rank >= 1).
+        output_rank: Rank of output tensor.
+        batch_dims: Number of batch dimensions. The gather of indexing
+                    starts from dimension of data[batch_dims:]
+
+    Args:
+        data: Tensor of rank data_rank >= 1.
+        indices: Tensor of rank indices_rank >= 1. All index values are expected
+                 to be within bounds [-s, s-1] along axis of size s. It is an
+                 error if any of the index values are out of bounds.
+        output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1.
+
+    """
+
+    constrained[
+        data_rank >= 1 and indices_rank >= 1,
+        "Constraint: data_rank >= 1 and indices_rank >= 1",
+    ]()
+
+    let indices_shape = indices.get_shape()
+    debug_assert(
+        1 <= indices_shape[indices_rank - 1] <= data_rank - batch_dims,
+        "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
+    )
+
+    # The number of elements in the batch_dims for data/indices array.
+    # E.g., if batch_dims = 2 (always is the outermost dimensions), and the
+    #       dimensions of data are [2,3,...], then batch_dims_size = 6
+    var batch_dims_size = 1
+    for i in range(batch_dims):
+        batch_dims_size = batch_dims_size * indices_shape[i]
+
+    let last_shape_of_indices = indices_shape[indices_rank - 1]
+    let num_elems = indices.num_elements()
+    # Reshape indices array, as 3D array. All batch_dims_size elements go to the
+    # outermost dimension, and elements of amount equal to indices.shape[-1] go
+    # to the innermost.
+    # Equivalent to numpy:
+    # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
+    let reshaped_indices = reshape[indices_rank, 3, DType.int64, True](
+        indices.make_dims_unknown(),
+        StaticIntTuple[3](
+            batch_dims_size,
+            num_elems // (batch_dims_size * last_shape_of_indices),
+            last_shape_of_indices,
+        ),
+    )
+
+    let reshaped_indices_shape = reshaped_indices.get_shape()
+    let data_shape = data.get_shape()
+
+    # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
+    alias reshaped_data_rank = data_rank + 1 - batch_dims
+    var reshaped_data_tuple = StaticIntTuple[reshaped_data_rank]()
+    # Calculate the dimensions of reshaped_data.
+    reshaped_data_tuple[0] = batch_dims_size
+    var counter = 1
+    for i in range(batch_dims, data_rank):
+        reshaped_data_tuple[counter] = data_shape[i]
+        counter += 1
+    # Do the actual reshaping.
+    let reshaped_data = reshape[data_rank, reshaped_data_rank, type, True](
+        data.make_dims_unknown(), reshaped_data_tuple
+    )
+
+    let reshaped_data_shape = reshaped_data.get_shape()
+
+    # idx[] stores the index from where to gather the requested elements.
+    let idx_ptr = DTypePointer[DType.index].alloc(reshaped_indices_shape[2])
+    let idx = NDBuffer[1, DimList.create_unknown[1](), DType.index](
+        idx_ptr, reshaped_indices_shape[2]
+    )
+
+    # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
+    # we will be copying (gather):
+    #   element (r_minus_m = 0),
+    #   row (r_minus_m = 1),
+    #   sheet (r_minus_m = 2),
+    #   cuboid (r_minus_m = 3), etc.
+    let r_minus_m = data_rank - last_shape_of_indices - batch_dims
+    # Calculate how many elements to copy (this is from the innermost
+    # dimensions, and is continuous memory locations).
+    var count_copy = 1
+    for i in range(r_minus_m):
+        count_copy = (
+            count_copy * reshaped_data_shape[reshaped_data_rank - 1 - i]
+        )
+
+    # Stores the full index on reshaped_data, where to copy from.
+    # It is constructed within the nested loop below.
+    let start_tensor = NDBuffer[
+        1,
+        DimList(reshaped_data_rank),
+        DType.index,
+    ]().stack_allocation()
+    # Zeroing here to avoid doing it selectively within the nested loop below.
+    memset_zero[DType.index](start_tensor.data, reshaped_data_rank)
+
+    var output_buffer_copy_ind = 0
+    for batch_dim in range(reshaped_indices_shape[0]):
+        for outer_dim in range(reshaped_indices_shape[1]):
+            # Construct the tuple (all dimensions except outermost, which is
+            # the batches dimension - recall all batch dimensions are reshaped
+            # into one - the outermost).
+            for constr in range(reshaped_indices_shape[2]):
+                let input_ax_dim = reshaped_data.get_shape()[constr + 1]
+                let idx_on_axis = reshaped_indices[batch_dim, outer_dim, constr]
+                # Verify indices have valid values.
+                debug_assert(
+                    -Int64(input_ax_dim)
+                    <= idx_on_axis.cast[DType.int64]()
+                    < Int64(input_ax_dim),
+                    (
+                        "Indices value must be in range [-input_shape[axis],"
+                        " input_shape[axis])"
+                    ),
+                )
+                # Handle negative indices values.
+                idx[constr] = (
+                    idx_on_axis.__int__() if idx_on_axis
+                    >= 0 else (idx_on_axis + input_ax_dim).__int__()
+                )
+
+            # Construct the full index on reshaped_data, where to copy from.
+            start_tensor[0] = batch_dim
+            var start_index = 1
+            for dim in range(idx.__len__()):
+                start_tensor[start_index] = idx[dim]
+                start_index = start_index + 1
+
+            # Calculate the input_offset from where to copy the data.
+            var input_offset = 0
+            for i in range(reshaped_data_rank):
+                input_offset = (
+                    input_offset
+                    + reshaped_data.stride(i) * start_tensor[i].to_int()
+                )
+
+            # Calculate the output_offset where to copy the data.
+            let output_offset = output_buffer_copy_ind * (count_copy)
+            output_buffer_copy_ind = output_buffer_copy_ind + 1
+
+            # Perform the actual copy of element/slice/sheet/cuboid/etc.
+            memcpy[type](
+                output.data + output_offset,
+                reshaped_data.data + input_offset,
+                count_copy,
+            )
