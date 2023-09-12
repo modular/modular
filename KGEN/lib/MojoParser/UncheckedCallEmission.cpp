@@ -44,34 +44,35 @@ public:
                          ValueInputConvention convention, Type expectedType,
                          size_t sequenceIndex = 0);
 
-  /// Emit all arguments. This function iterates by expected arguments since
-  /// we're building the argument list of the call. Default arguments and
-  /// variadics are also handled.
-  LogicalResult emitArgValues(const CallOperands &operands);
+  /// Emit all arguments and return their values in a vector. This function
+  /// iterates by expected arguments since we're building the argument list of
+  /// the call. Default arguments are applied (if available and an operand isn't
+  /// provided for the arg), and variadics (including packs) are collected from
+  /// the operand list and amitter as the appropriate variadic/pack type to the
+  /// callee.
+  FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
+  emitArgValues(const CallOperands &operands);
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
-  /// This handles promotion of PValues to dynamic values as needed.
-  Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
-                                             ValueInputConvention convention);
+  /// This handles promotion of PValues to dynamic values as needed. It needs
+  /// the list of pre-emitted argument values to check aliasing with the result
+  /// slot.
+  Value emitPreemittedArgumentAsDynamicValue(
+      ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
   /// an PValue.
-  FailureOr<CValue> inlineFunctionCallIntoPValueIfPossible();
+  FailureOr<CValue> inlineFunctionCallIntoPValueIfPossible(
+      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit a function call in a parameter context.
-  CValue emitCallInParamContext();
+  CValue emitCallInParamContext(ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
   /// Emit any after-call actions collected during call emission.
   void emitAfterCallActions() { afterCallActions.emit(); }
-
-  /// Return the emitted pre-emitted-argument values. Fails if `emitArgValues`
-  /// weren't called before.
-  ArrayRef<ASTExprAnd<AnyValue>> getEmittedArgValues() {
-    assert(argumentValues.has_value());
-    return *argumentValues;
-  }
 
 private:
   /// The (type-checked and resolved) callee we are emitting the call to.
@@ -82,8 +83,6 @@ private:
   ExprEmitter &emitter;
   /// The mlir location of the call expression above, stored for convenience.
   Location loc;
-  /// The argument values emitted by calling `emitArgValues`.
-  std::optional<SmallVector<ASTExprAnd<AnyValue>>> argumentValues;
   /// A parameter evaluator used to simplify parameter expression and fold the
   /// callee if possible.
   ParserParamEvaluator evaluator;
@@ -129,12 +128,15 @@ private:
   /// At this point, we've already applied implicit conversions and converted
   /// things to RValues or BValues as required by the argument convention, but
   /// things may still be in parameter space.
-  bool isSafeToUseValueDestForDirectResult(ASTType destRValueType);
+  bool isSafeToUseValueDestForDirectResult(
+      ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
 
-  /// Emit the given (remaining) operands as a variadic or pack sequence.
+  /// Emit the given (remaining) operands as a variadic or pack sequence,
+  /// appending to the given argument value vector.
   LogicalResult emitRemainingPosOperands(
       size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
-      ValueInputConvention convention, Type expectedType);
+      ValueInputConvention convention, Type expectedType,
+      SmallVector<ASTExprAnd<AnyValue>> &argumentValues);
 };
 
 void CallEmitter::AfterCallActions::emit() {
@@ -192,7 +194,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
 LogicalResult CallEmitter::emitRemainingPosOperands(
     size_t argIdx, MutableArrayRef<ASTExprAnd<AnyValue>> remainingOperands,
-    ValueInputConvention convention, Type expectedType) {
+    ValueInputConvention convention, Type expectedType,
+    SmallVector<ASTExprAnd<AnyValue>> &argumentValues) {
   // Emit all of the remaining values to make sure they're converted to the
   // right type.
   for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
@@ -217,7 +220,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
     else
       attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
-    argumentValues->push_back({PValue(attr), remainingOperands[0].expr});
+    argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
     return success();
   }
 
@@ -225,7 +228,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // create a variadic or pack sequence.
   SmallVector<Value> args;
   for (auto &operand : remainingOperands) {
-    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
+    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention,
+                                                        argumentValues);
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -247,19 +251,19 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   else
     argVal =
         emitter.builder->create<POP::PackCreateOp>(loc, expectedType, args);
-  argumentValues->push_back({SRValue(argVal), remainingOperands[0].expr});
+  argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
   return success();
 }
 
-LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
+FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
+CallEmitter::emitArgValues(const CallOperands &operands) {
   assert(!operands.hasKwOperands() && "keyword arguments not yet supported");
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
 
-  assert(!argumentValues.has_value());
-  argumentValues = SmallVector<ASTExprAnd<AnyValue>>();
-  argumentValues->reserve(calleeSig.getNumInputs());
+  SmallVector<ASTExprAnd<AnyValue>> argumentValues;
+  argumentValues.reserve(calleeSig.getNumInputs());
   for (auto [argIdx, argName, expectedTypeX, convention] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
                        calleeSig.getValueInputConventions())) {
@@ -279,7 +283,7 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
       auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
           /*isSynth=*/true);
-      argumentValues->push_back({SLValue(resultTmp), callExpr});
+      argumentValues.push_back({SLValue(resultTmp), callExpr});
       continue;
     }
 
@@ -308,7 +312,7 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
         // have a default argument for each missing operand.
         argAttr = calleeSig.getDefaultArguments()[nextDefaultIdx++];
       }
-      argumentValues->push_back({PValue(argAttr), callExpr});
+      argumentValues.push_back({PValue(argAttr), callExpr});
       continue;
     } else if (argIdx >= calleeSig.getNumInputs() -
                              calleeSig.getDefaultArguments().size()) {
@@ -326,7 +330,7 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
           emitOneArgVal(operand, argIdx, convention, expectedType);
       if (!argVal)
         return failure();
-      argumentValues->push_back({argVal, operand.expr});
+      argumentValues.push_back({argVal, operand.expr});
       continue;
     }
 
@@ -337,7 +341,8 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
     nextOperandIdx = posOperands.size();
 
     if (succeeded(emitRemainingPosOperands(argIdx, remainingOperands,
-                                           convention, expectedType)))
+                                           convention, expectedType,
+                                           argumentValues)))
       break;
 
     return failure();
@@ -345,7 +350,7 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
 
   assert(nextOperandIdx == posOperands.size() &&
          "typechecking confirmed that we would use up all operands");
-  return success();
+  return argumentValues;
 }
 
 /// Given a call to a function with a memory only result and the desired value
@@ -357,13 +362,14 @@ LogicalResult CallEmitter::emitArgValues(const CallOperands &operands) {
 /// At this point, we've already applied implicit conversions and converted
 /// things to RValues or BValues as required by the argument convention, but
 /// things may still be in parameter space.
-bool CallEmitter::isSafeToUseValueDestForDirectResult(ASTType destRValueType) {
+bool CallEmitter::isSafeToUseValueDestForDirectResult(
+    ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   // Drop the first argument which is the return slot.
   ArrayRef<ValueInputConvention> argConventions =
       calleeSig.getValueInputConventions();
   assert(argConventions[0] == ValueInputConvention::ByRefResult);
   argConventions = argConventions.drop_front();
-  ArrayRef<ASTExprAnd<AnyValue>> argValues = getEmittedArgValues().drop_front();
+  argumentValues = argumentValues.drop_front();
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
@@ -391,7 +397,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(ASTType destRValueType) {
 
   // If any of the arguments might alias, then we need to use a temporary
   // buffer.
-  for (auto [value, convention] : llvm::zip(argValues, argConventions)) {
+  for (auto [value, convention] : llvm::zip(argumentValues, argConventions)) {
     switch (convention) {
     case ValueInputConvention::OwnedInReg:
     case ValueInputConvention::BorrowedInReg:
@@ -441,7 +447,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(ASTType destRValueType) {
 }
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
-    ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention) {
+    ASTExprAnd<AnyValue> argValAndExpr, ValueInputConvention convention,
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   Value arg;
   switch (convention) {
   case ValueInputConvention::OwnedInReg:
@@ -489,7 +496,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // In these cases we really do need a temporary+copy in the var slot.
     // At this point we've got enough information about the arguments to make
     // that assessment in a correct way.
-    if (!isSafeToUseValueDestForDirectResult(rvalueType))
+    if (!isSafeToUseValueDestForDirectResult(rvalueType, argumentValues))
       return tmpSlotAddr;
 
     // Okay it is safe to use, so remove the temporary allocation we aren't
@@ -532,7 +539,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   return arg;
 }
 
-FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible() {
+FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   if (calleeSig.isThrows())
     return failure();
   auto calleePR = callee.getIfPValue();
@@ -543,7 +551,7 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible() {
     return failure();
 
   SmallVector<Attribute> arguments;
-  for (ASTExprAnd<AnyValue> argValue : getEmittedArgValues()) {
+  for (ASTExprAnd<AnyValue> argValue : argumentValues) {
     auto mValue = argValue.ir.getIfPValue();
     if (!mValue || !ParameterAttr::isSimpleConstant(mValue.get()))
       return failure();
@@ -557,7 +565,8 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible() {
   return emitter.emitCResult(*res, callExpr, dest);
 }
 
-CValue CallEmitter::emitCallInParamContext() {
+CValue CallEmitter::emitCallInParamContext(
+    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
 
   // TODO: We can support throwing parameter calls by inserting a 'force to
@@ -576,10 +585,9 @@ CValue CallEmitter::emitCallInParamContext() {
   SmallVector<TypedAttr> operands({callee.getIfPValue().get()});
   bool dropFirst =
       calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
-  for (auto [argValAndExpr, calleeArgType, convention] :
-       llvm::zip(getEmittedArgValues(),
-                 calleeSig.getValueInputs().drop_front(dropFirst),
-                 calleeSig.getValueInputConventions().drop_front(dropFirst))) {
+  for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
+           argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
+           calleeSig.getValueInputConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue) {
       return emitter.emitErrorForDynamicValueInParameter(
@@ -627,19 +635,22 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
          "Type checking should be done");
 
   // We first emit all the arguments.
-  if (failed(callEmitter.emitArgValues(callOperands)))
+  FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
+      callEmitter.emitArgValues(callOperands);
+  if (failed(argumentValuesOr))
     return {};
+  ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
 
   // Folding into PValue can fail for a number of reasons, in which case we
   // fall back to emitting normally.
   if (FailureOr<CValue> resCValue =
-          callEmitter.inlineFunctionCallIntoPValueIfPossible();
+          callEmitter.inlineFunctionCallIntoPValueIfPossible(argumentValues);
       succeeded(resCValue))
     return *resCValue;
 
   // If we are in a parameter context, we can now emit the call.
   if (!builder)
-    return callEmitter.emitCallInParamContext();
+    return callEmitter.emitCallInParamContext(argumentValues);
 
   Location loc = translateLocation(callExpr->getLoc());
 
@@ -647,8 +658,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   SmallVector<Value> callArgs;
   SmallVector<Value, 1> byRefResults;
   for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
-       llvm::zip(callEmitter.getEmittedArgValues(),
-                 calleeSig.getValueInputConventions(),
+       llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
     auto calleeArgType = calleeArgTypeAndIdx.value();
     auto argIdx = calleeArgTypeAndIdx.index();
@@ -661,8 +671,8 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     if (calleeSig.isVararg(argIdx) || isa<POP::PackType>(calleeArgType))
       convention = ValueInputConvention::OwnedInReg;
 
-    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(argValAndExpr,
-                                                                 convention);
+    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
+        argValAndExpr, convention, argumentValues);
     if (!arg)
       return {};
     if (arg.getType() != calleeArgType)
