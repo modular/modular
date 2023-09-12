@@ -76,8 +76,10 @@ LogicalResult ValueOp::verify() {
   if (!scope)
     return success();
   if (!isa_and_nonnull<DISubprogramAttr>(scope.getLocScope())) {
-    return emitOpError("is contained within a subprogram scoped operation that "
-                       "lacks a subprogram scope")
+    return emitOpError(
+               "is contained within a SubprogramScoped operation that's "
+               "missing a subprogram scope (hint: the parent is likely a "
+               "@nodebug function)")
                .attachNote(scope.getLoc())
            << "see surrounding scope function here";
   }
