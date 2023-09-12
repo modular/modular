@@ -81,7 +81,7 @@ void MojoParserListener::onRef(ArrayRef<MojoASTDeclRef> declRefs,
 
 MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
                               MojoParserConfig &config)
-    : sharedState(sourceMgr, config) {
+    : sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &sharedState.declResolver->addDecl(
