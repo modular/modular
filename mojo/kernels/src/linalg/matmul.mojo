@@ -781,10 +781,8 @@ struct MatmulInnerLoopBPacked[
             + tile_idx[1]
         )
 
-        # TODO: For NEON, avoid skip_boundary_check and always use this helper
-        # to generate the load/store sequence.
         @parameter
-        if has_neon() and not skip_boundary_check:
+        if has_neon():
             self._initialize_c_tile(c_local)
             return LoadStoreOutputTile[
                 c_type, simd_size, a_row_size, pack_inner_size, True
@@ -851,10 +849,8 @@ struct MatmulInnerLoopBPacked[
             + tile_idx[1]
         )
 
-        # TODO: For NEON, avoid skip_boundary_check and always use this helper
-        # to generate the load/store sequence.
         @parameter
-        if has_neon() and not skip_boundary_check:
+        if has_neon():
             return LoadStoreOutputTile[
                 c_type, simd_size, a_row_size, pack_inner_size, False
             ].run(
@@ -1396,7 +1392,14 @@ struct TiledMatmul[
                 knm_bounds.M,  # row bound
             )
 
-        unswitch[unswitch_residual_n](knm_bounds[1] > sub_tile_n)
+        @parameter
+        if has_neon():
+            # The performance of the skip_col_bound=True path is the same as
+            # skip_col_bound=False, so reduce code size and emit only the
+            # skip_col_bound=False path.
+            unswitch_residual_n[False]()
+        else:
+            unswitch[unswitch_residual_n](knm_bounds[1] > sub_tile_n)
 
     # Iterate on the N dimension of the gemm space.
     fn _outer_n_loop[
