@@ -235,3 +235,57 @@ void M::printBufferSignature(OpAsmPrinter &printer, const Operation *opIgnored,
   }
   printer << ")";
 }
+
+/// Returns true if the given string can be represented as a bare identifier
+/// compatible with the MLIR lexer.
+static bool isBareIdentifier(StringRef name) {
+  if (name.empty() || (!isalpha(name[0]) && name[0] != '_'))
+    return false;
+  return llvm::all_of(name.drop_front(), [](unsigned char c) {
+    return isalnum(c) || c == '_' || c == '$' || c == '.';
+  });
+}
+
+void StreamAsmPrinter::printKeywordOrString(StringRef keyword) {
+  if (isBareIdentifier(keyword)) {
+    os << keyword;
+    return;
+  }
+  os << "\"";
+  llvm::printEscapedString(keyword, os);
+  os << '"';
+}
+
+void StreamAsmPrinter::printSymbolName(StringRef symbolRef) {
+  os << '@';
+  printKeywordOrString(symbolRef);
+}
+
+void StreamAsmPrinter::printResourceHandle(
+    const mlir::AsmDialectResourceHandle &resource) {
+  auto *interface = cast<OpAsmDialectInterface>(resource.getDialect());
+  os << interface->getResourceKey(resource);
+}
+
+void StreamAsmPrinter::printFloat(const APFloat &value) {
+  if (!value.isInfinity() && !value.isNaN()) {
+    SmallString<128> strValue;
+    value.toString(strValue, /*FormatPrecision=*/6, /*FormatMaxPadding=*/0,
+                   /*TruncateZero=*/false);
+    if (APFloat(value.getSemantics(), strValue).bitwiseIsEqual(value)) {
+      os << strValue;
+      return;
+    }
+    strValue.clear();
+    value.toString(strValue);
+    if (strValue.str().contains('.')) {
+      os << strValue;
+      return;
+    }
+  }
+  SmallVector<char, 16> str;
+  APInt apInt = value.bitcastToAPInt();
+  apInt.toString(str, /*Radix=*/16, /*Signed=*/false,
+                 /*formatAsCLiteral=*/true);
+  os << str;
+}

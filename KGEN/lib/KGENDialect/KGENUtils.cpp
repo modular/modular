@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/Compiler/ParserUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
 #include "Support/STLExtras.h"
@@ -26,92 +27,6 @@
 
 using namespace M;
 using namespace KGEN;
-
-//===----------------------------------------------------------------------===//
-// StreamAsmPrinter
-//===----------------------------------------------------------------------===//
-
-/// Returns true if the given string can be represented as a bare identifier
-/// compatible with the MLIR lexer.
-static bool isBareIdentifier(StringRef name) {
-  if (name.empty() || (!isalpha(name[0]) && name[0] != '_'))
-    return false;
-  return llvm::all_of(name.drop_front(), [](unsigned char c) {
-    return isalnum(c) || c == '_' || c == '$' || c == '.';
-  });
-}
-
-namespace {
-/// This is an AsmPrinter implementation that just outputs to an external output
-/// stream.
-class StreamAsmPrinter : public AsmPrinter {
-public:
-  explicit StreamAsmPrinter(raw_ostream &os) : os(os) {}
-
-  /// Implement all the virtual hooks.
-
-  raw_ostream &getStream() const override { return os; }
-
-  /// Trivial hooks
-
-  void printType(Type type) override { os << type; }
-  void printAttribute(Attribute attr) override { os << attr; }
-  void printAttributeWithoutType(Attribute attr) override {
-    attr.print(os, /*elideType=*/true);
-  }
-  LogicalResult printAlias(Attribute attr) override { return failure(); }
-  LogicalResult printAlias(Type type) override { return failure(); }
-
-  /// Less trivial hooks.
-
-  void printKeywordOrString(StringRef keyword) override {
-    if (isBareIdentifier(keyword)) {
-      os << keyword;
-      return;
-    }
-    os << "\"";
-    printEscapedString(keyword, os);
-    os << '"';
-  }
-  void printSymbolName(StringRef symbolRef) override {
-    os << '@';
-    printKeywordOrString(symbolRef);
-  }
-  void
-  printResourceHandle(const mlir::AsmDialectResourceHandle &resource) override {
-    auto *interface = cast<OpAsmDialectInterface>(resource.getDialect());
-    os << interface->getResourceKey(resource);
-  }
-
-  /// Print floats like MLIR does.
-  void printFloat(const APFloat &value) override {
-    if (!value.isInfinity() && !value.isNaN()) {
-      SmallString<128> strValue;
-      value.toString(strValue, /*FormatPrecision=*/6, /*FormatMaxPadding=*/0,
-                     /*TruncateZero=*/false);
-      if (APFloat(value.getSemantics(), strValue).bitwiseIsEqual(value)) {
-        os << strValue;
-        return;
-      }
-      strValue.clear();
-      value.toString(strValue);
-      if (strValue.str().contains('.')) {
-        os << strValue;
-        return;
-      }
-    }
-    SmallVector<char, 16> str;
-    APInt apInt = value.bitcastToAPInt();
-    apInt.toString(str, /*Radix=*/16, /*Signed=*/false,
-                   /*formatAsCLiteral=*/true);
-    os << str;
-  }
-
-private:
-  /// The stream to output to.
-  raw_ostream &os;
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // Parameter Type and Value Printing and Parsing
