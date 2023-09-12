@@ -479,6 +479,8 @@ Implements the builtin package.
 ###
 Implements basic object methods for working with strings.
 
+These are Mojo built-ins, so you don't need to import them.
+
 """,
     )
 
@@ -488,6 +490,8 @@ Implements basic object methods for working with strings.
 
 ###
 Implements SIMD struct.
+
+These are Mojo built-ins, so you don't need to import them.
 
 """
     await assert_import("simd", simd_doc)

@@ -9,7 +9,6 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
 )
 
-# FIXME(21026): Add the LSP python tests here.
 add_modular_testsuite(check-mojo-lsp-server
   TOP_LEVEL_CHECK check-mojo
 
@@ -17,3 +16,5 @@ add_modular_testsuite(check-mojo-lsp-server
   mojo-lsp-server
   mojo-sdk
 )
+
+add_subdirectory(python-tests)
