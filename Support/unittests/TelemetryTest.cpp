@@ -340,6 +340,9 @@ TEST(Telemetry, LoggerL2) {
         if (bufSize != 0) {
           fprintf(stderr, "!! Buffer is not empty. Size=%lu file=%s\n", bufSize,
                   path.string().c_str());
+          fprintf(stderr, "(%.*s)\n",
+                  std::min(bufSize, static_cast<size_t>(10000)),
+                  mbuf->getBufferStart());
         }
         EXPECT_TRUE(bufSize == 0);
       });
