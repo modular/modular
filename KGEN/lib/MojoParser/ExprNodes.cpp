@@ -1216,7 +1216,7 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Lookup the builtin slice type and emit a constructor call.
   ASTType type =
       emitter.shared.getBuiltinSliceType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type, CallOperands(posOperands), this,
+  return emitter.emitConstructorCall(type, posOperands, this,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1617,7 +1617,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
-  return emitter.emitConstructorCall(type, CallOperands(elements), node,
+  return emitter.emitConstructorCall(type, elements, node,
                                      CallSyntax::kImplicitConvert, dest);
 }
 
@@ -1882,8 +1882,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   }
 
   // Emit an error complaining about the forward version of the operator.
-  return emitter.emitNamedMethodCall(specialFnInfo.name,
-                                     CallOperands(argValues), dest,
+  return emitter.emitNamedMethodCall(specialFnInfo.name, argValues, dest,
                                      CallSyntax::kOperator, callExpr);
 }
 

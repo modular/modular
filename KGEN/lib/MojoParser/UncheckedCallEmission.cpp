@@ -698,10 +698,10 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
                   "type", TypeConstantAttr::get(resultTypes.front()))}));
       ValueDest dest;
       // Emit the implicit conversion.
-      callResult = emitConstructorCall(
-                       coroType, CallOperands({{SBValue(call), callExpr}}),
-                       callExpr, CallSyntax::kImplicitConvert, dest)
-                       .getIfSRValue();
+      callResult =
+          emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
+                              CallSyntax::kImplicitConvert, dest)
+              .getIfSRValue();
     } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
       // If the callee is a symbol constant, directly emit a call.
       auto call = builder->create<CallOp>(loc, resultTypes, symbol,
