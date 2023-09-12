@@ -32,6 +32,9 @@ struct MojoParserContext::Impl {
   // REPL State
   //===--------------------------------------------------------------------===//
 
+  /// The location mapper used for REPL expressions.
+  MojoParserContext::REPLLocMapper replLocMapper;
+
   /// The decls of each REPL module that have been successfully parsed.
   SmallVector<KGEN::LIT::ASTDecl *> replModuleDecls;
 

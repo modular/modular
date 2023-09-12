@@ -515,7 +515,7 @@ public:
           diagKind == llvm::SourceMgr::DK_Remark) {
         if (MojoPersistentExpressionState::isExpressionModuleName(
                 diag.getFilename()) &&
-            diag.getFilename() != currentModuleName) {
+            !diag.getFilename().ends_with(currentModuleName)) {
           lastDiagnosticIgnored = true;
           continue;
         }
@@ -634,9 +634,12 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Create a function name for the expression. This string must be a valid Mojo
   // identifier.
   std::string exprFnName = ("__lldb_expr__" + Twine(expressionId)).str();
+  int exprFileId = sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBufferCopy(impl->expr.Text(), exprModuleName),
+      llvm::SMLoc());
   impl->expr.setFunctionName(exprFnName);
   MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpresion(
-      listener, exprModuleName, impl->expr.Text(), exprFnName, variables);
+      listener, exprFileId, exprFnName, variables);
 
   // If the parser supplied a fixed expression, abort processing and use that
   // expression instead.
@@ -668,11 +671,18 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   impl->typeSystem->debugLog("Parsed module successfully");
 
   // Setup a diagnostic handler to process diagnostics emitted during lowering.
+  struct MLIRDiagnosticHandlerContext {
+    LLDBMojoREPLListener &listener;
+    MojoParserContext &parserContext;
+  };
+  MLIRDiagnosticHandlerContext handlerContext{listener, parserContext};
   sourceMgr.setDiagHandler(
       [](const llvm::SMDiagnostic &diag, void *context) {
-        static_cast<LLDBMojoREPLListener *>(context)->notifyDiagnostics(diag);
+        auto *ctx = static_cast<MLIRDiagnosticHandlerContext *>(context);
+        ctx->listener.notifyDiagnostics(
+            ctx->parserContext.getREPLLocMapper().mapDiagnostic(diag));
       },
-      &listener);
+      &handlerContext);
 
   // Functor containing various cleanup performed in the case of an error.
   auto returnErrorCleanup = [&] {

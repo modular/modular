@@ -22,6 +22,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/IndentedOstream.h"
+#include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -30,6 +31,133 @@
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
+
+//===----------------------------------------------------------------------===//
+// MojoParserContext::REPLLocMapper
+//===----------------------------------------------------------------------===//
+
+/// This class provides support for mapping locations between an input REPL
+/// expression and the wrapped expression that is actually parsed.
+class MojoParserContext::REPLLocMapper::ExprLocMapper {
+public:
+  ExprLocMapper(StringRef inputExpr)
+      : inputExpr(inputExpr), inputToWrappedMap(allocator),
+        wrappedToInputMap(allocator) {}
+
+  /// Set the expressions mapped in this mapper.
+  void setWrappedExpr(StringRef exprText) { wrappedExpr = exprText; }
+
+  /// Map a substring of the REPL input expression to the same corresponding
+  /// substring within the wrapped expression.
+  void addMapping(StringRef inputExprSplice, unsigned wrappedExprOffset) {
+    // Insert a mapping from input to wrapped expression.
+    unsigned inputExprOffset = inputExprSplice.data() - inputExpr.data();
+    inputToWrappedMap.insert(inputExprOffset,
+                             inputExprOffset + inputExprSplice.size(),
+                             wrappedExprOffset);
+
+    // Insert a reverse mapping from wrapped to input expression.
+    wrappedToInputMap.insert(wrappedExprOffset,
+                             wrappedExprOffset + inputExprSplice.size(),
+                             inputExprOffset);
+  }
+
+  /// Map the given location in the input expression to the wrapped expression.
+  /// Returns an invalid location if the location is not mapped.
+  llvm::SMLoc mapLocation(llvm::SMLoc loc) const {
+    auto mapImpl = [&](const char *locBufferStart, const char *newBufferStart,
+                       const MapT &map) {
+      unsigned locOffset = loc.getPointer() - locBufferStart;
+
+      auto it = map.find(locOffset);
+      if (!it.valid() || locOffset < it.start())
+        return llvm::SMLoc();
+      return llvm::SMLoc::getFromPointer(newBufferStart + it.value() +
+                                         (locOffset - it.start()));
+    };
+
+    // Check if the location is within the input or wrapped expression.
+    if (loc.getPointer() >= inputExpr.data() &&
+        loc.getPointer() < inputExpr.end()) {
+      return mapImpl(inputExpr.data(), wrappedExpr.data(), wrappedToInputMap);
+    }
+    if (loc.getPointer() >= wrappedExpr.data() &&
+        loc.getPointer() < wrappedExpr.end()) {
+      return mapImpl(wrappedExpr.data(), inputExpr.data(), wrappedToInputMap);
+    }
+    return llvm::SMLoc();
+  }
+
+private:
+  using MapT = llvm::IntervalMap<
+      unsigned, unsigned,
+      llvm::IntervalMapImpl::NodeSizer<unsigned, StringRef>::LeafSize,
+      llvm::IntervalMapHalfOpenInfo<unsigned>>;
+  MapT::Allocator allocator;
+
+  /// The buffer for the input expression.
+  StringRef inputExpr;
+  MapT inputToWrappedMap;
+
+  /// The buffer for the wrapped expression.
+  StringRef wrappedExpr;
+  MapT wrappedToInputMap;
+};
+
+MojoParserContext::REPLLocMapper::REPLLocMapper(llvm::SourceMgr &sourceMgr)
+    : sourceMgr(sourceMgr) {}
+MojoParserContext::REPLLocMapper::~REPLLocMapper() = default;
+
+llvm::SMLoc
+MojoParserContext::REPLLocMapper::mapLocation(llvm::SMLoc loc) const {
+  for (ExprLocMapper &mapper : llvm::make_pointee_range(exprMappers))
+    if (llvm::SMLoc newLoc = mapper.mapLocation(loc); newLoc.isValid())
+      return newLoc;
+  return llvm::SMLoc();
+}
+
+llvm::SMDiagnostic MojoParserContext::REPLLocMapper::mapDiagnostic(
+    const llvm::SMDiagnostic &diag) {
+  // Check if the diagnostic is using location information from the wrapped
+  // expression.
+  llvm::SMLoc newLoc = mapLocation(diag.getLoc());
+  if (!newLoc.isValid())
+    return diag;
+
+  // If we remapped the location back to the input, we need to update the
+  // components of the diagnostic to account for the new location information.
+  auto [newLine, newCol] = sourceMgr.getLineAndColumn(newLoc);
+  --newCol;
+  int colDiff = diag.getColumnNo() - newCol;
+
+  // Update the diagnostic contents based on the column difference.
+  SmallVector<std::pair<unsigned, unsigned>> ranges(diag.getRanges());
+  StringRef lineContents = diag.getLineContents();
+  if (colDiff) {
+    for (auto &range : ranges) {
+      range.first -= colDiff;
+      range.second -= colDiff;
+    }
+    if (!lineContents.empty())
+      lineContents = lineContents.drop_front(colDiff);
+  }
+
+  // Update the locations of the fixits.
+  SmallVector<llvm::SMFixIt> fixits;
+  for (auto &fixit : diag.getFixIts()) {
+    fixits.emplace_back(llvm::SMRange(mapLocation(fixit.getRange().Start),
+                                      mapLocation(fixit.getRange().End)),
+                        fixit.getText());
+  }
+
+  // Remap the file name and record the diagnostic.
+  StringRef newFileName =
+      sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(newLoc))
+          ->getBufferIdentifier();
+  return llvm::SMDiagnostic(sourceMgr, newLoc, newFileName, newLine, newCol,
+                            diag.getKind(), diag.getMessage(), lineContents,
+                            ranges, fixits);
+}
 
 //===----------------------------------------------------------------------===//
 // Expression Extraction
@@ -76,12 +204,12 @@ static bool isCloseParenthesis(char c) { return c == ')' || c == ']'; }
 /// the next statement is the parsing was successful, in which case true is
 /// returned.
 static bool tryHandleSimpleImport(StringRef &unparsedCode,
-                                  llvm::raw_string_ostream &topLevelOS) {
+                                  SmallVectorImpl<StringRef> &topLevelCode) {
   if (!isSimpleImport(unparsedCode))
     return false;
   // It seems that mojo doesn't support simple imports yet.
   auto [line, rest] = unparsedCode.split("\n");
-  topLevelOS << line << "\n";
+  topLevelCode.push_back(line);
   unparsedCode = rest;
   return true;
 }
@@ -90,9 +218,8 @@ static bool tryHandleSimpleImport(StringRef &unparsedCode,
 /// `fn`, a `def` or a `struct` top level statement. If the parsing fails, false
 /// is returned. `unparsedCode` is modified to point to the next statement is
 /// the parsing was successful, in which case true is returned.
-static bool
-tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
-                                         llvm::raw_string_ostream &topLevelOS) {
+static bool tryHandleFromImportAliasFunctionOrStruct(
+    StringRef &unparsedCode, SmallVectorImpl<StringRef> &topLevelCode) {
   bool isFunctionOrStruct = isFunctionOrStructDeclaration(unparsedCode);
   if (!isFunctionOrStruct && !isFromImport(unparsedCode) &&
       !isAlias(unparsedCode))
@@ -113,6 +240,7 @@ tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
   //
   // then this block find the `fn foo() -> Int:\n`, even if it's split across
   // many lines. The body will be handled later.
+  StringRef declStr;
   {
     // This is an iterator of the unparsed code.
     size_t pos = 0;
@@ -121,6 +249,11 @@ tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
     for (size_t end = unparsedCode.size(); pos < end; ++pos) {
       if (unparsedCode[pos] == '\n' && openings == 0 && !requiresOuterColon)
         break;
+      // Skip past comments.
+      if (unparsedCode[pos] == '#') {
+        pos = unparsedCode.find('\n', pos);
+        continue;
+      }
 
       if (isOpenParenthesis(unparsedCode[pos]))
         ++openings;
@@ -129,7 +262,7 @@ tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
       else if (unparsedCode[pos] == ':' && openings == 0)
         requiresOuterColon = false;
     }
-    topLevelOS << unparsedCode.substr(0, pos + 1);
+    declStr = unparsedCode.substr(0, pos + 1);
     unparsedCode = unparsedCode.substr(pos + 1);
   }
 
@@ -138,177 +271,121 @@ tryHandleFromImportAliasFunctionOrStruct(StringRef &unparsedCode,
     // of the entity we are parsing. This doesn't apply to aliases, for example.
     while (!unparsedCode.empty()) {
       auto [line, rest] = unparsedCode.split("\n");
-      if (!line.empty() && !isIndented(line))
+      if (!line.empty() && !isIndented(line) && !line.ltrim().starts_with("#"))
         break;
+      declStr = StringRef(declStr.data(), line.end() - declStr.data());
       unparsedCode = rest;
-      topLevelOS << line << "\n";
     }
   }
+  topLevelCode.push_back(declStr);
   return true;
 }
 
-static std::string removeComments(StringRef exprText) {
-  // We are only handling comments that start with #. ''' and """ are trickier
-  // and we should instead use the actual mojo parser to handle them instead of
-  // doing these hacks.
-  std::string uncommentedCode;
-
-  while (!exprText.empty()) {
-    auto [line, rest] = exprText.split("\n");
-    exprText = rest;
-    if (line.ltrim().starts_with("#"))
-      continue;
-
-    if (!uncommentedCode.empty())
-      uncommentedCode += '\n';
-    uncommentedCode += line;
-  }
-
-  return uncommentedCode;
-}
-
-static void extractExpressionCode(StringRef exprText, std::string &topLevelCode,
-                                  std::string &mainBodyCode) {
-  llvm::raw_string_ostream topLevelOS(topLevelCode), mainBodyOS(mainBodyCode);
-
-  std::string uncommentedCode = removeComments(exprText);
-  StringRef unparsedCode = uncommentedCode;
-
+static void extractExpressionCode(StringRef exprText,
+                                  SmallVectorImpl<StringRef> &topLevelCode,
+                                  SmallVectorImpl<StringRef> &mainBodyCode) {
   // The following code will consume chunks of code assigning them to either
   // the top-level or the main body sections.
+  StringRef unparsedCode = exprText;
   while (!unparsedCode.empty()) {
     // Note: We are not yet handling multiline expressions with \.
-    if (!tryHandleFromImportAliasFunctionOrStruct(unparsedCode, topLevelOS) &&
-        !tryHandleSimpleImport(unparsedCode, topLevelOS)) {
+    if (!tryHandleFromImportAliasFunctionOrStruct(unparsedCode, topLevelCode) &&
+        !tryHandleSimpleImport(unparsedCode, topLevelCode)) {
       // Any other case is just main body code.
       auto [line, rest] = unparsedCode.split("\n");
-      mainBodyOS << line << "\n";
+      if (!line.empty())
+        mainBodyCode.push_back(line);
       unparsedCode = rest;
     }
   }
-
-  auto ensureEOLTerminated = [](auto &str) {
-    if (!str.empty() && str.back() != '\n')
-      str += '\n';
-  };
-
-  ensureEOLTerminated(topLevelCode);
-  ensureEOLTerminated(mainBodyCode);
 }
 
 //===----------------------------------------------------------------------===//
 // Expression Wrapping
 //===----------------------------------------------------------------------===//
 
-/// We use the following comments to identify the chunks of code written by the
-/// user. After we apply fix-its, we need to extract these two chunks and
-/// combine them into the new source code to evaluate.
-constexpr StringLiteral kTopLevelBlockBegin =
-    "#==__lldb_expr_top_level_code_begin\n";
-constexpr StringLiteral kTopLevelBlockEnd =
-    "#==__lldb_expr_top_level_code_end\n";
-constexpr StringLiteral kMainBodyBlockBegin =
-    "    #==__lldb_expr_main_body_code_begin\n";
-constexpr StringLiteral kMainBodyBlockEnd =
-    "    #==__lldb_expr_main_body_code_end\n";
-
 /// Wrap the provided expression text in a function so that it can be executed.
 /// The generated function uses the provided name, and the provided variables
 /// are passed via fields to a generated struct that is used as the first
 /// argument of the function.
 static std::string
-wrapExpressionText(StringRef wrappedFnName, StringRef exprText,
+wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
+                   StringRef wrappedFnName, StringRef exprText,
                    ArrayRef<std::pair<StringRef, Type>> variables,
                    bool isFirstREPLCell) {
   // Wrap the expression text in a function so that we can execute it.
   std::string transformedText;
-  llvm::raw_string_ostream exprRawOS(transformedText);
-  mlir::raw_indented_ostream exprOSIndented(exprRawOS);
+  llvm::raw_string_ostream exprOS(transformedText);
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOSIndented << "from memory.unsafe import Pointer\n"
-                   << "from python.python import Python\n"
-                   << "from python.object import PythonObject\n";
+    exprOS << "from memory.unsafe import Pointer\n"
+           << "from python.python import Python\n"
+           << "from python.object import PythonObject\n";
   }
 
   // Build the input struct, which contains each of the persistent variables.
-  exprOSIndented << "struct __mojo_repl_context__:\n";
+  exprOS << "struct __mojo_repl_context__:\n";
   for (auto &[name, type] : variables) {
-    exprOSIndented << llvm::formatv(
+    exprOS << llvm::formatv(
         "  var `{0}`: Pointer[Pointer[__mlir_type.`{1}`]]\n", name, type);
   }
   if (variables.empty())
-    exprOSIndented << "  pass\n";
-  exprOSIndented << "\n";
+    exprOS << "  pass\n";
+  exprOS << "\n";
 
   // Extract out the top-level code from the expression code.
-  std::string topLevelCode, mainBodyCode;
+  SmallVector<StringRef> topLevelCode, mainBodyCode;
   extractExpressionCode(exprText, topLevelCode, mainBodyCode);
 
+  // Build a mapping for pieces of the input expression and the wrapped
+  // expression, enabling seamless location mapping between the two.
+  auto emitAndMapCode = [&](StringRef code) {
+    locMapper.addMapping(code, exprOS.str().size());
+    exprOS << code << "\n";
+  };
+
   // Splat out the top-level code.
-  exprOSIndented << kTopLevelBlockBegin << topLevelCode << kTopLevelBlockEnd;
+  for (StringRef code : topLevelCode)
+    emitAndMapCode(code);
 
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
-  exprOSIndented << "fn " << wrappedFnName
-                 << "(inout __mojo_repl_arg: __mojo_repl_context__):\n"
-                    "  try:\n"
-                    "    __mojo_repl_expr_impl__(__mojo_repl_arg";
+  exprOS << "fn " << wrappedFnName
+         << "(inout __mojo_repl_arg: __mojo_repl_context__):\n"
+            "  try:\n"
+            "    __mojo_repl_expr_impl__(__mojo_repl_arg";
   for (auto &[name, type] : variables) {
-    exprOSIndented << formatv(
+    exprOS << formatv(
         ", __get_address_as_lvalue(__mojo_repl_arg.`{0}`.load().address)",
         name);
   }
-  exprOSIndented << ")\n"
-                    "  except error:\n"
-                    "    print(\"Error:\", error.value)\n\n";
+  exprOS << ")\n"
+            "  except error:\n"
+            "    print(\"Error:\", error.value)\n\n";
 
   // Finally we can generate the actual expression function.
-  exprOSIndented << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
-                    "__mojo_repl_context__";
+  exprOS << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
+            "__mojo_repl_context__";
   for (auto &[name, type] : variables)
-    exprOSIndented << llvm::formatv(", inout `{0}`: __mlir_type.`{1}`", name,
-                                    type);
-  exprOSIndented << ") -> None:\n";
+    exprOS << llvm::formatv(", inout `{0}`: __mlir_type.`{1}`", name, type);
+  exprOS << ") -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
-  exprOSIndented << "  @parameter\n"
-                 << "  def __mojo_repl_expr_body__() -> None:\n";
+  exprOS << "  @parameter\n"
+            "  def __mojo_repl_expr_body__() -> None:\n";
 
-  exprOSIndented << "    var ___lldb_expr_failed = False\n";
+  exprOS << "    var ___lldb_expr_failed = False\n";
   // The following is the other chunk of code just written by the user.
-  exprOSIndented << kMainBodyBlockBegin;
-  // Add a sigil variable that is true if the cell succeeded, false otherwise.
-  exprOSIndented.printReindented(mainBodyCode, "    ");
-  exprOSIndented << kMainBodyBlockEnd
-                 << "    return\n"
-                    "  __mojo_repl_expr_body__()\n";
+  for (StringRef code : mainBodyCode) {
+    exprOS << "    ";
+    emitAndMapCode(code);
+  }
+  exprOS << "    return\n"
+            "  __mojo_repl_expr_body__()\n";
 
-  return transformedText;
-}
-
-/// Unwrap the given expression string, extracting the user written code from
-/// the auto-generated boilerplate.
-static std::string unwrapExpressionText(StringRef exprText) {
-  std::string result;
-  llvm::raw_string_ostream resultOS(result);
-  mlir::raw_indented_ostream indentedResultOS(resultOS);
-
-  // Splice out the top level code.
-  indentedResultOS << exprText.slice(exprText.find(kTopLevelBlockBegin) +
-                                         kTopLevelBlockBegin.size(),
-                                     exprText.find(kTopLevelBlockEnd));
-
-  // Splice out the main body and remove all indent.
-  indentedResultOS.printReindented(
-      exprText.slice(exprText.find(kMainBodyBlockBegin) +
-                         kMainBodyBlockBegin.size(),
-                     exprText.find(kMainBodyBlockEnd)),
-      "");
-
-  return result;
+  return exprOS.str();
 }
 
 //===----------------------------------------------------------------------===//
@@ -445,14 +522,15 @@ namespace {
 class REPLDiagnosticHandler {
 public:
   REPLDiagnosticHandler(MojoParserREPLListener &listener,
-                        llvm::SourceMgr &sourceMgr)
-      : listener(listener) {
+                        MojoParserContext::REPLLocMapper &locMapper,
+                        StringRef exprText, llvm::SourceMgr &sourceMgr)
+      : listener(listener), locMapper(locMapper), exprText(exprText) {
     sourceMgr.setDiagHandler(handleDiagnostic, this);
   }
 
   /// This method processes all of the diagnostics that have been collected.
   /// `exprText` is the text of the wrapped expression that was parsed.
-  LogicalResult processDiagnostics(StringRef exprText);
+  LogicalResult processDiagnostics();
 
 private:
   /// A static diagnostic handler function that is usable with SourceMgr. This
@@ -460,15 +538,18 @@ private:
   static void handleDiagnostic(const llvm::SMDiagnostic &diagnostic,
                                void *ctx) {
     auto *handler = static_cast<REPLDiagnosticHandler *>(ctx);
-    handler->diagnostics.push_back(diagnostic);
+    handler->diagnostics.emplace_back(
+        handler->locMapper.mapDiagnostic(diagnostic));
   }
 
   MojoParserREPLListener &listener;
+  MojoParserContext::REPLLocMapper &locMapper;
+  StringRef exprText;
   std::vector<llvm::SMDiagnostic> diagnostics;
 };
 } // namespace
 
-LogicalResult REPLDiagnosticHandler::processDiagnostics(StringRef exprText) {
+LogicalResult REPLDiagnosticHandler::processDiagnostics() {
   if (diagnostics.empty())
     return success();
 
@@ -528,7 +609,7 @@ LogicalResult REPLDiagnosticHandler::processDiagnostics(StringRef exprText) {
     // of the buffer. We do this here because we only want to do it if/once
     // *all* diagnostics are handled.
     newText += exprText.substr(prevEnd);
-    listener.notifyFixedExpr(unwrapExpressionText(newText));
+    listener.notifyFixedExpr(newText);
   }
 
   return success(allDiagsHandled);
@@ -604,30 +685,45 @@ buildAndResolveREPLModule(const llvm::MemoryBuffer *sourceBuf,
   return moduleDecl;
 }
 
+MojoParserContext::REPLLocMapper &MojoParserContext::getREPLLocMapper() {
+  return impl->replLocMapper;
+}
+
 MojoASTDeclRef MojoParserContext::parseREPLExpresion(
-    MojoParserREPLListener &listener, StringRef exprId, StringRef exprText,
+    MojoParserREPLListener &listener, unsigned exprFileId,
     StringRef replExprFnName,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
+  const llvm::MemoryBuffer *exprFileBuf = sourceMgr.getMemoryBuffer(exprFileId);
+  StringRef exprText = exprFileBuf->getBuffer();
+
+  // Build a location mapper for this expression.
+  impl->replLocMapper.exprMappers.emplace_back(
+      std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
+  REPLLocMapper::ExprLocMapper &exprLocMapper =
+      *impl->replLocMapper.exprMappers.back();
 
   // Set up a diagnostic handler to process diagnostics emitted during parsing.
   auto oldDiagHandler = sourceMgr.getDiagHandler();
   auto oldDiagContext = sourceMgr.getDiagContext();
   auto resetHandlerOnExit = llvm::make_scope_exit(
       [&] { sourceMgr.setDiagHandler(oldDiagHandler, oldDiagContext); });
-  REPLDiagnosticHandler diagHandler(listener, sourceMgr);
+  REPLDiagnosticHandler diagHandler(listener, impl->replLocMapper, exprText,
+                                    sourceMgr);
 
   // Wrap the expression text in a function so that we can execute it.
   std::string wrappedExprText =
-      wrapExpressionText(replExprFnName, exprText, replVariables,
+      wrapExpressionText(exprLocMapper, replExprFnName, exprText, replVariables,
                          /*isFirstREPLCell=*/impl->replModuleDecls.empty());
   listener.notifyWrappedExpr(wrappedExprText);
 
   // TODO: We should print the expression to a file if we need debug
   // information attached.
-  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(wrappedExprText, exprId);
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(
+      wrappedExprText, ("wrapped " + exprFileBuf->getBufferIdentifier()).str());
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(
       sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc()));
+  exprLocMapper.setWrappedExpr(sourceBuf->getBuffer());
 
   // Resolve a module decl for this REPL expression.
   ASTDecl &moduleDecl = buildAndResolveREPLModule(sourceBuf, impl->sharedState,
@@ -639,7 +735,7 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
 
   // Check if we have a non-recoverable parse error, or emitted an error and
   // then recovered.
-  if (failed(diagHandler.processDiagnostics(sourceBuf->getBuffer())) ||
+  if (failed(diagHandler.processDiagnostics()) ||
       failed(mlir::verify(*impl->module))) {
     // In the case of failure, remove the module so that it doesn't prevent
     // parsing future cells.
@@ -671,9 +767,15 @@ MojoParserContext::codeCompleteREPLExpresion(
   exprTextWithMarker += kCompletionMarker;
   exprTextWithMarker += exprText.drop_front(completionPosition).str();
 
+  // Build a location mapper for this expression.
+  REPLLocMapper locMapper(getSourceMgr());
+  locMapper.exprMappers.emplace_back(
+      std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
+
   // Wrap the expression text in a function so that we can execute it.
   std::string wrappedExprText = wrapExpressionText(
-      "__repl_code_complete_fn", exprTextWithMarker, replVariables,
+      *locMapper.exprMappers.back(), "__repl_code_complete_fn",
+      exprTextWithMarker, replVariables,
       /*isFirstREPLCell=*/impl->replModuleDecls.empty());
 
   // Remove the completion marker from the wrapped expression text and grab the

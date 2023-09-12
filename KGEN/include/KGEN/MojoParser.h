@@ -280,15 +280,49 @@ public:
   /// The following methods provide functionality for interacting with the
   /// parser context from REPL like environments.
 
+  /// This class provides support for mapping between the input expression to a
+  /// REPL expression, and the generated wrapped expression used during the
+  /// parsing of the REPL expression.
+  class REPLLocMapper {
+  public:
+    class ExprLocMapper;
+
+    ~REPLLocMapper();
+
+    /// Map the given location in the input expression to the wrapped
+    /// expression, or vice-a-versa. Returns an invalid location if the location
+    /// is not mapped.
+    llvm::SMLoc mapLocation(llvm::SMLoc loc) const;
+
+    /// Remap the locations in the given diagnostic, returning a newly formed
+    /// diagnostic.
+    llvm::SMDiagnostic mapDiagnostic(const llvm::SMDiagnostic &diag);
+
+  private:
+    REPLLocMapper(llvm::SourceMgr &sourceMgr);
+
+    /// Allow access to the constructor.
+    friend class MojoParserContext;
+
+    /// The source manager used for the REPL.
+    llvm::SourceMgr &sourceMgr;
+
+    /// The mapper used for each expression within the REPL expression.
+    std::vector<std::unique_ptr<ExprLocMapper>> exprMappers;
+  };
+
+  /// Return the location mapper used for REPL expressions.
+  REPLLocMapper &getREPLLocMapper();
+
   /// The following methods allow for interacting with the parser for REPL
-  /// like expressions, i.e., in environments like Jupyter notebooks. `exprId`
-  /// is a unique identifier for the expression being parsed, and is used as the
-  /// generated module name. `exprText` is the expression to parse.
-  /// `replExprFnName` is the name of the function to use for wrapping the
-  /// expression. `replVariables` is a list of pre-existing variables to make
-  /// available to the expression function, these variables should be used as
-  /// `Pointer[Pointer[]]` fields within a struct that is passed by reference to
-  /// the expression function. For example, given the following expression:
+  /// like expressions, i.e., in environments like Jupyter notebooks.
+  /// `exprFileId` is the buffer id of the expression to parse within the main
+  /// source manager. `replExprFnName` is the name of the function to use for
+  /// wrapping the expression. `replVariables` is a list of pre-existing
+  /// variables to make available to the expression function, these variables
+  /// should be used as `Pointer[Pointer[]]` fields within a struct that is
+  /// passed by reference to the expression function. For example, given the
+  /// following expression:
   ///
   ///   print(a)
   ///
@@ -304,8 +338,8 @@ public:
   /// In the case of success, the decl corresponding to the expr function is
   /// returned. In the case of an error, a null decl is returned.
   MojoASTDeclRef
-  parseREPLExpresion(MojoParserREPLListener &listener, StringRef exprId,
-                     StringRef exprText, StringRef replExprFnName,
+  parseREPLExpresion(MojoParserREPLListener &listener, unsigned exprFileId,
+                     StringRef replExprFnName,
                      ArrayRef<std::pair<StringRef, Type>> replVariables);
 
   /// Return the code completion results for the given REPL expression.
