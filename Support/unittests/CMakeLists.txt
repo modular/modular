@@ -8,6 +8,7 @@ add_subdirectory(ADT)
 add_subdirectory(Entitlements)
 add_subdirectory(HTTP)
 add_subdirectory(MArchTarget)
+add_subdirectory(MDialect)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK

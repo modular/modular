@@ -106,12 +106,6 @@ public:
   mlir::MLIRContext *getContext() { return packageModule->getContext(); }
 
 private:
-  /// This takes a BufferRef `bytes` and a name, and generates a
-  /// DenseResourceElementsAttr. It's a small helper, but it is somewhat fiddly
-  /// so it's useful to only write this code once.
-  DenseResourceElementsAttr createResourceAttr(Cache::BufferRef bytes,
-                                               Twine name);
-
   /// This is the module that contains the new package we're generating.
   OwningOpRef<ModuleOp> packageModule;
   /// This is a reference to the new package op we've created.
@@ -272,8 +266,9 @@ ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
   auto hash = llvm::BLAKE3::hash(
       ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
                         (const uint8_t *)str->getBufferEnd()));
-  thePackage.setPreElaborationModuleAttr(createResourceAttr(
-      std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
+  thePackage.setPreElaborationModuleAttr(
+      createResourceAttr(moduleOp.getContext(), str->getBuffer(),
+                         "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
   return success();
 }
 
@@ -307,8 +302,9 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
   auto hash = llvm::BLAKE3::hash(
       ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
                         (const uint8_t *)str->getBufferEnd()));
-  DenseResourceElementsAttr bytecodeResource = createResourceAttr(
-      std::move(str), "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true));
+  DenseResourceElementsAttr bytecodeResource =
+      createResourceAttr(theModule.getContext(), str->getBuffer(),
+                         "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true));
 
   for (auto [symName, exportSym] : exportedSymbols) {
     LIT::FuncOp hlFunc = flattenedNameToFunc.lookup(symName);
@@ -351,36 +347,11 @@ ErrorOrSuccess PackageBuilder::attachCompiledArchiveBytes(
                produceStandaloneArchiveKey->getBufferSize()));
 
   auto attr = createResourceAttr(
-      std::move(archive), "archive_" + llvm::toHex(hash, /*LowerCase=*/true));
+      packageModule->getContext(),
+      ArrayRef(archive->getBufferStart(), archive->getBufferSize()),
+      "archive_" + llvm::toHex(hash, /*LowerCase=*/true));
   thePackage.setArchiveBytesAttr(attr);
   return success();
-}
-
-/// Generate a DenseResourceElementsAttr from `bytes` with the given `name`.
-DenseResourceElementsAttr
-PackageBuilder::createResourceAttr(Cache::BufferRef bytes, Twine name) {
-  mlir::MLIRContext *ctx = packageModule->getContext();
-
-  auto resourceManager =
-      mlir::DenseResourceElementsHandle::getManagerInterface(ctx);
-
-  // Pretend this is a "tensor" of data.
-  auto attrType =
-      RankedTensorType::get({(int64_t)bytes->getBufferSize()},
-                            IntegerType::get(ctx, 8, IntegerType::Unsigned));
-  auto blob = mlir::UnmanagedAsmResourceBlob::allocateWithAlign(
-      ArrayRef<char>(bytes->getBufferStart(), bytes->getBufferSize()),
-      /*align=*/8,
-      [bytes = bytes.copy()](void *data, size_t size, size_t align) {
-        // Drop the ref to the BufferRef to deallocate the bytes.
-      });
-
-  // Some convenience typedefs to simplify this code a little bit.
-  using HandleTy = mlir::DialectResourceBlobHandle<mlir::BuiltinDialect>;
-  auto *dialect = cast<mlir::BuiltinDialect>(resourceManager.getDialect());
-  return DenseResourceElementsAttr::get(
-      attrType, resourceManager.getBlobManager().insert<HandleTy>(
-                    dialect, name.str(), std::move(blob)));
 }
 
 //===----------------------------------------------------------------------===//
