@@ -70,34 +70,35 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
 
   mlir::index::CmpOp cmpOp;
   switch (cmpPredicate) {
-  case HLCF::ForLoopBoundCmpPredicate::SGTLHS:
+  case HLCF::ForLoopBoundCmpPredicate::SGT:
     cmpOp = rewriter.create<mlir::index::CmpOp>(
         forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT, inductionVar,
         forLoop.getUpperBound());
     break;
 
-  case HLCF::ForLoopBoundCmpPredicate::SLTLHS:
+  case HLCF::ForLoopBoundCmpPredicate::SLT:
     cmpOp = rewriter.create<mlir::index::CmpOp>(
         forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT, inductionVar,
         forLoop.getUpperBound());
     break;
-  case HLCF::ForLoopBoundCmpPredicate::SGTRHS:
+  case HLCF::ForLoopBoundCmpPredicate::SGE:
     cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGT,
-        forLoop.getUpperBound(), inductionVar);
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SGE, inductionVar,
+        forLoop.getUpperBound());
     break;
-  case HLCF::ForLoopBoundCmpPredicate::SLTRHS:
+
+  case HLCF::ForLoopBoundCmpPredicate::SLE:
     cmpOp = rewriter.create<mlir::index::CmpOp>(
-        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLT,
-        forLoop.getUpperBound(), inductionVar);
+        forLoop->getLoc(), mlir::index::IndexCmpPredicate::SLE, inductionVar,
+        forLoop.getUpperBound());
     break;
   }
 
   // Create IfOp with ThenBlock yields and ElseBlock breaks.
   auto ifOp = rewriter.create<IfOp>(forLoop->getLoc(), ValueRange{}, cmpOp);
+
   rewriter.createBlock(&ifOp.getThenRegion());
   rewriter.create<YieldOp>(forLoop->getLoc());
-
   rewriter.createBlock(&ifOp.getElseRegion());
   rewriter.create<BreakOp>(
       forLoop->getLoc(),

@@ -182,8 +182,13 @@ std::optional<int64_t> ForOp::getTripCount() {
   if (!lowerBound || !upperBound || !step)
     return {};
 
-  return llvm::divideCeil(std::abs(upperBound.value() - lowerBound.value()),
-                          std::abs(step.value()));
+  int64_t r = std::abs(upperBound.value() - lowerBound.value());
+  HLCF::ForLoopBoundCmpPredicate pred = getCmpPredicateType();
+  if (pred == HLCF::ForLoopBoundCmpPredicate::SGE ||
+      pred == HLCF::ForLoopBoundCmpPredicate::SLE)
+    r += 1;
+
+  return llvm::divideCeil(r, std::abs(step.value()));
 }
 
 bool ForOp::isFullUnroll() {

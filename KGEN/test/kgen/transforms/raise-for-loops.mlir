@@ -9,7 +9,7 @@ kgen.func @zero_starting_range() {
   // CHECK:      [[INDEX2:%.*]] = index.constant 2
   // CHECK-NEXT: [[INDEX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
-  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg0 = [[INDEX2]] : index) {
   // CHECK-NEXT:   [[IDX:%.*]] = index.sub %arg0, [[INDEX1]]
   // CHECK-NEXT:   [[V:%.*]] = index.sub [[INDEX2]], %arg0
   // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
@@ -38,7 +38,7 @@ kgen.func @sequential_range() {
 
   // CHECK:      [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT: [[INDEX4:%.*]] = index.constant 4
-  // CHECK-NEXT: hlcf.for [[[INDEX1]] to [[INDEX4]] step [[INDEX1]] sltlhs add] (%arg0 = [[INDEX1]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX1]] to [[INDEX4]] step [[INDEX1]] slt add] (%arg0 = [[INDEX1]] : index) {
   // CHECK-NEXT:   [[IDX:%.*]] = index.add %arg0, [[INDEX1]]
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
@@ -67,7 +67,7 @@ kgen.func @strided_range() {
   // CHECK:      [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT: [[INDEX6:%.*]] = index.constant 6
   // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
-  // CHECK-NEXT: hlcf.for [[[INDEX1]] to [[INDEX6]] step [[INDEX2]] sltlhs add] (%arg0 = [[INDEX1]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX1]] to [[INDEX6]] step [[INDEX2]] slt add] (%arg0 = [[INDEX1]] : index) {
   // CHECK-NEXT:   [[IDX:%.*]] = index.add %arg0, [[INDEX2]]
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
@@ -100,11 +100,11 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
   // CHECK-NEXT: [[INDEX4:%.*]] = index.constant 4
   // CHECK-NEXT: [[INDEX8:%.*]] = index.constant 8
-  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg0 = [[INDEX2]] : index) {
   // CHECK-NEXT:   [[IDX0:%.*]] = index.sub %arg0, [[INDEX1]]
   // CHECK-NEXT:   [[V0:%.*]]  = index.sub [[INDEX2]], %arg0
   // CHECK-NEXT:   kgen.call @foo([[V0]]) : (index) -> ()
-  // CHECK-NEXT:   hlcf.for [[[INDEX4]] to [[INDEX8]] step [[INDEX2]] sltlhs add] (%arg1 = [[INDEX4]] : index) {
+  // CHECK-NEXT:   hlcf.for [[[INDEX4]] to [[INDEX8]] step [[INDEX2]] slt add] (%arg1 = [[INDEX4]] : index) {
   // CHECK-NEXT:     [[IDX1:%.*]]  = index.add %arg1, [[INDEX2]]
   // CHECK-NEXT:     [[V1:%.*]] = index.add %1, %arg1
   // CHECK-NEXT:     kgen.call @foo([[V1]]) : (index) -> ()
@@ -148,7 +148,7 @@ kgen.func @zero_starting_range_not_decorated() {
   // CHECK:      [[INDEX2:%.*]] = index.constant 2
   // CHECK-NEXT: [[INDEX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
-  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg0 = [[INDEX2]] : index) {
   // CHECK-NEXT:   [[IDX:%.*]] = index.sub %arg0, [[INDEX1]]
   // CHECK-NEXT:   [[V:%.*]] = index.sub [[INDEX2]], %arg0
   // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
@@ -184,11 +184,11 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT: [[INDEX4:%.*]] = index.constant 4
   // CHECK-NEXT: [[INDEX8:%.*]] = index.constant 8
   // CHECK-NEXT: [[INDEX0:%.*]] = index.constant 0
-  // CHECK-NEXT: %0:2 = hlcf.for [[[INDEX1]] to [[INDEX9]] step [[INDEX2]] sltlhs add] (%arg0 = [[INDEX1]]  : index, %arg1 = [[INDEX0]] : index, %arg2 = [[INDEX0]]  : index) -> (index, index) {
+  // CHECK-NEXT: %0:2 = hlcf.for [[[INDEX1]] to [[INDEX9]] step [[INDEX2]] slt add] (%arg0 = [[INDEX1]]  : index, %arg1 = [[INDEX0]] : index, %arg2 = [[INDEX0]]  : index) -> (index, index) {
   // CHECK-NEXT:   [[IDX0:%.*]] = index.add %arg0, [[INDEX2]]
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   [[V0:%.*]] = index.add %arg1, %arg0
-  // CHECK-NEXT:   [[V1:%.*]] = hlcf.for [[[INDEX4]] to [[INDEX8]] step [[INDEX2]] sltlhs add] (%arg3 =  [[INDEX4]] : index, %arg4 = %arg2 : index) -> index {
+  // CHECK-NEXT:   [[V1:%.*]] = hlcf.for [[[INDEX4]] to [[INDEX8]] step [[INDEX2]] slt add] (%arg3 =  [[INDEX4]] : index, %arg4 = %arg2 : index) -> index {
   // CHECK-NEXT:     [[V4:%.*]] = index.add %arg3, [[INDEX2]]
   // CHECK-NEXT:     [[V2:%.*]] = index.add %arg0, %arg3
   // CHECK-NEXT:     kgen.call @foo([[V2]]) : (index) -> ()
@@ -239,7 +239,7 @@ kgen.func @reorder_args(%arg0: !pop.struct<pointer<scalar<f32>>, index, dtype>) 
   // CHECK-NEXT:  [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT:  [[INDEX0:%.*]] = index.constant 0
   // CHECK-NEXT:  [[V0:%.*]] = pop.struct.extract %arg0[0] : !pop.struct<pointer<scalar<f32>>, index, dtype>
-  // CHECK-NEXT:  [[V1:%.*]] = hlcf.for [[[INDEX10]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg1 = [[INDEX10]] : index, %arg2 = [[INDEX0]] : index, %arg3 = [[V0]] : !kgen.pointer<scalar<f32>>) -> index {
+  // CHECK-NEXT:  [[V1:%.*]] = hlcf.for [[[INDEX10]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg1 = [[INDEX10]] : index, %arg2 = [[INDEX0]] : index, %arg3 = [[V0]] : !kgen.pointer<scalar<f32>>) -> index {
   // CHECK-NEXT:   [[V2:%.*]] = index.sub %arg1, [[INDEX1]]
   // CHECK-NEXT:   [[V3:%.*]] = pop.load %arg3 align 1  : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT:   [[V4:%.*]] = pop.cast [[V3]] : !pop.scalar<f32> to !pop.scalar<index>
@@ -298,7 +298,7 @@ kgen.func @negative_step() {
   // CHECK:       [[INDEX5:%.*]] = index.constant 5
   // CHECK-NEXT:  [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT:  [[INDEXN1:%.*]] = index.constant -1
-  // CHECK-NEXT: hlcf.for [[[INDEX5]] to [[INDEX1]] step [[INDEXN1]]  sgtlhs add] (%arg0 = [[INDEX5]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX5]] to [[INDEX1]] step [[INDEXN1]]  sgt add] (%arg0 = [[INDEX5]] : index) {
   // CHECK-NEXT:   %0 = index.add %arg0, [[INDEXN1]]
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
@@ -327,7 +327,7 @@ kgen.func @nested_loops_no_unroll_inner() {
   // CHECK:      [[INDEX0:%.*]] = index.constant 0
   // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
   // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
-  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgtlhs sub] (%arg0 = [[INDEX2]] : index) {
+  // CHECK-NEXT: hlcf.for [[[INDEX2]] to [[INDEX0]] step [[INDEX1]] sgt sub] (%arg0 = [[INDEX2]] : index) {
   // CHECK-NEXT:   [[IDX0:%.*]] = index.sub %arg0, [[INDEX1]]
   // CHECK-NEXT:   [[V0:%.*]]  = index.sub [[INDEX2]], %arg0
   // CHECK-NEXT:   kgen.call @foo([[V0]]) : (index) -> ()
@@ -363,3 +363,27 @@ kgen.func @nested_loops_no_unroll_inner() {
   } {unrollFactor = #hlcf<loop_unroll_full none>}
   kgen.return
 }
+
+// CHECK-LABEL: @break_in_then
+ kgen.func @break_in_then() {
+   %index0 = index.constant 0
+   %index1 = index.constant 1
+   %index10 = index.constant 10
+
+   // CHECK:      [[INDEX0:%.*]] = index.constant 0
+   // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+   // CHECK-NEXT: [[INDEX10:%.*]] = index.constant 10
+   // CHECK-NEXT: hlcf.for [[[INDEX0]] to [[INDEX10]] step [[INDEX1]] sle add] (%arg0 = [[INDEX0]] : index)
+   hlcf.loop (%arg0 = %index0 : index) {
+     // when for-loop is raise, this condition will be inverted to sle
+     %1 = index.cmp sgt(%arg0, %index10)
+     hlcf.if %1 {
+       hlcf.break
+     } else {
+       hlcf.yield
+     }
+     %2 = index.add %arg0, %index1
+     hlcf.continue %2 : index
+   } {unrollFactor = #hlcf<loop_unroll_full none>}
+   kgen.return
+ }

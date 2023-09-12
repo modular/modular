@@ -196,7 +196,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // Example1: unroll the following ForOp (trip count 6) by 2
     // %idx5 = index.constant 7
     // %idx1 = index.constant 1
-    // %1 = hlcf.for [7 to 1 step 1 sgtlhs sub] (%arg0, %arg1, %arg2) -> index {
+    // %1 = hlcf.for [7 to 1 step 1 sgt sub] (%arg0, %arg1, %arg2) -> index {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
@@ -206,7 +206,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // Also change the result to include all iteration args except the induction
     // variable.
     //
-    // %0:2 = hlcf.for [7 to 1 step 2 sgtlhs sub] (%arg0, %arg1, %arg2)->index {
+    // %0:2 = hlcf.for [7 to 1 step 2 sgt sub] (%arg0, %arg1, %arg2)->index {
     //   %1 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   %2 = index.sub %1, 1
@@ -218,7 +218,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // divisible  by 2.
     // %idx5 = index.constant 5
     // %idx1 = index.constant 1
-    // %1 = hlcf.for [5 to 1 step 1 sgtlhs sub] (%arg0, %arg1, %arg2) -> index {
+    // %1 = hlcf.for [5 to 1 step 1 sgt sub] (%arg0, %arg1, %arg2) -> index {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
@@ -230,7 +230,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     // variable.
     // 2. Fully unroll the tail iterations.
     //
-    // %0:2 = hlcf.for [5 to 2 step 2 sgtlhs sub] (%arg0, %arg1, %arg2)->index {
+    // %0:2 = hlcf.for [5 to 2 step 2 sgt sub] (%arg0, %arg1, %arg2)->index {
     //   %1 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   %2 = index.sub %1, 1
