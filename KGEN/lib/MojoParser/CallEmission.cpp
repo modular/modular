@@ -12,6 +12,7 @@
 #include "ASTDecl.h"
 #include "ExprEmitter.h"
 #include "ParserParamEvaluator.h"
+#include "Utils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -158,12 +159,6 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
              actualAttr.dump(); expectedAttr.dump();
              llvm::errs() << parameterIndex << "\n");
   return success();
-}
-
-POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
-  return sig.isPackVararg(index)
-             ? ::cast<POP::PackType>(sig.getValueInputs()[index])
-             : nullptr;
 }
 
 /// Given an incomplete parameter binding set for a call to the specified

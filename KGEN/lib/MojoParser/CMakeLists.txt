@@ -26,6 +26,7 @@ add_modular_conversion_library(MojoParser
   SharedState.cpp
   StructEmitter.cpp
   UncheckedCallEmission.cpp
+  Utils.cpp
 
   DEPENDS
   KGENVersion
