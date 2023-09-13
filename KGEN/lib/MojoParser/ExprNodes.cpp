@@ -9,14 +9,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprNodes.h"
-#include "ASTDecl.h"
-#include "CallEmission.h"
-#include "ClosureEmitter.h"
-#include "ExprEmitter.h"
-#include "IRValues.h"
-#include "ParserParamEvaluator.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/ClosureEmitter.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -24,11 +23,11 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LifetimeTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
+#include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/AsmParser/AsmParser.h"

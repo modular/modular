@@ -13,13 +13,13 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "SharedState.h"
-#include "StructEmitter.h"
+#include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoParser/StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
 
-typedef std::pair<SignatureType, StringAttr> ClosureHash;
+using ClosureHash = std::pair<SignatureType, StringAttr>;
 
 /// A ClosureCache stores previously generated closures to prevent duplicate
 /// definitions from being generated.

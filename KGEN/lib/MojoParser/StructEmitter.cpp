@@ -8,18 +8,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "StructEmitter.h"
-#include "ASTDecl.h"
-#include "CallEmission.h"
-#include "DeclResolver.h"
-#include "ExprEmitter.h"
-#include "ExprNodes.h"
-#include "ParserBase.h"
-
+#include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "mlir/IR/ImplicitLocOpBuilder.h"
 
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
 #include <bitset>
 

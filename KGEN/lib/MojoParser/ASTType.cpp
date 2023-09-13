@@ -8,11 +8,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ASTType.h"
-#include "ASTDecl.h"
-#include "ExprNode.h"
-#include "IRValues.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"

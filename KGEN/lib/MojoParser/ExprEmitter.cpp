@@ -9,16 +9,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ExprEmitter.h"
-#include "ASTDecl.h"
-#include "CallEmission.h"
-#include "ExprNodes.h"
-#include "ParserParamEvaluator.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"

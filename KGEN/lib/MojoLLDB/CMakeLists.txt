@@ -39,7 +39,7 @@ add_modular_library(MojoLLDB SHARED
   MCrashReporting
   MSupportGlobals
   MVersion
-  MojoParser
+  MojoTooling
 
   MLIRBuiltinToLLVMIRTranslation
 

@@ -15,7 +15,7 @@
 #include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
-#include "KGEN/MojoParser/CodeComplete.h"
+#include "KGEN/MojoTooling/CodeComplete.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/STLExtras.h"

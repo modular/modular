@@ -16,9 +16,9 @@
 #ifndef EXPRNODES_H
 #define EXPRNODES_H
 
-#include "ExprNode.h"
-#include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
 #include "llvm/ADT/StringExtras.h"
 

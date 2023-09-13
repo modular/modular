@@ -12,8 +12,8 @@
 #ifndef PARSERBASE_H
 #define PARSERBASE_H
 
-#include "Lexer.h"
-#include "SharedState.h"
+#include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {

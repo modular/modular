@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser/ASTDeclView.h"
-#include "ASTDecl.h"
-#include "DocString.h"
+#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DocString.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"

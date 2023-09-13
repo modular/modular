@@ -9,11 +9,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DOCSTRING_H
-#define DOCSTRING_H
+#ifndef KGEN_MOJOPARSER_DOCSTRING_H
+#define KGEN_MOJOPARSER_DOCSTRING_H
 
-#include "Lexer.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "Support/ADT/SmartVariant.h"
 
 namespace M::KGEN::LIT {
@@ -79,4 +78,4 @@ void validateDocString(SharedState &sharedState, ASTDecl &decl);
 
 } // namespace M::KGEN::LIT
 
-#endif // DOCSTRING_H
+#endif // KGEN_MOJOPARSER_DOCSTRING_H

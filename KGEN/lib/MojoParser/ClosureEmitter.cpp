@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClosureEmitter.h"
-#include "ASTDecl.h"
-#include "ExprEmitter.h"
-#include "IRValues.h"
+#include "KGEN/MojoParser/ClosureEmitter.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/IRValues.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"

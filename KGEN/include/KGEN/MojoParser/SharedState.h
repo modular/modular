@@ -12,9 +12,8 @@
 #ifndef SHARED_STATE_H
 #define SHARED_STATE_H
 
+#include "KGEN/MojoParser/IRValues.h"
 #include "Support/Compiler/Diags.h"
-
-#include "IRValues.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
 

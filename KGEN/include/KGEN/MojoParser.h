@@ -241,6 +241,9 @@ public:
   /// Return the source manager used by the parser.
   llvm::SourceMgr &getSourceMgr();
 
+  /// Return the shared state user by the parser.
+  KGEN::LIT::SharedState &getSharedState();
+
   /// Return the full list of directories considered for module lookup from
   /// the given file.
   std::vector<std::string> getModuleSearchDirectories(unsigned fileId);

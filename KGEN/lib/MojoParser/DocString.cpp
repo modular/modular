@@ -4,13 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "DocString.h"
-#include "ASTDecl.h"
+#include "KGEN/MojoParser/DocString.h"
+#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
-#include "KGEN/MojoParser/ASTDeclView.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -187,7 +186,9 @@ public:
   DocStringValidator(SharedState &sharedState, ASTDecl &decl)
       : sharedState(sharedState),
         warnMissingDocStrings(sharedState.shouldWarnMissingDocStrings()),
-        docStr(decl.getParsedDocString()) {
+        docStr(decl.getDocString()
+                   ? std::optional<DocString>(decl.getDocString())
+                   : std::nullopt) {
     // If the doc string isn't valid, there's nothing to do.
     if (!docStr || !docStr->getLoc())
       return;

@@ -8,15 +8,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ASTDecl.h"
-#include "DeclResolver.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
-#include "KGEN/MojoParser/CodeComplete.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "Lexer.h"
 #include "ParserDriverImpl.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"

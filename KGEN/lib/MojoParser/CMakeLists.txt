@@ -5,21 +5,16 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MojoParser
-  ASTDeclView.cpp
-  ASTDeclRef.cpp
   ASTType.cpp
   CallEmission.cpp
   ClosureEmitter.cpp
-  CodeComplete.cpp
   DeclResolver.cpp
   DocString.cpp
+  EntryPoint.cpp
   ExprEmitter.cpp
   ExprNodes.cpp
   IRValues.cpp
-  Lexer.cpp
   ParserBase.cpp
-  ParserDriver.cpp
-  ParserDriverREPL.cpp
   ParserExprs.cpp
   ParserStmts.cpp
   SharedState.cpp
@@ -29,16 +24,16 @@ add_modular_library(MojoParser
 
   DEPENDS
   KGENVersion
-  MLIRKGENPasses
 
   LINK_LIBS PUBLIC
   MCompilerSupport
+  MojoLexer
   KGENToolCommon
   LLCLRuntime
   MTelemetry
+  MLIRTransformUtils
 
   MLIRBytecodeReader
   MLIRBytecodeWriter
   MLIRIndexDialect
-  MLIRTranslateLib
 )

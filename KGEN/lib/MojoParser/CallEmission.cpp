@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallEmission.h"
-#include "ASTDecl.h"
-#include "ExprEmitter.h"
-#include "ParserParamEvaluator.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "Utils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -19,6 +19,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
+
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"

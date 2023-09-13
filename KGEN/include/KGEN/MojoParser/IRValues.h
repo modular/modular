@@ -43,7 +43,7 @@
 #ifndef IRVALUES_H
 #define IRVALUES_H
 
-#include "ASTType.h"
+#include "KGEN/MojoParser/ASTType.h"
 #include "Support/ADT/SmartVariant.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"

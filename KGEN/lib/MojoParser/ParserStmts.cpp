@@ -8,23 +8,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ASTDecl.h"
-#include "CallEmission.h"
-#include "DeclResolver.h"
-#include "ExprEmitter.h"
-#include "ExprNodes.h"
-#include "KGEN/MojoParser.h"
-#include "Lexer.h"
-#include "ParserBase.h"
+#include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/ExprEmitter.h"
+#include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/ParserBase.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"

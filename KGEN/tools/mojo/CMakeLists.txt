@@ -44,10 +44,10 @@ add_modular_tool(mojo
   LINK_LIBS PRIVATE
   KGENToolCommon
   LLCLRuntimeGlobals
-  LLCLRuntime
   MArchTarget
   MCrashReporting
   MojoParser
+  MojoTooling
   MSupportDriver
   MSupportGlobals
   KGENExecutionEngine
