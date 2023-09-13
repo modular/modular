@@ -54,8 +54,11 @@ constexpr size_t kTaskListSlotsPerThread = 1024;
 /// Max number of worker threads.
 constexpr size_t kMaxWorkers = 1024;
 /// Amount of time to spend spinning while waiting for work before going to
-/// sleep on a semaphore.
-constexpr std::chrono::nanoseconds kBusyWait = std::chrono::milliseconds(1);
+/// sleep on a semaphore. Tuning this number is especially important for
+/// cases that interact with other threadpools. Ideally we should autotune
+/// this during the `warmup` phase or come up with heuristics based on
+/// the fallback ops distribution.
+constexpr std::chrono::nanoseconds kBusyWait = std::chrono::nanoseconds(200000);
 
 //===----------------------------------------------------------------------===//
 // WorkerThread
