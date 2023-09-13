@@ -73,7 +73,11 @@ from Conv import (
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
 from GatherScatter import gather_reduce
-from GatherScatter import scatter_nd as _scatter_nd, scatter_nd_generator
+from GatherScatter import (
+    scatter_elements,
+    scatter_nd as _scatter_nd,
+    scatter_nd_generator,
+)
 from Matmul import _pack_b_ndbuffer_impl
 from Matmul import matmul as _matmul
 from Matmul import (
@@ -204,6 +208,11 @@ fn MOGGExport():
     alias _scatter_nd_max = scatter_nd_max
     alias _scatter_nd_min = scatter_nd_min
     alias _scatter_nd_mul = scatter_nd_mul
+    alias _scatter = scatter
+    alias _scatter_add = scatter_add
+    alias _scatter_max = scatter_max
+    alias _scatter_min = scatter_min
+    alias _scatter_mul = scatter_mul
     alias _slice = slice
     alias _simd_load = simd_load
     alias _simd_store = simd_store
@@ -1751,6 +1760,196 @@ fn batched_matmul[
         output_0_fn,
         single_thread_blocking_override,
     ](c, a, b, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG scatter
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn scatter[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        input_type,
+    ],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        indices_type,
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        return rhs  # always return the latest update element
+
+    let axis_int = axis[0].to_int()
+    return scatter_elements[
+        reduce_func,
+        rank,
+        input_type,
+        indices_type,
+    ](input, indices, updates, axis_int, output, out_chain)
+
+
+@always_inline
+fn scatter_add[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        input_type,
+    ],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        indices_type,
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        return lhs + rhs
+
+    let axis_int = axis[0].to_int()
+    return scatter_elements[
+        reduce_func,
+        rank,
+        input_type,
+        indices_type,
+    ](input, indices, updates, axis_int, output, out_chain)
+
+
+@always_inline
+fn scatter_max[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        input_type,
+    ],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        indices_type,
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        return lhs.max(rhs)
+
+    let axis_int = axis[0].to_int()
+    return scatter_elements[
+        reduce_func,
+        rank,
+        input_type,
+        indices_type,
+    ](input, indices, updates, axis_int, output, out_chain)
+
+
+@always_inline
+fn scatter_min[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        input_type,
+    ],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        indices_type,
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        return lhs.min(rhs)
+
+    let axis_int = axis[0].to_int()
+    return scatter_elements[
+        reduce_func,
+        rank,
+        input_type,
+        indices_type,
+    ](input, indices, updates, axis_int, output, out_chain)
+
+
+@always_inline
+fn scatter_mul[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+](
+    input: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        input_type,
+    ],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[
+        rank,
+        DimList.create_unknown[rank](),
+        indices_type,
+    ],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    out_chain: OutputChainPtr,
+):
+    @always_inline
+    fn reduce_func[
+        type: DType, width: Int
+    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        return lhs * rhs
+
+    let axis_int = axis[0].to_int()
+    return scatter_elements[
+        reduce_func,
+        rank,
+        input_type,
+        indices_type,
+    ](input, indices, updates, axis_int, output, out_chain)
 
 
 # ===----------------------------------------------------------------------===#
