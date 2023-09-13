@@ -57,45 +57,6 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
   return declOp;
 }
 
-/// Given a function of the form "lit.func __initFromExisting__(%target:
-/// !kgen.pointer<@MyStruct>, %existing: !kgen.pointer<@MyStruct>)", the opaque
-/// pointer FieldOp member, and a FieldOp member that is of type
-/// kgen.signature<(x,x) -> x>, where x is opaque pointer, populate the function
-/// with the following:
-///       %funcPtrPtr = lit.struct.gep %self[funcPtr]
-///       %selfImplPtr = lit.struct.gep %self[impl]
-///       %existingImplPtr = lit.struct.gep $existing[impl]
-///       %funcPtr = pop.load %funcPtrPtr
-///       %loadedSelfImpl = pop.load %selfImplPtr
-///       %loadedExistingImpl = pop.load %existingImplPtr
-///       kgen.call_signature %funcPtr(%loadedSelfImpl, %loadedExistingImpl)
-static void populateMove(ImplicitLocOpBuilder &builder, StructFieldOp fieldOp,
-                         LIT::FuncOp wrapperFunc, StructFieldOp impl,
-                         Type noneType) {
-  Block *initialBlock = builder.getBlock();
-  Block::iterator initialInsertionPoint = builder.getInsertionPoint();
-  Location initialLocation = builder.getLoc();
-  builder.setLoc(wrapperFunc.getLoc());
-  builder.setInsertionPoint(wrapperFunc.getBody(),
-                            wrapperFunc.getBody()->begin());
-  Value copySelf = wrapperFunc.getBody()->getArgument(0);
-  Value copyExisting = wrapperFunc.getBody()->getArgument(1);
-  Value selfImpl = builder.create<StructGEPOp>(copySelf, impl);
-  Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
-
-  auto loadedSelfImpl = builder.create<POP::LoadOp>(selfImpl);
-  auto loadedExistingImpl = builder.create<POP::LoadOp>(existingImpl);
-  auto funcPtrPtr = builder.create<StructGEPOp>(copySelf, fieldOp);
-  auto loadedFuncPtr = builder.create<POP::LoadOp>(funcPtrPtr);
-  builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
-                                  ValueRange({
-                                      loadedSelfImpl,
-                                      loadedExistingImpl,
-                                  }));
-  builder.setInsertionPoint(initialBlock, initialInsertionPoint);
-  builder.setLoc(initialLocation);
-}
-
 /// Given a signature of a function, create a new signature by inserting a
 /// closure argument at index 0 or 1 depending on the result type.
 static SignatureType
@@ -192,20 +153,6 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   auto copy = b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr,
                                       cpySignatureType, nullptr);
 
-  // Create Move Member.
-  SignatureType moveSignatureType = SignatureType::get(
-      {}, {},
-      b.getType<FunctionType>(ArrayRef<Type>{opaquePtrType, opaquePtrType},
-                              noneType),
-      b.getAttr<FnMetadataAttr>(
-          b.getAttr<StringArrayAttr>(ArrayRef<StringAttr>{
-              b.getStringAttr("self"), b.getStringAttr("other")}),
-          ArrayRef<ValueInputConvention>{ValueInputConvention::InitSelf,
-                                         ValueInputConvention::OwnedInMem},
-          ArrayRef<TypedAttr>(), FnEffects()));
-  auto move = b.create<StructFieldOp>(declOp.getLoc(), moveFieldAttr,
-                                      moveSignatureType, nullptr);
-
   // Add the call member
   bool hasResultSlot = signatureType.hasMemoryOnlyResult();
   SignatureType callMemberSignatureType =
@@ -291,7 +238,30 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
                                         loadedExistingImpl,
                                     }));
   }
-  populateMove(builder, move, moveCtr, impl, noneType);
+  // Populate move constructor.
+  {
+    Block *initialBlock = builder.getBlock();
+    Block::iterator initialInsertionPoint = builder.getInsertionPoint();
+    Location initialLocation = builder.getLoc();
+    builder.setLoc(moveCtr.getLoc());
+    builder.setInsertionPoint(moveCtr.getBody(), moveCtr.getBody()->begin());
+    Value copySelf = moveCtr.getBody()->getArgument(0);
+    Value copyExisting = moveCtr.getBody()->getArgument(1);
+    Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
+    Value ptrToSelfImpl = builder.create<StructGEPOp>(copySelf, impl);
+    auto loadedExistingImpl = builder.create<POP::LoadOp>(existingImpl);
+
+    // Take the impl from the existing.
+    builder.create<POP::StoreOp>(loadedExistingImpl, ptrToSelfImpl);
+    auto opaquePointerTypeAttr =
+        M::PointerAttr::get(builder.getContext(), 0, opaquePointer);
+    Value nullPtr =
+        builder.create<ParamConstantOp>(opaquePointer, opaquePointerTypeAttr);
+    builder.create<POP::StoreOp>(nullPtr, existingImpl);
+
+    builder.setInsertionPoint(initialBlock, initialInsertionPoint);
+    builder.setLoc(initialLocation);
+  }
 
   // Add the __call__ Method.
   SignatureType closureMethodSignatureType =
@@ -766,54 +736,6 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
   // Set the member.
   setMember(topLevelDtor, dtorFieldAttr);
-
-  // Create the copy constructors.
-  auto makeCopyMoveConstructor = [&](bool isMove) {
-    builder = ImplicitLocOpBuilder::atBlockEnd(
-        fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-    StringRef prefix = isMove ? "_moveinit_" : "_copyinit_";
-    auto otherName = builder.getStringAttr("other");
-    LIT::FuncOp topLevelInit = structEmitter.createFunction(
-        generateName(prefix), ArrayRef<Type>{opaquePointer, opaquePointer},
-        ArrayRef<ValueInputConvention>{
-            ValueInputConvention::InitSelf,
-            isMove ? ValueInputConvention::OwnedInMem
-                   : ValueInputConvention::BorrowedInMem},
-        ArrayRef<StringAttr>{selfName, otherName}, shared.getNoneType(),
-        SpecialFunctionKind::kNormal, location, builder);
-    // Populate init body.
-    {
-      builder = ImplicitLocOpBuilder::atBlockEnd(topLevelInit.getLoc(),
-                                                 topLevelInit.getBody());
-      Block *body = topLevelInit.getBody();
-      DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-      if (DebugInfo::DIScopeAttr spAttr = topLevelInit.getLocScope())
-        diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-      Value selfPtr = builder.create<POP::PointerBitcastOp>(
-          ptrToClosureImplType, body->getArgument(0));
-      Value existingPtr = builder.create<POP::PointerBitcastOp>(
-          ptrToClosureImplType, body->getArgument(1));
-      TypedAttr symbol = isMove ? closureImpl.getMoveInitAttr()
-                                : closureImpl.getCopyInitAttr();
-      if (symbol) {
-        auto copySym = cast<SymbolConstantAttr>(symbol);
-        builder.create<CallOp>(
-            copySym.getType().getValueResults(), copySym,
-            ParamDeclArrayAttr::get(closureImpl.getContext(), params),
-            ValueRange({selfPtr, existingPtr}));
-      }
-      if (isMove)
-        builder.create<OwnershipMarkDestroyedOp>(existingPtr);
-      builder = ImplicitLocOpBuilder::atBlockEnd(topLevelInit.getLoc(), body);
-      ExprEmitter::emitNormalReturn(
-          builder,
-          builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
-          topLevelInit);
-      builder.create<LIT::EndFuncOp>();
-      setMember(topLevelInit, isMove ? moveFieldAttr : copyFieldAttr);
-    }
-  };
-  makeCopyMoveConstructor(true);
 
   // Create the __call__ function.
   assert(closureWrapper.getClosureSignature().has_value() &&

@@ -28,13 +28,12 @@
 # CHECK-DAG: } loc(#[[LOC_COPY]])
 
 # CHECK-DAG: lit.func @"__moveinit__(${{.*}}::_CW_
-# CHECK-DAG: %[[V0:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <@"${{.*}}"::@"_CW_${{.*}}(__mlir_type.index){{.*}}"> loc(#[[LOC_MOV:loc[0-9]*]])
-# CHECK-DAG: %[[V1:.*]] = lit.struct.gep %existing[field0] {{.*}} loc(#[[LOC_MOV]])
-# CHECK-DAG: %[[V2:.*]] = pop.load %[[V0]] {{.*}} loc(#[[LOC_MOV]])
-# CHECK-DAG: %[[V3:.*]] = pop.load %[[V1]] {{.*}} loc(#[[LOC_MOV]])
-# CHECK-DAG: %[[V4:.*]] = lit.struct.gep %self[move] {{.*}} loc(#[[LOC_MOV]])
-# CHECK-DAG: %[[V5:.*]] = pop.load %[[V4]] {{.*}} loc(#[[LOC_MOV]])
-# CHECK-DAG: kgen.call_signature %[[V5]](%[[V2]], %[[V3]]) {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG: %[[V0:.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> loc(#[[LOC_MOV:loc[0-9]*]])
+# CHECK-DAG: %[[V1:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> loc(#[[LOC_MOV]])
+# CHECK-DAG: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
+# CHECK-DAG: pop.store %[[V2]], %[[V1]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
+# CHECK-DAG: %pointer = kgen.param.constant: pointer<array<0, i1>> = <0> loc(#[[LOC_MOV]])
+# CHECK-DAG: pop.store %pointer, %[[V0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
 # CHECK-DAG: } loc(#[[LOC_MOV]])
 
 # CHECK-DAG: #[[LOC_DEL]] = loc(fused<#[[SP1]]>[#[[LOC:loc[0-9]*]]])
