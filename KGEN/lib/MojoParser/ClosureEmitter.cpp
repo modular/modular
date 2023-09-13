@@ -619,21 +619,18 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
                                ImplicitLocOpBuilder &builder) {
     Type elementType = ptrToClosureImplType.getElementAsType();
     Type indexType = builder.getIndexType();
-    Attribute targetAttr = ParamOperatorAttr::get(
+    TypedAttr targetAttr = ParamOperatorAttr::get(
         POC::CurrentTarget, {}, builder.getType<TargetType>());
-    TypedAttr sizeOfAttr =
-        ParamOperatorAttr::get(POC::GetSizeOf,
-                               {ParameterizedTypeConstantAttr::get(elementType),
-                                cast<TypedAttr>(targetAttr)},
-                               builder.getType<TargetType>());
+    TypedAttr sizeOfAttr = ParamOperatorAttr::get(
+        POC::GetSizeOf,
+        {ParameterizedTypeConstantAttr::get(elementType), targetAttr},
+        builder.getType<TargetType>());
     Value sizeOf = builder.create<ParamConstantOp>(indexType, sizeOfAttr);
-    Attribute alignOfAttr = ParamOperatorAttr::get(
+    TypedAttr alignOfAttr = ParamOperatorAttr::get(
         POC::GetAlignOf,
-        {cast<TypedAttr>(ParameterizedTypeConstantAttr::get(elementType)),
-         cast<TypedAttr>(targetAttr)},
+        {ParameterizedTypeConstantAttr::get(elementType), targetAttr},
         indexType);
-    Value alignOf = builder.create<ParamConstantOp>(
-        indexType, cast<TypedAttr>(alignOfAttr));
+    Value alignOf = builder.create<ParamConstantOp>(indexType, alignOfAttr);
     return builder.create<POP::AlignedAllocOp>(
         ptrToClosureImplType, ArrayRef<Value>{alignOf, sizeOf});
   };
