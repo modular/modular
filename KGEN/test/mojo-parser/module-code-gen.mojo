@@ -136,7 +136,6 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:     lit.struct.field field0 : !kgen.pointer<array<0, i1>>
 # CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field copy : !kgen.signature<("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
-# CHECK-NEXT:     lit.struct.field move : !kgen.signature<("self": !kgen.pointer<array<0, i1>> init_self, "other": !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field call : !kgen.signature<("__result__": !kgen.pointer<!String> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
 # CHECK-NEXT: [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
@@ -169,15 +168,14 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   [[COPY:%.*]] = pop.load [[COPY_PTR]]
 # CHECK-NEXT:   kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 # CHECK: lit.func @"__moveinit__
-# CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]]
-# CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]]
-# CHECK-NEXT:   [[MOVE_PTR:%.*]] = lit.struct.gep %self[move]
-# CHECK-NEXT:   [[MOVE:%.*]] = pop.load [[MOVE_PTR]]
-# CHECK-NEXT:   kgen.call_signature [[MOVE]]([[SELF_IMPL]], [[EXISTING_IMPL]])
-# CHECK-NEXT:   kgen.param.constant
-# CHECK-NEXT:   lit.ownership.mark.destroyed %existing
+# CHECK-NEXT: [[V0:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <@"${{.*}}"::@"_CW_${{.*}}_\22(,$builtin::$string::String)\22">
+# CHECK-NEXT: [[V1:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT: [[V2:%.*]] = pop.load [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: pop.store [[V2]], [[V1]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: %pointer = kgen.param.constant: pointer<array<0, i1>> = <0>
+# CHECK-NEXT: pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.ownership.mark.destroyed %existing
 
 # CHECK: lit.func @"returns_escaping_closure({{.*}}::String)"
 # CHECK-SAME: (%__result__: !kgen.pointer<@{{.*}}"_CW_{{.*}}"> byref_result, %m: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
@@ -233,10 +231,6 @@ struct Mem:
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [<>("__result__": !kgen.pointer<!Mem> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
-# CHECK-NEXT: %[[V7:.*]] = lit.struct.gep %self[move]
-# CHECK-NEXT: %[[V8:.*]] = kgen.create_closure [{{.*}}]()
-# CHECK-NEXT: pop.store %[[V8]], %[[V7]]
-
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
 # CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
@@ -266,11 +260,6 @@ struct Mem:
 # CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
-
-# CHECK: lit.func @"_CW_{{.*}}_moveinit__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>> init_self, %other: !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none
-# CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
-# CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__moveinit__{{.*}}(%[[W0]], %[[W1]])
 
 # CHECK: lit.func @"_CW_{{.*}}_call__CI_{{.*}}"(%__result__: !kgen.pointer<!Mem> byref_result, %self: !kgen.pointer<array<0, i1>> borrow_in_mem, %n: !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: %[[A0:.*]] = pop.pointer.bitcast %self

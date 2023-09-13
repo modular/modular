@@ -38,7 +38,6 @@ public:
         structEmitter(shared),
         dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
         copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
-        moveFieldAttr(StringAttr::get(shared.getContext(), "move")),
         callFieldAttr(StringAttr::get(shared.getContext(), "call")),
         callMethodAttr(
             StringAttr::get(shared.getContext(), "closureCallMethod")) {}
@@ -73,7 +72,6 @@ private:
   StructEmitter structEmitter;
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
-  StringAttr moveFieldAttr;
   StringAttr callFieldAttr;
   StringAttr callMethodAttr;
 };
