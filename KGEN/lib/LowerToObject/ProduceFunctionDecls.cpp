@@ -220,9 +220,9 @@ using ssize_t = SSIZE_T;
 #endif // {0}
 )literal";
 
+  std::filesystem::path filepath(filename.str());
   std::string headerGuard =
-      "__KGEN_" +
-      StringRef(std::filesystem::path(filename.str()).stem()).upper() + "_H";
+      "__KGEN_" + StringRef(filepath.stem().string()).upper() + "_H";
   os << llvm::formatv(headerFmtStart,
                       llvm::fmt_repeat('-', 80 - 2 * strlen("//===")),
                       headerGuard);
