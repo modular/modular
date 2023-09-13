@@ -8,7 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/LowerToObject.h"
+#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"

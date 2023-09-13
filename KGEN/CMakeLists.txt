@@ -28,7 +28,7 @@ add_subdirectory(lib/Transforms)
 add_subdirectory(lib/ExecutionEngine)
 add_subdirectory(lib/CLOptions)
 add_subdirectory(lib/Elaborator)
-add_subdirectory(lib/LowerToObject)
+add_subdirectory(lib/ObjectCompiler)
 add_subdirectory(lib/Compiler)
 add_subdirectory(lib/Package)
 
