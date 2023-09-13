@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %lldb -b -o 'settings set target.disable-aslr false' -o 'b test.mojo:9' -o run -- mojo run --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
+# RUN: %lldb -b -o 'settings set target.disable-aslr false' -o 'b test.mojo:9' -o run -- %mojo run --debug-level full -O0 '%S/Inputs/test.mojo' | FileCheck %s
 
 # CHECK-NOT: hello
 # CHECK: Process {{.*}} stopped
