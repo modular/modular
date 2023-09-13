@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_EXECUTION_ENGINE_H
-#define KGEN_EXECUTION_ENGINE_H
+#ifndef KGEN_COMPILER_EXECUTIONENGINE_H
+#define KGEN_COMPILER_EXECUTIONENGINE_H
 
 #include "Cache/Buffer.h"
 #include "Support/Compiler/Sanitizers.h"
@@ -385,4 +385,4 @@ private:
 };
 } // namespace M::KGEN
 
-#endif // KGEN_EXECUTION_ENGINE_H
+#endif // KGEN_COMPILER_EXECUTIONENGINE_H

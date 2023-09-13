@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENCompiler.h"
+#include "KGEN/Compiler/KGENCompiler.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"

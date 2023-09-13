@@ -8,9 +8,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/InitAllDialects.h"
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
