@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(KGENTransforms
+add_modular_library(KGENTransforms
   AutomaticInline.cpp
   Canonicalizer.cpp
   CleanupCompilerGlobals.cpp
@@ -35,4 +35,5 @@ add_modular_conversion_library(KGENTransforms
   HLCFAnalysis
   KGENDialect
   POPDialect
+  LITDialect
 )

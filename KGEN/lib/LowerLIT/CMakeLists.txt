@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(LowerLIT
+add_modular_library(LowerLIT
   CheckLifetimes.cpp
   CheckRecursiveStructs.cpp
   ConstraintReduction.cpp
