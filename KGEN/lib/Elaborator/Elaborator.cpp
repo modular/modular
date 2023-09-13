@@ -15,10 +15,10 @@
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -535,6 +535,9 @@ namespace {
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl Declaration
 //===----------------------------------------------------------------------===//
+
+using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
+    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 
 /// This class provides the elaborator, which constructs the expansion tree as
 /// it walks the IR and specializes operations. This outputs IR that has been

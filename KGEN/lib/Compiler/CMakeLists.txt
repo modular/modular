@@ -6,6 +6,7 @@
 
 add_modular_library(KGENCompiler
   KGENCompiler.cpp
+  Pipeline.cpp
 
   DEPENDS
   MLIRKGENPasses

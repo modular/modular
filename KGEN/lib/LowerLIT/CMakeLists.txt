@@ -22,5 +22,6 @@ add_modular_library(LowerLIT
   LINK_LIBS PUBLIC
   KGENDialect
   LITDialect
+  DebugInfoTransforms
   MLIRIR
   )

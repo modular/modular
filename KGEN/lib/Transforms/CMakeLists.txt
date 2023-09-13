@@ -36,4 +36,5 @@ add_modular_library(KGENTransforms
   KGENDialect
   POPDialect
   LITDialect
+  MLIRTransformUtils
 )

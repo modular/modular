@@ -414,7 +414,7 @@ elaboratePackage(ModuleOp theModule, PackageBuilder &packageBuilder,
   // environment attribute in the pre-elaborated bytecode.
   theModule->setAttr(EnvAttr::getEnvAttrName(), env);
   mlir::PassManager preElaboratePM(theModule.getContext());
-  populateGenerateLibraryFilePasses(preElaboratePM, runtime, options);
+  buildGenerateLibraryPipeline(preElaboratePM, runtime, options);
   if (auto err = runPipeline(preElaboratePM))
     return err.takeError();
   if (auto err = packageBuilder.attachPreElaboratorBytecode(theModule))
