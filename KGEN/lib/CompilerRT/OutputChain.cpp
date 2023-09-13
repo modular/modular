@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/OutputChain.h"
+#include "KGEN/CompilerRT/OutputChain.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "llvm/Support/Threading.h"
 

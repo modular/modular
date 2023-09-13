@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_OUTPUTCHAIN_H
-#define KGEN_OUTPUTCHAIN_H
+#ifndef KGEN_COMPILERRT_OUTPUTCHAIN_H
+#define KGEN_COMPILERRT_OUTPUTCHAIN_H
 
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Support/Chain.h"
@@ -192,4 +192,4 @@ private:
 
 } // namespace M::KGEN
 
-#endif // KGEN_OUTPUTCHAIN_H
+#endif // KGEN_COMPILERRT_OUTPUTCHAIN_H

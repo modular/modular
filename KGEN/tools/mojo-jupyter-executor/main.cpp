@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "Support/Configuration.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"

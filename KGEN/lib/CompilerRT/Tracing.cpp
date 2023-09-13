@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "Support/SymbolExport.h"
 #include "Support/TimeProfiler.h"
 
