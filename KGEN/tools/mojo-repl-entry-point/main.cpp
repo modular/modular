@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;

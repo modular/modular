@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_COMPILER_RT_H
-#define KGEN_COMPILER_RT_H
+#ifndef KGEN_COMPILERRT_REGISTRATION_H
+#define KGEN_COMPILERRT_REGISTRATION_H
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -97,4 +97,4 @@ namespace M::KGEN {
 void registerPython(std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
-#endif // KGEN_COMPILER_RT_H
+#endif // KGEN_COMPILERRT_REGISTRATION_H

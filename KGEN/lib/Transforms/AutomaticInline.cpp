@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "InliningUtils.h"
-#include "KGEN/CLOptions.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"

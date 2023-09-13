@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Process.h"

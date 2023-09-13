@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "llvm/ADT/StringRef.h"
 
 #if defined(__x86_64__) && defined(__linux__)

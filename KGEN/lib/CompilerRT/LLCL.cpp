@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
-#include "KGEN/OutputChain.h"
+#include "KGEN/CompilerRT/OutputChain.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"

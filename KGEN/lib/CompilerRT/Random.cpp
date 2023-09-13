@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CompilerRT.h"
+#include "KGEN/CompilerRT/Registration.h"
 #include "Support/MathExtras.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
