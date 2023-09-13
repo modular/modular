@@ -292,9 +292,6 @@ TEST(Telemetry, HistogramL1) {
         EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
         std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
 
-        // Memory buffer must be empty.
-        EXPECT_TRUE(mbuf->getBufferSize() == 0);
-
         bool instrumentFound = false;
         iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
           if (key == "instrument name" && value == "optional.histogram")
