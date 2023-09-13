@@ -28,6 +28,7 @@ namespace lsp = mlir::lsp;
 using namespace M;
 using namespace M::KGEN::LIT;
 using llvm::SMLoc;
+using llvm::SMRange;
 
 /// Returns a language server uri for the given source location. `mainFileURI`
 /// corresponds to the uri for the main file of the source manager.
@@ -77,12 +78,21 @@ getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
 }
 
 /// Returns a `Range` for a given `text` that starts at the location `loc`.
-static lsp::Range getRangeForText(const llvm::SourceMgr &sourceMgr, SMLoc loc,
-                                  StringRef text) {
-  auto [line, col] = sourceMgr.getLineAndColumn(loc);
-  return {lsp::Position(line - 1, col - 1),
-          lsp::Position(line - 1, col + text.size() - 1)};
+static SMRange getRangeForText(SMLoc loc, StringRef text) {
+  if (!loc.isValid())
+    return {};
+  return {loc, SMLoc::getFromPointer(loc.getPointer() + text.size())};
 }
+
+/// Define ordering operators for SMLoc for use in IntervalMap.
+namespace llvm {
+bool operator<(const SMLoc &lhs, const SMLoc &rhs) {
+  return lhs.getPointer() < rhs.getPointer();
+}
+bool operator<=(const SMLoc &lhs, const SMLoc &rhs) {
+  return lhs.getPointer() <= rhs.getPointer();
+}
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 // Symbol
@@ -92,19 +102,14 @@ namespace {
 /// Common representation for any kind of symbol.
 struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
-      : identifier(identifier), declRef(declRef), identifierLoc(identifierLoc) {
-  }
+      : identifier(identifier), declRef(declRef),
+        range(getRangeForText(identifierLoc, identifier)) {}
 
   Symbol(const Symbol &) = delete;
   Symbol &operator=(const Symbol &) = delete;
 
   /// Return a nicely formatted markdown text of the declaration of this symbol.
   std::string getMarkdownDeclaration() const;
-
-  /// Get the LSP range of the identifier at the declaration point.
-  lsp::Range getIdentifierRange(const llvm::SourceMgr &sourceMgr) const {
-    return getRangeForText(sourceMgr, identifierLoc, identifier);
-  }
 
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
@@ -113,7 +118,7 @@ struct Symbol {
   MojoASTDeclRef declRef;
 
   /// The location of the identifier of this decl.
-  SMLoc identifierLoc;
+  SMRange range;
 };
 } // namespace
 
@@ -171,10 +176,9 @@ namespace {
 /// This struct represents a reference or a declaration in the doc managed by
 /// this index to a symbol that might be defined elsewhere.
 struct SymbolRef {
-  SymbolRef(ArrayRef<const Symbol *> symbols, const lsp::Range &range)
+  SymbolRef(ArrayRef<const Symbol *> symbols, SMRange range)
       : symbols(symbols), range(range) {}
-  SymbolRef(const Symbol &symbol, const lsp::Range &range)
-      : SymbolRef(&symbol, range) {}
+  SymbolRef(const Symbol &symbol, SMRange range) : SymbolRef(&symbol, range) {}
 
   /// Return a nicely formatted markdown text of this reference.
   std::string getMarkdownDeclaration() const;
@@ -182,7 +186,7 @@ struct SymbolRef {
   /// The symbols being referenced.
   SmallVector<const Symbol *, 1> symbols;
   /// The range in the index's doc where the symbol is being referenced.
-  lsp::Range range;
+  SMRange range;
 };
 } // namespace
 
@@ -226,7 +230,7 @@ public:
 
   /// Look for the symbols whose declaration or references contain the given
   /// position in the document.
-  SymbolRef *getSymbolAt(const lsp::Position &position) const;
+  SymbolRef *getSymbolAt(SMLoc loc) const;
 
   /// Look for the symbol corresponding to the given decl in the symbol table.
   /// Return nullptr if not found.
@@ -238,9 +242,9 @@ private:
   void insertRangeInMainDoc(SymbolRef &&symbolRef);
 
   using MapT = llvm::IntervalMap<
-      lsp::Position, SymbolRef *,
-      llvm::IntervalMapImpl::NodeSizer<lsp::Position, Symbol *>::LeafSize,
-      llvm::IntervalMapHalfOpenInfo<lsp::Position>>;
+      SMLoc, SymbolRef *,
+      llvm::IntervalMapImpl::NodeSizer<SMLoc, Symbol *>::LeafSize,
+      llvm::IntervalMapHalfOpenInfo<SMLoc>>;
 
   const llvm::SourceMgr &sourceMgr;
   MapT::Allocator allocator;
@@ -260,12 +264,12 @@ Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
 }
 
 void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
-  lsp::Range range = symbolRef.range;
+  SMRange range = symbolRef.range;
 
   // If an existing mapping is found, overwrite with the new reference. We may
   // resolve more specific references as the parser progresses.
-  if (auto it = rangeToSymbolRef.find(range.start); it.valid()) {
-    if (it.start() == range.start && it.stop() == range.end &&
+  if (auto it = rangeToSymbolRef.find(range.Start); it.valid()) {
+    if (it.start() == range.Start && it.stop() == range.End &&
         it.value()->symbols.size() > symbolRef.symbols.size()) {
       it.value()->symbols = std::move(symbolRef.symbols);
       return;
@@ -273,9 +277,9 @@ void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
   }
 
   // Otherwise, insert a new mapping.
-  if (!rangeToSymbolRef.overlaps(range.start, range.end)) {
+  if (!rangeToSymbolRef.overlaps(range.Start, range.End)) {
     symbolRefs.push_back(std::make_unique<SymbolRef>(std::move(symbolRef)));
-    rangeToSymbolRef.insert(range.start, range.end, symbolRefs.back().get());
+    rangeToSymbolRef.insert(range.Start, range.End, symbolRefs.back().get());
   }
 }
 
@@ -292,8 +296,8 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
-  if (isMainFileLoc(sourceMgr, symbol.identifierLoc))
-    insertRangeInMainDoc({symbol, symbol.getIdentifierRange(sourceMgr)});
+  if (isMainFileLoc(sourceMgr, symbol.range.Start))
+    insertRangeInMainDoc({symbol, symbol.range});
   return &symbol;
 }
 
@@ -315,14 +319,12 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
   }
 
   if (!symbols.empty())
-    insertRangeInMainDoc({symbols, getRangeForText(sourceMgr, loc, spelling)});
+    insertRangeInMainDoc({symbols, getRangeForText(loc, spelling)});
 }
 
-SymbolRef *SymbolIndex::getSymbolAt(const lsp::Position &position) const {
-  if (auto it = rangeToSymbolRef.find(position);
-      it.valid() && it.start() <= position) {
+SymbolRef *SymbolIndex::getSymbolAt(SMLoc loc) const {
+  if (auto it = rangeToSymbolRef.find(loc); it.valid() && it.start() <= loc)
     return it.value();
-  }
   return nullptr;
 }
 
@@ -413,6 +415,16 @@ public:
     return isDocumentParsed.copy();
   }
 
+  /// Return the source location from the given LSP position.
+  SMLoc getLocFromPos(const lsp::Position &pos) {
+    return pos.getAsSMLoc(context->sourceMgr);
+  }
+
+  /// Return the source range from the given LSP range.
+  SMRange getLocFromPos(const lsp::Range &range) {
+    return {getLocFromPos(range.start), getLocFromPos(range.end)};
+  }
+
   //===--------------------------------------------------------------------===//
   // Asynchronous LSP Queries
   //===--------------------------------------------------------------------===//
@@ -472,18 +484,16 @@ private:
   // Code Actions
 
   std::vector<lsp::CodeAction>
-  getCodeActionsSync(const lsp::Range &pos,
-                     const lsp::CodeActionContext &context);
+  getCodeActionsSync(SMRange range, const lsp::CodeActionContext &context);
 
   //===--------------------------------------------------------------------===//
   // Language Features
 
-  lsp::CompletionList
-  onCodeCompletionSync(const lsp::Position &completePos) const;
+  lsp::CompletionList onCodeCompletionSync(SMLoc completeLoc) const;
 
-  std::vector<lsp::Location> onDefinitionSync(const lsp::Position &pos) const;
+  std::vector<lsp::Location> onDefinitionSync(SMLoc loc) const;
 
-  std::optional<lsp::Hover> onHoverSync(const lsp::Position &pos) const;
+  std::optional<lsp::Hover> onHoverSync(SMLoc loc) const;
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -800,14 +810,13 @@ void MojoDocument::getCodeActions(
   startTaskAfterParsing([pos, context, onActions = std::move(onActions)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
-      onActions({});
-    else
-      onActions(doc.getCodeActionsSync(pos, context));
+      return onActions({});
+    onActions(doc.getCodeActionsSync(doc.getLocFromPos(pos), context));
   });
 }
 
 std::vector<lsp::CodeAction>
-MojoDocument::getCodeActionsSync(const lsp::Range &pos,
+MojoDocument::getCodeActionsSync(SMRange range,
                                  const lsp::CodeActionContext &context) {
   // Create actions for any diagnostics in this file.
   std::vector<lsp::CodeAction> actions;
@@ -838,28 +847,28 @@ void MojoDocument::onCodeCompletion(
       [completePos,
        onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          onCompletionFn({});
-        else
-          onCompletionFn(doc.onCodeCompletionSync(completePos));
+          return onCompletionFn({});
+        SMLoc completeLoc = doc.getLocFromPos(completePos);
+        if (!completeLoc.isValid())
+          return onCompletionFn({});
+        onCompletionFn(doc.onCodeCompletionSync(completeLoc));
       });
 }
 
 lsp::CompletionList
-MojoDocument::onCodeCompletionSync(const lsp::Position &completePos) const {
+MojoDocument::onCodeCompletionSync(SMLoc completeLoc) const {
   if (!context)
     return lsp::CompletionList();
-  SMLoc posLoc = completePos.getAsSMLoc(context->sourceMgr);
-  if (!posLoc.isValid())
-    return lsp::CompletionList();
-  unsigned locBuffer = context->sourceMgr.FindBufferContainingLoc(posLoc);
+  unsigned locBuffer = context->sourceMgr.FindBufferContainingLoc(completeLoc);
   const llvm::MemoryBuffer *buffer =
       context->sourceMgr.getMemoryBuffer(locBuffer);
 
   // Query the mojo parser for potential completion results.
-  uint64_t rawCompletePos = posLoc.getPointer() - buffer->getBuffer().data();
+  uint64_t rawCompleteLoc =
+      completeLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   std::vector<KGEN::Mojo::CodeCompletionResult> results =
-      MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
+      MojoParserContext::codeComplete(*buffer, rawCompleteLoc, &mlirContext,
                                       runtime, context->compilationOptions);
 
   // Map the Mojo results to LSP results.
@@ -907,25 +916,25 @@ void MojoDocument::onDefinition(
   startTaskAfterParsing([pos, onDefinitionFn = std::move(onDefinitionFn)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
-      onDefinitionFn({});
-    else
-      onDefinitionFn(doc.onDefinitionSync(pos));
+      return onDefinitionFn({});
+    SMLoc loc = doc.getLocFromPos(pos);
+    if (!loc.isValid())
+      return onDefinitionFn({});
+    onDefinitionFn(doc.onDefinitionSync(loc));
   });
 }
 
-std::vector<lsp::Location>
-MojoDocument::onDefinitionSync(const lsp::Position &pos) const {
-  SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(pos);
+std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) const {
+  SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(loc);
   if (!symbolRef)
     return {};
 
   std::vector<lsp::Location> locations;
   for (const Symbol *symbol : symbolRef->symbols) {
     if (auto symbolUri =
-            getURIFromLoc(context->sourceMgr, symbol->identifierLoc, uri)) {
-      locations.emplace_back(*symbolUri, getRangeForText(context->sourceMgr,
-                                                         symbol->identifierLoc,
-                                                         symbol->identifier));
+            getURIFromLoc(context->sourceMgr, symbol->range.Start, uri)) {
+      locations.emplace_back(*symbolUri,
+                             lsp::Range(context->sourceMgr, symbol->range));
     }
   }
 
@@ -942,16 +951,15 @@ void MojoDocument::onHover(
   startTaskAfterParsing(
       [pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          onHoverFn({});
-        else
-          onHoverFn(doc.onHoverSync(pos));
+          return onHoverFn({});
+        SMLoc loc = doc.getLocFromPos(pos);
+        onHoverFn(loc.isValid() ? doc.onHoverSync(loc) : std::nullopt);
       });
 }
 
-std::optional<lsp::Hover>
-MojoDocument::onHoverSync(const lsp::Position &pos) const {
-  if (auto symbolRef = context->symbolIndex.getSymbolAt(pos)) {
-    lsp::Hover hover(symbolRef->range);
+std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) const {
+  if (auto symbolRef = context->symbolIndex.getSymbolAt(loc)) {
+    lsp::Hover hover(lsp::Range(context->sourceMgr, symbolRef->range));
     hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
     hover.contents.value = symbolRef->getMarkdownDeclaration();
     return hover;
