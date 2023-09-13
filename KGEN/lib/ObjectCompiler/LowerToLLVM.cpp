@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENPasses.h"
-#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"

@@ -7,8 +7,8 @@
 #include "KGEN/Package/Package.h"
 #include "Cache/Buffer.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Runtime/Runtime.h"
 
 #include "mlir/IR/BuiltinOps.h"

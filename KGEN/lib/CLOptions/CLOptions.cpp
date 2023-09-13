@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CLOptions.h"
-#include "KGEN/ExecutionEngine.h"
+#include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/Support/Process.h"

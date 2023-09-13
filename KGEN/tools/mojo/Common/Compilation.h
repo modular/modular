@@ -12,7 +12,7 @@
 #define KGEN_TOOLS_MOJO_COMMON_COMPILATION_H
 
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/ExecutionEngine.h"
+#include "KGEN/Compiler/ExecutionEngine.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Option/ArgList.h"

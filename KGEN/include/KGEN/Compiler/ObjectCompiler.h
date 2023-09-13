@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_OBJECTCOMPILER_H
-#define KGEN_OBJECTCOMPILER_H
+#ifndef KGEN_COMPILER_OBJECTCOMPILER_H
+#define KGEN_COMPILER_OBJECTCOMPILER_H
 
 #include "Cache/BlobCache.h"
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/ExecutionEngine.h"
+#include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
@@ -208,4 +208,4 @@ private:
 };
 } // namespace M::KGEN
 
-#endif // KGEN_OBJECTCOMPILER_H
+#endif // KGEN_COMPILER_OBJECTCOMPILER_H

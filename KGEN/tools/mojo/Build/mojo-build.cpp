@@ -10,11 +10,11 @@
 
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/Compiler/KGENCompiler.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/InitAllDialects.h"
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/ObjectCompiler.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"

@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilationOptions.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/ObjectCompiler.h"
 #include "LLVMPassesPipeline.h"
 #include "LowerToObjectImpl.h"
 #include "Support/FileSystemExtras.h"

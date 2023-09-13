@@ -5,12 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Compilation.h"
+#include "KGEN/Compiler/KGENCompiler.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/InitAllDialects.h"
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/ObjectCompiler.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"

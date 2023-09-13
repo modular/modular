@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/ObjectCompiler.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/ML/DType.h"

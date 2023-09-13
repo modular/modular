@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_COMPILER_H
-#define KGEN_COMPILER_H
+#ifndef KGEN_COMPILER_KGENCOMPILER_H
+#define KGEN_COMPILER_KGENCOMPILER_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "KGEN/CompilationOptions.h"
-#include "KGEN/ExecutionEngine.h"
+#include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENPasses.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -107,4 +107,4 @@ private:
 };
 } // namespace M::KGEN
 
-#endif // KGEN_COMPILER_H
+#endif // KGEN_COMPILER_KGENCOMPILER_H
