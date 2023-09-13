@@ -4,9 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(KGENCompiler
+add_modular_library(KGENCompiler
   KGENCompiler.cpp
-  EmitFuncHeader.cpp
 
   DEPENDS
   MLIRKGENPasses

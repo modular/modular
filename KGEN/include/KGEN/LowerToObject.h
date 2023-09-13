@@ -79,7 +79,7 @@ public:
   /// Writes function declarations for all exported symbols.
   LogicalResult produceFunctionDecls(const SymbolTable &symtab,
                                      const ExportMap &exportedSymbols,
-                                     raw_ostream &os);
+                                     StringRef filename, raw_ostream &os);
 
   /// Configure the object compiler to be used for search.
   void setForSearch(bool useForSearch) { isSearch = useForSearch; }
