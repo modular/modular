@@ -178,6 +178,7 @@ fn MOGGExport():
     alias _matrix_solve = matrix_solve
     alias _matrix_band_part = matrix_band_part
     alias _matmul = matmul
+    alias _negative = negative
     alias _batched_matmul = batched_matmul
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
@@ -1011,6 +1012,29 @@ fn mean[
             wrapped_output_div,
             reduce_impl,
         ](input_shape, 0, reduce_dim, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# Negative op
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn negative[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Negates a SIMD vector.
+    Parameters:
+      type: DType of the input SIMD vector.
+      simd_width: Width of the input SIMD vector.
+
+    Args:
+      x: SIMD vector to negate.
+
+    Returns:
+      Negative of x (i.e., x multiplied by -1).
+    """
+    return -x
 
 
 # ===----------------------------------------------------------------------===#
