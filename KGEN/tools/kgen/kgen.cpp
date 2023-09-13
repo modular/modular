@@ -6,7 +6,6 @@
 
 #include "Config/Version.h"
 #include "KGEN/CLOptions.h"
-#include "KGEN/EmitFuncHeader.h"
 #include "KGEN/ExecutionEngine.h"
 #include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENCompiler.h"
@@ -20,6 +19,7 @@
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -396,9 +396,33 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Handle header emission, we don't need to generate an archive for this.
-  if (clOptions.cmd == Command::kEmitHeader)
-    return emitHeader(symtab, exportedSymbols, *compiler,
-                      clOptions.outputFilename);
+  if (clOptions.cmd == Command::kEmitHeader) {
+    LogicalResult result = failure();
+    auto writeFn = [&](raw_ostream &os) {
+      result = compiler->produceFunctionDecls(symtab, exportedSymbols,
+                                              clOptions.outputFilename, os);
+    };
+    if (clOptions.outputFilename == "-") {
+      auto writeContents = [&](raw_ostream &os) {
+        writeFn(os);
+        os.flush();
+        return llvm::Error::success();
+      };
+      if (llvm::Error err =
+              llvm::writeToOutput(clOptions.outputFilename, writeContents)) {
+        return failure(
+            clOptions.reportError(toModularError(std::move(err)).get()));
+      }
+
+      // Safely process creating the header, taking into account that we may
+      // have different processes trying to produce this header in parallel.
+    } else if (ErrorOr<std::filesystem::path> err = writeFileUnderLock(
+                   clOptions.outputFilename.getValue(), writeFn);
+               err.isError()) {
+      return failure(clOptions.reportError(err.getError()));
+    }
+    return mlir::success();
+  }
 
   // If there are no exported symbols, there's nothing to codegen. Report this
   // as an error.
