@@ -87,8 +87,9 @@ export class MojoDebugContext extends DisposableContext {
    * workspace is undefined, then a global config is used instead.
    */
   private updateOrCreateRpcServer(workspaceFolder?: vscode.WorkspaceFolder) {
-    let options = config.get<any>('lldb.rpcServer', workspaceFolder);
-    if (!options)
+    let options = config.get<{[key: string] : string | number}>(
+        'lldb.rpcServer', workspaceFolder);
+    if (!options || Object.keys(options).length == 0)
       return;
 
     let uri = workspaceFolder?.uri.toString() || "";
@@ -100,7 +101,8 @@ export class MojoDebugContext extends DisposableContext {
           "Starting RPC server defined by global config", options);
 
     this.disposeRpcServer(workspaceFolder);
-    let rpcServer = new RpcLaunchServer({token : options.token});
+    let rpcServer =
+        new RpcLaunchServer(workspaceFolder, {token : options.token as string});
     rpcServer.listen(options);
     this.rpcServers.set(uri, rpcServer);
   }
@@ -125,5 +127,12 @@ export class MojoDebugContext extends DisposableContext {
     }
     rpcServer.close();
     this.rpcServers.delete(uri);
+  }
+
+  dispose() {
+    super.dispose();
+    const rpcServers = this.rpcServers.values();
+    for (const rpcServer of rpcServers)
+      this.disposeRpcServer(rpcServer.workspaceFolder);
   }
 }

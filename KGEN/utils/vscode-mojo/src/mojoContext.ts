@@ -33,8 +33,25 @@ export class MOJOContext extends DisposableContext {
    */
   async activate(loggingService: LoggingService,
                  launchLanguageServerSuspended: boolean = false) {
-    this._loggingService = loggingService;
+    loggingService
+        .logInfo("Activating the Mojo Context.")
+
+            this._loggingService = loggingService;
     this._sdk = new MOJOSDK(loggingService);
+
+    // Initialize the commands of the extension.
+    this.pushSubscription(
+        vscode.commands.registerCommand('mojo.restart', async () => {
+          // Dispose and reactivate the context.
+          this.dispose();
+          await this.activate(loggingService);
+        }));
+    this.pushSubscription(
+        vscode.commands.registerCommand('mojo.restart-suspended', async () => {
+          // Dispose and reactivate the context.
+          this.dispose();
+          await this.activate(loggingService, /*launchSuspended=*/ true);
+        }));
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
@@ -226,6 +243,7 @@ export class MOJOContext extends DisposableContext {
   }
 
   dispose() {
+    this.getLoggingService().logInfo("Disposing MOJOContext.");
     super.dispose();
     this.workspaceClients.forEach((client) => {
       if (client) {
