@@ -144,6 +144,21 @@ static void iterateMessages(StringRef log,
   }
 }
 
+/// This function provides visitor-style access to every message.
+static void iterateMessages(StringRef log,
+                            function_ref<void(StringRef)> callback) {
+  StringRef message;
+  while (!log.empty()) {
+    log.consume_front("{\n");
+    message = log.take_until([](char c) { return c == '}'; });
+    if (message == "}")
+      return;
+    callback(message);
+    log = log.drop_front(message.size());
+    log.consume_front("}\n");
+  }
+}
+
 /// This test ensures that when we create and increment a counter, we get the
 /// values we expect in the log file, in the order we expect.
 TEST(Telemetry, Counter) {
@@ -152,7 +167,7 @@ TEST(Telemetry, Counter) {
 
   TelemetryContext ctx;
 
-  auto counter = ctx.createUInt64Counter("basic.counter", Level::L0);
+  auto counter = ctx.createUInt64Counter("basic.test.counter", Level::L0);
   counter.add(32);
   ctx.flush();
   counter.add(10);
@@ -167,10 +182,16 @@ TEST(Telemetry, Counter) {
 
         bool found32 = false;
         bool foundPlus10 = false;
+        StringRef currentInstrument = "";
         iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
           int i;
+          if (key == "instrument name") {
+            currentInstrument = value;
+            return;
+          }
           // consumeInteger returns *false* on success.
-          if (key == "value" && !value.consumeInteger(10, i)) {
+          if (key == "value" && currentInstrument == "basic.test.counter" &&
+              !value.consumeInteger(10, i)) {
             if (i == 32) {
               EXPECT_FALSE(foundPlus10) << "expected to find 32 first";
               found32 = true;
@@ -196,7 +217,7 @@ TEST(Telemetry, Histogram) {
 
   TelemetryContext ctx;
 
-  auto hist = ctx.createUInt64Histogram("basic.histogram", Level::L0);
+  auto hist = ctx.createUInt64Histogram("basic.test.histogram", Level::L0);
   hist.record(32);
   hist.record(10);
   ctx.flush();
@@ -213,28 +234,40 @@ TEST(Telemetry, Histogram) {
           return str.take_until([](char c) { return c == '\n'; });
         };
 
-        auto countPos = mbuf->getBuffer().find("count");
-        StringRef countLine = getLineStartingAt(countPos);
-        EXPECT_EQ(countLine.split(':').second.trim(), "2");
+        bool instrumentFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          auto instrumentPos = message.find("instrument name");
+          StringRef instrumentLine = getLineStartingAt(instrumentPos);
+          if (instrumentLine.split(':').second.trim() != "basic.test.histogram")
+            return;
 
-        auto minPos = mbuf->getBuffer().find("min");
-        StringRef minLine = getLineStartingAt(minPos);
-        EXPECT_EQ(minLine.split(':').second.trim(), "10");
+          instrumentFound = true;
 
-        auto maxPos = mbuf->getBuffer().find("max");
-        StringRef maxLine = getLineStartingAt(maxPos);
-        EXPECT_EQ(maxLine.split(':').second.trim(), "32");
+          auto countPos = message.find("count");
+          StringRef countLine = getLineStartingAt(countPos);
+          EXPECT_EQ(countLine.split(':').second.trim(), "2");
 
-        auto bucketsPos = mbuf->getBuffer().find("buckets");
-        StringRef bucketsLine = getLineStartingAt(bucketsPos);
-        EXPECT_EQ(bucketsLine.split(':').second.trim(),
-                  "[0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, "
-                  "5000, 7500, 10000, ]");
+          auto minPos = message.find("min");
+          StringRef minLine = getLineStartingAt(minPos);
+          EXPECT_EQ(minLine.split(':').second.trim(), "10");
 
-        auto countsPos = mbuf->getBuffer().find("counts");
-        StringRef countsLine = getLineStartingAt(countsPos);
-        EXPECT_EQ(countsLine.split(':').second.trim(),
-                  "[0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]");
+          auto maxPos = message.find("max");
+          StringRef maxLine = getLineStartingAt(maxPos);
+          EXPECT_EQ(maxLine.split(':').second.trim(), "32");
+
+          auto bucketsPos = message.find("buckets");
+          StringRef bucketsLine = getLineStartingAt(bucketsPos);
+          EXPECT_EQ(bucketsLine.split(':').second.trim(),
+                    "[0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, "
+                    "5000, 7500, 10000, ]");
+
+          auto countsPos = message.find("counts");
+          StringRef countsLine = getLineStartingAt(countsPos);
+          EXPECT_EQ(countsLine.split(':').second.trim(),
+                    "[0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]");
+        });
+
+        EXPECT_TRUE(instrumentFound) << "expected to find histogram in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
@@ -261,6 +294,15 @@ TEST(Telemetry, HistogramL1) {
 
         // Memory buffer must be empty.
         EXPECT_TRUE(mbuf->getBufferSize() == 0);
+
+        bool instrumentFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
+          if (key == "instrument name" && value == "optional.histogram")
+            instrumentFound = true;
+        });
+
+        EXPECT_FALSE(instrumentFound)
+            << "expected not to find histogram in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
@@ -279,7 +321,7 @@ TEST(Telemetry, Logger) {
   auto logger = ctx.getLogger("basic.log");
   llvm::StringMap<M::Telemetry::Logs::AttributeValue> attributes = {
       {"attr1", "hello"}, {"attr2", "world"}};
-  logger->getInfo("test", Level::L1, attributes) << logString;
+  logger->getInfo("test.Logger", Level::L1, attributes) << logString;
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -294,21 +336,33 @@ TEST(Telemetry, Logger) {
           return str.take_until([](char c) { return c == '\n'; });
         };
 
-        auto bodyPos = mbuf->getBuffer().find("body");
-        StringRef bodyLine = getLineStartingAt(bodyPos);
-        EXPECT_EQ(bodyLine.split(':').second.trim(), escapedLogString);
+        bool eventFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          auto eventNamePos = message.find("event.name");
+          StringRef eventNameLine = getLineStartingAt(eventNamePos);
+          if (eventNameLine.split(':').second.trim() != "test.Logger")
+            return;
 
-        auto severityPos = mbuf->getBuffer().find("severity_text");
-        StringRef severityLine = getLineStartingAt(severityPos);
-        EXPECT_EQ(severityLine.split(':').second.trim(), "INFO");
+          eventFound = true;
 
-        auto attribute1Pos = mbuf->getBuffer().find("attr1");
-        StringRef attr1Line = getLineStartingAt(attribute1Pos);
-        EXPECT_EQ(attr1Line.split(':').second.trim(), "hello");
+          auto bodyPos = message.find("body");
+          StringRef bodyLine = getLineStartingAt(bodyPos);
+          EXPECT_EQ(bodyLine.split(':').second.trim(), escapedLogString);
 
-        auto attribute2Pos = mbuf->getBuffer().find("attr2");
-        StringRef attr2Line = getLineStartingAt(attribute2Pos);
-        EXPECT_EQ(attr2Line.split(':').second.trim(), "world");
+          auto severityPos = message.find("severity_text");
+          StringRef severityLine = getLineStartingAt(severityPos);
+          EXPECT_EQ(severityLine.split(':').second.trim(), "INFO");
+
+          auto attribute1Pos = message.find("attr1");
+          StringRef attr1Line = getLineStartingAt(attribute1Pos);
+          EXPECT_EQ(attr1Line.split(':').second.trim(), "hello");
+
+          auto attribute2Pos = message.find("attr2");
+          StringRef attr2Line = getLineStartingAt(attribute2Pos);
+          EXPECT_EQ(attr2Line.split(':').second.trim(), "world");
+        });
+
+        EXPECT_TRUE(eventFound) << "expected to find event in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
@@ -325,7 +379,7 @@ TEST(Telemetry, LoggerL2) {
   StringRef escapedLogString = "hello\\nthis is a string";
 
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test", Level::L2) << logString;
+  logger->getInfo("test.LoggerL2", Level::L2) << logString;
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -335,16 +389,13 @@ TEST(Telemetry, LoggerL2) {
         EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
         std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
 
-        // Memory buffer must be empty.
-        size_t bufSize = mbuf->getBufferSize();
-        if (bufSize != 0) {
-          fprintf(stderr, "!! Buffer is not empty. Size=%lu file=%s\n", bufSize,
-                  path.string().c_str());
-          fprintf(stderr, "(%.*s)\n",
-                  std::min(bufSize, static_cast<size_t>(10000)),
-                  mbuf->getBufferStart());
-        }
-        EXPECT_TRUE(bufSize == 0);
+        bool eventFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef key, StringRef value) {
+          if (key == "event.name" && value == "test.LoggerL2")
+            eventFound = true;
+        });
+
+        EXPECT_FALSE(eventFound) << "expected not to find event in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
@@ -361,7 +412,7 @@ TEST(Telemetry, Resources) {
   TelemetryContext ctx(extras);
 
   auto logger = ctx.getLogger("basic.log");
-  logger->getInfo("test", Level::L0) << StringRef("foo");
+  logger->getInfo("test.Resources", Level::L0) << StringRef("foo");
   ctx.flush();
 
   auto err = readFileUnderLock(
@@ -376,13 +427,25 @@ TEST(Telemetry, Resources) {
           return str.take_until([](char c) { return c == '\n'; });
         };
 
-        auto resourcePos = mbuf->getBuffer().find("aResource");
-        StringRef resourceLine = getLineStartingAt(resourcePos);
-        EXPECT_EQ(resourceLine.split(':').second.trim(), resourceVal);
+        bool eventFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          auto eventNamePos = message.find("event.name");
+          StringRef eventNameLine = getLineStartingAt(eventNamePos);
+          if (eventNameLine.split(':').second.trim() != "test.Resources")
+            return;
 
-        auto numberPos = mbuf->getBuffer().find("aNumber");
-        StringRef numberLine = getLineStartingAt(numberPos);
-        EXPECT_EQ(numberLine.split(':').second.trim(), "32");
+          eventFound = true;
+
+          auto resourcePos = message.find("aResource");
+          StringRef resourceLine = getLineStartingAt(resourcePos);
+          EXPECT_EQ(resourceLine.split(':').second.trim(), resourceVal);
+
+          auto numberPos = message.find("aNumber");
+          StringRef numberLine = getLineStartingAt(numberPos);
+          EXPECT_EQ(numberLine.split(':').second.trim(), "32");
+        });
+
+        EXPECT_TRUE(eventFound) << "expected to find event in file";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
 }
