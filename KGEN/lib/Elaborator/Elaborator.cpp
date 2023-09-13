@@ -18,7 +18,7 @@
 #include "KGEN/KGENPasses.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/LowerToObject.h"
+#include "KGEN/ObjectCompiler.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"

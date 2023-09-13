@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_LOWERTOOBJECT_H
-#define KGEN_LOWERTOOBJECT_H
+#ifndef KGEN_OBJECTCOMPILER_H
+#define KGEN_OBJECTCOMPILER_H
 
 #include "Cache/BlobCache.h"
 #include "Cache/CacheDialect/CachedTransform.h"
@@ -208,4 +208,4 @@ private:
 };
 } // namespace M::KGEN
 
-#endif // KGEN_LOWERTOOBJECT_H
+#endif // KGEN_OBJECTCOMPILER_H
