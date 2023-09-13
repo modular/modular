@@ -1798,12 +1798,9 @@ fn scatter[
         return rhs  # always return the latest update element
 
     let axis_int = axis[0].to_int()
-    return scatter_elements[
-        reduce_func,
-        rank,
-        input_type,
-        indices_type,
-    ](input, indices, updates, axis_int, output, out_chain)
+    return scatter_elements[reduce_func](
+        input, indices, updates, axis_int, output, out_chain
+    )
 
 
 @always_inline
@@ -1835,12 +1832,9 @@ fn scatter_add[
         return lhs + rhs
 
     let axis_int = axis[0].to_int()
-    return scatter_elements[
-        reduce_func,
-        rank,
-        input_type,
-        indices_type,
-    ](input, indices, updates, axis_int, output, out_chain)
+    return scatter_elements[reduce_func](
+        input, indices, updates, axis_int, output, out_chain
+    )
 
 
 @always_inline
@@ -1872,12 +1866,9 @@ fn scatter_max[
         return lhs.max(rhs)
 
     let axis_int = axis[0].to_int()
-    return scatter_elements[
-        reduce_func,
-        rank,
-        input_type,
-        indices_type,
-    ](input, indices, updates, axis_int, output, out_chain)
+    return scatter_elements[reduce_func](
+        input, indices, updates, axis_int, output, out_chain
+    )
 
 
 @always_inline
@@ -1909,12 +1900,9 @@ fn scatter_min[
         return lhs.min(rhs)
 
     let axis_int = axis[0].to_int()
-    return scatter_elements[
-        reduce_func,
-        rank,
-        input_type,
-        indices_type,
-    ](input, indices, updates, axis_int, output, out_chain)
+    return scatter_elements[reduce_func](
+        input, indices, updates, axis_int, output, out_chain
+    )
 
 
 @always_inline
@@ -1946,12 +1934,9 @@ fn scatter_mul[
         return lhs * rhs
 
     let axis_int = axis[0].to_int()
-    return scatter_elements[
-        reduce_func,
-        rank,
-        input_type,
-        indices_type,
-    ](input, indices, updates, axis_int, output, out_chain)
+    return scatter_elements[reduce_func](
+        input, indices, updates, axis_int, output, out_chain
+    )
 
 
 # ===----------------------------------------------------------------------===#
