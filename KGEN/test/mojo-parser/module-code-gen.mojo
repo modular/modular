@@ -135,7 +135,7 @@ fn makes_escaping_closure(m: String):
 # CHECK: lit.struct.decl @"_CW_{{.*}}(,{{.*}}::String)\22"
 # CHECK-NEXT:     lit.struct.field field0 : !kgen.pointer<array<0, i1>>
 # CHECK-NEXT:     lit.struct.field dtor : !kgen.signature<("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:     lit.struct.field copy : !kgen.signature<("self": !kgen.pointer<array<0, i1>> init_self, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
+# CHECK-NEXT:     lit.struct.field copy : !kgen.signature<("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field move : !kgen.signature<("self": !kgen.pointer<array<0, i1>> init_self, "other": !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field call : !kgen.signature<("__result__": !kgen.pointer<!String> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
@@ -147,13 +147,12 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   kgen.param.constant
 # CHECK-NEXT:   lit.ownership.mark.destroyed %self
 # CHECK: lit.func @"__copyinit__
-# CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT:   [[SELF_IMPL:%.*]] = pop.load [[SELF_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT:   [[COPY:%.*]] = pop.load [[COPY_PTR]]
-# CHECK-NEXT:   kgen.call_signature [[COPY]]([[SELF_IMPL]], [[EXISTING_IMPL]])
+# CHECK-NEXT:   kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 # CHECK: lit.func @"__moveinit__
 # CHECK-NEXT:   [[SELF_IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
@@ -223,13 +222,13 @@ struct Mem:
 # CHECK-NEXT: %[[V8:.*]] = kgen.create_closure [{{.*}}]()
 # CHECK-NEXT: pop.store %[[V8]], %[[V7]]
 
-# CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT: %[[V10:.*]] = kgen.create_closure [{{.*}}]()
-# CHECK-NEXT: pop.store %[[V10]], %[[V9]]
-
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
 # CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+
+# CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT: %[[V10:.*]] = kgen.create_closure [{{.*}}]()
+# CHECK-NEXT: pop.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
 # CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(@[[CI_TYPE:.*]], current_target())>
@@ -252,11 +251,6 @@ struct Mem:
 # CHECK: lit.func @"_CW_{{.*}}_dtor__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: %0 = pop.pointer.bitcast %self
 # CHECK-NEXT: pop.aligned_free %0
-
-# CHECK: lit.func @"_CW_{{.*}}_copyinit__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>> init_self, %other: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
-# CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
-# CHECK-NEXT: %[[W1:.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT: %[[W2:.*]]  = kgen.call @{{.*}}__copyinit__{{.*}}(%[[W0]], %[[W1]])
 
 # CHECK: lit.func @"_CW_{{.*}}_moveinit__CI_{{.*}}"(%self: !kgen.pointer<array<0, i1>> init_self, %other: !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none
 # CHECK-NEXT: %[[W0:.*]]  = pop.pointer.bitcast %self
@@ -515,3 +509,38 @@ fn makes_escaping_closure(m: String):
       fn nested_nested(k:String, l:String) escaping -> String:
          return n+k
       return n+m
+
+# // -----
+
+##===----------------------------------------------------------------------===##
+# Copy Constructor
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.func @"__copyinit__(${{.*}}::_CW_${{.*}}_\22(,[[ST:.*]])\22=&,${{.*}}::_CW_${{.*}}_\22(,[[ST]])\22)"(%self: !kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(,[[ST]])\22"> init_self, %existing: !kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(,[[ST]])\22"> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
+# CHECK-NEXT:  [[W0:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <@"${{.*}}"::@"_CW_${{.*}}_\22(,[[ST]])\22">
+# CHECK-NEXT:  [[W1:%.*]] = pop.load [[W0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:  [[W2:%.*]] = lit.struct.gep %self[copy] : <<>("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none> from <@"${{.*}}"::@"_CW_${{.*}}_\22(,[[ST]])\22">
+# CHECK-NEXT:  [[W3:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:  [[W4:%.*]] = pop.load [[W2]] : !kgen.pointer<<>("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none>
+
+# Call the copy constructor member with the uninitialized self and the untyped existing impl.
+# CHECK-NEXT:  [[W5:%.*]] = kgen.call_signature [[W4]]([[W3]], [[W1]]) : ("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
+# CHECK-NEXT:  [[W6:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:  lit.return [[W6]] : !lit.none
+# CHECK-NEXT:  lit.end_func
+
+# CHECK:      lit.func @"_CW_${{.*}}_{{.*}}_copyinit__CI_{{.*}}"(%ptrToImpl: !kgen.pointer<pointer<array<0, i1>>> borrow, %other: !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none attributes {specialFnKind = 0 : i8} {
+
+# Allocate memory on the heap for impl and copy existing contents into it.
+# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(@"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22", current_target())>
+# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(@"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22", current_target())>
+# CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index : <@"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22">
+# CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other : !kgen.pointer<array<0, i1>> to !kgen.pointer<@"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22">
+# CHECK-NEXT:  [[V2:%.*]] = kgen.call @"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22"::@"__copyinit__(${{.*}}::_CI_${{.*}}"([[V0]], [[V1]])
+
+# Store the address of the heap allocated memory into the self.
+# CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]] : !kgen.pointer<@"${{.*}}"::@"_CI_${{.*}}_\22([[ST]],[[ST]])\22"> to !kgen.pointer<array<0, i1>>
+# CHECK-NEXT:  pop.store [[V4]], %ptrToImpl : !kgen.pointer<pointer<array<0, i1>>>
+fn materialize_escaping_closure(m: String):
+   fn unique(n: String) escaping -> String:
+      return m + n
