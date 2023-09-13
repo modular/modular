@@ -13,6 +13,7 @@ add_modular_testsuite(check-mojo-lldb-repl
   TOP_LEVEL_CHECK check-mojo
   TOOLS
   mojo-sdk
+  mojo
 )
 
 if(LLDB_FOUND)
