@@ -2312,13 +2312,12 @@ fn print_buffer_info[
 fn bottom_k[
     type: DType,
     rank: Int,
-    out_type: DType,
     axis_type: DType,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
 ):
@@ -2337,13 +2336,12 @@ fn bottom_k[
 fn top_k[
     type: DType,
     rank: Int,
-    out_type: DType,
     axis_type: DType,
 ](
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
-    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), out_type],
+    out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
 ):
