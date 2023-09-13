@@ -3194,7 +3194,7 @@ struct ConvDirectNHWC[
                             filter_ptr, 0, residual, 0.0
                         )
                     # It's always safe to load a full vector from packed filter because
-                    # the filter to padded to multiple simd_size during pre-packing.
+                    # the filter is padded to multiple simd_size during pre-packing.
                     else:
                         filter_vec = filter_ptr.offset(j * simd_size).simd_load[
                             simd_size
@@ -3290,7 +3290,7 @@ struct ConvDirectNHWC[
                             filter_ptr, 0, residual, 0.0
                         )
                     # It's always safe to load a full vector from packed filter because
-                    # the filter to padded to multiple simd_size during pre-packing.
+                    # the filter is padded to multiple simd_size during pre-packing.
                     else:
                         filter_vec = filter_ptr.offset(j * simd_size).simd_load[
                             simd_size
@@ -3325,6 +3325,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        has_residual: Bool,
         prefetch_offset: Int,
     ](
         self,
@@ -3376,9 +3377,22 @@ struct ConvDirectNHWC[
                     ).load()
                     let input_vec = SIMD[type, simd_size](input_val)
                     # Load a simd vector from filter.
-                    let filter_vec = filter_ptr.offset(j * simd_size).simd_load[
-                        simd_size
-                    ]()
+                    let filter_vec: SIMD[type, simd_size]
+                    # Partial load if filter is not multiple of simd_size.
+                    @parameter
+                    if has_residual and not filter_packed:
+                        let residual = self.conv_shape.f - (
+                            self.conv_shape.f // simd_size
+                        ) * simd_size
+                        filter_vec = partial_simd_load[type, simd_size](
+                            filter_ptr, 0, residual, 0.0
+                        )
+                    # It's always safe to load a full vector from packed filter because
+                    # the filter is padded to multiple simd_size during pre-packing.
+                    else:
+                        filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                            simd_size
+                        ]()
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     var output_vec = output_ptr.offset(
@@ -3405,6 +3419,7 @@ struct ConvDirectNHWC[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        has_residual: Bool,
         prefetch_offset: Int,
     ](
         self,
@@ -3414,7 +3429,7 @@ struct ConvDirectNHWC[
         filter_base: DTypePointer[type],
         output_ptr: DTypePointer[type],
     ):
-        """Accumulate with register tiling on x86 architectures."""
+        """Accumulate with register tiling on NEON architectures."""
         constrained[has_neon()]()
 
         # Short circuit when the micro tile is in padding.
@@ -3455,9 +3470,23 @@ struct ConvDirectNHWC[
                 @unroll
                 for j in range(micro_kernel_width):
                     # Load a simd vector from filter.
-                    let filter_vec = filter_ptr.offset(j * simd_size).simd_load[
-                        simd_size
-                    ]()
+                    let filter_vec: SIMD[type, simd_size]
+                    # Partial load if filter is not multiple of simd_size.
+                    @parameter
+                    if has_residual and not filter_packed:
+                        let residual = self.conv_shape.f - (
+                            self.conv_shape.f // simd_size
+                        ) * simd_size
+                        # TODO: optimize the partial load following #20211.
+                        filter_vec = partial_simd_load[type, simd_size](
+                            filter_ptr, 0, residual, 0.0
+                        )
+                    # It's always safe to load a full vector from packed filter because
+                    # the filter is padded to multiple simd_size during pre-packing.
+                    else:
+                        filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                            simd_size
+                        ]()
 
                     @unroll
                     for i in range(micro_kernel_height):
@@ -3756,6 +3785,7 @@ struct ConvDirectNHWC[
                         micro_kernel_height,
                         micro_kernel_width,
                         simd_size,
+                        has_residual,
                         # prefetch offset, default to 4 for now
                         4,
                     ](
