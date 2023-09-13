@@ -139,13 +139,28 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:     lit.struct.field move : !kgen.signature<("self": !kgen.pointer<array<0, i1>> init_self, "other": !kgen.pointer<array<0, i1>> owned_in_mem) -> !lit.none>
 # CHECK-NEXT:     lit.struct.field call : !kgen.signature<("__result__": !kgen.pointer<!String> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!String> borrow_in_mem) -> !lit.none>
 # CHECK-NEXT: lit.func @"__del__
-# CHECK-DAG:   [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor]
-# CHECK-DAG:   [[DTOR:%.*]] = pop.load [[DTOR_PTR]]
-# CHECK-DAG:   [[IMPL_PTR:%.*]] = lit.struct.gep %self[field0]
-# CHECK-DAG:   [[IMPL:%.*]] = pop.load [[IMPL_PTR]]
-# CHECK-NEXT:   kgen.call_signature [[DTOR]]([[IMPL]])
-# CHECK-NEXT:   kgen.param.constant
-# CHECK-NEXT:   lit.ownership.mark.destroyed %self
+# CHECK-NEXT: [[PTR_TO_IMPL:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT: [[OPAQUE_IMPL:%.*]] = pop.load [[PTR_TO_IMPL]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT: %index0 = kgen.param.constant = <0>
+# CHECK-NEXT: [[SCALAR_IMPL:%.*]] = pop.pointer_to_index [[OPAQUE_IMPL]] : !kgen.pointer<array<0, i1>> to !pop.scalar<index>
+# CHECK-NEXT: [[INDEX_IMPL:%.*]] = pop.cast_to_builtin [[SCALAR_IMPL]] : !pop.scalar<index> to index
+# CHECK-NEXT: [[IS_NULL:%.*]] = index.cmp eq([[INDEX_IMPL]], %index0)
+# CHECK-NEXT: hlcf.if [[IS_NULL]] {
+# CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.ownership.mark.destroyed %self
+# CHECK-NEXT: lit.return
+# CHECK-NEXT: hlcf.yield
+# CHECK-NEXT: } else {
+# CHECK-NEXT: hlcf.yield
+# CHECK-NEXT: }
+# CHECK-NEXT: [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: [[DTOR:%.*]] = pop.load [[DTOR_PTR]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: kgen.call_signature [[DTOR]]([[OPAQUE_IMPL]]) : ("self": !kgen.pointer<array<0, i1>>) -> !lit.none
+# CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT: lit.ownership.mark.destroyed %self
+# CHECK-NEXT: lit.return %8 : !lit.none
+# CHECK-NEXT: lit.end_func
+
 # CHECK: lit.func @"__copyinit__
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>

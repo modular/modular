@@ -13,9 +13,11 @@
 #include "ExprEmitter.h"
 #include "IRValues.h"
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
@@ -231,11 +233,45 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
       destructor.getLoc(), destructor.getBody());
   Value dtorSelf = destructor.getBody()->getArgument(0);
+  // Return early if the impl is null.
+  Value dtorImpl =
+      builder.create<POP::LoadOp>(builder.create<StructGEPOp>(dtorSelf, impl));
+  Type scalarIndex = POP::SIMDType::get(
+      1, DTypeConstantAttr::get(builder.getContext(),
+                                KGENDType(KGENDType::ExtraCases::index)));
+  Value zero = builder.create<ParamConstantOp>(
+      IntegerAttr::get(IndexType::get(builder.getContext()), 0));
+  Value dtorImplAsIndex = builder.create<POP::CastToBuiltinOp>(
+      IndexType::get(builder.getContext()),
+      builder.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
+  Value isEqualToZero = builder.create<mlir::index::CmpOp>(
+      mlir::index::IndexCmpPredicate::EQ, dtorImplAsIndex, zero);
+  auto ifOp = builder.create<HLCF::IfOp>(isEqualToZero);
+  auto insertionPoint = builder.saveInsertionPoint();
+
+  // If false, the impl is not null. Continue to destruction.
+  if (ifOp.getElseRegion().empty())
+    ifOp.getElseRegion().push_back(new Block);
+  builder =
+      ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
+  builder.create<HLCF::YieldOp>();
+
+  // If true, the impl is null and no destruction is needed.
+  if (ifOp.getThenRegion().empty())
+    ifOp.getThenRegion().push_back(new Block);
+  builder =
+      ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
+  ExprEmitter::emitNormalReturn(
+      builder,
+      builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
+      destructor);
+  builder.create<HLCF::YieldOp>();
+
+  builder.restoreInsertionPoint(insertionPoint);
   builder.create<CallSignatureOp>(
       noneType,
       builder.create<POP::LoadOp>(builder.create<StructGEPOp>(dtorSelf, dtor)),
-      ValueRange({builder.create<POP::LoadOp>(
-          builder.create<StructGEPOp>(dtorSelf, impl))}));
+      ValueRange({dtorImpl}));
 
   // Populate the copy constructor.
   {
@@ -707,6 +743,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (DebugInfo::DIScopeAttr spAttr = topLevelDtor.getLocScope())
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
     // Cast the opaque pointer back to the closure impl type.
     Value implPtr = builder.create<POP::PointerBitcastOp>(ptrToClosureImplType,
                                                           body->getArgument(0));
