@@ -408,7 +408,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
           // attribute. Encode information {singleExit} as bits.
           scope->setAttr(
               updateAttrName,
-              OpBuilder(scope->getContext()).getBoolAttr(singleExit));
+              OpBuilder(scope->getContext()).getI8IntegerAttr(singleExit));
         } else if (singleExit) {
           foldTrivialLoop(scope);
         }
@@ -528,7 +528,8 @@ void AutomaticInline::runOnOperation() {
     LLCL::ForkJoin state(*rt);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
-      if (!func || node.isAllInlined() || node.callSites.empty())
+      if (!func || (node.isAllInlined() && !func.isExported()) ||
+          node.callSites.empty())
         continue;
 
       state.fork([func = func, updateAttrName, &innerPipelineFailed, &pms] {
