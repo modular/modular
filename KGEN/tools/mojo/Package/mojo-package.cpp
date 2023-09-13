@@ -18,6 +18,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LowerToObject.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/Package/Package.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -88,12 +89,9 @@ public:
   ErrorOrSuccess attachElaboratedBytecode(const SymbolTable &symtab,
                                           const ExportMap &exportedSymbols);
 
-  /// Given the module and the static archive bytes corresponding to that
-  /// module, generate a resource attribute and attach it to the package we're
-  /// building.
-  ErrorOrSuccess
-  attachCompiledArchiveBytes(ModuleOp theModule, Cache::BufferRef archive,
-                             const CompilationOptions &compilationOptions);
+  /// Given an attribute for the static archive bytes corresponding to a package
+  /// module, attaches that attribute onto the package we're building.
+  void attachCompiledArchiveBytes(DenseResourceElementsAttr archiveBytes);
 
   /// Returns an owning reference to the module that contains the newly created
   /// package, as well as the package itself. This releases the builer's owning
@@ -276,35 +274,11 @@ ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
 ErrorOrSuccess
 PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
                                          const ExportMap &exportedSymbols) {
-  ModuleOp theModule = cast<ModuleOp>(symtab.getOp());
-
-  // Prepare the functions within the module for use when importing the package.
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
-  for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>()) {
-    // Attach a reference to the precompiled body to the KGEN::FuncOp.
-    func.setPrecompiledBodyRefAttr(packageName);
-    func.setExported();
-  }
-
-  // Write the package bytecode to the given buffer. This will be attached to
-  // the exported high level functions.
-  Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
-  if (failed(mlir::writeBytecodeToFile(symtab.getOp(), *str)))
-    return Error("could not write bytecode for package module");
-
-  // Reset the precompiled references now that we've written to bytecode.
-  for (KGEN::FuncOp func : theModule.getOps<KGEN::FuncOp>())
-    func.removePrecompiledBodyRefAttr();
-
-  // Hash the bytecode itself - this will give us a unique'd attr name that
-  // shouldn't clash even when a large number of packages get imported - and
-  // if they do clash, they're guaranteed to be exactly the same.
-  auto hash = llvm::BLAKE3::hash(
-      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
-                        (const uint8_t *)str->getBufferEnd()));
-  DenseResourceElementsAttr bytecodeResource =
-      createResourceAttr(theModule.getContext(), str->getBuffer(),
-                         "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true));
+  auto bytecodeResourceOr = createElaboratedBytecodeAttr(symtab, packageName);
+  if (bytecodeResourceOr.isError())
+    return bytecodeResourceOr.takeError();
+  DenseResourceElementsAttr bytecodeResource = bytecodeResourceOr.takeValue();
 
   for (auto [symName, exportSym] : exportedSymbols) {
     LIT::FuncOp hlFunc = flattenedNameToFunc.lookup(symName);
@@ -329,29 +303,9 @@ PackageBuilder::attachElaboratedBytecode(const SymbolTable &symtab,
 }
 
 /// Attach the compiled archive bytes to the new lit.package op.
-ErrorOrSuccess PackageBuilder::attachCompiledArchiveBytes(
-    ModuleOp theModule, Cache::BufferRef archive,
-    const CompilationOptions &compilationOptions) {
-  // Get the standalone archive key to use as the archive name.
-  Cache::WriteableBufferRef produceStandaloneArchiveKey =
-      Cache::WriteableBuffer::get();
-  compilationOptions.print(*produceStandaloneArchiveKey
-                           << "produceStandaloneArchive(");
-  *produceStandaloneArchiveKey << ")";
-  if (failed(
-          mlir::writeBytecodeToFile(theModule, *produceStandaloneArchiveKey)))
-    return Error("failed to write bytecode file");
-  // Hash it so the name isn't enormous.
-  auto hash = llvm::BLAKE3::hash(
-      ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
-               produceStandaloneArchiveKey->getBufferSize()));
-
-  auto attr = createResourceAttr(
-      packageModule->getContext(),
-      ArrayRef(archive->getBufferStart(), archive->getBufferSize()),
-      "archive_" + llvm::toHex(hash, /*LowerCase=*/true));
-  thePackage.setArchiveBytesAttr(attr);
-  return success();
+void PackageBuilder::attachCompiledArchiveBytes(
+    DenseResourceElementsAttr archiveBytes) {
+  thePackage.setArchiveBytesAttr(archiveBytes);
 }
 
 //===----------------------------------------------------------------------===//
@@ -523,23 +477,11 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   }
   auto [symtab, exportMap] = std::move(*symTabAndExportedSymbolsOr);
 
-  // Now we can start to generate the archive.
-  mlir::PassManager archivePM(ctx);
-  auto objectCompiler = ObjectCompiler::create(
-      runtime, archivePM, ".mojo_cache", compilationOptions, /*isJIT=*/false);
-  if (failed(objectCompiler))
-    return objectCompiler.takeError();
-  ErrorOr<Cache::BufferRef> archiveOr =
-      objectCompiler->produceStandaloneArchive(symtab, exportMap);
-  if (failed(archiveOr))
-    return Error(archiveOr.getError());
-  Cache::BufferRef archive = std::move(*archiveOr);
-
-  // Compile the module, and attach the archive to the package op.
-  if (auto err = packageBuilder.attachCompiledArchiveBytes(
-          theModule, std::move(archive), compilationOptions))
-    return err.takeError();
-
+  auto archiveOr =
+      createPackageArchive(symtab, exportMap, compilationOptions, runtime);
+  if (archiveOr.isError())
+    return archiveOr.takeError();
+  packageBuilder.attachCompiledArchiveBytes(archiveOr.takeValue());
   return packageBuilder.build();
 }
 
