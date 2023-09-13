@@ -439,7 +439,7 @@ struct RemoveUnusedLoopResults : OpRewritePattern<LoopOp> {
 
     auto newLoop =
         b.create<LoopOp>(loop.getLoc(), TypeRange(ValueRange(toReplace)),
-                         loop.getOperands(), label, loop.getUnrollFactorAttr());
+                         loop.getOperands(), label, loop.getUnrollLevelAttr());
     b.replaceAllUsesWith(toReplace, newLoop.getResults());
     b.inlineRegionBefore(loop.getBody(), newLoop.getBody(),
                          newLoop.getBody().begin());

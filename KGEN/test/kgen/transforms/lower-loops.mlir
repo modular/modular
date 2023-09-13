@@ -24,7 +24,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
     %0 = index.sub %arg0, %idx1
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  }
   kgen.return
 }
 
@@ -70,9 +70,9 @@ kgen.func @nested_unroll_loops() {
       %3 = index.add %arg1, %idx2
       kgen.call @foo(%3) : (index) -> ()
       hlcf.for.yield [induction_var (%3 : index)] [retvals ()] [iterargs ()]
-    } {unrollFactor = #hlcf<loop_unroll_full none>}
+    }
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
-  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  }
   kgen.return
 }
 
@@ -120,9 +120,9 @@ kgen.func @loop_carried_dependency() {
       %7 = index.add %arg4, %idx2
       kgen.call @foo(%7, %arg3) : (index, index) -> ()
       hlcf.for.yield [induction_var (%7 : index)] [retvals (%7: index)] [iterargs ()]
-    } {unrollFactor = #hlcf<loop_unroll_full none>}
+    }
     hlcf.for.yield [induction_var (%3 : index)] [retvals (%6, %3: index, index)] [iterargs ()]
-  } {unrollFactor = #hlcf<loop_unroll_full none>}
+  }
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
   kgen.return
@@ -167,7 +167,7 @@ kgen.func @loop_carried_dependency() {
      %3 = index.add %2, %idx1
      kgen.call @foo(%3) : (index) -> ()
      hlcf.for.yield [induction_var (%3 : index)] [retvals (%3 : index)] [iterargs ()]
-   } {unrollFactor = #hlcf<loop_unroll_full none>}
+   }
    kgen.call @foo(%idx4) : (index) -> ()
    kgen.call @foo(%idx5) : (index) -> ()
    kgen.return %idx5 : index

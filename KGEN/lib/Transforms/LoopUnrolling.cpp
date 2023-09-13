@@ -200,7 +200,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
-    // } {unrollFactor = 2: index }
+    // } {unrollLevel = #hlcf<unroll_level 2> }
     //
     // To a loop with trip count of 3 and a body of 2 unrolled original body.
     // Also change the result to include all iteration args except the induction
@@ -212,7 +212,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     //   %2 = index.sub %1, 1
     //   kgen.call @foo(%1, %1) : (index) -> ()
     //   hlcf.for.yield [induction_var (%2)] [retvals (%2, %2)] [iterargs ()]
-    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+    // }
     //
     // Example2: unroll the following ForOp (trip count 5) by 2 where 5 is not
     // divisible  by 2.
@@ -222,7 +222,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     //   %0 = index.sub %arg0, 1
     //   kgen.call @foo(%arg1, %arg2) : (index) -> ()
     //   hlcf.for.yield [induction_var (%0)] [retvals (%0)] [iterargs (%0)]
-    // } {unrollFactor = 2: index }
+    // } {unrollLevel = #hlcf<unroll_level 2> }
     //
     // To
     // 1. A loop with trip count of 2 and a body of 2 unrolled original body.
@@ -236,7 +236,7 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
     //   %2 = index.sub %1, 1
     //   kgen.call @foo(%1, %1) : (index) -> ()
     //   hlcf.for.yield [induction_var (%2)] [retvals (%2, %2)] [iterargs ()]
-    // } {unrollFactor = #hlcf<loop_unroll_full none>}
+    // }
     //
     // kgen.call @foo(%0:0, %0:1) : (index) -> ()
 
@@ -269,10 +269,8 @@ LogicalResult LoopUnrolling::unrollForLoopN(ForOp loop, int64_t unrollFactorN) {
         loop->getLoc(),
         SmallVector<Type>{llvm::drop_begin(loop.getIterArgs().getTypes())},
         loop.getLowerBound(), newUnrollNUpperBoundOp, newStepOp,
-        loop.getIterArgs(),
-        HLCF::LoopUnrollFullAttr::get(loop->getContext(),
-                                      HLCF::LoopUnrollFull::None),
-        loop.getCmpPredicateType(), loop.getIndVarComputeType());
+        loop.getIterArgs(), UnrollLevel::none(), loop.getCmpPredicateType(),
+        loop.getIndVarComputeType());
 
     // Create the block for the new ForOp.
     Block *forBody = rewriter.createBlock(&forOp.getBody());
@@ -331,9 +329,9 @@ void LoopUnrolling::runOnOperation() {
 
       // TODO: unroll with a factor based on cost model if a for loop decorated
       // with fully unroll is not a loop that has no early exits.
-    } else if (loop.getUnrollFactorN()) {
+    } else if (std::optional<int64_t> factor = loop.getUnrollFactorN()) {
       // unroll loops with decorator of an unroll factor
-      if (failed(unrollForLoopN(loop, loop.getUnrollFactorN().value()))) {
+      if (failed(unrollForLoopN(loop, *factor))) {
         signalPassFailure();
       }
     }

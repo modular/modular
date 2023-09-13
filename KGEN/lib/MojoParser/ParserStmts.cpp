@@ -810,10 +810,8 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 static ParseResult parseLoopDecorators(ParserBase &parser,
                                        LexerCursor startCursor,
                                        size_t curIndent, Token::Kind kind,
-                                       int64_t &unrollFactorN,
-                                       bool &isFullUnroll) {
+                                       HLCF::UnrollLevel &level) {
   StringRef kindName = parser.getToken().getSpelling();
-  isFullUnroll = false;
 
   if (startCursor != parser.getLexer().getCursor()) {
     startCursor.restore(parser.getLexer());
@@ -821,14 +819,17 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
       // Handle recognized decorators.
       if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
         if (dre->spelling == "unroll") {
-          isFullUnroll = true;
+          level = HLCF::UnrollLevel::full();
           continue;
         }
       } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
         if (auto dre = dyn_cast<DeclRefNode>(callNode->callee)) {
+          int32_t factor;
           if (dre->spelling == "unroll" && callNode->args.size() == 1 &&
-              callNode->args[0].isPositionalIntLiteral(unrollFactorN))
+              callNode->args[0].isPositionalIntLiteral(factor)) {
+            level = HLCF::UnrollLevel(factor);
             continue;
+          }
         }
       }
 
@@ -851,10 +852,9 @@ static ParseResult parseLoopDecorators(ParserBase &parser,
 ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
                                        size_t curIndent) {
   // We parse the decorators for the 'while' if they exist.
-  bool isFullUnroll = false;
-  int64_t unrollFactorN = -1;
+  HLCF::UnrollLevel unrollLevel = HLCF::UnrollLevel::none();
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_while,
-                          unrollFactorN, isFullUnroll))
+                          unrollLevel))
     return success();
 
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
@@ -868,8 +868,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
-  auto loopOp =
-      builder.create<HLCF::LoopOp>(whileLoc, isFullUnroll, unrollFactorN);
+  auto loopOp = builder.create<HLCF::LoopOp>(whileLoc, unrollLevel);
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
@@ -908,10 +907,9 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
 ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                      size_t curIndent) {
   // We parse the decorators for the 'for' if they exist.
-  bool isFullUnroll = false;
-  int64_t unrollFactorN = -1;
+  HLCF::UnrollLevel unrollLevel = HLCF::UnrollLevel::none();
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_for,
-                          unrollFactorN, isFullUnroll))
+                          unrollLevel))
     return success();
 
   Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
@@ -981,8 +979,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
   }
 
-  HLCF::LoopOp loopOp =
-      builder.create<HLCF::LoopOp>(forLoc, isFullUnroll, unrollFactorN);
+  HLCF::LoopOp loopOp = builder.create<HLCF::LoopOp>(forLoc, unrollLevel);
   Block *body = builder.createBlock(&loopOp.getBody());
   builder = OpBuilder::atBlockEnd(body);
 
