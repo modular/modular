@@ -177,10 +177,13 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
     auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
     if (!tag)
       return WalkResult::advance();
+
     // If the surrounding function lacks debug info, then debug value operations
     // have no anchor. Erase them.
+    Location surroundingFuncLoc =
+        isa<HLCF::LoopOp>(op) ? func->getLoc() : op->getLoc();
     updateScopeDebugInfoFrom(op, tag, updateAttrName,
-                             isa<FileLineColLoc>(func.getLoc()));
+                             isa<FileLineColLoc>(surroundingFuncLoc));
     return WalkResult::skip();
   });
 }

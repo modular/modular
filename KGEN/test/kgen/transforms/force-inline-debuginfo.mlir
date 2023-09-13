@@ -153,7 +153,7 @@ kgen.func @call_async_no_debuginfo() -> !pop.coroutine<() -> (index)> {
   // CHECK-NEXT: lit.async.execute
   // CHECK-NOT: debuginfo.value
   %idx2 = index.constant 2 loc(#locAsyncCaller)
-  %0 = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
+  %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   kgen.return %0 : !pop.coroutine<() -> (index)>
 }
 

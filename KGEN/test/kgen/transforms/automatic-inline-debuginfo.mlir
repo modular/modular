@@ -1,0 +1,136 @@
+// RUN: kgen-opt -automatic-inline=update-debug-info=true -mlir-print-debuginfo %s | FileCheck %s
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#compile_unit = #debuginfo.compile_unit<
+  sourceLanguage = DW_LANG_C,
+  file = #file,
+  producer = "MLIR",
+  isOptimized = true,
+  emissionKind = Full
+>
+// CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, name = "inline_me0", linkageName = "inline_me0",
+#callee0Sp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "inline_me0",
+  linkageName = "inline_me0",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+
+// CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<{{.*}}, name = "inline_me1", linkageName = "inline_me1",
+#callee1Sp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "inline_me1",
+  linkageName = "inline_me1",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+
+#callerSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "caller",
+  linkageName = "caller",
+  file = #file,
+  line = 10,
+  scopeLine = 10,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+
+// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<{{.*}}, name = "call_async", linkageName = "call_async",
+#asyncCallerSp = #debuginfo.subprogram<
+  compileUnit = #compile_unit,
+  scope = #file,
+  name = "call_async",
+  linkageName = "call_async",
+  file = #file,
+  line = 50,
+  scopeLine = 50,
+  subprogramFlags = Definition
+> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
+#local_variable0 = #debuginfo.local_variable<
+  scope = #callee0Sp,
+  name = "foo",
+  file = #file,
+  line = 10,
+  arg = 1
+> : !debuginfo.unresolved<index>
+#local_variable1 = #debuginfo.local_variable<
+  scope = #callee1Sp,
+  name = "bar",
+  file = #file,
+  line = 10,
+  arg = 1
+> : !debuginfo.unresolved<index>
+
+// CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
+// CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
+#locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
+
+// -------------------------------------------------------------------------- //
+// Test location handling for two-level of fully-inlined exported function
+// -------------------------------------------------------------------------- //
+
+#loc0 = loc("foo.mlir":13:1)
+#loc1 = loc("foo.mlir":13:2)
+#locArg0 = loc("foo.mlir":13:12)
+#locArg1 = loc("foo.mlir":13:13)
+#locCallee0 = loc(fused<#callee0Sp>[#loc0])
+#locCallee1 = loc(fused<#callee1Sp>[#loc1])
+
+#locCallsite = loc("bar.mlir":27:8)
+#locCaller = loc(fused<#callerSp>[#locCallsite])
+
+// Both of inline_me0 and inline_me1 will be fully-inilined,
+// However they will not be erased since both are `exported`.
+// We need to update location for both of them.
+kgen.func export @inline_me0(%arg0: index) -> index {
+  debuginfo.value #local_variable0 = %arg0 : index loc(fused<#callee0Sp>[#locArg0])
+  kgen.return %arg0: index loc(#locCallee0)
+} loc(#locCallee0)
+
+kgen.func export @inline_me1(%arg0: index) -> index {
+  debuginfo.value #local_variable1 = %arg0 : index loc(fused<#callee1Sp>[#locArg1])
+  %1 = kgen.call @inline_me0(%arg0) : (index) -> index loc(#locCallee1)
+  kgen.return %1: index loc(#locCallee1)
+} loc(#locCallee1)
+
+// CHECK-LABEL: kgen.func @call_inline_me
+kgen.func @call_inline_me() -> index {
+  %0 = index.constant 3 loc(#locCaller)
+  // CHECK: %idx3 = index.constant 3
+  // CHECK-NEXT: debuginfo.value #local_variable1 = %idx3 : index loc(#[[LOC_VALUE_INLINED:.*]])
+  %1 = kgen.call @inline_me1(%0) : (index) -> index loc(#locCaller)
+  kgen.return %1 : index loc(#locCaller)
+} loc(#locCaller)
+
+// -------------------------------------------------------------------------- //
+// Test location for inlining async call with a nodebug function that inlines
+// a function that has debugInfo. :-(
+// -------------------------------------------------------------------------- //
+
+kgen.func @nodebug_inline_me(%arg0: index) -> index {
+  %0 = index.add %arg0, %arg0
+  %1 = kgen.call @inline_me0(%0) : (index) -> index
+  kgen.return %1: index
+}
+
+// CHECK-LABEL: kgen.func @call_async
+kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
+  // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER]])
+  %idx2 = index.constant 2 loc(#locAsyncCaller)
+  // CHECK-NEXT: [[V0:%.*]]lit.async.execute <() -> index> {
+  // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
+  // CHECK-NEXT:   lit.async.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
+  // CHECK-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
+  // CHECK-NEXT: kgen.return
+  kgen.return %0: !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
+// CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
+} loc(#locAsyncCaller)
