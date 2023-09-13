@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(KGENToLLVM
+add_modular_library(KGENToLLVM
   KGENToLLVMPipeline.cpp
   LLVMLoweringUtils.cpp
   LowerControlFlow.cpp

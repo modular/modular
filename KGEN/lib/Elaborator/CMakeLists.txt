@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(KGENElaborator
+add_modular_library(KGENElaborator
   Elaborator.cpp
   IREvaluator.cpp
 

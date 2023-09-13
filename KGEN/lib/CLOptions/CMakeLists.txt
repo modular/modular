@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_mlir_library(KGENCLOptions
+add_modular_library(KGENCLOptions
   CLOptions.cpp
 
   DEPENDS

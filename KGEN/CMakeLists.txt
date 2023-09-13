@@ -13,13 +13,6 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # the necessary standard library packages.
 add_custom_target(mojo-sdk)
 
-# add_kgen_translation_library is a wrapper around add_modular_mlir_library that
-# automatically links the library into kgen-translate.
-function(add_kgen_translation_library name)
-  set_property(GLOBAL APPEND PROPERTY KGEN_TRANSLATION_LIBS ${name})
-  add_modular_mlir_library(${ARGV} DEPENDS modular-headers)
-endfunction()
-
 add_subdirectory(include/KGEN)
 add_subdirectory(lib/Interpreter)
 add_subdirectory(lib/HLCFDialect)
