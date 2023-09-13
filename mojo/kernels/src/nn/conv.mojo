@@ -2949,6 +2949,7 @@ struct ConvDirectNHWC[
                         simd_size,
                         c_fully_cached,
                         has_residual,
+                        # prefetch offset
                         4 if not has_neon() else -1,
                     ](
                         input_base_offsets,
@@ -3144,6 +3145,8 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
+        constrained[is_x86()]()
+
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         var offset = input_offset
@@ -3221,10 +3224,108 @@ struct ConvDirectNHWC[
             offset += 1
 
     @always_inline
+    @adaptive
     fn _accumulate[
         micro_kernel_height: Int,
         micro_kernel_width: Int,
         simd_size: Int,
+        c_fully_cached: Bool,
+        has_residual: Bool,
+        prefetch_offset: Int,
+    ](
+        self,
+        input_base_offsets: Buffer[micro_kernel_height, DType.int32],
+        input_offset: Int,
+        c_tile_size: Int,
+        filter_base: DTypePointer[type],
+        output_micro_tile: NDBuffer[
+            2,
+            DimList(micro_kernel_height, micro_kernel_width * simd_size),
+            type,
+        ],
+    ):
+        constrained[has_neon()]()
+
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        @parameter
+        @always_inline
+        fn micro_kernel[num_lanes: Int](offset: Int):
+            let input_vecs = stack_allocation[
+                micro_kernel_height, SIMD[type, num_lanes]
+            ]()
+
+            # Load vectors of size num_lanes from input.
+            @unroll
+            for i in range(micro_kernel_height):
+                # input_base_offset + input_offset is the actual offset
+                # for the accumulation.
+                let input_vec = self.input.data.offset(
+                    input_base_offsets[i].value + input_offset + offset
+                ).simd_load[num_lanes]()
+                input_vecs.store(i, input_vec)
+
+            var filter_ptr: DTypePointer[type]
+
+            @parameter
+            if filter_packed:
+                filter_ptr = filter_base.offset(offset * micro_kernel_f_size)
+            else:
+                filter_ptr = filter_base.offset(offset * self.conv_shape.f)
+
+            @unroll
+            for lane in range(num_lanes):
+
+                @unroll
+                for j in range(micro_kernel_width):
+                    # Load a simd vector from filter.
+                    let filter_vec: SIMD[type, simd_size]
+                    # Partial load if filter is not multiple of simd_size.
+                    @parameter
+                    if has_residual and not filter_packed:
+                        let residual = self.conv_shape.f - (
+                            self.conv_shape.f // simd_size
+                        ) * simd_size
+                        filter_vec = partial_simd_load[type, simd_size](
+                            filter_ptr, 0, residual, 0.0
+                        )
+                    # It's always safe to load a full vector from packed filter because
+                    # the filter to padded to multiple simd_size during pre-packing.
+                    else:
+                        filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                            simd_size
+                        ]()
+
+                    @unroll
+                    for i in range(micro_kernel_height):
+                        let input_vec = input_vecs[i]
+                        let output_micro_idx = Index(i, j * simd_size)
+                        var output_vec = output_micro_tile.simd_load[simd_size](
+                            output_micro_idx
+                        )
+                        # Neon can broadcast from an element in simd vector.
+                        output_vec = fma[type, simd_size](
+                            input_vec[lane], filter_vec, output_vec
+                        )
+                        output_micro_tile.simd_store[simd_size](
+                            output_micro_idx, output_vec
+                        )
+
+                @parameter
+                if filter_packed:
+                    filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+                else:
+                    filter_ptr = filter_ptr.offset(self.conv_shape.f)
+
+        tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
+
+    @always_inline
+    @adaptive
+    fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+        prefetch_offset: Int,
     ](
         self,
         c_tile_size: Int,
@@ -3233,6 +3334,9 @@ struct ConvDirectNHWC[
         filter_base: DTypePointer[type],
         output_ptr: DTypePointer[type],
     ):
+        """Accumulate with register tiling on x86 architectures."""
+        constrained[is_x86()]()
+
         # Short circuit when the micro tile is in padding.
         @parameter
         if micro_kernel_height == 0:
@@ -3243,14 +3347,21 @@ struct ConvDirectNHWC[
         for c in range(c_tile_size):
 
             alias micro_kernel_f_size = micro_kernel_width * simd_size
-            alias prefetch_offset = 4 * micro_kernel_f_size
 
             # prefetch
-            @unroll
-            for i in range(micro_kernel_width):
-                filter_base.offset(prefetch_offset + i * simd_size).prefetch[
-                    PrefetchOptions().for_read().high_locality().to_data_cache()
-                ]()
+            @parameter
+            if prefetch_offset > 0:
+
+                @unroll
+                for i in range(micro_kernel_width):
+                    filter_base.offset(
+                        prefetch_offset * micro_kernel_f_size + i * simd_size
+                    ).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
 
             alias alignment = alignof[SIMD[type, simd_size]]()
 
@@ -3287,6 +3398,88 @@ struct ConvDirectNHWC[
             # RSCF: jump to the next row for the next f segement.
             else:
                 filter_ptr = filter_ptr.offset(self.conv_shape.f)
+
+    @always_inline
+    @adaptive
+    fn _accumulate[
+        micro_kernel_height: Int,
+        micro_kernel_width: Int,
+        simd_size: Int,
+        prefetch_offset: Int,
+    ](
+        self,
+        c_tile_size: Int,
+        input_stride: Int,
+        input_base: DTypePointer[type],
+        filter_base: DTypePointer[type],
+        output_ptr: DTypePointer[type],
+    ):
+        """Accumulate with register tiling on x86 architectures."""
+        constrained[has_neon()]()
+
+        # Short circuit when the micro tile is in padding.
+        @parameter
+        if micro_kernel_height == 0:
+            return
+
+        alias micro_kernel_f_size = micro_kernel_width * simd_size
+
+        @parameter
+        @always_inline
+        fn micro_kernel[num_lanes: Int](offset: Int):
+            let input_vecs = stack_allocation[
+                micro_kernel_height, SIMD[type, num_lanes]
+            ]()
+
+            # Load vectors of size num_lanes from input.
+            @unroll
+            for i in range(micro_kernel_height):
+                input_vecs.store(
+                    i,
+                    input_base.offset(offset + i * input_stride).simd_load[
+                        num_lanes
+                    ](),
+                )
+
+            var filter_ptr: DTypePointer[type]
+
+            @parameter
+            if filter_packed:
+                filter_ptr = filter_base.offset(offset * micro_kernel_f_size)
+            else:
+                filter_ptr = filter_base.offset(offset * self.conv_shape.f)
+
+            @unroll
+            for lane in range(num_lanes):
+
+                @unroll
+                for j in range(micro_kernel_width):
+                    # Load a simd vector from filter.
+                    let filter_vec = filter_ptr.offset(j * simd_size).simd_load[
+                        simd_size
+                    ]()
+
+                    @unroll
+                    for i in range(micro_kernel_height):
+                        let input_vec = input_vecs[i]
+                        var output_vec = output_ptr.offset(
+                            i * micro_kernel_f_size + j * simd_size
+                        ).simd_load[simd_size]()
+                        # Neon can broadcast from an element in simd vector.
+                        output_vec = fma[type, simd_size](
+                            input_vec[lane], filter_vec, output_vec
+                        )
+                        output_ptr.offset(
+                            i * micro_kernel_f_size + j * simd_size
+                        ).simd_store[simd_size](output_vec)
+
+                @parameter
+                if filter_packed:
+                    filter_ptr = filter_ptr.offset(micro_kernel_f_size)
+                else:
+                    filter_ptr = filter_ptr.offset(self.conv_shape.f)
+
+        tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, c_tile_size)
 
     @always_inline
     fn _h_loop[
@@ -3563,6 +3756,8 @@ struct ConvDirectNHWC[
                         micro_kernel_height,
                         micro_kernel_width,
                         simd_size,
+                        # prefetch offset, default to 4 for now
+                        4,
                     ](
                         c_tile_size,
                         wo_stride_in_input,

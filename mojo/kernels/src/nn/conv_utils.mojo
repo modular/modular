@@ -6,7 +6,14 @@
 
 from math import clamp, div_ceil, max, min, sqrt
 from sys.build import is_debug_build
-from sys.info import has_avx512f, has_neon, os_is_macos, simdwidthof, sizeof
+from sys.info import (
+    has_avx512f,
+    has_neon,
+    is_neoverse_n1,
+    os_is_macos,
+    simdwidthof,
+    sizeof,
+)
 
 from Image import Image2DLayout, ImageData
 from MatmulUtils import partition_work
@@ -283,8 +290,10 @@ fn get_direct_conv_micro_kernel_height() -> Int:
     @parameter
     if has_avx512f():
         return 6
-    elif has_neon():
+    elif is_neoverse_n1():
         return 8
+    elif has_neon():  # neon other than neoverse-N1
+        return 6
     return 4
 
 
@@ -292,8 +301,10 @@ fn get_direct_conv_micro_kernel_width() -> Int:
     @parameter
     if has_avx512f():
         return 4
-    elif has_neon():
+    elif is_neoverse_n1():
         return 2
+    elif has_neon():  # neon other than neoverse-N1
+        return 4
     return 3
 
 
