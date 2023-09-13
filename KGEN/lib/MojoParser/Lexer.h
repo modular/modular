@@ -11,7 +11,7 @@
 #ifndef LEXER_H
 #define LEXER_H
 
-#include "Diags.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBuffer.h"

@@ -4,9 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Diags.h"
-#include "Lexer.h"
-
+#include "Support/Compiler/Diags.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/SmallString.h"

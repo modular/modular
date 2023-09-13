@@ -16,10 +16,10 @@
 #ifndef EXPRNODES_H
 #define EXPRNODES_H
 
-#include "Diags.h"
 #include "ExprNode.h"
 #include "IRValues.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "Support/Compiler/Diags.h"
 #include "llvm/ADT/StringExtras.h"
 
 namespace M::KGEN {

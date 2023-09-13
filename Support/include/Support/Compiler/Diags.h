@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef DIAGS_H
-#define DIAGS_H
+#ifndef KGEN_FRONTENDSUPPORT_DIAGS_H
+#define KGEN_FRONTENDSUPPORT_DIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <functional>
@@ -261,4 +261,4 @@ void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 
 } // namespace M::KGEN::LIT
 
-#endif // DIAGS_H
+#endif // KGEN_FRONTENDSUPPORT_DIAGS_H

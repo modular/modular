@@ -12,7 +12,6 @@ add_modular_library(MojoParser
   ClosureEmitter.cpp
   CodeComplete.cpp
   DeclResolver.cpp
-  Diags.cpp
   DocString.cpp
   ExprEmitter.cpp
   ExprNodes.cpp
@@ -33,6 +32,7 @@ add_modular_library(MojoParser
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  MCompilerSupport
   KGENToolCommon
   LLCLRuntime
   MTelemetry
