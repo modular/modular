@@ -25,15 +25,24 @@ class HLCF_Attr<string attrName, string attrMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
-// LoopUnrollFactor
+// UnrollLevel
 //===----------------------------------------------------------------------===//
 
-def HLCF_LoopUnrollFull: HLCF_Enum<"LoopUnrollFull", "loop unroll full", [
-                           HLCF_EnumCase<"Full", 0, "full">,
-                           HLCF_EnumCase<"None", 1, "none">]>;
+def HLCF_UnrollLevelAttr : HLCF_Attr<"UnrollLevel", "unroll_level"> {
+  let summary = "loop unroll level";
+  let description = [{
+    The `#hlcf.unroll_level` attribute describes how much a loop should be
+    unrolled. When set to `none`, the loop is not unrolled. When set to `full`,
+    the loop will be fully unrolled. Alternatively, an unroll factor can be set.
+  }];
 
-def HLCF_LoopUnrollFullAttr
-  : EnumAttr<HLCFDialect, HLCF_LoopUnrollFull, "loop_unroll_full">;
+  let parameters = (ins "UnrollLevel":$value);
+  let assemblyFormat = "custom<UnrollLevel>($value)";
+
+  let returnType = "UnrollLevel";
+  let constBuilderCall = "UnrollLevelAttr::get($_builder.getContext(), $0)";
+  let convertFromStorage = "$_self.getValue()";
+}
 
 //===----------------------------------------------------------------------===//
 // ForLoopBoundCmpPredicate

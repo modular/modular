@@ -4,7 +4,7 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_conversion_library(MojoParser
+add_modular_library(MojoParser
   ASTDeclView.cpp
   ASTDeclRef.cpp
   ASTType.cpp

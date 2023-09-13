@@ -342,13 +342,13 @@ fn unroll_for():
         @unroll
         for j in range (1, 4):
             print (i + j)
-    # CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
-    # CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
+    # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
+    # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
 
     @unroll(2)
     for j in range (1, 4):
         print (j)
-    # CHECK: } {unrollFactor = 2 : index}
+    # CHECK: } {unrollLevel = #hlcf<unroll_level 2>}
 
 # CHECK-LABEL: lit.func @"unroll_while()"
 fn unroll_while():
@@ -356,7 +356,7 @@ fn unroll_while():
   @unroll
   while i < 4:
       print(i)
-  # CHECK: } {unrollFactor = #hlcf<loop_unroll_full full>}
+  # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
 
 ##===----------------------------------------------------------------------===##
 # Raise and Try

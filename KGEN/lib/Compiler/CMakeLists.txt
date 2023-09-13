@@ -17,7 +17,6 @@ add_modular_library(KGENCompiler
   KGENElaborator
   KGENEmitObject
   KGENTransforms
-  MojoParser
   LowerLIT
 
   KGENDialect
@@ -25,4 +24,4 @@ add_modular_library(KGENCompiler
   POPDialect
 
   MLIRIR
-  )
+)

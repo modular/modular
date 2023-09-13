@@ -86,18 +86,19 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
      hlcf.for [%lb to %up step %step slt add] (%arg0 = %c1: index) {
        %5 = index.add %arg0, %c2
        hlcf.for.yield[induction_var (%5 : index)] [retvals ()] [iterargs ()]
-     } {unrollFactor = #hlcf<loop_unroll_full full>}
+     } {unrollLevel = #hlcf<unroll_level full>}
     ```
 
     or
 
     ```mlir
-     %0 = hlcf.for [%lb to %up step %step sge sub]
-                    (%arg1 = %k: index, %arg0 = %i: index) -> (index, index) {
-         %3 = index.add %arg1, %index2
-         %5 = index.add %arg0, %arg1
-         hlcf.for.yield[induction_var (%3 : index)] [retvals (%5: index)] [iterargs ()]
-       } {unrollFactor = "full"}
+    %0 = hlcf.for [%lb to %up step %step sge sub]
+                  (%arg1 = %k: index, %arg0 = %i: index) -> (index, index) {
+      %3 = index.add %arg1, %index2
+      %5 = index.add %arg0, %arg1
+      hlcf.for.yield [induction_var (%3 : index)] [retvals (%5: index)]
+                     [iterargs ()]
+    } {unrollLevel = #hlcf<unroll_level full>}
     ```
 
    The arg operands are ordered in three parts:
@@ -107,36 +108,24 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
 
   }];
 
-  let arguments = (ins Index:$lowerBound,
-                       Index:$upperBound,
-                       Index:$step,
-                       Variadic<AnyType>:$iterArgs,
-                       AnyAttrOf<[HLCF_LoopUnrollFullAttr, IndexAttr]>:$unrollFactor,
-                       HLCF_ForLoopBoundCmpPredicateAttr:$cmpPredicateType,
-                       HLCF_ForLoopIndVarComputeAttr:$indVarComputeType);
+  let arguments = (ins
+    Index:$lowerBound,
+    Index:$upperBound,
+    Index:$step,
+    Variadic<AnyType>:$iterArgs,
+    DefaultValuedAttr<HLCF_UnrollLevelAttr, "UnrollLevel::none()">:$unrollLevel,
+    HLCF_ForLoopBoundCmpPredicateAttr:$cmpPredicateType,
+    HLCF_ForLoopIndVarComputeAttr:$indVarComputeType
+  );
 
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    ` ``[` $lowerBound
-    `to` $upperBound
-    `step` $step
-    ``$cmpPredicateType
-    ``$indVarComputeType`]`
+    ` ``[` $lowerBound `to` $upperBound `step` $step ``$cmpPredicateType ``
+    $indVarComputeType`]`
     custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
   }];
-
-  let builders =[
-    OpBuilder<(ins "TypeRange":$results,
-                       "Value":$lowerBound,
-                       "Value":$upperBound,
-                       "Value":$step,
-                       "ValueRange":$iterArgs,
-                       "std::optional<Attribute>":$unrollFactor,
-                       "HLCF::ForLoopBoundCmpPredicate":$cmpPredicateType,
-                       "HLCF::ForLoopIndVarCompute":$indVarComputeType)>
-  ];
 
   let extraClassDeclaration = [{
     /// Get integer value for lowerBound.
@@ -221,11 +210,11 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     operations explicitly target to break or continue from out of inner loops.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands,
-                       OptionalAttr<StrAttr>:$label,
-                       OptionalAttr<AnyAttrOf<
-                         [HLCF_LoopUnrollFullAttr, IndexAttr]>>:$unrollFactor);
-
+  let arguments = (ins
+    Variadic<AnyType>:$operands,
+    OptionalAttr<StrAttr>:$label,
+    DefaultValuedAttr<HLCF_UnrollLevelAttr, "UnrollLevel::none()">:$unrollLevel
+  );
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$body);
 
@@ -234,26 +223,9 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
     custom<Loop>($operands, type($operands), type($results), $body) attr-dict
   }];
 
-
   let builders = [
-    OpBuilder<(ins CArg<"bool", "false">:$isFullUnroll,
-                   CArg<"int64_t", "-1">:$unrollFactorN), [{
-       if(isFullUnroll)
-           build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
-               $_state.getContext(), HLCF::LoopUnrollFull::Full));
-       else if (unrollFactorN > 0)
-           build($_builder, $_state, {}, {}, {},
-               $_builder.getIndexAttr(unrollFactorN));
-       else
-           build($_builder, $_state, {}, {}, {},  HLCF::LoopUnrollFullAttr::get(
-               $_state.getContext(), HLCF::LoopUnrollFull::None));
-    }]>,
-    OpBuilder<(ins "TypeRange":$results,
-                   "ValueRange":$operands,
-                   "StringAttr":$label), [{
-      build($_builder, $_state, results, operands, label,
-        HLCF::LoopUnrollFullAttr::get(
-          $_state.getContext(), HLCF::LoopUnrollFull::None));
+    OpBuilder<(ins "UnrollLevel":$level), [{
+      build($_builder, $_state, {}, {}, {}, level);
     }]>
   ];
 
@@ -552,7 +524,7 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
     hlcf.for [%lb to %up step %step] (%arg0 = %c1: index) {
       %5 = index.add %arg0, %c2
       hlcf.for.yield[induction_var (%5 : index)] [retvals ()] [iterargs ()]
-    } {unrollFactor = #hlcf<loop_unroll_full full>}
+    } {unrollLevel = #hlcf<unroll_level full>}
     ```
   }];
 

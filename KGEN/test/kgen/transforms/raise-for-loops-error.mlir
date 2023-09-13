@@ -6,7 +6,7 @@ kgen.func @decorated_but_cannot_unroll0() -> () {
   %index1 = kgen.param.constant = <1>
   %index2 = kgen.param.constant = <2>
 
-  // expected-error @+2 {{loop is decorated with @unroll, but compiler can't fully unroll it}}
+  // expected-error @below {{loop is decorated with @unroll, but compiler can't fully unroll it}}
   // expected-note @below {{loop has multiple exits}}
   hlcf.loop (%arg0 = %index1 : index, %arg1 = %index2 : index) {
     %0 = index.cmp slt(%arg0, %index4)
@@ -27,6 +27,6 @@ kgen.func @decorated_but_cannot_unroll0() -> () {
     %3 = index.add %arg0, %index1
     %4 = index.add %arg1, %3
     hlcf.continue %3, %4 : index, index
-  } {unrollFactor = #hlcf<loop_unroll_full full>}
+  } {unrollLevel = #hlcf<unroll_level full>}
   kgen.return
 }

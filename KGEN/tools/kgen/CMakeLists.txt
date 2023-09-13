@@ -27,6 +27,7 @@ add_modular_tool(kgen
   MArchTarget
   MSupportGlobals
   MVersion
+  MojoParser
 
   MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
