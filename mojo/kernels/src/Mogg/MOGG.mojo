@@ -75,6 +75,7 @@ from GatherScatter import gather_shape
 from GatherScatter import gather_reduce
 from GatherScatter import (
     scatter_elements,
+    scatter_elements_shape as scatter_shape,
     scatter_nd as _scatter_nd,
     scatter_nd_generator,
 )
@@ -209,6 +210,7 @@ fn MOGGExport():
     alias _scatter_nd_min = scatter_nd_min
     alias _scatter_nd_mul = scatter_nd_mul
     alias _scatter = scatter
+    alias _scatter_shape = scatter_shape
     alias _scatter_add = scatter_add
     alias _scatter_max = scatter_max
     alias _scatter_min = scatter_min
