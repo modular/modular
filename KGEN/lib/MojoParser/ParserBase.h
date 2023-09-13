@@ -13,6 +13,7 @@
 #define PARSERBASE_H
 
 #include "Lexer.h"
+#include "SharedState.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M::KGEN::LIT {
@@ -27,7 +28,8 @@ class ASTDecl;
 /// which is independent of the concrete grammar.
 class ParserBase : public SharedStateUser {
 public:
-  ParserBase(Lexer &lexer) : SharedStateUser(lexer.shared), lexer(lexer) {}
+  ParserBase(SharedState &shared, Lexer &lexer)
+      : SharedStateUser(shared), lexer(lexer) {}
 
   Lexer &getLexer() { return lexer; }
 
@@ -228,7 +230,7 @@ public:
   ExprNode *getNoneExpr(SMLoc loc);
 
   /// Parse a 'suite' production into the declaration specified by `decl`.
-  static ParseResult parseSuite(ASTDecl &decl, Lexer &lexer);
+  ParseResult parseSuite(ASTDecl &decl);
 
 public:
   Lexer &lexer;

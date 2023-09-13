@@ -1095,7 +1095,7 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
                                const llvm::MemoryBuffer *moduleBuffer,
                                ModuleState &parentState, FileLineColLoc loc,
                                bool enableCaching) {
-  Lexer lexer(*this, moduleBuffer);
+  Lexer lexer(diags, moduleBuffer);
 
   // Create a new decl for this module.
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
@@ -1764,9 +1764,27 @@ void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
   builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr);
 }
 
+/// Given a valid pointer into a source buffer for some token, return the
+/// length of the token by re-lex'ing it.  This is efficient.
+static size_t getTokenLength(SharedState &shared, SMLoc loc) {
+  // Because we know the pointer is to a valid place in a source buffer, and
+  // because we know that all source buffers are NUL terminated, we know that
+  // the end of buffer check isn't needed.  This allows us to form a lexer
+  // without having to find the MemoryBuffer it came from, saving some expense
+  // in diagnostic emission.
+  const char *curPtr = loc.getPointer();
+
+  // If the byte is NUL, it is an invalid token and might be end of buffer.
+  if (*curPtr == '\0')
+    return 0;
+
+  Lexer lexer(shared.diags, StringRef(curPtr, ~0ULL), curPtr);
+  return lexer.getToken().getSpelling().size();
+}
+
 /// Given a pointer to the start of a token, find the end of it.
 static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
-  size_t tokenSize = Lexer::getTokenLength(shared, loc);
+  size_t tokenSize = getTokenLength(shared, loc);
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 

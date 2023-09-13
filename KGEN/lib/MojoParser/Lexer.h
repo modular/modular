@@ -11,13 +11,15 @@
 #ifndef LEXER_H
 #define LEXER_H
 
-#include "SharedState.h"
-#include "mlir/IR/BuiltinAttributes.h"
+#include "Diags.h"
+#include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/SMLoc.h"
 
 namespace M::KGEN::LIT {
+class Diags;
 class LexerCursor;
 using llvm::SMLoc;
 
@@ -101,11 +103,11 @@ private:
 };
 
 /// This implements a lexer for .mojo files.
-class Lexer : public SharedStateUser {
+class Lexer {
 public:
-  Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr);
-  Lexer(SharedState &sharedState, const llvm::MemoryBuffer *buffer);
-  Lexer(SharedState &sharedState, const LexerCursor &cursor);
+  Lexer(Diags &diags, StringRef curBuffer, const char *curPtr);
+  Lexer(Diags &diags, const llvm::MemoryBuffer *buffer);
+  Lexer(Diags &diags, const LexerCursor &cursor);
 
   /// Move to the next valid token.
   void lexToken();
@@ -137,10 +139,6 @@ public:
   /// buffer if there is none.
   SMLoc findEndOfPreviousLine(SMLoc loc) const;
 
-  /// Given a valid pointer into a source buffer for some token, return the
-  /// length of the token by re-lex'ing it.  This is efficient.
-  static size_t getTokenLength(SharedState &shared, SMLoc loc);
-
   /// Return the current buffer we are lexing from.
   StringRef getBuffer() const { return curBuffer; }
 
@@ -163,6 +161,8 @@ private:
   void skipComment();
 
 private:
+  /// This the source file diagnostic manager to use.
+  Diags &diags;
   /// This is the overall memory buffer that we are lexing from.
   StringRef curBuffer;
   /// This the start of the next byte to lex.
@@ -178,6 +178,7 @@ private:
   Lexer(const Lexer &) = delete;
   void operator=(const Lexer &) = delete;
   friend class LexerCursor;
+  friend class LexerCrashReporter;
 };
 
 /// This is the state captured for a lexer cursor.

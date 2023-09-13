@@ -65,8 +65,9 @@ namespace M::KGEN::LIT {
 /// idiom.
 class ExprParser : public ParserBase {
 public:
-  ExprParser(Lexer &lexer, std::optional<size_t> stmtIndent)
-      : ParserBase(lexer), stmtIndent(stmtIndent) {}
+  ExprParser(SharedState &shared, Lexer &lexer,
+             std::optional<size_t> stmtIndent)
+      : ParserBase(shared, lexer), stmtIndent(stmtIndent) {}
 
   ~ExprParser() {}
 
@@ -1059,7 +1060,7 @@ ParseResult ExprParser::parseAddressConvert(ExprNode *&result) {
 /// tuple expression if there are commas.
 ParseResult ParserBase::parseExpressionList(ExprNode *&result,
                                             std::optional<size_t> stmtIndent) {
-  ExprParser parser(getLexer(), stmtIndent);
+  ExprParser parser(shared, getLexer(), stmtIndent);
   SmallVector<ExprNode *> exprs;
   auto parseItem = [&]() -> ParseResult {
     return parser.parseExpression(exprs.emplace_back(nullptr),
@@ -1105,18 +1106,18 @@ ParseResult ParserBase::parseOptionalIdentifier(StringAttr &result,
 /// trailing punctuator that naturally terminates the expression.
 ParseResult ParserBase::parseExpression(ExprNode *&result,
                                         std::optional<size_t> stmtIndent) {
-  return ExprParser(getLexer(), stmtIndent)
+  return ExprParser(shared, getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kExpression);
 }
 ParseResult
 ParserBase::parseAssignExpression(ExprNode *&result,
                                   std::optional<size_t> stmtIndent) {
-  return ExprParser(getLexer(), stmtIndent)
+  return ExprParser(shared, getLexer(), stmtIndent)
       .parseExpression(result, Precedence::kAssignExpr);
 }
 
 ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
-  return ExprParser(getLexer(), std::nullopt).parseStarredItem(result);
+  return ExprParser(shared, getLexer(), std::nullopt).parseStarredItem(result);
 }
 
 /// If the specified token is an '=' or '+=' sort of token, return the
@@ -1170,7 +1171,7 @@ static std::optional<ExprNode::Kind> getAssignmentKind(Token::Kind tokenKind) {
 /// and starred expression.
 ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
                                              size_t stmtIndent) {
-  ExprParser p(getLexer(), stmtIndent);
+  ExprParser p(shared, getLexer(), stmtIndent);
 
   // We have three very different grammar productions that all start with an
   // expression, starred_expression, or assignment_expression plus the target
@@ -1203,11 +1204,11 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
 
 ParseResult ParserBase::parseVarLetInitExpression(ExprNode *&expr,
                                                   size_t stmtIndent) {
-  return ExprParser(getLexer(), stmtIndent)
+  return ExprParser(shared, getLexer(), stmtIndent)
       .parseStarredListAsTuple(expr, /*terminators=*/{});
 }
 
 /// Return an expression node for None at the specified location.
 ExprNode *ParserBase::getNoneExpr(SMLoc loc) {
-  return ExprParser(getLexer(), 0).getNoneExpr(loc);
+  return ExprParser(shared, getLexer(), 0).getNoneExpr(loc);
 }
