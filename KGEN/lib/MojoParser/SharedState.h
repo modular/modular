@@ -12,7 +12,7 @@
 #ifndef SHARED_STATE_H
 #define SHARED_STATE_H
 
-#include "Diags.h"
+#include "Support/Compiler/Diags.h"
 
 #include "IRValues.h"
 #include "mlir/IR/BuiltinOps.h"

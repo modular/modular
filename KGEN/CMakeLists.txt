@@ -13,23 +13,30 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # the necessary standard library packages.
 add_custom_target(mojo-sdk)
 
+# KGEN MLIR dialects.
 add_subdirectory(include/KGEN)
 add_subdirectory(lib/Interpreter)
 add_subdirectory(lib/HLCFDialect)
 add_subdirectory(lib/KGENDialect)
 add_subdirectory(lib/POPDialect)
 add_subdirectory(lib/LITDialect)
-add_subdirectory(lib/ToolCommon)
+
+# KGEN MLIR passes.
 add_subdirectory(lib/LowerLIT)
 add_subdirectory(lib/KGENToLLVM)
-add_subdirectory(lib/CompilerRT)
-add_subdirectory(lib/MojoParser)
 add_subdirectory(lib/Transforms)
-add_subdirectory(lib/ExecutionEngine)
 add_subdirectory(lib/Elaborator)
+
+# KGEN compiler and JIT.
+add_subdirectory(lib/ToolCommon)
+add_subdirectory(lib/CompilerRT)
+add_subdirectory(lib/ExecutionEngine)
 add_subdirectory(lib/ObjectCompiler)
 add_subdirectory(lib/Compiler)
 add_subdirectory(lib/Package)
+
+# KGEN parser.
+add_subdirectory(lib/MojoParser)
 
 if(LLDB_FOUND)
   add_subdirectory(lib/MojoLLDB)
