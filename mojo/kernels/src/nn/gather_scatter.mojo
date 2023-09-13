@@ -730,6 +730,68 @@ fn scatter_elements[
 
 
 @always_inline
+fn scatter_elements_shape[
+    rank: Int,
+    input_type: DType,
+    indices_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    updates: NDBuffer[rank, DimList.create_unknown[rank](), input_type],
+    indices: NDBuffer[rank, DimList.create_unknown[rank](), indices_type],
+    axis: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+) -> StaticIntTuple[rank]:
+    """
+    Compute the output shape of a `scatter_elements` operation, and assert the
+    inputs are compatible.
+
+    Parameters:
+        rank: Rank of the input tensor.
+        input_type: Type of the input tensor.
+        indices_type: Type of the indices tensor.
+        axis_type: Type of the axis tensor.
+        single_thread_blocking_override: Whether this function can block.
+
+    Args:
+        input: The input tensor.
+        updates: The input tensor.
+        indices: The indices tensor.
+        axis: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # Check axis
+    let axis_int = axis[0].to_int()
+    # TODO(#17512)
+    debug_assert(
+        -rank <= axis_int and axis_int < rank,
+        "axis must be within range [-input_rank, input_rank)",
+    )
+
+    # Check individual dimensions
+    for axis in range(rank):
+        let input_dim = input.dim(axis)
+        let indices_dim = indices.dim(axis)
+        let updates_dim = updates.dim(axis)
+        # TODO(#17512)
+        debug_assert(
+            indices_dim == updates_dim,
+            "indices and updates must have the same shape",
+        )
+        # TODO(#17512)
+        debug_assert(
+            indices_dim < input_dim,
+            "indices and updates must have smaller shape than input",
+        )
+
+    # Return output shape
+    return input.get_shape()
+
+
+@always_inline
 fn gather_elements[
     rank: Int,
     input_type: DType,
