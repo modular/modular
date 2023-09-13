@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMPassesPipeline.h"
-#include "KGEN/CompilationOptions.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"

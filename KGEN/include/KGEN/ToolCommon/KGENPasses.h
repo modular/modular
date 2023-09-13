@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_KGENPASSES_H
-#define KGEN_KGENPASSES_H
+#ifndef KGEN_TOOLCOMMON_KGENPASSES_H
+#define KGEN_TOOLCOMMON_KGENPASSES_H
 
-#include "KGEN/CompilationOptions.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Pass/Pass.h"
@@ -197,4 +197,4 @@ void buildPostElaborationPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 } // namespace KGEN
 } // namespace M
 
-#endif // KGEN_KGENPASSES_H
+#endif // KGEN_TOOLCOMMON_KGENPASSES_H

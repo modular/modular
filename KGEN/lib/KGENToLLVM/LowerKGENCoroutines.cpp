@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"

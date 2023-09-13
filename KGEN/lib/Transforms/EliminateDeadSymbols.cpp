@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 
 using namespace M;

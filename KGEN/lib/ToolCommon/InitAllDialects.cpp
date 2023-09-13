@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/InitAllDialects.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"

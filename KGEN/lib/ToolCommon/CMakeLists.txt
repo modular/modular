@@ -4,20 +4,19 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENCLOptions
+add_modular_library(KGENToolCommon
   CLOptions.cpp
-
-  DEPENDS
-  MLIRDebugInfoIncGen
-  InterpreterInterfaceIncGen
-  MLIRKGENIncGen
-  MLIRMIncGen
-  MLIRPOPIncGen
+  CompilationOptions.cpp
+  InitAllDialects.cpp
 
   LINK_LIBS PUBLIC
-  KGENExecutionEngine
-  MLIRLLVMDialect
-  MSupport
+  DebugInfoDialect
+  HLCFDialect
+  KGENDialect
+  LITDialect
+  POPDialect
+  CacheDialect
 
-  DISALLOWED_DEPENDS
+  MLIRIndexDialect
+  MLIRLLVMDialect
   )

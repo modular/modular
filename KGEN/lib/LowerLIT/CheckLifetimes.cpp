@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENPasses.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"

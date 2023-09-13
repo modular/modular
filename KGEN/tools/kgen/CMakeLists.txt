@@ -18,8 +18,7 @@ add_modular_tool(kgen
   AllTargetsInfos
 
   LINK_LIBS PRIVATE
-  InitAllKGENDialects
-  KGENCLOptions
+  KGENToolCommon
   KGENCompiler
   KGENEmitObject
   KGENExecutionEngine

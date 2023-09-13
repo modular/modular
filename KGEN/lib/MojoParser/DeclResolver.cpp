@@ -21,7 +21,6 @@
 #include "ParserParamEvaluator.h"
 #include "StructEmitter.h"
 
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -30,6 +29,7 @@
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "SharedState.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"

@@ -20,9 +20,7 @@
 
 #include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
-#include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -32,6 +30,8 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"

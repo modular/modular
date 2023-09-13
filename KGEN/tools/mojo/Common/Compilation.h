@@ -11,8 +11,8 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_COMPILATION_H
 #define KGEN_TOOLS_MOJO_COMMON_COMPILATION_H
 
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Option/ArgList.h"

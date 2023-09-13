@@ -32,7 +32,7 @@ add_modular_library(MojoLLDB SHARED
   MCJIT
 
   LINK_LIBS
-  InitAllKGENDialects
+  KGENToolCommon
   KGENCompiler
   KGENEmitObject
   LLCLRuntimeGlobals

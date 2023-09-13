@@ -6,8 +6,8 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"

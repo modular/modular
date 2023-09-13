@@ -5,12 +5,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoServer.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "KGEN/MojoParser/CodeComplete.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"

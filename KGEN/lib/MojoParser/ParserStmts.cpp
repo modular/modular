@@ -17,7 +17,6 @@
 #include "Lexer.h"
 #include "ParserBase.h"
 
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -25,6 +24,7 @@
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"

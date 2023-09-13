@@ -6,9 +6,9 @@
 
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"

@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CLOptions.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/ToolCommon/CLOptions.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"

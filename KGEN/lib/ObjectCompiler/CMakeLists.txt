@@ -22,6 +22,7 @@ add_modular_library(KGENEmitObject
   LINK_LIBS PUBLIC
   KGENToLLVM
   KGENExecutionEngine
+  KGENToolCommon
 
   MCache
   MCompilerSupport

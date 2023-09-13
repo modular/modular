@@ -6,7 +6,6 @@
 
 #include "KGEN/Package/Package.h"
 #include "Cache/Buffer.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "LLCL/Runtime/Runtime.h"

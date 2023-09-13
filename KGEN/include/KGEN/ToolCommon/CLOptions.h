@@ -4,10 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_CLOPTIONS_H
-#define KGEN_CLOPTIONS_H
+#ifndef KGEN_TOOLCOMMON_CLOPTIONS_H
+#define KGEN_TOOLCOMMON_CLOPTIONS_H
 
-#include "KGEN/CompilationOptions.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
@@ -257,4 +257,4 @@ private:
 } // namespace KGEN
 } // namespace M
 
-#endif // KGEN_CLOPTIONS_H
+#endif // KGEN_TOOLCOMMON_CLOPTIONS_H

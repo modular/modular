@@ -10,7 +10,7 @@ add_modular_tool(mojo-lsp-server
   mojo-lsp-server.cpp
 
   LINK_LIBS PRIVATE
-  KGENCLOptions
+  KGENToolCommon
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals
