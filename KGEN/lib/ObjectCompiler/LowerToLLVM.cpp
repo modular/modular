@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENPasses.h"
 #include "KGEN/ObjectCompiler.h"
 #include "LLCL/Runtime/Algorithms.h"
@@ -75,7 +74,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // We only need to run the post-elaboration passes if we are searching. In
   // non-search mode, we know the passes have already been run.
   if (isSearch)
-    populatePostElaborationPasses(*mgr, runtime, options);
+    buildPostElaborationPipeline(*mgr, runtime, options);
 
   LowerToLLVMOptions llvmOptions(options.getDIEmissionKind(),
                                  options.debugAtLevel);

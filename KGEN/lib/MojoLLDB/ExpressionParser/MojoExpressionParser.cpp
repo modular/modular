@@ -7,8 +7,8 @@
 #include "MojoExpressionParser.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "JITExecutionUnit.h"
-#include "KGEN/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
@@ -132,9 +132,9 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   BuildInfoAttr buildInfo = BuildInfoAttr::getForCurrentBuild(ctx);
   fullCompilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  populateGenerateLibraryFilePasses(
-      *fullCompilationPM, typeSystem->getRuntime(), *compilationOptions);
-  populateElaborateModulePasses(
+  buildGenerateLibraryPipeline(*fullCompilationPM, typeSystem->getRuntime(),
+                               *compilationOptions);
+  buildElaborateModulePipeline(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo, buildInfo,
       [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,
           TargetInfoAttr target, ArrayRef<KGEN::FuncOp> specializations) {
@@ -142,6 +142,8 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                        specializations);
       },
       compilationOptions);
+  buildPostElaborationPipeline(*fullCompilationPM, typeSystem->getRuntime(),
+                               compilationOptions);
 
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),

@@ -21,42 +21,26 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN {
-/// This populates the pre-elaboration phase passes of the KGEN compiler. The
-/// distribution format of a KGEN library is essentially what comes just before
-/// elaboration because the parameter system allows significant extension.
-void populateGenerateLibraryFilePasses(mlir::PassManager &pm,
-                                       LLCL::Runtime &runtime,
-                                       const CompilationOptions &options);
-
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
-std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT(
-    LLCL::Runtime &runtime, TargetInfoAttr target = {},
-    BuildInfoAttr build = {}, const CompilationOptions &options = {});
+std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
 
-/// This populates the passes to produce a fully concrete KGEN module. That
-/// means it runs pre-elaboration, elaboration, and then the post-elaboration
-/// cleanup passes. Its purpose is to populate the passes used to produce the
-/// format that we will end up using to produce an object file.
-void populateElaborateModulePasses(mlir::PassManager &pm,
-                                   LLCL::Runtime &runtime,
-                                   TargetInfoAttr target, BuildInfoAttr build,
-                                   const CompilationOptions &options);
+//===----------------------------------------------------------------------===//
+// populateElaborateModulePasses
+//===----------------------------------------------------------------------===//
 
 /// This populates the passes to produce a fully concrete KGEN module. It is the
 /// same as the function above, but allows the user to specify their own JIT.
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target, BuildInfoAttr build,
-                                   EvaluatorExecutorFn evaluatorExecutorFn,
                                    const CompilationOptions &options);
 
-/// This populates the post-elaboration optimization and simplification passes.
-/// These passes are intended to run immediately after the elaborator.
-void populatePostElaborationPasses(mlir::PassManager &pm,
-                                   LLCL::Runtime &runtime,
-                                   const CompilationOptions &options);
+//===----------------------------------------------------------------------===//
+// Caching
+//===----------------------------------------------------------------------===//
 
 /// Returns Mojo transform and caching backends, or an error if the backend
 /// objects could not be created.

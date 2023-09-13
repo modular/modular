@@ -20,12 +20,8 @@ add_modular_library(KGENEmitObject
   MC
 
   LINK_LIBS PUBLIC
-  CacheDialect
-  DebugInfoToLLVM
-  KGENDialect
   KGENToLLVM
-  KGENTransforms
-  LowerLIT
+  KGENExecutionEngine
 
   MCache
   MCompilerSupport

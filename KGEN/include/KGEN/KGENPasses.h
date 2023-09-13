@@ -52,7 +52,62 @@ class POPDialect;
 } // namespace POP
 
 //===----------------------------------------------------------------------===//
-// Pass Pipelines
+// Generated Pass Classes and Registration
+//===----------------------------------------------------------------------===//
+
+#define GEN_PASS_DECL
+#define GEN_PASS_REGISTRATION
+#include "KGEN/KGENPasses.h.inc"
+
+//===----------------------------------------------------------------------===//
+// Elaborator
+//===----------------------------------------------------------------------===//
+
+/// This function kind represents a callback to invoke a compiled evaluator
+/// function with the compiled candidate functions. This function performs the
+/// actual benchmarking of search and must be invoked in isolation. The
+/// elaborator ensures that the compiler process is quiet before invoking this
+/// function, which is required for stable and accurate results.
+using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
+
+/// This function kind represents a callback given the IR for an evaluator
+/// function and a list of candidate functions and should perform all necessary
+/// JIT compilation on those functions, in preparation for search. The function
+/// should return a search execute function, which the elaborator then
+/// guarantees executes in isolation.
+using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
+    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
+
+/// Create an instance of the elaborator pass that captures all of the
+/// referenced include files.
+std::unique_ptr<mlir::Pass>
+createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+                          BuildInfoAttr build,
+                          const ElaborateGeneratorsOptions &options = {},
+                          EvaluatorExecutorFn evaluatorExecutorFn = {});
+
+//===----------------------------------------------------------------------===//
+// Inlining
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<mlir::Pass>
+createAlwaysInlineParametric(LLCL::Runtime &runtime,
+                             const AlwaysInlineParametricOptions &options = {});
+
+/// Create a ForceInline pass with an LLCL runtime instance and a
+/// function pass pipeline to run.
+std::unique_ptr<mlir::Pass> createForceInline(
+    LLCL::Runtime &runtime, const ForceInlineOptions &options = {},
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
+
+/// Create an AutomaticInline pass with an LLCL runtime instance and a
+/// function pass pipeline to run.
+std::unique_ptr<mlir::Pass> createAutomaticInline(
+    LLCL::Runtime &runtime, const AutomaticInlineOptions &options,
+    std::function<void(mlir::OpPassManager &)> buildFuncPasses);
+
+//===----------------------------------------------------------------------===//
+// LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
 
 /// Options for the KGEN to LLVM pipeline.
@@ -111,61 +166,33 @@ void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 void registerLowerToLLVMPipeline();
 
 //===----------------------------------------------------------------------===//
-// Generated Pass Classes and Registration
+// GenerateLibraryPipeline
 //===----------------------------------------------------------------------===//
 
-#define GEN_PASS_DECL
-#define GEN_PASS_REGISTRATION
-#include "KGEN/KGENPasses.h.inc"
+/// This populates the pre-elaboration phase passes of the KGEN compiler. The
+/// distribution format of a KGEN library is essentially what comes just before
+/// elaboration because the parameter system allows significant extension.
+void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                                  const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
-// Elaborator
+// ElaborateModulePipeline
 //===----------------------------------------------------------------------===//
 
-/// This function kind represents a callback to invoke a compiled evaluator
-/// function with the compiled candidate functions. This function performs the
-/// actual benchmarking of search and must be invoked in isolation. The
-/// elaborator ensures that the compiler process is quiet before invoking this
-/// function, which is required for stable and accurate results.
-using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
-
-/// This function kind represents a callback given the IR for an evaluator
-/// function and a list of candidate functions and should perform all necessary
-/// JIT compilation on those functions, in preparation for search. The function
-/// should return a search execute function, which the elaborator then
-/// guarantees executes in isolation.
-using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
-    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
-    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-
-/// Create an instance of the elaborator pass that captures all of the
-/// referenced include files.
-std::unique_ptr<mlir::Pass>
-createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
-                          BuildInfoAttr build,
-                          const ElaborateGeneratorsOptions &options = {},
-                          EvaluatorExecutorFn evaluatorExecutorFn = {});
-
+/// This populates the passes to produce a fully concrete KGEN module. That
+/// means it runs the elaborator and any dependent passes.
+void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                                  TargetInfoAttr target, BuildInfoAttr build,
+                                  EvaluatorExecutorFn evaluatorExecutorFn,
+                                  const CompilationOptions &options);
 //===----------------------------------------------------------------------===//
-// Inlining
+// PostElaborationPipeline
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<mlir::Pass>
-createAlwaysInlineParametric(LLCL::Runtime &runtime,
-                             const AlwaysInlineParametricOptions &options = {});
-
-/// Create a ForceInline pass with an LLCL runtime instance and a
-/// function pass pipeline to run.
-std::unique_ptr<mlir::Pass> createForceInline(
-    LLCL::Runtime &runtime, const ForceInlineOptions &options = {},
-    std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
-
-/// Create an AutomaticInline pass with an LLCL runtime instance and a
-/// function pass pipeline to run.
-std::unique_ptr<mlir::Pass> createAutomaticInline(
-    LLCL::Runtime &runtime, const AutomaticInlineOptions &options,
-    std::function<void(mlir::OpPassManager &)> buildFuncPasses);
+/// This populates the post-elaboration optimization and simplification passes.
+/// These passes are intended to run immediately after the elaborator.
+void buildPostElaborationPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+                                  const CompilationOptions &options);
 
 } // namespace KGEN
 } // namespace M
