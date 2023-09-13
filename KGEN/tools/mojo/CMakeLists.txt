@@ -53,6 +53,7 @@ add_modular_tool(mojo
   KGENExecutionEngine
   KGENCompiler
   KGENEmitObject
+  KGENPackage
 
   MLIRTransformUtils
   MLIRIR

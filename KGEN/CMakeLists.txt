@@ -37,6 +37,7 @@ add_subdirectory(lib/CLOptions)
 add_subdirectory(lib/Elaborator)
 add_subdirectory(lib/LowerToObject)
 add_subdirectory(lib/Compiler)
+add_subdirectory(lib/Package)
 
 if(LLDB_FOUND)
   add_subdirectory(lib/MojoLLDB)
