@@ -68,8 +68,8 @@ public:
   ~TelemetryContext();
 
   // XXX: not sure if it's better to allocate Counter and Histogram on the heap
-  // or not. For Otel, the Counter struct will basically just contain a pointer
-  // to the Otel counter, and so returning the struct seems appropiate.
+  // or not. For OTel, the Counter struct will basically just contain a pointer
+  // to the OTel counter, and so returning the struct seems appropiate.
 
   /// Returns true if an instrument will be enabled based on its level and the
   /// configured telemetry level.

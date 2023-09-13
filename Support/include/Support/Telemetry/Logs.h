@@ -36,7 +36,7 @@ using AttributeValue = opentelemetry::common::AttributeValue;
 #else
 
 // If telemetry is disabled, this enum is only required for the NOOP API.
-// Note: not including all of Otel's severity numbers here, only the ones
+// Note: not including all of OTel's severity numbers here, only the ones
 // we are going to use.
 enum class Severity : uint8_t {
   kInvalid,
