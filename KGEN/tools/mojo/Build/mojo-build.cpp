@@ -289,21 +289,6 @@ static int linkExecutable(const State &state,
 #endif
 #endif
 
-  // Apply options for stripping unused code.
-#if !defined(_WIN32) &&                                                        \
-    !(LLVM_ADDRESS_SANITIZER_BUILD || LLVM_MEMORY_SANITIZER_BUILD ||           \
-      LLVM_THREAD_SANITIZER_BUILD)
-  // Avoid stripping in sanitizer or debug builds, to avoid dropping symbols
-  // that are actually referenced externally.
-  if (options.optimizationLevel != 0 &&
-      options.debugLevel != M::KGEN::CompilationOptions::kFullDebugInfo &&
-      !options.sanitizers) {
-    linkerArgs.emplace_back("-ffunction-sections");
-    linkerArgs.emplace_back("-fdata-sections");
-    linkerArgs.emplace_back("-Wl,--gc-sections");
-  }
-#endif
-
   // Add any necessary system libraries.
   StringRef systemLibsArg = config.getValue("mojo.system_libs");
   systemLibsArg.split(linkerArgs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
