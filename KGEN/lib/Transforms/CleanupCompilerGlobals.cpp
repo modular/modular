@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 
 using namespace M;
 using namespace KGEN;

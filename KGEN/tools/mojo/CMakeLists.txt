@@ -42,7 +42,7 @@ add_modular_tool(mojo
   OrcTargetProcess
 
   LINK_LIBS PRIVATE
-  InitAllKGENDialects
+  KGENToolCommon
   LLCLRuntimeGlobals
   LLCLRuntime
   MArchTarget

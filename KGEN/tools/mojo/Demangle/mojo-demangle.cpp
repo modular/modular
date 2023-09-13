@@ -7,8 +7,8 @@
 #include "mojo-demangle.h"
 #include "../Common/Telemetry.h"
 
-#include "KGEN/InitAllDialects.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LLVMForwardDecls.h"

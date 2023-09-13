@@ -5,14 +5,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "Config/Version.h"
-#include "KGEN/CLOptions.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
-#include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser.h"
+#include "KGEN/ToolCommon/CLOptions.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"

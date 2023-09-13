@@ -8,7 +8,7 @@ add_modular_tool(kgen-translate
   kgen-translate.cpp
 
   LINK_LIBS PRIVATE
-  KGENCLOptions
+  KGENToolCommon
   LLCLRuntimeGlobals
   MSupportGlobals
   MojoParser

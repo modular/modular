@@ -33,7 +33,7 @@ add_modular_library(MojoParser
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
-  InitAllKGENDialects
+  KGENToolCommon
   LLCLRuntime
   MTelemetry
 

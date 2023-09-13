@@ -6,8 +6,8 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

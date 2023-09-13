@@ -12,7 +12,7 @@ add_modular_tool(kgen-opt
   nativecodegen
 
   LINK_LIBS PRIVATE
-  InitAllKGENDialects
+  KGENToolCommon
   DebugInfoToLLVM
   KGENCompiler
   KGENElaborator

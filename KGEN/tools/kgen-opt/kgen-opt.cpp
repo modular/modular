@@ -10,10 +10,10 @@
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/HLCFDialect/Analysis/DataFlow.h"
-#include "KGEN/InitAllDialects.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"

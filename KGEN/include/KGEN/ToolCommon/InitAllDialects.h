@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_INITALLDIALECTS_H
-#define KGEN_INITALLDIALECTS_H
+#ifndef KGEN_TOOLCOMMON_INITALLDIALECTS_H
+#define KGEN_TOOLCOMMON_INITALLDIALECTS_H
 
 namespace mlir {
 class DialectRegistry;
@@ -20,4 +20,4 @@ namespace M {
 void registerAllKGENDialects(mlir::DialectRegistry &registry);
 } // namespace M
 
-#endif // KGEN_INITALLDIALECTS_H
+#endif // KGEN_TOOLCOMMON_INITALLDIALECTS_H

@@ -6,11 +6,11 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/KGENPasses.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"

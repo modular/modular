@@ -8,10 +8,10 @@
 #define KGEN_COMPILER_KGENCOMPILER_H
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/KGENPasses.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"

@@ -9,9 +9,9 @@
 
 #include "Cache/BlobCache.h"
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
 #include <string>

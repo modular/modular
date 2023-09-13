@@ -19,11 +19,11 @@
 #include "ParserParamEvaluator.h"
 #include "SharedState.h"
 
-#include "KGEN/CompilationOptions.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDeclRef.h"
 #include "KGEN/MojoParser/ASTDeclView.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/Telemetry/Telemetry.h"
