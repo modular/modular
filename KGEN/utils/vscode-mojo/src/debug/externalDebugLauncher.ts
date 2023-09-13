@@ -11,6 +11,7 @@
 import * as net from 'net';
 import * as querystring from 'querystring';
 import stringArgv from 'string-argv';
+import * as vscode from 'vscode';
 import {
   debug,
   DebugConfiguration,
@@ -123,13 +124,16 @@ export class RpcLaunchServer {
   private inner: net.Server;
   private token: string|undefined;
   private errorEmitter = new EventEmitter<Error>();
+  readonly workspaceFolder: vscode.WorkspaceFolder|undefined;
 
   /**
    * This constructor receives an optional token, which is expected to match the
    * `token` attribute from the incoming debug configuration requests as a
    * safety mechanism.
    */
-  constructor(options: {token?: string}) {
+  constructor(workspaceFolder: vscode.WorkspaceFolder|undefined,
+              options: {token?: string}) {
+    this.workspaceFolder = workspaceFolder;
     this.token = options.token;
     this.inner = net.createServer({allowHalfOpen : true});
     this.inner.on('error', err => this.errorEmitter.fire(err));
@@ -165,7 +169,8 @@ export class RpcLaunchServer {
       delete debugConfig.token;
     }
     try {
-      let success = await debug.startDebugging(undefined, debugConfig);
+      let success =
+          await debug.startDebugging(this.workspaceFolder, debugConfig);
       return JSON.stringify({success : success});
     } catch (err) {
       return JSON.stringify({success : false, message : `${err}`});

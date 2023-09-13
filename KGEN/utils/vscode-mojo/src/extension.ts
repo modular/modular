@@ -9,33 +9,29 @@ import * as vscode from 'vscode';
 import {LoggingService} from './logging';
 import {MOJOContext} from './mojoContext';
 
+let loggingService: LoggingService;
+let mojoContext: MOJOContext;
+
 /**
- *  This method is called when the extension is activated. The extension is
- *  activated the very first time a command is executed.
+ *  This method is called when the extension is activated. See the
+ * `activationEvents` in the package.json file for the current events that
+ * activate this extension.
  */
 export function activate(context: vscode.ExtensionContext) {
-  const loggingService = new LoggingService('Mojo');
-  context.subscriptions.push(loggingService);
+  loggingService = new LoggingService('Mojo');
   loggingService.logInfo("Initializing the Mojo extension.")
-
-  // Initialize the Mojo context.
-  const mojoContext = new MOJOContext();
-  context.subscriptions.push(mojoContext);
-
-  // Initialize the commands of the extension.
-  context.subscriptions.push(
-      vscode.commands.registerCommand('mojo.restart', async () => {
-        // Dispose and reactivate the context.
-        mojoContext.dispose();
-        await mojoContext.activate(loggingService);
-      }));
-  context.subscriptions.push(
-      vscode.commands.registerCommand('mojo.restart-suspended', async () => {
-        // Dispose and reactivate the context.
-        mojoContext.dispose();
-        await mojoContext.activate(loggingService, /*launchSuspended=*/ true);
-      }));
-
+  mojoContext = new MOJOContext();
   mojoContext.activate(loggingService);
   loggingService.logInfo("Mojo extension initialized.")
+}
+
+/**
+ * This method is called with VS Code deactivates this extension because of
+ * an upgrade, a window reload, the editor is shutting down, or the user
+ * disabled the extension manually.
+ */
+export function deactivate() {
+  loggingService.logInfo("Deactivating extension.");
+  mojoContext.dispose();
+  loggingService.dispose();
 }
