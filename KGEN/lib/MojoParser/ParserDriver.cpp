@@ -35,6 +35,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include <filesystem>
 
@@ -360,7 +361,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
   return importMojoImpl(
       bufName, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
-        Lexer lexer(sharedState, sourceBuf);
+        Lexer lexer(sharedState.diags, sourceBuf);
         auto startSMLoc = lexer.getToken().getLoc();
 
         // Create the top-level outer decl, which will contain all things we

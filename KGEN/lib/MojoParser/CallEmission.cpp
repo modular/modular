@@ -24,6 +24,7 @@
 #include "Support/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include <limits>
 

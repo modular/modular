@@ -10,8 +10,11 @@
 
 #include "Lexer.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 using namespace M::KGEN::LIT;
@@ -53,25 +56,24 @@ bool Token::isKeyword() const {
 // Lexer
 //===----------------------------------------------------------------------===//
 
-Lexer::Lexer(SharedState &shared, StringRef curBuffer, const char *curPtr)
-    : SharedStateUser(shared), curBuffer(curBuffer), curPtr(curPtr),
+Lexer::Lexer(Diags &diags, StringRef curBuffer, const char *curPtr)
+    : diags(diags), curBuffer(curBuffer), curPtr(curPtr),
       curToken(Token::eof, StringRef(), 0), lastLineStart(nullptr),
       lastLineIndent(0) {
   lexToken();
 }
 
-Lexer::Lexer(SharedState &shared, const llvm::MemoryBuffer *buffer)
-    : SharedStateUser(shared), curBuffer(buffer->getBuffer()),
-      curPtr(curBuffer.begin()), curToken(Token::eof, StringRef(), 0),
-      lastLineStart(nullptr), lastLineIndent(0) {
+Lexer::Lexer(Diags &diags, const llvm::MemoryBuffer *buffer)
+    : diags(diags), curBuffer(buffer->getBuffer()), curPtr(curBuffer.begin()),
+      curToken(Token::eof, StringRef(), 0), lastLineStart(nullptr),
+      lastLineIndent(0) {
 
   // Prime the first token.
   lexToken();
 }
 
-static StringRef findBuffer(SharedState &sharedState,
+static StringRef findBuffer(llvm::SourceMgr &sourceMgr,
                             const LexerCursor &cursor) {
-  auto &sourceMgr = sharedState.getSourceMgr();
   unsigned cursorBufferId =
       sourceMgr.FindBufferContainingLoc(cursor.getToken().getLoc());
   assert(cursorBufferId && "invalid cursor!");
@@ -79,15 +81,15 @@ static StringRef findBuffer(SharedState &sharedState,
   return buffer->getBuffer();
 }
 
-Lexer::Lexer(SharedState &shared, const LexerCursor &cursor)
-    : SharedStateUser(shared), curBuffer(findBuffer(shared, cursor)),
+Lexer::Lexer(Diags &diags, const LexerCursor &cursor)
+    : diags(diags), curBuffer(findBuffer(diags.sourceMgr, cursor)),
       curToken(Token::eof, {}, 0) {
   cursor.restore(*this);
 }
 
 /// Emit an error message and return a Token::error token.
 InflightDiag Lexer::emitErrorAt(const char *loc, const Twine &message) {
-  auto diag = shared.diags.emitError(SMLoc::getFromPointer(loc), message);
+  auto diag = diags.emitError(SMLoc::getFromPointer(loc), message);
   formToken(Token::error, loc, -1);
   return diag;
 }
@@ -109,9 +111,9 @@ void Lexer::formToken(Token::Kind kind, StringRef spelling, ssize_t indentation,
         spelling.data() - indentation - tokenStartOffset;
     if (memcmp(lastLineStart, thisLineStart,
                std::min(indentation, lastLineIndent))) {
-      shared.diags.emitError(SMLoc::getFromPointer(spelling.data()),
-                             "leading indentation uses inconsistent whitespace "
-                             "(tabs and spaces) than previous line");
+      diags.emitError(SMLoc::getFromPointer(spelling.data()),
+                      "leading indentation uses inconsistent whitespace (tabs "
+                      "and spaces) than previous line");
     }
 
     lastLineStart = thisLineStart;
@@ -861,7 +863,7 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
 
     // Scan from the start of the line to the current position.
     auto *lineStart = curBuffer.data() + nextNewLine;
-    Lexer tmpLexer(shared, curBuffer, lineStart);
+    Lexer tmpLexer(diags, curBuffer, lineStart);
 
     // If the token is on this line, then there was at least one token on this
     // line.  Report the error at the end of the line.
@@ -873,32 +875,13 @@ SMLoc Lexer::findEndOfPreviousLine(SMLoc loc) const {
   }
 }
 
-/// Given a valid pointer into a source buffer for some token, return the
-/// length of the token by re-lex'ing it.  This is efficient.
-size_t Lexer::getTokenLength(SharedState &shared, SMLoc loc) {
-  // Because we know the pointer is to a valid place in a source buffer, and
-  // because we know that all source buffers are NUL terminated, we know that
-  // the end of buffer check isn't needed.  This allows us to form a lexer
-  // without having to find the MemoryBuffer it came from, saving some expense
-  // in diagnostic emission.
-  const char *curPtr = loc.getPointer();
-
-  // If the byte is NUL, it is an invalid token and might be end of buffer.
-  if (*curPtr == '\0')
-    return 0;
-
-  Lexer lexer(shared, StringRef(curPtr, ~0ULL), curPtr);
-  return lexer.getToken().getSpelling().size();
-}
-
 //===----------------------------------------------------------------------===//
 // LexerCrashReporter
 //===----------------------------------------------------------------------===//
 
 void LexerCrashReporter::print(raw_ostream &os) const {
   os << "Crash " << message << " at "
-     << lexer.shared.diags.translateLocation(SMLoc::getFromPointer(startPtr))
-     << '\n';
+     << lexer.diags.translateLocation(SMLoc::getFromPointer(startPtr)) << '\n';
 
   // We know where the statement started, though the statement may not be the
   // first token on the line.  We know the current lexer position which is the

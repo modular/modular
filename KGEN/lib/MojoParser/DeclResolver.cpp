@@ -43,6 +43,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/SourceMgr.h"
 #include <deque>
 
 using namespace M;
@@ -876,7 +877,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     TypeSwitch<ASTDecl &>(decl)
         .Case<LIT::FuncOp, StructDeclOp, StructFieldOp, VarLetDeclOp,
               GlobalVarDeclOp, AliasDeclOp>([&](auto op) {
-          Lexer lexer(shared, decl.getCursor());
+          Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
           LexerCrashReporter crashReporter(lexer, decl.getLoc(),
@@ -950,7 +951,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
               VarLetDeclOp, GlobalVarDeclOp, LetRegDeclOp, AliasDeclOp,
               AliasForwardDeclOp>([&](auto op) {
           // Parse the body of the declaration from the correct point.
-          Lexer lexer(shared, decl.getCursor());
+          Lexer lexer(shared.diags, decl.getCursor());
 
           // Generate pretty stack traces if a crash happens in this scope.
           LexerCrashReporter crashReporter(lexer, decl.getLoc(),
@@ -2408,7 +2409,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
 ///
 LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
-  ParserBase p(lexer);
+  ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
@@ -2872,7 +2873,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // With all the argument declarations set up, we can resolve the body of the
   // function.
-  if (ParserBase::parseSuite(decl, lexer))
+  if (ParserBase(shared, lexer).parseSuite(decl))
     return failure();
 
   auto loc = funcOp.getLoc();
@@ -2920,7 +2921,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
   // Push a scope for the file of this module.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
   if (shared.diBuilder) {
-    auto &sourceMgr = lexer.getSourceMgr();
+    auto &sourceMgr = shared.getSourceMgr();
     int fileId = sourceMgr.FindBufferContainingLoc(lexer.getToken().getLoc());
     if (fileId) {
       StringRef filename =
@@ -2929,7 +2930,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
     }
   }
 
-  return ParserBase::parseSuite(decl, lexer);
+  return ParserBase(shared, lexer).parseSuite(decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -3041,13 +3042,13 @@ ParseResult DeclResolver::resolveBody(LetRegDeclOp op, Lexer &lexer,
 
 LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
                                              ASTDecl &decl) {
-  ParserBase p(lexer);
+  ParserBase p(shared, lexer);
   SmallVector<std::pair<ExprNode *, LexerCursor>> decoratorExprs =
       p.parseDecorators(decl);
 
   // Re-parse the preamble. The syntax should have been checked already.
   if (!p.consumeIf(Token::kw_var) && !p.consumeIf(Token::kw_let)) {
-    return lexer.emitError(
+    return shared.emitError(
         decl.getLoc(), "internal error: should be checked by statement parser");
   }
   StringAttr name;
@@ -3159,7 +3160,7 @@ ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  ParserBase p(lexer);
+  ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
   SMLoc identifierLoc;
 
@@ -3294,7 +3295,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  ParserBase p(lexer);
+  ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
 
   // The signature of a struct is a self-contained decl where types can
@@ -3641,7 +3642,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (DebugInfo::DIScopeAttr spAttr = structOp.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
 
-  if (ParserBase::parseSuite(structDecl, lexer))
+  if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
 
   // Track whether any field needs destruction, if so, we need a __del__
@@ -3729,7 +3730,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 ///
 LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
                                              Lexer &lexer, ASTDecl &decl) {
-  ParserBase p(lexer);
+  ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
 
   ASTType type;

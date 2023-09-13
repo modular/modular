@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/SourceMgr.h"
 
 using namespace M;
 using namespace M::KGEN;

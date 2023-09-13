@@ -35,6 +35,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/SourceMgr.h"
 #include <filesystem>
 #include <limits>
 
@@ -50,8 +51,8 @@ using namespace M;
 /// grammar.
 namespace {
 struct StmtParser : public ParserBase {
-  StmtParser(Lexer &lexer, ASTDecl &containingDecl)
-      : ParserBase(lexer), parentDecl(containingDecl),
+  StmtParser(SharedState &shared, Lexer &lexer, ASTDecl &containingDecl)
+      : ParserBase(shared, lexer), parentDecl(containingDecl),
         curDeclScope(&containingDecl),
         builder(containingDecl.getDeclEndBuilder()) {
 
@@ -2087,7 +2088,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
   if (parseToken(Token::colon, "expected ':' after region argument list"))
     return failure();
-  StmtParser parser(lexer, decl);
+  StmtParser parser(shared, lexer, decl);
   return parser.parseLocalScopeSuite(curIndent);
 }
 
@@ -2097,8 +2098,8 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
 /// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
-ParseResult ParserBase::parseSuite(ASTDecl &containingDecl, Lexer &lexer) {
-  StmtParser parser(lexer, containingDecl);
+ParseResult ParserBase::parseSuite(ASTDecl &containingDecl) {
+  StmtParser parser(shared, lexer, containingDecl);
 
   // Parse the docstring if present.
   parser.parseDocString(containingDecl);
