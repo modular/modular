@@ -83,8 +83,6 @@ export class MOJOSDK {
       modularPath = process.env.MODULAR_HOME;
     } else {
       this.loggingService.logInfo("MODULAR_HOME found in VS Code settings.");
-      let workspaceRoot = workspaceFolder ? workspaceFolder.uri.fsPath : "";
-      modularPath = modularPath.replace("${workspaceRoot}", workspaceRoot);
     }
 
     // If we still don't have a path, prompt the user to install the SDK.

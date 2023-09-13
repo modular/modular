@@ -273,7 +273,7 @@
               "cwd": {
                 "type": "string",
                 "description": "Program working directory.",
-                "default": "${workspaceRoot}"
+                "default": "${workspaceFolder}"
               },
               "env": {
                 "type": "array",
@@ -452,10 +452,10 @@
             "type": "mojo-lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceRoot}/<your program>",
+            "program": "${workspaceFolder}/<your program>",
             "args": [],
             "env": [],
-            "cwd": "${workspaceRoot}"
+            "cwd": "${workspaceFolder}"
           }
         ],
         "configurationSnippets": [
@@ -466,10 +466,10 @@
               "type": "mojo-lldb",
               "request": "launch",
               "name": "${2:Launch}",
-              "program": "^\"\\${workspaceRoot}/${1:<your program>}\"",
+              "program": "^\"\\${workspaceFolder}/${1:<your program>}\"",
               "args": [],
               "env": [],
-              "cwd": "^\"\\${workspaceRoot}\""
+              "cwd": "^\"\\${workspaceFolder}\""
             }
           }
         ]
