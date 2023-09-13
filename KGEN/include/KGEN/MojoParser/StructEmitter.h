@@ -13,7 +13,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 namespace M::KGEN::LIT {
 

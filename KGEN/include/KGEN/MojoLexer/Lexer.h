@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LEXER_H
-#define LEXER_H
+#ifndef KGEN_MOJOLEXER_LEXER_H
+#define KGEN_MOJOLEXER_LEXER_H
 
 #include "Support/Compiler/Diags.h"
 #include "Support/LLVMForwardDecls.h"
@@ -253,4 +253,4 @@ public:
 
 } // namespace M::KGEN::LIT
 
-#endif // LEXER_H
+#endif // KGEN_MOJOLEXER_LEXER_H

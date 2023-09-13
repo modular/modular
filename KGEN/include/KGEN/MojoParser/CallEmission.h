@@ -11,7 +11,7 @@
 #ifndef CALLEMISSION_H
 #define CALLEMISSION_H
 
-#include "IRValues.h"
+#include "KGEN/MojoParser/IRValues.h"
 
 namespace M::KGEN {
 class ParamDeclArrayAttr;

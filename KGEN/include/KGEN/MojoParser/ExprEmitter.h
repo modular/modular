@@ -7,11 +7,11 @@
 #ifndef EXPREMITTER_H
 #define EXPREMITTER_H
 
-#include "ExprNode.h"
-#include "ExprNodes.h"
-#include "IRValues.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"

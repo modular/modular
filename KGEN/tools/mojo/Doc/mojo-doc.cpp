@@ -8,8 +8,8 @@
 #include "../Common/Telemetry.h"
 
 #include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
-#include "KGEN/MojoParser/ASTDeclView.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"

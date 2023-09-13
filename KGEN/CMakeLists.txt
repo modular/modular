@@ -35,8 +35,10 @@ add_subdirectory(lib/ObjectCompiler)
 add_subdirectory(lib/Compiler)
 add_subdirectory(lib/Package)
 
-# KGEN parser.
+# Mojo frontend.
+add_subdirectory(lib/MojoLexer)
 add_subdirectory(lib/MojoParser)
+add_subdirectory(lib/MojoTooling)
 
 if(LLDB_FOUND)
   add_subdirectory(lib/MojoLLDB)

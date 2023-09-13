@@ -8,7 +8,7 @@
 #define PARSERDRIVERIMPL_H
 
 #include "KGEN/MojoParser.h"
-#include "SharedState.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 namespace M {
 /// This class represents the internal implementation of the parser driver.

@@ -21,10 +21,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "DeclResolver.h"
-#include "ExprNodes.h"
-#include "Lexer.h"
-#include "ParserBase.h"
+#include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/ParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M::KGEN::LIT;

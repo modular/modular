@@ -9,7 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ParserBase.h"
+#include "KGEN/MojoParser/ParserBase.h"
+
 using namespace M::KGEN::LIT;
 using namespace M;
 

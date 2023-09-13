@@ -15,6 +15,7 @@ add_modular_tool(mojo-lsp-server
   MArchTarget
   MSupportGlobals
   MojoParser
+  MojoTooling
   MLIRLspServerSupportLib
   MLIRTransformUtils
 )

@@ -4,14 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Lexer.h"
-#include "ParserDriverImpl.h"
-
+#include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
-#include "KGEN/MojoParser/ASTDeclView.h"
-#include "KGEN/MojoParser/CodeComplete.h"
+#include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
@@ -201,7 +200,7 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
   // completion position.
   StringRef completionPosStr =
       buffer.getBuffer().drop_front(completionPosition);
-  Lexer lexer(parserContext.impl->sharedState.diags, completionPosStr,
+  Lexer lexer(parserContext.getSharedState().diags, completionPosStr,
               completionPosStr.data());
   listener.loc = lexer.getToken().getLoc();
 

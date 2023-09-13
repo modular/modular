@@ -7,7 +7,7 @@
 #include "MojoTypeDataLayout.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser.h"
-#include "KGEN/MojoParser/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
 
 using namespace M;
 using namespace M::KGEN;

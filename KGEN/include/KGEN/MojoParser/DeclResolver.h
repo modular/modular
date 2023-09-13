@@ -11,12 +11,11 @@
 #ifndef DECLRESOLVER_H
 #define DECLRESOLVER_H
 
-#include "IRValues.h"
-#include "Lexer.h"
-#include "SharedState.h"
-
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+#include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/SharedState.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN {
