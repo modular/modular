@@ -418,7 +418,7 @@ fn parallelize[
         rt: The runtime.
         num_work_items: Number of parallel tasks.
     """
-    parallelize[func](rt, num_work_items, num_cores())
+    parallelize[func](rt, num_work_items, rt.parallelism_level())
 
 
 @always_inline
