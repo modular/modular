@@ -16,10 +16,6 @@ namespace M {
 /// the REPL, or an error if none exists.
 llvm::ErrorOr<std::string> getLLDB(const std::string &executable);
 
-/// Returns the path to a MojoLLDB dynamic library, or an error if none exists.
-/// This library implements Mojo's LLDB plugin.
-std::string getMojoLLDB(const std::string &executable);
-
 /// Invokes an LLDB process with the provided arguments.
 int invokeLLDB(const State &state, llvm::opt::InputArgList &args,
                std::initializer_list<StringRef> extraOptions);
