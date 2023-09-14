@@ -132,7 +132,10 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
 
+  // Loop raising must happen after at least one run on Mem2Reg for bound
+  // inference.
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
+  pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
 
   if (options.optimizationLevel >= 2) {
     pm.addNestedPass<FuncOp>(createSROA());
@@ -148,8 +151,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addPass(createSimplifyCF());
     pm.addPass(createSROA());
     pm.addPass(createMem2Reg());
-    // TODO: can't run HoistTrivailInvariants pass till divs UB is fixed
-    // pm.addPass(createHoistTrivialInvariants());
+    pm.addPass(createHoistTrivialInvariants());
     pm.addPass(createStackReuse());
     pm.addPass(mlir::createCSEPass());
     pm.addPass(createCanonicalizer());
@@ -164,11 +166,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
 
-  // Loop raising must happen after `hoist-trivial-invariants`.
-  // FIXME: Move this earlier in the pipeline.
-  pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
-  pm.addNestedPass<FuncOp>(createLowerLoops());
-
   // TODO: Remove these once we move unrolling earlier in the pipeline.
   if (options.optimizationLevel >= 1) {
     pm.addPass(mlir::createCSEPass());
@@ -178,6 +175,8 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addPass(mlir::createCSEPass());
     pm.addPass(createCanonicalizer());
   }
+
+  pm.addNestedPass<FuncOp>(createLowerLoops());
 
   // At the end of the pipeline, externalize any functions that have been
   // precompiled so that they aren't sent to LLVM again.
