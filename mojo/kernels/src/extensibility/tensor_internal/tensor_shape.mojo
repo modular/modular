@@ -108,7 +108,7 @@ struct _Rep16:
         Returns:
           The rank of the representation.
         """
-        debug_assert(self.rank.to_int() < 4, "index out of range")
+        debug_assert(self.rank.to_int() <= 6, "index out of range")
         return self.rank.to_int()
 
     @always_inline
@@ -205,7 +205,7 @@ struct _Rep32:
         Returns:
           The rank of the representation.
         """
-        debug_assert(self.rank.to_int() < 4, "index out of range")
+        debug_assert(self.rank.to_int() <= 4, "index out of range")
         return self.rank.to_int()
 
     @always_inline
