@@ -209,7 +209,8 @@ def KGEN_IntLiteralCmpPred : I32EnumAttr<"IntLiteralCmpPred",
   let genSpecializedAttr = 0;
 }
 
-def KGEN_IntLiteralCmpPredAttr : EnumAttr<KGENDialect, KGEN_IntLiteralCmpPred, "int_literal.cmp_pred">;
+def KGEN_IntLiteralCmpPredAttr : EnumAttr<KGENDialect, KGEN_IntLiteralCmpPred,
+                                          "int_literal.cmp_pred">;
 
 /// This encodes which specific operation is to be performed
 /// for `kgen.int_literal.binop` ops.

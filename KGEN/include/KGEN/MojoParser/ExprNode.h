@@ -14,12 +14,15 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
+namespace M {
+class SourceRange;
+} // namespace M
+
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
 class AnyValue;
 class ASTType;
 class ExprEmitter;
-class SourceRange;
 class ValueDest;
 
 //===----------------------------------------------------------------------===//

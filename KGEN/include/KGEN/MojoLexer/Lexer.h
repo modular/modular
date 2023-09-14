@@ -18,8 +18,11 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SMLoc.h"
 
-namespace M::KGEN::LIT {
+namespace M {
 class Diags;
+} // namespace M
+
+namespace M::KGEN::LIT {
 class LexerCursor;
 using llvm::SMLoc;
 
