@@ -40,6 +40,11 @@ export class MOJOSDKConfig {
    * The path the mojo language server within the SDK installation.
    */
   mojoLanguageServerPath: string = "";
+
+  /**
+   * The path to the mojo LLDB plugin.
+   */
+  mojoLLDBPluginPath: string = "";
 }
 
 /**
@@ -127,6 +132,7 @@ export class MOJOSDK {
         modularConfig.mojo.lldb_visualizers_path;
     mojoConfig.mojoDriverPath = modularConfig.mojo.driver_path;
     mojoConfig.mojoLanguageServerPath = modularConfig.mojo.lsp_server_path;
+    mojoConfig.mojoLLDBPluginPath = modularConfig.mojo.lldb_plugin_path;
 
     // Cache the config for the workspace.
     this.workspaceConfigs.set(workspaceFolderStr, mojoConfig);

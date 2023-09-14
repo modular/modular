@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import {debug} from 'console';
 import * as vscode from 'vscode';
 
 import {MOJOContext} from '../mojoContext';
@@ -13,25 +14,58 @@ import {DisposableContext} from '../utils/disposableContext';
 import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
 
 /**
- * This class defines a factory used to create the debug adaptor used for
- * debugging mojo, which is dependent on the SDK installation.
+ * This class defines a factory used to find the lldb-vscode binary to use
+ * depending on the session configuration.
  */
 class MojoDebugAdapterDescriptorFactory implements
     vscode.DebugAdapterDescriptorFactory {
-  _context: MOJOContext|undefined;
+  private context: MOJOContext|undefined;
   public static DEBUG_TYPE: string = "mojo-lldb";
 
-  constructor(context: MOJOContext) { this._context = context; }
+  constructor(context: MOJOContext) { this.context = context; }
 
   async createDebugAdapterDescriptor(session: vscode.DebugSession,
-                                     executable: vscode.DebugAdapterExecutable|
+                                     _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|null> {
     let config =
-        await this._context?.getSDK().resolveConfig(session.workspaceFolder);
+        await this.context?.getSDK().resolveConfig(session.workspaceFolder);
     if (!config)
       return null;
     return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath, []);
+  }
+}
+
+/**
+ * This class modifies the debug configuration right before the debug adapter is
+ * launched. In other words, this is where we configure lldb-vscode.
+ */
+class MojoDebugConfigurationProvider implements
+    vscode.DebugConfigurationProvider {
+  private context: MOJOContext|undefined;
+  public static DEBUG_TYPE: string = "mojo-lldb";
+
+  constructor(context: MOJOContext) { this.context = context; }
+
+  async resolveDebugConfiguration(folder: vscode.WorkspaceFolder|undefined,
+                                  debugConfiguration: vscode.DebugConfiguration,
+                                  token?: vscode.CancellationToken):
+      Promise<vscode.DebugConfiguration> {
+    // Enable some features that enhance the debugging experience.
+    if (!("enableSyntheticChildDebugging" in debugConfiguration))
+      debugConfiguration["enableSyntheticChildDebugging"] = true;
+    if (!("enableAutoVariableSummaries" in debugConfiguration))
+      debugConfiguration["enableAutoVariableSummaries"] = true;
+
+    // Load the MojoLLDB plugin.
+    let config = await this.context?.getSDK().resolveConfig(folder);
+    if (config && config.mojoLLDBPluginPath &&
+        config.mojoLLDBPluginPath.length > 0) {
+      const initCommands = debugConfiguration["initCommands"] || [];
+      initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
+      debugConfiguration["initCommands"] = initCommands;
+    }
+    return debugConfiguration;
   }
 }
 
@@ -59,6 +93,10 @@ export class MojoDebugContext extends DisposableContext {
       if (!listener.configuration.runInTerminal)
         vscode.commands.executeCommand("workbench.debug.action.focusRepl");
     }));
+
+    this.pushSubscription(vscode.debug.registerDebugConfigurationProvider(
+        MojoDebugAdapterDescriptorFactory.DEBUG_TYPE,
+        new MojoDebugConfigurationProvider(context)));
 
     // Register the URI-based debug launcher.
     this.pushSubscription(vscode.window.registerUriHandler(
