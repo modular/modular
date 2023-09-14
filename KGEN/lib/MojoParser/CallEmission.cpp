@@ -23,6 +23,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
@@ -578,6 +579,8 @@ struct OverloadFitness {
     kArgWrongType,     //< An argument value not convertible to expected type
     kArgGenericMem,    //< Argument bound from mlirtype to a memory-only type.
     kResultGenericMem, //< Result bound from mlirtype to a memory-only type.
+    kRedundantArg,     //< Argument passed both by positional and kw operands.
+    kUnexpectedKw,     //< Operand(s) passed with unknown keyword.
   } kind;
 
   /// The interpretation of this payload depends on the 'kind' field:
@@ -593,6 +596,8 @@ struct OverloadFitness {
   ///  kArgWrongType:     the argument # that mismatches.
   ///  kArgGenericMem:    the argument # that is a problem.
   ///  kResultGenericMem: the result #, always 0.
+  ///  kRedundantArg,     the argument # for the redundant operand.
+  ///  kUnexpectedKw,     not used.
   size_t payload;
 
   /// For type mismatches, this is the actual or expected type, otherwise null.
@@ -613,7 +618,7 @@ struct OverloadFitness {
   /// Add explanation for why this candidate doesn't work to the specified
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
-                ArrayRef<ASTExprAnd<AnyValue>> posOperands, InflightDiag &diag);
+                const CallOperands &operands, InflightDiag &diag);
 
 private:
   /// Diagnose if there are too few or too many arguments passed, returning the
@@ -759,12 +764,38 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
                                           const CallOperands &callOperands,
                                           bool allowImplicitConversions,
                                           ExprEmitter &emitter) {
-  // TODO: normalize keyword/positional args based on signature info.
-  assert(!callOperands.hasKwOperands() &&
-         "keyword arguments not yet supported");
-  ArrayRef<ASTExprAnd<AnyValue>> operands = callOperands.posOperands;
+  // Before we do anything, we check if there were any unknown keyword operands
+  // passed, or if variadic/pack arguments were passed as keyword operands. This
+  // keeps the subsequent code much simpler.
+
+  // First, we collect all real argument names.
+  StringSet<> argNames;
+  for (auto [argIdx, argName] :
+       llvm::enumerate(signature.getMetadata().getArgNames())) {
+    if (argName.empty())
+      continue; // Positional-only argument.
+    if (signature.isVarArg(argIdx) || signature.isPackVarArg(argIdx))
+      continue; // Variadic/pack args cannot be specified by keyword.
+    auto [_, addedNew] = argNames.insert(argName);
+    assert(addedNew && "duplicate argument name in signature");
+  }
+
+  // Then we find all the keyword operands with unknown names.
+  SmallDenseMap<StringRef, ASTExprAnd<AnyValue>> unknownKwOperands;
+  if (callOperands.hasKwOperands()) {
+    for (auto [name, operandVal] : *callOperands.kwOperands)
+      if (!argNames.contains(name))
+        unknownKwOperands.insert({name, operandVal});
+  }
+  // TODO(#21295): handle variadic keyword arguments.
+  // TODO: enable better diagnostics.
+  if (!unknownKwOperands.empty())
+    return {kUnexpectedKw, 0, ASTType(), {}};
+
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
 
   // Check that the signature can be rebound with this set of bindings.
+  // TODO(#21339): allow inferring parameters from keyword arguments.
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
@@ -772,9 +803,9 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
           [&](size_t index, Type type, ASTType expectedParamType,
               ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
             return ParameterInferenceState(emitter.shared, index, type)
-                .infer(signature, bindingsSoFar, operands);
+                .infer(signature, bindingsSoFar, posOperands);
           },
-          /*isPackVarArg=*/signature.hasPackVarArgs() && !operands.empty());
+          /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
   // If there is an error, return the problem.
   if (!newBindings) {
@@ -805,7 +836,9 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // to diagnose problems where too few or too many arguments are passed if that
   // is the problem, rather than complaining about a type error of some argument
   // that doesn't work out.  Check for that first.
-  if (auto [res, payload] = checkMinMaxArgs(operands.size(), signature);
+  size_t numPosOperands = posOperands.size();
+  if (auto [res, payload] = checkMinMaxArgs(
+          numPosOperands + callOperands.getNumKwOperands(), signature);
       res != kValid)
     return {res, payload, ASTType(), newBindings};
 
@@ -823,11 +856,12 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
+  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getValueInputs(),
-                       signature.getValueInputConventions())) {
+                       signature.getValueInputConventions(),
+                       signature.getMetadata().getArgNames())) {
     assert(!signature.isKWVarArg(expectedArgIdx) &&
-           "keyword arguments and `**arg` variadics not supported yet");
+           "`**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
     if (expectedConvention == ValueInputConvention::ByRefResult)
@@ -841,8 +875,8 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
       return {kArgGenericMem, expectedArgIdx, expectedType, newBindings};
 
-    // Handle case when there are no more provided arguments.
-    if (providedValueIdx == operands.size()) {
+    // Handle case when there are no more provided positional arguments.
+    if (providedValueIdx == numPosOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
       if (signature.isVarArg(expectedArgIdx) ||
@@ -852,23 +886,41 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         ++numImplicitConversions;
         break;
       }
+
+      // Check if the argument was passed as a keyword operand.
+      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+              callOperands.findKwArg(argName)) {
+        // If we found a keyword argument, we check it normally.
+        auto [kind, ty] = checkOneOperand(*kwOperandOr, expectedConvention,
+                                          expectedType, numImplicitConversions,
+                                          allowImplicitConversions, emitter);
+        if (kind != kValid) {
+          // TODO: revise diagnostics so we can propagate kwarg info.
+          return {kind, expectedArgIdx, ty, newBindings};
+        }
+        continue;
+      }
+
       // We don't need to provide value for this argument if it has a default
       // value.
       if (expectedArgIdx >=
           signature.getNumInputs() - signature.getDefaultArguments().size()) {
-        // In the callee, arguments with default values must be followed only by
-        // other arguments with default values, so we do not need to enumerate
-        // any more of the callee arguments.
-        break;
+        // Arguments with default values must be followed only by other
+        // arguments with default values, or by keyword argument.
+        continue;
       }
+
+      llvm_unreachable("argument had no corresponding operand");
     }
 
-    /// Check and process a single operand and advance the operand index.
-    auto processOneOperand = [&, expectedConvention = expectedConvention,
-                              newBindings = std::ref(newBindings)](
-                                 ASTType expectedType) -> OverloadFitness {
+    /// Check and process a single positional operand and advance the operand
+    /// index.
+    auto processPositionalOperand =
+        [&, expectedConvention = expectedConvention,
+         newBindings =
+             std::ref(newBindings)](ASTType expectedType) -> OverloadFitness {
       auto [kind, ty] = checkOneOperand(
-          operands[providedValueIdx], expectedConvention, expectedType,
+          posOperands[providedValueIdx], expectedConvention, expectedType,
           numImplicitConversions, allowImplicitConversions, emitter);
       if (kind != kValid)
         return {kind, providedValueIdx, ty, newBindings};
@@ -880,8 +932,8 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     // arguments, but we have to check each of them.
     if (signature.isVarArg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
-      while (providedValueIdx != operands.size()) {
-        OverloadFitness result = processOneOperand(varArgsEltType);
+      while (providedValueIdx != numPosOperands) {
+        OverloadFitness result = processPositionalOperand(varArgsEltType);
         if (result.kind != kValid)
           return result;
         passesVarArgArgument = true;
@@ -890,10 +942,10 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     }
 
     // If we have a pack type, it must have a known number of elements, and so
-    // consumes exactly that number of arguments.
+    // consume exactly that many arguments.
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
-        OverloadFitness result = processOneOperand(ASTType(element));
+        OverloadFitness result = processPositionalOperand(ASTType(element));
         if (result.kind != kValid)
           return result;
         passesVarArgArgument = true;
@@ -901,14 +953,18 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
       continue;
     }
 
-    // Otherwise, we have an ordinary argument that is not varargs or a pack.
-    // Check it and move on to the next one.
-    OverloadFitness result = processOneOperand(expectedType);
+    // Otherwise, we have an ordinary positional argument that is not varargs or
+    // a pack. Ensure that it is not also passed as a keyword operand, then
+    // process it as usual.
+    if (!argName.empty())
+      if (callOperands.findKwArg(argName))
+        return {kRedundantArg, expectedArgIdx, expectedType, newBindings};
+    OverloadFitness result = processPositionalOperand(expectedType);
     if (result.kind != kValid)
       return result;
   }
 
-  assert(providedValueIdx == operands.size() &&
+  assert(providedValueIdx == numPosOperands &&
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!  For our payload, indicate the number of implicit
@@ -954,8 +1010,9 @@ static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
 /// (e.g.) `foo(x,y)` or `x.foo(y)` syntax.
 void OverloadFitness::diagnose(SignatureType signature,
                                const OverloadSet &callable,
-                               ArrayRef<ASTExprAnd<AnyValue>> posOperands,
+                               const CallOperands &operands,
                                InflightDiag &diag) {
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   auto describePayloadArgumentNo = [&]() {
     // If this is a method syntax call, don't count the receiver.
     if (callable.syntax == CallSyntax::kMethodCall) {
@@ -998,6 +1055,8 @@ void OverloadFitness::diagnose(SignatureType signature,
       diag << "unknown overload";
   };
 
+  size_t numOperands = posOperands.size() + operands.getNumKwOperands();
+
   switch (kind) {
   case kValid:
     diag << "candidate is viable";
@@ -1025,19 +1084,19 @@ void OverloadFitness::diagnose(SignatureType signature,
          << " provided";
     return;
   case kArgCount:
-    diag << "callee expects " << payload << " positional argument"
-         << plural(payload) << ", but " << posOperands.size() << " "
-         << plural(posOperands.size(), "was", "were") << " specified";
+    diag << "callee expects " << payload << " argument" << plural(payload)
+         << ", but " << numOperands << " " << plural(numOperands, "was", "were")
+         << " specified";
     return;
   case kArgTooFewAtLeast:
     diag << "callee expects at least " << payload << " argument"
-         << plural(payload) << ", but " << posOperands.size() << " "
-         << plural(posOperands.size(), "was", "were") << " specified";
+         << plural(payload) << ", but " << numOperands << " "
+         << plural(numOperands, "was", "were") << " specified";
     return;
   case kArgTooManyAtMost:
     diag << "callee expects at most " << payload << " argument"
-         << plural(payload) << ", but " << posOperands.size() << " "
-         << plural(posOperands.size(), "was", "were") << " specified";
+         << plural(payload) << ", but " << numOperands << " "
+         << plural(numOperands, "was", "were") << " specified";
     return;
   case kArgNotLValue:
     if (callable.syntax == CallSyntax::kMethodCall && payload == 0) {
@@ -1056,7 +1115,6 @@ void OverloadFitness::diagnose(SignatureType signature,
          << type.getReferenceElementType()
          << posOperands[payload].expr->getRange();
     return;
-
   case kArgWrongType: {
     describePayloadArgumentNo();
     diag << " cannot be converted from ";
@@ -1064,16 +1122,22 @@ void OverloadFitness::diagnose(SignatureType signature,
     SourceRange payloadLoc = posOperands[payload].expr->getRange();
     diag << " to " << type << payloadLoc;
     addTypeConversionDetail(diag, payloadLoc, getPayloadRValueType(), type);
-    break;
+    return;
   }
-
   case kArgGenericMem:
     describePayloadArgumentNo();
     diag << " cannot bind generic !mlirtype to memory-only type " << type;
-    break;
+    return;
   case kResultGenericMem:
     diag << "result cannot bind generic !mlirtype to memory-only type " << type;
-    break;
+    return;
+  case kRedundantArg:
+    describePayloadArgumentNo();
+    diag << " passed both as positional and keyword operand";
+    return;
+  case kUnexpectedKw:
+    diag << "unexpected keyword argument";
+    return;
   }
 }
 
@@ -1081,12 +1145,6 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure,
                                       ExprEmitter &emitter) const {
-  if (operands.hasKwOperands()) {
-    emitter.emitError(operands.kwOperands->begin()->second.expr->getLoc(),
-                      "keyword arguments are not supported yet");
-    return {};
-  }
-
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -1099,14 +1157,13 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
 
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
-    ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
     if (emitDiagnosticOnFailure) {
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
         auto diag = emitter.emitError(expr->getLoc(), "invalid call to '")
                     << baseName << "': " << expr->getRange();
-        evaluations[0].diagnose(fnDecl.getFullSignature(), *this, posOperands,
+        evaluations[0].diagnose(fnDecl.getFullSignature(), *this, operands,
                                 diag);
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return {};
@@ -1120,7 +1177,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         auto fnDecl = cast<LIT::FuncOp>(*candidate);
         diag.attachNote(fnDecl->getLoc()) << "candidate not viable: ";
-        eval.diagnose(fnDecl.getFullSignature(), *this, posOperands, diag);
+        eval.diagnose(fnDecl.getFullSignature(), *this, operands, diag);
       }
       return {};
     }
@@ -1804,7 +1861,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   if (fitness.kind != OverloadFitness::kValid) {
     // If not, diagnose it with an error.
     auto diag = emitError(callExpr->getLoc(), "invalid indirect call: ");
-    fitness.diagnose(calleeSig, bindings, callOperands.posOperands, diag);
+    fitness.diagnose(calleeSig, bindings, callOperands, diag);
     return {};
   }
 
