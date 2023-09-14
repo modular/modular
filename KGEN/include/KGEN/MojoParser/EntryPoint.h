@@ -157,9 +157,10 @@ public:
                         llvm::SMLoc importLoc);
 
   /// Notify the listener that a member within the given decl is being looked
-  /// up.
+  /// up. `searchParentScopes` is true if the lookup is not restricted to just
+  /// the given decl.
   virtual void onMemberLookup(ResolveInputDeclFn getDeclFn,
-                              llvm::SMLoc lookupLoc);
+                              llvm::SMLoc lookupLoc, bool searchParentScopes);
 
   /// Notify the listener that a new `module` decl has been created by the
   /// parser.

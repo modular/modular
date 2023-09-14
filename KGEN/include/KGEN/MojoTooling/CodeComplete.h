@@ -27,6 +27,7 @@ struct CodeCompletionResult {
     kStruct,
     kFunction,
     kField,
+    kVariable,
   };
 
   CodeCompletionResult() = default;

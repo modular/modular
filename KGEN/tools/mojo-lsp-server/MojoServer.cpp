@@ -848,6 +848,9 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
     case KGEN::Mojo::CodeCompletionResult::kField:
       item.kind = lsp::CompletionItemKind::Field;
       break;
+    case KGEN::Mojo::CodeCompletionResult::kVariable:
+      item.kind = lsp::CompletionItemKind::Variable;
+      break;
     }
 
     if (!it.documentation.empty())

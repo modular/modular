@@ -386,6 +386,10 @@ AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ASTDecl &container = emitter.declScope;
 
+  // Notify the listener of a normal decl reference lookup.
+  emitter.shared.notifyListenerOnMemberLookup(container, getLoc(),
+                                              /*searchParentScopes=*/true);
+
   // Perform a lookup of the specified decl in the current container.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);

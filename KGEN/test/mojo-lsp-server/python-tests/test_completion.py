@@ -125,3 +125,34 @@ fn function(arg: Int):
         item.label == "value" and item.kind == CompletionItemKind.Field
         for item in items
     )
+
+
+async def test_completion_top_level_lookup(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn function() -> Int:
+    let value: Int = 10
+    return value
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    # Check that we can complete the `Int` from `I` in the result type.
+    items = fail_if_none(
+        await requests.completion(doc, doc.find_first_pos("nt"))
+    )
+    assert any(
+        item.label == "Int" and item.kind == CompletionItemKind.Struct
+        for item in items
+    )
+
+    # Check that we can complete the `value` from `v` in the return statement.
+    items = fail_if_none(
+        await requests.completion(doc, doc.find_last_pos("alue"))
+    )
+    assert any(
+        item.label == "value" and item.kind == CompletionItemKind.Variable
+        for item in items
+    )
