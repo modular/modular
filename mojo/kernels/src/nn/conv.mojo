@@ -3174,7 +3174,11 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
-        constrained[is_x86()]()
+        """Accumulate with register tiling on SIMD ISAs other than NEON.
+        It has been optimized for AVX512 and AVX2.
+        """
+
+        constrained[not has_neon()]()
 
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -3259,6 +3263,8 @@ struct ConvDirectNHWC[
             type,
         ],
     ):
+        """Accumulate with register tiling on NEON architectures."""
+
         constrained[has_neon()]()
 
         alias micro_kernel_f_size = micro_kernel_width * simd_size
@@ -3336,8 +3342,10 @@ struct ConvDirectNHWC[
         filter_base: DTypePointer[type],
         output_ptr: DTypePointer[type],
     ):
-        """Accumulate with register tiling on x86 architectures."""
-        constrained[is_x86()]()
+        """Accumulate with register tiling on SIMD ISAs other than NEON.
+        It has been optimized for AVX512 and AVX2.
+        """
+        constrained[not has_neon()]()
 
         # Short circuit when the micro tile is in padding.
         @parameter
