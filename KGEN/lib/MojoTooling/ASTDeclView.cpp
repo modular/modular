@@ -6,7 +6,6 @@
 
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"

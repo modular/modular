@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -19,6 +19,10 @@
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
+
+//===----------------------------------------------------------------------===//
+// Driver Entry Points
+//===----------------------------------------------------------------------===//
 
 /// Sort the order of uses of the given value using the given set of operation
 /// IDs. This ensures a deterministic order of uses.
@@ -278,7 +282,7 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
       });
 }
 
-bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
+bool LIT::isMojoSourcePackagePath(const std::filesystem::path &path) {
   std::error_code ec;
   if (std::filesystem::is_directory(path, ec) && !ec) {
     return std::filesystem::exists(path / "__init__.mojo", ec) ||
@@ -288,10 +292,10 @@ bool M::isMojoSourcePackagePath(const std::filesystem::path &path) {
 }
 
 std::pair<OwningOpRef<ModuleOp>, PackageOp>
-M::importMojoPackage(StringRef path, StringRef packageName,
-                     llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                     mlir::TimingScope &ts,
-                     SmallVectorImpl<std::string> *includedFiles) {
+LIT::importMojoPackage(StringRef path, StringRef packageName,
+                       llvm::SourceMgr &sourceMgr, ParserConfig &config,
+                       mlir::TimingScope &ts,
+                       SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -324,11 +328,33 @@ M::importMojoPackage(StringRef path, StringRef packageName,
 }
 
 OwningOpRef<mlir::ModuleOp>
-M::importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                  mlir::TimingScope &ts,
-                  SmallVectorImpl<std::string> *includedFiles) {
+LIT::importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
+                    mlir::TimingScope &ts,
+                    SmallVectorImpl<std::string> *includedFiles) {
   SharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
       importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
+
+//===----------------------------------------------------------------------===//
+// ParserListener
+//===----------------------------------------------------------------------===//
+
+bool ParserListener::isInterestedInLoc(SMLoc parserLoc) { return true; }
+void ParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onImport(SMLoc importLoc) {}
+void ParserListener::onImport(ResolveInputDeclFn getPackageDecl,
+                              SMLoc importLoc) {}
+void ParserListener::onMemberLookup(ResolveInputDeclFn getDeclFn, SMLoc loc) {}
+void ParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
+                                    SMLoc importLoc) {}
+void ParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                           SMLoc loc) {}

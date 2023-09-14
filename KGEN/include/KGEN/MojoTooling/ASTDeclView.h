@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_ASTDECLVIEW_H
-#define KGEN_MOJOPARSER_ASTDECLVIEW_H
+#ifndef KGEN_MOJOTOOLING_ASTDECLVIEW_H
+#define KGEN_MOJOTOOLING_ASTDECLVIEW_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -607,4 +607,4 @@ private:
 
 } // namespace M
 
-#endif // KGEN_MOJOPARSER_ASTDECLVIEW_H
+#endif // KGEN_MOJOTOOLING_ASTDECLVIEW_H

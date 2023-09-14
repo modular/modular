@@ -7,9 +7,10 @@
 #include "mojo-doc.h"
 #include "../Common/Telemetry.h"
 
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -97,7 +98,7 @@ static int doc(const State &state) {
 
   mlir::MLIRContext context;
   CompilationOptions compilationOptions;
-  MojoParserConfig parserConfig(&context, runtime, compilationOptions);
+  LIT::ParserConfig parserConfig(&context, runtime, compilationOptions);
   parserConfig.warnMissingDocStrings =
       args.hasArg(options::OPT_warn_missing_dog_strings);
   if (args.hasArg(options::OPT_parsing_stdlib))

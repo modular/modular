@@ -9,7 +9,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
@@ -23,7 +23,8 @@
 #include "llvm/Target/TargetMachine.h"
 
 using namespace M;
-using namespace M::KGEN;
+using namespace KGEN;
+using namespace LIT;
 
 ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
@@ -151,14 +152,14 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier parsingStdlibId,
-    function_ref<OwningOpRef<ModuleOp>(MojoParserConfig &, mlir::TimingScope &)>
+    function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // We don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
   mlir::TimingScope timing = timingManager.getRootScope();
 
   // Parse the input Mojo file into an MLIR module.
-  MojoParserConfig parseConfig(ctx, runtime, compilationOptions);
+  ParserConfig parseConfig(ctx, runtime, compilationOptions);
   parseConfig.warnMissingDocStrings = args.hasArg(docWarnMissingId);
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))

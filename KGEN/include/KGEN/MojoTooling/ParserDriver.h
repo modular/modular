@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_H
-#define KGEN_MOJOPARSER_H
+#ifndef KGEN_MOJOTOOLING_PARSERDRIVER_H
+#define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -17,17 +17,13 @@ namespace llvm {
 class SMDiagnostic;
 class SourceMgr;
 } // namespace llvm
-namespace mlir {
-class TimingScope;
-class Type;
-} // namespace mlir
 
 namespace M {
 namespace KGEN {
 class CompilationOptions;
 namespace LIT {
-class PackageOp;
 class SharedState;
+struct ParserConfig;
 } // namespace LIT
 namespace Mojo {
 struct CodeCompletionResult;
@@ -37,147 +33,8 @@ namespace LLCL {
 class Runtime;
 } // namespace LLCL
 
-class DeclView;
-class MojoParserListener;
 class MojoASTDeclRef;
 class MojoASTTypeRef;
-
-/// This class provides the various configurations used to parse a .mojo file.
-struct MojoParserConfig {
-  MojoParserConfig(MLIRContext *context, LLCL::Runtime &runtime,
-                   const KGEN::CompilationOptions &options)
-      : context(context), runtime(runtime), options(options) {}
-
-  /// This enum defines different levels of caching acceptible for the parser.
-  enum CachingLevel {
-    /// No caching is allowed.
-    kCacheNone,
-
-    /// Caching is allowed just for imported modules, main/input/root modules
-    /// are not cached.
-    kCacheImports,
-
-    /// Caching is allowed for all modules.
-    kCacheAll,
-  };
-
-  /// The MLIR context to use when parsing the file.
-  MLIRContext *context;
-
-  /// The runtime to use when parsing the file.
-  LLCL::Runtime &runtime;
-
-  /// The compilation options to use when parsing the file.
-  const KGEN::CompilationOptions &options;
-
-  /// When true, this prints diagnostics through MLIR (so MLIR features like
-  /// -verify-diagnostics may be used). When false, this prints them through
-  /// SourceMgr to get ranges and fixit hints.
-  bool useMLIRDiagnostics = false;
-
-  /// If true, this will warn on missing pieces of documentation strings.
-  bool warnMissingDocStrings = false;
-
-  /// If true, use !lit.ref representation for full lifetimes support in Mojo.
-  bool experimentalLifetimes = false;
-
-  /// If true, the inputs are parsed as if they belong to the Mojo standard
-  /// library.
-  bool parsingStandardLibrary = false;
-
-  /// The level of module caching enabled in the parser.
-  CachingLevel moduleCachingLevel = kCacheAll;
-
-  /// An optional listener that is used to inspect certain events of the parser.
-  /// For simplicity it is a single item, but it could evolve into a list of
-  /// listeners.
-  MojoParserListener *parserListener = nullptr;
-
-  /// Maximum number of notes to print per compiler error or warning.
-  int maxNotesPerDiagnostic = 10;
-};
-
-//===----------------------------------------------------------------------===//
-// MojoParserListener
-//===----------------------------------------------------------------------===//
-
-/// This class provides an interface for other language tools like LSP servers
-/// to inspect specific events in the parser.
-class MojoParserListener {
-public:
-  virtual ~MojoParserListener() = default;
-
-  /// A functor type used to resolve an input decl for a listener method.
-  using ResolveInputDeclFn = function_ref<MojoASTDeclRef()>;
-
-  /// Returns true if the listener is interested in being notified for the given
-  /// location.
-  virtual bool isInterestedInLoc(llvm::SMLoc parserLoc);
-
-  /// Notify the listener that a new `alias` declaration has been resolved by
-  /// the parser.
-  virtual void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new `function argument` declaration has been
-  /// resolved by the parser.
-  ///
-  /// It is guaranteed that this listener has been notified of its parent
-  /// function decl before this call.
-  virtual void onArgumentDecl(MojoASTDeclRef declRef,
-                              llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new `def` or `fn` function declaration has been
-  /// resolved by the parser. This includes struct methods and closures.
-  virtual void onFunctionDecl(MojoASTDeclRef declRef,
-                              llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that an import is currently being resolved.
-  virtual void onImport(llvm::SMLoc importLoc);
-
-  /// Notify the listener that an import of a module within the given package is
-  /// currently being resolved.
-  virtual void onImport(ResolveInputDeclFn getPackageDecl,
-                        llvm::SMLoc importLoc);
-
-  /// Notify the listener that a member within the given decl is being looked
-  /// up.
-  virtual void onMemberLookup(ResolveInputDeclFn getDeclFn,
-                              llvm::SMLoc lookupLoc);
-
-  /// Notify the listener that a new `module` decl has been created by the
-  /// parser.
-  virtual void onModuleDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new function or struct `parameter` decl has
-  /// been resolved by the parser.
-  virtual void onParameterDecl(MojoASTDeclRef declRef,
-                               llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new import of the form `from Module [as Alias]`
-  /// has been resolved by the parser. The provided location and spelling
-  /// correspond to the module name and not to its optional alias.
-  virtual void onModuleImport(MojoASTDeclRef declRef, StringRef spelling,
-                              llvm::SMLoc loc);
-
-  /// Notify the listener that a new `struct` declaration has been resolved by
-  /// the parser.
-  virtual void onStructDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new `struct field` declaration has been
-  /// resolved by the parser.
-  virtual void onStructFieldDecl(MojoASTDeclRef declRef,
-                                 llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new `let` or `var` declaration has been
-  /// resolved by the parser.
-  virtual void onVariableDecl(MojoASTDeclRef declRef,
-                              llvm::SMLoc identifierLoc);
-
-  /// Notify the listener that a new reference has been resolved by the parser,
-  /// i.e. its declarations are known.
-  virtual void onRef(ArrayRef<MojoASTDeclRef> declRefs, StringRef spelling,
-                     llvm::SMLoc loc);
-};
 
 //===----------------------------------------------------------------------===//
 // MojoParserREPLListener
@@ -232,7 +89,8 @@ public:
 /// modules.
 class MojoParserContext {
 public:
-  MojoParserContext(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
+  MojoParserContext(llvm::SourceMgr &sourceMgr,
+                    KGEN::LIT::ParserConfig &config);
   ~MojoParserContext();
 
   /// Return the current module being parsed.
@@ -370,32 +228,6 @@ protected:
   std::unique_ptr<Impl> impl;
 };
 
-//===----------------------------------------------------------------------===//
-// Driver Entry Points
-//===----------------------------------------------------------------------===//
-
-/// Returns true if the given file path corresponds to a mojo package.
-bool isMojoSourcePackagePath(const std::filesystem::path &path);
-
-/// Parse a single .mojo file and return the MLIR module for it.
-///
-/// If `includedFiles` is provided, it is set to the list of included files when
-/// parsing imports.
-OwningOpRef<ModuleOp>
-importMojoFile(llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-               mlir::TimingScope &ts,
-               SmallVectorImpl<std::string> *includedFiles = nullptr);
-
-/// Parse a single mojo package at the given path and return the full context
-/// MLIR module, and the corresponding PackageOp for it.
-///
-/// If `includedFiles` is provided, it is set to the list of included files when
-/// parsing imports.
-std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
-importMojoPackage(StringRef path, StringRef packageName,
-                  llvm::SourceMgr &sourceMgr, MojoParserConfig &config,
-                  mlir::TimingScope &ts,
-                  SmallVectorImpl<std::string> *includedFiles = nullptr);
 } // namespace M
 
-#endif // KGEN_MOJOPARSER_H
+#endif // KGEN_MOJOTOOLING_PARSERDRIVER_H

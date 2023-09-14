@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Allocator.h"
@@ -23,9 +23,10 @@
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
+using namespace KGEN;
 
 int main(int argc, char *argv[]) {
-  KGEN::KGENCommonOptions clOptions;
+  KGENCommonOptions clOptions;
 
   cl::opt<bool> disableParserCaching{
       "mojo-disable-parser-caching",
@@ -59,8 +60,8 @@ int main(int argc, char *argv[]) {
         // Set up the runtime.
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();
         mlir::TimingScope ts;
-        KGEN::CompilationOptions options = clOptions.getCompilationOptions();
-        MojoParserConfig config(context, *runtime, options);
+        CompilationOptions options = clOptions.getCompilationOptions();
+        LIT::ParserConfig config(context, *runtime, options);
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
@@ -68,8 +69,8 @@ int main(int argc, char *argv[]) {
         // Disable binary packages when using `kgen-translate`.
         config.parsingStandardLibrary = true;
         if (disableParserCaching)
-          config.moduleCachingLevel = MojoParserConfig::kCacheNone;
-        return importMojoFile(sourceMgr, config, ts);
+          config.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
+        return LIT::importMojoFile(sourceMgr, config, ts);
       });
 
   // Register LLVM IR generation.

@@ -17,11 +17,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include <filesystem>
 
-namespace M {
-struct MojoParserConfig;
-class MojoParserListener;
-} // namespace M
-
 namespace M::DebugInfo {
 class DIBuilder;
 } // namespace M::DebugInfo
@@ -37,16 +32,18 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN::LIT {
-class DeclResolver;
 class ASTDecl;
 class ASTType;
+class DeclResolver;
+class ExprNode;
+class FileModuleOp;
+class FuncOp;
 class LookupResult;
 class NoneAttr;
-class StructDeclOp;
-class FuncOp;
-class FileModuleOp;
 class PackageOp;
-class ExprNode;
+class ParserListener;
+class StructDeclOp;
+struct ParserConfig;
 enum class CallSyntax : uint8_t;
 
 /// Given a number, return one string if the number is 1, otherwise return the
@@ -101,7 +98,7 @@ enum class DeclResolvedness : int8_t {
 /// which are always shared across them.
 class SharedState {
 public:
-  SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
+  SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config);
   ~SharedState();
 
   Diags diags; // Contains SourceMgr and MLIRContext pointers.
@@ -109,7 +106,7 @@ public:
 
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
-  MojoParserListener *parserListener;
+  ParserListener *parserListener;
   LLCL::Runtime &runtime;
 
   const mlir::StringAttr bufferNameIdentifier;

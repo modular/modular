@@ -6,10 +6,11 @@
 
 #include "MojoServer.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
@@ -337,38 +338,37 @@ struct MojoDocument;
 
 /// Class that is used to connect the LSP with the Mojo parser to enable
 /// features like symbol indices.
-class LSPParserListener : public MojoParserListener {
+class LSPParserListener : public ParserListener {
 public:
   LSPParserListener(MojoDocument &mainDoc, const llvm::SourceMgr &sourceMgr)
       : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
+
+  void addSymbolDecl(ASTDecl *decl, SMLoc loc);
 
   bool isInterestedInLoc(llvm::SMLoc parserLoc) override {
     // We're only interested in locations in the main file.
     return isMainFileLoc(sourceMgr, parserLoc);
   }
 
-  void onAliasDecl(MojoASTDeclRef declRef, llvm::SMLoc identifierLoc) override;
+  void onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onArgumentDecl(MojoASTDeclRef declRef,
-                      llvm::SMLoc identifierLoc) override;
+  void onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onFunctionDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onModuleDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onModuleImport(MojoASTDeclRef declRef, StringRef spelling,
-                      SMLoc loc) override;
+  void onModuleImport(ASTDecl *decl, StringRef spelling, SMLoc loc) override;
 
-  void onParameterDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onStructDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onStructDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onStructFieldDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onVariableDecl(MojoASTDeclRef declRef, SMLoc identifierLoc) override;
+  void onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onRef(ArrayRef<MojoASTDeclRef> declRefs, StringRef spelling,
-             SMLoc loc) override;
+  void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling, SMLoc loc) override;
 
 private:
   /// The main doc for which parsing was initiated.
@@ -518,14 +518,14 @@ private:
       // TODO: Enable full caching here when we can symbolize references from
       // IR. We can enable references from imported modules though, as we just
       // need definitions from cached IR.
-      parserConfig.moduleCachingLevel = MojoParserConfig::kCacheImports;
+      parserConfig.moduleCachingLevel = ParserConfig::kCacheImports;
       parserContext =
           std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
     }
 
     KGEN::CompilationOptions compilationOptions;
     MLIRContext mlirContext;
-    MojoParserConfig parserConfig;
+    ParserConfig parserConfig;
     llvm::SourceMgr sourceMgr;
     SymbolIndex symbolIndex;
     LSPParserListener parserListener;
@@ -971,64 +971,56 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) const {
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
-void LSPParserListener::onAliasDecl(MojoASTDeclRef declRef,
-                                    SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc) {
+  MojoASTDeclRef declRef(decl);
+  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(), loc);
 }
 
-void LSPParserListener::onArgumentDecl(MojoASTDeclRef declRef,
-                                       SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onFunctionDecl(MojoASTDeclRef declRef,
-                                       SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onModuleDecl(MojoASTDeclRef declRef,
-                                     SMLoc identifierLoc) {
+void LSPParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {
   // We don't index the module of the main file.
   if (!isMainFileLoc(sourceMgr, identifierLoc))
-    mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                                identifierLoc);
+    addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onModuleImport(MojoASTDeclRef declRef,
-                                       StringRef spelling, SMLoc loc) {
-  mainDoc.context->symbolIndex.registerRef(declRef, loc, spelling);
+void LSPParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
+                                       SMLoc loc) {
+  mainDoc.context->symbolIndex.registerRef(MojoASTDeclRef(decl), loc, spelling);
 }
 
-void LSPParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
-                                          SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onParameterDecl(MojoASTDeclRef declRef,
-                                        SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onStructDecl(MojoASTDeclRef declRef,
-                                     SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onVariableDecl(MojoASTDeclRef declRef,
-                                       SMLoc identifierLoc) {
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(),
-                                              identifierLoc);
+void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onRef(ArrayRef<MojoASTDeclRef> declRefs,
-                              StringRef spelling, SMLoc loc) {
-  mainDoc.context->symbolIndex.registerRef(declRefs, loc, spelling);
+void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                              SMLoc loc) {
+  mainDoc.context->symbolIndex.registerRef(
+      llvm::map_to_vector(decls,
+                          [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
+      loc, spelling);
 }
 
 //===----------------------------------------------------------------------===//
