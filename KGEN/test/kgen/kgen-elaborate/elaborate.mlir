@@ -1939,3 +1939,14 @@ kgen.generator export @interpret_concrete() {
   kgen.param.constant = <apply(:() -> index @already_concrete)>
   kgen.return
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", cpu="", features="foobar", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: @custom_target
+  kgen.generator @custom_target() {
+    // CHECK: constant: i1 = <1>
+    kgen.param.constant: i1 = <target_has_feature(current_target(), "foobar")>
+    kgen.return
+  }
+}
