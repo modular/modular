@@ -311,7 +311,7 @@ public:
 
   void addSymbolDecl(ASTDecl *decl, SMLoc loc);
 
-  bool isInterestedInLoc(llvm::SMLoc parserLoc) override {
+  bool isInterestedInLoc(SMLoc parserLoc) override {
     // We're only interested in locations in the main file.
     return mainDoc.containsLocation(mainDoc.translateParserLoc(parserLoc));
   }
@@ -396,6 +396,51 @@ void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                           [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
       mainDoc.translateParserLoc(loc), spelling);
 }
+
+//===----------------------------------------------------------------------===//
+// LSPMojoREPLListener
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class implements a parser listener that communicates between the Mojo
+/// parser and the LSP.
+class LSPMojoREPLListener : public MojoParserREPLListener {
+public:
+  LSPMojoREPLListener(
+      llvm::SourceMgr &sourceMgr,
+      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables)
+      : newPersistentVariables(newPersistentVariables),
+        diagHandler(sourceMgr.getDiagHandler()),
+        diagHandlerContext(sourceMgr.getDiagContext()) {}
+  ~LSPMojoREPLListener() override = default;
+
+  //===--------------------------------------------------------------------===//
+  // Notifications
+
+  void notifyWrappedExpr(StringRef wrappedExpr) override {}
+  void notifyFixedExpr(StringRef fixedExpr) override {}
+  void notifyDiagnostics(ArrayRef<llvm::SMDiagnostic> diagnostics) override {
+    for (const llvm::SMDiagnostic &diag : diagnostics)
+      diagHandler(diag, diagHandlerContext);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Queries
+
+  bool shouldPersistVariable(StringRef name, mlir::Type type) override {
+    newPersistentVariables.emplace_back(name, type);
+    return true;
+  }
+
+private:
+  StringRef currentModuleName;
+  SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
+
+  /// The main diagnostic handler used to notify diagnostics.
+  llvm::SourceMgr::DiagHandlerTy diagHandler;
+  void *diagHandlerContext;
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // MojoDocument::Context
@@ -893,7 +938,7 @@ void MojoTextDocument::parseDocumentImpl() {
 }
 
 const mlir::lsp::URIForFile &
-MojoTextDocument::getURIFromContainedLoc(llvm::SMLoc loc) {
+MojoTextDocument::getURIFromContainedLoc(SMLoc loc) {
   return getURIs().front();
 }
 
@@ -902,8 +947,8 @@ bool MojoTextDocument::containsLocation(SMLoc loc) {
          getSourceMgr().getMainFileID();
 }
 
-llvm::SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
-                                            mlir::lsp::Position position) {
+SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
+                                      mlir::lsp::Position position) {
   return position.getAsSMLoc(getSourceMgr());
 }
 
@@ -923,6 +968,88 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
                                          getRuntime(), getCompilationOptions());
+}
+
+//===----------------------------------------------------------------------===//
+// MojoNotebookDocument
+//===----------------------------------------------------------------------===//
+
+MojoNotebookDocument::MojoNotebookDocument(
+    ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs, int64_t version,
+    ArrayRef<mlir::lsp::NotebookCell> cellInfos,
+    ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
+    SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
+    LLCL::AnyAsyncValueRef chain)
+    : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
+                   sendDiagnosticsFn, runtime, std::move(chain)) {
+  for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
+    if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
+      continue;
+    auto &doc = cellDocuments[i];
+
+    auto &cell = cells.emplace_back(std::make_unique<Cell>(doc.uri, doc.text));
+    cell->bufferId = getSourceMgr().AddNewSourceBuffer(
+        llvm::MemoryBuffer::getMemBuffer(cell->contents, cell->uri.file()),
+        SMLoc());
+    uriToCell.try_emplace(doc.uri.file(), cells.back().get());
+  }
+}
+
+void MojoNotebookDocument::parseDocumentImpl() {
+  SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
+  LSPMojoREPLListener listener(getSourceMgr(), persistentVariables);
+
+  // Parse each of the cells in the notebook.
+  MojoParserContext &ctx = getParserContext();
+  for (Cell &cell : getCells()) {
+    // Ignore cells that contain python expressions.
+    // TODO: Extract the variables that are implicitly imported into mojo and
+    // create stub definitions so that future cells can reference them without
+    // error.
+    if (StringRef(cell.contents).starts_with("%%python"))
+      continue;
+
+    cell.decl = ctx.parseREPLExpresion(listener, cell.bufferId, "lsp_repl_main",
+                                       persistentVariables);
+  }
+}
+
+const mlir::lsp::URIForFile &
+MojoNotebookDocument::getURIFromContainedLoc(SMLoc loc) {
+  size_t bufferId = getSourceMgr().FindBufferContainingLoc(loc);
+  assert(bufferId && bufferId <= cells.size() &&
+         "expected to find buffer containing location");
+  return cells[bufferId - 1]->uri;
+}
+
+bool MojoNotebookDocument::containsLocation(SMLoc loc) {
+  int locBufferId = getSourceMgr().FindBufferContainingLoc(loc);
+  if (locBufferId == 0)
+    return false;
+  // Check that the buffer corresponds to one of the cells.
+  return locBufferId <= static_cast<int>(cells.size());
+}
+
+SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
+  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  return newLoc.isValid() ? newLoc : loc;
+}
+
+SMLoc MojoNotebookDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
+                                          mlir::lsp::Position position) {
+  Cell &cell = *uriToCell[uri.file()];
+  return getSourceMgr().FindLocForLineAndColumn(
+      cell.bufferId, position.line + 1, position.character + 1);
+}
+
+//===----------------------------------------------------------------------===//
+// MojoNotebookDocument: Code Completion
+//===----------------------------------------------------------------------===//
+
+std::vector<KGEN::Mojo::CodeCompletionResult>
+MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
+  // TODO: Support notebook documents.
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -950,6 +1077,7 @@ struct MojoServer::Impl {
         it.second->invalidate();
     }
     files.clear();
+    notebookCellToFile.clear();
     runtime.reset();
   }
 
@@ -959,10 +1087,12 @@ struct MojoServer::Impl {
   /// Retrieve the document that matches completely the given filename. Return
   /// `nullptr` if no document is found.
   MojoDocumentRef findDocument(StringRef filename) {
-    auto it = files.find(filename);
-    if (it == files.end())
-      return MojoDocumentRef();
-    return it->second.copy();
+    if (auto it = files.find(filename); it != files.end())
+      return it->second.copy();
+
+    auto it = notebookCellToFile.find(filename);
+    return it != notebookCellToFile.end() ? it->second.copy()
+                                          : MojoDocumentRef();
   }
 
   /// The runtime used when processing files.
@@ -977,6 +1107,9 @@ struct MojoServer::Impl {
 
   /// The files held by the server, mapped by their URI file name.
   llvm::StringMap<MojoDocumentRef> files;
+
+  /// A mapping from individual notebook cells to their documents.
+  llvm::StringMap<MojoDocumentRef> notebookCellToFile;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1051,6 +1184,131 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
       lsp::PublishDiagnosticsParams(uri, it->second->getVersion()));
   it->second->invalidate();
   impl->files.erase(it);
+}
+
+//===----------------------------------------------------------------------===//
+// Notebook Document Management
+
+void MojoServer::addNotebookDocument(
+    const mlir::lsp::URIForFile &uri, ArrayRef<mlir::lsp::NotebookCell> cells,
+    int64_t version, ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments) {
+  if (impl->isShuttingDown())
+    return;
+  MojoDocumentRef &file = impl->files[uri.file()];
+
+  // If a document already exists, invalidate that version.
+  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(*impl->runtime);
+  if (file) {
+    file->invalidate();
+
+    // Chain the new document to the old one.
+    chain = file->getDocumentReadyChain();
+  }
+
+  // Build the list of URIs for the document and cells.
+  SmallVector<lsp::URIForFile> docURIs(1, uri);
+  for (auto [index, cell] : llvm::enumerate(cellDocuments))
+    docURIs.push_back(cell.uri);
+
+  // Create a new document.
+  file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
+                                         impl->sendDiagnosticsFn,
+                                         *impl->runtime, std::move(chain));
+  for (const mlir::lsp::TextDocumentItem &cell : cellDocuments)
+    impl->notebookCellToFile[cell.uri.file()] = file.copy();
+}
+
+void MojoServer::removeNotebookDocument(
+    const mlir::lsp::URIForFile &uri,
+    ArrayRef<mlir::lsp::TextDocumentIdentifier> cellDocuments) {
+  // Remove the document from the server using the same flow as a normal text
+  // document.
+  removeDocument(uri);
+
+  // Clear out mappings from the cell documents to the notebook document.
+  for (const mlir::lsp::TextDocumentIdentifier &cell : cellDocuments)
+    impl->notebookCellToFile.erase(cell.uri.file());
+}
+
+void MojoServer::updateNotebookDocument(
+    const lsp::URIForFile &uri, int64_t version,
+    const lsp::NotebookDocumentChangeEvent &change) {
+  auto it = impl->files.find(uri.file());
+  if (it == impl->files.end())
+    return;
+  MojoNotebookDocument *doc = dyn_cast<MojoNotebookDocument>(&*it->second);
+  if (!doc) {
+    lsp::Logger::error("Updating a non-notebook document: {0}", uri.file());
+    return;
+  }
+
+  // Grab all of the current cells and their documents.
+  std::vector<lsp::NotebookCell> cells;
+  std::vector<lsp::TextDocumentItem> cellDocs;
+  for (MojoNotebookDocument::Cell &cell : doc->getCells()) {
+    cells.push_back({lsp::NotebookCellKind::Code, cell.uri});
+    cellDocs.push_back({cell.uri, "mojo", cell.contents, version});
+  }
+
+  // Apply updates to the cells.
+  if (change.cells) {
+    // Check for structure changes.
+    if (auto &cellStructure = change.cells->structure) {
+      auto &array = cellStructure->array;
+
+      // Erase the deleted cells.
+      for (const lsp::NotebookCell &cell :
+           ArrayRef(cells).slice(array.start, array.deleteCount)) {
+        impl->notebookCellToFile.erase(cell.document.file());
+      }
+      cells.erase(cells.begin() + array.start,
+                  cells.begin() + array.start + array.deleteCount);
+      cellDocs.erase(cellDocs.begin() + array.start,
+                     cellDocs.begin() + array.start + array.deleteCount);
+
+      // Insert any new cells.
+      cells.insert(cells.begin() + array.start, array.cells.begin(),
+                   array.cells.end());
+      for (const lsp::NotebookCell &cell : llvm::reverse(array.cells)) {
+        lsp::TextDocumentItem docItem{cell.document, "mojo", "", version};
+        cellDocs.insert(cellDocs.begin() + array.start, docItem);
+      }
+    }
+
+    // Map the cell uri the index of the cell.
+    llvm::StringMap<unsigned> cellURIToIndex;
+    for (auto [index, cell] : llvm::enumerate(cells))
+      cellURIToIndex.try_emplace(cell.document.file(), index);
+
+    // Apply updates to the cell properties.
+    for (auto &cellUpdate : change.cells->data) {
+      auto it = cellURIToIndex.find(cellUpdate.document.file());
+      if (it != cellURIToIndex.end())
+        cells[it->second].kind = cellUpdate.kind;
+    }
+
+    // Apply updates to the cell contents.
+    for (auto &content : change.cells->textContent) {
+      auto it = cellURIToIndex.find(content.document.uri.file());
+      if (it == cellURIToIndex.end())
+        continue;
+      // Try to update the document. If we fail, erase the file from the
+      // server. A failed updated generally means we've fallen out of sync
+      // somewhere.
+      if (failed(lsp::TextDocumentContentChangeEvent::applyTo(
+              content.changes, cellDocs[it->second].text))) {
+        lsp::Logger::error("Failed to update contents of {0}", uri.file());
+
+        SmallVector<lsp::TextDocumentIdentifier> cellDocuments;
+        for (auto &cell : cells)
+          cellDocuments.push_back({cell.document});
+        return removeNotebookDocument(uri, cellDocuments);
+      }
+    }
+  }
+
+  // Overrite the original document with the new contents.
+  addNotebookDocument(uri, cells, version, cellDocs);
 }
 
 //===----------------------------------------------------------------------===//

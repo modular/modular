@@ -98,13 +98,14 @@ export class MOJOContext extends DisposableContext {
   async getOrActivateLanguageClient(uri: vscode.Uri,
                                     launchLanguageServerSuspended: boolean):
       Promise<vscodelc.LanguageClient|undefined> {
-    if (!uri.fsPath.endsWith(".mojo") && !uri.fsPath.endsWith('🔥'))
+    if (!uri.fsPath.endsWith(".mojo") && !uri.fsPath.endsWith('🔥') &&
+        !uri.fsPath.endsWith(".ipynb"))
       return undefined;
 
     this.getLoggingService().logInfo(
         `Activating language client for URI '${uri}'`)
     // Check the scheme of the uri.
-    let validSchemes = [ 'file' ];
+    let validSchemes = [ 'file', 'vscode-notebook-cell' ];
     if (!validSchemes.includes(uri.scheme)) {
       this.getLoggingService().logInfo(`Unsupported URI scheme '${uri.scheme}'`)
       return undefined;
@@ -181,7 +182,7 @@ export class MOJOContext extends DisposableContext {
     };
 
     // Configure file patterns relative to the workspace folder.
-    let filePattern: vscode.GlobPattern = '**/*.{mojo,🔥}';
+    let filePattern: vscode.GlobPattern = '**/*.{mojo,🔥,ipynb}';
     let selectorPattern: string|undefined = undefined;
     if (workspaceFolder) {
       filePattern = new vscode.RelativePattern(workspaceFolder, filePattern);
@@ -210,7 +211,15 @@ export class MOJOContext extends DisposableContext {
     // Configure the client options.
     const clientOptions: vscodelc.LanguageClientOptions = {
       documentSelector : [
-        {language : 'mojo', pattern : selectorPattern},
+        {
+          language : 'mojo',
+          pattern : selectorPattern,
+        },
+        {
+          scheme : "vscode-notebook-cell",
+          language : "mojo",
+          pattern : selectorPattern,
+        },
       ],
       synchronize : {
         // Notify the server about file changes to language files contained in

@@ -8,6 +8,7 @@ add_modular_tool(mojo-lsp-server
   LSPServer.cpp
   MojoServer.cpp
   mojo-lsp-server.cpp
+  Protocol.cpp
 
   LINK_LIBS PRIVATE
   KGENToolCommon

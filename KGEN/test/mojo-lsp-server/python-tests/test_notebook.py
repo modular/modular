@@ -1,0 +1,183 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import os
+from typing import List, Optional
+
+import pytest_lsp
+from lib.utils import NotebookDocument, Requests, fail_if_none
+from lsprotocol.types import (
+    DidChangeNotebookDocumentParams,
+    MarkupContent,
+    NotebookCell,
+    NotebookCellArrayChange,
+    NotebookCellKind,
+    NotebookDocumentChangeEvent,
+    NotebookDocumentChangeEventCellsType,
+    NotebookDocumentChangeEventCellsTypeStructureType,
+    NotebookDocumentChangeEventCellsTypeTextContentType,
+    Position,
+    Range,
+    TextDocumentContentChangeEvent_Type1,
+    TextDocumentContentChangeEvent_Type2,
+    VersionedNotebookDocumentIdentifier,
+    VersionedTextDocumentIdentifier,
+)
+from pytest_lsp import ClientServerConfig, LanguageClient
+
+
+@pytest_lsp.fixture(
+    config=ClientServerConfig(
+        server_command=[os.environ["MOJO_LSP_SERVER"]],
+    ),
+)
+async def client(lsp_client: LanguageClient):
+    # Setup
+    await Requests(lsp_client).initialize()
+    yield
+    # Teardown
+    await lsp_client.shutdown_session()
+
+
+async def test_updates(client: LanguageClient):
+    cell_contents = [
+        """
+fn function() -> Int:
+  return 10
+""",
+        """
+function()
+""",
+    ]
+    doc = NotebookDocument("test", cell_contents)
+
+    requests = Requests(client)
+    requests.open_notebook_document(doc)
+
+    async def wait_for_diags():
+        """Wait for diagnostics to be published for all cells."""
+        for i in range(len(doc.cells) + 1):
+            await requests.client.wait_for_notification(
+                "textDocument/publishDiagnostics"
+            )
+
+    # Check that no diagnostics were emitted.
+    await wait_for_diags()
+    for cell in doc.cells:
+        assert (
+            cell.uri in requests.client.diagnostics
+            and len(requests.client.diagnostics[cell.uri]) == 0
+        )
+
+    def build_change_params(
+        arrayChange: NotebookCellArrayChange,
+        text_content: Optional[
+            List[NotebookDocumentChangeEventCellsTypeTextContentType]
+        ] = None,
+    ) -> DidChangeNotebookDocumentParams:
+        return DidChangeNotebookDocumentParams(
+            notebook_document=VersionedNotebookDocumentIdentifier(
+                uri=doc.uri,
+                version=0,
+            ),
+            change=NotebookDocumentChangeEvent(
+                cells=NotebookDocumentChangeEventCellsType(
+                    structure=NotebookDocumentChangeEventCellsTypeStructureType(
+                        array=arrayChange
+                    ),
+                    text_content=text_content,
+                ),
+            ),
+        )
+
+    # Send an update to replace the first cell.
+    requests.client.notebook_document_did_change(
+        build_change_params(
+            NotebookCellArrayChange(
+                start=0,
+                delete_count=1,
+                cells=[
+                    NotebookCell(
+                        kind=NotebookCellKind.Code,
+                        document=doc.cells[0].uri,
+                    )
+                ],
+            )
+        )
+    )
+
+    # Check that the second cell can't find the called function.
+    await wait_for_diags()
+    cell1_diags = requests.client.diagnostics[doc.cells[1].uri]
+    assert (
+        len(cell1_diags) == 1
+        and cell1_diags[0].message == "use of unknown declaration 'function'"
+    )
+
+    # Add back in the first cell, and change the function called in the second
+    # cell.
+    requests.client.notebook_document_did_change(
+        build_change_params(
+            NotebookCellArrayChange(start=0, delete_count=0, cells=[]),
+            [
+                NotebookDocumentChangeEventCellsTypeTextContentType(
+                    document=VersionedTextDocumentIdentifier(
+                        uri=doc.cells[0].uri,
+                        version=0,
+                    ),
+                    changes=[
+                        TextDocumentContentChangeEvent_Type2(
+                            text=cell_contents[0]
+                        ),
+                        TextDocumentContentChangeEvent_Type1(
+                            range=doc.cells[0].find_first_range("function"),
+                            text="renamed_function",
+                        ),
+                    ],
+                ),
+                NotebookDocumentChangeEventCellsTypeTextContentType(
+                    document=VersionedTextDocumentIdentifier(
+                        uri=doc.cells[1].uri,
+                        version=0,
+                    ),
+                    changes=[
+                        TextDocumentContentChangeEvent_Type1(
+                            range=doc.cells[1].find_first_range("function"),
+                            text="renamed_function",
+                        ),
+                    ],
+                ),
+            ],
+        )
+    )
+    # Update the contents within the cells in the test document.
+    for cell in doc.cells:
+        cell.set_contents(cell.contents.replace("function", "renamed_function"))
+
+    # Check that no diagnostics were emitted.
+    await wait_for_diags()
+    for cell in doc.cells:
+        assert (
+            cell.uri in requests.client.diagnostics
+            and len(requests.client.diagnostics[cell.uri]) == 0
+        )
+
+    # Check that the second cell has the renamed function.
+    result = fail_if_none(
+        await requests.hover(
+            doc.cells[1], doc.cells[1].find_first_pos("renamed_function")
+        )
+    )
+    assert isinstance(result.contents, MarkupContent)
+    assert (
+        result.contents.value
+        == """```mojo
+(function) fn renamed_function() -> Int
+```"""
+    )
+    assert result.range == Range(
+        start=Position(line=1, character=0), end=Position(line=1, character=16)
+    )

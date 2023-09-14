@@ -7,8 +7,8 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 
+#include "Protocol.h"
 #include "Support/LLVMForwardDecls.h"
-#include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M::LLCL {
@@ -35,6 +35,10 @@ public:
   /// Begin the shutdown sequence for the server.
   void shutdown();
 
+  //===--------------------------------------------------------------------===//
+  // Document Management
+  //===--------------------------------------------------------------------===//
+
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
   void addDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
@@ -49,6 +53,31 @@ public:
 
   /// Remove the document with the given uri.
   void removeDocument(const mlir::lsp::URIForFile &uri);
+
+  //===--------------------------------------------------------------------===//
+  // Notebook Document Management
+  //===--------------------------------------------------------------------===//
+
+  /// Add the notebook document, with the provided `version`, at the given URI.
+  /// Any diagnostics emitted for this document will be added to `diagnostics`.
+  void addNotebookDocument(const mlir::lsp::URIForFile &uri,
+                           ArrayRef<mlir::lsp::NotebookCell> cells,
+                           int64_t version,
+                           ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments);
+
+  /// Remove the notebook document with the given uri.
+  void removeNotebookDocument(
+      const mlir::lsp::URIForFile &uri,
+      ArrayRef<mlir::lsp::TextDocumentIdentifier> cellDocuments);
+
+  /// Update the document, with the provided `version`, at the given URI.
+  void
+  updateNotebookDocument(const mlir::lsp::URIForFile &uri, int64_t version,
+                         const mlir::lsp::NotebookDocumentChangeEvent &change);
+
+  //===--------------------------------------------------------------------===//
+  // Queries
+  //===--------------------------------------------------------------------===//
 
   /// Get the set of code actions within the file.
   void

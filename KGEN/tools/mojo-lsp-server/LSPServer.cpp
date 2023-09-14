@@ -7,9 +7,9 @@
 #include "LSPServer.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "MojoServer.h"
+#include "Protocol.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
-#include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringMap.h"
@@ -44,6 +44,11 @@ struct LSPServer {
   void onDocumentDidOpen(const DidOpenTextDocumentParams &params);
   void onDocumentDidClose(const DidCloseTextDocumentParams &params);
   void onDocumentDidChange(const DidChangeTextDocumentParams &params);
+
+  void onNotebookDocumentDidOpen(const DidOpenNotebookDocumentParams &params);
+  void onNotebookDocumentDidClose(const DidCloseNotebookDocumentParams &params);
+  void
+  onNotebookDocumentDidChange(const DidChangeNotebookDocumentParams &params);
 
   //===--------------------------------------------------------------------===//
   // Code Action
@@ -81,10 +86,13 @@ struct LSPServer {
 
 void LSPServer::onInitialize(const InitializeParams &params,
                              Callback<llvm::json::Value> reply) {
+  using JSONArray = llvm::json::Array;
+  using JSONObject = llvm::json::Object;
+
   // Send a response with the capabilities of this server.
-  llvm::json::Object serverCaps{
+  JSONObject serverCaps{
       {"completionProvider",
-       llvm::json::Object{
+       JSONObject{
            {"allCommitCharacters",
             {"\t", "(", ")", "[", "]", "{",  "}", "<", ">",
              ":",  ";", ",", "+", "-", "/",  "*", "%", "^",
@@ -94,12 +102,23 @@ void LSPServer::onInitialize(const InitializeParams &params,
        }},
       {"definitionProvider", true},
       {"hoverProvider", true},
-      {"textDocumentSync",
-       llvm::json::Object{
-           {"openClose", true},
-           {"change", (int)TextDocumentSyncKind::Incremental},
-           {"save", true},
-       }},
+      {"notebookDocumentSync",
+       JSONObject{{
+           "notebookSelector",
+           JSONArray{JSONObject{
+               {"notebook", JSONObject{{"scheme", "file"},
+                                       {"notebookType", "jupyter-notebook"}}},
+               {"cells", JSONArray{JSONObject{{"language", "mojo"}}}},
+           }},
+       }}},
+      {
+          "textDocumentSync",
+          JSONObject{
+              {"openClose", true},
+              {"change", (int)TextDocumentSyncKind::Incremental},
+              {"save", true},
+          },
+      },
   };
 
   // Per LSP, codeActionProvider can be either boolean or CodeActionOptions.
@@ -139,6 +158,23 @@ void LSPServer::onDocumentDidClose(const DidCloseTextDocumentParams &params) {
 void LSPServer::onDocumentDidChange(const DidChangeTextDocumentParams &params) {
   server.updateDocument(params.textDocument.uri, params.contentChanges,
                         params.textDocument.version);
+}
+
+void LSPServer::onNotebookDocumentDidOpen(
+    const DidOpenNotebookDocumentParams &params) {
+  server.addNotebookDocument(
+      params.notebookDocument.uri, params.notebookDocument.cells,
+      params.notebookDocument.version, params.cellTextDocuments);
+}
+void LSPServer::onNotebookDocumentDidClose(
+    const DidCloseNotebookDocumentParams &params) {
+  server.removeNotebookDocument(params.notebookDocument.uri,
+                                params.cellTextDocuments);
+}
+void LSPServer::onNotebookDocumentDidChange(
+    const DidChangeNotebookDocumentParams &params) {
+  server.updateNotebookDocument(params.notebookDocument.uri,
+                                params.notebookDocument.version, params.change);
 }
 
 //===----------------------------------------------------------------------===//
@@ -220,6 +256,12 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
   messageHandler.method("shutdown", &lspServer, &LSPServer::onShutdown);
 
   // Document Changes
+  messageHandler.notification("notebookDocument/didOpen", &lspServer,
+                              &LSPServer::onNotebookDocumentDidOpen);
+  messageHandler.notification("notebookDocument/didClose", &lspServer,
+                              &LSPServer::onNotebookDocumentDidClose);
+  messageHandler.notification("notebookDocument/didChange", &lspServer,
+                              &LSPServer::onNotebookDocumentDidChange);
   messageHandler.notification("textDocument/didOpen", &lspServer,
                               &LSPServer::onDocumentDidOpen);
   messageHandler.notification("textDocument/didClose", &lspServer,

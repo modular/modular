@@ -9,7 +9,14 @@
 // CHECK-NEXT:      "completionProvider":
 // CHECK:           "definitionProvider": true,
 // CHECK-NEXT:      "hoverProvider": true,
-// CHECK-NEXT:      "textDocumentSync": {
+// CHECK:           "notebookDocumentSync":
+// CHECK:             "notebookSelector":
+// CHECK:               "cells":
+// CHECK:                 "language": "mojo"
+// CHECK:               "notebook":
+// CHECK:                 "notebookType": "jupyter-notebook",
+// CHECK:                 "scheme": "file"
+// CHECK:           "textDocumentSync": {
 // CHECK-NEXT:        "change": 2,
 // CHECK-NEXT:        "openClose": true,
 // CHECK-NEXT:        "save": true
