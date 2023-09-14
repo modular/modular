@@ -8,6 +8,7 @@
 #include "../Common/Telemetry.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLDB/MojoLLDB.h"
+#include "Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -23,13 +24,22 @@ llvm::ErrorOr<std::string> M::getLLDB(const std::string &executable) {
                                       /*Paths=*/ArrayRef<StringRef>(str));
 }
 
-std::string M::getMojoLLDB(const std::string &executable) {
-  // Attempt to find a MojoLLDB installed relative to the driver: if the driver
-  // exists at "foo/bin/mojo", MojoLLDB should exist at "foo/bin/../lib/".
-  std::filesystem::path lib =
-      std::filesystem::path(executable).parent_path().parent_path() / "lib" /
-      MOJO_LLDB;
-  return lib.string();
+/// Returns the path to the MojoLLDB shared library, or an error if not found.
+/// This library implements Mojo's LLDB plugin.
+static ErrorOr<std::string> getMojoLLDB() {
+  // Read the mojo configuration.
+  ErrorOr<Config> configOr = Config::open();
+  if (failed(configOr)) {
+    return Error(Twine("failed to parse 'modular.cfg': ") +
+                 configOr.getError());
+  }
+  Config config = std::move(*configOr);
+
+  std::error_code ec;
+  StringRef mojoLLDB = config.getValue("mojo.lldb_plugin_path");
+  if (!std::filesystem::exists(mojoLLDB.str(), ec) || ec)
+    return Error("unable to resolve the MojoLLDB plugin path");
+  return mojoLLDB.str();
 }
 
 int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
@@ -49,11 +59,13 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
   llvm::ErrorOr<std::string> lldb = M::getLLDB(executable);
   if (!lldb)
     return state.reportError("lldb must be installed alongside mojo");
-  std::string mojoLLDB = M::getMojoLLDB(executable);
+  ErrorOr<std::string> mojoLLDB = getMojoLLDB();
+  if (failed(mojoLLDB))
+    return state.reportError(mojoLLDB.getError());
 
   // We forward all unparsed command line arguments to LLDB.
   SmallVector<StringRef> lldbArgs(state.arguments);
-  std::string loadCommand = llvm::formatv("plugin load \"{0}\"", mojoLLDB);
+  std::string loadCommand = llvm::formatv("plugin load \"{0}\"", *mojoLLDB);
   lldbArgs.insert(lldbArgs.begin(),
                   {lldb.get(), "-Q", "--one-line-before-file", loadCommand});
   lldbArgs.insert(lldbArgs.end(), extraOptions);
