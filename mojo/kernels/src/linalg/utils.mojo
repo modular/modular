@@ -485,13 +485,21 @@ fn get_partitioned_matmul_mojo[
     # pack size per partition.
     # We still maintain that there is more column partitions than row
     # partitions since n > m.
-    let num_packs = max(n // micro_kernel_n, 1)
-    if num_packs < 2 * num_col_tasks:
+    let num_packs_n = max(n // micro_kernel_n, 1)
+    let num_packs_m = max(m // micro_kernel_m, 1)
+
+    fn int_sqrt_floor(val: Int) -> Int:
+        return Int(sqrt(Float32(val)).cast[DType.index]().value)
+
+    if (
+        num_packs_n < 2 * num_col_tasks
+        and int_sqrt_floor(num_packs_m * num_packs_n) > num_col_tasks
+    ):
         var num_col_partitions: Int = num_tasks
         var aligned_partition_found: Bool = False
         while num_col_partitions > (num_tasks // num_col_partitions):
             if (
-                num_packs % num_col_partitions == 0
+                num_packs_n % num_col_partitions == 0
                 and num_tasks % num_col_partitions == 0
             ):
                 aligned_partition_found = True
