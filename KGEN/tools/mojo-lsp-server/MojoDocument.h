@@ -64,6 +64,7 @@ public:
   /// The kind of document this is.
   enum class Kind {
     kTextDocument,
+    kNotebookDocument,
   };
 
   /// Return the kind of this document.
@@ -299,9 +300,6 @@ private:
   // Fields
   //===--------------------------------------------------------------------===//
 
-  //===--------------------------------------------------------------------===//
-  // Static Fields
-
   /// The following fields are always available for access and don't require
   /// additional synchronization.
 
@@ -311,6 +309,93 @@ private:
 
 using MojoTextDocumentRef = RCRef<MojoTextDocument>;
 
+//===----------------------------------------------------------------------===//
+// MojoNotebookDocument
+//===----------------------------------------------------------------------===//
+
+/// This class represents all of the information pertaining to a specific Mojo
+/// notebook document, e.g. a jupyter notebook file.
+struct MojoNotebookDocument : public MojoDocument {
+public:
+  /// This class represents a cell within the notebook.
+  struct Cell {
+    Cell(mlir::lsp::URIForFile uri, StringRef contents)
+        : uri(std::move(uri)), contents(contents.str()) {}
+
+    /// The uri of the cell
+    mlir::lsp::URIForFile uri;
+
+    /// The contents of the cell.
+    std::string contents;
+
+    /// The buffer id of the cell contents within the source manager.
+    unsigned bufferId = 0;
+
+    /// The AST decl for the module containing this cell.
+    MojoASTDeclRef decl;
+  };
+
+  MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,
+                       int64_t version,
+                       ArrayRef<mlir::lsp::NotebookCell> cellInfos,
+                       ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
+                       SendDiagnosticsFnRef sendDiagnosticsFn,
+                       LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
+  MojoNotebookDocument(const MojoDocument &) = delete;
+  MojoNotebookDocument &operator=(const MojoDocument &) = delete;
+
+  /// Return the cells within this document.
+  auto getCells() { return llvm::make_pointee_range(cells); }
+
+  /// Support LLVM RTTI.
+  static bool classof(const MojoDocument *doc) {
+    return doc->getKind() == Kind::kNotebookDocument;
+  }
+
+private:
+  //===--------------------------------------------------------------------===//
+  // Derived Document Hooks
+  //===--------------------------------------------------------------------===//
+
+  /// Hook that is invoked to perform the raw document parsing process.
+  void parseDocumentImpl() override;
+
+  /// Returns true if the document contains the given location.
+  bool containsLocation(llvm::SMLoc loc) override;
+
+  /// Translate the given parser location into one usable by the language
+  /// server.
+  llvm::SMLoc translateParserLoc(llvm::SMLoc loc) override;
+
+  /// Returns true if the document contains the given location.
+  llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                            mlir::lsp::Position position) override;
+
+  /// Hook that returns the URI for the given contained location.
+  const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  std::vector<KGEN::Mojo::CodeCompletionResult>
+  onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Static Fields
+
+  /// The following fields are always available for access and don't require
+  /// additional synchronization.
+
+  /// The cells within the document, mapped from the uri of the cell.
+  llvm::StringMap<Cell *> uriToCell;
+  std::vector<std::unique_ptr<Cell>> cells;
+};
+
+using MojoNotebookDocumentRef = RCRef<MojoNotebookDocument>;
 } // namespace M::Mojo::LSP
 
 #endif // KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H

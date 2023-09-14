@@ -4,17 +4,24 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import json
 import os
 from pathlib import Path
-from typing import Generator, Optional, TypeVar
+from typing import Generator, List, Optional, TypeVar
 
 from lsprotocol.types import (
     CompletionList,
     CompletionParams,
     DefinitionParams,
+    DidOpenNotebookDocumentParams,
     DidOpenTextDocumentParams,
     HoverParams,
     InitializeParams,
+)
+from lsprotocol.types import NotebookCell as LspNotebookCell
+from lsprotocol.types import NotebookCellKind
+from lsprotocol.types import NotebookDocument as LspNotebookDocument
+from lsprotocol.types import (
     Position,
     Range,
     TextDocumentIdentifier,
@@ -41,6 +48,10 @@ class Document:
 
     def __init__(self, name: str, contents: str):
         self.uri = f"test:///{name}"
+        self.set_contents(contents)
+
+    def set_contents(self, contents: str):
+        """Update the contents of this document with the given string."""
         self.contents = contents
         self.lines = contents.splitlines()
 
@@ -107,6 +118,17 @@ class Document:
         return TextDocumentIdentifier(self.uri)
 
 
+class NotebookDocument:
+    """Helper class for dealing with notebook documents."""
+
+    def __init__(self, name: str, cell_contents: List[str]):
+        self.uri = f"test:///{str(name)}"
+
+        self.cells = []
+        for cell in cell_contents:
+            self.cells.append(Document(str(len(self.cells)), cell))
+
+
 class Requests:
     """Helper class for issuing requests to the server. It is not intenteded to be a full wrapper of `LanguageClient`."""
 
@@ -130,6 +152,32 @@ class Requests:
                     version=0,
                     text=doc.contents,
                 )
+            )
+        )
+
+    def open_notebook_document(self, doc: NotebookDocument):
+        self.client.notebook_document_did_open(
+            DidOpenNotebookDocumentParams(
+                notebook_document=LspNotebookDocument(
+                    uri=doc.uri,
+                    notebook_type="jupyter",
+                    version=0,
+                    cells=map(
+                        lambda cell: LspNotebookCell(
+                            kind=NotebookCellKind.Code, document=cell.uri
+                        ),
+                        doc.cells,
+                    ),
+                ),
+                cell_text_documents=map(
+                    lambda cell: TextDocumentItem(
+                        uri=cell.uri,
+                        language_id="mojo",
+                        version=0,
+                        text=cell.contents,
+                    ),
+                    doc.cells,
+                ),
             )
         )
 

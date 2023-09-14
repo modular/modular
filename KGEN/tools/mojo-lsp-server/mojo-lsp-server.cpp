@@ -96,6 +96,9 @@ int main(int argc, char **argv) {
   llvm::sys::ChangeStdinToBinary();
   JSONTransport transport(stdin, llvm::outs(), inputStyle, prettyPrint);
 
+  // Register the additionally supported URI schemes for the server.
+  URIForFile::registerSupportedScheme("vscode-notebook-cell");
+
   if (suspended) {
     Logger::info(
         "The server has been launched in a suspended state. It's pid "
