@@ -171,7 +171,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ValueInputConvention::BorrowedInMem:
     // by-val arguments are converted to the expected r-value type.
     ASTType expectedArgType = expectedType;
-    if (calleeSig.isVararg(argIdx))
+    if (calleeSig.isVarArg(argIdx))
       // In the case of a variadic argument, we need to remove the
       // !pop.variadic<> wrapper to get the type to convert to.
       expectedArgType = expectedArgType.getVariadicElementType();
@@ -216,7 +216,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     for (ASTExprAnd<AnyValue> operand : remainingOperands)
       args.push_back(operand.ir.getIfPValue().get());
     Attribute attr;
-    if (calleeSig.isVararg(argIdx))
+    if (calleeSig.isVarArg(argIdx))
       attr = VariadicAttr::get(args, expectedType.cast<VariadicType>());
     else
       attr = POP::PackAttr::get(args, expectedType.cast<POP::PackType>());
@@ -245,7 +245,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   }
 
   Value argVal;
-  if (calleeSig.isVararg(argIdx))
+  if (calleeSig.isVarArg(argIdx))
     argVal =
         emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType, args);
   else
@@ -298,8 +298,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // variadic list, or empty pack.
     if (nextOperandIdx == posOperands.size()) {
       Attribute argAttr;
-      if (calleeSig.isVararg(argIdx)) {
-        // Varargs arguments are fulfilled with an empty !kgen.variadic list.
+      if (calleeSig.isVarArg(argIdx)) {
+        // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
         argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
                                     expectedType.cast<VariadicType>());
       } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
@@ -324,7 +324,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // Otherwise, we're applying one or more arguments to this.
     // For a normal (not a vararg or a pack) argument, we just emit it and add
     // it to our list.
-    if (!calleeSig.isVararg(argIdx) && !isa<POP::PackType>(expectedType)) {
+    if (!calleeSig.isVarArg(argIdx) && !isa<POP::PackType>(expectedType)) {
       auto operand = posOperands[nextOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
@@ -668,7 +668,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isVararg(argIdx) || isa<POP::PackType>(calleeArgType))
+    if (calleeSig.isVarArg(argIdx) || isa<POP::PackType>(calleeArgType))
       convention = ValueInputConvention::OwnedInReg;
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(

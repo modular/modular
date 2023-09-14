@@ -538,7 +538,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       InputParamBindings paramBindings;
       auto [bindingAttr, _] =
           paramBindings.verifyBindings(signature.getInputParamTypes(), {},
-                                       *this, signature.hasParamVarargs());
+                                       *this, signature.hasParamVarArgs());
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -1220,7 +1220,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
     paramTypes.push_back(decl.getType());
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
       paramTypes, structDecl.getInputParamsAttr(), *this,
-      structDecl.getParamVarargs(), structDecl.getName(), structDecl.getLoc(),
+      structDecl.getParamVarArgs(), structDecl.getName(), structDecl.getLoc(),
       expr->getLoc());
   if (!bindingValuesAttr)
     return {};

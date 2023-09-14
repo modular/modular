@@ -631,7 +631,7 @@ struct BorrowStruct:
     fn testMethod(borrowed self):
         pass
 
-    fn borrowedVarargs(borrowed self, borrowed *x: BorrowStruct):
+    fn borrowedVarArgs(borrowed self, borrowed *x: BorrowStruct):
         pass
 
 
@@ -642,8 +642,8 @@ fn callerFn(borrowed arg0: BorrowStruct):
     arg0.testMethod()
 
     # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
-    # CHECK: kgen.call {{.*}}borrowedVarargs{{.*}}(%arg0, %1)
-    arg0.borrowedVarargs(arg0, arg0)
+    # CHECK: kgen.call {{.*}}borrowedVarArgs{{.*}}(%arg0, %1)
+    arg0.borrowedVarArgs(arg0, arg0)
 
 
 ##===----------------------------------------------------------------------===##

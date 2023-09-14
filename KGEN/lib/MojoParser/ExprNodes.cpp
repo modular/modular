@@ -1259,7 +1259,7 @@ static PValue substituteParametersIntoUserDefinedType(
     paramTypes.push_back(decl.getType());
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
       paramTypes, structOp.getInputParamsAttr(), emitter,
-      structOp.getParamVarargs(), structOp.getName(), structOp.getLoc(),
+      structOp.getParamVarArgs(), structOp.getName(), structOp.getLoc(),
       subscript.getLoc());
   if (!bindingValuesAttr)
     return {};
@@ -2527,17 +2527,17 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
   ExprEmitter typeEmitter(emitter.shared, dummyScope, EC_Type);
 
-  bool paramVararg = false;
+  bool paramVarArg = false;
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   ParsedArgument::processParameterArgs(typeEmitter, dummyScope, inputParams,
                                        inputParamDecls,
-                                       /*isResultParams=*/false, paramVararg);
+                                       /*isResultParams=*/false, paramVarArg);
   ParsedArgument::processParameterArgs(typeEmitter, dummyScope, resultParams,
                                        resultParamDecls,
-                                       /*isResultParams=*/true, paramVararg);
+                                       /*isResultParams=*/true, paramVarArg);
   FnEffects effects = this->effects;
-  if (paramVararg)
-    effects = effects | FnEffects::ParamVararg;
+  if (paramVarArg)
+    effects = effects | FnEffects::ParamVarArg;
 
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;

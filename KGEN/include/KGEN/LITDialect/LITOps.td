@@ -324,7 +324,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     SymbolNameAttr:$sym_name,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
-    UnitAttr:$paramVarargs,
+    UnitAttr:$paramVarArgs,
     DefaultValuedOptionalAttr<I8Attr, "0">:$registerPassable,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$destructor,
     OptionalAttr<AttrOfType<KGEN_SignatureType>>:$moveInit,

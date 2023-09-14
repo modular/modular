@@ -1341,7 +1341,7 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
 void ParsedArgument::processParameterArgs(
     ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
     SmallVectorImpl<ParamDeclAttr> &params, bool isResultParams,
-    bool &paramVararg) {
+    bool &paramVarArg) {
   for (const ParsedArgument &arg : args) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -1365,7 +1365,7 @@ void ParsedArgument::processParameterArgs(
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       type = VariadicType::get(type);
-      paramVararg = true;
+      paramVarArg = true;
     }
 
     // TODO: Parameter decls should support conventions at some point.
@@ -1392,7 +1392,7 @@ static ParseResult
 parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
                                 SmallVectorImpl<ParamDeclAttr> &resultParams,
-                                bool &paramVararg) {
+                                bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
@@ -1414,7 +1414,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(p.shared, declScope, EC_Type);
   ParsedArgument::processParameterArgs(emitter, declScope, args, inputParams,
-                                       /*isResultParams=*/false, paramVararg);
+                                       /*isResultParams=*/false, paramVarArg);
 
   // Parse the meta results if present.
   if (p.consumeIf(Token::minus_greater)) {
@@ -1424,7 +1424,7 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
             p, args, ParsedArgument::ArgListKind::kParamList))
       return failure();
     ParsedArgument::processParameterArgs(emitter, declScope, args, resultParams,
-                                         /*isResultParams=*/true, paramVararg);
+                                         /*isResultParams=*/true, paramVarArg);
   }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
@@ -1519,11 +1519,11 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
     // Determine the required function effects from the conventions.
     if (arg.vararg == VarArgKind::VarArg)
-      effects = effects | FnEffects::Vararg;
+      effects = effects | FnEffects::VarArg;
     else if (arg.vararg == VarArgKind::PackVarArg)
-      effects = effects | FnEffects::PackVararg;
+      effects = effects | FnEffects::PackVarArg;
     else if (arg.vararg == VarArgKind::KWVarArg)
-      effects = effects | FnEffects::KWVararg;
+      effects = effects | FnEffects::KWVarArg;
 
     // If no convention was explicitly specified, provide a default.  We default
     // to borrowed in an 'fn' or owned in a 'def'.
@@ -2175,7 +2175,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
     ASTType type = argType;
     // FIXME(#13015, #13603): In general, we shouldn't be checking for variadic
     // types specifically, but this is a quick stop-gap to address a crash.
-    if (signature.isVararg(argNo) && isa<VariadicType>(type.mlirType))
+    if (signature.isVarArg(argNo) && isa<VariadicType>(type.mlirType))
       type = type.getVariadicElementType();
     if (convention != ValueInputConvention::OwnedInReg &&
         convention != ValueInputConvention::BorrowedInReg)
@@ -2199,7 +2199,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
       llvm_unreachable("byref_result should be skipped");
     }
 
-    if (signature.isVararg(argNo))
+    if (signature.isVarArg(argNo))
       mangledName += '*';
   }
   mangledName += ')';
@@ -2431,7 +2431,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // These are /in/ our current scope because we do not want name conflicts with
   // them and they are instance (not type-level) values.
   // TODO: Generalize this to support nested structs and functions.
-  bool paramVararg = false;
+  bool paramVarArg = false;
   auto structDecl = dyn_cast<StructDeclOp>(*decl.getParentDecl());
   if (structDecl) {
     SMLoc parentLoc = decl.getParentDecl()->getLoc();
@@ -2440,7 +2440,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
       addFullyResolvedDecl(PValue(paramRef), param.getName(), parentLoc,
                            &sigDecl);
     }
-    paramVararg = structDecl.getParamVarargs();
+    paramVarArg = structDecl.getParamVarArgs();
   }
 
   // Parse declared meta parameters and add them to the current scope.
@@ -2453,7 +2453,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // value signature list so the types and parameters can resolve to the bound
   // values.
   if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramVararg))
+                                      resultParamDecls, paramVarArg))
     return failure();
 
   // Parse the argument list next if present.
@@ -2461,8 +2461,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
           p, args, ParsedArgument::ArgListKind::kArgList, &effects))
     return failure();
 
-  if (paramVararg)
-    effects = effects | FnEffects::ParamVararg;
+  if (paramVarArg)
+    effects = effects | FnEffects::ParamVarArg;
 
   // This doesn't support the capturing effect, reject it.
   if (bitEnumContainsAny(effects, FnEffects::Capturing)) {
@@ -2829,7 +2829,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
     // VarArg arguments are always treated as their pop.variadic type
     // by-value right now.  TODO(literals): Project to a list like thing.
-    if (funcSignature.isVararg(bbArg.getArgNumber()) ||
+    if (funcSignature.isVarArg(bbArg.getArgNumber()) ||
         isa<POP::PackType>(bbArg.getType())) {
       if (failed(setDecl(SRValue(bbArg))))
         return failure();
@@ -3303,14 +3303,14 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   SmallVector<ParamDeclAttr> inputParamDecls;
   SmallVector<ParamDeclAttr> resultParamDecls;
-  bool paramVarargs = false;
+  bool paramVarArgs = false;
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseToken(Token::identifier, "internal error: checked by stmt parser",
                    &identifierLoc) ||
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramVarargs) ||
+                                      resultParamDecls, paramVarArgs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
 
@@ -3318,7 +3318,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   moveDecls(decl, sigDecl);
 
   structOp.setInputParams(inputParamDecls);
-  structOp.setParamVarargs(paramVarargs);
+  structOp.setParamVarArgs(paramVarArgs);
 
   // Reject result parameters.
   if (!resultParamDecls.empty())

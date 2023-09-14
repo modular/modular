@@ -135,7 +135,7 @@ static bool canExternalize(LIT::FuncOp func) {
   LIT::StructDeclOp parentStruct = func->getParentOfType<LIT::StructDeclOp>();
   while (parentStruct) {
     if (!parentStruct.getInputParams().empty() ||
-        parentStruct.getParamVarargs())
+        parentStruct.getParamVarArgs())
       return false;
     parentStruct = parentStruct->getParentOfType<LIT::StructDeclOp>();
   }

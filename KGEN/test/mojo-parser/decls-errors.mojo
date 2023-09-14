@@ -183,7 +183,7 @@ fn issue14191() -> Int:
     return 1
 
 ##===----------------------------------------------------------------------===##
-# Default Arguments, Varargs, and Packs
+# Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
 
 # expected-error @+1 {{non-default argument follows default argument}}
