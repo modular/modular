@@ -260,10 +260,9 @@ PValue ParameterInferenceState::infer(SignatureType signature,
     // arguments, but we have to check each of them.
     if (signature.isVararg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
-      while (providedValueIdx != operands.size()) {
+      while (providedValueIdx != operands.size())
         if (failed(checkOneOperand(varArgsEltType)))
           return {};
-      }
       continue;
     }
 
@@ -615,8 +614,142 @@ struct OverloadFitness {
   /// diagnostic.
   void diagnose(SignatureType signature, const OverloadSet &callable,
                 ArrayRef<ASTExprAnd<AnyValue>> posOperands, InflightDiag &diag);
+
+private:
+  /// Diagnose if there are too few or too many arguments passed, returning the
+  /// appropriate kind enum and payload if so.
+  static std::pair<OverloadFitness::Kind, size_t>
+  checkMinMaxArgs(size_t numOperands, SignatureType signature);
+
+  /// Check the expected type against the provided operand. This identifies any
+  /// problems with the operand type and also returns the type to be used for
+  /// error propagation.
+  static std::pair<OverloadFitness::Kind, ASTType>
+  checkOneOperand(ASTExprAnd<AnyValue> operand,
+                  ValueInputConvention expectedConvention, ASTType expectedType,
+                  size_t &numImplicitConversions, bool allowImplicitConversions,
+                  ExprEmitter &emitter);
 };
 } // namespace
+
+std::pair<OverloadFitness::Kind, size_t>
+OverloadFitness::checkMinMaxArgs(size_t numOperands, SignatureType signature) {
+  size_t minRequiredArgs = 0;
+  size_t maxAllowedArgs = 0;
+  for (auto [idx, convention] :
+       llvm::enumerate(signature.getValueInputConventions())) {
+    // Ignore the return slot if present.
+    if (convention == ValueInputConvention::ByRefResult)
+      continue;
+
+    // Varargs arguments don't require a value, but allow any number of them.
+    if (signature.isVararg(idx)) {
+      maxAllowedArgs = std::numeric_limits<size_t>::max();
+      continue;
+    }
+
+    // Arguments with a pack type must have a known number of element types,
+    // and so they require exactly that many arguments.
+    if (auto packType = getIfPackType(signature, idx)) {
+      size_t numValues = packType.getVariadicAttr().getValues().size();
+      minRequiredArgs += numValues;
+      maxAllowedArgs += numValues;
+      continue;
+    }
+
+    // Otherwise, we have an ordinary argument that requires a value.
+    ++minRequiredArgs;
+    ++maxAllowedArgs;
+  }
+
+  // One less required argument for each argument that has a default value we
+  // can use instead.
+  minRequiredArgs -= signature.getDefaultArguments().size();
+
+  // Tailor the diagnostic if the exact number of expect args is known.
+  if (minRequiredArgs == maxAllowedArgs && numOperands != minRequiredArgs)
+    return {kArgCount, minRequiredArgs};
+  if (numOperands < minRequiredArgs)
+    return {kArgTooFewAtLeast, minRequiredArgs};
+  if (numOperands > maxAllowedArgs)
+    return {kArgTooManyAtMost, maxAllowedArgs};
+  return {kValid, 0};
+}
+
+std::pair<OverloadFitness::Kind, ASTType> OverloadFitness::checkOneOperand(
+    ASTExprAnd<AnyValue> operand, ValueInputConvention expectedConvention,
+    ASTType expectedType, size_t &numImplicitConversions,
+    bool allowImplicitConversions, ExprEmitter &emitter) {
+  switch (expectedConvention) {
+  case ValueInputConvention::InitSelf:
+    // If this is an UnknownAttr, then it is a placeholder for type
+    // checking, just let it pass.
+    if (auto pValue = operand.ir.getIfPValue())
+      if (isa<UnknownAttr>(pValue.get()))
+        break;
+    [[fallthrough]];
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult: {
+    // The actual value must be an lvalue if callee takes things by-ref.
+    auto argVal = operand.ir.getIfLValue();
+    if (!argVal)
+      return {kArgNotLValue, expectedType};
+
+    // By-ref argument types must exactly match, no conversions are allowed.
+    if (!argVal.getRValueType().isEqualCanon(
+            expectedType.getReferenceElementType()))
+      return {kArgWrongLVType, expectedType};
+    break;
+  }
+  case ValueInputConvention::BorrowedInMem:
+  case ValueInputConvention::OwnedInMem:
+    // Ignore the pointer type on memory conventions when matching types.
+    // Note: Should do not support overloading on borrow/owned currently,
+    // but we could add this if there is a reason to.
+    expectedType = expectedType.getReferenceElementType();
+    [[fallthrough]];
+  case ValueInputConvention::BorrowedInReg:
+  case ValueInputConvention::OwnedInReg:
+    // If the argument is an overload set, see if it can be resolve to the
+    // right type.
+    CValue argVal;
+    if (auto orValue = operand.ir.getIfORValue()) {
+      // Try to refine the ORValue into a PValue.
+      argVal = orValue->emitAsPValue(&emitter, expectedType);
+      if (!argVal)
+        return {kArgWrongType, expectedType};
+    } else {
+      argVal = operand.ir.getIfCValue();
+      assert(argVal && "we handled ORValue above");
+    }
+
+    auto argType = argVal.getRValueType();
+    // Otherwise, we pass as an r-value.  If the argument types match, then
+    // they are good.
+    if (argType.isEqualCanon(expectedType))
+      break;
+
+    // Argument name mismatches don't count as implicit conversions.
+    auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
+    auto argSig = dyn_cast<SignatureType>(argType.mlirType);
+    if (expectedSig && argSig &&
+        canZeroCostConvertSignature(expectedSig, argSig))
+      break;
+
+    // If we lack an exact match and conversions are disabled, this
+    // candidate fails.
+    if (!allowImplicitConversions || !emitter.canImplicitlyConvertToType(
+                                         {argVal, operand.expr}, expectedType,
+                                         /*allowArgNameCheck=*/false))
+      return {kArgWrongType, expectedType};
+
+    // If we had one, this bumps our # implicit conversions.
+    ++numImplicitConversions;
+    break;
+  }
+
+  return {kValid, expectedType};
+};
 
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
@@ -630,8 +763,6 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   assert(!callOperands.hasKwOperands() &&
          "keyword arguments not yet supported");
   ArrayRef<ASTExprAnd<AnyValue>> operands = callOperands.posOperands;
-
-  SMLoc callLoc = callable.expr->getLoc();
 
   // Check that the signature can be rebound with this set of bindings.
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
@@ -654,10 +785,6 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     return {kParamCount, 0, ASTType(), newBindings};
   }
 
-  // We will accumulate the implicit conversion in arguments to those counted
-  // for the parameter bindings.
-  size_t numImplicitConversions = bindingFitness.numImplicitConversions;
-
   // Check the result parameter count.
   if (signature.getNumResultParams() != callable.resultParams.size())
     return {kResultParamCount, 0, ASTType(), newBindings};
@@ -669,6 +796,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
+  SMLoc callLoc = callable.expr->getLoc();
   for (auto output : signature.getValueResults())
     if (!ASTType(output).isRegisterPassable(callLoc, emitter.shared))
       return {kResultGenericMem, 0, output, newBindings};
@@ -677,50 +805,13 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // to diagnose problems where too few or too many arguments are passed if that
   // is the problem, rather than complaining about a type error of some argument
   // that doesn't work out.  Check for that first.
-  size_t minRequiredArgs = 0;
-  size_t maxAllowedargs = 0;
-  for (auto [idx, convention] :
-       llvm::enumerate(signature.getValueInputConventions())) {
-    // Ignore the return slot if present.
-    if (convention == ValueInputConvention::ByRefResult)
-      continue;
+  if (auto [res, payload] = checkMinMaxArgs(operands.size(), signature);
+      res != kValid)
+    return {res, payload, ASTType(), newBindings};
 
-    // Varargs arguments don't require a value, but allow any number of them.
-    if (signature.isVararg(idx)) {
-      maxAllowedargs = std::numeric_limits<size_t>::max();
-      continue;
-    }
-
-    // Arguments with a pack type must have a known number of element types,
-    // and so they require exactly that many arguments.
-    if (auto packType = getIfPackType(signature, idx)) {
-      size_t numValues = packType.getVariadicAttr().getValues().size();
-      minRequiredArgs += numValues;
-      maxAllowedargs += numValues;
-      continue;
-    }
-
-    // Otherwise, we have an ordinary argument that requires a value.
-    ++minRequiredArgs;
-    ++maxAllowedargs;
-  }
-
-  // One less required argument for each argument that has a default value we
-  // can use instead.
-  minRequiredArgs -= signature.getDefaultArguments().size();
-
-  if (operands.size() < minRequiredArgs) {
-    // Tailor the diagnostic when more args are allowed.
-    auto problem =
-        minRequiredArgs != maxAllowedargs ? kArgTooFewAtLeast : kArgCount;
-    return {problem, minRequiredArgs, ASTType(), newBindings};
-  }
-  if (operands.size() > maxAllowedargs) {
-    // Tailor the diagnostic when more args are allowed.
-    auto problem =
-        minRequiredArgs != maxAllowedargs ? kArgTooManyAtMost : kArgCount;
-    return {problem, maxAllowedargs, ASTType(), newBindings};
-  }
+  // We will accumulate the implicit conversion in arguments to those counted
+  // for the parameter bindings.
+  size_t numImplicitConversions = bindingFitness.numImplicitConversions;
 
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
@@ -732,22 +823,21 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  for (auto [expectedArgIdxX, unboundExpectedType] :
-       llvm::enumerate(signature.getValueInputs())) {
-    size_t expectedArgIdx = expectedArgIdxX; // Workaround lambda problem.
-    ValueInputConvention expectedConvention =
-        signature.getInputConvention(expectedArgIdx);
+  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
+       llvm::enumerate(signature.getValueInputs(),
+                       signature.getValueInputConventions())) {
+    assert(!signature.isKWVararg(expectedArgIdx) &&
+           "keyword arguments and `**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
     if (expectedConvention == ValueInputConvention::ByRefResult)
       continue;
 
-    Type expectedType = evaluator.refineType(unboundExpectedType);
-
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
     // proper type traits.  Note that the PointerType is considered a valid
     // register passable type, so things passed byref are ok.
+    Type expectedType = evaluator.refineType(unboundExpectedType);
     if (!ASTType(expectedType).isRegisterPassable(callLoc, emitter.shared))
       return {kArgGenericMem, expectedArgIdx, expectedType, newBindings};
 
@@ -765,95 +855,23 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
       // We don't need to provide value for this argument if it has a default
       // value.
       if (expectedArgIdx >=
-          signature.getNumInputs() - signature.getDefaultArguments().size())
+          signature.getNumInputs() - signature.getDefaultArguments().size()) {
         // In the callee, arguments with default values must be followed only by
         // other arguments with default values, so we do not need to enumerate
         // any more of the callee arguments.
         break;
+      }
     }
 
-    // Otherwise we'll check the expected type against one (or more in the case
-    // of varargs or packs) of the provided values. This reports any problems
-    // with the operand type, or otherwise continues on to the next expected
-    // argument to check.
-    auto checkOneOperand = [&, newBindings = std::ref(newBindings)](
-                               ASTType expectedType) -> OverloadFitness {
-      // We'll bind the next provided value.
-      auto operand = operands[providedValueIdx];
-      assert(!signature.isKWVararg(expectedArgIdx) &&
-             "keyword arguments and `**arg` variadics not supported yet");
-      switch (expectedConvention) {
-      case ValueInputConvention::InitSelf:
-        // If this is an UnknownAttr, then it is a placeholder for type
-        // checking, just let it pass.
-        if (auto pValue = operand.ir.getIfPValue())
-          if (isa<UnknownAttr>(pValue.get()))
-            break;
-        [[fallthrough]];
-      case ValueInputConvention::ByRef:
-      case ValueInputConvention::ByRefResult: {
-        // The actual value must be an lvalue if callee takes things by-ref.
-        auto argVal = operand.ir.getIfLValue();
-        if (!argVal)
-          return {kArgNotLValue, providedValueIdx, Type(), newBindings};
-
-        // By-ref argument types must exactly match, no conversions are allowed.
-        if (!argVal.getRValueType().isEqualCanon(
-                expectedType.getReferenceElementType()))
-          return {kArgWrongLVType, providedValueIdx, expectedType, newBindings};
-        break;
-      }
-      case ValueInputConvention::BorrowedInReg:
-      case ValueInputConvention::BorrowedInMem:
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::OwnedInMem:
-        // Ignore the pointer type on memory conventions when matching types.
-        // Note: Should do not support overloading on borrow/owned currently,
-        // but we could add this if there is a reason to.
-        if (expectedConvention == ValueInputConvention::OwnedInMem ||
-            expectedConvention == ValueInputConvention::BorrowedInMem)
-          expectedType = expectedType.getReferenceElementType();
-
-        // If the argument is an overload set, see if it can be resolve to the
-        // right type.
-        CValue argVal;
-        if (auto orValue = operand.ir.getIfORValue()) {
-          // Try to refine the ORValue into a PValue.
-          argVal = orValue->emitAsPValue(&emitter, expectedType);
-          if (!argVal)
-            return {kArgWrongType, providedValueIdx, expectedType, newBindings};
-        } else {
-          argVal = operand.ir.getIfCValue();
-          assert(argVal && "we handled ORValue above");
-        }
-
-        auto argType = argVal.getRValueType();
-        // Otherwise, we pass as an r-value.  If the argument types match, then
-        // they are good.
-        if (argType.isEqualCanon(expectedType))
-          break;
-
-        // Argument name mismatches don't count as implicit conversions.
-        auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
-        auto argSig = dyn_cast<SignatureType>(argType.mlirType);
-        if (expectedSig && argSig &&
-            canZeroCostConvertSignature(expectedSig, argSig))
-          break;
-
-        // If we lack an exact match and conversions are disabled, this
-        // candidate fails.
-        if (!allowImplicitConversions ||
-            !emitter.canImplicitlyConvertToType({argVal, operand.expr},
-                                                expectedType,
-                                                /*allowArgNameCheck=*/false))
-          return {kArgWrongType, providedValueIdx, expectedType, newBindings};
-
-        // If we had one, this bumps our # implicit conversions.
-        ++numImplicitConversions;
-        break;
-      }
-
-      // This provided value has been used up.
+    /// Check and process a single operand and advance the operand index.
+    auto processOneOperand = [&, expectedConvention = expectedConvention,
+                              newBindings = std::ref(newBindings)](
+                                 ASTType expectedType) -> OverloadFitness {
+      auto [kind, ty] = checkOneOperand(
+          operands[providedValueIdx], expectedConvention, expectedType,
+          numImplicitConversions, allowImplicitConversions, emitter);
+      if (kind != kValid)
+        return {kind, providedValueIdx, ty, newBindings};
       ++providedValueIdx;
       return {kValid, 0, ASTType(), newBindings};
     };
@@ -863,19 +881,19 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     if (signature.isVararg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
-        auto result = checkOneOperand(varArgsEltType);
+        OverloadFitness result = processOneOperand(varArgsEltType);
         if (result.kind != kValid)
           return result;
         passesVarargArgument = true;
       }
-      continue;
+      break;
     }
 
     // If we have a pack type, it must have a known number of elements, and so
     // consumes exactly that number of arguments.
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
-        OverloadFitness result = checkOneOperand(ASTType(element));
+        OverloadFitness result = processOneOperand(ASTType(element));
         if (result.kind != kValid)
           return result;
         passesVarargArgument = true;
@@ -885,7 +903,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
 
     // Otherwise, we have an ordinary argument that is not varargs or a pack.
     // Check it and move on to the next one.
-    auto result = checkOneOperand(expectedType);
+    OverloadFitness result = processOneOperand(expectedType);
     if (result.kind != kValid)
       return result;
   }
