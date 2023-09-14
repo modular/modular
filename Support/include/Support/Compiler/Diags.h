@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_FRONTENDSUPPORT_DIAGS_H
-#define KGEN_FRONTENDSUPPORT_DIAGS_H
+#ifndef SUPPORT_COMPILER_DIAGS_H
+#define SUPPORT_COMPILER_DIAGS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <functional>
@@ -23,7 +23,7 @@ class SourceMgr;
 class SMFixIt;
 } // namespace llvm
 
-namespace M::KGEN::LIT {
+namespace M {
 using llvm::SMFixIt;
 using llvm::SMLoc;
 using llvm::SourceMgr;
@@ -259,6 +259,6 @@ void addToDiagnostic(SourceRange range, InflightDiag &diag);
 /// This adds a fixit hint.
 void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
 
-} // namespace M::KGEN::LIT
+} // namespace M
 
-#endif // KGEN_FRONTENDSUPPORT_DIAGS_H
+#endif // SUPPORT_COMPILER_DIAGS_H

@@ -12,8 +12,6 @@
 
 using llvm::SMRange;
 using namespace M;
-using namespace M::KGEN;
-using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
 // SourceRange implementation
@@ -385,30 +383,30 @@ FixIt FixIt::insertAfterToken(SMLoc loc, const Twine &text, Diags &diags) {
 //===----------------------------------------------------------------------===//
 
 // Allow inserting string-like things.
-void LIT::addToDiagnostic(const Twine &text, InflightDiag &diag) {
+void M::addToDiagnostic(const Twine &text, InflightDiag &diag) {
   diag.addText(text);
 }
 
-void LIT::addToDiagnostic(char text, InflightDiag &diag) {
+void M::addToDiagnostic(char text, InflightDiag &diag) {
   diag.addText(Twine(text));
 }
 
-void LIT::addToDiagnostic(size_t number, InflightDiag &diag) {
+void M::addToDiagnostic(size_t number, InflightDiag &diag) {
   diag.addText(Twine(number));
 }
 
-void LIT::addToDiagnostic(StringAttr attr, InflightDiag &diag) {
+void M::addToDiagnostic(StringAttr attr, InflightDiag &diag) {
   diag.addText(Twine("'"));
   diag.addText(attr.getValue());
   diag.addText(Twine("'"));
 }
 
 /// This adds a source range highlight.
-void LIT::addToDiagnostic(SourceRange range, InflightDiag &diag) {
+void M::addToDiagnostic(SourceRange range, InflightDiag &diag) {
   diag.addSourceRange(range);
 }
 
 /// This adds a fixit hint.
-void LIT::addToDiagnostic(FixIt fixIt, InflightDiag &diag) {
+void M::addToDiagnostic(FixIt fixIt, InflightDiag &diag) {
   diag.addFixIt(fixIt);
 }
