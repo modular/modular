@@ -9,16 +9,18 @@
 #include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
+#include "MojoTypeDataLayout.h"
+
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "MojoTypeDataLayout.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/SymbolExport.h"
 #include "lldb/API/SBDebugger.h"
@@ -77,8 +79,8 @@ struct MojoTypeSystem::Impl {
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // Configure the parser context.
-    MojoParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);
-    parserConfig.moduleCachingLevel = MojoParserConfig::kCacheNone;
+    LIT::ParserConfig parserConfig(&mlirContext, *runtime, compilationOptions);
+    parserConfig.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
     parserContext =
         std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
 

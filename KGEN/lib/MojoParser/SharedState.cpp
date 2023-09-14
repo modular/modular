@@ -8,12 +8,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/ClosureEmitter.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
@@ -83,7 +83,7 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
 }
 
 struct SharedState::Impl : public ClosureCache {
-  Impl(MLIRContext *ctx, MojoParserConfig::CachingLevel moduleCachingLevel)
+  Impl(MLIRContext *ctx, ParserConfig::CachingLevel moduleCachingLevel)
       : moduleCachingLevel(moduleCachingLevel),
         bytecodeParserContext(ctx, /*verifyAfterParse=*/false) {}
   virtual ~Impl() {}
@@ -136,7 +136,7 @@ struct SharedState::Impl : public ClosureCache {
   RCRef<Cache::BlobCache<Cache::TransformCacheKey>> transformCache;
 
   /// The level of module caching enabled for the parser.
-  MojoParserConfig::CachingLevel moduleCachingLevel;
+  ParserConfig::CachingLevel moduleCachingLevel;
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
@@ -178,7 +178,7 @@ void SharedState::Impl::storeClosure(ClosureHash key, StructDeclOp closure) {
   closureImpls[key] = closure;
 }
 
-SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
+SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
             config.maxNotesPerDiagnostic),
       options(config.options),
@@ -223,7 +223,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MojoParserConfig &config)
   }
 
   // Create a cache for use by the parser.
-  if (config.moduleCachingLevel != MojoParserConfig::kCacheNone) {
+  if (config.moduleCachingLevel != ParserConfig::kCacheNone) {
     auto transformCacheBackendOr = Cache::getLocalDefaultBackendChain(
         runtime, (std::filesystem::path(".mojo_cache") / "mojo").string(),
         KGEN_VERSION_STRING);
@@ -786,8 +786,8 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
 
   // Enable caching for the module if caching is enable and it's not the main
   // file, or if we're caching all modules.
-  bool enableCaching = impl->moduleCachingLevel != MojoParserConfig::kCacheNone;
-  if (impl->moduleCachingLevel == MojoParserConfig::kCacheImports)
+  bool enableCaching = impl->moduleCachingLevel != ParserConfig::kCacheNone;
+  if (impl->moduleCachingLevel == ParserConfig::kCacheImports)
     enableCaching = fileID != getSourceMgr().getMainFileID();
 
   // Now that we have a MemoryBuffer, we can lex it, and therefore parse it.
@@ -1063,7 +1063,7 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
   // cache if we're caching everything.
   ModuleState &state = createModuleState(
       mangledName, mangledName, moduleBuffer, *impl->topLevelModuleState, loc,
-      impl->moduleCachingLevel == MojoParserConfig::kCacheAll);
+      impl->moduleCachingLevel == ParserConfig::kCacheAll);
   return *state.decl;
 }
 
@@ -1851,7 +1851,7 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
 }
 
 /// Return if the given parser listner is interested in the given location.
-static bool isListenerInterestedInLoc(MojoParserListener *listener, SMLoc loc) {
+static bool isListenerInterestedInLoc(ParserListener *listener, SMLoc loc) {
   return listener && listener->isInterestedInLoc(loc);
 }
 
@@ -1883,7 +1883,7 @@ void SharedState::notifyListenerOnImport(
   if (!isListenerInterestedInLoc(parserListener, importLoc))
     return;
   parserListener->onImport(
-      [&]() -> MojoASTDeclRef {
+      [&]() -> ASTDecl * {
         ASTDecl &packageDecl = getPackageDecl();
         resolveDeclForListenerLookup(*declResolver, packageDecl, importLoc);
         return &packageDecl;
@@ -1895,7 +1895,7 @@ void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
   if (!isListenerInterestedInLoc(parserListener, lookupLoc))
     return;
   parserListener->onMemberLookup(
-      [&]() -> MojoASTDeclRef {
+      [&]() -> ASTDecl * {
         resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
         return &decl;
       },
@@ -1973,11 +1973,8 @@ void SharedState::notifyListenerOnVariableDecl(ASTDecl &decl,
 
 void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
                                       StringRef spelling, SMLoc loc) {
-  if (isListenerInterestedInLoc(parserListener, loc)) {
-    auto declRefs = llvm::map_to_vector(
-        decls, [](ASTDecl *decl) { return MojoASTDeclRef(decl); });
-    parserListener->onRef(declRefs, spelling, loc);
-  }
+  if (isListenerInterestedInLoc(parserListener, loc))
+    parserListener->onRef(decls, spelling, loc);
 }
 
 /// Return the location of the identifier in the given expression.

@@ -10,7 +10,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -222,7 +222,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    MojoParserConfig config(ctx, *runtime, options);
+    LIT::ParserConfig config(ctx, *runtime, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     theModule = importMojoFile(mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >

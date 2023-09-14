@@ -7,13 +7,13 @@
 #ifndef PARSERDRIVERIMPL_H
 #define PARSERDRIVERIMPL_H
 
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 
 namespace M {
 /// This class represents the internal implementation of the parser driver.
 struct MojoParserContext::Impl {
-  Impl(llvm::SourceMgr &sourceMgr, MojoParserConfig &config);
+  Impl(llvm::SourceMgr &sourceMgr, KGEN::LIT::ParserConfig &config);
 
   //===--------------------------------------------------------------------===//
   // General State

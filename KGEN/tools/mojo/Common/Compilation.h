@@ -31,7 +31,10 @@ namespace LLCL {
 class Runtime;
 } // namespace LLCL
 
-struct MojoParserConfig;
+namespace KGEN::LIT {
+struct ParserConfig;
+} // namespace KGEN::LIT
+
 class TargetInfoAttr;
 
 /// Parse the common compilation options for Mojo related to configuration,
@@ -56,7 +59,8 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier parsingStdlibId,
-    function_ref<OwningOpRef<ModuleOp>(MojoParserConfig &, mlir::TimingScope &)>
+    function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
+                                       mlir::TimingScope &)>
         parseFn);
 
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles

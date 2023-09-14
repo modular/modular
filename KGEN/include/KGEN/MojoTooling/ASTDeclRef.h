@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_ASTDECLREF_H
-#define KGEN_MOJOPARSER_ASTDECLREF_H
+#ifndef KGEN_MOJOTOOLING_ASTDECLREF_H
+#define KGEN_MOJOTOOLING_ASTDECLREF_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -192,4 +192,4 @@ struct CastInfo<T, const M::MojoASTTypeRef>
 
 } // namespace llvm
 
-#endif // KGEN_MOJOPARSER_ASTDECLREF_H
+#endif // KGEN_MOJOTOOLING_ASTDECLREF_H

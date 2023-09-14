@@ -7,10 +7,11 @@
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoLexer/Lexer.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
@@ -43,7 +44,7 @@ static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
 
 namespace {
 /// This class implements a listener that collects code completion results.
-struct CodeCompletionListener : public MojoParserListener {
+struct CodeCompletionListener : public ParserListener {
   CodeCompletionListener(std::vector<CodeCompletionResult> &results,
                          llvm::SourceMgr &sourceMgr)
       : results(results), sourceMgr(sourceMgr) {}
@@ -182,11 +183,11 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
   std::vector<CodeCompletionResult> results;
   CodeCompletionListener listener(results, sourceMgr);
 
-  MojoParserConfig config(context, runtime, options);
+  ParserConfig config(context, runtime, options);
   config.parserListener = &listener;
 
   // We don't want to cache the main module, but imported modules can be cached.
-  config.moduleCachingLevel = MojoParserConfig::kCacheImports;
+  config.moduleCachingLevel = ParserConfig::kCacheImports;
 
   // Disable as much of the diagnostic machinery as possible, we don't care
   // about diagnostics for completion results.

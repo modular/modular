@@ -15,7 +15,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -346,7 +346,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // Reject input files that do not appear to be mojo package directories (this
   // includes stdin "-").
   pkgArgs.inputPath = args.getLastArgValue(options::OPT_INPUT).str();
-  if (!isMojoSourcePackagePath(pkgArgs.inputPath)) {
+  if (!LIT::isMojoSourcePackagePath(pkgArgs.inputPath)) {
     return Error("'" + pkgArgs.inputPath +
                  "' does not correspond to a Mojo package");
   }
@@ -548,15 +548,15 @@ static int package(const State &state) {
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_parsing_stdlib,
-      [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
+      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         // TODO: We allow naming the package but parser caching doesn't
         // currently take this into account.
-        parserConfig.moduleCachingLevel = MojoParserConfig::kCacheNone;
+        parserConfig.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
 
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) =
-            M::importMojoPackage(packageArgs.inputPath, packageArgs.name,
-                                 sourceMgr, parserConfig, ts);
+            LIT::importMojoPackage(packageArgs.inputPath, packageArgs.name,
+                                   sourceMgr, parserConfig, ts);
         return moduleOp;
       });
   if (failed(module))

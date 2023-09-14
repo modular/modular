@@ -7,8 +7,9 @@
 #include "MojoREPL.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../Language/MojoLanguage.h"
-#include "KGEN/MojoParser.h"
+
 #include "KGEN/MojoTooling/CodeComplete.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"

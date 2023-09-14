@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_CODECOMPLETE_H
-#define KGEN_MOJOPARSER_CODECOMPLETE_H
+#ifndef KGEN_MOJOTOOLING_CODECOMPLETE_H
+#define KGEN_MOJOTOOLING_CODECOMPLETE_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -45,4 +45,4 @@ struct CodeCompletionResult {
 
 } // namespace M::KGEN::Mojo
 
-#endif // KGEN_MOJOPARSER_CODECOMPLETE_H
+#endif // KGEN_MOJOTOOLING_CODECOMPLETE_H

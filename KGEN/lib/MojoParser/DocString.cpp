@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DocString.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"

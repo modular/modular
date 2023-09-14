@@ -6,8 +6,8 @@
 
 #include "MojoTypeDataLayout.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
 
 using namespace M;
 using namespace M::KGEN;

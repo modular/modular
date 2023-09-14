@@ -8,12 +8,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoLexer/Lexer.h"
-#include "KGEN/MojoParser.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -45,42 +46,10 @@ using namespace M::KGEN::LIT;
 using llvm::SourceMgr;
 
 //===----------------------------------------------------------------------===//
-// MojoParserListener
-//===----------------------------------------------------------------------===//
-
-bool MojoParserListener::isInterestedInLoc(SMLoc parserLoc) { return true; }
-void MojoParserListener::onAliasDecl(MojoASTDeclRef declRef,
-                                     SMLoc identifierLoc) {}
-void MojoParserListener::onArgumentDecl(MojoASTDeclRef declRef,
-                                        SMLoc identifierLoc) {}
-void MojoParserListener::onFunctionDecl(MojoASTDeclRef declRef,
-                                        SMLoc identifierLoc) {}
-void MojoParserListener::onImport(SMLoc importLoc) {}
-void MojoParserListener::onImport(ResolveInputDeclFn getPackageDecl,
-                                  SMLoc importLoc) {}
-void MojoParserListener::onMemberLookup(ResolveInputDeclFn getDeclFn,
-                                        SMLoc loc) {}
-void MojoParserListener::onModuleImport(MojoASTDeclRef declRef,
-                                        StringRef spelling, SMLoc importLoc) {}
-void MojoParserListener::onModuleDecl(MojoASTDeclRef declRef,
-                                      SMLoc identifierLoc) {}
-void MojoParserListener::onParameterDecl(MojoASTDeclRef declRef,
-                                         SMLoc identifierLoc) {}
-void MojoParserListener::onStructDecl(MojoASTDeclRef declRef,
-                                      SMLoc identifierLoc) {}
-void MojoParserListener::onStructFieldDecl(MojoASTDeclRef declRef,
-                                           SMLoc identifierLoc) {}
-void MojoParserListener::onVariableDecl(MojoASTDeclRef declRef,
-                                        SMLoc identifierLoc) {}
-void MojoParserListener::onRef(ArrayRef<MojoASTDeclRef> declRefs,
-                               StringRef spelling, SMLoc loc) {}
-
-//===----------------------------------------------------------------------===//
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//
 
-MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
-                              MojoParserConfig &config)
+MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
@@ -94,8 +63,7 @@ MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr,
 // MojoParserContext
 //===----------------------------------------------------------------------===//
 
-MojoParserContext::MojoParserContext(SourceMgr &sourceMgr,
-                                     MojoParserConfig &config)
+MojoParserContext::MojoParserContext(SourceMgr &sourceMgr, ParserConfig &config)
     : impl(std::make_unique<Impl>(sourceMgr, config)) {}
 
 MojoParserContext::~MojoParserContext() {

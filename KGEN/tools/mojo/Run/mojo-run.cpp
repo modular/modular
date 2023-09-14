@@ -13,7 +13,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
-#include "KGEN/MojoParser.h"
+#include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -267,8 +267,8 @@ static int run(const State &state) {
       state, args, options, &context, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_parsing_stdlib,
-      [&](MojoParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return importMojoFile(sourceManager, parserConfig, ts);
+      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
+        return LIT::importMojoFile(sourceManager, parserConfig, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
