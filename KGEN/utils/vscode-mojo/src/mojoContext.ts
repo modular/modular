@@ -50,7 +50,8 @@ export class MOJOContext extends DisposableContext {
         vscode.commands.registerCommand('mojo.restart-suspended', async () => {
           // Dispose and reactivate the context.
           this.dispose();
-          await this.activate(loggingService, /*launchSuspended=*/ true);
+          await this.activate(loggingService,
+                              /*launchLanguageServerSuspended=*/ true);
         }));
 
     // This lambda is used to lazily start language clients for the given
