@@ -193,7 +193,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
-      if (signature.isVararg(expectedArgIdx))
+      if (signature.isVarArg(expectedArgIdx))
         break;
 
       // TODO: If this argument is defaulted, infer against it.
@@ -258,7 +258,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
-    if (signature.isVararg(expectedArgIdx)) {
+    if (signature.isVarArg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size())
         if (failed(checkOneOperand(varArgsEltType)))
@@ -300,7 +300,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
   // If we have left over operands, then this signature cannot match.
   if (providedValueIdx != operands.size() &&
-      !bitEnumContainsAny(signature.getFnEffects(), FnEffects::ParamVararg))
+      !bitEnumContainsAny(signature.getFnEffects(), FnEffects::ParamVarArg))
     return {};
 
   // If we have no inferred values or if they disagree, then we fail to infer.
@@ -320,8 +320,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ExprEmitter &emitter, bool hasParamVarargs,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVararg,
+    ExprEmitter &emitter, bool hasParamVarArgs,
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
     function_ref<void()> emitParamCountDiag,
     function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
 
@@ -345,7 +345,7 @@ InputParamBindings::verifyBindings(
   size_t nextBinding = 0;
   InputParamBindings::Fitness fitness{0, false};
   for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
-    bool isVararg = idx + 1 == actualParamTypes.size() && hasParamVarargs;
+    bool isVarArg = idx + 1 == actualParamTypes.size() && hasParamVarArgs;
 
     // This lambda installs the decl's value in the parameter evaluator and new
     // binding array.
@@ -366,7 +366,7 @@ InputParamBindings::verifyBindings(
         Type requestedType = evaluator.getReboundType(type);
         Type expectedType = requestedType;
         // If this is a vararg parameter, infer using the element type.
-        if (isVararg && isa<VariadicType>(requestedType)) {
+        if (isVarArg && isa<VariadicType>(requestedType)) {
           expectedType =
               ASTType(cast<VariadicType>(expectedType).getElementType());
         }
@@ -384,7 +384,7 @@ InputParamBindings::verifyBindings(
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl. If this isn't actually a variadic type, then we simply reached
       // the end of the parameter list.
-      if (isVararg && !isPackVararg && isa<VariadicType>(type)) {
+      if (isVarArg && !isPackVarArg && isa<VariadicType>(type)) {
         auto emptyVariadic =
             VariadicAttr::get(ArrayRef<TypedAttr>(), cast<VariadicType>(type));
         setParamValue(emptyVariadic);
@@ -441,7 +441,7 @@ InputParamBindings::verifyBindings(
     // of the same type, we can use it as the value of the parameter directly.
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
-    if (!isVararg || binding.getValue().getType() == type) {
+    if (!isVarArg || binding.getValue().getType() == type) {
       PValue paramValue = handleSingleParameterValue(idx, binding, type);
       if (!paramValue)
         return {{}, fitness};
@@ -482,12 +482,12 @@ InputParamBindings::verifyBindings(
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ExprEmitter &emitter, bool hasParamVarargs, StringRef baseName,
+    ExprEmitter &emitter, bool hasParamVarArgs, StringRef baseName,
     Location opLoc, llvm::SMLoc exprLoc,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVararg) const {
+    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
   return verifyBindings(
-      actualParamTypes, actualParamDecls, emitter, hasParamVarargs,
-      parameterInferenceHook, isPackVararg, /*emitParamCountDiag=*/
+      actualParamTypes, actualParamDecls, emitter, hasParamVarArgs,
+      parameterInferenceHook, isPackVarArg, /*emitParamCountDiag=*/
       [&]() {
         auto expectedNumParams = actualParamTypes.size();
         auto actualNumParams = bindings.size();
@@ -522,7 +522,7 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
   ASTType nextExpectedType;
 
   (void)verifyBindings(candidateType.getInputParamTypes(), {}, emitter,
-                       candidateType.hasParamVarargs(),
+                       candidateType.hasParamVarArgs(),
                        [&](size_t index, Type type, ASTType expectedType,
                            ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
                          nextExpectedType = expectedType;
@@ -642,8 +642,8 @@ OverloadFitness::checkMinMaxArgs(size_t numOperands, SignatureType signature) {
     if (convention == ValueInputConvention::ByRefResult)
       continue;
 
-    // Varargs arguments don't require a value, but allow any number of them.
-    if (signature.isVararg(idx)) {
+    // VarArgs arguments don't require a value, but allow any number of them.
+    if (signature.isVarArg(idx)) {
       maxAllowedArgs = std::numeric_limits<size_t>::max();
       continue;
     }
@@ -768,13 +768,13 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
-          inputParamTypes, {}, emitter, signature.hasParamVarargs(),
+          inputParamTypes, {}, emitter, signature.hasParamVarArgs(),
           [&](size_t index, Type type, ASTType expectedParamType,
               ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
             return ParameterInferenceState(emitter.shared, index, type)
                 .infer(signature, bindingsSoFar, operands);
           },
-          /*isPackVararg=*/signature.hasPackVarargs() && !operands.empty());
+          /*isPackVarArg=*/signature.hasPackVarArgs() && !operands.empty());
 
   // If there is an error, return the problem.
   if (!newBindings) {
@@ -818,7 +818,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // take note if variadic arguments are passed, and accumulate implicit
   // conversions required for a match.
   size_t providedValueIdx = 0;
-  bool passesVarargArgument = false;
+  bool passesVarArgArgument = false;
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
@@ -826,7 +826,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
        llvm::enumerate(signature.getValueInputs(),
                        signature.getValueInputConventions())) {
-    assert(!signature.isKWVararg(expectedArgIdx) &&
+    assert(!signature.isKWVarArg(expectedArgIdx) &&
            "keyword arguments and `**arg` variadics not supported yet");
 
     // Ignore the return slot if present.
@@ -845,8 +845,8 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     if (providedValueIdx == operands.size()) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
-      if (signature.isVararg(expectedArgIdx) ||
-          signature.isPackVararg(expectedArgIdx)) {
+      if (signature.isVarArg(expectedArgIdx) ||
+          signature.isPackVarArg(expectedArgIdx)) {
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
         ++numImplicitConversions;
@@ -878,13 +878,13 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
 
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
-    if (signature.isVararg(expectedArgIdx)) {
+    if (signature.isVarArg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
       while (providedValueIdx != operands.size()) {
         OverloadFitness result = processOneOperand(varArgsEltType);
         if (result.kind != kValid)
           return result;
-        passesVarargArgument = true;
+        passesVarArgArgument = true;
       }
       break;
     }
@@ -896,7 +896,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         OverloadFitness result = processOneOperand(ASTType(element));
         if (result.kind != kValid)
           return result;
-        passesVarargArgument = true;
+        passesVarArgArgument = true;
       }
       continue;
     }
@@ -916,7 +916,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // exact matches of concrete types to be more specific than varargs matches,
   // and both of these more specific than matches with variadic parameters.
   size_t payload = numImplicitConversions * 4;
-  payload += (passesVarargArgument ? 2 : 0);
+  payload += (passesVarArgArgument ? 2 : 0);
   payload += (bindingFitness.hasVariadicParams ? 1 : 0);
   return {kValid, payload, ASTType(), newBindings};
 }
@@ -1268,7 +1268,7 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
     // TODO: Parameter inference.
     auto [newBindings, _] = inputParamBindings.verifyBindings(
         candidateType.getInputParamTypes(), {}, emitter,
-        candidateType.hasParamVarargs());
+        candidateType.hasParamVarArgs());
     return newBindings;
   };
 
@@ -1370,7 +1370,7 @@ static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
   // Check that the signature can be rebound with our set of bindings.
   auto [newBindings, _] = inputParamBindings.verifyBindings(
       funcOp.getFullSignature().getInputParamTypes(), {}, emitter,
-      funcOp.getSignature().hasParamVarargs(), baseName, funcOp.getLoc(),
+      funcOp.getSignature().hasParamVarArgs(), baseName, funcOp.getLoc(),
       expr->getLoc());
   if (!newBindings)
     return {};
@@ -1629,7 +1629,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   ValueInputConvention selfConvention = calleeSignature.getInputConvention(0);
   Value firstArgValue;
 
-  assert(!calleeSignature.isVararg(0) && !calleeSignature.isKWVararg(0) &&
+  assert(!calleeSignature.isVarArg(0) && !calleeSignature.isKWVarArg(0) &&
          "Error: self shouldn't be varargs");
 
   switch (selfConvention) {

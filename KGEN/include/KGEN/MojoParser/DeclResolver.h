@@ -363,7 +363,7 @@ struct ParsedArgument {
   static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
                                    ArrayRef<ParsedArgument> args,
                                    SmallVectorImpl<ParamDeclAttr> &params,
-                                   bool isResultParams, bool &paramVararg);
+                                   bool isResultParams, bool &paramVarArg);
 
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.

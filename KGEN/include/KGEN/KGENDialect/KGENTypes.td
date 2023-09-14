@@ -162,11 +162,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Get the function input argument names.
     StringArrayAttr getArgNames() { return getMetadata().getArgNames(); }
     /// Returns true if the argument at this index is a vararg.
-    bool isVararg(size_t index);
+    bool isVarArg(size_t index);
     /// Returns true if the argument at this index is a pack vararg.
-    bool isPackVararg(size_t index);
+    bool isPackVarArg(size_t index);
     /// Returns true if the argument at this index is a keyword vararg.
-    bool isKWVararg(size_t index);
+    bool isKWVarArg(size_t index);
 
     /// Return true if this signature's first argument is a result from the
     /// the function returned through memory.
@@ -191,13 +191,13 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     }
 
     /// Return true if the function has parameter varargs.
-    bool hasParamVarargs() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVararg);
+    bool hasParamVarArgs() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVarArg);
     }
 
     /// Return true if the function has pack varargs.
-    bool hasPackVarargs() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::PackVararg);
+    bool hasPackVarArgs() {
+      return bitEnumContainsAny(getFnEffects(), FnEffects::PackVarArg);
     }
 
     /// Return true if the function captures state, which means

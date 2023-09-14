@@ -102,10 +102,10 @@ public:
   std::pair<ParameterExprArrayAttr, Fitness>
   verifyBindings(ArrayRef<Type> actualParamTypes,
                  ParamDeclArrayAttr actualParamDecls, ExprEmitter &emitter,
-                 bool hasParamVarargs, StringRef baseName, Location opLoc,
+                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
                  llvm::SMLoc exprLoc,
                  ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool isPackVararg = false) const;
+                 bool isPackVarArg = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters and call operands (if any). If so, return a checked
@@ -116,9 +116,9 @@ public:
   /// This rejects the signature list if all the parameters are not bound.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-      ExprEmitter &emitter, bool hasParamVarargs,
+      ExprEmitter &emitter, bool hasParamVarArgs,
       ParameterInferenceHookTy parameterInferenceHook = {},
-      bool isPackVararg = false,
+      bool isPackVarArg = false,
       function_ref<void()> emitParamCountDiag = []() {},
       function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
           [](size_t, Binding &, ASTType) {}) const;

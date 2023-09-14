@@ -182,27 +182,27 @@ SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
                             getMetadata().getWithFnEffects(effects));
 }
 
-static bool isVarargKind(FnEffects effects, size_t numInputs, size_t index,
+static bool isVarArgKind(FnEffects effects, size_t numInputs, size_t index,
                          FnEffects kind) {
   if (!bitEnumContainsAny(effects, kind))
     return false;
   // If the function has keyword varargs, the vararg index is the second last.
   // Otherwise, it's the last.
-  return (index + 1 + bitEnumContainsAny(effects, FnEffects::KWVararg)) ==
+  return (index + 1 + bitEnumContainsAny(effects, FnEffects::KWVarArg)) ==
          numInputs;
 }
 
-bool SignatureType::isVararg(size_t index) {
-  return isVarargKind(getFnEffects(), getNumInputs(), index, FnEffects::Vararg);
+bool SignatureType::isVarArg(size_t index) {
+  return isVarArgKind(getFnEffects(), getNumInputs(), index, FnEffects::VarArg);
 }
 
-bool SignatureType::isPackVararg(size_t index) {
-  return isVarargKind(getFnEffects(), getNumInputs(), index,
-                      FnEffects::PackVararg);
+bool SignatureType::isPackVarArg(size_t index) {
+  return isVarArgKind(getFnEffects(), getNumInputs(), index,
+                      FnEffects::PackVarArg);
 }
 
-bool SignatureType::isKWVararg(size_t index) {
-  if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVararg))
+bool SignatureType::isKWVarArg(size_t index) {
+  if (!bitEnumContainsAny(getFnEffects(), FnEffects::KWVarArg))
     return false;
   return index + 1 == getNumInputs();
 }
@@ -375,10 +375,10 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (metadata.getInputConventions().size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  bool hasVararg = bitEnumContainsAny(
-      metadata.getFnEffects(), FnEffects::Vararg | FnEffects::PackVararg);
-  unsigned minNumArgs = hasVararg + bitEnumContainsAny(metadata.getFnEffects(),
-                                                       FnEffects::KWVararg);
+  bool hasVarArg = bitEnumContainsAny(
+      metadata.getFnEffects(), FnEffects::VarArg | FnEffects::PackVarArg);
+  unsigned minNumArgs = hasVarArg + bitEnumContainsAny(metadata.getFnEffects(),
+                                                       FnEffects::KWVarArg);
   if (values.getNumInputs() < minNumArgs) {
     return emitError()
            << "function has varargs and/or kwvarargs but signature only has "
@@ -390,8 +390,8 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
        llvm::enumerate(values.getInputs(), metadata.getInputConventions())) {
     Type type = argType;
     // Verify variadics.
-    if (isVarargKind(metadata.getFnEffects(), values.getNumInputs(), i,
-                     FnEffects::Vararg)) {
+    if (isVarArgKind(metadata.getFnEffects(), values.getNumInputs(), i,
+                     FnEffects::VarArg)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i

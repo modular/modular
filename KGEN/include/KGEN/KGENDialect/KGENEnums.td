@@ -173,13 +173,13 @@ def KGEN_FnEffects : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This is an async function.
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
   /// This function has vararg arguments.
-  I16BitEnumAttrCaseBit<"Vararg", 2, "vararg">,
+  I16BitEnumAttrCaseBit<"VarArg", 2, "vararg">,
   /// This function has pack arguments.
-  I16BitEnumAttrCaseBit<"PackVararg", 3, "packvararg">,
+  I16BitEnumAttrCaseBit<"PackVarArg", 3, "packvararg">,
   /// This function has keyword vararg arguments.
-  I16BitEnumAttrCaseBit<"KWVararg", 4, "kwvararg">,
+  I16BitEnumAttrCaseBit<"KWVarArg", 4, "kwvararg">,
   /// This function has vararg input parameters.
-  I16BitEnumAttrCaseBit<"ParamVararg", 5, "param_vararg">,
+  I16BitEnumAttrCaseBit<"ParamVarArg", 5, "param_vararg">,
   /// This function captures state.
   I16BitEnumAttrCaseBit<"Capturing", 6, "capturing">,
   /// The return value of this function is a non-trivial owned register value.

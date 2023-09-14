@@ -379,7 +379,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       if (!sig.getInputParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ParamVararg) &&
+          if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ParamVarArg) &&
               i == sig.getNumInputParams() - 1) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
@@ -425,17 +425,17 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         needSpace = true;
       }
 
-      if (sig.isVararg(i) || sig.isPackVararg(i)) {
+      if (sig.isVarArg(i) || sig.isPackVarArg(i)) {
         if (needSpace) {
           os << ' ';
           needSpace = false;
         }
         os << '*';
-        needSpace = sig.isPackVararg(i);
+        needSpace = sig.isPackVarArg(i);
       }
       if (needSpace)
         os << ' ';
-      if (sig.isPackVararg(i)) {
+      if (sig.isPackVarArg(i)) {
         os << '*';
         // This should always be a parameter reference. If not, print the value
         // directly.
@@ -447,7 +447,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         continue;
       }
       ASTType actualType = type;
-      if (sig.isVararg(i))
+      if (sig.isVarArg(i))
         actualType = cast<VariadicType>(actualType.mlirType).getElementType();
       if (convention != ValueInputConvention::OwnedInReg &&
           convention != ValueInputConvention::BorrowedInReg) {
