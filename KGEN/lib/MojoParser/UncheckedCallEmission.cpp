@@ -257,7 +257,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
-  assert(!operands.hasKwOperands() && "keyword arguments not yet supported");
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t nextOperandIdx = 0;
   size_t nextDefaultIdx = 0;
@@ -294,8 +293,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
                                        convention))
       continue;
 
-    // If we ran out of operands, fulfill this with a default value, empty
-    // variadic list, or empty pack.
+    // If we ran out of operands, fulfill this with a keyword argument, default
+    // value, empty variadic list, or empty pack.
     if (nextOperandIdx == posOperands.size()) {
       Attribute argAttr;
       if (calleeSig.isVarArg(argIdx)) {
@@ -307,6 +306,21 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         assert(packType.isEmpty() &&
                "pack type already checked against operand count");
         argAttr = POP::PackAttr::get(ArrayRef<TypedAttr>(), packType);
+      } else if (auto kwOperandOr = operands.findKwArg(argName);
+                 kwOperandOr.has_value()) {
+        // The argument is passed as a keyword operand.
+        AnyValue argVal =
+            emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
+        if (!argVal)
+          return failure();
+        argumentValues.push_back({argVal, kwOperandOr->expr});
+        if (argIdx >=
+            calleeSig.getNumInputs() - calleeSig.getDefaultArguments().size()) {
+          // If we provided a keyword operand for an argument with a default
+          // value, advance the index.
+          ++nextDefaultIdx;
+        }
+        continue;
       } else {
         // Otherwise, apply the default argument. We've ensured above that we
         // have a default argument for each missing operand.
@@ -316,8 +330,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       continue;
     } else if (argIdx >= calleeSig.getNumInputs() -
                              calleeSig.getDefaultArguments().size()) {
-      // If we provided a value for an argument with a default value, advance
-      // the index.
+      // If we provided a positional operand for an argument with a default
+      // value, advance the index.
       ++nextDefaultIdx;
     }
 
@@ -325,7 +339,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // For a normal (not a vararg or a pack) argument, we just emit it and add
     // it to our list.
     if (!calleeSig.isVarArg(argIdx) && !isa<POP::PackType>(expectedType)) {
-      auto operand = posOperands[nextOperandIdx++];
+      ASTExprAnd<AnyValue> operand = posOperands[nextOperandIdx++];
       AnyValue argVal =
           emitOneArgVal(operand, argIdx, convention, expectedType);
       if (!argVal)

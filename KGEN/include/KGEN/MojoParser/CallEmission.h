@@ -169,8 +169,21 @@ struct CallOperands {
       : CallOperands(PositionalOperands(std::forward<OperandsT>(posOperands))) {
   }
 
+  /// Return a keyword argument value if present, or null otherwise.
+  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringRef argName) const {
+    if (hasKwOperands())
+      if (auto it = kwOperands->find(argName); it != kwOperands->end())
+        return it->getSecond();
+    return std::nullopt;
+  }
+
+  /// Return the number of keyword operands.
+  size_t getNumKwOperands() const {
+    return kwOperands ? kwOperands->size() : 0;
+  }
+
   /// Return if there are any keyword operands specified.
-  bool hasKwOperands() const { return kwOperands && !kwOperands->empty(); }
+  bool hasKwOperands() const { return getNumKwOperands(); }
 
   /// The values passed as positional operands.
   PositionalOperands posOperands;

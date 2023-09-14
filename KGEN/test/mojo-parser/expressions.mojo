@@ -1324,3 +1324,79 @@ fn testTransferWarning():
 
   # expected-warning @+1 {{transfer from an owned value has no effect}}
   consume(MemoryOnlyInt()^)
+
+##===----------------------------------------------------------------------===##
+# Keyword arguments
+##===----------------------------------------------------------------------===##
+
+
+fn take_kw_args(a: Int, b: Int = 2, c: Int = 3):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_simple_kw_args()"
+fn test_simple_kw_args():
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 3
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+    take_kw_args(5, b=7)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 9
+    take_kw_args(5, b=7, c=9)
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 2
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 9
+    take_kw_args(5, c=9)
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 9
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+    take_kw_args(5, c=9, b=7)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 9
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+    take_kw_args(a=5, c=9, b=7)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[C:.*]] = kgen.param.constant: {{.*}}value = 9
+    # CHECK: kgen.call @{{.*}}@"take_kw_args{{.*}}"(%[[A]], %[[B]], %[[C]])
+    take_kw_args(c=9, b=7, a=5)
+
+@register_passable("trivial")
+struct MyInt:
+    var value: Int
+
+    @always_inline("nodebug")
+    fn __init__(_a: Int) -> Self:
+        return Self {value: _a}
+
+
+fn overloaded_kw_arg(a: Int, b: MyInt):
+    pass
+
+
+fn overloaded_kw_arg(a: Int, b: Int):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_kw_args_overload()"
+fn test_kw_args_overload():
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: !Int {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: !Int {{.*}}value = 8
+    # CHECK: kgen.call @{{.*}}@"overloaded_kw_arg({{.*}}::Int,{{.*}}::Int)"(%[[A]], %[[B]])
+    overloaded_kw_arg(b=8, a=5)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: !Int {{.*}}value = 5
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: !MyInt {{.*}}value = 8
+    # CHECK: kgen.call @{{.*}}@"overloaded_kw_arg({{.*}}::Int,{{.*}}::MyInt)"(%[[A]], %[[B]])
+    overloaded_kw_arg(b=MyInt(8), a=5)

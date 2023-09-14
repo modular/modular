@@ -315,9 +315,9 @@ fn packArgOverload(x: Int):
   pass
 
 fn badPackCalls():
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 positional argument, but 2 were specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee expects 1 argument, but 2 were specified}}
   examplePack[Int](1, 2)
-  # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 positional arguments, but 1 was specified}}
+  # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
   examplePack[Int, Float32](1, (2).value)
@@ -329,20 +329,20 @@ fn badPackCalls():
 # Keyword Arguments
 ##===----------------------------------------------------------------------===##
 
-# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+# expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw1(a, *, *, b): pass # expected-error {{cannot have two '*' markers in the same argument list}}
 def kw2(a, /, /, b): pass # expected-error {{cannot have two '/' markers in the same argument list}}
-# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+# expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw3(a, /, *, b): pass # OK
-# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+# expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw4(a, *, /, b): pass # expected-error {{cannot specify '/' marker after '*' marker}}
 def kw5(/, a):       pass # expected-error {{'/' marker cannot be used at the start of the argument list}}
 def kw6(a, *):       pass # expected-error {{'*' marker is not allowed at end of argument list}}
-# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+# expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw7(*a: Int, *b: Int): pass # expected-error {{cannot have two '*' markers in the same argument list}}
-# expected-error @+1 {{TODO: keyword arguments not supported yet}}
+# expected-error @+1 {{keyword-only arguments not supported yet}}
 def kw8[*Ts: __mlir_type.`!kgen.mlirtype`](*a: *Ts, *b: *Ts): pass # expected-error {{cannot have two '*' markers in the same argument list}}
-fn kw9(*a: Int, b: Int): pass # expected-error {{TODO: keyword arguments not supported yet}}
+fn kw9(*a: Int, b: Int): pass # expected-error {{keyword-only arguments not supported yet}}
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading
@@ -360,21 +360,21 @@ def fn_redecl2() -> Float32: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
-# expected-note @below {{candidate not viable: callee expects 1 positional argument}}
+# expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'SIMD[{{.*}}f32{{.*}}]'}}
-# expected-note @below {{candidate not viable: callee expects 1 positional argument}}
+# expected-note @below {{candidate not viable: callee expects 1 argument}}
 fn overloadIntFloat32(a: Float32): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 positional arguments}}
+# expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note-re @below {{candidate not viable: argument #1 cannot be converted from 'SIMD[{{.*}}f32{{.*}}]' to 'Int'}}
 fn overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: callee expects 2 positional arguments}}
+# expected-note @below {{candidate not viable: callee expects 2 arguments}}
 # expected-note @below {{argument #1 must be mutable in order to pass as a by-ref argument}}
 fn overloadIntFloat32(a: Int, inout b: Float32): pass
 

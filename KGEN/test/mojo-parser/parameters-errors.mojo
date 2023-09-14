@@ -112,7 +112,7 @@ def param_redef(x: __mlir_type.index, x: __mlir_type.index):
 
 # The keyword argument flags work in parameter lists.
 fn funnyArgs[a: Int, /, b: Int, *,
-             c: Int](): # expected-error {{TODO: keyword arguments not supported yet}}
+             c: Int](): # expected-error {{keyword-only arguments not supported yet}}
     pass
 
 # expected-error @+1 {{result parameters may not be variadic}}

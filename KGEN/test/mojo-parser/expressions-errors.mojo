@@ -175,16 +175,33 @@ fn dynamic_type_value():
 # Keyword arguments
 ##===----------------------------------------------------------------------===##
 
-fn takeKeywordArgs(i: Int, j: Int): pass
+# expected-note @+1 {{function declared here}}
+fn var_func(s: String, *a: Int): pass
 
-def testKWargs():
+# expected-note @+1 {{function declared here}}
+fn pack_func[*Ts: AnyType](*a: *Ts): pass
+
+# expected-note @+1 {{function declared here}}
+fn take_kw_args(i: Int, j: Int = 7): pass
+
+def test_kw_args():
   # expected-error @+2 {{duplicate keyword argument 'j'}}
   # expected-note @+1 {{previously specified here}}
-  takeKeywordArgs(j = 42, j = 43)
-  # expected-error @+1 {{keyword arguments are not supported yet}}
-  takeKeywordArgs(j = 42, i = 1)
+  take_kw_args(j = 42, j = 43)
   # expected-error @+1 {{positional argument follows keyword argument}}
-  takeKeywordArgs(j = 42, 1)
+  take_kw_args(j = 42, 1)
+
+def test_kw_args_2():
+  # expected-error @+1 {{unexpected keyword argument}}
+  var_func("boo", a=3)
+  # expected-error @+1 {{unexpected keyword argument}}
+  pack_func("boo", a=2)
+  # expected-error @+1 {{unexpected keyword argument}}
+  take_kw_args(8, z=13)
+  # expected-error @+1 {{unexpected keyword argument}}
+  take_kw_args(8, j=11, z=13)
+  # expected-error @+1 {{argument #0 passed both as positional and keyword operand}}
+  take_kw_args(8, i=11)
 
 ##===----------------------------------------------------------------------===##
 # Tuples
@@ -357,7 +374,7 @@ fn testSubscripts(a: WeirdArray, b: MultiSetItem, c: IncompatElementTypes):
   # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'FloatLiteral' to 'Int'}}
   _ = a[1.0]
 
-  # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 positional arguments, but 3 were specified}}
+  # expected-error @+1 {{invalid call to '__getitem__': callee expects 2 arguments, but 3 were specified}}
   _ = a[1, 2]
 
   # expected-error @+1 {{expression must be mutable in assignment}}
