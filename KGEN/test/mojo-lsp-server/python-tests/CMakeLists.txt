@@ -17,5 +17,7 @@ add_custom_target(check-mojo-lsp-server-pytests
     mojo-sdk
 )
 
-# FIXME(21134): Reenable this dependency to run these tests in the CI
-# add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
+# ASAN triggers errors because of python.
+if (NOT LLVM_USE_SANITIZER)
+  add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
+endif()
