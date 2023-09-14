@@ -520,16 +520,8 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
     return failure();
 
   // Resolve pending wildcard imports in this module.
-  while (!module.unresolvedWildcardImports.empty()) {
-    auto it = module.unresolvedWildcardImports.begin();
-    auto [moduleName, locAndIsFullImport] = *it;
-    module.unresolvedWildcardImports.erase(it);
-
-    if (failed(importWildCardDeclsFromModule(module, moduleName,
-                                             locAndIsFullImport.second,
-                                             locAndIsFullImport.first)))
-      return failure();
-  }
+  if (failed(resolveAllWildcardImports(module)))
+    return failure();
 
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
@@ -973,6 +965,20 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   declsCurrentlyProcessing.erase(&decl);
   // If decl is busted, then return failure.
   return success(!decl.hasReferenceError);
+}
+
+LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
+  while (!module.unresolvedWildcardImports.empty()) {
+    auto it = module.unresolvedWildcardImports.begin();
+    auto [moduleName, locAndIsFullImport] = *it;
+    module.unresolvedWildcardImports.erase(it);
+
+    if (failed(importWildCardDeclsFromModule(module, moduleName,
+                                             locAndIsFullImport.second,
+                                             locAndIsFullImport.first)))
+      return failure();
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

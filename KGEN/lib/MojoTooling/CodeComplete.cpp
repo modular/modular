@@ -12,6 +12,7 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/SourceMgr.h"
@@ -52,7 +53,10 @@ struct CodeCompletionListener : public ParserListener {
 
   /// Returns true if the listener is interested in being notified for the given
   /// location.
-  bool isInterestedInLoc(SMLoc parserLoc) override { return parserLoc == loc; }
+  bool isInterestedInLoc(SMLoc parserLoc) override {
+    return completionRange.Start.getPointer() <= parserLoc.getPointer() &&
+           parserLoc.getPointer() <= completionRange.End.getPointer();
+  }
 
   /// Notify the listener that an import is currently being resolved.
   void onImport(SMLoc importLoc) override {
@@ -98,19 +102,32 @@ struct CodeCompletionListener : public ParserListener {
 
   /// Notify the listener that a member within the given decl is being looked
   /// up.
-  void onMemberLookup(ResolveInputDeclFn getDeclFn,
-                      llvm::SMLoc lookupLoc) override {
+  void onMemberLookup(ResolveInputDeclFn getDeclFn, llvm::SMLoc lookupLoc,
+                      bool searchParentScopes) override {
     MojoASTDeclRef decl = getDeclFn();
 
-    for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
-      StringRef name = child.getName();
-      if (!showDeclDuringLookup(decl, name))
-        continue;
+    auto collectDeclChildren = [&](MojoASTDeclRef decl) {
+      for (MojoASTDeclRef::ChildEntry child : decl.getChildren()) {
+        StringRef name = child.getName();
+        if (!showDeclDuringLookup(decl, name))
+          continue;
 
-      // TODO: Include information about overloads here and just handle multi
-      // decls in general.
-      addCompletionForOp(name, *child.getDecls().begin());
-    }
+        // TODO: Include information about overloads here and just handle multi
+        // decls in general.
+        addCompletionForOp(name, *child.getDecls().begin());
+      }
+    };
+
+    // Collect all of the decls in the current scope.
+    if (!searchParentScopes)
+      return collectDeclChildren(decl);
+
+    // Collect all of the decls in the current scope and all parent scopes.
+    do {
+      collectDeclChildren(decl);
+      decl = decl.getParentDecl();
+    } while (
+        !llvm::isa_and_present<PackageOp, ModuleOp>(decl.getIfOperation()));
   }
 
   /// Utility function to add a completion result for the given decl. An
@@ -127,6 +144,8 @@ struct CodeCompletionListener : public ParserListener {
             .Case([](StructDeclOp) { return CodeCompletionResult::kStruct; })
             .Case([](FuncOp) { return CodeCompletionResult::kFunction; })
             .Case([](StructFieldOp) { return CodeCompletionResult::kField; })
+            .Case<LetRegDeclOp, VarLetDeclOp>(
+                [](auto op) { return CodeCompletionResult::kVariable; })
             .Default(CodeCompletionResult::kUnknown);
 
     CodeCompletionResult result(name, kind);
@@ -138,8 +157,8 @@ struct CodeCompletionListener : public ParserListener {
   /// The results that have been collected so far.
   std::vector<CodeCompletionResult> &results;
 
-  /// The location of the code completion request.
-  SMLoc loc;
+  /// The range of acceptable locations for the completion.
+  llvm::SMRange completionRange;
 
   /// The source manager.
   llvm::SourceMgr &sourceMgr;
@@ -197,13 +216,27 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
   MojoParserContext parserContext(sourceMgr, config);
   listener.parserContext = &parserContext;
 
-  // Compute the completion SM location by finding the next token from the input
-  // completion position.
+  // Compute the start completion location. We first trim the buffer to the
+  // last non-whitespace, and then to the start of any identifier. We often get
+  // completion requests for lookups that are partially formed already (e.g. a
+  // completion on `p` to get things like `print`).
   StringRef completionPosStr =
-      buffer.getBuffer().drop_front(completionPosition);
+      buffer.getBuffer().take_front(completionPosition).rtrim();
+  while (!completionPosStr.empty()) {
+    char c = completionPosStr.back();
+    if (!(llvm::isAlpha(c) || llvm::isDigit(c) || c == '_' || c == '$'))
+      break;
+    completionPosStr = completionPosStr.drop_back();
+  }
+  listener.completionRange.Start =
+      SMLoc::getFromPointer(completionPosStr.end());
+
+  // Compute the end completion location by finding the next token from the
+  // input completion position.
+  completionPosStr = buffer.getBuffer().drop_front(completionPosition);
   Lexer lexer(parserContext.getSharedState().diags, completionPosStr,
               completionPosStr.data());
-  listener.loc = lexer.getToken().getLoc();
+  listener.completionRange.End = lexer.getToken().getLoc();
 
   parserCallback(parserContext, sourceMgr.getMainFileID());
   return results;

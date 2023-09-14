@@ -270,13 +270,17 @@ public:
                               function_ref<ASTDecl &()> getPackageDecl);
 
   /// Notify the parser listener, if present, that a member within the given
-  /// decl is being looked up.
-  void notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc);
+  /// decl is being looked up. `searchParentScopes` is true if the lookup is not
+  /// restricted to just the given decl.
+  void notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc,
+                                    bool searchParentScopes = false);
   /// Notify the parser listener, if present, that a member within the given
   /// decl is being looked up. `getDeclFn` is a function called to get the decl
-  /// if the listener needs it.
+  /// if the listener needs it. `searchParentScopes` is true if the lookup is
+  /// not restricted to just the given decl.
   void notifyListenerOnMemberLookup(SMLoc lookupLoc,
-                                    function_ref<ASTDecl &()> getDeclFn);
+                                    function_ref<ASTDecl &()> getDeclFn,
+                                    bool searchParentScopes = false);
 
   /// Notify the parser listener, if present, that a new `module` decl has been
   /// created by the parser.

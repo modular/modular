@@ -348,7 +348,8 @@ void ParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onImport(SMLoc importLoc) {}
 void ParserListener::onImport(ResolveInputDeclFn getPackageDecl,
                               SMLoc importLoc) {}
-void ParserListener::onMemberLookup(ResolveInputDeclFn getDeclFn, SMLoc loc) {}
+void ParserListener::onMemberLookup(ResolveInputDeclFn getDeclFn, SMLoc loc,
+                                    bool searchParentScopes) {}
 void ParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
                                     SMLoc importLoc) {}
 void ParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {}

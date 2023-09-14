@@ -1847,6 +1847,10 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
     auto &[name, children] = *std::next(decls.begin(), i);
     (void)declResolver.resolveFully(*children.front(), loc);
   }
+  // Resolve any pending wildcards in the decl. We don't care about failure
+  // here, as we still want to enable lookup for the decls that could be
+  // resolved.
+  (void)declResolver.resolveAllWildcardImports(decl);
 }
 
 /// Return if the given parser listner is interested in the given location.
@@ -1890,21 +1894,30 @@ void SharedState::notifyListenerOnImport(
       importLoc);
 }
 
-void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc) {
+void SharedState::notifyListenerOnMemberLookup(ASTDecl &decl, SMLoc lookupLoc,
+                                               bool searchParentScopes) {
   if (!isListenerInterestedInLoc(parserListener, lookupLoc))
     return;
   parserListener->onMemberLookup(
       [&]() -> ASTDecl * {
         resolveDeclForListenerLookup(*declResolver, decl, lookupLoc);
+
+        // Resolve parent scopes if necessary.
+        if (searchParentScopes) {
+          ASTDecl *parentDecl = &decl;
+          while ((parentDecl = parentDecl->getParentDecl()))
+            resolveDeclForListenerLookup(*declResolver, *parentDecl, lookupLoc);
+        }
         return &decl;
       },
-      lookupLoc);
+      lookupLoc, searchParentScopes);
 }
 
 void SharedState::notifyListenerOnMemberLookup(
-    SMLoc lookupLoc, function_ref<ASTDecl &()> getDeclFn) {
+    SMLoc lookupLoc, function_ref<ASTDecl &()> getDeclFn,
+    bool searchParentScopes) {
   if (isListenerInterestedInLoc(parserListener, lookupLoc))
-    notifyListenerOnMemberLookup(getDeclFn(), lookupLoc);
+    notifyListenerOnMemberLookup(getDeclFn(), lookupLoc, searchParentScopes);
 }
 
 void SharedState::notifyListenerOnModuleDecl(ASTDecl &decl,

@@ -149,6 +149,10 @@ public:
     return resolve(decl, DeclResolvedness::fully, loc);
   }
 
+  /// Resolve the pending wildcard imports in the decl if it represents a
+  /// module.
+  LogicalResult resolveAllWildcardImports(ASTDecl &module);
+
   /// Given the symbol for a lit type declaration, return the ASTDecl that
   /// corresponds to it.  This doesn't allow null symbols, so it always
   /// succeeds.
