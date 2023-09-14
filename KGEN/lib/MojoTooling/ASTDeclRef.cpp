@@ -23,17 +23,10 @@ using namespace M::KGEN::LIT;
 // MojoASTDeclRef
 //===----------------------------------------------------------------------===//
 
-/// Unwrap a raw ASTDecl pointer.
-static ASTDecl *unwrapMojoASTDecl(void *declImpl) {
-  assert(declImpl && "expected valid MojoASTDeclRef impl");
-  return reinterpret_cast<ASTDecl *>(declImpl);
-}
-
 /// If this decl corresponds to a not owned function argument, return its
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
-  return TypeSwitch<DeclIRValue, BlockArgument>(
-             (*unwrapMojoASTDecl(declRef.getAsVoidPointer())).getIRValue())
+  return TypeSwitch<DeclIRValue, BlockArgument>(declRef->getIRValue())
       .Case<SBValue, SRValue, SLValue, MBValue>([&](auto val) -> BlockArgument {
         if (auto bbArg = dyn_cast<BlockArgument>(Value(val)))
           if (isa<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
@@ -44,8 +37,7 @@ static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
 }
 
 static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
-  if (auto val = dyn_cast_if_present<PValue>(
-          (*unwrapMojoASTDecl(declRef.getAsVoidPointer())).getIRValue())) {
+  if (auto val = dyn_cast_if_present<PValue>(declRef->getIRValue())) {
     if (auto paramRef = dyn_cast<ParamDeclRefAttr>(val.get()))
       return paramRef;
   }
@@ -55,19 +47,18 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// Return the defining Op from the IR encapsulated by this decl. It might be
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
-  ASTDecl &astDecl = *unwrapMojoASTDecl(declRef.getAsVoidPointer());
-  return TypeSwitch<DeclIRValue, Operation *>(astDecl.getIRValue())
+  return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
       .Case<SBValue, SRValue, SLValue, MBValue>(
           [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
       .Default((Operation *)nullptr);
 }
 
 Operation *MojoASTDeclRef::getIfOperation() const {
-  return unwrapMojoASTDecl(impl)->getIfOperation();
+  return decl->getIfOperation();
 }
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
-  return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*unwrapMojoASTDecl(impl))
+  return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
       .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Default({});
@@ -83,13 +74,11 @@ std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
   // We first try to get the name from the operation. Then we try to match the
   // decl with a function argument. Finally, as a last resort, we extract the
   // defining Op from the IR to fetch the name.
-  ASTDecl &decl = *unwrapMojoASTDecl(impl);
-
-  if (auto name = getFromOp(decl.getIfOperation()))
+  if (auto name = getFromOp(decl->getIfOperation()))
     return name;
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    auto func = cast<FuncOp>(*decl.getParentDecl());
+    auto func = cast<FuncOp>(*decl->getParentDecl());
     return func.getSignature().getArgName(bbArg.getArgNumber());
   }
 
@@ -100,8 +89,6 @@ std::optional<StringAttr> MojoASTDeclRef::getMangledName() const {
 }
 
 std::optional<StringRef> MojoASTDeclRef::getName() const {
-  ASTDecl &decl = *unwrapMojoASTDecl(impl);
-
   auto getFromOp = [&](Operation *op) -> std::optional<StringRef> {
     if (!op)
       return std::nullopt;
@@ -134,11 +121,11 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
   // We first try to get the name from the operation. Then we try to match the
   // decl with a function argument. Finally, as a last resort, we extract the
   // defining Op from the IR to fetch the name.
-  if (auto name = getFromOp(decl.getIfOperation()))
+  if (auto name = getFromOp(decl->getIfOperation()))
     return name;
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    auto func = cast<FuncOp>(*decl.getParentDecl());
+    auto func = cast<FuncOp>(*decl->getParentDecl());
     return func.getSignature().getArgName(bbArg.getArgNumber());
   }
 
@@ -148,30 +135,26 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
   return getFromOp(getDefiningOpFromIR(*this));
 }
 
-llvm::SMLoc MojoASTDeclRef::getLoc() const {
-  return unwrapMojoASTDecl(impl)->getLoc();
-}
+llvm::SMLoc MojoASTDeclRef::getLoc() const { return decl->getLoc(); }
 
 MojoASTDeclRef MojoASTDeclRef::getParentDecl() const {
-  return MojoASTDeclRef(unwrapMojoASTDecl(impl)->getParentDecl());
+  return MojoASTDeclRef(decl->getParentDecl());
 }
 
 std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
-  ASTDecl &astDecl = *unwrapMojoASTDecl(impl);
-
-  if (isa<AliasDeclOp>(astDecl))
+  if (isa<AliasDeclOp>(*decl))
     return std::unique_ptr<AliasDeclView>(new AliasDeclView(*this));
-  if (isa<FileModuleOp>(astDecl))
+  if (isa<FileModuleOp>(*decl))
     return std::unique_ptr<ModuleDeclView>(new ModuleDeclView(*this));
-  if (isa<FuncOp>(astDecl))
+  if (isa<FuncOp>(*decl))
     return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
-  if (isa<StructDeclOp>(astDecl))
+  if (isa<StructDeclOp>(*decl))
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
-  if (isa<StructFieldOp>(astDecl))
+  if (isa<StructFieldOp>(*decl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(astDecl))
+  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(*decl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
-  if (isa<PackageOp>(astDecl))
+  if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
 
   // After failing to match with regular Ops, we then inspect the IR to identify
@@ -222,22 +205,17 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
 // Children
 
 MojoASTDeclRef::ChildEntry MojoASTDeclRef::ChildIterator::operator*() const {
-  ASTDecl *decl = unwrapMojoASTDecl(const_cast<void *>(getBase()));
-  auto it = std::next(decl->getDeclsInScope().begin(), getIndex());
-  ArrayRef<ASTDecl *> decls = it->second;
-  ArrayRef<void *> rawDecls(reinterpret_cast<void *const *>(decls.data()),
-                            decls.size());
-  return ChildEntry(it->first, rawDecls);
+  auto it = std::next(getBase()->getDeclsInScope().begin(), getIndex());
+  return ChildEntry(it->first, it->second);
 }
 
 MojoASTDeclRef::ChildIterator::ChildIterator(MojoASTDeclRef decl, size_t index)
-    : llvm::indexed_accessor_iterator<ChildIterator, const void *, ChildEntry,
-                                      ChildEntry, ChildEntry>(
-          decl.getAsVoidPointer(), index) {}
+    : llvm::indexed_accessor_iterator<ChildIterator, ASTDecl *, ChildEntry,
+                                      ChildEntry, ChildEntry>(decl.decl,
+                                                              index) {}
 
 llvm::iterator_range<MojoASTDeclRef::ChildIterator>
 MojoASTDeclRef::getChildren() const {
-  ASTDecl *decl = unwrapMojoASTDecl(impl);
   return llvm::make_range(ChildIterator(*this, 0),
                           ChildIterator(*this, decl->getDeclsInScope().size()));
 }
@@ -246,27 +224,16 @@ MojoASTDeclRef::getChildren() const {
 // MojoASTTypeRef
 //===----------------------------------------------------------------------===//
 
-/// Unwrap a raw ASTDecl pointer.
-static ASTType unwrapMojoASTType(void *declImpl) {
-  assert(declImpl && "expected valid MojoASTDeclRef impl");
-  return ASTType(Type::getFromOpaquePointer(declImpl));
-}
-
-MojoASTTypeRef::MojoASTTypeRef(const mlir::Type &type)
-    : MojoASTTypeRef(const_cast<void *>(type.getAsOpaquePointer())) {}
-
 MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &sharedState) {
-  return MojoASTDeclRef(unwrapMojoASTType(impl).getDecl(sharedState));
+  return MojoASTDeclRef(type.getDecl(sharedState));
 }
 
 std::string MojoASTTypeRef::getAsString() const {
-  return unwrapMojoASTType(impl).getAsString(/*forDiag=*/true);
+  return type.getAsString(/*forDiag=*/true);
 }
 
 MojoASTTypeRef MojoASTTypeRef::getPointerElementType() const {
-  return unwrapMojoASTType(impl).getPointerElementType().mlirType;
+  return type.getPointerElementType();
 }
 
-Type MojoASTTypeRef::getMLIRType() const {
-  return Type::getFromOpaquePointer(impl);
-}
+Type MojoASTTypeRef::getMLIRType() const { return type.mlirType; }

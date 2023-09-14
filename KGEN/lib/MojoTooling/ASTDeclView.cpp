@@ -448,13 +448,12 @@ llvm::json::Object AliasDeclView::toJSON() const {
 
 AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_AliasDeclView, declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
-  auto aliasOp = cast<LIT::AliasDeclOp>(declRef.getIfOperation());
+  auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   llvm::raw_string_ostream valueOS(value);
   PValue(aliasOp.getValue()).printForDiag(valueOS);
 
-  if (auto docStr = decl.getParsedDocString()) {
+  if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
   }
@@ -570,8 +569,6 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_FunctionDeclView, declRef.getName().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
 
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
-
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
   ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
   ArrayRef<ValueInputConvention> argConventions =
@@ -591,7 +588,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
   if (isa<StructDeclOp>(funcOp->getParentOp()))
-    selfType = decl.getParentDecl()->getSelfType();
+    selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
   for (auto [type, name, convention] :
@@ -613,7 +610,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   if (!resultType.isNoneType())
     returnType = generateTypeString(resultType, selfType);
 
-  if (auto docStr = decl.getParsedDocString()) {
+  if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     augmentWithDocumentation(docStr->getDescription());
   }
@@ -655,13 +652,12 @@ llvm::json::Object StructFieldDeclView::toJSON() const {
 StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_StructFieldDeclView,
                declRef.getName().value_or(StringRef{})) {
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
   llvm::raw_string_ostream typeOS(type);
   ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
 
-  if (std::optional<DocString> docStr = decl.getParsedDocString()) {
+  if (std::optional<DocString> docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
   }
@@ -753,7 +749,7 @@ llvm::json::Object StructDeclView::toJSON() const {
 
 StructDeclView::StructDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_StructDeclView, declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+  ASTDecl &decl = *declRef;
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
@@ -798,7 +794,7 @@ llvm::json::Object ModuleDeclView::toJSON() const {
 
 ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_ModuleDeclView, declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
+  ASTDecl &decl = *declRef;
 
   aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(decl);
   structs = extractChildDecls<StructDeclView, StructDeclOp>(decl);
@@ -833,9 +829,7 @@ llvm::json::Object PackageDeclView::toJSON() const {
 
 PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
     : DeclView(DK_PackageDeclView, declRef.getName().value_or(StringRef())) {
-  ASTDecl &decl = *reinterpret_cast<ASTDecl *>(declRef.getAsVoidPointer());
-
-  if (auto docStr = decl.getParsedDocString()) {
+  if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
     description = llvm::join(docStr->getDescription(), "\n");
   }

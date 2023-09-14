@@ -252,14 +252,13 @@ private:
   MapT rangeToSymbolRef;
   SmallVector<std::unique_ptr<SymbolRef>> symbolRefs;
 
-  /// Mapping from an opaque pointer of a MojoASTDeclRef to an LSP Symbol.
-  llvm::DenseMap<void *, std::unique_ptr<Symbol>> symbolTable;
+  /// Mapping from an ASTDecl to an LSP Symbol.
+  llvm::DenseMap<ASTDecl *, std::unique_ptr<Symbol>> symbolTable;
 };
 } // namespace
 
 Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
-  if (auto it = symbolTable.find(declRef.getAsVoidPointer());
-      it != symbolTable.end())
+  if (auto it = symbolTable.find(&*declRef); it != symbolTable.end())
     return it->getSecond().get();
   return nullptr;
 }
@@ -292,8 +291,7 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
     return nullptr;
 
   auto [it, _] = symbolTable.try_emplace(
-      declRef.getAsVoidPointer(),
-      std::make_unique<Symbol>(declRef, *identifier, identifierLoc));
+      &*declRef, std::make_unique<Symbol>(declRef, *identifier, identifierLoc));
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
