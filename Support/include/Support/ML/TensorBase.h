@@ -35,6 +35,7 @@ public:
 
   /// Returns the tensor spec/shape/element type.
   const TensorSpec &getSpec() const { return spec; }
+  TensorSpec &getSpec() { return spec; }
   const TensorShape &getShape() const { return spec; }
   DType getEltType() const { return spec.getEltType(); }
 
