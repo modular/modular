@@ -102,7 +102,9 @@ export class MojoDebugContext extends DisposableContext {
 
     this.disposeRpcServer(workspaceFolder);
     let rpcServer =
-        new RpcLaunchServer(workspaceFolder, {token : options.token as string});
+        new RpcLaunchServer(this.context.getLoggingService(), workspaceFolder,
+                            {token : options.token as string});
+    this.pushSubscription(rpcServer);
     rpcServer.listen(options);
     this.rpcServers.set(uri, rpcServer);
   }
@@ -125,14 +127,7 @@ export class MojoDebugContext extends DisposableContext {
       this.context.getLoggingService().logInfo(
           `Stopping RPC server defined by global config`);
     }
-    rpcServer.close();
+    rpcServer.dispose();
     this.rpcServers.delete(uri);
-  }
-
-  dispose() {
-    super.dispose();
-    const rpcServers = this.rpcServers.values();
-    for (const rpcServer of rpcServers)
-      this.disposeRpcServer(rpcServer.workspaceFolder);
   }
 }
