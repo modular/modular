@@ -14,5 +14,6 @@ add_mlir_library(DebugInfoTransforms
 
   LINK_LIBS PUBLIC
   DebugInfoDialect
+  MLIRTransformUtils
   MLIRParser
 )
