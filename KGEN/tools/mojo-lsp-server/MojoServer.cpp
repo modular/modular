@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoServer.h"
+#include "MojoDocument.h"
+
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
@@ -27,34 +29,10 @@
 
 namespace lsp = mlir::lsp;
 using namespace M;
+using namespace M::Mojo::LSP;
 using namespace M::KGEN::LIT;
 using llvm::SMLoc;
 using llvm::SMRange;
-
-/// Returns a language server uri for the given source location. `mainFileURI`
-/// corresponds to the uri for the main file of the source manager.
-static std::optional<lsp::URIForFile>
-getURIFromLoc(llvm::SourceMgr &mgr, SMLoc loc,
-              const lsp::URIForFile &mainFileURI) {
-  int bufferId = mgr.FindBufferContainingLoc(loc);
-  if (bufferId == 0)
-    return std::nullopt;
-  if (bufferId == static_cast<int>(mgr.getMainFileID()))
-    return mainFileURI;
-  llvm::Expected<lsp::URIForFile> fileForLoc = lsp::URIForFile::fromFile(
-      mgr.getBufferInfo(bufferId).Buffer->getBufferIdentifier());
-  if (fileForLoc)
-    return *fileForLoc;
-  lsp::Logger::error("Failed to create URI for include file: {0}",
-                     llvm::toString(fileForLoc.takeError()));
-  return std::nullopt;
-}
-
-/// Returns true if the given location is in the main file of the source
-/// manager.
-static bool isMainFileLoc(const llvm::SourceMgr &mgr, SMLoc loc) {
-  return mgr.FindBufferContainingLoc(loc) == mgr.getMainFileID();
-}
 
 /// Returns a language server range from the given diagnostic.
 static lsp::Range getRangeFromDiag(llvm::SourceMgr &mgr,
@@ -67,18 +45,7 @@ static lsp::Range getRangeFromDiag(llvm::SourceMgr &mgr,
   return range;
 }
 
-/// Returns a language server location from the given diagnostic.
-static std::optional<lsp::Location>
-getLocationFromDiag(llvm::SourceMgr &mgr, const llvm::SMDiagnostic &diag,
-                    const lsp::URIForFile &uri) {
-  std::optional<lsp::URIForFile> diagUri =
-      getURIFromLoc(mgr, diag.getLoc(), uri);
-  if (!diagUri)
-    return std::nullopt;
-  return lsp::Location(*diagUri, getRangeFromDiag(mgr, diag));
-}
-
-/// Returns a `Range` for a given `text` that starts at the location `loc`.
+/// Returns a `SMRange` for a given `text` that starts at the location `loc`.
 static SMRange getRangeForText(SMLoc loc, StringRef text) {
   if (!loc.isValid())
     return {};
@@ -214,8 +181,9 @@ namespace {
 /// Database of symbols in a single file.
 class SymbolIndex {
 public:
-  SymbolIndex(const llvm::SourceMgr &sourceMgr)
-      : sourceMgr(sourceMgr), rangeToSymbolRef(allocator) {}
+  SymbolIndex(MojoDocument &mainDoc)
+      : mainDoc(mainDoc), sourceMgr(mainDoc.getSourceMgr()),
+        rangeToSymbolRef(allocator) {}
 
   /// Store a new symbol in this index, unless its name is empty.
   /// If the symbol is effectively stored, a pointer to it is returned,
@@ -247,6 +215,7 @@ private:
       llvm::IntervalMapImpl::NodeSizer<SMLoc, Symbol *>::LeafSize,
       llvm::IntervalMapHalfOpenInfo<SMLoc>>;
 
+  MojoDocument &mainDoc;
   const llvm::SourceMgr &sourceMgr;
   MapT::Allocator allocator;
   MapT rangeToSymbolRef;
@@ -295,7 +264,7 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
   Symbol &symbol = *it->second;
 
   // We only add symbols to the range map if they belong to the main file.
-  if (isMainFileLoc(sourceMgr, symbol.range.Start))
+  if (mainDoc.containsLocation(symbol.range.Start))
     insertRangeInMainDoc({symbol, symbol.range});
   return &symbol;
 }
@@ -304,7 +273,7 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
                               StringRef spelling) {
   // We don't index empty spellings nor references in files other than the main
   // one.
-  if (spelling.empty() || !isMainFileLoc(sourceMgr, loc))
+  if (spelling.empty() || !mainDoc.containsLocation(loc))
     return;
 
   SmallVector<Symbol *> symbols;
@@ -313,7 +282,8 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMLoc loc,
     // might come from a non-main doc.
     if (Symbol *symbol = findSymbol(ref))
       symbols.push_back(symbol);
-    else if (Symbol *symbol = registerSymbol(ref, ref.getName(), ref.getLoc()))
+    else if (Symbol *symbol = registerSymbol(
+                 ref, ref.getName(), mainDoc.translateParserLoc(ref.getLoc())))
       symbols.push_back(symbol);
   }
 
@@ -332,20 +302,18 @@ SymbolRef *SymbolIndex::getSymbolAt(SMLoc loc) const {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct MojoDocument;
-
 /// Class that is used to connect the LSP with the Mojo parser to enable
 /// features like symbol indices.
 class LSPParserListener : public ParserListener {
 public:
-  LSPParserListener(MojoDocument &mainDoc, const llvm::SourceMgr &sourceMgr)
-      : mainDoc(mainDoc), sourceMgr(sourceMgr) {}
+  LSPParserListener(MojoDocument &mainDoc, SymbolIndex &symbolIndex)
+      : mainDoc(mainDoc), symbolIndex(symbolIndex) {}
 
   void addSymbolDecl(ASTDecl *decl, SMLoc loc);
 
   bool isInterestedInLoc(llvm::SMLoc parserLoc) override {
     // We're only interested in locations in the main file.
-    return isMainFileLoc(sourceMgr, parserLoc);
+    return mainDoc.containsLocation(mainDoc.translateParserLoc(parserLoc));
   }
 
   void onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) override;
@@ -371,219 +339,105 @@ public:
 private:
   /// The main doc for which parsing was initiated.
   MojoDocument &mainDoc;
-  const llvm::SourceMgr &sourceMgr;
+  SymbolIndex &symbolIndex;
 };
 } // namespace
+
+void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc) {
+  MojoASTDeclRef declRef(decl);
+  symbolIndex.registerSymbol(declRef, declRef.getName(),
+                             mainDoc.translateParserLoc(loc));
+}
+
+void LSPParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  // We don't index the module of the main file.
+  if (!mainDoc.containsLocation(mainDoc.translateParserLoc(identifierLoc)))
+    addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
+                                       SMLoc loc) {
+  symbolIndex.registerRef(MojoASTDeclRef(decl), mainDoc.translateParserLoc(loc),
+                          spelling);
+}
+
+void LSPParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc);
+}
+
+void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
+                              SMLoc loc) {
+  symbolIndex.registerRef(
+      llvm::map_to_vector(decls,
+                          [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
+      mainDoc.translateParserLoc(loc), spelling);
+}
+
+//===----------------------------------------------------------------------===//
+// MojoDocument::Context
+//===----------------------------------------------------------------------===//
+
+/// A collection of MLIR and Mojo related entities used to invoke the parser.
+/// Its lifetime is tied to that of the AST objects gotten from the parser.
+/// It also sets up a SourceMgr with the given MojoDocument as its main file.
+struct MojoDocument::Context {
+  Context(MojoDocument &mainDoc)
+      : mlirContext(MLIRContext::Threading::DISABLED),
+        parserConfig(&mlirContext, mainDoc.getRuntime(), compilationOptions),
+        symbolIndex(mainDoc), parserListener(mainDoc, symbolIndex) {
+    parserConfig.parserListener = &parserListener;
+
+    // TODO: Enable full caching here when we can symbolize references from
+    // IR. We can enable references from imported modules though, as we just
+    // need definitions from cached IR.
+    parserConfig.moduleCachingLevel = isa<MojoTextDocument>(mainDoc)
+                                          ? ParserConfig::kCacheImports
+                                          : ParserConfig::kCacheNone;
+    parserContext =
+        std::make_unique<MojoParserContext>(mainDoc.sourceMgr, parserConfig);
+  }
+
+  KGEN::CompilationOptions compilationOptions;
+  MLIRContext mlirContext;
+  ParserConfig parserConfig;
+  SymbolIndex symbolIndex;
+  LSPParserListener parserListener;
+  std::unique_ptr<MojoParserContext> parserContext;
+};
 
 //===----------------------------------------------------------------------===//
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
-using SendDiagnosticsFnRef =
-    function_ref<void(const mlir::lsp::PublishDiagnosticsParams &)>;
-
-namespace {
-/// This class represents all of the information pertaining to a specific Mojo
-/// document.
-struct MojoDocument : public ReferenceCounted<MojoDocument> {
-public:
-  MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
-               int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-               LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
-  MojoDocument(const MojoDocument &) = delete;
-  MojoDocument &operator=(const MojoDocument &) = delete;
-
-  /// Return the contents of this document.
-  StringRef getContents() const { return contents; }
-
-  /// Return the version of this document.
-  int64_t getVersion() const { return version; }
-
-  /// Invalidate this document.
-  void invalidate() {
-    isInvalidated = true;
-
-    // Mark the document as parsed to unblock chained events, and let them
-    // invalidate themselves.
-    markDocumentParsed();
-  }
-
-  /// Return a chain that will be ready when the document is parsed.
-  AnyAsyncValueRef getDocumentReadyChain() const {
-    return isDocumentParsed.copy();
-  }
-
-  /// Return the source location from the given LSP position.
-  SMLoc getLocFromPos(const lsp::Position &pos) {
-    return pos.getAsSMLoc(context->sourceMgr);
-  }
-
-  /// Return the source range from the given LSP range.
-  SMRange getLocFromPos(const lsp::Range &range) {
-    return {getLocFromPos(range.start), getLocFromPos(range.end)};
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Asynchronous LSP Queries
-  //===--------------------------------------------------------------------===//
-
-  //===--------------------------------------------------------------------===//
-  // Code Actions
-
-  void getCodeActions(const lsp::Range &pos,
-                      const lsp::CodeActionContext &context,
-                      OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions);
-
-  //===--------------------------------------------------------------------===//
-  // Language Features
-
-  void onCodeCompletion(const lsp::Position &completePos,
-                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
-
-  void
-  onDefinition(const lsp::Position &pos,
-               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
-
-  void onHover(const lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
-
-private:
-  /// Parse the document and populate the index based on the current contents.
-  void parseDocument();
-
-  /// Mark the current document as being finished parsing.
-  void markDocumentParsed() {
-    std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
-    if (!isDocumentParsed.isReady())
-      isDocumentParsed.copy().emplace();
-  }
-
-  /// Start a task that depends on the document being parsed.
-  template <typename FnT>
-  void startTaskAfterParsing(FnT &&fn) {
-    isDocumentParsed.andThenAsync(
-        [doc = RCRef<MojoDocument>::copy(this),
-         fn = std::forward<FnT>(fn)]() mutable { fn(*doc); });
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Synchronous LSP Queries
-  //===--------------------------------------------------------------------===//
-
-  //===--------------------------------------------------------------------===//
-  // Diagnostics
-
-  std::optional<lsp::Diagnostic>
-  buildLspDiagnosticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
-                                     ArrayRef<llvm::SMDiagnostic> diags,
-                                     const lsp::URIForFile &uri);
-
-  //===--------------------------------------------------------------------===//
-  // Code Actions
-
-  std::vector<lsp::CodeAction>
-  getCodeActionsSync(SMRange range, const lsp::CodeActionContext &context);
-
-  //===--------------------------------------------------------------------===//
-  // Language Features
-
-  lsp::CompletionList onCodeCompletionSync(SMLoc completeLoc) const;
-
-  std::vector<lsp::Location> onDefinitionSync(SMLoc loc) const;
-
-  std::optional<lsp::Hover> onHoverSync(SMLoc loc) const;
-
-  //===--------------------------------------------------------------------===//
-  // Fields
-  //===--------------------------------------------------------------------===//
-
-  /// A collection of MLIR and Mojo related entities used to invoke the parser.
-  /// Its lifetime is tied to that of the AST objects gotten from the parser.
-  /// It also sets up a SourceMgr with the given MojoDocument as its main file.
-  struct Context {
-    Context(LLCL::Runtime &runtime, MojoDocument &mainDoc)
-        : mlirContext(MLIRContext::Threading::DISABLED),
-          parserConfig(&mlirContext, runtime, compilationOptions),
-          symbolIndex(sourceMgr), parserListener(mainDoc, sourceMgr) {
-      // We add the main doc to the SourceMgr here to ensure it's considered the
-      // "main" file.
-      auto buffer = llvm::MemoryBuffer::getMemBuffer(mainDoc.contents,
-                                                     mainDoc.uri.file());
-      sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
-
-      parserConfig.parserListener = &parserListener;
-
-      // TODO: Enable full caching here when we can symbolize references from
-      // IR. We can enable references from imported modules though, as we just
-      // need definitions from cached IR.
-      parserConfig.moduleCachingLevel = ParserConfig::kCacheImports;
-      parserContext =
-          std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
-    }
-
-    KGEN::CompilationOptions compilationOptions;
-    MLIRContext mlirContext;
-    ParserConfig parserConfig;
-    llvm::SourceMgr sourceMgr;
-    SymbolIndex symbolIndex;
-    LSPParserListener parserListener;
-    std::unique_ptr<MojoParserContext> parserContext;
-  };
-
-  //===--------------------------------------------------------------------===//
-  // Static Fields
-
-  /// The following fields are always available for access and don't require
-  /// additional synchronization.
-
-  /// The uri of the file.
-  lsp::URIForFile uri;
-
-  /// The full string contents of the file.
-  std::string contents;
-
-  /// The version of this file.
-  int64_t version = 0;
-
-  /// The function used to send diagnostics for this document.
-  SendDiagnosticsFnRef sendDiagnosticsFn;
-
-  /// The runtime used when parsing the file.
-  LLCL::Runtime &runtime;
-
-  /// A flag indicating if this document version has been invalidated.
-  std::atomic<bool> isInvalidated = false;
-
-  //===--------------------------------------------------------------------===//
-  // Parsed Fields
-
-  /// The following fields are only available after the document has been
-  /// parsed, when `isDocumentParsed` is ready.
-
-  /// Allow access to the parser fields.
-  friend LSPParserListener;
-
-  /// An async value readied when the document is parsed.
-  AsyncValueRef<Chain> isDocumentParsed;
-  std::mutex isDocumentParsedMutex;
-
-  /// An ordered set of fixits for diagnostics emitted for the current version
-  /// of the file.
-  std::map<std::pair<lsp::Range, std::string>, std::vector<lsp::CodeAction>>
-      fixits;
-
-  /// The overall parser context.
-  std::unique_ptr<Context> context;
-};
-
-using MojoDocumentRef = RCRef<MojoDocument>;
-} // namespace
-
-MojoDocument::MojoDocument(const lsp::URIForFile &uri, std::string &&contents,
+MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
                            LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain)
-    : uri(uri), contents(std::move(contents)), version(version),
+    : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
   // Start a task to resolve the document.
@@ -595,9 +449,6 @@ void MojoDocument::parseDocument() {
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
     return markDocumentParsed();
-
-  // Reset the source manager and parse the file.
-  context = std::make_unique<Context>(runtime, *this);
 
   // Build a wrapper diagnostic handler for the source manager to capture
   // diagnostics emitted when parsing the mojo file.
@@ -618,15 +469,14 @@ void MojoDocument::parseDocument() {
     handlerCtx.smDiagnostics.push_back({diag});
   };
   DiagHandlerContext handlerCtx;
-  context->sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
+  sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
 
   llvm::CrashRecoveryContext::Enable();
   llvm::CrashRecoveryContext crc;
   crc.DumpStackAndCleanupOnFailure = true;
 
-  if (!crc.RunSafelyOnThread([&]() {
-        context->parserContext->parseFile(context->sourceMgr.getMainFileID());
-      })) {
+  context = std::make_unique<Context>(*this);
+  if (!crc.RunSafelyOnThread([&]() { parseDocumentImpl(); })) {
     lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
                        "POSIX: signal number + 128) = {0}",
                        crc.RetCode);
@@ -635,9 +485,9 @@ void MojoDocument::parseDocument() {
         "file {0}.\nPlease report this issue in "
         "https://github.com/modularml/mojo/issues along with all the relevant "
         "source codes with the contents they had at crash time.",
-        uri);
+        uris.front());
     isInvalidated = true;
-    lsp::PublishDiagnosticsParams diagParams(uri, version);
+    lsp::PublishDiagnosticsParams diagParams(uris.front(), version);
     lsp::Diagnostic lspDiag;
     lspDiag.source = "mojo";
     lspDiag.severity = lsp::DiagnosticSeverity::Error;
@@ -655,16 +505,88 @@ void MojoDocument::parseDocument() {
     return markDocumentParsed();
 
   // Process the collected diagnostics.
-  lsp::PublishDiagnosticsParams diagParams(uri, version);
+  llvm::StringMap<std::optional<lsp::PublishDiagnosticsParams>> fileToDiags;
+  for (auto &uri : uris)
+    fileToDiags[uri.file()].emplace(uri, version);
+
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
+    // Skip diagnostics that weren't emitted within the main file.
+    if (!containsLocation(diags.front().getLoc()))
+      continue;
+    // Get the URI for the file this diagnostic is in. In the case of a text
+    // document, this is always the main URI.
+    lsp::URIForFile diagUri = uris.front();
+    if (uris.size() > 1) {
+      std::optional<lsp::URIForFile> optDiagUri =
+          getURIFromLoc(diags.front().getLoc());
+      if (!optDiagUri)
+        continue;
+      diagUri = *optDiagUri;
+    }
+
+    // Build the LSP diagnostic.
     if (auto lspDiag =
-            buildLspDiagnosticFromSMDiagnostic(context->sourceMgr, diags, uri))
-      diagParams.diagnostics.push_back(*lspDiag);
+            buildLspDiagnosticFromSMDiagnostic(sourceMgr, diags, diagUri))
+      fileToDiags[diagUri.file()]->diagnostics.push_back(*lspDiag);
   }
-  sendDiagnosticsFn(diagParams);
+  for (auto &params : llvm::make_second_range(fileToDiags))
+    sendDiagnosticsFn(*params);
 
   // Mark the document as fully parsed now that we're done.
   markDocumentParsed();
+}
+
+const KGEN::CompilationOptions &MojoDocument::getCompilationOptions() const {
+  return context->compilationOptions;
+}
+
+MojoParserContext &MojoDocument::getParserContext() const {
+  return *context->parserContext;
+}
+
+void MojoDocument::invalidate() {
+  if (isInvalidated)
+    return;
+  isInvalidated = true;
+
+  // Mark the document as parsed to unblock chained events, and let them
+  // invalidate themselves.
+  markDocumentParsed();
+}
+
+void MojoDocument::markDocumentParsed() {
+  std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
+  if (!isDocumentParsed.isReady())
+    isDocumentParsed.copy().emplace();
+}
+
+//===----------------------------------------------------------------------===//
+// MojoDocument: Document Utilities
+//===----------------------------------------------------------------------===//
+
+std::optional<lsp::URIForFile> MojoDocument::getURIFromLoc(SMLoc loc) {
+  int bufferId = sourceMgr.FindBufferContainingLoc(loc);
+  if (bufferId == 0)
+    return std::nullopt;
+
+  // If this is a contained location, we can directly get the URI for it.
+  if (containsLocation(loc))
+    return getURIFromContainedLoc(loc);
+
+  llvm::Expected<lsp::URIForFile> fileForLoc = lsp::URIForFile::fromFile(
+      sourceMgr.getBufferInfo(bufferId).Buffer->getBufferIdentifier(), "file");
+  if (fileForLoc)
+    return *fileForLoc;
+  lsp::Logger::error("Failed to create URI for include file: {0}",
+                     llvm::toString(fileForLoc.takeError()));
+  return std::nullopt;
+}
+
+std::optional<lsp::Location>
+MojoDocument::getLocationFromDiag(const llvm::SMDiagnostic &diag) {
+  if (std::optional<lsp::URIForFile> diagUri = getURIFromLoc(diag.getLoc()))
+    return lsp::Location(*diagUri, getRangeFromDiag(sourceMgr, diag));
+  return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -692,14 +614,14 @@ static void writeCodeToFixMessage(raw_ostream &os, StringRef code) {
 }
 
 static std::optional<lsp::CodeAction>
-buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, llvm::SourceMgr &mgr,
+buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, MojoDocument &doc,
                            const lsp::URIForFile &mainFileURI) {
   llvm::SMRange range = fixit.getRange();
   if (!range.isValid())
     return std::nullopt;
 
   // Get the file this fixit is in.
-  auto uri = getURIFromLoc(mgr, range.Start, mainFileURI);
+  auto uri = doc.getURIFromLoc(range.Start);
   if (!uri)
     return std::nullopt;
 
@@ -737,7 +659,7 @@ buildCodeActionFromSMFixit(const llvm::SMFixIt &fixit, llvm::SourceMgr &mgr,
   // Build the edit.
   action.edit.emplace();
   action.edit->changes[uri->uri().str()].push_back(
-      {lsp::Range(mgr, range), fixit.getText().str()});
+      {lsp::Range(doc.getSourceMgr(), range), fixit.getText().str()});
   return action;
 }
 
@@ -746,10 +668,6 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
     llvm::SourceMgr &sourceMgr, ArrayRef<llvm::SMDiagnostic> diags,
     const lsp::URIForFile &uri) {
   const llvm::SMDiagnostic &mainDiag = diags[0];
-
-  // Skip diagnostics that weren't emitted within the main file.
-  if (!isMainFileLoc(sourceMgr, mainDiag.getLoc()))
-    return std::nullopt;
 
   lsp::Diagnostic lspDiag;
   lspDiag.source = "mojo";
@@ -776,7 +694,7 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
   if (diags.size() > 1) {
     std::vector<lsp::DiagnosticRelatedInformation> relatedDiags;
     for (const llvm::SMDiagnostic &note : diags.drop_front())
-      if (auto loc = getLocationFromDiag(sourceMgr, note, uri))
+      if (auto loc = getLocationFromDiag(note))
         relatedDiags.emplace_back(*loc, note.getMessage().str());
     lspDiag.relatedInformation = std::move(relatedDiags);
   }
@@ -784,7 +702,7 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
   // Collect fixits for the diagnostic.
   std::vector<lsp::CodeAction> diagFixits;
   for (const llvm::SMFixIt &fixit : mainDiag.getFixIts())
-    if (auto action = buildCodeActionFromSMFixit(fixit, sourceMgr, uri))
+    if (auto action = buildCodeActionFromSMFixit(fixit, *this, uri))
       diagFixits.push_back(*action);
   if (!diagFixits.empty()) {
     // If there is only one fixit, mark it as preferred.
@@ -803,13 +721,14 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::getCodeActions(
-    const lsp::Range &pos, const lsp::CodeActionContext &context,
+    const mlir::lsp::URIForFile &uri, const lsp::Range &pos,
+    const lsp::CodeActionContext &context,
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions) {
-  startTaskAfterParsing([pos, context, onActions = std::move(onActions)](
+  startTaskAfterParsing([uri, pos, context, onActions = std::move(onActions)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return onActions({});
-    onActions(doc.getCodeActionsSync(doc.getLocFromPos(pos), context));
+    onActions(doc.getCodeActionsSync(doc.getLocFromPos(uri, pos), context));
   });
 }
 
@@ -839,39 +758,28 @@ MojoDocument::getCodeActionsSync(SMRange range,
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onCodeCompletion(
-    const lsp::Position &completePos,
+    const mlir::lsp::URIForFile &uri, const lsp::Position &completePos,
     OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
   startTaskAfterParsing(
-      [completePos,
+      [uri, completePos,
        onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
           return onCompletionFn({});
-        SMLoc completeLoc = doc.getLocFromPos(completePos);
+        SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
         if (!completeLoc.isValid())
           return onCompletionFn({});
         onCompletionFn(doc.onCodeCompletionSync(completeLoc));
       });
 }
 
-lsp::CompletionList
-MojoDocument::onCodeCompletionSync(SMLoc completeLoc) const {
+lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
   if (!context)
     return lsp::CompletionList();
-  unsigned locBuffer = context->sourceMgr.FindBufferContainingLoc(completeLoc);
-  const llvm::MemoryBuffer *buffer =
-      context->sourceMgr.getMemoryBuffer(locBuffer);
-
-  // Query the mojo parser for potential completion results.
-  uint64_t rawCompleteLoc =
-      completeLoc.getPointer() - buffer->getBuffer().data();
-  MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
-  std::vector<KGEN::Mojo::CodeCompletionResult> results =
-      MojoParserContext::codeComplete(*buffer, rawCompleteLoc, &mlirContext,
-                                      runtime, context->compilationOptions);
 
   // Map the Mojo results to LSP results.
   lsp::CompletionList completionList;
-  for (const KGEN::Mojo::CodeCompletionResult &it : results) {
+  for (const KGEN::Mojo::CodeCompletionResult &it :
+       onCodeCompletionSyncImpl(completeLoc)) {
     lsp::CompletionItem item;
     item.label = it.label;
     item.sortText = std::to_string(static_cast<unsigned>(it.kind));
@@ -909,33 +817,28 @@ MojoDocument::onCodeCompletionSync(SMLoc completeLoc) const {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onDefinition(
-    const lsp::Position &pos,
+    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
-  startTaskAfterParsing([pos, onDefinitionFn = std::move(onDefinitionFn)](
+  startTaskAfterParsing([uri, pos, onDefinitionFn = std::move(onDefinitionFn)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return onDefinitionFn({});
-    SMLoc loc = doc.getLocFromPos(pos);
+    SMLoc loc = doc.getLocFromPos(uri, pos);
     if (!loc.isValid())
       return onDefinitionFn({});
     onDefinitionFn(doc.onDefinitionSync(loc));
   });
 }
 
-std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) const {
+std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
   SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(loc);
   if (!symbolRef)
     return {};
 
   std::vector<lsp::Location> locations;
-  for (const Symbol *symbol : symbolRef->symbols) {
-    if (auto symbolUri =
-            getURIFromLoc(context->sourceMgr, symbol->range.Start, uri)) {
-      locations.emplace_back(*symbolUri,
-                             lsp::Range(context->sourceMgr, symbol->range));
-    }
-  }
-
+  for (const Symbol *symbol : symbolRef->symbols)
+    if (auto uri = getURIFromLoc(symbol->range.Start))
+      locations.emplace_back(*uri, lsp::Range(getSourceMgr(), symbol->range));
   return locations;
 }
 
@@ -944,20 +847,22 @@ std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) const {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onHover(
-    const lsp::Position &pos,
+    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   startTaskAfterParsing(
-      [pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
+      [uri, pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
           return onHoverFn({});
-        SMLoc loc = doc.getLocFromPos(pos);
-        onHoverFn(loc.isValid() ? doc.onHoverSync(loc) : std::nullopt);
+        SMLoc loc = doc.getLocFromPos(uri, pos);
+        if (!loc.isValid())
+          return onHoverFn({});
+        onHoverFn(doc.onHoverSync(loc));
       });
 }
 
-std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) const {
+std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
   if (auto symbolRef = context->symbolIndex.getSymbolAt(loc)) {
-    lsp::Hover hover(lsp::Range(context->sourceMgr, symbolRef->range));
+    lsp::Hover hover(lsp::Range(getSourceMgr(), symbolRef->range));
     hover.contents.kind = mlir::lsp::MarkupKind::Markdown;
     hover.contents.value = symbolRef->getMarkdownDeclaration();
     return hover;
@@ -966,59 +871,58 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) const {
 }
 
 //===----------------------------------------------------------------------===//
-// LSPParserListener
+// MojoTextDocument
 //===----------------------------------------------------------------------===//
 
-void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc) {
-  MojoASTDeclRef declRef(decl);
-  mainDoc.context->symbolIndex.registerSymbol(declRef, declRef.getName(), loc);
+MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
+                                   std::string &&contents, int64_t version,
+                                   SendDiagnosticsFnRef sendDiagnosticsFn,
+                                   LLCL::Runtime &runtime,
+                                   LLCL::AnyAsyncValueRef chain)
+    : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
+                   runtime, std::move(chain)),
+      contents(std::move(contents)) {
+  // We add the main doc to the SourceMgr here to ensure it's considered the
+  // "main" file.
+  getSourceMgr().AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBuffer(this->contents, uri.file()), SMLoc());
 }
 
-void LSPParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
+void MojoTextDocument::parseDocumentImpl() {
+  getParserContext().parseFile(getSourceMgr().getMainFileID());
 }
 
-void LSPParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
+const mlir::lsp::URIForFile &
+MojoTextDocument::getURIFromContainedLoc(llvm::SMLoc loc) {
+  return getURIs().front();
 }
 
-void LSPParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
+bool MojoTextDocument::containsLocation(SMLoc loc) {
+  return getSourceMgr().FindBufferContainingLoc(loc) ==
+         getSourceMgr().getMainFileID();
 }
 
-void LSPParserListener::onModuleDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  // We don't index the module of the main file.
-  if (!isMainFileLoc(sourceMgr, identifierLoc))
-    addSymbolDecl(decl, identifierLoc);
+llvm::SMLoc MojoTextDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
+                                            mlir::lsp::Position position) {
+  return position.getAsSMLoc(getSourceMgr());
 }
 
-void LSPParserListener::onModuleImport(ASTDecl *decl, StringRef spelling,
-                                       SMLoc loc) {
-  mainDoc.context->symbolIndex.registerRef(MojoASTDeclRef(decl), loc, spelling);
-}
+//===----------------------------------------------------------------------===//
+// MojoTextDocument: Code Completion
+//===----------------------------------------------------------------------===//
 
-void LSPParserListener::onStructFieldDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
-}
+std::vector<KGEN::Mojo::CodeCompletionResult>
+MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+  const llvm::MemoryBuffer *buffer =
+      sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
 
-void LSPParserListener::onParameterDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
-}
-
-void LSPParserListener::onStructDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
-}
-
-void LSPParserListener::onVariableDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
-}
-
-void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
-                              SMLoc loc) {
-  mainDoc.context->symbolIndex.registerRef(
-      llvm::map_to_vector(decls,
-                          [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
-      loc, spelling);
+  // Query the mojo parser for potential completion results.
+  uint64_t rawCompletePos =
+      completeLoc.getPointer() - buffer->getBuffer().data();
+  MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
+  return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
+                                         getRuntime(), getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1087,6 +991,9 @@ MojoServer::~MojoServer() { shutdown(); }
 
 void MojoServer::shutdown() { impl->shutdown(); }
 
+//===----------------------------------------------------------------------===//
+// Document Management
+
 void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
   if (impl->isShuttingDown())
@@ -1103,9 +1010,9 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   }
 
   // Create a new document.
-  it->second = MojoDocumentRef::create(uri, std::move(contents), version,
-                                       impl->sendDiagnosticsFn, *impl->runtime,
-                                       std::move(chain));
+  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
+                                           impl->sendDiagnosticsFn,
+                                           *impl->runtime, std::move(chain));
 }
 
 void MojoServer::updateDocument(
@@ -1114,10 +1021,15 @@ void MojoServer::updateDocument(
   auto it = impl->files.find(uri.file());
   if (it == impl->files.end())
     return;
+  MojoTextDocument *textDoc = dyn_cast<MojoTextDocument>(&*it->second);
+  if (!textDoc) {
+    lsp::Logger::error("Updating a non-text document: {0}", uri.file());
+    return;
+  }
 
   // Try to update the document. If we fail, erase the file from the server. A
   // failed updated generally means we've fallen out of sync somewhere.
-  std::string contents = it->second->getContents().str();
+  std::string contents = textDoc->getContents().str();
   if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
     lsp::Logger::error("Failed to update contents of {0}", uri.file());
     return removeDocument(uri);
@@ -1141,31 +1053,34 @@ void MojoServer::removeDocument(const lsp::URIForFile &uri) {
   impl->files.erase(it);
 }
 
+//===----------------------------------------------------------------------===//
+// Queries
+
 void MojoServer::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
     OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->getCodeActions(pos, context, std::move(onActionsFn));
+    doc->getCodeActions(uri, pos, context, std::move(onActionsFn));
 }
 
 void MojoServer::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
     OnResultFn<mlir::lsp::CompletionList> onCompletionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onCodeCompletion(completePos, std::move(onCompletionFn));
+    doc->onCodeCompletion(uri, completePos, std::move(onCompletionFn));
 }
 
 void MojoServer::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onDefinition(pos, std::move(onDefinitionFn));
+    doc->onDefinition(uri, pos, std::move(onDefinitionFn));
 }
 
 void MojoServer::onHover(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onHover(pos, std::move(onHoverFn));
+    doc->onHover(uri, pos, std::move(onHoverFn));
 }

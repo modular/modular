@@ -15,9 +15,11 @@ namespace M::LLCL {
 class WorkQueue;
 } // namespace M::LLCL
 
-namespace M::KGEN::LIT {
+namespace M::Mojo::LSP {
 using SendDiagnosticsFn =
     llvm::unique_function<void(const mlir::lsp::PublishDiagnosticsParams &)>;
+using SendDiagnosticsFnRef =
+    function_ref<void(const mlir::lsp::PublishDiagnosticsParams &)>;
 template <typename T>
 using OnResultFn = llvm::unique_function<void(T)>;
 
@@ -74,6 +76,6 @@ private:
   std::unique_ptr<Impl> impl;
 };
 
-} // namespace M::KGEN::LIT
+} // namespace M::Mojo::LSP
 
 #endif // KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H

@@ -19,7 +19,7 @@
 
 using namespace mlir::lsp;
 using namespace M;
-using namespace M::KGEN::LIT;
+using namespace M::Mojo::LSP;
 
 //===----------------------------------------------------------------------===//
 // LSPServer

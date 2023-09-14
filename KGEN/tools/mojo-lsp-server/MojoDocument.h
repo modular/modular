@@ -1,0 +1,316 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
+#define KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
+
+#include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "MojoServer.h"
+#include "Support/LLVMForwardDecls.h"
+#include "Support/ReferenceCounted.h"
+#include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/MapVector.h"
+
+namespace M::Mojo::LSP {
+//===----------------------------------------------------------------------===//
+// MojoDocument
+//===----------------------------------------------------------------------===//
+
+/// This class represents all of the information pertaining to a specific Mojo
+/// document.
+struct MojoDocument : public ReferenceCounted<MojoDocument> {
+public:
+  MojoDocument(const MojoDocument &) = delete;
+  MojoDocument &operator=(const MojoDocument &) = delete;
+  virtual ~MojoDocument() = default;
+
+  /// Return the version of this document.
+  int64_t getVersion() const { return version; }
+
+  /// Return the runtime used for this document.
+  LLCL::Runtime &getRuntime() const { return runtime; }
+
+  /// Return the URIs of this document.
+  ArrayRef<mlir::lsp::URIForFile> getURIs() const { return uris; }
+
+  /// Return the source manager used for this document.
+  llvm::SourceMgr &getSourceMgr() { return sourceMgr; }
+
+  /// Return the compilation options for this document.
+  const KGEN::CompilationOptions &getCompilationOptions() const;
+
+  /// Return the parser context for this document.
+  MojoParserContext &getParserContext() const;
+
+  /// Invalidate this document.
+  void invalidate();
+
+  /// Return a chain that will be ready when the document is parsed.
+  AnyAsyncValueRef getDocumentReadyChain() const {
+    return isDocumentParsed.copy();
+  }
+
+  //===--------------------------------------------------------------------===//
+  // RTTI Utilities
+  //===--------------------------------------------------------------------===//
+
+  /// The kind of document this is.
+  enum class Kind {
+    kTextDocument,
+  };
+
+  /// Return the kind of this document.
+  Kind getKind() const { return kind; }
+
+  //===--------------------------------------------------------------------===//
+  // Document Utilities
+  //===--------------------------------------------------------------------===//
+
+  /// Returns true if the document contains the given location.
+  virtual bool containsLocation(llvm::SMLoc loc) = 0;
+
+  /// Returns true if the document contains the given location.
+  virtual llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                                    mlir::lsp::Position position) = 0;
+
+  /// Return the source range from the given LSP range.
+  llvm::SMRange getLocFromPos(const mlir::lsp::URIForFile &uri,
+                              const mlir::lsp::Range &range) {
+    return llvm::SMRange(getLocFromPos(uri, range.start),
+                         getLocFromPos(uri, range.end));
+  }
+
+  /// Translate the given parser location into one usable by the language
+  /// server.
+  virtual llvm::SMLoc translateParserLoc(llvm::SMLoc loc) { return loc; }
+
+  /// Returns a language server uri for the given source location. `mainFileURI`
+  /// corresponds to the uri for the main file of the source manager.
+  std::optional<mlir::lsp::URIForFile> getURIFromLoc(llvm::SMLoc loc);
+
+  /// Returns a language server location from the given diagnostic.
+  std::optional<mlir::lsp::Location>
+  getLocationFromDiag(const llvm::SMDiagnostic &diag);
+
+  //===--------------------------------------------------------------------===//
+  // Asynchronous LSP Queries
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Code Actions
+
+  void getCodeActions(const mlir::lsp::URIForFile &uri,
+                      const mlir::lsp::Range &pos,
+                      const mlir::lsp::CodeActionContext &context,
+                      OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions);
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  void onCodeCompletion(const mlir::lsp::URIForFile &uri,
+                        const mlir::lsp::Position &completePos,
+                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
+
+  void
+  onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
+               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
+
+  void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
+               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
+
+protected:
+  MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
+               SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
+               LLCL::AnyAsyncValueRef chain);
+
+  /// A collection of MLIR and Mojo related entities used to invoke the parser.
+  /// Its lifetime is tied to that of the AST objects gotten from the parser.
+  /// It also sets up a SourceMgr with the given MojoDocument as its main file.
+  struct Context;
+
+  //===--------------------------------------------------------------------===//
+  // Derived Document Hooks
+  //===--------------------------------------------------------------------===//
+
+  /// Hook that is invoked to perform the raw document parsing process.
+  virtual void parseDocumentImpl() = 0;
+
+  /// Hook that returns the URI for the given contained location.
+  virtual const mlir::lsp::URIForFile &
+  getURIFromContainedLoc(llvm::SMLoc loc) = 0;
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  /// Hook that is invoked to perform code completion at the given position.
+  virtual std::vector<KGEN::Mojo::CodeCompletionResult>
+  onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) = 0;
+
+private:
+  /// Parse the document and populate the index based on the current contents.
+  void parseDocument();
+
+  /// Mark the current document as being finished parsing.
+  void markDocumentParsed();
+
+  /// Start a task that depends on the document being parsed.
+  template <typename FnT>
+  void startTaskAfterParsing(FnT &&fn) {
+    isDocumentParsed.andThenAsync(
+        [doc = RCRef<MojoDocument>::copy(this),
+         fn = std::forward<FnT>(fn)]() mutable { fn(*doc); });
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Synchronous LSP Queries
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Diagnostics
+
+  std::optional<mlir::lsp::Diagnostic>
+  buildLspDiagnosticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
+                                     ArrayRef<llvm::SMDiagnostic> diags,
+                                     const mlir::lsp::URIForFile &uri);
+
+  //===--------------------------------------------------------------------===//
+  // Code Actions
+
+  std::vector<mlir::lsp::CodeAction>
+  getCodeActionsSync(llvm::SMRange range,
+                     const mlir::lsp::CodeActionContext &context);
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  mlir::lsp::CompletionList onCodeCompletionSync(llvm::SMLoc completeLoc);
+
+  std::vector<mlir::lsp::Location> onDefinitionSync(llvm::SMLoc loc);
+
+  std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Static Fields
+
+  /// The following fields are always available for access and don't require
+  /// additional synchronization.
+
+  /// The kind of this document.
+  Kind kind;
+
+  /// The uri of the file.
+  SmallVector<mlir::lsp::URIForFile> uris;
+
+  /// The version of this file.
+  int64_t version = 0;
+
+  /// The function used to send diagnostics for this document.
+  SendDiagnosticsFnRef sendDiagnosticsFn;
+
+  /// The runtime used when parsing the file.
+  LLCL::Runtime &runtime;
+
+  /// A flag indicating if this document version has been invalidated.
+  std::atomic<bool> isInvalidated = false;
+
+  /// The source manager used to parse the document.
+  llvm::SourceMgr sourceMgr;
+
+  //===--------------------------------------------------------------------===//
+  // Parsed Fields
+
+  /// The following fields are only available after the document has been
+  /// parsed, when `isDocumentParsed` is ready.
+
+  /// An async value readied when the document is parsed.
+  AsyncValueRef<Chain> isDocumentParsed;
+  std::mutex isDocumentParsedMutex;
+
+  /// An ordered set of fixits for diagnostics emitted for the current version
+  /// of the file.
+  std::map<std::pair<mlir::lsp::Range, std::string>,
+           std::vector<mlir::lsp::CodeAction>>
+      fixits;
+
+  /// The overall parser context.
+  std::unique_ptr<Context> context;
+};
+
+using MojoDocumentRef = RCRef<MojoDocument>;
+
+//===----------------------------------------------------------------------===//
+// MojoTextDocument
+//===----------------------------------------------------------------------===//
+
+/// This class represents all of the information pertaining to a specific Mojo
+/// text document, i.e. a .mojo or .🔥 file.
+struct MojoTextDocument : public MojoDocument {
+public:
+  MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
+                   int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
+                   LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain);
+  MojoTextDocument(const MojoDocument &) = delete;
+  MojoTextDocument &operator=(const MojoDocument &) = delete;
+
+  /// Return the contents of this document.
+  StringRef getContents() const { return contents; }
+
+  /// Support LLVM RTTI.
+  static bool classof(const MojoDocument *doc) {
+    return doc->getKind() == Kind::kTextDocument;
+  }
+
+private:
+  //===--------------------------------------------------------------------===//
+  // Derived Document Hooks
+  //===--------------------------------------------------------------------===//
+
+  /// Hook that is invoked to perform the raw document parsing process.
+  void parseDocumentImpl() override;
+
+  /// Hook that returns the URI for the given contained location.
+  const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
+
+  /// Returns true if the document contains the given location.
+  bool containsLocation(llvm::SMLoc loc) override;
+
+  /// Returns true if the document contains the given location.
+  llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                            mlir::lsp::Position position) override;
+
+  //===--------------------------------------------------------------------===//
+  // Language Features
+
+  std::vector<KGEN::Mojo::CodeCompletionResult>
+  onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
+
+  //===--------------------------------------------------------------------===//
+  // Fields
+  //===--------------------------------------------------------------------===//
+
+  //===--------------------------------------------------------------------===//
+  // Static Fields
+
+  /// The following fields are always available for access and don't require
+  /// additional synchronization.
+
+  /// The full string contents of the file.
+  std::string contents;
+};
+
+using MojoTextDocumentRef = RCRef<MojoTextDocument>;
+
+} // namespace M::Mojo::LSP
+
+#endif // KGEN_TOOLS_MOJO_LSP_SERVER_MOJODOCUMENT_H
