@@ -171,7 +171,6 @@ StringAttr Diags::getBufferNameIdentifier() const {
 
 /// Emit an error through the parser's logic.
 InflightDiag Diags::emitError(Location loc, const Twine &message) {
-  diagnosticEmitted = errorEmitted = true;
   return InflightDiag(loc, *this, /*isWarning=*/false) << message;
 }
 
@@ -182,7 +181,6 @@ InflightDiag Diags::emitError(llvm::SMLoc loc, const Twine &message) {
 
 /// Emit a warning.
 InflightDiag Diags::emitWarning(Location loc, const Twine &message) {
-  diagnosticEmitted = true;
   return InflightDiag(loc, *this, /*isWarning=*/true) << message;
 }
 InflightDiag Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
@@ -247,6 +245,9 @@ InflightDiag::~InflightDiag() {
   if (!diags)
     return;
 
+  diags->diagnosticEmitted = true;
+  if (!isWarning)
+    diags->errorEmitted = true;
   if (diags->useMLIRDiagnostics)
     emitMLIRDiagnostic();
   else
