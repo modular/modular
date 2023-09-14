@@ -17,24 +17,18 @@
 
 using namespace M;
 
-llvm::ErrorOr<std::string> M::getLLDB(const std::string &executable) {
-  // Attempt to find an LLDB installed alongside the driver.
-  std::string str = std::filesystem::path(executable).parent_path().string();
-  return llvm::sys::findProgramByName("lldb",
-                                      /*Paths=*/ArrayRef<StringRef>(str));
+/// Returns the path to the `lldb` executable, or an error if not found.
+static ErrorOr<std::string> getLLDB(Config &config) {
+  std::error_code ec;
+  StringRef lldb = config.getValue("mojo.lldb_path");
+  if (!std::filesystem::exists(lldb.str(), ec) || ec)
+    return Error("unable to resolve the lldb path");
+  return lldb.str();
 }
 
 /// Returns the path to the MojoLLDB shared library, or an error if not found.
 /// This library implements Mojo's LLDB plugin.
-static ErrorOr<std::string> getMojoLLDB() {
-  // Read the mojo configuration.
-  ErrorOr<Config> configOr = Config::open();
-  if (failed(configOr)) {
-    return Error(Twine("failed to parse 'modular.cfg': ") +
-                 configOr.getError());
-  }
-  Config config = std::move(*configOr);
-
+static ErrorOr<std::string> getMojoLLDB(Config &config) {
   std::error_code ec;
   StringRef mojoLLDB = config.getValue("mojo.lldb_plugin_path");
   if (!std::filesystem::exists(mojoLLDB.str(), ec) || ec)
@@ -54,12 +48,18 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
   initializeTelemetry(telemetryCtx, state, args);
 
   // Find the path to the LLDB executable and the MojoLLDB plugin library.
-  std::string executable =
-      llvm::sys::fs::getMainExecutable(state.programName, (void *)M::getLLDB);
-  llvm::ErrorOr<std::string> lldb = M::getLLDB(executable);
-  if (!lldb)
-    return state.reportError("lldb must be installed alongside mojo");
-  ErrorOr<std::string> mojoLLDB = getMojoLLDB();
+  // Read the mojo configuration.
+  ErrorOr<Config> configOr = Config::open();
+  if (failed(configOr)) {
+    return state.reportError(Twine("failed to parse 'modular.cfg': ") +
+                             configOr.getError());
+  }
+
+  Config config = std::move(*configOr);
+  ErrorOr<std::string> lldb = getLLDB(config);
+  if (failed(lldb))
+    return state.reportError(lldb.getError());
+  ErrorOr<std::string> mojoLLDB = getMojoLLDB(config);
   if (failed(mojoLLDB))
     return state.reportError(mojoLLDB.getError());
 
