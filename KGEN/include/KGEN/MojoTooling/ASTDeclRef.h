@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOTOOLING_ASTDECLREF_H
 #define KGEN_MOJOTOOLING_ASTDECLREF_H
 
+#include "KGEN/MojoParser/ASTType.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -16,6 +17,7 @@
 
 namespace M {
 namespace KGEN::LIT {
+class ASTDecl;
 class SharedState;
 } // namespace KGEN::LIT
 
@@ -29,7 +31,7 @@ class MojoASTTypeRef;
 /// This class provides a view into a Mojo AST declaration.
 class MojoASTDeclRef {
 public:
-  MojoASTDeclRef(void *impl = nullptr) : impl(impl) {}
+  MojoASTDeclRef(KGEN::LIT::ASTDecl *decl = nullptr) : decl(decl) {}
 
   /// Returns the operation corresponding to this decl if there is one, nullptr
   /// otherwise. The returned operation should only be used for introspection,
@@ -37,11 +39,11 @@ public:
   Operation *getIfOperation() const;
 
   /// Returns if the AST declaration is valid.
-  operator bool() const { return impl != nullptr; }
+  operator bool() const { return decl != nullptr; }
 
-  /// Returns the underlying pointer to the implementation backed by this class.
-  /// It can be used as a unique ID for this declaration.
-  void *getAsVoidPointer() const { return impl; }
+  /// Access the underlying AST decl.
+  KGEN::LIT::ASTDecl &operator*() { return *decl; }
+  KGEN::LIT::ASTDecl *operator->() { return decl; }
 
   /// Returns the type corresponding to this declaration. If not availble, this
   /// returns an invalid `MojoASTTypeRef`.
@@ -79,8 +81,8 @@ public:
 
     /// Return the declarations within this entry.
     auto getDecls() const {
-      return llvm::map_range(rawEntries, [](const void *entry) {
-        return MojoASTDeclRef(const_cast<void *>(entry));
+      return llvm::map_range(rawEntries, [](KGEN::LIT::ASTDecl *entry) {
+        return MojoASTDeclRef(entry);
       });
     }
 
@@ -88,20 +90,21 @@ public:
     friend MojoASTDeclRef;
 
     /// Constructs a new child entry.
-    ChildEntry(StringRef name, ArrayRef<void *> rawEntries)
+    ChildEntry(StringRef name, ArrayRef<KGEN::LIT::ASTDecl *> rawEntries)
         : name(name), rawEntries(rawEntries) {}
 
     /// The name of this entry.
     StringRef name;
 
     /// The raw entry array.
-    ArrayRef<void *> rawEntries;
+    ArrayRef<KGEN::LIT::ASTDecl *> rawEntries;
   };
 
   /// This class defines an iterator over the children of a declaration.
   class ChildIterator
-      : public llvm::indexed_accessor_iterator<
-            ChildIterator, const void *, ChildEntry, ChildEntry, ChildEntry> {
+      : public llvm::indexed_accessor_iterator<ChildIterator,
+                                               KGEN::LIT::ASTDecl *, ChildEntry,
+                                               ChildEntry, ChildEntry> {
   public:
     /// Accesses the entry at the current position.
     ChildEntry operator*() const;
@@ -117,11 +120,11 @@ public:
   llvm::iterator_range<ChildIterator> getChildren() const;
 
 private:
-  /// Allow MojoParserContext to access the internal implementation.
+  /// Allow MojoParserContext to access the internal impl.
   friend class MojoParserContext;
 
-  /// The internal implementation of the AST declaration.
-  void *impl;
+  /// The ASTDecl being referenced.
+  KGEN::LIT::ASTDecl *decl;
 };
 
 //===----------------------------------------------------------------------===//
@@ -132,11 +135,12 @@ private:
 class MojoASTTypeRef {
 public:
   MojoASTTypeRef() : MojoASTTypeRef(nullptr) {}
-  MojoASTTypeRef(void *impl) : impl(impl){};
-  MojoASTTypeRef(const mlir::Type &type);
+  MojoASTTypeRef(KGEN::LIT::ASTType type) : type(type){};
+  MojoASTTypeRef(Type type) : type(type) {}
+  MojoASTTypeRef(const void *impl) : type(Type::getFromOpaquePointer(impl)) {}
 
   /// Returns if the AST declaration is valid.
-  operator bool() const { return impl != nullptr; }
+  operator bool() const { return bool(type); }
 
   /// Returns a readable string representation of this type.
   std::string getAsString() const;
@@ -148,10 +152,6 @@ public:
   /// Return the MLIR type associated with this
   Type getMLIRType() const;
 
-  /// Returns the underlying pointer to the implementation backed by this class.
-  /// It can be used as a unique ID for this declaration.
-  void *getAsVoidPointer() const { return impl; }
-
 private:
   // Return the decl that defined this type.
   MojoASTDeclRef getDecl(KGEN::LIT::SharedState &sharedState);
@@ -160,7 +160,7 @@ private:
   friend class MojoParserContext;
 
   /// The internal implementation of the AST type.
-  void *impl;
+  KGEN::LIT::ASTType type;
 };
 
 } // namespace M

@@ -17,7 +17,6 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"

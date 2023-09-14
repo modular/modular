@@ -32,7 +32,7 @@ struct MojoTypeDataLayoutContext::Impl {
   std::optional<MojoTypeDataLayout>
   calculateForStruct(MojoASTTypeRef type, LIT::StructDeclOp structOp);
 
-  DenseMap<const void *, std::optional<MojoTypeDataLayout>> cache;
+  DenseMap<Type, std::optional<MojoTypeDataLayout>> cache;
   MojoParserContext &context;
   TargetInfoAttr targetInfo;
 };
@@ -61,8 +61,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
 
     uint64_t fieldOffset = llvm::alignTo(size, fieldLayout->getAlignment());
     layout.addField({fieldOffset, fieldLayout->getByteSize(),
-                     fieldLayout->getAlignment(),
-                     fieldType.getAsVoidPointer()});
+                     fieldLayout->getAlignment(), fieldType});
     size = fieldOffset + fieldLayout->getByteSize();
     align = std::max(align, fieldLayout->getAlignment());
   }
@@ -73,10 +72,10 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
 
 const std::optional<MojoTypeDataLayout> &
 MojoTypeDataLayoutContext::Impl::getOrCalculate(MojoASTTypeRef type) {
-  auto it = cache.find(type.getAsVoidPointer());
+  auto it = cache.find(type.getMLIRType());
   if (it != cache.end())
     return it->second;
-  auto ret = cache.try_emplace(type.getAsVoidPointer(), calculate(type));
+  auto ret = cache.try_emplace(type.getMLIRType(), calculate(type));
   return ret.first->second;
 }
 
