@@ -24,6 +24,7 @@ import {
 import * as YAML from 'yaml';
 
 import {LoggingService} from '../logging';
+import {DisposableContext} from '../utils/disposableContext';
 
 /**
  * URI-based debug launcher.
@@ -120,20 +121,26 @@ export class UriLaunchServer implements UriHandler {
  * It listens for network messages containing full JSON debug configurations and
  * launches them using lldb-vscode.
  */
-export class RpcLaunchServer {
+export class RpcLaunchServer extends DisposableContext {
   private inner: net.Server;
   private token: string|undefined;
   private errorEmitter = new EventEmitter<Error>();
   readonly workspaceFolder: vscode.WorkspaceFolder|undefined;
+  private loggingService: LoggingService;
 
   /**
    * This constructor receives an optional token, which is expected to match the
    * `token` attribute from the incoming debug configuration requests as a
    * safety mechanism.
    */
-  constructor(workspaceFolder: vscode.WorkspaceFolder|undefined,
+  constructor(loggingService: LoggingService,
+              workspaceFolder: vscode.WorkspaceFolder|undefined,
               options: {token?: string}) {
+    super();
+    this.loggingService = loggingService;
     this.workspaceFolder = workspaceFolder;
+    this.pushSubscription(this.errorEmitter.event(
+        (e: Error) => {this.loggingService.logError("RPC Server error", e)}));
     this.token = options.token;
     this.inner = net.createServer({allowHalfOpen : true});
     this.inner.on('error', err => this.errorEmitter.fire(err));
@@ -187,7 +194,10 @@ export class RpcLaunchServer {
   }
 
   /**
-   * Closes the server.
+   * Closes and disposes the server.
    */
-  public close() { this.inner.close(); }
+  public dispose() {
+    this.inner.close();
+    super.dispose();
+  }
 }
