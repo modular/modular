@@ -2564,15 +2564,14 @@ public:
     // IR, we must evaluate compile-time expressions, which is a target-specific
     // operation. Make the IR target-specific by attaching the required target
     // specification.
-    if (TargetInfoAttr tgt = getTargetInfo(theModule)) {
-      if (tgt != target) {
-        mlir::emitError(theModule->getLoc(), "target did not match, expected ")
-            << target << " but got " << tgt;
-        return signalPassFailure();
-      }
-    } else {
+    if (TargetInfoAttr targetInfo = getTargetInfo(theModule))
+      target = targetInfo;
+    else
       setTargetInfo(theModule, target);
-    }
+    if (BuildInfoAttr buildInfo = getBuildInfo(theModule))
+      build = buildInfo;
+    else
+      setBuildInfo(theModule, build);
 
     // If the module is missing an environment attribute, set an empty one.
     if (!theModule->hasAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())) {
