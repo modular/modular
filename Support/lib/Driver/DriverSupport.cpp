@@ -31,10 +31,18 @@ M::openMojoInputFile(StringRef path) {
         "(it does not end in '.mojo' or '.🔥')",
         path));
 
+  std::error_code ec;
+  std::filesystem::path fullPath = std::filesystem::absolute(path.str(), ec);
+  if (ec) {
+    return Error(
+        llvm::formatv("failed to resolve the absolute path for '{0}': {1}",
+                      path.str(), ec.message()));
+  }
+
   // Open the input file, or exit with an error.
   std::string inputError;
   std::unique_ptr<llvm::MemoryBuffer> buffer =
-      mlir::openInputFile(path, &inputError);
+      mlir::openInputFile(fullPath.string(), &inputError);
   if (!buffer)
     return Error(inputError);
 

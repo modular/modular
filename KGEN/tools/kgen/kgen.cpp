@@ -80,8 +80,15 @@ ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
     mgr.AddNewSourceBuffer(openInputFileOrExit(), llvm::SMLoc());
 
   for (StringRef in : inputFiles) {
+    std::error_code ec;
+    std::filesystem::path fullPath = std::filesystem::absolute(in.str(), ec);
+    if (ec) {
+      return Error(
+          llvm::formatv("failed to resolve the absolute path for '{0}': {1}",
+                        in.str(), ec.message()));
+    }
     std::string errorMsg;
-    auto result = mlir::openInputFile(in, &errorMsg);
+    auto result = mlir::openInputFile(fullPath.string(), &errorMsg);
     if (!result)
       return Error(errorMsg);
 
