@@ -75,7 +75,7 @@ SF(kMatmul  , "__matmul__"  , 2, kMatMul,   kInstMethod)
 SF(kTrueDiv , "__truediv__" , 2, kTrueDiv,  kInstMethod)
 SF(kFloorDiv, "__floordiv__", 2, kFloorDiv, kInstMethod)
 SF(kMod     , "__mod__"     , 2, kMod,      kInstMethod)
-// TODO: pow has 3 arguments: __pow__(base, exp[, mod])
+// TODO(#21428): pow has 3 arguments: __pow__(base, exp[, mod])
 // Only the two-argument form pow(base, exp) is equivalent
 // to using the power operator: base ** exp. Once we have default parameters
 // we can support mod=None, but for now we keep it as 2 arguments definition.
@@ -109,7 +109,7 @@ SF(kIMatmul  , "__imatmul__"  , 2, kIMatMul,   kAllowByRefSelfInstMethod|kNoneRe
 SF(kITrueDiv , "__itruediv__" , 2, kITrueDiv,  kAllowByRefSelfInstMethod|kNoneResult)
 SF(kIFloorDiv, "__ifloordiv__", 2, kIFloorDiv, kAllowByRefSelfInstMethod|kNoneResult)
 SF(kIMod     , "__imod__"     , 2, kIMod,      kAllowByRefSelfInstMethod|kNoneResult)
-// TODO: ipow has 3 arguments: __ipow__(base, exp[, mod])
+// TODO(#21428): ipow has 3 arguments: __ipow__(base, exp[, mod])
 // Only the two-argument form pow(base, exp) is equivalent
 // to using the power operator: base ** exp. Once we have default parameters
 // we can support mod=None, but for now we keep it as 2 arguments definition.
