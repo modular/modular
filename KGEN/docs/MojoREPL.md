@@ -231,8 +231,6 @@ is a potential foot-gun that devs should be aware of.
   this is unspecified, the kernel simply logs to the stderr.
 - `MOJO_JUPYTER_JSON_LOGS`: Setting this will cause the jupyter notebook kernel
   to produce logs in JSON format instead of plain text.
-- `MOJO_REPL_VERBOSE_LOG`: Setting that will enable `DumpIR` and `DebugLog` log
-  messages. See more in the `Logging` section.
 
 ## Debugging Compiler Issues
 
@@ -329,11 +327,11 @@ is by emitting events to the LLDB event handler interface.
 The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
 
 - `BroadcastUserMessage` events are flushed to the user's stderr immediately.
-- `DebugLog` events are buffered internally until either a `FlushDebugAndIRDump`
-  or an `ErrorLog` are sent.
-- `DumpIR` events are treated the same as `DebugLog`.
+- `DebugLog` events are only flushed when the `expr` LLDB log channel is
+  enabled via `:log enable lldb expr`.
+- `DumpIR` events are only flushed when the `expr` LLDB log channel is enabled
+  in verbose mode via `:log enable lldb expr -v`.
 - `ErrorLog` events are flushed immediately.
-- `CrashLog` events are flushed immediately.
 
 Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements the
 behavior above. A new user can do whatever they want with the various events as
@@ -343,11 +341,9 @@ Feel free to add more event kinds as is appropriate - event kinds ending with
 `Message` are shown to the user in the notebook, while event kinds ending in
 `Log` are not shown to the user.
 
-Lastly, in order to enable the `DumpIR` and `DebugLog` logs, you need to set the
-environment variable `MOJO_REPL_VERBOSE_LOG` or issue the LLDB command
-`:log enable lldb expr`. You can also execute the LLDB command
-`:log enable lldb expr -f /tmp/logs.txt` to output the logs to a file for
-easier debugging.
+Lastly, as a troublshooting aid you can pass the `-f /tmp/logs.txt` option to
+the `:log enable lldb expr` command to output the logs to a file for easier
+inspection.
 
 #### MojoJupyter Log Format
 
@@ -358,7 +354,7 @@ you'll see in the jupyter kernel logs is:
 {
   // `|` separated list of event kinds. Each log event can be more than one
   // kind.
-  "type": "DebugLog|DumpIR|ErrorLog|BroadcastUserMessage",
+  "type": "BroadcastUserMessage|DebugLog|DumpIR|ErrorLog",
   "message": "<log message>"
 }
 ```
@@ -377,8 +373,7 @@ please document them here!
 
 Current Mojo commands:
 
-- `:mojo dump-logs` - This command sends a `FlushIRAndDebugLog` event, which
-  instructs the various clients to flush their debug log caches immediately.
+- `:mojo help` - This command prints out a REPL help text.
 
 ### Testing
 

@@ -83,18 +83,13 @@ public:
     /// users when not using the CLI.
     eBroadcastUserMessage = (1u << 0),
     /// An IR dump that we are emitting for debug purposes. This will not be
-    /// flushed to stderr unless `eFlushToStderr` is produced.
+    /// emitted unless verbose logs are enabled.
     eDumpIR = (1u << 1),
     /// A debug log message. This will not be flushed to stderr unless
     /// `eFlushToStderr` is produced.
     eDebugLog = (1u << 2),
-    /// A signal that the plugin should flush its IR and log buffers to the
-    /// stderr.
-    eFlushIRAndDebugLog = (1u << 3),
     /// A log message that we should always flush to the stderr.
     eErrorLog = (1u << 4),
-    /// A log message that we show on a crash.
-    eCrashLog = (1u << 5),
     /// A mask that we can use to listen for all MojoTypeSystem messages.
     eAllMessagesMask = (1u << 6) - 1,
   };
@@ -119,9 +114,6 @@ public:
     debugLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
   }
 
-  /// Flush the debug logs.
-  void flushIRDumpAndDebugLog();
-
   /// Log an error message, copying the underlying bytes into the Event object
   /// (to avoid lifetime issues).
   void errorLog(StringRef message);
@@ -129,15 +121,6 @@ public:
   template <typename... Args>
   void errorLog(StringRef fmt, Args &&...args) {
     errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
-  }
-
-  /// Log an error message, copying the underlying bytes into the Event object
-  /// (to avoid lifetime issues).
-  void crashLog(StringRef message);
-  /// Use llvm::formatv to log a message.
-  template <typename... Args>
-  void crashLog(StringRef fmt, Args &&...args) {
-    crashLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
   }
 
   /// Broadcast the diagnostics within the given diagnostic manager. An optional
@@ -150,18 +133,12 @@ public:
   /// that want different behavior are encouraged to provide their own handler.
   /// The behavior of this function is to:
   ///  - Send eBroadcastUserMessage to `sendUserOutput`
-  ///  - Send eIRMessage to `debugMessageCache`
   ///  - Treat eDebugMessage same as eIRMessage
-  ///  - On eFlushToStderr flush `debugMessageCache` to `reportMessage`
   ///  - Send eErrorMessage to `reportMessage`
-  /// `debugMessageCache` is capped at a static number of the most recent items.
-  /// The first argument to `reportMessage` is the string-ified version of the
-  /// message kind.
-  static void handleEvent(
-      const lldb::EventSP &event,
-      std::deque<std::pair<MessageKind, std::string>> &debugMessageCache,
-      function_ref<void(StringRef, StringRef)> reportMessage,
-      function_ref<void(StringRef)> sendUserOutput);
+  static void
+  handleEvent(const lldb::EventSP &event,
+              function_ref<void(StringRef, StringRef)> reportMessage,
+              function_ref<void(StringRef)> sendUserOutput);
 
   //===--------------------------------------------------------------------===//
   // Dumping

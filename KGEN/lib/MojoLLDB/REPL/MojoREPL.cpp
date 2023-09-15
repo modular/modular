@@ -79,8 +79,7 @@ void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
   lldb::EventSP event;
   while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
     // Handle the mojo type system events by logging them to error stream.
-    MojoTypeSystem::handleEvent(event, debugMessages, reportMessage,
-                                sendUserOutput);
+    MojoTypeSystem::handleEvent(event, reportMessage, sendUserOutput);
   }
 
   if (lldb::ProcessSP process = target->GetProcessSP()) {

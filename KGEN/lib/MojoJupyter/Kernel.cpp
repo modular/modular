@@ -116,11 +116,6 @@ public:
 
     /// The string identifier of the cell.
     std::string id;
-
-    /// This is a list of debug messages that we'll only flush to the kernel's
-    /// stderr if we are told to do so.
-    std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>>
-        debugMessages;
   };
 
   /// This struct represents a single expression evaluation request. It is used
@@ -542,9 +537,9 @@ void MojoKernel::flushLLDBStreams() {
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
   while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-    MojoTypeSystem::handleEvent(
-        event, executionState->cellState.debugMessages, reportMessage,
-        [&](StringRef msg) { sendOutput("stderr", msg); });
+    MojoTypeSystem::handleEvent(event, reportMessage, [&](StringRef msg) {
+      sendOutput("stderr", msg);
+    });
     event->Clear();
   }
 
