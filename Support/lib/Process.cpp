@@ -10,6 +10,11 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
 
+#ifdef __APPLE__
+#include <mach/mach_init.h>
+#include <mach/task.h>
+#endif // __APPLE__
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
