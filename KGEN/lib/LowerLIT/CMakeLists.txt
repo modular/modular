@@ -9,7 +9,6 @@ add_modular_library(LowerLIT
   CheckRecursiveStructs.cpp
   ConstraintReduction.cpp
   ConstraintSet.cpp
-  LowerClosures.cpp
   LowerLIT.cpp
   LowerPreElaboratedLIT.cpp
   LowerSemanticCF.cpp
