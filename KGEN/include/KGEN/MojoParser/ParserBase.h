@@ -118,11 +118,22 @@ public:
     return consumedToken;
   }
 
+  Token consumeIdentifier() {
+    Token consumedToken = getToken();
+    assert(consumedToken.isIdentifier() && "consumed an unexpected token");
+    consumeToken();
+    return consumedToken;
+  }
+
   /// Consume the specified token if present and return success.  On failure,
   /// output a diagnostic and return failure. If `loc` is set, it is populated
   /// with the source location of the token.
   ParseResult parseToken(Token::Kind expectedToken, const Twine &message,
                          SMLoc *loc = nullptr);
+
+  /// Consume an identifier token. If `loc` is set, it is populated with the
+  /// source location of the token.
+  ParseResult parseIdentifier(const Twine &message, SMLoc *loc = nullptr);
 
   /// Consume an identifier token, binding its name into the specified result
   /// string attribute. If `loc` is set, it is populated with the source

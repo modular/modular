@@ -922,11 +922,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // FIXME: This needs to parse this as a target expression and then handle it
   // like a destructuring pattern.
   SMLoc targetLoc;
-  if (!consumeIf(Token::kw__, &targetLoc)) {
-    if (parseToken(Token::identifier, "expected identifier for target in 'for'",
-                   &targetLoc))
+  if (!consumeIf(Token::kw__, &targetLoc))
+    if (parseIdentifier("expected identifier for target in 'for'", &targetLoc))
       return failure();
-  }
   if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
                                "that target lists are not yet supported."))
     return failure();
@@ -1065,11 +1063,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
     // Parse an optional identifier to bind the error.
     StringAttr errName;
-    if (getToken().is(Token::identifier)) {
-      Token idTok = consumeToken(Token::identifier);
-      errName = StringAttr::get(getContext(), idTok.getSpelling());
-      errValLoc = idTok.getLoc();
-    }
+    if (getToken().isIdentifier())
+      (void)parseIdentifier(errName, "<this can't fail>", &errValLoc);
 
     if (parseToken(Token::colon, "expected ':' after 'except'"))
       return failure();
@@ -1194,8 +1189,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   ValueDest enterDest(EC_WithContextMgr);
   if (consumeIf(Token::kw_as, &asLoc)) {
     StringAttr name = StringAttr::get(getContext(), getToken().getSpelling());
-    if (parseToken(Token::identifier,
-                   "expected identifier for target in 'with'", &targetLoc))
+    if (parseIdentifier("expected identifier for target in 'with'", &targetLoc))
       return failure();
     ArrayRef<ASTDecl *> decls = curDeclScope->lookupInCurrentScope(name);
     if (!useLexicalScope && !decls.empty()) {
@@ -1588,8 +1582,8 @@ ParseResult StmtParser::parseFromImportStmt() {
     // Parse the next construct to import.
     SMLoc importSourceNameLoc = getToken().getLoc();
     StringRef importSourceName = getTokenSpelling();
-    bool missingIdentifier = failed(
-        parseToken(Token::identifier, "expected construct name to import"));
+    bool missingIdentifier =
+        failed(parseIdentifier("expected construct name to import"));
     notifyListenerOfImport();
 
     // If there was no identifier, then we're done.
@@ -1600,8 +1594,8 @@ ParseResult StmtParser::parseFromImportStmt() {
     if (consumeIf(Token::kw_as)) {
       importDestName = getTokenSpelling();
       importDestLoc = getToken().getLoc();
-      if (parseToken(Token::identifier,
-                     "expected name to import '" + importSourceName + "' as"))
+      if (parseIdentifier("expected name to import '" + importSourceName +
+                          "' as"))
         return failure();
     }
 
@@ -1652,7 +1646,7 @@ ParseResult StmtParser::parseImportStmt() {
     if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
       boundModuleLocAttr = translateLocation(getToken().getLoc());
-      if (parseToken(Token::identifier, "expected name to bind import"))
+      if (parseIdentifier("expected name to bind import"))
         return failure();
     }
 
@@ -1716,8 +1710,7 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
 
   // Parse the first module name.
   StringRef rootModuleName = getTokenSpelling();
-  bool missingIdentifier =
-      failed(parseToken(Token::identifier, "expected module name"));
+  bool missingIdentifier = failed(parseIdentifier("expected module name"));
   notifyListenerOfImport();
 
   // If there was no identifier, then we're done.
@@ -1730,7 +1723,7 @@ ParseResult StmtParser::parseImportModuleName(bool allowRelativeModules,
     notifyListenerOfImport();
 
     moduleNames.push_back(getTokenSpelling());
-    if (parseToken(Token::identifier, "expected module name"))
+    if (parseIdentifier("expected module name"))
       return failure();
   }
 

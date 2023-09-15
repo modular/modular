@@ -1312,7 +1312,7 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
   // If the client supports function effects, parse them as well.
   if (fnEffects) {
     // Parse other function effects.
-    while (p.getToken().is(Token::identifier)) {
+    while (p.getToken().isIdentifier()) {
       SMLoc loc = p.getToken().getLoc();
       StringRef spelling = p.getToken().getSpelling();
 
@@ -1334,7 +1334,7 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
             << spelling << "', expected 'raises' or 'capturing'";
       }
 
-      p.consumeToken(Token::identifier);
+      p.consumeIdentifier();
     }
   }
 
@@ -3170,8 +3170,8 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
   // Parse the type if present.
   if (p.parseToken(Token::kw_alias, "internal error: checked by stmt parser") ||
-      p.parseToken(Token::identifier, "internal error: checked by stmt parser",
-                   &identifierLoc))
+      p.parseIdentifier("internal error: checked by stmt parser",
+                        &identifierLoc))
     return failure();
 
   ASTType type;
@@ -3313,8 +3313,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
-      p.parseToken(Token::identifier, "internal error: checked by stmt parser",
-                   &identifierLoc) ||
+      p.parseIdentifier("internal error: checked by stmt parser",
+                        &identifierLoc) ||
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
                                       resultParamDecls, paramVarArgs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
@@ -3741,8 +3741,8 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   SMLoc identifierLoc;
   // Parse the type if present.
   p.consumeToken(); // let or var.
-  if (p.parseToken(Token::identifier, "internal error: checked by stmt parser",
-                   &identifierLoc) ||
+  if (p.parseIdentifier("internal error: checked by stmt parser",
+                        &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
     return failure();
