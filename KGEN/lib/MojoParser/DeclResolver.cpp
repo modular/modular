@@ -2768,11 +2768,10 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       emitter.builder = b;
       ValueDest resultDest(SLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
-      ExprNode *noneExpr = shared.allocPersistent<SimpleLiteralNode>(
-          ExprNode::kNoneLiteral, funcDecl.getLoc());
+      SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
-          objType, {}, noneExpr, CallSyntax::kImplicitConvert, resultDest);
-      if (!result || !emitter.emitResult(result, noneExpr, resultDest))
+          objType, {}, &locExpr, CallSyntax::kImplicitConvert, resultDest);
+      if (!result || !emitter.emitResult(result, &locExpr, resultDest))
         resultDest.resetForError();
       else
         makeNoneReturn();
