@@ -1400,3 +1400,50 @@ fn test_kw_args_overload():
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: !MyInt {{.*}}value = 8
     # CHECK: kgen.call @{{.*}}@"overloaded_kw_arg({{.*}}::Int,{{.*}}::MyInt)"(%[[A]], %[[B]])
     overloaded_kw_arg(b=MyInt(8), a=5)
+
+
+fn take_kw_param_infer[A: AnyType, B: AnyType](a: A, b: B):
+    pass
+
+
+# COM: test parametric overload in the presence of keyword operands.
+fn take_kw_param_infer[B: AnyType](a: StringLiteral, b: B):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_kw_args_param_infer()"
+fn test_kw_args_param_infer():
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
+    # CHECK: kgen.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    take_kw_param_infer(1, b=3.14)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
+    # CHECK: kgen.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    take_kw_param_infer(a=1, b=3.14)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
+    # CHECK: kgen.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    take_kw_param_infer[Int, FloatLiteral](a=1, b=3.14)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
+    # CHECK: kgen.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    take_kw_param_infer(b=3.14, a=1)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 1
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value: scalar<f64> = "3.14
+    # CHECK: kgen.call @{{.*}}@"take_kw_param_infer[AnyType,AnyType]{{.*}}"<:type !Int, :type !FloatLiteral>(%[[A]], %[[B]])
+    take_kw_param_infer[Int](b=3.14, a=1)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
+    # CHECK: kgen.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
+    take_kw_param_infer("hello", b=3)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value: string = "hello"
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
+    # CHECK: kgen.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
+    take_kw_param_infer(b=3, a="hello")
