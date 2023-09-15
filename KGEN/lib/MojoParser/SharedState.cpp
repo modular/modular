@@ -307,7 +307,7 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
 
   // Add a declarations for builtin types.
   impl->noneType = LIT::NoneType::get(context);
-  impl->noneAttr = NoneAttr::get(context);
+  impl->noneAttr = LIT::NoneAttr::get(context);
 
   // Make the type check error type.  Anything that references this will
   // considering it erroneous and already declared as such.
@@ -1798,7 +1798,7 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
   if (!existing) {
     StringAttr name = ClosureEmitter::getClosureNameFromType(
         "_CW_", fileModuleOp, signatureType);
-    ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
+    ClosureEmitter emitter(fileModuleOp, *this);
     existing = emitter.createClosureWrapperStructDecl(name, signatureType);
     impl->closureWrappers[key] = existing;
   }
@@ -1808,7 +1808,7 @@ SharedState::getOrGenerateClosureWrapperStruct(llvm::SMLoc location,
 LIT::StructDeclOp
 SharedState::replaceNestedFunctionWithGeneratedClosureImplStruct(
     llvm::SMLoc location, ASTDecl &nestedFunc, FileModuleOp fileModuleOp) {
-  ClosureEmitter emitter(fileModuleOp, getNoneType(), *this);
+  ClosureEmitter emitter(fileModuleOp, *this);
   return emitter.replaceNestedFunctionWithClosureImplStructDecl(
       location, nestedFunc, *this->impl);
 }

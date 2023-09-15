@@ -2368,7 +2368,7 @@ static Value emitClosureInstance(SignatureType closureSignature,
       shared.replaceNestedFunctionWithGeneratedClosureImplStruct(
           location, nestedFunctionDecl, fileModuleOp);
   ClosureEmitter emitter(closureWrapper->getParentOfType<FileModuleOp>(),
-                         shared.getNoneType(), shared);
+                         shared);
   emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, location);
 
   // Create an instance of the closure implementation in the parent function
@@ -2742,7 +2742,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
 
   auto makeNoneReturn = [&] {
     // The function returns none.
-    Value retVal = b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>());
+    Value retVal = b.create<ParamConstantOp>(shared.getNoneAttr());
 
     // Wrap the result value if necessary.
     if (func.isThrows())
