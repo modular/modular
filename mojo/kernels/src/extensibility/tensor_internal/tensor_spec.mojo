@@ -87,6 +87,36 @@ struct TensorSpec:
         existing.shape = TensorShape()
 
     @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two values are the same and False otherwise.
+
+        Args:
+          other: The other TensorSpec to compare against.
+
+        Returns:
+          True if the two specs are the same and False otherwise.
+        """
+
+        return (
+            _as_rep16(self.shape._rep).auxillary
+            == _as_rep16(other.shape._rep).auxillary
+            and self.shape == other.shape
+        )
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two values are not the same and False otherwise.
+
+        Args:
+          other: The other TensorSpec to compare against.
+
+        Returns:
+          True if the two specs are the not the same and False otherwise.
+        """
+
+        return not (self == other)
+
+    @always_inline
     fn __getitem__(self, index: Int) -> Int:
         """Gets the dimension at the specified index.
 

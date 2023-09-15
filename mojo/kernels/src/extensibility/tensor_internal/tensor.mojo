@@ -151,6 +151,34 @@ struct Tensor[dtype: DType]:
         existing._ptr = DTypePointer[dtype]()
 
     @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two tensors are the same and False otherwise.
+
+        Args:
+          other: The other Tensor to compare against.
+
+        Returns:
+          True if the two tensors are the same and False otherwise.
+        """
+        if self._spec != other._spec:
+            return False
+
+        return memcmp(self.data(), other.data(), self.num_elements()) == 0
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two tensors are not the same and False otherwise.
+
+        Args:
+          other: The other Tensor to compare against.
+
+        Returns:
+          True if the two tensors are the not the same and False otherwise.
+        """
+
+        return not (self == other)
+
+    @always_inline
     fn data(self) -> DTypePointer[dtype]:
         """Gets the underlying Data pointer to the Tensor.
 

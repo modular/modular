@@ -16,6 +16,7 @@ from tensor import TensorShape
 
 from sys.info import is_little_endian, sizeof
 
+from math import min
 from memory import memcpy
 from memory.unsafe import DTypePointer, Pointer
 
@@ -100,6 +101,38 @@ struct _Rep16:
             rank: 0,
             auxillary: 0,
         }
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two values are the same and False otherwise.
+
+        Args:
+          other: The other _Rep16 to compare against.
+
+        Returns:
+          True if the two shapes are the same and False otherwise.
+        """
+        if self.get_rank() != other.get_rank():
+            return False
+
+        for i in range(self.get_rank()):
+            if self[i] != other[i]:
+                return False
+
+        return True
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two values are not the same and False otherwise.
+
+        Args:
+          other: The other _Rep16 to compare against.
+
+        Returns:
+          True if the two shapes are the not the same and False otherwise.
+        """
+
+        return not (self == other)
 
     @always_inline
     fn get_rank(self) -> Int:
@@ -197,6 +230,41 @@ struct _Rep32:
             rank: 0,
             auxillary: 0,
         }
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two values are the same and False otherwise.
+
+        Args:
+          other: The other _Rep32 to compare against.
+
+        Returns:
+          True if the two shapes are the same and False otherwise.
+        """
+        if self.get_rank() != other.get_rank():
+            return False
+
+        for i in range(min(self.get_rank(), 3)):
+            if self.dims012[i] != other.dims012[i]:
+                return False
+
+        if self.get_rank() > 3 and self.dim3 != other.dim3:
+            return False
+
+        return True
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two values are not the same and False otherwise.
+
+        Args:
+          other: The other _Rep32 to compare against.
+
+        Returns:
+          True if the two shapes are the not the same and False otherwise.
+        """
+
+        return not (self == other)
 
     @always_inline
     fn get_rank(self) -> Int:
@@ -315,6 +383,34 @@ struct _RepOutOfLine:
             rank: 0,
             auxillary: 0,
         }
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two values are the same and False otherwise.
+
+        Args:
+          other: The other _RepOutOfLine to compare against.
+
+        Returns:
+          True if the two shapes are the same and False otherwise.
+        """
+        if self.get_rank() != other.get_rank():
+            return False
+
+        return memcmp(self.dims, other.dims, self.get_rank()) == 0
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two values are not the same and False otherwise.
+
+        Args:
+          other: The other _RepOutOfLine to compare against.
+
+        Returns:
+          True if the two shapes are the not the same and False otherwise.
+        """
+
+        return not (self == other)
 
     @always_inline
     fn get_rank(self) -> Int:
@@ -739,6 +835,51 @@ struct TensorShape:
           True if the representation is out of line and False otherwise.
         """
         return self._get_rep_kind() == _RepKind.KIND_OUT_OF_LINE
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Returns True if the two values are the same and False otherwise.
+
+        Args:
+          other: The other TensorShape to compare against.
+
+        Returns:
+          True if the two shapes are the same and False otherwise.
+        """
+        if self.rank() != other.rank():
+            return False
+
+        # If the two representations match, then we can do a quick check.
+        if self._get_rep_kind() == other._get_rep_kind():
+            let rep_kind = self._get_rep_kind()
+            if rep_kind == _RepKind.KIND_16:
+                return _as_rep16(self._rep) == _as_rep16(other._rep)
+            if rep_kind == _RepKind.KIND_32:
+                return _as_rep32(self._rep) == _as_rep32(other._rep)
+            if rep_kind == _RepKind.KIND_OUT_OF_LINE:
+                return _as_rep_out_of_line(self._rep) == _as_rep_out_of_line(
+                    other._rep
+                )
+
+        # Otherwise, we check if the dimentions match.
+        for i in range(self.rank()):
+            if self[i] != other[i]:
+                return False
+
+        return True
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Returns True if the two values are not the same and False otherwise.
+
+        Args:
+          other: The other TensorShape to compare against.
+
+        Returns:
+          True if the two shapes are the not the same and False otherwise.
+        """
+
+        return not (self == other)
 
     @always_inline
     fn rank(self) -> Int:
