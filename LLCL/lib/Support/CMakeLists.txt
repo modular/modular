@@ -33,4 +33,4 @@ add_modular_library(LLCLSupport
   ThreadAffinity.cpp
   UnknownLocationDecoder.cpp
   )
-target_link_libraries(LLCLSupport PUBLIC ${LIBS})
+target_link_libraries(LLCLSupport PUBLIC ${LIBS} MThreading)

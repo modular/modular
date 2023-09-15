@@ -9,7 +9,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/TimeProfiler.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/Support/SaveAndRestore.h"
 

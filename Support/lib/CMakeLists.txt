@@ -16,14 +16,12 @@ add_modular_library(MSupport
   ErrorOr.cpp
   FileSystemExtras.cpp
   HMAC.cpp
-  Host.cpp
   IPInt.cpp
   JSON.cpp
   MicroBenchmark.cpp
   Process.cpp
   Random.cpp
-    ReferenceCounted.cpp
-  TimeProfiler.cpp
+  ReferenceCounted.cpp
   URI.cpp
   Version.cpp
 
@@ -34,11 +32,6 @@ add_modular_library(MSupport
   MLIRSupport
   MVersion
   )
-
-if (APPLE)
-  target_include_directories(MSupport PRIVATE ${CLANG_INCLUDE_DIRS})
-  target_link_libraries(MSupport PRIVATE clangBasic)
-endif ()
 
 #TODO: Move this to a cmake module.
 if (MODULAR_USE_TCMALLOC AND UNIX)
@@ -74,9 +67,12 @@ add_subdirectory(Driver)
 add_subdirectory(Entitlements)
 add_subdirectory(HTTP)
 add_subdirectory(MDialect)
+add_subdirectory(Threading)
 add_subdirectory(MArchTarget)
 add_subdirectory(ML)
 add_subdirectory(Compiler)
 add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
 add_subdirectory(Telemetry)
+add_subdirectory(Profiling)
+
