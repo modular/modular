@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
+
 add_modular_library(MSupport
   OBJECT # Always generate an obj.${name} target.
 
@@ -32,22 +33,6 @@ add_modular_library(MSupport
   MLIRSupport
   MVersion
   )
-
-#TODO: Move this to a cmake module.
-if (MODULAR_USE_TCMALLOC AND UNIX)
-
-  if (APPLE)
-    file(GLOB_RECURSE Tcmalloc_LIBRARY
-      /opt/homebrew/Cellar/gperftools/*libtcmalloc_minimal.dylib
-    )
-  else()
-    file(GLOB_RECURSE Tcmalloc_LIBRARY
-      /usr/lib/*libtcmalloc_minimal.so*
-    )
-  endif()
-
-  target_link_libraries(MSupport PUBLIC ${Tcmalloc_LIBRARY})
-endif()
 
 string(REPLACE ";" " " LLVM_TARGETS_BUILT "${LLVM_TARGETS_TO_BUILD}")
 set(BUILD_INFO_DEFINITIONS
