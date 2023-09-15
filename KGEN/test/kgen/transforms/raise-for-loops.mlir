@@ -387,3 +387,30 @@ kgen.func @nested_loops_no_unroll_inner() {
    }
    kgen.return
  }
+
+// CHECK-LABEL: @return_value_same_as_iter_var
+kgen.func @return_value_same_as_iter_var()  {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index2 = index.constant 2
+
+  // CHECK:      [[INDEX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[INDEX2:%.*]] = index.constant 2
+  // CHECK-NEXT: hlcf.for [[[INDEX0]] to [[INDEX2]] step [[INDEX1]] slt add] (%arg0 = [[INDEX0]] : index, %arg1 = [[INDEX0]] : index) -> index
+  // CHECK-NEXT:  [[V1:%.*]] = index.add %arg0, [[INDEX1]]
+  // CHECK-NEXT:  hlcf.for.yield [induction_var ([[V1]] : index)] [retvals ([[V1]] : index)] [iterargs ()]
+
+  %0 = hlcf.loop (%arg0 = %index0 : index) -> index {
+    // loop return value is the same as iterVar: %arg0
+    %2 = index.cmp slt(%arg0, %index2)
+    hlcf.if %2 {
+      hlcf.yield
+    } else {
+      hlcf.break %arg0 : index
+    }
+    %3 = index.add %arg0, %index1
+    hlcf.continue %3 : index
+  }
+  kgen.return
+}

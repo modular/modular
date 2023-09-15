@@ -281,7 +281,7 @@ reorderValues(ValueRange values,
   for (int64_t i : llvm::seq<int64_t>(0, values.size())) {
     if (!firstPartIndices.contains(i) && i != inductionVarArgNumber)
       secondPart.push_back(values[i]);
-    else if (i != inductionVarArgNumber)
+    else if (firstPartIndices.contains(i))
       result.push_back(values[i]);
   }
 
@@ -305,7 +305,7 @@ reorderValueIntoGroups(ValueRange values,
   for (int64_t i = 0, e = values.size(); i != e; ++i) {
     if (!firstPartIndices.contains(i) && i != inductionVarArgNumber)
       result[2].push_back(values[i]);
-    else if (i != inductionVarArgNumber)
+    else if (firstPartIndices.contains(i))
       result[1].push_back(values[i]);
   }
   return result;
