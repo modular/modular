@@ -382,15 +382,14 @@ InputParamBindings::verifyBindings(
         Type requestedType = evaluator.getReboundType(type);
         Type expectedType = requestedType;
         // If this is a vararg parameter, infer using the element type.
-        if (isVarArg && isa<VariadicType>(requestedType)) {
-          expectedType =
-              ASTType(cast<VariadicType>(expectedType).getElementType());
-        }
-        if (auto value =
+        if (isVarArg)
+          if (auto varType = dyn_cast<VariadicType>(expectedType))
+            expectedType = ASTType(varType.getElementType());
+        if (PValue pValue =
                 parameterInferenceHook(idx, type, expectedType, newBindings)) {
-          assert(value.getType().mlirType == requestedType &&
-                 "inferred a default parameter value of wrong type");
-          setParamValue(value);
+          assert(pValue.getType().mlirType == requestedType &&
+                 "inferred a parameter value of wrong type");
+          setParamValue(pValue);
           continue;
         }
       }
@@ -400,11 +399,11 @@ InputParamBindings::verifyBindings(
       // fulfill it with an empty list.  We know it must be the last parameter
       // decl. If this isn't actually a variadic type, then we simply reached
       // the end of the parameter list.
-      if (isVarArg && !isPackVarArg && isa<VariadicType>(type)) {
-        auto emptyVariadic =
-            VariadicAttr::get(ArrayRef<TypedAttr>(), cast<VariadicType>(type));
-        setParamValue(emptyVariadic);
-        continue;
+      if (isVarArg && !isPackVarArg) {
+        if (auto varType = dyn_cast<VariadicType>(type)) {
+          setParamValue(VariadicAttr::get({}, varType));
+          continue;
+        }
       }
 
       // TODO(#21428): Apply default values for parameters.
@@ -414,7 +413,7 @@ InputParamBindings::verifyBindings(
       return {};
     }
 
-    auto binding = bindings[nextBinding++];
+    InputParamBindings::Binding binding = bindings[nextBinding++];
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
       setParamValue(binding.value);
