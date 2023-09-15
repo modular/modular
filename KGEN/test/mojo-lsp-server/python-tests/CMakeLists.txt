@@ -4,10 +4,17 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# ASAN triggers errors because of python, so we skip.
+if (LLVM_USE_SANITIZER)
+  return()
+endif()
+
 add_test(NAME mojo-lsp-server-pytests
-  COMMAND ${CMAKE_COMMAND} -E
-    env ${ASAN_LIB_INJECT_ENV} MOJO_LSP_SERVER=$<TARGET_FILE:mojo-lsp-server>
+  COMMAND ${CMAKE_COMMAND} -E env
+    MOJO_LSP_SERVER=$<TARGET_FILE:mojo-lsp-server>
+    LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/mojo-lsl-server-pytests%4m.profraw
     ${Python3_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}
+
 )
 add_custom_target(check-mojo-lsp-server-pytests
   COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R mojo-lsp-server-pytests
@@ -17,7 +24,4 @@ add_custom_target(check-mojo-lsp-server-pytests
     mojo-sdk
 )
 
-# ASAN triggers errors because of python.
-if (NOT LLVM_USE_SANITIZER)
-  add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
-endif()
+add_dependencies(check-mojo-lsp-server check-mojo-lsp-server-pytests)
