@@ -18,7 +18,9 @@ TEST(MAttrs, createResourceAttr) {
   {
     // The underlying string is released, but the resource attribute copies it.
     std::string data = "Please pretend this is MLIR bytecode.";
-    attr = createResourceAttr(&ctx, ArrayRef(data.c_str(), data.size()),
+
+    // Add an addiitonal byte for null terminator.
+    attr = createResourceAttr(&ctx, ArrayRef(data.c_str(), data.size() + 1),
                               "This is the name.");
   }
   EXPECT_EQ(attr.getRawHandle().getKey(), "This is the name.");
