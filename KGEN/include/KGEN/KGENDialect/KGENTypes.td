@@ -180,40 +180,14 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       return getMetadata().getDefaultArguments();
     }
 
-    /// Return true if the function throws.
-    bool isThrows() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::Throws);
-    }
-
-    /// Return true if the function is async.
-    bool isAsync() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::Async);
-    }
-
-    /// Return true if the function has parameter varargs.
-    bool hasParamVarArgs() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::ParamVarArg);
-    }
-
-    /// Return true if the function has pack varargs.
-    bool hasPackVarArgs() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::PackVarArg);
-    }
-
-    /// Return true if the function captures state, which means
-    /// it requires a context pointer.
-    bool isCapturing() const {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::Capturing);
-    }
-
-    bool isEscaping() const {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::Escaping);
-    }
-
-    /// Return true if the SSA result of this signature is a non-trivial owned
-    /// register result.
-    bool hasOwnedRegisterResult() {
-      return bitEnumContainsAny(getFnEffects(), FnEffects::OwnedResult);
+    bool isThrows() const { return getFnEffects().isThrows(); }
+    bool isAsync() const { return getFnEffects().isAsync(); }
+    bool hasParamVarArgs() const { return getFnEffects().hasParamVarArgs(); }
+    bool hasPackVarArgs() const { return getFnEffects().hasPackVarArgs(); }
+    bool isCapturing() const { return getFnEffects().isCapturing(); }
+    bool isEscaping() const { return getFnEffects().isEscaping(); }
+    bool hasOwnedRegisterResult() const {
+      return getFnEffects().hasOwnedRegisterResult();
     }
 
     /// Return the convention for the specified value input argument.

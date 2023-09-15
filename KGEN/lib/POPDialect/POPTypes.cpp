@@ -652,8 +652,7 @@ CoroutineType CoroutineType::get(SignatureType sig) {
   auto coroSig = SignatureType::get(
       TypeArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
       FunctionType::get(ctx, {}, sig.getValueResults()),
-      FnMetadataAttr::get(
-          ctx, 0, sig.isThrows() ? FnEffects::Throws : FnEffects::None));
+      FnMetadataAttr::get(ctx, 0, FnEffects().setThrows(sig.isThrows())));
   return POP::CoroutineType::get(ctx, coroSig);
 }
 

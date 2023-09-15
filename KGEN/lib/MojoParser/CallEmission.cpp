@@ -300,8 +300,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (providedValueIdx != operands.size() &&
-      !bitEnumContainsAny(signature.getFnEffects(), FnEffects::ParamVarArg))
+  if (providedValueIdx != operands.size() && !signature.hasParamVarArgs())
     return {};
 
   // If we have no inferred values or if they disagree, then we fail to infer.

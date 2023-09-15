@@ -35,9 +35,7 @@ StringAttr ClosureEmitter::getClosureNameFromType(StringRef prefix,
   stream << fileModuleOp.getSymName() << "_";
   stream << DeclResolver::getMangledName(
       StringAttr::get(fileModuleOp.getContext(), ""), signatureType);
-  for (FnEffects effect : {FnEffects::Throws, FnEffects::Async})
-    if (bitEnumContainsAny(signatureType.getFnEffects(), effect))
-      stream << effect;
+  stream << signatureType.getFnEffects().getImpl();
   return StringAttr::get(signatureType.getContext(), stream.str());
 }
 
@@ -95,7 +93,7 @@ addClosureSelfArgToFunctionSignature(Type closureType,
   auto metadata = FnMetadataAttr::get(
       functionType.getContext(), StringArrayAttr::get(ctx, callMemberArgNames),
       callMemberInputConventions, {},
-      bitEnumClear(functionType.getFnEffects(), FnEffects::Escaping));
+      functionType.getFnEffects().setEscaping(false));
   return SignatureType::get(
       functionType.getInputParamTypes(), functionType.getResultParamTypes(),
       FunctionType::get(functionType.getContext(), callMemberSignatureInputs,

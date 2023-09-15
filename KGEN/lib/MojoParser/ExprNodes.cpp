@@ -2541,7 +2541,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                        /*isResultParams=*/true, paramVarArg);
   FnEffects effects = this->effects;
   if (paramVarArg)
-    effects = effects | FnEffects::ParamVarArg;
+    effects.setParamVarArgs();
 
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;
@@ -2567,7 +2567,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         return arg.name;
       });
 
-  if (bitEnumContainsAny(effects, FnEffects::Throws)) {
+  if (effects.isThrows()) {
     Type errorType =
         emitter.shared.getBuiltinErrorType(emitter.declScope, resultLoc);
     if (!errorType)
@@ -2599,7 +2599,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");
     return {};
   }
-  if (bitEnumContainsAny(effects, FnEffects::Escaping)) {
+  if (effects.isEscaping()) {
     LIT::FileModuleOp fileModuleOp;
     ASTDecl *astDecl = &emitter.declScope;
     for (; !fileModuleOp && astDecl; astDecl = astDecl->getParentDecl()) {

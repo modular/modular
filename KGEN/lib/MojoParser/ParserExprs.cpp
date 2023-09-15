@@ -949,14 +949,13 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
   SmallVector<ParsedArgument> inputParams, resultParams, arguments;
   ExprNode *resultTypeExpr = nullptr;
-  FnEffects effects = FnEffects::None;
+  FnEffects effects;
   bool isDef = false;
 
   // Parse the function effects from the leading keyword.
-  if (consumeIf(Token::kw_async))
-    effects = effects | FnEffects::Async;
+  effects.setAsync(consumeIf(Token::kw_async));
   if (consumeToken().is(Token::kw_def)) {
-    effects = effects | FnEffects::Throws;
+    effects.setThrows();
     isDef = true;
   }
 
@@ -989,7 +988,7 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   SMLoc lambdaLoc = consumeToken(Token::kw_lambda).getLoc();
 
   SmallVector<ParsedArgument> inputParams, resultParams, arguments;
-  FnEffects effects = FnEffects::None;
+  FnEffects effects;
 
   // Parameter signature, argument list and the function effects next.
   if (parseOptionalFunctionParameters(*this, inputParams, resultParams))

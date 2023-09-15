@@ -117,8 +117,8 @@ struct MyValueStruct:
 
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
-# CHECK-DAG: ![[SR7:.*]] = !debuginfo.subroutine<(!kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22">, index, index) -> (!lit.none): DW_CC_normal>
-# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "makes_escaping_closure", linkageName = "makes_escaping_closure(,__mlir_type.index,__mlir_type.index)", file = #file, line = [[#LN42:]], scopeLine = [[#SCOPE:]], subprogramFlags = "Definition|Optimized"> : ![[SR7]]
+# CHECK-DAG: ![[SR7:.*]] = !debuginfo.subroutine<(!kgen.pointer<!escaping1>, index, index) -> (!lit.none): DW_CC_normal>
+# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "makes_escaping_closure", linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
 
 # CHECK-DAG: #[[LOC1:.*]] = loc("{{.*}}":[[#LN42]]:1)
 # CHECK-DAG: #[[LOC4:.*]] = loc("{{.*}}":[[#LN42+1]]:3)
@@ -130,11 +130,11 @@ struct MyValueStruct:
 # CHECK-DAG:    lit.func @"makes_escaping_closure
 # CHECK-DAG:    debuginfo.value #local_variable1 = %m : index loc(#[[LOC26:.*]])
 # CHECK-DAG:    debuginfo.value #local_variable2 = %z : index loc(#[[LOC27:.*]])
-# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : <@"${{.*}}"::@"_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22"> loc(#[[LOC28:.*]])
-# CHECK-DAG:    %0 = kgen.call @"${{.*}}"::@"_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22"::@"__init__(${{.*}}::_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22=&,__mlir_type.index)"(%anonymous2A, %m) : ("self": !kgen.pointer<@"${{.*}}"::@"_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22"> init_self, "field0": index) -> !lit.none loc(#[[LOC28]])
-# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> loc(#[[LOC28]])
-# CHECK-DAG:    %1 = kgen.call @"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"::@"__init__(${{.*}}::_CW_${{.*}}_\22(__mlir_type.index)\22=&,${{.*}}::_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22)"(%anonymous2A_0, %anonymous2A) : ("self": !kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> init_self, "impl": !kgen.pointer<@"${{.*}}"::@"_CI_${{.*}}_\22(__mlir_type.index,__mlir_type.index)\22"> borrow_in_mem) -> !lit.none loc(#[[LOC28]])
-# CHECK-DAG:    %2 = kgen.call @"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"::@"__copyinit__(${{.*}}::_CW_${{.*}}_\22(__mlir_type.index)\22=&,${{.*}}::_CW_${{.*}}_\22(__mlir_type.index)\22)"(%__result__, %anonymous2A_0) : ("self": !kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> init_self, "existing": !kgen.pointer<@"${{.*}}"::@"_CW_${{.*}}_\22(__mlir_type.index)\22"> borrow_in_mem) -> !lit.none loc(#[[LOC29:.*]])
+# CHECK-DAG:    %anonymous2A = lit.varlet.decl "anonymous*" var synth : <!escaping> loc(#[[LOC28:.*]])
+# CHECK-DAG:    %0 = kgen.call {{.*}}CI{{.*}}__init__{{.*}}"(%anonymous2A, %m)
+# CHECK-DAG:    %anonymous2A_0 = lit.varlet.decl "anonymous*" var synth : <!escaping1>
+# CHECK-DAG:    %1 = kgen.call {{.*}}CW{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
+# CHECK-DAG:    %2 = kgen.call {{.*}}CW{{.*}}__copyinit__{{.*}}(%__result__, %anonymous2A_0) {{.*}} loc(#[[LOC29:.*]])
 
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#[[LOC6]]])
 # CHECK-DAG: #[[LOC27]] = loc(fused<#[[SP9]]>[#[[LOC7]]])
@@ -145,4 +145,3 @@ fn makes_escaping_closure(m:  __mlir_type.index, z: __mlir_type.index) -> fn(n:_
   fn myclosure(n: __mlir_type.index) escaping ->  __mlir_type.index:
       return m
   return myclosure
-

@@ -1316,22 +1316,23 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
       SMLoc loc = p.getToken().getLoc();
       StringRef spelling = p.getToken().getSpelling();
 
-      auto handleEffect = [&](FnEffects effect) {
-        if (bitEnumContainsAny(*fnEffects, effect))
+      auto handleEffect = [&](auto hasFn, auto setFn) {
+        if ((fnEffects->*hasFn)())
           p.emitError(loc, "function effect '")
               << spelling << "' was already specified";
-        *fnEffects = *fnEffects | effect;
+        (fnEffects->*setFn)(true);
       };
 
-      if (spelling == "raises")
-        handleEffect(FnEffects::Throws);
-      else if (spelling == "capturing")
-        handleEffect(FnEffects::Capturing);
-      else if (spelling == "escaping")
-        handleEffect(FnEffects::Escaping);
-      else
+      if (spelling == "raises") {
+        handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
+      } else if (spelling == "capturing") {
+        handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
+      } else if (spelling == "escaping") {
+        handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+      } else {
         p.emitError(loc, "unknown function effect '")
             << spelling << "', expected 'raises' or 'capturing'";
+      }
 
       p.consumeToken(Token::identifier);
     }
@@ -1501,7 +1502,7 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
       // otherwise it would be promoted to an argument).  If the result of the
       // function is a non-trivial type, mark the function effect as having an
       // owned result so ownership tracking will notice it.
-      effects = effects | FnEffects::OwnedResult;
+      effects.setOwnedRegisterResult();
     }
   }
 
@@ -1525,11 +1526,11 @@ ASTType ParsedArgument::emitFunctionArgumentsAndResults(
 
     // Determine the required function effects from the conventions.
     if (arg.vararg == VarArgKind::VarArg)
-      effects = effects | FnEffects::VarArg;
+      effects.setVarArgs();
     else if (arg.vararg == VarArgKind::PackVarArg)
-      effects = effects | FnEffects::PackVarArg;
+      effects.setPackVarArgs();
     else if (arg.vararg == VarArgKind::KWVarArg)
-      effects = effects | FnEffects::KWVarArg;
+      effects.setKWVarArgs();
 
     // If no convention was explicitly specified, provide a default.  We default
     // to borrowed in an 'fn' or owned in a 'def'.
@@ -2078,8 +2079,7 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   }
 
   // Reject special functions declared as throwing when that is invalid.
-  if (bitEnumContainsAny(effects, FnEffects::Throws) &&
-      fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
+  if (effects.isThrows() && fnInfo.flags & SpecialFunctionInfo::kCannotRaise) {
     // Specialize the error if raising is implicit because it was defined as a
     // def.
     if (funcOp.getIsDef()) {
@@ -2247,9 +2247,9 @@ LogicalResult FnDecorators::apply(ExprNode *decorator, FnEffects &effects) {
     else if (declRef->spelling == "parameter")
       funcOp.setIsParametric(true);
     else if (declRef->spelling == "noncapturing")
-      effects = bitEnumClear(effects, FnEffects::Capturing);
+      effects.setCapturing(false);
     else if (declRef->spelling == "closure")
-      effects = effects | FnEffects::Capturing;
+      effects.setCapturing();
     else
       return failure();
     return success();
@@ -2417,10 +2417,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   auto decoratorExprs = p.parseDecorators(decl);
   assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  FnEffects effects =
-      p.consumeIf(Token::kw_async) ? FnEffects::Async : FnEffects::None;
+  FnEffects effects;
+  effects.setAsync(p.consumeIf(Token::kw_async));
   if (p.getToken().is(Token::kw_def))
-    effects = effects | FnEffects::Throws;
+    effects.setThrows();
   p.consumeToken();
 
   StringAttr baseName;
@@ -2468,13 +2468,13 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   if (paramVarArg)
-    effects = effects | FnEffects::ParamVarArg;
+    effects.setParamVarArgs();
 
   // This doesn't support the capturing effect, reject it.
-  if (bitEnumContainsAny(effects, FnEffects::Capturing)) {
+  if (effects.isCapturing()) {
     emitError(decl.getLoc(),
               "'capturing' effect not supported on this declaration");
-    effects = bitEnumClear(effects, FnEffects::Capturing);
+    effects.setCapturing(false);
   }
 
   // Parse the result type if present.
@@ -2506,8 +2506,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   moveDecls(decl, sigDecl);
 
   if (isCapturingByDefault(funcOp, inputParamDecls, resultParamDecls) &&
-      !bitEnumContainsAny(effects, FnEffects::Escaping))
-    effects = effects | FnEffects::Capturing;
+      !effects.isEscaping())
+    effects.setCapturing();
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
@@ -2533,7 +2533,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // First, handle function effects. If the function raises, it implicitly gets
   // a variant result type.
-  if (bitEnumContainsAny(effects, FnEffects::Throws)) {
+  if (effects.isThrows()) {
     ASTType errorType =
         shared.getBuiltinErrorType(*decl.getParentDecl(), decl.getLoc());
     if (errorType.isTypeCheckErrorType())
@@ -3366,7 +3366,7 @@ static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (!ASTType(resultType).isTrivial(structDecl.getLoc(), resolver.shared))
-    fnEffects = fnEffects | FnEffects::OwnedResult;
+    fnEffects.setOwnedRegisterResult();
 
   // TODO: Should raise if anything we invoke raises.
   auto metadata = builder.getAttr<FnMetadataAttr>(
