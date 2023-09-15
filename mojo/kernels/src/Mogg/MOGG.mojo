@@ -72,6 +72,7 @@ from Conv import (
 )
 from GatherScatter import gather as _gather
 from GatherScatter import gather_shape
+from GatherScatter import gather_nd as _gather_nd
 from GatherScatter import gather_reduce
 from GatherScatter import (
     scatter_elements,
@@ -156,6 +157,7 @@ fn MOGGExport():
     alias _equal = equal
     alias _floor = floor
     alias _gather_shape = gather_shape
+    alias _gather_nd = gather_nd
     alias _gather = gather
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
@@ -2540,3 +2542,32 @@ fn top_k[
         out_idxs,
         out_chain,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# GatherND
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn gather_nd[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    batch_dims: Int,
+    single_thread_blocking_override: Bool,
+](
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
+    ],
+    output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    _gather_nd[
+        type, indices_type, data_rank, indices_rank, output_rank, batch_dims
+    ](data, indices, output)
+    if not single_thread_blocking_override:
+        out_chain.mark_ready()
