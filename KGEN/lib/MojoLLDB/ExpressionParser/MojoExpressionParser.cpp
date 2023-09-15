@@ -708,15 +708,20 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   clonedExprFn.setCExported();
 
   // Log the pre-elaboration module.
-  std::string preElaborationModule;
-  llvm::raw_string_ostream preElaborationStream(preElaborationModule);
-  impl->fullCompilationPM->enableIRPrinting(
-      [](Pass *pass, Operation *) {
-        return pass->getName() == "ElaborateGenerators";
-      },
-      [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
-      /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
-      /*out=*/preElaborationStream);
+  Log *logChannel = GetLog(LLDBLog::Expressions);
+  bool isVerboseLoggingEnabled = logChannel && logChannel->GetVerbose();
+
+  std::string preElaborationModuleLog;
+  llvm::raw_string_ostream preElaborationLogStream(preElaborationModuleLog);
+  if (isVerboseLoggingEnabled) {
+    impl->fullCompilationPM->enableIRPrinting(
+        [](Pass *pass, Operation *) {
+          return pass->getName() == "ElaborateGenerators";
+        },
+        [](Pass *, Operation *) { return false; }, /*printModuleScope=*/false,
+        /*printAfterOnlyOnChange=*/false, /*printAfterOnlyOnFailure=*/false,
+        /*out=*/preElaborationLogStream);
+  }
 
   // Run the elaboration pipeline.
   if (failed(impl->fullCompilationPM->run(*module))) {
@@ -724,9 +729,11 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return returnErrorCleanup();
   }
 
-  impl->typeSystem->dumpIR("Pre-elaboration module:\n{0}",
-                           preElaborationModule);
-  impl->typeSystem->dumpIR("Elaborated module:\n{0}", *module);
+  if (isVerboseLoggingEnabled) {
+    impl->typeSystem->dumpIR("Pre-elaboration module:\n{0}",
+                             preElaborationModuleLog);
+    impl->typeSystem->dumpIR("Elaborated module:\n{0}", *module);
+  }
 
   // Lower the module to LLVM IR.
   SymbolTable symtab(*module);
@@ -738,8 +745,10 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return returnErrorCleanup();
   }
 
-  impl->typeSystem->dumpIR("Pre-optimization LLVM module:\n{0}",
-                           *impl->llvmModule);
+  if (isVerboseLoggingEnabled) {
+    impl->typeSystem->dumpIR("Pre-optimization LLVM module:\n{0}",
+                             *impl->llvmModule);
+  }
 
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =

@@ -206,25 +206,10 @@ void MojoTypeSystem::debugLog(StringRef message) {
   BroadcastEvent(event);
 }
 
-void MojoTypeSystem::flushIRDumpAndDebugLog() {
-  lldb::EventSP event = std::make_shared<Event>(eFlushIRAndDebugLog);
-  BroadcastEvent(event);
-}
-
 void MojoTypeSystem::errorLog(StringRef message) {
   lldb::EventSP event =
       std::make_shared<Event>(eErrorLog, new EventDataBytes(message));
   BroadcastEvent(event);
-  // When we hit an error, we want to flush the debug logs as well.
-  flushIRDumpAndDebugLog();
-}
-
-void MojoTypeSystem::crashLog(StringRef message) {
-  lldb::EventSP event =
-      std::make_shared<Event>(eCrashLog, new EventDataBytes(message));
-  BroadcastEvent(event);
-  // When we hit an error, we want to flush the debug logs as well.
-  flushIRDumpAndDebugLog();
 }
 
 void MojoTypeSystem::broadcastDiagnostics(
@@ -283,8 +268,6 @@ static std::string stringifyType(MojoTypeSystem::MessageKind type) {
     typeStrs.push_back("DebugLog");
   if (type & MojoTypeSystem::eErrorLog)
     typeStrs.push_back("ErrorLog");
-  if (type & MojoTypeSystem::eCrashLog)
-    typeStrs.push_back("CrashLog");
 
   std::string out;
   llvm::raw_string_ostream outStream(out);
@@ -294,47 +277,30 @@ static std::string stringifyType(MojoTypeSystem::MessageKind type) {
 
 void MojoTypeSystem::handleEvent(
     const lldb::EventSP &event,
-    std::deque<std::pair<MessageKind, std::string>> &debugMessageCache,
     function_ref<void(StringRef, StringRef)> reportMessage,
     function_ref<void(StringRef)> sendUserOutput) {
   assert(llvm::popcount(event->GetType()) == 1 &&
          "a message must contain one single type");
 
-  auto addEventToDebugMessageCache = [&] {
-    debugMessageCache.emplace_back(MessageKind(event->GetType()),
-                                   getStringFromEvent(event));
-    // Pop the front message if we've exceeded 40 items in the deque.
-    if (debugMessageCache.size() > 40)
-      debugMessageCache.pop_front();
-  };
-
   if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage) {
     // If it's a user message broadcast, send that output.
     sendUserOutput(getStringFromEvent(event));
-    addEventToDebugMessageCache();
-  } else if (event->GetType() &
-             (MojoTypeSystem::eErrorLog | MojoTypeSystem::eCrashLog)) {
+  } else if (event->GetType() & (MojoTypeSystem::eErrorLog)) {
     // If it's an error log, send that output as well.
     reportMessage(stringifyType(MessageKind(event->GetType())),
                   getStringFromEvent(event));
   } else if (event->GetType() & (eDumpIR | eDebugLog)) {
-    // These logs are only displayed right away if the LLDB expr logs are
-    // enabled.
-    if (Log *log = GetLog(LLDBLog::Expressions)) {
-      LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
-               getStringFromEvent(event));
-    }
-
-    // These messages are extremely noisy, so we don't want to add them to the
-    // cache by default.
-    if (llvm::sys::Process::GetEnv("MOJO_REPL_VERBOSE_LOG"))
-      addEventToDebugMessageCache();
-  } else if (event->GetType() & MojoTypeSystem::eFlushIRAndDebugLog) {
-    for (const auto &message : debugMessageCache)
-      reportMessage(stringifyType(message.first), message.second);
-
-    // Clear out the message cache.
-    debugMessageCache.clear();
+    Log *log = GetLog(LLDBLog::Expressions);
+    if (!log)
+      return;
+    // DumpIR messages are extremely heavy, so we don't want to log them unless
+    // verbose logs are enabled.
+    if ((event->GetType() & eDumpIR) && !log->GetVerbose())
+      return;
+    LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
+             getStringFromEvent(event));
+    reportMessage(stringifyType(MessageKind(event->GetType())),
+                  getStringFromEvent(event));
   } else {
     llvm_unreachable("Unexpected message type");
   }

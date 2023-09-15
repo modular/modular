@@ -119,7 +119,6 @@ private:
   std::atomic_bool stopEventThread = false;
   lldb::ListenerSP typeSystemListener;
   lldb::TargetWP targetWP;
-  std::deque<std::pair<MojoTypeSystem::MessageKind, std::string>> debugMessages;
   lldb::StreamSP errorStream;
   std::mutex flushStreamsMutex;
   std::shared_ptr<MojoTypeSystem> typeSystem;
