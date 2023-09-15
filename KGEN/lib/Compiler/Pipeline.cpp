@@ -127,32 +127,33 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
     pm.addNestedPass<FuncOp>(DebugInfo::createDebugInfoStrip());
 
   // Guaranteed optimizations.
-  pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
-
   pm.addNestedPass<FuncOp>(createRaiseForLoops());
+  pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
 
-  if (options.optimizationLevel >= 2) {
+  if (options.optimizationLevel >= 1) {
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
     pm.addNestedPass<FuncOp>(createCanonicalizer());
+    pm.addNestedPass<FuncOp>(mlir::createCSEPass());
+    pm.addNestedPass<FuncOp>(createFoldGlobalConstLoads());
   }
 
   // Run the AutomaticInliner with an inner function pass pipeline.
   auto buildAutomaticInlinerFuncPasses = [options](mlir::OpPassManager &pm) {
-    pm.addPass(createCleanupCompilerGlobals());
     if (options.optimizationLevel < 1)
       return;
     pm.addPass(createSimplifyCF());
     pm.addPass(createSROA());
     pm.addPass(createMem2Reg());
-    // TODO: can't run HoistTrivailInvariants pass till divs UB is fixed
+    // TODO: hoistTrivialInvariant is causing perf drop, needs further
+    // investigation.
     // pm.addPass(createHoistTrivialInvariants());
     pm.addPass(createStackReuse());
-    pm.addPass(mlir::createCSEPass());
     pm.addPass(createCanonicalizer());
+    pm.addPass(mlir::createCSEPass());
   };
 
   pm.addPass(createAutomaticInline(
@@ -161,24 +162,25 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
        options.optimizationLevel},
       std::move(buildAutomaticInlinerFuncPasses)));
 
-  // Lower async functions and closures as late as possible.
-  pm.addPass(createLowerClosures());
-
-  // Loop raising must happen after `hoist-trivial-invariants`.
-  // FIXME: Move this earlier in the pipeline.
-  pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
-  pm.addNestedPass<FuncOp>(createLowerLoops());
-
-  // TODO: Remove these once we move unrolling earlier in the pipeline.
   if (options.optimizationLevel >= 1) {
-    pm.addPass(mlir::createCSEPass());
-    pm.addPass(createCanonicalizer());
-    pm.addPass(createSROA());
-    pm.addPass(createMem2Reg());
-    pm.addPass(mlir::createCSEPass());
-    pm.addPass(createCanonicalizer());
+    pm.addNestedPass<FuncOp>(createRaiseForLoops());
+    pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
+    pm.addNestedPass<FuncOp>(createSROA());
+    pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
+    pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   }
 
+  if (options.optimizationLevel >= 2) {
+    pm.addNestedPass<FuncOp>(createSROA());
+    pm.addNestedPass<FuncOp>(createMem2Reg());
+    pm.addNestedPass<FuncOp>(createCanonicalizer());
+    pm.addNestedPass<FuncOp>(mlir::createCSEPass());
+  }
+
+  pm.addNestedPass<FuncOp>(createLowerLoops());
+  // Lower async functions and closures as late as possible.
+  pm.addPass(createLowerClosures());
   // At the end of the pipeline, externalize any functions that have been
   // precompiled so that they aren't sent to LLVM again.
   pm.addPass(createExternalizePrecompiledFunctions());
