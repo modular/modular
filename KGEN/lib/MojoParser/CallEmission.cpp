@@ -227,9 +227,10 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
   size_t posOperandIdx = 0;
-  for (auto [expectedArgIdx, expectedType, expectedConvention] :
+  for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getValueInputs(),
-                       signature.getValueInputConventions())) {
+                       signature.getValueInputConventions(),
+                       signature.getArgNames())) {
 
     // There is no provided operand for a by-ref result.
     if (expectedConvention == ValueInputConvention::ByRefResult)
@@ -242,16 +243,25 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       if (signature.isVarArg(expectedArgIdx))
         break;
 
-      // TODO: If this argument is defaulted, infer against it.
-
       // If we have a pack argument, then we're binding zero type values to it.
-      if (auto packType = getIfPackType(signature, expectedArgIdx)) {
+      if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
         if (!inferredValues.empty())
           break;
         inferredValues.push_back(VariadicAttr::get(
             {}, cast<VariadicType>(packType.getVariadic().getType())));
         continue;
       }
+
+      // Check if a keyword operand was provided for this argument
+      if (std::optional<ASTExprAnd<AnyValue>> kwOperandOr =
+              callOperands.findKwArg(argName)) {
+        if (failed(checkOneOperand(*kwOperandOr, expectedType,
+                                   expectedConvention)))
+          return {};
+        continue;
+      }
+
+      // TODO: If this argument is defaulted, infer against it.
 
       // Otherwise we have an argument count mismatch, just fail.
       return {};
