@@ -407,7 +407,7 @@ InputParamBindings::verifyBindings(
         continue;
       }
 
-      // TODO: Apply default values for parameters.
+      // TODO(#21428): Apply default values for parameters.
 
       // Otherwise, we're simply missing bindings.
       emitParamCountDiag();
