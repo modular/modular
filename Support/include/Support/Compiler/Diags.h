@@ -123,6 +123,10 @@ public:
   ~InflightDiag();
   InflightDiag(InflightDiag &&other);
 
+  // This class in non-copyable.
+  InflightDiag(const InflightDiag &) = delete;
+  InflightDiag &operator=(const InflightDiag &) = delete;
+
   /// Abandon emission of this message, this will make it be a noop when its
   /// destructor runs.
   void abandon() { diags = nullptr; }
@@ -152,11 +156,12 @@ public:
     return std::move(*this);
   }
 
-  /// This method can be used by addToDiagnostic impls to add things to the
+  /// These methods can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
   void addSourceRange(SourceRange range);
   void addFixIt(FixIt fixIt);
+  void addDiag(InflightDiag &&otherDiag);
 
 private:
   void emitMLIRDiagnostic();
@@ -258,6 +263,8 @@ void addToDiagnostic(StringAttr attr, InflightDiag &diag);
 void addToDiagnostic(SourceRange range, InflightDiag &diag);
 /// This adds a fixit hint.
 void addToDiagnostic(FixIt fixIt, InflightDiag &diag);
+/// This concatenates another diagnostic.
+void addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag);
 
 } // namespace M
 
