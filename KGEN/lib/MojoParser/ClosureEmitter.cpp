@@ -207,9 +207,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   builder =
       ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
   ExprEmitter::emitNormalReturn(
-      builder,
-      builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
-      destructor);
+      builder, builder.create<ParamConstantOp>(noneAttr), destructor);
   builder.create<HLCF::YieldOp>();
 
   builder.restoreInsertionPoint(insertionPoint);
@@ -656,7 +654,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
       {ValueInputConvention::BorrowedInReg,
        ValueInputConvention::BorrowedInMem},
       {StringAttr::get(closureWrapper.getContext(), "ptrToImpl"), existingName},
-      shared.getNoneType(), SpecialFunctionKind::kNormal, location, builder);
+      noneType, SpecialFunctionKind::kNormal, location, builder);
   // Populate init body.
   {
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(),
@@ -683,9 +681,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
 
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(), body);
     ExprEmitter::emitNormalReturn(
-        builder,
-        builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
-        topLevelCopyInit);
+        builder, builder.create<ParamConstantOp>(noneAttr), topLevelCopyInit);
     builder.create<LIT::EndFuncOp>();
     setMember(topLevelCopyInit, copyFieldAttr);
   }
@@ -697,8 +693,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   LIT::FuncOp topLevelDtor = structEmitter.createFunction(
       generateName("_dtor_"), ArrayRef<Type>{opaquePointer},
       ArrayRef<ValueInputConvention>{ValueInputConvention::OwnedInReg},
-      ArrayRef<StringAttr>{selfName}, shared.getNoneType(),
-      SpecialFunctionKind::kNormal, location, builder);
+      ArrayRef<StringAttr>{selfName}, noneType, SpecialFunctionKind::kNormal,
+      location, builder);
 
   // Populate destructor body.
   {
@@ -726,9 +722,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
     builder.create<POP::AlignedFreeOp>(implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
     ExprEmitter::emitNormalReturn(
-        builder,
-        builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
-        topLevelDtor);
+        builder, builder.create<ParamConstantOp>(noneAttr), topLevelDtor);
     builder.create<LIT::EndFuncOp>();
   }
 

@@ -164,9 +164,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
     // Finish off the function with a return + lit.endfunc.
     ExprEmitter::emitNormalReturn(
-        builder,
-        builder.create<ParamConstantOp>(builder.getAttr<LIT::NoneAttr>()),
-        funcOp);
+        builder, builder.create<ParamConstantOp>(noneAttr), funcOp);
     builder.create<LIT::EndFuncOp>();
     return funcOp;
   }
@@ -280,8 +278,7 @@ LIT::FuncOp StructEmitter::addVoidMethod(
 
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
-  ExprEmitter::emitNormalReturn(
-      b, b.create<ParamConstantOp>(b.getAttr<LIT::NoneAttr>()), func);
+  ExprEmitter::emitNormalReturn(b, b.create<ParamConstantOp>(noneAttr), func);
   b.create<LIT::EndFuncOp>();
   return func;
 }

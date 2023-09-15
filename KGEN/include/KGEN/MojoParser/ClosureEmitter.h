@@ -32,9 +32,9 @@ public:
 
 class ClosureEmitter {
 public:
-  ClosureEmitter(LIT::FileModuleOp fileModuleOp, Type noneType,
-                 SharedState &shared)
-      : fileModuleOp(fileModuleOp), noneType(noneType), shared(shared),
+  ClosureEmitter(LIT::FileModuleOp fileModuleOp, SharedState &shared)
+      : fileModuleOp(fileModuleOp), shared(shared),
+        noneType(shared.getNoneType()), noneAttr(shared.getNoneAttr()),
         structEmitter(shared),
         dtorFieldAttr(StringAttr::get(shared.getContext(), "dtor")),
         copyFieldAttr(StringAttr::get(shared.getContext(), "copy")),
@@ -46,8 +46,6 @@ public:
   /// pointer to the underlying Closure Implementation instance.
   StructDeclOp createClosureWrapperStructDecl(StringAttr name,
                                               SignatureType signatureType);
-  Type getNoneType() const { return noneType; }
-  SharedState &sharedState() const { return shared; }
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
@@ -67,8 +65,9 @@ public:
 
 private:
   FileModuleOp fileModuleOp;
-  Type noneType;
   SharedState &shared;
+  Type noneType;
+  LIT::NoneAttr noneAttr;
   StructEmitter structEmitter;
   StringAttr dtorFieldAttr;
   StringAttr copyFieldAttr;
