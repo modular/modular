@@ -320,10 +320,6 @@ struct ORValue::OverloadSetWrapper
   OverloadSet overloadSet;
 };
 
-/// Returns whether the two signatures match, i.e. if they only differ in
-/// argument names.
-bool canZeroCostConvertSignature(SignatureType from, SignatureType to);
-
 //===----------------------------------------------------------------------===//
 // ORValue implementation details
 //===----------------------------------------------------------------------===//
