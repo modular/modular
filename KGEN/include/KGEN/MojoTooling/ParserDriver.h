@@ -207,6 +207,14 @@ public:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
                             ArrayRef<std::pair<StringRef, Type>> replVariables);
+  /// Return the code completion results for the given REPL expression.
+  /// `replDecl` corresponds to the decl if a previously parsed repl expression.
+  /// Completion results will only consider state before that expression was
+  /// parsed.
+  std::vector<KGEN::Mojo::CodeCompletionResult>
+  codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
+                            ArrayRef<std::pair<StringRef, Type>> replVariables,
+                            MojoASTDeclRef replDecl);
 
   /// Remove the previously parsed REPL expression. This allows for removing an
   /// erroneous expression when it is only detected as invalid after it has been

@@ -112,9 +112,9 @@ llvm::Error MojoREPL::OnExpressionEvaluated(
   auto persistentState = (MojoPersistentExpressionState *)getTypeSystem()
                              ->GetPersistentExpressionState();
 
-  auto lldbExprFailedVar =
-      persistentState->getVar(lldb_private::ConstString("___lldb_expr_failed"));
-  // Remove ___lldb_expr_failed so that it won't be printed.
+  auto lldbExprFailedVar = persistentState->getVar(
+      lldb_private::ConstString("__mojo_repl_expr_failed"));
+  // Remove __mojo_repl_expr_failed so that it won't be printed.
   if (lldbExprFailedVar != nullptr)
     persistentState->RemovePersistentVariable(lldbExprFailedVar);
 
@@ -122,11 +122,11 @@ llvm::Error MojoREPL::OnExpressionEvaluated(
   // that failed.
   if (!execution_results) {
     if (lldbExprFailedVar == nullptr)
-      llvm::report_fatal_error(
-          "Expected to find variable `___lldb_expr_failed` in the persistent "
-          "state.");
+      llvm::report_fatal_error("Expected to find variable "
+                               "`__mojo_repl_expr_failed` in the persistent "
+                               "state.");
 
-    // Extract the value of ___lldb_expr_failed.
+    // Extract the value of __mojo_repl_expr_failed.
     DataExtractor extractor(lldbExprFailedVar->GetValueBytes(),
                             *lldbExprFailedVar->GetByteSize(),
                             exe_ctx.GetProcessRef().GetByteOrder(),

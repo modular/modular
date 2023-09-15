@@ -10,6 +10,7 @@ from typing import List, Optional
 import pytest_lsp
 from lib.utils import NotebookDocument, Requests, fail_if_none
 from lsprotocol.types import (
+    CompletionItemKind,
     DidChangeNotebookDocumentParams,
     MarkupContent,
     NotebookCell,
@@ -180,4 +181,28 @@ function()
     )
     assert result.range == Range(
         start=Position(line=1, character=0), end=Position(line=1, character=16)
+    )
+
+
+async def test_completion(client: LanguageClient):
+    cell_contents = [
+        """
+fn function() -> Int:
+  return 10
+""",
+        """
+fu
+""",
+    ]
+    doc = NotebookDocument("test", cell_contents)
+
+    requests = Requests(client)
+    requests.open_notebook_document(doc)
+
+    items = fail_if_none(
+        await requests.completion(doc.cells[1], Position(line=1, character=2))
+    )
+    assert any(
+        item.label == "function" and item.kind == CompletionItemKind.Function
+        for item in items
     )
