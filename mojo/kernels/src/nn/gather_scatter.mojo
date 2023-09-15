@@ -1097,3 +1097,4 @@ fn gather_nd[
                 reshaped_data.data + input_offset,
                 count_copy,
             )
+    idx_ptr.free()
