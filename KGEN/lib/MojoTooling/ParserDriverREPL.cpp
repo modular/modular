@@ -375,7 +375,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   exprOS << "  @parameter\n"
             "  def __mojo_repl_expr_body__() -> None:\n";
 
-  exprOS << "    var ___lldb_expr_failed = False\n";
+  exprOS << "    var __mojo_repl_expr_failed = False\n";
   // The following is the other chunk of code just written by the user.
   for (StringRef code : mainBodyCode) {
     exprOS << "    ";
@@ -757,6 +757,15 @@ std::vector<Mojo::CodeCompletionResult>
 MojoParserContext::codeCompleteREPLExpresion(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
+  return codeCompleteREPLExpresion(exprText, completionPosition, replVariables,
+                                   MojoASTDeclRef());
+}
+
+std::vector<KGEN::Mojo::CodeCompletionResult>
+MojoParserContext::codeCompleteREPLExpresion(
+    StringRef exprText, uint64_t completionPosition,
+    ArrayRef<std::pair<StringRef, Type>> replVariables,
+    MojoASTDeclRef replDecl) {
   // Insert a marker into the expression text at the completion position. This
   // is only really necessary because we currently do string splicing to fake
   // support for top-level code, meaning that we don't know where the completion
@@ -773,7 +782,7 @@ MojoParserContext::codeCompleteREPLExpresion(
 
   // Wrap the expression text in a function so that we can execute it.
   std::string wrappedExprText = wrapExpressionText(
-      *locMapper.exprMappers.back(), "__repl_code_complete_fn",
+      *locMapper.exprMappers.back(), "__mojo_repl_code_complete_fn",
       exprTextWithMarker, replVariables,
       /*isFirstREPLCell=*/impl->replModuleDecls.empty());
 
@@ -792,6 +801,9 @@ MojoParserContext::codeCompleteREPLExpresion(
     // Pull in the existing REPL module state.
     SmallVector<ASTDecl *> completionReplModuleDecls;
     for (ASTDecl *module : impl->replModuleDecls) {
+      if (module == replDecl.decl)
+        break;
+
       int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
       const llvm::MemoryBuffer *moduleBuf =
           mainSourceMgr.getMemoryBuffer(bufferId);
@@ -811,10 +823,17 @@ MojoParserContext::codeCompleteREPLExpresion(
                               completionReplModuleDecls);
   };
 
-  return MojoParserContext::codeComplete(
-      llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
-      impl->sharedState.getContext(), impl->sharedState.runtime,
-      impl->sharedState.options, replParseFn);
+  std::vector<KGEN::Mojo::CodeCompletionResult> results =
+      MojoParserContext::codeComplete(
+          llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
+          impl->sharedState.getContext(), impl->sharedState.runtime,
+          impl->sharedState.options, replParseFn);
+
+  // Filter out results pointing to internal decls.
+  llvm::erase_if(results, [&](const KGEN::Mojo::CodeCompletionResult &result) {
+    return StringRef(result.label).starts_with("__mojo_repl");
+  });
+  return results;
 }
 
 void MojoParserContext::removeLastREPLExpression() {

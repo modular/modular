@@ -134,6 +134,9 @@ struct CodeCompletionListener : public ParserListener {
   /// optional filter that returns which operations should be considered.
   void addCompletionForOp(StringRef name, MojoASTDeclRef decl,
                           function_ref<bool(Operation *)> filter = {}) {
+    if (!addedResults.insert(&*decl).second)
+      return;
+
     Operation *op = decl.getIfOperation();
     if (!op || (filter && !filter(op)))
       return;
@@ -155,6 +158,7 @@ struct CodeCompletionListener : public ParserListener {
   }
 
   /// The results that have been collected so far.
+  DenseSet<ASTDecl *> addedResults;
   std::vector<CodeCompletionResult> &results;
 
   /// The range of acceptable locations for the completion.

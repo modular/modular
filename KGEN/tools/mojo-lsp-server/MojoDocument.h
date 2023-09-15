@@ -333,6 +333,9 @@ public:
 
     /// The AST decl for the module containing this cell.
     MojoASTDeclRef decl;
+
+    /// The persistent REPL variables defined before this cell.
+    SmallVector<std::pair<StringRef, Type>> persistentVariables;
   };
 
   MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,

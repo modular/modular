@@ -1012,8 +1012,9 @@ void MojoNotebookDocument::parseDocumentImpl() {
     if (StringRef(cell.contents).starts_with("%%python"))
       continue;
 
-    cell.decl = ctx.parseREPLExpresion(listener, cell.bufferId, "lsp_repl_main",
-                                       persistentVariables);
+    cell.persistentVariables = persistentVariables;
+    cell.decl = ctx.parseREPLExpresion(
+        listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
   }
 }
 
@@ -1051,8 +1052,16 @@ SMLoc MojoNotebookDocument::getLocFromPos(const mlir::lsp::URIForFile &uri,
 
 std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
-  // TODO: Support notebook documents.
-  return {};
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+  int cellBufferId = sourceMgr.FindBufferContainingLoc(completeLoc);
+  assert(cellBufferId > 0 && cellBufferId <= static_cast<int>(cells.size()) &&
+         "expected to find cell buffer containing location");
+  Cell &cell = *cells[cellBufferId - 1];
+
+  // Query the mojo parser for potential completion results.
+  uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
+  return getParserContext().codeCompleteREPLExpresion(
+      cell.contents, rawCompletePos, cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//
