@@ -20,6 +20,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -662,9 +663,20 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
       succeeded(resCValue))
     return *resCValue;
 
-  // If we are in a parameter context, we can now emit the call.
-  if (!builder)
+  // HACK: If any of the arguments are nonmaterializable and all arguments are
+  // PValues, then emit the call in the parameter context.
+  bool forceParameterCall =
+      llvm::all_of(argumentValues,
+                   [](auto &arg) { return arg.ir.getIfPValue(); }) &&
+      llvm::any_of(argumentValues, [&](auto &arg) {
+        return arg.ir.getIfPValue().getType().getNonmaterializableTarget(
+            shared);
+      });
+
+  if (!builder || forceParameterCall) {
+    llvm::SaveAndRestore savedBuilder(builder, {});
     return callEmitter.emitCallInParamContext(argumentValues);
+  }
 
   Location loc = translateLocation(callExpr->getLoc());
 

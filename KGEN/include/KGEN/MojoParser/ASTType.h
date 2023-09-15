@@ -80,6 +80,10 @@ public:
   /// Return the StructDeclOp::RegisterPassable enum for this type.
   uint8_t getRegisterPassability(llvm::SMLoc loc, SharedState &shared) const;
 
+  /// Return the nonmaterializable decorator target for the type, or null if
+  /// there is none.
+  ASTType getNonmaterializableTarget(SharedState &shared) const;
+
   /// Return true if this type is a 'trivial' type, that is one that can be
   /// passed around by copying the bits, and whose destructor is a noop.
   bool isTrivial(llvm::SMLoc loc, SharedState &shared) const;

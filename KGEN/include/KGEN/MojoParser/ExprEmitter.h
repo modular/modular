@@ -440,7 +440,7 @@ public:
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.  The
-  /// types must match for this call.
+  /// types must match for this call, or be a nonmaterializable conversion.
   BValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                            ExprContext context);
 

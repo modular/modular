@@ -740,7 +740,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*paramVarArgs=*/false,
-        /*registerPassable=*/0, /*destructor=*/nullptr, /*moveInit=*/nullptr,
+        /*registerPassable=*/0, /*nonmaterializableTarget=*/nullptr,
+        /*destructor=*/nullptr, /*moveInit=*/nullptr,
         /*copyInit=*/nullptr, /*closureSignature=*/nullptr,
         /*docString=*/nullptr);
   result.regions[0]->push_back(new Block());

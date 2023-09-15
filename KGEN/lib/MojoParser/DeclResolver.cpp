@@ -3269,7 +3269,9 @@ ParseResult DeclResolver::resolveBody(AliasForwardDeclOp aliasFwdDeclOp,
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
 static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
-                                                     StructDeclOp structOp) {
+                                                     StructDeclOp structOp,
+                                                     SharedState &shared,
+                                                     ASTDecl &structDecl) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassable);
@@ -3287,6 +3289,17 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
         structOp.setRegisterPassable(StructDeclOp::RP_RegisterPassableTrivial);
         return success();
       }
+      if (declRef->spelling == "nonmaterializable" &&
+          callNode->args.size() == 1)
+        if (auto drn = dyn_cast<DeclRefNode>(callNode->args[0].expr))
+          if (auto parentDecl = structDecl.getParentDecl()) {
+            ExprEmitter emitter(shared, *parentDecl, EC_Type);
+            if (ASTType t = emitter.emitExprType(drn)) {
+              structOp.setNonmaterializableTargetAttr(
+                  TypeAttr::get(t.mlirType));
+              return success();
+            }
+          }
     }
   }
   // Not handled in signature phase.
@@ -3340,7 +3353,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Now that we have the basic struct set up, process signature decorators.
   Decorators(decl, shared)
       .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return processStructSignatureDecorator(decorator, structOp);
+        return processStructSignatureDecorator(decorator, structOp, shared,
+                                               decl);
       });
 
   shared.notifyListenerOnStructDecl(decl, identifierLoc);

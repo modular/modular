@@ -45,9 +45,9 @@ ASTType::ASTType(TypedAttr typeParamExpr) {
 }
 
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+  if (auto declRef = dyn_cast_or_null<DeclRefType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-  if (auto metaType = dyn_cast<MetaTypeType>(mlirType))
+  if (auto metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
     return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
   return nullptr;
 }
@@ -72,6 +72,20 @@ bool ASTType::isNoneType() const { return mlirType.isa<LIT::NoneType>(); }
 /// Return true if this is a TypeCheckError type.
 bool ASTType::isTypeCheckErrorType() const {
   return mlirType.isa<TypeCheckErrorType>();
+}
+
+/// Return the nonmaterializable decorator target for the type, or null if there
+/// is none.
+ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
+  ASTDecl *decl = getDecl(shared);
+  if (!decl)
+    return {};
+
+  if (auto structOp = dyn_cast<StructDeclOp>(*decl))
+    if (auto targetMlirType = structOp.getNonmaterializableTarget())
+      return ASTType(*targetMlirType);
+
+  return {};
 }
 
 /// Return the StructDeclOp::RegisterPassable enum for this type.

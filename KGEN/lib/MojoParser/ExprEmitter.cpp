@@ -155,8 +155,13 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
     ValueDest dest;
-    if (existingValueType)
-      dest = ValueDest(LValueInitializerType{existingValueType}, context);
+    if (existingValueType) {
+      if (ASTType nmTarget = ASTType(existingValueType)
+                                 .getNonmaterializableTarget(emitter.shared))
+        dest = ValueDest(LValueInitializerType{nmTarget}, context);
+      else
+        dest = ValueDest(LValueInitializerType{existingValueType}, context);
+    }
 
     /// Emit the target as an LValue to understand what we're assigning into. If
     /// this fails, it will produce an error.
@@ -226,17 +231,19 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // always succeed and consume this ValueDest.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
     representation = LValueBufferTaken(); // Buffer used!
+    ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
+    ASTType materializedType = nmTarget ? nmTarget : resultType;
 
     if (auto varOp = dyn_cast<VarLetDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
              "Cannot resolve an already-resolved vardecl");
-      varOp.getResult().setType(PointerType::get(resultType));
+      varOp.getResult().setType(PointerType::get(materializedType));
       return SLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
     assert(isa<UnresolvedType>(globalOp.getType()) &&
            "Cannot resolve an already-resolved global");
-    globalOp.setType(resultType);
+    globalOp.setType(materializedType);
     return DLValue(RCRef<GlobalDLValue>::create(globalOp, resultType, loc));
   }
 
@@ -878,9 +885,30 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           !canZeroCostConvertSignature(valueSig, requiredSig)) {
         // We disable implicit conversions to prevent converting T -> S -> U in
         // one step, and to avoid infinite conversion cycles.
-        return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                   expr, CallSyntax::kImplicitConvert, dest,
-                                   /*allowImplicitConversion=*/false);
+        if (rvalueType.getNonmaterializableTarget(shared).isEqualCanon(
+                requiredType) &&
+            cValue.getIfPValue()) {
+          // For nonmaterializable types, we force a conversion to happen in the
+          // parameter domain.
+          CValue converted;
+          {
+            llvm::SaveAndRestore X(builder, {});
+            converted = emitConstructorCall(
+                requiredType, CallOperands({{cValue, expr}}), expr,
+                CallSyntax::kImplicitConvert, ValueDest::none(),
+                /*allowImplicitConversion=*/false);
+          }
+          if (!converted) {
+            dest.resetForError();
+            return {};
+          }
+          return emitResult(converted, expr, dest);
+        } else {
+          return emitConstructorCall(requiredType,
+                                     CallOperands({{cValue, expr}}), expr,
+                                     CallSyntax::kImplicitConvert, dest,
+                                     /*allowImplicitConversion=*/false);
+        }
       }
 
       // If we are dealing with signatures that differ only in argument names,
@@ -956,7 +984,8 @@ CValue ExprEmitter::emitExprCValue(const ExprNode *expr, ExprContext context) {
 SRValue ExprEmitter::emitExprSRValue(const ExprNode *expr, ExprContext context,
                                      ASTType resultType) {
   assert(expr && "cannot emit a null node");
-  return emitSRValue({emitExpr(expr, context, resultType), expr}, context);
+  return emitSRValue({emitExpr(expr, context, resultType), expr}, context,
+                     resultType);
 }
 
 PValue ExprEmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
@@ -1079,6 +1108,21 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
 BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                                       ExprContext context) {
+  // Convert nonmaterializables.
+  if (auto nmTarget =
+          value.ir.getRValueType().getNonmaterializableTarget(shared)) {
+    if (nmTarget.isEqualCanon(destLV.getRValueType())) {
+      ValueDest nmConversionDest(context);
+      CValue nmConversionVal =
+          emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
+                              CallSyntax::kIndirectCall, nmConversionDest,
+                              /*allowImplicitConversion=*/true);
+      value = {nmConversionVal, value.expr};
+    }
+  }
+  if (!value.ir.getRValueType())
+    return {};
+
   assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
          "Types should match");
 

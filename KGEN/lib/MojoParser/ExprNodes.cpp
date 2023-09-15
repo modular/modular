@@ -2014,6 +2014,37 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   return failure();
 }
 
+/// When emitting an op node that does not invoke a function but generates
+/// conditionals, if the input values are nonmaterializable but the destination
+/// did not explicitly request a value of the nonmaterializable type, then emit
+/// the conversion in the parameter domain before the conditional, which
+/// requires SRValues.
+static LogicalResult materializeTypesInConditional(ExprEmitter &emitter,
+                                                   const ExprNode *node,
+                                                   CValue &lhsV, CValue &rhsV,
+                                                   ExprNode *lhs, ExprNode *rhs,
+                                                   ValueDest &dest) {
+  ASTType lTarget = lhsV.getType().getNonmaterializableTarget(emitter.shared);
+  ASTType rTarget = rhsV.getType().getNonmaterializableTarget(emitter.shared);
+  if (lTarget) {
+    ValueDest lhsDest(lTarget, EC_CondExpr);
+    lhsV = emitter.emitCValue({lhsV, lhs}, lhsDest);
+    if (!lhsV) {
+      dest.resetForError();
+      return failure();
+    }
+  }
+  if (rTarget) {
+    ValueDest rhsDest(rTarget, EC_CondExpr);
+    rhsV = emitter.emitCValue({rhsV, rhs}, rhsDest);
+    if (!rhsV) {
+      dest.resetForError();
+      return failure();
+    }
+  }
+  return success();
+}
+
 /// This method emits the `x and y`, `x or y` operators.  These are
 /// interesting in Python:
 ///
@@ -2077,6 +2108,10 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   emitter.builder = trueBuilder;
   CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
   if (!rhsV)
+    return {};
+
+  if (failed(materializeTypesInConditional(emitter, this, lhsV, rhsV, lhs, rhs,
+                                           dest)))
     return {};
 
   /// If the types disagree, then we need to emit a conversion to a common
@@ -2393,7 +2428,13 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitCValue(value, EC_CondExpr, type);
   };
   if (coerceTypesToEachOther<CValue>(getLoc(), trueVal, trueExpr, falseVal,
-                                     falseExpr, emitter, convertValue))
+                                     falseExpr, emitter, convertValue)) {
+    dest.resetForError();
+    return {};
+  }
+
+  if (failed(materializeTypesInConditional(emitter, this, trueVal, falseVal,
+                                           trueExpr, falseExpr, dest)))
     return {};
 
   // Ok, we now know if the types were register_passable or not, so finish up
@@ -2403,19 +2444,19 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.
     emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
-    auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_BoolCondition);
+    auto falseSR = emitter.emitSRValue({falseVal, falseExpr}, EC_CondExpr);
     if (!falseSR)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, falseSR);
     // Finish true.
     emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
-    auto trueSR = emitter.emitSRValue({trueVal, trueExpr}, EC_BoolCondition);
+    auto trueSR = emitter.emitSRValue({trueVal, trueExpr}, EC_CondExpr);
     if (!trueSR)
       return {};
     emitter.builder->create<HLCF::YieldOp>(ifLoc, trueSR);
     emitter.builder->setInsertionPointAfter(ifOp);
     // Ensure the correct type is used.
-    ifOp->getResult(0).setType(trueVal.getType());
+    ifOp->getResult(0).setType(trueSR.getType());
     return emitter.emitResult(SRValue(ifOp.getResult(0)), this, dest);
   }
 
