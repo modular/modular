@@ -1041,7 +1041,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // match them up against arguments expected by the signature of the callee,
   // take note if variadic arguments are passed, and accumulate implicit
   // conversions required for a match.
-  size_t providedValueIdx = 0;
+  size_t posOperandIdx = 0;
   bool passesVarArgArgument = false;
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
@@ -1067,7 +1067,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
     // Handle case when there are no more provided positional arguments.
-    if (providedValueIdx == numPosOperands) {
+    if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
       if (signature.isVarArg(expectedArgIdx) ||
@@ -1075,7 +1075,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         // We consider an empty varargs list to be an implicit conversion,
         // so an exact signature match takes precedence.
         ++numImplicitConversions;
-        break;
+        continue;
       }
 
       // Check if the argument was passed as a keyword operand.
@@ -1110,30 +1110,30 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         [&, expectedConvention = expectedConvention,
          newBindings = std::ref(newBindings)](
             ASTType expectedType) -> std::optional<InflightDiag> {
-      ASTExprAnd<AnyValue> operand = posOperands[providedValueIdx];
+      ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
       auto [kind, ty] = checkOneOperand(operand, expectedConvention,
                                         expectedType, numImplicitConversions,
                                         allowImplicitConversions, emitter);
       if (kind != kValidType)
-        return emitDiagFor.argTypeMismatch(kind, ty, operand, providedValueIdx);
-      ++providedValueIdx;
+        return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
+      ++posOperandIdx;
       return std::nullopt;
     };
 
     // If we have a varargs argument, then it will eat the rest of the
-    // arguments, but we have to check each of them.
+    // positional arguments, but we have to check each of them.
     if (signature.isVarArg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
-      while (providedValueIdx != numPosOperands) {
+      while (posOperandIdx != numPosOperands) {
         if (auto result = processPositionalOperand(varArgsEltType))
           return std::move(*result);
         passesVarArgArgument = true;
       }
-      break;
+      continue;
     }
 
     // If we have a pack type, it must have a known number of elements, and so
-    // consume exactly that many arguments.
+    // consume exactly that many positional operands.
     if (POP::PackType packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicAttr().getValues()) {
         if (auto result = processPositionalOperand(ASTType(element)))
@@ -1153,7 +1153,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
       return std::move(*result);
   }
 
-  assert(providedValueIdx == numPosOperands &&
+  assert(posOperandIdx == numPosOperands &&
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!  For our payload, indicate the number of implicit
