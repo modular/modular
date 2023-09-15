@@ -29,18 +29,14 @@ public:
     auto cfgOr = Config::open();
     EXPECT_FALSE(cfgOr.isError()) << cfgOr.getError();
     cfg = std::move(*cfgOr);
-
-    // Get the original value to restore later.
-    filePathOriginalValue = cfg.getValue(filePathKey);
-    httpUrlOriginalValue = cfg.getValue(httpUrlKey);
   }
 
-  ~LogFileSetup() {
-    cfg.setValue(filePathKey, filePathOriginalValue);
-    cfg.setValue(httpUrlKey, httpUrlOriginalValue);
-    auto err = cfg.flush();
-    EXPECT_FALSE(err.isError()) << err.getError();
-  }
+  /// NOTE: This config stays in-memory and is passed to the TelemetryContext
+  /// constructor. This is done to isolate the telemetry config used by these
+  /// unit tests from Modular's centralized config. There might be other
+  /// processes running at the same time as these tests and emitting telemetry,
+  /// and we don't want them to write to the same files.
+  Config getConfig() { return std::move(cfg); }
 
   TempFile getLogFile(StringRef prefix, StringRef level) {
     EXPECT_THAT(level.str(), testing::AnyOf("0", "1", "2"));
@@ -55,10 +51,6 @@ public:
 
     // Set telemetry level.
     cfg.setValue("telemetry.level", level);
-
-    // Flush the config to the file so we can read it from the context.
-    auto err = cfg.flush();
-    EXPECT_FALSE(err.isError()) << err.getError();
 
     // Return the temp file so it'll automatically get destroyed.
     return std::move(*tmpOr);
@@ -165,7 +157,7 @@ TEST(Telemetry, Counter) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("counter", "0");
 
-  TelemetryContext ctx;
+  TelemetryContext ctx({}, logFileSetup.getConfig());
 
   auto counter = ctx.createUInt64Counter("basic.test.counter", Level::L0);
   counter.add(32);
@@ -215,7 +207,7 @@ TEST(Telemetry, Histogram) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram", "1");
 
-  TelemetryContext ctx;
+  TelemetryContext ctx({}, logFileSetup.getConfig());
 
   auto hist = ctx.createUInt64Histogram("basic.test.histogram", Level::L0);
   hist.record(32);
@@ -278,7 +270,7 @@ TEST(Telemetry, HistogramL1) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram", "0");
 
-  TelemetryContext ctx;
+  TelemetryContext ctx({}, logFileSetup.getConfig());
 
   auto hist = ctx.createUInt64Histogram("optional.histogram", Level::L1);
   hist.record(32);
@@ -310,7 +302,7 @@ TEST(Telemetry, Logger) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
 
-  TelemetryContext ctx;
+  TelemetryContext ctx({}, logFileSetup.getConfig());
 
   StringRef logString = "hello\nthis is a string";
   StringRef escapedLogString = "hello\\nthis is a string";
@@ -370,7 +362,7 @@ TEST(Telemetry, LoggerL2) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
 
-  TelemetryContext ctx;
+  TelemetryContext ctx({}, logFileSetup.getConfig());
 
   StringRef logString = "hello\nthis is a string";
   StringRef escapedLogString = "hello\\nthis is a string";
@@ -406,7 +398,7 @@ TEST(Telemetry, Resources) {
   extras["aResource"] = resourceVal;
   extras["aNumber"] = 32;
 
-  TelemetryContext ctx(extras);
+  TelemetryContext ctx(extras, logFileSetup.getConfig());
 
   auto logger = ctx.getLogger("basic.log");
   logger->getInfo("test.Resources", Level::L0) << StringRef("foo");

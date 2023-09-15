@@ -7,6 +7,7 @@
 #ifndef SUPPORT_TELEMETRY_H
 #define SUPPORT_TELEMETRY_H
 
+#include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
@@ -63,7 +64,10 @@ public:
 
   /// Construct a TelemetryContext with additional resource strings. These will
   /// be added to the OTel resources that are attached to every log message.
-  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {});
+  /// NOTE: `config` parameter is only used by tests right now, to isolate
+  /// telemetry test config from Modular's centralized config.
+  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
+                   std::optional<Config> config = std::nullopt);
 
   ~TelemetryContext();
 

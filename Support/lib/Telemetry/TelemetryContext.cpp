@@ -6,7 +6,6 @@
 
 #include "Support/Telemetry/Telemetry.h"
 
-#include "Support/Configuration.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
@@ -92,7 +91,8 @@ static void configureInternalLogging(Config &cfg) {
 #endif // MODULAR_ENABLE_TELEMETRY
 
 TelemetryContext::TelemetryContext(
-    const llvm::StringMap<TelemetryContext::AttributeValue> &resources) {
+    const llvm::StringMap<TelemetryContext::AttributeValue> &resources,
+    std::optional<Config> config) {
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
 
@@ -121,10 +121,15 @@ TelemetryContext::TelemetryContext(
   }
 
   // -------- Get config --------
-  auto configOr = Config::open();
-  if (configOr.isError())
-    llvm::report_fatal_error(configOr.getError());
-  Config cfg = std::move(*configOr);
+  Config cfg;
+  if (config) {
+    cfg = std::move(*config);
+  } else {
+    auto configOr = Config::open();
+    if (configOr.isError())
+      llvm::report_fatal_error(configOr.getError());
+    cfg = std::move(*configOr);
+  }
 
   // Check if telemetry is enabled. Note that currently users have to opt out of
   // telemetry, so it is enabled unless the user explicitly disables.
