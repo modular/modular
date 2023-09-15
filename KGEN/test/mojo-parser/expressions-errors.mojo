@@ -176,10 +176,10 @@ fn dynamic_type_value():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{function declared here}}
-fn var_func(s: String, *a: Int): pass
+fn var_func(s: String, *args: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn pack_func[*Ts: AnyType](*a: *Ts): pass
+fn pack_func[*Ts: AnyType](*args: *Ts): pass
 
 # expected-note @+1 {{function declared here}}
 fn take_kw_args(i: Int, j: Int = 7): pass
@@ -192,15 +192,17 @@ def test_kw_args():
   take_kw_args(j = 42, 1)
 
 def test_kw_args_2():
-  # expected-error @+1 {{unexpected keyword argument}}
-  var_func("boo", a=3)
-  # expected-error @+1 {{unexpected keyword argument}}
-  pack_func("boo", a=2)
-  # expected-error @+1 {{unexpected keyword argument}}
+  # expected-error @+1 {{unexpected keyword argument: 'args'}}
+  var_func("boo", args=3)
+  # expected-error @+1 {{unexpected keyword argument: 'args'}}
+  pack_func("boo", args=2)
+  # expected-error @+1 {{unexpected keyword argument: 'z'}}
   take_kw_args(8, z=13)
-  # expected-error @+1 {{unexpected keyword argument}}
-  take_kw_args(8, j=11, z=13)
-  # expected-error @+1 {{argument #0 passed both as positional and keyword operand}}
+  # expected-error @+1 {{unexpected keyword argument: 'z'}}
+  take_kw_args(8, z=13)
+  # expected-error @+1 {{unexpected keyword arguments: 'x', 'z'}}
+  take_kw_args(8, x=11, z=13)
+  # expected-error @+1 {{argument #0 ('i') passed both as positional and keyword operand}}
   take_kw_args(8, i=11)
 
 ##===----------------------------------------------------------------------===##

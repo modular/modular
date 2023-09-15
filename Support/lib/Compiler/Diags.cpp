@@ -322,6 +322,17 @@ InflightDiag &InflightDiag::attachNote(SMLoc loc) & {
   return attachNote(diags->translateLocation(loc));
 }
 
+void InflightDiag::addDiag(InflightDiag &&otherDiag) {
+  auto otherMessages = std::move(otherDiag.messages);
+  Message &otherPrimary = otherMessages[0];
+  Message &lastMsg = messages.back();
+  lastMsg.text += otherPrimary.text;
+  llvm::append_range(lastMsg.ranges, std::move(otherPrimary.ranges));
+  llvm::append_range(lastMsg.fixIts, std::move(otherPrimary.fixIts));
+  llvm::append_range(messages, llvm::drop_begin(std::move(otherMessages)));
+  otherDiag.abandon();
+}
+
 void InflightDiag::addText(const Twine &text) {
   messages.back().text += text.str();
 }
@@ -409,4 +420,8 @@ void M::addToDiagnostic(SourceRange range, InflightDiag &diag) {
 /// This adds a fixit hint.
 void M::addToDiagnostic(FixIt fixIt, InflightDiag &diag) {
   diag.addFixIt(fixIt);
+}
+
+void M::addToDiagnostic(InflightDiag &&otherDiag, InflightDiag &diag) {
+  diag.addDiag(std::move(otherDiag));
 }
