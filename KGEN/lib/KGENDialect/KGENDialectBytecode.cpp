@@ -602,13 +602,15 @@ KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
   if (failed(reader.readAttributes(defaultArguments)))
     return FnMetadataAttr();
 
-  uint64_t fnEffects;
-  if (failed(reader.readVarInt(fnEffects)))
+  FailureOr<APInt> fnEffectsValue =
+      reader.readAPIntWithKnownWidth(/*bitWidth=*/16);
+  if (failed(fnEffectsValue))
     return FnMetadataAttr();
+  auto fnEffects =
+      static_cast<impl::FnEffects>(fnEffectsValue->getLimitedValue());
 
   return FnMetadataAttr::get(getContext(), argNames, inputConventions,
-                             defaultArguments,
-                             static_cast<FnEffects>(fnEffects));
+                             defaultArguments, FnEffects(fnEffects));
 }
 
 void KGENBytecodeInterface::write(FnMetadataAttr attr,
@@ -619,7 +621,9 @@ void KGENBytecodeInterface::write(FnMetadataAttr attr,
     writer.writeVarInt(static_cast<uint64_t>(value));
   });
   writer.writeAttributes(attr.getDefaultArguments());
-  writer.writeVarInt(static_cast<uint64_t>(attr.getFnEffects()));
+  APInt fnEffectsValue(/*numBits=*/16,
+                       static_cast<uint64_t>(attr.getFnEffects().getImpl()));
+  writer.writeAPIntWithKnownWidth(fnEffectsValue);
 }
 
 //===----------------------------------------------------------------------===//

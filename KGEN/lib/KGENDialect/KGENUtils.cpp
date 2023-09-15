@@ -1031,12 +1031,12 @@ static OptionalParseResult parseOptionalSignatureValues(
 
   // Parse the function effects. Check for each case to disambiguate the syntax
   // for interfaces.
-  FnEffects effect = FnEffects::None;
+  auto effects = impl::FnEffects::None;
   StringRef kw;
   while (succeeded(p.parseOptionalKeyword(
       &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
             "param_vararg", "capturing", "ownedresult", "escaping"}))) {
-    effect = effect | *symbolizeFnEffects(kw);
+    effects |= *impl::symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
     // can't specify more effects.
@@ -1056,7 +1056,7 @@ static OptionalParseResult parseOptionalSignatureValues(
       ArrayRef<ValueInputConvention>, ArrayRef<TypedAttr>, FnEffects);
   metadata = ((GetCheckedT)&FnMetadataAttr::getChecked)(
       emitError, p.getContext(), StringArrayAttr::get(p.getContext(), argNames),
-      inputConventions, defaults, effect);
+      inputConventions, defaults, FnEffects(effects));
   if (!metadata)
     return failure();
   values = p.getBuilder().getFunctionType(argTypes, resTypes);
@@ -1103,8 +1103,9 @@ printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
   p << ')';
 
   // Print the function effects.
-  if (metadata.getFnEffects() != FnEffects::None)
-    p << ' ' << stringifyFnEffects(metadata.getFnEffects());
+  impl::FnEffects effects = metadata.getFnEffects().getImpl();
+  if (effects != impl::FnEffects::None)
+    p << ' ' << impl::stringifyFnEffects(effects);
 
   if constexpr (optionalResultList)
     p.printOptionalArrowTypeList(functionType.getResults());

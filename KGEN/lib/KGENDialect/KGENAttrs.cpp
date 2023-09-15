@@ -49,6 +49,41 @@ struct FieldParser<KGENDType> {
 } // namespace mlir
 
 //===----------------------------------------------------------------------===//
+// FnEffects
+//===----------------------------------------------------------------------===//
+
+namespace mlir {
+/// Parse function effects.
+template <>
+struct FieldParser<FnEffects> {
+  static FailureOr<FnEffects> parse(AsmParser &parser) {
+    std::string str;
+    SMLoc loc = parser.getCurrentLocation();
+    if (parser.parseKeywordOrString(&str))
+      return failure();
+    std::optional<KGEN::impl::FnEffects> effects =
+        KGEN::impl::symbolizeFnEffects(str);
+    if (!effects)
+      return parser.emitError(loc, "invalid function effects");
+    return FnEffects(*effects);
+  }
+};
+} // namespace mlir
+
+namespace M::KGEN {
+static raw_ostream &operator<<(raw_ostream &os, FnEffects effects) {
+  os << impl::stringifyFnEffects(effects.getImpl());
+  return os;
+}
+static llvm::hash_code hash_value(FnEffects effects) {
+  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
+}
+static bool operator==(FnEffects lhs, FnEffects rhs) {
+  return lhs.getImpl() == rhs.getImpl();
+}
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
 // KGENDialect attribute support
 //===----------------------------------------------------------------------===//
 
@@ -88,7 +123,7 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 //===----------------------------------------------------------------------===//
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
-  return get(ctx, numInputs, FnEffects::None);
+  return get(ctx, numInputs, FnEffects());
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
@@ -107,7 +142,7 @@ FnMetadataAttr FnMetadataAttr::getWithFnEffects(FnEffects effects) {
 }
 
 bool FnMetadataAttr::isDefault() {
-  return getFnEffects() == FnEffects::None &&
+  return getFnEffects() == FnEffects() &&
          llvm::all_of(getInputConventions(),
                       [](ValueInputConvention inputConv) {
                         return inputConv == ValueInputConvention::OwnedInReg;

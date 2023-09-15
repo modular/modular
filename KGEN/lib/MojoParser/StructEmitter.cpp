@@ -40,7 +40,7 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
       StructDeclOp::RP_RegisterPassableTrivial)
-    fnEffects = fnEffects | FnEffects::OwnedResult;
+    fnEffects.setOwnedRegisterResult();
 
   auto metadata = builder.getAttr<FnMetadataAttr>(
       builder.getAttr<StringArrayAttr>(argNames), argConventions,

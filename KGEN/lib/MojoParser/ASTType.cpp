@@ -379,8 +379,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       if (!sig.getInputParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (bitEnumContainsAny(sig.getFnEffects(), FnEffects::ParamVarArg) &&
-              i == sig.getNumInputParams() - 1) {
+          if (sig.hasParamVarArgs() && i == sig.getNumInputParams() - 1) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
                 .print(os, forDiag);

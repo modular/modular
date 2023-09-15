@@ -1056,7 +1056,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
 
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
-    effects = effects | FnEffects::Capturing;
+    effects.setCapturing();
   results.push_back(SignatureType::get(
       sig.getInputParamTypes(), sig.getResultParamTypes(),
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),

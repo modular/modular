@@ -27,6 +27,10 @@ class TypeArrayAttr;
 class VariadicType;
 class VariadicAttr;
 
+//===----------------------------------------------------------------------===//
+// IndexRefRemapper
+//===----------------------------------------------------------------------===//
+
 /// Utility class for remapping named parameter references to index references.
 class IndexRefRemapper {
 public:

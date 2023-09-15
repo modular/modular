@@ -165,7 +165,7 @@ def KGEN_ValueInputConvention : I32EnumAttr<"ValueInputConvention",
 
 /// This describes the encoding of the function effects in the metadata of a
 /// SignatureType.
-def KGEN_FnEffects : I16BitEnumAttr<"FnEffects", "Function effects", [
+def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This function has no effects.
   I16BitEnumAttrCaseNone<"None", "none">,
   /// This function can throw.
@@ -187,7 +187,8 @@ def KGEN_FnEffects : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// This local function has state that may live beyond its defined scope.
   I16BitEnumAttrCaseBit<"Escaping", 8, "escaping">,
 ]> {
-  let cppNamespace = "M::KGEN";
+  let cppNamespace = "M::KGEN::impl";
+  let genSpecializedAttr = 0;
 }
 
 //===----------------------------------------------------------------------===//
