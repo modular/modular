@@ -3347,61 +3347,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   return success();
 }
 
-/// This method creates a FuncOp for a method inside of a struct with the
-/// specified value signature information.  It handles the mechanics of creating
-/// the function but also of registering it with the DeclResolver.
-static std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
-    SharedState &shared, StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, Type resultType,
-    ImplicitLocOpBuilder &builder, ASTDecl &structDecl, DeclResolver &resolver,
-    SpecialFunctionKind specialFnID) {
-  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
-
-  // Get the signature for the function.
-  auto fnType = builder.getFunctionType(argTypes, resultType);
-
-  FnEffects fnEffects = FnEffects();
-  // If the result of the function is a non-trivial type, mark the function
-  // effect as having an owned result so ownership tracking will notice it.
-  if (!ASTType(resultType).isTrivial(structDecl.getLoc(), resolver.shared))
-    fnEffects.setOwnedRegisterResult();
-
-  // TODO: Should raise if anything we invoke raises.
-  auto metadata = builder.getAttr<FnMetadataAttr>(
-      builder.getAttr<StringArrayAttr>(argNames), argConventions,
-      /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
-  auto signature = SignatureType::get({}, {}, fnType, metadata);
-
-  // Create the empty function.
-  StringAttr nameAttr =
-      DeclResolver::getMangledName(builder.getStringAttr(name), signature);
-  auto funcOp = builder.create<LIT::FuncOp>(nameAttr, signature, specialFnID);
-
-  // Generate a debug subprogram for this function.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  DeclResolver::setLocationDebugScope(shared, diScopeGuard, funcOp, name);
-
-  // Register the method in the struct.
-  ASTDecl &funcDecl = resolver.addFullyResolvedDecl(
-      funcOp.getOperation(), name, structDecl.getLoc(), &structDecl);
-
-  // Set the symbol and notice if we are redeclaring something.
-  if (Operation *existing = resolver.finalizeFuncSignature(funcOp, funcDecl)) {
-    resolver.emitError(
-        existing->getLoc(),
-        "internal compiler error: synthesized member that already exists");
-  }
-
-  // If the struct is register_passable("trivial"), make this
-  // @always_inline("nodebug").
-  if (structOp.getRegisterPassable() ==
-      StructDeclOp::RP_RegisterPassableTrivial)
-    funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-
-  return {funcOp, funcDecl};
-}
-
 /// Look up the __del__ destructor for the specified `type` which is needed
 /// for the specified declaration (typically a var or argument declaration).
 /// This returns the destructor if successful, diagnoses an error if not, and
@@ -3475,14 +3420,14 @@ static TypedAttr synthesizeEmptyDtor(SharedState &shared, StructDeclOp structOp,
   StringAttr selfName = builder.getStringAttr("self");
 
   // Create the FuncOp and ASTDecl for the method.
-  auto [funcOp, funcDecl] =
-      synthesizeMethodInStruct(shared, "__del__", selfType.mlirType, convention,
-                               selfName, resolver.shared.getNoneType(), builder,
-                               structDecl, resolver, SpecialFunctionKind::kDel);
+  StructEmitter emitter(shared);
+  auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
+      "__del__", selfType.mlirType, convention, selfName, shared.getNoneType(),
+      structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
   Block *body = funcOp.getBody();
-  BlockArgument arg = body->addArgument(selfType, structOp.getLoc());
+  BlockArgument arg = body->getArgument(0);
 
   // We need to make a var box + store for register_passable values since that
   // is what lifetime tracking expects.
@@ -3545,7 +3490,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   StructEmitter structEmitter(shared);
   StructDeclOp declOp = dyn_cast<StructDeclOp>(structDecl);
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, structDecl.getLoc(), structDecl, true);
+      structDecl, /*generateFieldwiseInit=*/true);
   if (!stubs) {
     emitError(decoratorLoc, "'@value' cannot synthesize members of struct '")
         << declOp.getSymName() << "'";

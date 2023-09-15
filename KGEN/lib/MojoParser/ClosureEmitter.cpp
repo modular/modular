@@ -167,8 +167,8 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
         field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, parent.getLoc(), astDecl, /*generateFieldwiseInit*/ false,
-      /*forceGenerateDestructor*/ true);
+      astDecl, /*generateFieldwiseInit=*/false,
+      /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs.getDestructor();
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
@@ -228,11 +228,9 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
     auto funcPtrPtr = builder.create<StructGEPOp>(copySelf, copy);
     auto ptrToImpl = builder.create<StructGEPOp>(copySelf, impl);
     auto loadedFuncPtr = builder.create<POP::LoadOp>(funcPtrPtr);
-    builder.create<CallSignatureOp>(noneType, loadedFuncPtr,
-                                    ValueRange({
-                                        ptrToImpl,
-                                        loadedExistingImpl,
-                                    }));
+    builder.create<CallSignatureOp>(
+        noneType, loadedFuncPtr,
+        ArrayRef<Value>{ptrToImpl, loadedExistingImpl});
   }
   // Populate move constructor.
   {
@@ -262,13 +260,12 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   // Add the __call__ Method.
   SignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(ptrToSelfType, signatureType);
-  LIT::FuncOp callMethod = structEmitter.synthesizeMethodInStruct(
+  auto [callMethod, _] = structEmitter.synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getValueInputs(),
       closureMethodSignatureType.getValueInputConventions(),
       callMemberSignatureType.getArgNames(),
-      signatureType.getValueResults().front(), declOp,
-      SpecialFunctionKind::kNormal, astDecl.getLoc(),
-      closureMethodSignatureType.getFnEffects());
+      signatureType.getValueResults().front(), astDecl,
+      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
 
   // Populate the body of ClosureWrapper::__call__.
   builder = ImplicitLocOpBuilder::atBlockBegin(callMethod.getLoc(),
@@ -422,8 +419,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                      llvm::drop_end(closureImplSigArgNames, wrapperNumArgs));
 
   GeneratedStubs stubs = structEmitter.addMissingValueMemberStubsToStruct(
-      declOp, astDecl.getLoc(), astDecl, /*generateFieldwiseInit=*/false);
-  structEmitter.synthesizeMemberwiseInit(astDecl.getLoc(), declOp, initSigTypes,
+      astDecl, /*generateFieldwiseInit=*/false);
+  structEmitter.synthesizeMemberwiseInit(astDecl, initSigTypes,
                                          initSigConventions, initSigNames);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
@@ -573,8 +570,10 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   argConventions.push_back(ValueInputConvention::BorrowedInMem);
   argNames.push_back(StringAttr::get(closureWrapper->getContext(), "impl"));
   FuncOp init = structEmitter.addVoidMethod(
-      closureWrapper, "__init__", argTypes, argConventions, argNames,
-      SpecialFunctionKind::kInit, location);
+      *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
+           .getDecl(shared),
+      "__init__", argTypes, argConventions, argNames,
+      SpecialFunctionKind::kInit);
 
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());

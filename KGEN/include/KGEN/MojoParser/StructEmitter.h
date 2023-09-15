@@ -58,9 +58,10 @@ public:
   /// destructor but that struct has an init that allocates heap memory. In this
   /// case set the forceGenerateDestructor flag to true to force destructor
   /// generation.
-  GeneratedStubs addMissingValueMemberStubsToStruct(
-      StructDeclOp declOp, SMLoc loc, ASTDecl &parent,
-      bool generateFieldwiseInit, bool forceGenerateDestructor = false);
+  GeneratedStubs
+  addMissingValueMemberStubsToStruct(ASTDecl &structDecl,
+                                     bool generateFieldwiseInit,
+                                     bool forceGenerateDestructor = false);
 
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
@@ -70,11 +71,11 @@ public:
 
   /// Create a FuncOp within the scope of the given struct and add function
   /// terminators.
-  LIT::FuncOp addVoidMethod(StructDeclOp selfStruct, StringRef prefix,
+  LIT::FuncOp addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                             ArrayRef<Type> argTypes,
                             ArrayRef<ValueInputConvention> argConventions,
                             ArrayRef<StringAttr> argNames,
-                            SpecialFunctionKind kind, SMLoc loc);
+                            SpecialFunctionKind kind);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
@@ -89,20 +90,20 @@ public:
                              ImplicitLocOpBuilder &builder,
                              FnEffects effects = FnEffects());
 
+  /// This synthesizes an __init__ method that accepts values for every field of
+  /// a struct, making it easy for external clients to initialize it.
   LIT::FuncOp
-  synthesizeMemberwiseInit(SMLoc location, StructDeclOp structOp,
-                           ArrayRef<Type> argTypes,
+  synthesizeMemberwiseInit(ASTDecl &structDecl, ArrayRef<Type> argTypes,
                            ArrayRef<ValueInputConvention> argConventions,
                            ArrayRef<StringAttr> argNames);
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated.
-  LIT::FuncOp
+  std::pair<LIT::FuncOp, ASTDecl &>
   synthesizeMethodInStruct(StringRef name, ArrayRef<Type> argTypes,
                            ArrayRef<ValueInputConvention> argConventions,
                            ArrayRef<StringAttr> argNames, Type resultType,
-                           StructDeclOp structOp,
-                           SpecialFunctionKind specialFnID, SMLoc loc,
+                           ASTDecl &structDecl, SpecialFunctionKind specialFnID,
                            FnEffects effects = FnEffects());
 
 private:
