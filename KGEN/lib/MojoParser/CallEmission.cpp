@@ -57,11 +57,14 @@ public:
   /// should always return null /without/ an error if it cannot be inferred, and
   /// return a specific value if unambiguously determined.
   PValue infer(SignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
-               ArrayRef<ASTExprAnd<AnyValue>> operands);
+               const CallOperands &callOperands);
 
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                ASTType expectedType,
+                                ValueInputConvention expectedConvention);
 
   SharedState &state;
   size_t parameterIndex;
@@ -76,6 +79,10 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType))
     return matchParams(ParameterizedTypeConstantAttr::get(actualType),
                        expectedParamRef.getParam());
+
+  // If the types trivially match then there is no inference to do.
+  if (actualType == expectedType)
+    return success();
 
   // Handle when both are DeclRefTypes.
   if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {
@@ -126,10 +133,6 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     if (auto expected = dyn_cast<VariadicType>(expectedType))
       return matchParams(actual.getElementType(), expected.getElementType());
 
-  // If the types trivial match then we're done and there is no inference to do.
-  if (actualType == expectedType)
-    return success();
-
   // TODO: Could do StructType?
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
              actualType.dump(); expectedType.dump();
@@ -164,13 +167,56 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   return success();
 }
 
-/// Given an incomplete parameter binding set for a call to the specified
-/// signature, try to infer the value of the next 'decl' parameter.  This should
-/// always return null /without/ an error if it cannot be inferred, and return
-/// a specific value if unambiguously determined.
+LogicalResult ParameterInferenceState::checkOneOperand(
+    ASTExprAnd<AnyValue> operand, ASTType expectedType,
+    ValueInputConvention expectedConvention) {
+  // We'll bind the next provided value.
+  switch (expectedConvention) {
+  case ValueInputConvention::InitSelf:
+    // If this is an UnknownAttr, then it is a placeholder for type
+    // checking, just let it pass.
+    if (PValue pValue = operand.ir.getIfPValue())
+      if (isa<UnknownAttr>(pValue.get()))
+        return success();
+    [[fallthrough]];
+  case ValueInputConvention::ByRef:
+  case ValueInputConvention::ByRefResult: {
+    // The actual value must be an lvalue if callee takes things by-ref.
+    LValue argVal = operand.ir.getIfLValue();
+    if (!argVal)
+      return failure();
+
+    // By-ref argument types must exactly match, no conversions are allowed.
+    return matchTypes(argVal.getRValueType(),
+                      expectedType.getReferenceElementType());
+  }
+
+  case ValueInputConvention::OwnedInMem:
+  case ValueInputConvention::BorrowedInMem:
+    // Otherwise,we expect an r-value to match up, ignoring the pointer type
+    // from the convention.
+    expectedType = expectedType.getReferenceElementType();
+    [[fallthrough]];
+  case ValueInputConvention::OwnedInReg:
+  case ValueInputConvention::BorrowedInReg:
+    // Otherwise, we pass as an r-value if we know the type.
+    // TODO: Consider implicit conversions?
+    if (CValue cValue = operand.ir.getIfCValue())
+      return matchTypes(cValue.getRValueType(), expectedType);
+    // Consider the types of ORValues with single candidates.
+    if (ORValue orValue = operand.ir.getIfORValue())
+      if (PValue pValue = orValue->emitAsPValue())
+        return matchTypes(pValue.getType(), expectedType);
+    return success();
+  }
+};
+
 PValue ParameterInferenceState::infer(SignatureType signature,
                                       ArrayRef<TypedAttr> bindingsSoFar,
-                                      ArrayRef<ASTExprAnd<AnyValue>> operands) {
+                                      const CallOperands &callOperands) {
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  size_t numPosOperands = posOperands.size();
+
   // TODO: Apply the bindings so far (plus a distinct new attribute relating
   // back to the original decls for ones that are missing) to the signature with
   // getSpecializedSignature so we benefit from the already-fixed substitutions
@@ -180,18 +226,17 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
-  size_t providedValueIdx = 0;
-  for (auto [expectedArgIdx, expectedType] :
-       llvm::enumerate(signature.getValueInputs())) {
-    ValueInputConvention expectedConvention =
-        signature.getInputConvention(expectedArgIdx);
+  size_t posOperandIdx = 0;
+  for (auto [expectedArgIdx, expectedType, expectedConvention] :
+       llvm::enumerate(signature.getValueInputs(),
+                       signature.getValueInputConventions())) {
 
     // There is no provided operand for a by-ref result.
     if (expectedConvention == ValueInputConvention::ByRefResult)
       continue;
 
-    // Handle case when there are no more provided arguments.
-    if (providedValueIdx == operands.size()) {
+    // Handle case when there are no more provided positional operands.
+    if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list, then it can be initialized
       // with zero values no problem.
       if (signature.isVarArg(expectedArgIdx))
@@ -214,55 +259,14 @@ PValue ParameterInferenceState::infer(SignatureType signature,
 
     // Otherwise we'll check the expected type against one (or more in the case
     // of varargs) provided values.
-    auto checkOneOperand = [&](ASTType expectedType) -> LogicalResult {
-      // We'll bind the next provided value.
-      auto operand = operands[providedValueIdx++];
-      switch (expectedConvention) {
-      case ValueInputConvention::InitSelf:
-        // If this is an UnknownAttr, then it is a placeholder for type
-        // checking, just let it pass.
-        if (auto pValue = operand.ir.getIfPValue())
-          if (isa<UnknownAttr>(pValue.get()))
-            return success();
-        [[fallthrough]];
-      case ValueInputConvention::ByRef:
-      case ValueInputConvention::ByRefResult: {
-        // The actual value must be an lvalue if callee takes things by-ref.
-        LValue argVal = operand.ir.getIfLValue();
-        if (!argVal)
-          return failure();
-
-        // By-ref argument types must exactly match, no conversions are allowed.
-        return matchTypes(argVal.getRValueType(),
-                          expectedType.getReferenceElementType());
-      }
-
-      case ValueInputConvention::OwnedInMem:
-      case ValueInputConvention::BorrowedInMem:
-        // Otherwise,we expect an r-value to match up, ignoring the pointer type
-        // from the convention.
-        expectedType = expectedType.getReferenceElementType();
-        [[fallthrough]];
-      case ValueInputConvention::OwnedInReg:
-      case ValueInputConvention::BorrowedInReg:
-        // Otherwise, we pass as an r-value if we know the type.
-        // TODO: Consider implicit conversions?
-        if (auto c = operand.ir.getIfCValue())
-          return matchTypes(c.getRValueType(), expectedType);
-        // Consider the types of ORValues with single candidates.
-        if (auto o = operand.ir.getIfORValue())
-          if (auto p = o->emitAsPValue())
-            return matchTypes(p.getType(), expectedType);
-        return success();
-      }
-    };
 
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
     if (signature.isVarArg(expectedArgIdx)) {
       auto varArgsEltType = ASTType(expectedType).getVariadicElementType();
-      while (providedValueIdx != operands.size())
-        if (failed(checkOneOperand(varArgsEltType)))
+      while (posOperandIdx != numPosOperands)
+        if (failed(checkOneOperand(posOperands[posOperandIdx++], varArgsEltType,
+                                   expectedConvention)))
           return {};
       continue;
     }
@@ -274,8 +278,8 @@ PValue ParameterInferenceState::infer(SignatureType signature,
       if (!inferredValues.empty())
         break;
       SmallVector<TypedAttr> types;
-      while (providedValueIdx != operands.size()) {
-        ASTExprAnd<AnyValue> operand = operands[providedValueIdx++];
+      while (posOperandIdx != numPosOperands) {
+        ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
         CValue value = operand.ir.getIfCValue();
         if (!value) {
           state.emitWarning(operand.expr->getLoc(),
@@ -295,22 +299,24 @@ PValue ParameterInferenceState::infer(SignatureType signature,
     // In the typical case, this argument isn't varargs or a pack, so just check
     // it.  If there was a problem, report it, otherwise continue on to the next
     // expected argument to check.
-    if (failed(checkOneOperand(expectedType)))
+    if (failed(checkOneOperand(posOperands[posOperandIdx++], expectedType,
+                               expectedConvention)))
       return {};
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (providedValueIdx != operands.size() && !signature.hasParamVarArgs())
+  if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
     return {};
 
-  // If we have no inferred values or if they disagree, then we fail to infer.
-  if (inferredValues.empty() ||
-      !llvm::all_of(inferredValues, [&](PValue v) -> bool {
-        return v.get() == inferredValues.front().get();
-      }))
-    return {};
+  // We succeed iff we were able to infer a single (unique) value.
+  if (!inferredValues.empty()) {
+    PValue first = inferredValues.front();
+    auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
+    if (llvm::all_of(inferredValues, sameAsFirst))
+      return first;
+  }
 
-  return inferredValues.front();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -981,7 +987,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
           [&](size_t index, Type type, ASTType expectedParamType,
               ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
             return ParameterInferenceState(emitter.shared, index, type)
-                .infer(signature, bindingsSoFar, posOperands);
+                .infer(signature, bindingsSoFar, callOperands);
           },
           /*isPackVarArg=*/signature.hasPackVarArgs() && !posOperands.empty());
 
