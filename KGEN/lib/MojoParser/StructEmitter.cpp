@@ -64,16 +64,17 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
   return funcOp;
 }
 
-LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
+std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, Type resultType, StructDeclOp structOp,
-    SpecialFunctionKind specialFnID, SMLoc loc, FnEffects effects) {
+    ArrayRef<StringAttr> argNames, Type resultType, ASTDecl &structDecl,
+    SpecialFunctionKind specialFnID, FnEffects effects) {
+  StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
   LIT::FuncOp funcOp =
       createFunction(name, argTypes, argConventions, argNames, resultType,
-                     specialFnID, loc, builder, effects);
+                     specialFnID, structDecl.getLoc(), builder, effects);
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
@@ -81,47 +82,40 @@ LIT::FuncOp StructEmitter::synthesizeMethodInStruct(
       StructDeclOp::RP_RegisterPassableTrivial)
     funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
-  Type selfType = ASTDecl::computeSelfTypeForStruct(structOp);
-  ASTDecl &astDecl = shared.declResolver->getDeclForTypeSymbol(
-      cast<DeclRefType>(selfType).getSymbol());
+  // Register the method in the struct.
+  ASTDecl &funcDecl = shared.declResolver->addFullyResolvedDecl(
+      funcOp.getOperation(), StringAttr::get(shared.getContext(), name),
+      structDecl.getLoc(), &structDecl);
 
-  ASTDecl &decl = shared.declResolver->addFullyResolvedDecl(
-      funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
-      &astDecl);
-
+  // Set the symbol and notice if we are redeclaring something.
   if (Operation *existing =
-          shared.declResolver->finalizeFuncSignature(funcOp, decl)) {
-    shared.emitError(loc,
+          shared.declResolver->finalizeFuncSignature(funcOp, funcDecl)) {
+    shared.emitError(structDecl.getLoc(),
                      "Duplicate definition of " + funcOp.getSymName().str());
-    return cast<M::KGEN::LIT::FuncOp>(existing);
   }
-  return funcOp;
+
+  return {funcOp, funcDecl};
 }
 
-/// This synthesizes an __init__ method that accepts values for every field of
-/// a struct, making it easy for external clients to initialize it.
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
-    SMLoc location, StructDeclOp structOp, ArrayRef<Type> argTypes,
+    ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
     ArrayRef<StringAttr> argNames) {
-  Type selfType = ASTDecl::computeSelfTypeForStruct(structOp);
-  Type resultType;
+  auto structOp = cast<StructDeclOp>(structDecl);
+  ASTType selfType = structDecl.getSelfType();
   bool isMemoryOnly =
       structOp.getRegisterPassable() == StructDeclOp::RP_MemoryOnly;
 
   // Figure out the type of the 'self' argument/result.
-  if (isMemoryOnly)
-    resultType = shared.getNoneType();
-  else
-    resultType = selfType;
+  Type resultType = isMemoryOnly ? shared.getNoneType() : selfType;
 
   auto specialFnId =
       isMemoryOnly ? SpecialFunctionKind::kInit : SpecialFunctionKind::kInitReg;
 
   // Create the FuncOp and ASTDecl for the method.
-  LIT::FuncOp funcOp =
+  auto [funcOp, _] =
       synthesizeMethodInStruct("__init__", argTypes, argConventions, argNames,
-                               resultType, structOp, specialFnId, location);
+                               resultType, structDecl, specialFnId);
 
   // Set up the body.
   ImplicitLocOpBuilder builder =
@@ -156,7 +150,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 
       // Project self to the right field and store the RValue.
       auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);
-      DeclRefNode srcExpr(StringRef(location.getPointer(), 1));
+      SyntheticNode srcExpr(structDecl.getLoc());
       emitter.emitStoreToLValue({argVal, &srcExpr}, SLValue(fieldPtr),
                                 EC_AttributeRefBase);
       ++idx;
@@ -181,7 +175,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   }
 
   auto result = SRValue(builder.create<StructCreateOp>(
-      selfType, fieldVals,
+      selfType.mlirType, fieldVals,
       StringArrayAttr::get(emitter.getContext(), argNames)));
 
   ExprEmitter::emitNormalReturn(builder, result, funcOp);
@@ -265,12 +259,12 @@ LogicalResult StructEmitter::populateMoveCopy(LIT::FuncOp func,
 ///          lit.end_func
 ///      }
 LIT::FuncOp StructEmitter::addVoidMethod(
-    StructDeclOp selfStruct, StringRef prefix, ArrayRef<Type> argTypes,
+    ASTDecl &structDecl, StringRef prefix, ArrayRef<Type> argTypes,
     ArrayRef<ValueInputConvention> argConventions,
-    ArrayRef<StringAttr> argNames, SpecialFunctionKind kind, SMLoc loc) {
-  M::KGEN::LIT::FuncOp func =
+    ArrayRef<StringAttr> argNames, SpecialFunctionKind kind) {
+  auto [func, _] =
       synthesizeMethodInStruct(prefix, argTypes, argConventions, argNames,
-                               shared.getNoneType(), selfStruct, kind, loc);
+                               shared.getNoneType(), structDecl, kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
@@ -389,8 +383,9 @@ private:
 };
 
 GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
-    StructDeclOp declOp, SMLoc loc, ASTDecl &parent, bool generateFieldwiseInit,
+    ASTDecl &structDecl, bool generateFieldwiseInit,
     bool forceGenerateDestructor) {
+  auto declOp = cast<StructDeclOp>(structDecl);
   ValueInfo valueInfo = ValueInfo::createValueInfo(declOp, shared);
   if (!valueInfo)
     return {};
@@ -419,7 +414,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     for (auto fieldOp : declOp.getFieldDecls()) {
       ASTType fieldType = fieldOp.getType();
       ValueInputConvention conv;
-      switch (fieldType.getRegisterPassability(loc, shared)) {
+      switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
       default:
         llvm_unreachable("unknown case");
       case StructDeclOp::RP_MemoryOnly:
@@ -437,7 +432,7 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
       argConventions.push_back(conv);
       argNames.push_back(fieldOp.getNameAttr());
     }
-    init = synthesizeMemberwiseInit(loc, declOp, argTypes, argConventions,
+    init = synthesizeMemberwiseInit(structDecl, argTypes, argConventions,
                                     argNames);
   }
   if (!valueInfo.hasDestructor()) {
@@ -462,10 +457,9 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
     }
 
     if (needsDtor) {
-      destructorFunc = addVoidMethod(
-          declOp, "__del__", SmallVector<Type>({ptrToSelf}),
-          SmallVector<ValueInputConvention>({ValueInputConvention::OwnedInMem}),
-          SmallVector<StringAttr>({selfName}), SpecialFunctionKind::kDel, loc);
+      destructorFunc = addVoidMethod(structDecl, "__del__", ptrToSelf,
+                                     ValueInputConvention::OwnedInMem, selfName,
+                                     SpecialFunctionKind::kDel);
     }
   }
   LIT::FuncOp copyFunc;
@@ -473,29 +467,23 @@ GeneratedStubs StructEmitter::addMissingValueMemberStubsToStruct(
                                   StructDeclOp::RP_RegisterPassableTrivial) {
     if (isMemoryOnly) {
       copyFunc = addVoidMethod(
-          declOp, "__copyinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
-          SmallVector<ValueInputConvention>(
-              {ValueInputConvention::InitSelf,
-               ValueInputConvention::BorrowedInMem}),
-          SmallVector<StringAttr>({selfName, existingName}),
-          SpecialFunctionKind::kCopyInit, loc);
+          structDecl, "__copyinit__", {ptrToSelf, ptrToSelf},
+          {ValueInputConvention::InitSelf, ValueInputConvention::BorrowedInMem},
+          {selfName, existingName}, SpecialFunctionKind::kCopyInit);
     } else {
-      copyFunc = synthesizeMethodInStruct(
-          "__copyinit__", SmallVector<Type>({selfType}),
-          SmallVector<ValueInputConvention>(
-              {ValueInputConvention::BorrowedInReg}),
-          SmallVector<StringAttr>({existingName}), selfType, declOp,
-          SpecialFunctionKind::kCopyInitReg, loc);
+      copyFunc = synthesizeMethodInStruct("__copyinit__", selfType,
+                                          ValueInputConvention::BorrowedInReg,
+                                          existingName, selfType, structDecl,
+                                          SpecialFunctionKind::kCopyInitReg)
+                     .first;
     }
   }
   LIT::FuncOp moveFunc;
   if (!valueInfo.hasMove() && isMemoryOnly) {
     moveFunc = addVoidMethod(
-        declOp, "__moveinit__", SmallVector<Type>({ptrToSelf, ptrToSelf}),
-        SmallVector<ValueInputConvention>(
-            {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem}),
-        SmallVector<StringAttr>({selfName, existingName}),
-        SpecialFunctionKind::kMoveInit, loc);
+        structDecl, "__moveinit__", {ptrToSelf, ptrToSelf},
+        {ValueInputConvention::InitSelf, ValueInputConvention::OwnedInMem},
+        {selfName, existingName}, SpecialFunctionKind::kMoveInit);
   }
 
   if (init)
