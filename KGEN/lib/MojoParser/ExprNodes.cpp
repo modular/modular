@@ -176,9 +176,9 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
     if (auto attrRef = dyn_cast<AttributeRefNode>(node)) {
       auto mlirAttr = dyn_cast<DeclRefNode>(attrRef->base);
       if (mlirAttr && mlirAttr->spelling == "__mlir_attr") {
-        if (attrRef->attrSpelling.empty())
+        if (attrRef->spelling.empty())
           return {};
-        return parseMLIRAttrFromString(attrRef->attrSpelling, attrRef->getLoc(),
+        return parseMLIRAttrFromString(attrRef->spelling, attrRef->getLoc(),
                                        emitter.shared);
       }
     }
@@ -742,7 +742,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Handle __adaptive_set.
   if (auto overloads = baseAnyVal.getIfORValue())
-    if (attrSpelling == "__adaptive_set")
+    if (spelling == "__adaptive_set")
       return emitter.emitResult(overloads->getAdaptiveSet(emitter), this, dest);
 
   // Otherwise must have a concrete type.
@@ -771,7 +771,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // If the attribute spelling is empty, we couldn't find a name to look up.
     // This was already diagnosed during initial parsing, so we can just bail
     // here.
-    if (attrSpelling.empty())
+    if (spelling.empty())
       return {};
 
     // If there is no decl, the type is an MLIR type.
@@ -781,15 +781,15 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // they are referenced.
     if (isa<MagicMLIRAttrType>(baseMLIRType)) {
       PValue result =
-          synthesizeMLIRAttrFromString(attrSpelling, getLoc(), emitter.shared);
+          synthesizeMLIRAttrFromString(spelling, getLoc(), emitter.shared);
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIROpType>(baseMLIRType)) {
-      PValue result = synthesizeMLIROpFromString(attrSpelling, emitter);
+      PValue result = synthesizeMLIROpFromString(spelling, emitter);
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIRTypeType>(baseMLIRType)) {
-      ASTType result = parseMLIRType(attrSpelling, this, emitter.shared);
+      ASTType result = parseMLIRType(spelling, this, emitter.shared);
       return emitter.emitResult(result, this, dest);
     }
 
@@ -804,19 +804,19 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the attribute spelling is empty, we couldn't find a name to look up.
   // This was already diagnosed during initial parsing, so we can just bail
   // here.
-  if (attrSpelling.empty())
+  if (spelling.empty())
     return {};
 
   // Handle module or package references.
   if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
     FailureOr<ArrayRef<ASTDecl *>> decls =
         emitter.getDeclResolver().lookupDeclInModule(
-            *typeDecl, StringAttr::get(emitter.getContext(), attrSpelling),
+            *typeDecl, StringAttr::get(emitter.getContext(), spelling),
             getLoc());
     if (failed(decls))
       return {};
     Capture unused;
-    return emitter.emitDeclReference(attrSpelling, *decls, this, dest, unused);
+    return emitter.emitDeclReference(spelling, *decls, this, dest, unused);
   }
 
   if (!isa<StructDeclOp>(*typeDecl)) {
@@ -827,7 +827,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Find the member being accessed.
   LookupResult lookup =
-      emitter.shared.lookupAndResolveDecl(attrSpelling, getLoc(), *typeDecl,
+      emitter.shared.lookupAndResolveDecl(spelling, getLoc(), *typeDecl,
                                           /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
@@ -837,7 +837,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       // If the error hasn't been diagnosed, handle it now.
       if (lookup.isFailure())
         emitter.emitError(getLoc()) << baseRVType << " value has no attribute '"
-                                    << attrSpelling << "'" << getRange();
+                                    << spelling << "'" << getRange();
     };
 
     // Emit the value as a StringLiteral.
@@ -845,7 +845,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
 
     auto attr =
-        StringAttr::get(attrSpelling, StringType::get(emitter.getContext()));
+        StringAttr::get(spelling, StringType::get(emitter.getContext()));
     ValueDest keyDest(EC_AttributeRefBase);
     AnyValue key = emitter.emitConstructorCall(
         type, CallOperands({{AnyValue(attr), this}}), this,
@@ -858,14 +858,14 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         this, base, dest, emitter, baseRVType, "__getattr__", "__setattr__",
         CallSyntax::kAttribute, lookupError, callArgs);
   }
-  emitter.shared.notifyListenerOnRef(memberDecls, attrSpelling, this);
+  emitter.shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(*memberDecls[0])) {
     // Get a symbol for the underlying function.
-    auto result = ORValue::create(attrSpelling, memberDecls,
-                                  baseRVType.getParamBindings(), this,
-                                  CallSyntax::kDirectCall);
+    auto result =
+        ORValue::create(spelling, memberDecls, baseRVType.getParamBindings(),
+                        this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
@@ -895,7 +895,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
     if (hasTypeBase) {
       emitter.emitError(getLoc(), "cannot access instance field '")
-          << attrSpelling << "' without an instance of " << baseRVType
+          << spelling << "' without an instance of " << baseRVType
           << getRange();
       return {};
     }
@@ -919,7 +919,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Reference to some non-function/struct member of the type.
   emitter.emitError(getLoc(), "reference to unknown member '")
-      << attrSpelling << "'" << getRange();
+      << spelling << "'" << getRange();
   return {};
 }
 

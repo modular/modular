@@ -31,8 +31,9 @@ struct ParsedArgument;
 class SRValue;
 
 /// This returns an SMLoc from a StringRef that points into the source buffer.
-inline SMLoc getSMLocFromStringRef(StringRef bufferRef) {
-  return SMLoc::getFromPointer(bufferRef.data());
+inline SMLoc getSMLocFromStringRef(StringRef bufferRef,
+                                   uint8_t startOffset = 0) {
+  return SMLoc::getFromPointer(bufferRef.data() - startOffset);
 }
 
 struct IntLiteralNode final : public ExprNode {
@@ -124,13 +125,26 @@ struct StringLiteralNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-struct DeclRefNode final : public ExprNode {
-  DeclRefNode(StringRef spelling) : ExprNode(kDeclRef), spelling(spelling) {}
+struct Identifier {
+  Identifier(StringRef spelling, bool isEscaped)
+      : spelling(spelling), isEscaped(isEscaped) {}
 
   const StringRef spelling;
+  /// Needed to emit correct location if an identifier was escaped.
+  bool isEscaped;
+
+  /// Return the identifier's location with the offset taken into account.
+  SMLoc getIdentifierLoc() const {
+    return getSMLocFromStringRef(spelling, /*startOffset=*/isEscaped);
+  }
+};
+
+struct DeclRefNode final : public ExprNode, Identifier {
+  DeclRefNode(StringRef spelling, bool isEscapedIdentifier = false)
+      : ExprNode(kDeclRef), Identifier(spelling, isEscapedIdentifier) {}
 
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
-  SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
+  SMLoc getLoc() const override { return getIdentifierLoc(); }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
@@ -151,22 +165,20 @@ struct SyntheticNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-struct AttributeRefNode final : public ExprNode {
-  AttributeRefNode(ExprNode *base, SMLoc dotLoc, StringRef attrSpelling)
-      : ExprNode(kAttributeRef), base(base), dotLoc(dotLoc),
-        attrSpelling(attrSpelling) {}
+struct AttributeRefNode final : public ExprNode, Identifier {
+  AttributeRefNode(ExprNode *base, SMLoc dotLoc, StringRef spelling,
+                   bool isEscapedIdentifier = false)
+      : ExprNode(kAttributeRef), Identifier(spelling, isEscapedIdentifier),
+        base(base), dotLoc(dotLoc) {}
 
   ExprNode *const base;
   const SMLoc dotLoc;
-  const StringRef attrSpelling;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kAttributeRef;
   }
   SMLoc getLoc() const override { return dotLoc; }
-  SMLoc getAttributeNameLoc() const {
-    return getSMLocFromStringRef(attrSpelling);
-  }
+  SMLoc getAttributeNameLoc() const { return getIdentifierLoc(); }
   SourceRange getRange() const override {
     return {base->getRangeStart(), getAttributeNameLoc()};
   }

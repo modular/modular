@@ -52,6 +52,10 @@ bool Token::isKeyword() const {
   }
 }
 
+bool Token::isIdentifier() const {
+  return isAny(identifier, escaped_identifier);
+}
+
 //===----------------------------------------------------------------------===//
 // Lexer
 //===----------------------------------------------------------------------===//
@@ -371,7 +375,7 @@ void Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
     switch (*curPtr++) {
     case '`':
       // Found the end character.
-      formToken(Token::identifier,
+      formToken(Token::escaped_identifier,
                 StringRef(tokStart + 1, curPtr - tokStart - 2), indentation,
                 /*tokenOffset*/ 1);
       return;

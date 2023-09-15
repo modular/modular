@@ -85,6 +85,9 @@ public:
   /// Return true if this is one of the keyword token kinds (e.g. kw_pass).
   bool isKeyword() const;
 
+  /// Return true if the kind is either `identifier` or `escaped_identifier`.
+  bool isIdentifier() const;
+
   // Location processing.
   SMLoc getLoc() const;
   SMLoc getEndLoc() const;

@@ -40,7 +40,7 @@ ParseResult ParserBase::parseToken(Token::Kind expectedToken,
   // Report the error.
   auto diag = emitError(diagLoc, message);
 
-  // Customize the error if an identifier was expected by a keyword was found.
+  // Customize the error if an identifier was expected but a keyword was found.
   if (expectedToken == Token::identifier && getToken().isKeyword())
     diag.attachNote(diagLoc) << "escape keyword '" << getToken().getSpelling()
                              << "' with backticks to use it as an identifier";
@@ -48,15 +48,21 @@ ParseResult ParserBase::parseToken(Token::Kind expectedToken,
   return failure();
 }
 
+ParseResult ParserBase::parseIdentifier(const Twine &message, SMLoc *loc) {
+  if (loc)
+    *loc = getToken().getLoc();
+  if (consumeIf(Token::escaped_identifier))
+    return success();
+  return parseToken(Token::identifier, message);
+}
+
 /// Consume an identifier token, binding its name into the specified result
 /// string attribute. If `loc` is set, it is populated with the source location
 /// of the token.
 ParseResult ParserBase::parseIdentifier(StringAttr &result,
                                         const Twine &message, SMLoc *loc) {
-  if (loc)
-    *loc = getToken().getLoc();
   result = StringAttr::get(getContext(), getToken().getSpelling());
-  return parseToken(Token::identifier, message);
+  return parseIdentifier(message, loc);
 }
 
 /// Parse a list of elements continued with commas.  If a set of terminators

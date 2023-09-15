@@ -365,6 +365,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_owned:    // owned [lifetime] type
   case Token::kw_not:
   case Token::identifier:
+  case Token::escaped_identifier:
   case Token::integer:
   case Token::kw_False:
   case Token::kw_True:
@@ -446,8 +447,10 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   }
   case Token::identifier: // primary -> atom -> identifier
-    consumeToken(Token::identifier);
-    result = alloc<DeclRefNode>(startTok.getSpelling());
+  case Token::escaped_identifier:
+    consumeIdentifier();
+    result = alloc<DeclRefNode>(startTok.getSpelling(),
+                                startTok.is(Token::escaped_identifier));
     break;
   case Token::integer: // primary -> literal -> integer
     consumeToken(Token::integer);
@@ -723,15 +726,17 @@ ParseResult ExprParser::parsePrefixLBrace(DictionaryNode *&result,
 /// attributeref ::=  primary "." identifier
 ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
                                                 SMLoc dotLoc) {
-  StringRef spelling = getTokenSpelling();
-  if (parseToken(Token::identifier, "expected name in attribute reference")) {
+  Token token = getToken();
+  StringRef spelling = token.getSpelling();
+  if (parseIdentifier("expected name in attribute reference")) {
     // If we didn't get an identifier, recover by using an empty string.
     // Reuse the spelling buffer to preserve the expected location of the
     // identifier.
     spelling = StringRef(spelling.data(), 0);
   }
 
-  result = alloc<AttributeRefNode>(result, dotLoc, spelling);
+  result = alloc<AttributeRefNode>(result, dotLoc, spelling,
+                                   token.is(Token::escaped_identifier));
   return success();
 }
 
@@ -767,7 +772,7 @@ ParseResult ExprParser::parseCallSuffix(ExprNode *&result, SMLoc lparenLoc) {
 
       // Check for a keyword argument.  We need look-ahead to determine whether
       // the token after the identifier is an equal sign.
-      if (getToken().is(Token::identifier)) {
+      if (getToken().isIdentifier()) {
         auto cursor = lexer.getCursor();
         (void)parseIdentifier(arg.name, "<<already know this is identifier>>");
         if (consumeIf(Token::equal)) {
