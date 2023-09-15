@@ -297,8 +297,11 @@ PValue ParameterInferenceState::infer(SignatureType signature,
                             "because it is not concrete");
           return {};
         }
-        types.push_back(
-            ParameterizedTypeConstantAttr::get(value.getRValueType()));
+        ASTType toPush = value.getRValueType();
+        // Infer nonmaterializable types as their materialization target.
+        if (ASTType nmTarget = toPush.getNonmaterializableTarget(state))
+          toPush = nmTarget;
+        types.push_back(ParameterizedTypeConstantAttr::get(toPush));
       }
 
       inferredValues.push_back(VariadicAttr::get(
@@ -322,8 +325,14 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   if (!inferredValues.empty()) {
     PValue first = inferredValues.front();
     auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
-    if (llvm::all_of(inferredValues, sameAsFirst))
+    if (llvm::all_of(inferredValues, sameAsFirst)) {
+      // Infer nonmaterializable types as their materialization target.
+      if (ASTType typeVal = first.getIfTypeValue()) {
+        if (ASTType nmTarget = typeVal.getNonmaterializableTarget(state))
+          return PValue(nmTarget);
+      }
       return first;
+    }
   }
 
   return {};
@@ -628,8 +637,9 @@ private:
   static std::pair<ArgTypeMismatchKind, ASTType>
   checkOneOperand(ASTExprAnd<AnyValue> operand,
                   ValueInputConvention expectedConvention, ASTType expectedType,
-                  size_t &numImplicitConversions, bool allowImplicitConversions,
-                  ExprEmitter &emitter);
+                  size_t &numImplicitConversions,
+                  bool &hasNonmaterializableConversion,
+                  bool allowImplicitConversions, ExprEmitter &emitter);
 };
 } // namespace
 
@@ -872,6 +882,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  ValueInputConvention expectedConvention,
                                  ASTType expectedType,
                                  size_t &numImplicitConversions,
+                                 bool &hasNonmaterializableConversion,
                                  bool allowImplicitConversions,
                                  ExprEmitter &emitter) {
   switch (expectedConvention) {
@@ -922,6 +933,20 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // they are good.
     if (argType.isEqualCanon(expectedType))
       break;
+    if (auto nonmaterializableTarget =
+            argType.getNonmaterializableTarget(emitter.shared))
+      if (nonmaterializableTarget.isEqualCanon(expectedType)) {
+        // Implicit conversion for nonmaterializable types to their target
+        // type is allowed even if !allowImplicitConversions.  Even though
+        // this may be an implicit conversion, don't increment the
+        // numImplicitConversions count so that it will win against other
+        // implicit conversions.  However, we keep track of whether
+        // nonmaterializable autoconversion has happened so that functions
+        // that literally take the nonmaterializable type can still win
+        // instead of autoconverting if their signature matches exactly.
+        hasNonmaterializableConversion = true;
+        break;
+      }
 
     // Argument name mismatches don't count as implicit conversions.
     auto expectedSig = dyn_cast<SignatureType>(expectedType.mlirType);
@@ -1045,6 +1070,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   // We will accumulate the implicit conversion in arguments to those counted
   // for the parameter bindings.
   size_t numImplicitConversions = bindingFitness.numImplicitConversions;
+  bool hasNonmaterializableConversion = false;
 
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
@@ -1093,6 +1119,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
         // If we found a keyword argument, we check it normally.
         auto [kind, ty] = checkOneOperand(*kwOperandOr, expectedConvention,
                                           expectedType, numImplicitConversions,
+                                          hasNonmaterializableConversion,
                                           allowImplicitConversions, emitter);
         if (kind != kValidType) {
           return emitDiagFor.argTypeMismatch(kind, ty, *kwOperandOr,
@@ -1120,9 +1147,9 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
          newBindings = std::ref(newBindings)](
             ASTType expectedType) -> std::optional<InflightDiag> {
       ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx];
-      auto [kind, ty] = checkOneOperand(operand, expectedConvention,
-                                        expectedType, numImplicitConversions,
-                                        allowImplicitConversions, emitter);
+      auto [kind, ty] = checkOneOperand(
+          operand, expectedConvention, expectedType, numImplicitConversions,
+          hasNonmaterializableConversion, allowImplicitConversions, emitter);
       if (kind != kValidType)
         return emitDiagFor.argTypeMismatch(kind, ty, operand, posOperandIdx);
       ++posOperandIdx;
@@ -1166,10 +1193,12 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
          "should handle argument mismatch above");
 
   // Otherwise we succeeded!  For our payload, indicate the number of implicit
-  // conversions and whether anything was passed through varargs.  We consider
+  // conversions, whether there were (even more implicit) nonmaterializable
+  // conversions, and whether anything was passed through varargs.  We consider
   // exact matches of concrete types to be more specific than varargs matches,
   // and both of these more specific than matches with variadic parameters.
-  size_t payload = numImplicitConversions * 4;
+  size_t payload = numImplicitConversions * 8;
+  payload += (hasNonmaterializableConversion ? 4 : 0);
   payload += (passesVarArgArgument ? 2 : 0);
   payload += (bindingFitness.hasVariadicParams ? 1 : 0);
   return {newBindings, payload};
@@ -1330,7 +1359,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
       // `foo(Int)` and `foo(Int*)` we should pick the former if both work. That
       // said, when we get here we don't want to complain about the wrong
       // number.
-      size_t numConversions = minConversions / 4;
+      size_t numConversions = minConversions / 8;
 
       auto diag = emitter.emitError(expr->getLoc(), "ambiguous call to '")
                   << baseName << "', each candidate requires " << numConversions
@@ -1641,20 +1670,33 @@ PValue OverloadSet::lookup(ASTType type, StringRef methodName,
                            const ExprNode *callExpr, CallSyntax syntax,
                            ExprEmitter &emitter,
                            std::function<void()> errorHandler) {
-  OverloadSet ovSet(type, methodName, callExpr, syntax, emitter.shared,
-                    errorHandler);
-
-  // If the core lookup failed, don't filter.
-  if (ovSet.isNull())
-    return {};
-
-  // Filter the overload set with the actual operands list.  If this fails,
-  // report an error (if we have an error handler) and reset to a null state so
-  // the client can check this.
+  ASTType nmTarget = type.getNonmaterializableTarget(emitter.shared);
   bool shouldPrintError = bool(errorHandler);
-  return ovSet.filterOverloadSet(
-      callOperands, /*allowImplicitConversions=*/true,
-      /*emitDiagnosticOnFailure=*/shouldPrintError, emitter);
+  auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
+    OverloadSet ovSet(type, methodName, callExpr, syntax, emitter.shared,
+                      errorHandler);
+
+    // If the core lookup failed, don't filter.
+    if (ovSet.isNull())
+      return {};
+
+    // Filter the overload set with the actual operands list.  If this
+    // fails, report an error (if we have an error handler) and reset to a
+    // null state so the client can check this.
+    return ovSet.filterOverloadSet(
+        callOperands, /*allowImplicitConversions=*/true,
+        /*emitDiagnosticOnFailure=*/shouldPrintError, emitter);
+  };
+
+  // If there is a nonmaterializableTarget, try using the original type first,
+  // then falling back on the target.
+  if (nmTarget) {
+    PValue ret = doLookup(type, false);
+    if (ret)
+      return ret;
+    type = nmTarget;
+  }
+  return doLookup(type, shouldPrintError);
 }
 
 PValue OverloadSet::getDirectSymbol(ExprEmitter *emitter,
@@ -1965,9 +2007,32 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     }
   };
 
+  PValue callee = {};
+  if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
+    // If the type doesn't have the specified method, but it's
+    // nonmaterializable, give it a second chance with the materialized type.
+    // If the type doesn't have the specified method, emit an error.
+    callee = OverloadSet::lookup(type, methodName, operands, callNode, syntax,
+                                 *this, /*errorHandler=*/{});
+    if (!callee) {
+      CValue convertedSelf = emitConstructorCall(
+          nmTarget, CallOperands({{selfVal, posOperands[0].expr}}), callNode,
+          CallSyntax::kImplicitConvert, ValueDest::none(),
+          /*allowImplicitConversion=*/true);
+      if (!convertedSelf)
+        return {};
+      updatedPosOperands.clear();
+      updatedPosOperands.append(posOperands.begin(), posOperands.end());
+      updatedPosOperands[0].ir = convertedSelf;
+      posOperands = updatedPosOperands;
+      type = nmTarget;
+    }
+  }
+
   // If the type doesn't have the specified method, emit an error.
-  PValue callee = OverloadSet::lookup(type, methodName, operands, callNode,
-                                      syntax, *this, emitNoMethodError);
+  if (!callee)
+    callee = OverloadSet::lookup(type, methodName, operands, callNode, syntax,
+                                 *this, emitNoMethodError);
   if (!callee)
     return {};
 
@@ -1989,36 +2054,70 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Init for memory-only types get their self argument implicitly initialized
   // and passed in as the first argument.
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
+  ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;
+  ArrayRef<ASTExprAnd<AnyValue>> posOperands = origPosOperands;
   CallOperands operands = callOperands;
   bool isMemoryOnly = !type.isRegisterPassable(expr->getLoc(), shared);
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
-  if (isMemoryOnly) {
-    posOperandsWithSelf.reserve(posOperands.size() + 1);
+  auto argsAddSelf = [&]() {
+    posOperandsWithSelf.clear();
+    if (isMemoryOnly) {
+      posOperandsWithSelf.reserve(posOperands.size() + 1);
 
-    // Unfortunately, we can't just use 'type' or the dest LValue as the buffer
-    // to initialize, because the concrete result type might need parameters to
-    // be inferred, and those may depend on other value arguments.  Handle this
-    // by setting up a placeholder with the type we know so far, and use that to
-    // filter the overload set.
-    auto attr = UnknownAttr::get(PointerType::get(type));
-    posOperandsWithSelf.push_back({PValue(attr), expr});
-    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    operands.posOperands = posOperandsWithSelf;
-  }
+      // Unfortunately, we can't just use 'type' or the dest LValue as the
+      // buffer to initialize, because the concrete result type might need
+      // parameters to be inferred, and those may depend on other value
+      // arguments.  Handle this by setting up a placeholder with the type
+      // we know so far, and use that to filter the overload set.
+      auto attr = UnknownAttr::get(PointerType::get(type));
+      posOperandsWithSelf.push_back({PValue(attr), expr});
+      posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
+      operands.posOperands = posOperandsWithSelf;
+    }
+  };
+  argsAddSelf();
 
   // Try to resolve the overload set to exactly one candidate, but don't emit an
   // error on failure (we typically want to customize the error).
   PValue calleeFn =
       callee.filterOverloadSet(operands, allowImplicitConversion,
                                /*emitDiagnosticOnFailure=*/false, *this);
+
+  ASTType operandType;
+  if (callOperands.posOperands.size() == 1 &&
+      callOperands.posOperands[0].ir.getIfCValue()) {
+    operandType = callOperands.posOperands[0].ir.getIfCValue().getRValueType();
+  }
+
+  CValue autoNonmaterializableConversion;
+  SmallVector<ASTExprAnd<AnyValue>> autoConvertedArgs;
+  if (!calleeFn) {
+    // If we are converting from a nonmaterializable struct, always allow an
+    // extra implicit conversion to the nonmaterializable target.  Then try
+    // again to find a constructor.
+    if (ASTType nonmaterializableTarget =
+            operandType.getNonmaterializableTarget(shared)) {
+      if (!nonmaterializableTarget.isEqualCanon(type)) {
+        ValueDest autoDest(nonmaterializableTarget, EC_CallArgValue);
+        autoNonmaterializableConversion = emitConstructorCall(
+            nonmaterializableTarget, origPosOperands, origPosOperands[0].expr,
+            syntax, autoDest, /*allowImplicitConversion=*/false);
+        autoConvertedArgs.push_back(
+            {autoNonmaterializableConversion, origPosOperands[0].expr});
+        operands.posOperands = autoConvertedArgs;
+        argsAddSelf();
+        calleeFn =
+            callee.filterOverloadSet(operands, allowImplicitConversion,
+                                     /*emitDiagnosticOnFailure=*/false, *this);
+      }
+    }
+  }
+
   if (!calleeFn) {
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).
-    if (posOperands.size() == 1 && posOperands[0].ir.getIfCValue()) {
-      ASTType operandType = posOperands[0].ir.getIfCValue().getRValueType();
-
+    if (operandType) {
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
           isa<CallNode>(expr)) {
