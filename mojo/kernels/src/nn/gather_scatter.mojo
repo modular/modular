@@ -857,7 +857,7 @@ fn gather_elements[
 # ===----------------------------------------------------------------------===#
 
 
-fn _gather_nd_shape[
+fn gather_nd_shape[
     input_rank: Int,
     indices_rank: Int,
     output_rank: Int,
@@ -891,13 +891,22 @@ fn _gather_nd_shape[
     Returns:
         The output shape.
     """
+    constrained[
+        input_rank >= 1 and indices_rank >= 1,
+        "Constraint: data_rank >= 1 and indices_rank >= 1",
+    ]()
+
+    let indices_shape = indices_buf.get_shape()
+    debug_assert(
+        1 <= indices_shape[indices_rank - 1] <= input_rank - batch_dims,
+        "Constraint: 1 <= indices_shape[-1] <= input_rank - batch_dims",
+    )
 
     # compute and return the output shape
     var output_shape = StaticIntTuple[output_rank]()
     var next_out_dim = 0
 
     let input_shape = input_buf.get_shape()
-    let indices_shape = indices_buf.get_shape()
 
     for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
@@ -921,6 +930,7 @@ fn _gather_nd_shape[
 
 fn gather_nd[
     type: DType,
+    indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     output_rank: Int,
@@ -928,7 +938,7 @@ fn gather_nd[
 ](
     data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
     indices: NDBuffer[
-        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+        indices_rank, DimList.create_unknown[indices_rank](), indices_type
     ],
     output: NDBuffer[output_rank, DimList.create_unknown[output_rank](), type],
 ):
@@ -978,7 +988,7 @@ fn gather_nd[
     # to the innermost.
     # Equivalent to numpy:
     # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
-    let reshaped_indices = reshape[indices_rank, 3, DType.int64, True](
+    let reshaped_indices = reshape[indices_rank, 3, indices_type, True](
         indices.make_dims_unknown(),
         StaticIntTuple[3](
             batch_dims_size,

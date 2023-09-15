@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from GatherScatter import gather_nd, _gather_nd_shape
+from GatherScatter import gather_nd, gather_nd_shape
 from memory.buffer import NDBuffer
 from memory import stack_allocation
 
@@ -44,7 +44,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 1)] = 1
 
         alias output_rank = 1
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -58,7 +58,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -90,7 +97,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -104,7 +111,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -149,7 +163,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 1)] = 0
 
         alias output_rank = 2
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -163,7 +177,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -208,7 +229,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0, 1)] = 0
 
         alias output_rank = 3
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -222,7 +243,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -265,7 +293,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -279,7 +307,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -347,7 +382,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 2, 0, 0)] = 2
 
         alias output_rank = 3
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -361,7 +396,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -408,7 +450,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0, 0)] = 1
 
         alias output_rank = 4
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -422,7 +464,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
@@ -472,7 +521,7 @@ fn main():
         indices[StaticIntTuple[indices_rank](1, 0)] = 0
 
         alias output_rank = 2
-        let output_shape = _gather_nd_shape[
+        let output_shape = gather_nd_shape[
             data_rank,
             indices_rank,
             output_rank,
@@ -486,7 +535,14 @@ fn main():
         let output_data_buffer = NDBuffer[
             output_rank, DimList.create_unknown[output_rank](), data_type
         ](output_data_data, output_shape)
-        gather_nd[data_type, data_rank, indices_rank, output_rank, batch_dims](
+        gather_nd[
+            data_type,
+            DType.int64,
+            data_rank,
+            indices_rank,
+            output_rank,
+            batch_dims,
+        ](
             data.make_dims_unknown(),
             indices.make_dims_unknown(),
             output_data_buffer,
