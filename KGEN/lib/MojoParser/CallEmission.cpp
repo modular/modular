@@ -41,7 +41,7 @@ void InputParamBindings::addPrechecked(TypedAttr precheckedBinding) {
 }
 
 //===----------------------------------------------------------------------===//
-// Parameter Inference Implementation
+// ParameterInferenceState Implementation
 //===----------------------------------------------------------------------===//
 
 namespace {
@@ -532,32 +532,8 @@ InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
 }
 
 //===----------------------------------------------------------------------===//
-// OverloadSet Implementation
+// OverloadFitness Implementation
 //===----------------------------------------------------------------------===//
-
-/// Get a symbol for a direct reference to the specified function in its
-/// enclosing context.  This does not bind any values to arguments.
-OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParameterExprArrayAttr bindingsAttr,
-                         const ExprNode *expr, CallSyntax syntax)
-    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
-      syntax(syntax) {
-  if (bindingsAttr) {
-    for (TypedAttr precheckedBinding : bindingsAttr)
-      inputParamBindings.addPrechecked(precheckedBinding);
-  }
-}
-
-OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
-                         ParamBindArrayAttr bindingsAttr, const ExprNode *expr,
-                         CallSyntax syntax)
-    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
-      syntax(syntax) {
-  if (bindingsAttr) {
-    for (ParamBindAttr precheckedBinding : bindingsAttr)
-      inputParamBindings.addPrechecked(precheckedBinding.getValue());
-  }
-}
 
 namespace {
 /// This struct indicates whether a signature can be successfully applied to a
@@ -1184,6 +1160,34 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   return {newBindings, payload};
 }
 
+//===----------------------------------------------------------------------===//
+// OverloadSet Implementation
+//===----------------------------------------------------------------------===//
+
+/// Get a symbol for a direct reference to the specified function in its
+/// enclosing context.  This does not bind any values to arguments.
+OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+                         ParameterExprArrayAttr bindingsAttr,
+                         const ExprNode *expr, CallSyntax syntax)
+    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
+      syntax(syntax) {
+  if (bindingsAttr) {
+    for (TypedAttr precheckedBinding : bindingsAttr)
+      inputParamBindings.addPrechecked(precheckedBinding);
+  }
+}
+
+OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
+                         ParamBindArrayAttr bindingsAttr, const ExprNode *expr,
+                         CallSyntax syntax)
+    : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()), expr(expr),
+      syntax(syntax) {
+  if (bindingsAttr) {
+    for (ParamBindAttr precheckedBinding : bindingsAttr)
+      inputParamBindings.addPrechecked(precheckedBinding.getValue());
+  }
+}
+
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure,
@@ -1323,18 +1327,6 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     }
   }
   return {};
-}
-
-bool LIT::canZeroCostConvertSignature(SignatureType from, SignatureType to) {
-  if (from.getArgNames().size() != to.getValueInputConventions().size())
-    return false;
-  auto newMetadata = FnMetadataAttr::get(
-      from.getContext(), from.getArgNames(), to.getValueInputConventions(),
-      to.getDefaultArguments(), to.getFnEffects());
-  auto newSig =
-      SignatureType::get(to.getInputParamTypes(), to.getResultParamTypes(),
-                         to.getValues(), newMetadata);
-  return newSig == from;
 }
 
 /// Filter down and complete this overload set based on knowledge that we need
@@ -1581,10 +1573,6 @@ TypedAttr OverloadSet::getBoundConstantAttr(ExprEmitter &emitter) const {
   return getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]), baseName,
                               inputParamBindings, expr, emitter);
 }
-
-//===----------------------------------------------------------------------===//
-// OverloadSet Implementation
-//===----------------------------------------------------------------------===//
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
 /// If successful, this provides a non-null OverloadSet.
