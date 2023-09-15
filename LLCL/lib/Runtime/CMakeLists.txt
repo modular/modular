@@ -22,6 +22,7 @@ add_modular_library(LLCLRuntime
   LLCLSupport
   LLVMSupport
   MSupport
+  MProfiling
   Threads::Threads
   )
 
