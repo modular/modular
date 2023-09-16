@@ -12,35 +12,60 @@
 
 
 # CHECK-DAG: lit.func @"__del__(${{.*}}::_CW_
-# CHECK-DAG: %[[VAL0:.*]] = lit.struct.gep %self[dtor] {{.*}} loc(#[[LOC_DEL:loc[0-9]*]])
-# CHECK-DAG: %[[VAL1:.*]] = pop.load %[[VAL0]] {{.*}} loc(#[[LOC_DEL]])
-# CHECK-DAG: %[[VAL2:.*]] = lit.struct.gep %self[field0] {{.*}} loc(#[[LOC_DEL]])
-# CHECK-DAG: %[[VAL3:.*]] = pop.load %[[VAL2]] {{.*}} loc(#[[LOC_DEL]])
+# CHECK-DAG: %[[VAL0:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_DEL:loc[0-9]*]])
+# CHECK-DAG: %[[VAL1:.*]] = pop.load %[[VAL0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_DEL]])
 # CHECK-DAG: } loc(#[[LOC_DEL]])
 
 # CHECK-DAG: lit.func @"__copyinit__(${{.*}}::_CW_
-# CHECK-DAG: %[[W0:.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <{{.*}}> loc(#[[LOC_COPY:loc[0-9]*]])
-# CHECK-DAG: %[[W1:.*]] = pop.load %[[W0]] {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG: %[[W2:.*]] = lit.struct.gep %self[copy] {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG: %[[W3:.*]] = lit.struct.gep %self[field0] {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG: %[[W4:.*]] = pop.load %[[W2]] {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG: kgen.call_signature %[[W4]](%[[W3]], %[[W1]]) {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG: } loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_COPY:loc[0-9]*]])
+# CHECK-DAG:   [[other_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[loaded_other_impl:%.*]] = pop.load [[other_impl]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_COPY]])
+# CHECK-DAG:   pop.store [[loaded_other_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none> {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none> {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M3:%.*]] = pop.load [[M2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none> loc(#[[LOC_COPY]])
+# CHECK-DAG:   pop.store [[M3]], [[M1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none> loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M4:%.*]] = lit.struct.gep %self[copy] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M5:%.*]] = lit.struct.gep %existing[copy] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M6:%.*]] = pop.load [[M5]] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   pop.store [[M6]], [[M4]] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M7:%.*]] = lit.struct.gep %self[call] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M8:%.*]] = lit.struct.gep %existing[call] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M9:%.*]] = pop.load [[M8]] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   pop.store [[M9]], [[M7]] {{.*}} loc(#[[LOC_COPY]])
+
+# CHECK-DAG:   %[[W0:.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_COPY]])
+# CHECK-DAG:   %[[W1:.*]] = pop.load %[[W0]] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   %[[W2:.*]] = lit.struct.gep %self[copy] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   %[[W3:.*]] = lit.struct.gep %self[field0] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   %[[W4:.*]] = pop.load %[[W2]] {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   kgen.call_signature %[[W4]](%[[W3]], %[[W1]]) {{.*}} loc(#[[LOC_COPY]])
 
 # CHECK-DAG: lit.func @"__moveinit__(${{.*}}::_CW_
-# CHECK-DAG: %[[V0:.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <{{.*}}> loc(#[[LOC_MOV:loc[0-9]*]])
-# CHECK-DAG: %[[V1:.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <{{.*}}> loc(#[[LOC_MOV]])
-# CHECK-DAG: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
-# CHECK-DAG: pop.store %[[V2]], %[[V1]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
-# CHECK-DAG: %pointer = kgen.param.constant: pointer<array<0, i1>> = <0> loc(#[[LOC_MOV]])
-# CHECK-DAG: pop.store %pointer, %[[V0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
-# CHECK-DAG: } loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_MOV:loc[0-9]*]])
+# CHECK-DAG:   [[mov_other_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[loaded_mov_other_impl:%.*]] = lit.load.consume [[mov_other_impl]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
+# CHECK-DAG:   pop.store [[loaded_mov_other_impl]], [[R0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none> {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none> {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R3:%.*]] = lit.load.consume [[R2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none> loc(#[[LOC_MOV]])
+# CHECK-DAG:   pop.store [[R3]], [[R1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none> loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R4:%.*]] = lit.struct.gep %self[copy] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R5:%.*]] = lit.struct.gep %existing[copy] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R6:%.*]] = lit.load.consume [[R5]] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   pop.store [[R6]], [[R4]] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R7:%.*]] = lit.struct.gep %self[call] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R8:%.*]] = lit.struct.gep %existing[call] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   [[R9:%.*]] = lit.load.consume [[R8]] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   pop.store [[R9]], [[R7]] {{.*}} loc(#[[LOC_MOV]])
+# CHECK-DAG:   %pointer = kgen.param.constant: pointer<array<0, i1>> = <0> loc(#[[LOC_MOV]])
+# CHECK-DAG:   %[[V0:.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>> from <!escaping1> loc(#[[LOC_MOV]])
+# CHECK-DAG:   pop.store %pointer, %[[V0]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_MOV]])
 
-# CHECK-DAG: #[[LOC_DEL]] = loc(fused<#[[SP1]]>[#[[LOC:loc[0-9]*]]])
-# CHECK-DAG: #[[LOC_MOV]] = loc(fused<#[[SP2]]>[#[[LOC]]])
-# CHECK-DAG: #[[LOC_COPY]] = loc(fused<#[[SP3]]>[#[[LOC]]])
+# CHECK-DAG: #[[LOC_DEL]] = loc(fused<#[[SP1]]>
+# CHECK-DAG: #[[LOC_MOV]] = loc(fused<#[[SP2]]>
+# CHECK-DAG: #[[LOC_COPY]] = loc(fused<#[[SP3]]>
 
-# CHECK-LABEL: lit.func @"capture_index
 fn capture_index(m:  __mlir_type.index, z: __mlir_type.index) -> fn(n:__mlir_type.index) escaping ->  __mlir_type.index:
    fn myclosure(n: __mlir_type.index) escaping ->  __mlir_type.index:
       return m

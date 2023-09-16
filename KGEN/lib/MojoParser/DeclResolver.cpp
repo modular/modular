@@ -3512,16 +3512,18 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   }
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
   if (copyCtr) {
-    if (failed(structEmitter.populateMoveCopy(copyCtr, declOp, structDecl,
-                                              structDecl.getLoc(), false)))
+    ASTDecl *copyCtrDecl = getDeclResolver().getDeclForFuncSymbol(
+        cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
+    if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
       copyCtr.erase();
     else
       declOp.setCopyInitAttr(copyCtr.getBoundReference());
   }
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
   if (moveCtr) {
-    if (failed(structEmitter.populateMoveCopy(moveCtr, declOp, structDecl,
-                                              structDecl.getLoc(), true)))
+    ASTDecl *moveCtrDecl = getDeclResolver().getDeclForFuncSymbol(
+        cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
+    if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))
       moveCtr.erase();
     else
       declOp.setMoveInitAttr(moveCtr.getBoundReference());

@@ -177,6 +177,23 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__copyinit__
+# CHECK-NEXT:   [[P0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[P0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[P1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[P2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[P3:%.*]] = pop.load [[P2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   pop.store [[P3]], [[P1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[P4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[P5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:   [[P6:%.*]] = pop.load [[P5]]
+# CHECK-NEXT:   pop.store [[P6]], [[P4]]
+# CHECK-NEXT:   [[P7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:   [[P8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:   [[P9:%.*]] = pop.load [[P8]]
+# CHECK-NEXT:   pop.store [[P9]], [[P7]]
+# CHECK-NEXT:   kgen.param.constant: !lit.none
 # CHECK-NEXT:   [[EXISTING_IMPL_PTR:%.*]] = lit.struct.gep %existing[field0]
 # CHECK-NEXT:   [[EXISTING_IMPL:%.*]] = pop.load [[EXISTING_IMPL_PTR]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   [[COPY_PTR:%.*]] = lit.struct.gep %self[copy]
@@ -184,14 +201,27 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   [[COPY:%.*]] = pop.load [[COPY_PTR]]
 # CHECK-NEXT:   kgen.call_signature [[COPY]]([[SELF_IMPL_PTR]], [[EXISTING_IMPL]])
 # CHECK: lit.func @"__moveinit__
-# CHECK-NEXT: [[V0:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT: [[V1:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT: [[V2:%.*]] = pop.load [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT: pop.store [[V2]], [[V1]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT: %pointer = kgen.param.constant: pointer<array<0, i1>> = <0>
-# CHECK-NEXT: pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT: lit.ownership.mark.destroyed %existing
+# CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[mov_existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   pop.store [[mov_loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M3:%.*]] = lit.load.consume [[M2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   pop.store [[M3]], [[M1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:   [[M6:%.*]] = lit.load.consume [[M5]]
+# CHECK-NEXT:   pop.store [[M6]], [[M4]]
+# CHECK-NEXT:   [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:   [[M9:%.*]] = lit.load.consume [[M8]]
+# CHECK-NEXT:   pop.store [[M9]], [[M7]]
+# CHECK-NEXT:   %pointer = kgen.param.constant: pointer<array<0, i1>> = <0>
+# CHECK-NEXT:   [[V0:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   pop.store %pointer, [[V0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[V3:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
+# CHECK-NEXT:   lit.ownership.mark.destroyed %existing
 
 # CHECK: lit.func @"returns_escaping_closure({{.*}}::String)"
 # CHECK-SAME: (%__result__: !kgen.pointer<{{.*}}> byref_result, %m: !kgen.pointer<!String> borrow_in_mem) -> !lit.none
@@ -576,16 +606,32 @@ fn makes_escaping_closure(m: String):
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.func @"__copyinit__{{.*}}(%self: !kgen.pointer<!escaping1> init_self, %existing: !kgen.pointer<!escaping1> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
-# CHECK-NEXT:  [[W0:%.*]] = lit.struct.gep %existing[field0]
-# CHECK-NEXT:  [[W1:%.*]] = pop.load [[W0]]
-# CHECK-NEXT:  [[W2:%.*]] = lit.struct.gep %self[copy]
-# CHECK-NEXT:  [[W3:%.*]] = lit.struct.gep %self[field0]
-# CHECK-NEXT:  [[W4:%.*]] = pop.load [[W2]]
+# CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   pop.store [[M3]], [[M1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %existing[copy]
+# CHECK-NEXT:   [[M6:%.*]] = pop.load [[M5]]
+# CHECK-NEXT:   pop.store [[M6]], [[M4]]
+# CHECK-NEXT:   [[M7:%.*]] = lit.struct.gep %self[call]
+# CHECK-NEXT:   [[M8:%.*]] = lit.struct.gep %existing[call]
+# CHECK-NEXT:   [[M9:%.*]] = pop.load [[M8]]
+# CHECK-NEXT:   pop.store [[M9]], [[M7]]
+# CHECK-NEXT:   kgen.param.constant: !lit.none
+# CHECK-NEXT:   [[W0:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:   [[W1:%.*]] = pop.load [[W0]] : !kgen.pointer<pointer<array<0, i1>>>
+# CHECK-NEXT:   [[W2:%.*]] = lit.struct.gep %self[copy]
+# CHECK-NEXT:   [[W3:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
+# CHECK-NEXT:   [[W4:%.*]] = pop.load [[W2]]
 
 # Call the copy constructor member with the uninitialized self and the untyped existing impl.
 # CHECK-NEXT:  [[W5:%.*]] = kgen.call_signature [[W4]]([[W3]], [[W1]]) : ("ptrToImpl": !kgen.pointer<pointer<array<0, i1>>> borrow, "other": !kgen.pointer<array<0, i1>> borrow_in_mem) -> !lit.none
-# CHECK-NEXT:  [[W6:%.*]] = kgen.param.constant: !lit.none = <#lit.none>
-# CHECK-NEXT:  lit.return [[W6]] : !lit.none
+# CHECK-NEXT:  lit.return
 # CHECK-NEXT:  lit.end_func
 
 # CHECK-LABEL: lit.func @"materialize_escaping_closure

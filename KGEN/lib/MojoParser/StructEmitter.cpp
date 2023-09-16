@@ -189,17 +189,26 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 /// %targetField0Ptr = lit.struct.get %self[field0]
 /// %sourceField0Ptr = lit.struct.get %existing[field0]
 /// copyinit_of_type_of_field0(%targetField0, %field
-LogicalResult StructEmitter::populateMoveCopy(LIT::FuncOp func,
-                                              StructDeclOp declOp,
-                                              ASTDecl &declScope,
-                                              SMLoc location, bool isMove) {
+LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
+                                              bool isMove) {
+  auto func = dyn_cast<LIT::FuncOp>(functionDecl);
+  if (!func)
+    return failure();
+  ASTDecl *declScope = functionDecl.getParentDecl();
+  if (!declScope)
+    return failure();
+  StructDeclOp declOp = dyn_cast<StructDeclOp>(*declScope);
+  // We want to populate a move but the move/copy should be a method!
+  if (!declOp)
+    return failure();
+  SMLoc location = functionDecl.getLoc();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-  ImplicitLocOpBuilder b =
-      ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
+  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
+      shared.translateLocation(location), func.getBody());
   bool isMemoryOnly = !declOp.isRegisterPassable();
-  ExprEmitter emitter(shared, declScope, b);
+  ExprEmitter emitter(shared, *declScope, b);
   if (isMemoryOnly) {
     assert(func.getNumArguments() == 2 &&
            "copy functions should have two arguments");
