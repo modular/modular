@@ -191,7 +191,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, POP::StructType> {
             // FIXME(11743): We can do better with field names on the structs.
             var.getScope(), (var.getName().getValue() + "." + Twine(i)).str(),
             var.getFile(), var.getLine(), /*arg=*/0, /*alignInBits=*/0,
-            DebugInfo::DIUnresolvedMLIRType::get(ptrType.getElementAsType()));
+            DebugInfo::DIUnresolvedMLIRType::get(ptrType));
       };
       for (auto [i, alloc] : llvm::enumerate(newAllocas))
         b.create<DebugInfo::ValueOp>(value.getLoc(), alloc, getElementVar(i));

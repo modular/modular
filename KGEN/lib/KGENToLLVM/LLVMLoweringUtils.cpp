@@ -991,11 +991,11 @@ buildDebugTypeFromDType(MLIRContext *ctx, uint8_t dtype, size_t indexWidth) {
   // Process various builtin dtypes.
   switch (dtype) {
   case DType::kBool:
-    return buildIntFpDebugType<DebugInfo::DIBasicBoolType>(ctx, "bool", 8, 8);
+    return buildIntFpDebugType<DebugInfo::DIBasicBoolType>(ctx, "bool", 1, 1);
   case DType::si1:
-    return buildIntFpDebugType<DebugInfo::DIBasicSIntType>(ctx, "si1", 1, 8);
+    return buildIntFpDebugType<DebugInfo::DIBasicSIntType>(ctx, "si1", 1, 1);
   case DType::ui1:
-    return buildIntFpDebugType<DebugInfo::DIBasicUIntType>(ctx, "ui1", 1, 8);
+    return buildIntFpDebugType<DebugInfo::DIBasicUIntType>(ctx, "ui1", 1, 1);
   case DType::si2:
     return buildIntFpDebugType<DebugInfo::DIBasicSIntType>(ctx, "si2", 2, 8);
   case DType::ui2:

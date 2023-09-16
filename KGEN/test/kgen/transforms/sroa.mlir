@@ -399,7 +399,7 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])
 
-// CHECK: !unresolved = !debuginfo.unresolved<index>
+// CHECK: !unresolved = !debuginfo.unresolved<!kgen.pointer<index>>
 // CHECK: #[[VAR0:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.0", {{.*}}> : !unresolved
 // CHECK: #[[VAR1:.*]] = #debuginfo.local_variable<{{.*}}, name = "self.1", {{.*}}> : !unresolved
 

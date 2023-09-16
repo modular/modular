@@ -55,6 +55,29 @@ static bool canPromote(StackAllocationOp alloc) {
   return true;
 }
 
+/// Given a type in a DILocalVariableAttr, unwrap one level of
+/// KGEN::PointerType or DIPointerType. This does not perform any other
+/// replacements.
+static DebugInfo::DILocalVariableAttr
+unwrapPointer(DebugInfo::DILocalVariableAttr diVarAttr) {
+  DebugInfo::DIType type = diVarAttr.getType();
+  DebugInfo::DIType newType = type;
+
+  // Unwrap the DIUnresolvedMLIRType (if there is one) and return the new type.
+  if (auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type))
+    if (auto ptr = dyn_cast<KGEN::PointerType>(unresolved.getType()))
+      newType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementAsType());
+
+  // Unwrap the DIPointerType if there is one and use the new type.
+  if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(type))
+    newType = ptr.getElementType();
+
+  return DebugInfo::DILocalVariableAttr::get(
+      diVarAttr.getScope(), diVarAttr.getName(), diVarAttr.getFile(),
+      diVarAttr.getLine(), diVarAttr.getArg(), newType.getAlignInBits(),
+      newType);
+}
+
 static LogicalResult
 processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               llvm::MapVector<StackAllocationOp, Value> &state,
@@ -103,7 +126,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
           OpBuilder b(value);
           b.create<DebugInfo::ValueOp>(value.getLoc(),
                                        valueOrUndef(alloc, value, it->second),
-                                       value.getValueInfo());
+                                       unwrapPointer(value.getValueInfo()));
           value.erase();
         }
       }
