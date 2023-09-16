@@ -798,7 +798,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
       .setRelocationModel(triple.isOSBinFormatMachO() ? llvm::Reloc::PIC_
                                                       : llvm::Reloc::Static)
       .setMCJITMemoryManager(std::make_unique<MemoryManager>(*this))
-      .setOptLevel(llvm::CodeGenOpt::Less);
+      .setOptLevel(llvm::CodeGenOptLevel::Less);
 
   StringRef mArch;
   StringRef mCPU;

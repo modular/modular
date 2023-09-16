@@ -256,7 +256,8 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
 
   if (failed(runLlcPasses(
           module, targetMachine, objStream,
-          emitAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile,
+          emitAssembly ? llvm::CodeGenFileType::AssemblyFile
+                       : llvm::CodeGenFileType::ObjectFile,
           &runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>())))
     return failure();
 
@@ -267,7 +268,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
       return failure();
 
     if (failed(runLlcPasses(module, targetMachine, outFile->os(),
-                            llvm::CGFT_AssemblyFile)))
+                            llvm::CodeGenFileType::AssemblyFile)))
       return failure();
     outFile->keep();
   }

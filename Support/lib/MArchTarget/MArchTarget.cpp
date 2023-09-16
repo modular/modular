@@ -106,7 +106,7 @@ std::string M::getHostCPUFeatures() {
 }
 
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
-M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOpt::Level optLevel) {
+M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOptLevel optLevel) {
   std::string hostTriple = llvm::sys::getDefaultTargetTriple();
   std::string hostCpu(llvm::sys::getHostCPUName());
   std::string targetFeatures = getHostCPUFeatures();

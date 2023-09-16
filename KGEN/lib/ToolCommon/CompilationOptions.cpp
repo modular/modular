@@ -25,17 +25,11 @@ CompilationOptions::CompilationOptions(
       targetFeatures(std::move(targetFeatures)), linkDirs(std::move(linkDirs)) {
 }
 
-llvm::CodeGenOpt::Level CompilationOptions::getCodeGenOptLevel() const {
-  switch (optimizationLevel) {
-  case 0:
-    return llvm::CodeGenOpt::None;
-  case 1:
-    return llvm::CodeGenOpt::Less;
-  case 2:
-    return llvm::CodeGenOpt::Default;
-  default:
-    return llvm::CodeGenOpt::Aggressive;
-  }
+llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
+  if (auto level = llvm::CodeGenOpt::getLevel(optimizationLevel))
+    return *level;
+  // Default to "Aggressive" optimizations.
+  return llvm::CodeGenOptLevel::Aggressive;
 }
 
 DebugInfo::EmissionKind CompilationOptions::getDIEmissionKind() const {
