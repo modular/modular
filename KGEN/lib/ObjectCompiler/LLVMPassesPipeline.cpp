@@ -590,12 +590,12 @@ static ModulePassManager buildO0Pipeline(const CompilationOptions &options) {
 
 ModulePassManager
 M::KGEN::buildLLVMOptimizationPipeline(const CompilationOptions &options) {
-  CodeGenOpt::Level optLevel = options.getCodeGenOptLevel();
+  CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
 
-  assert((optLevel == CodeGenOpt::Level::None ||
-          optLevel == CodeGenOpt::Level::Aggressive) &&
+  assert((optLevel == CodeGenOptLevel::None ||
+          optLevel == CodeGenOptLevel::Aggressive) &&
          "only OptLevel::None and OptLevel::Aggressive are supported");
-  if (optLevel == CodeGenOpt::Level::None)
+  if (optLevel == CodeGenOptLevel::None)
     return buildO0Pipeline(options);
   return buildO3Pipeline(options);
 }

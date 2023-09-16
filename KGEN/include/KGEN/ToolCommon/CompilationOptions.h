@@ -53,7 +53,7 @@ public:
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
-  llvm::CodeGenOpt::Level getCodeGenOptLevel() const;
+  llvm::CodeGenOptLevel getCodeGenOptLevel() const;
 
   /// Return the corresponding debuginfo emission level for the current option
   /// set.

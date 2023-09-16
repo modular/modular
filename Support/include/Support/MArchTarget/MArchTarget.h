@@ -27,7 +27,7 @@ std::string getHostCPUFeatures();
 /// Returns a TargetMachine for the current host.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
     bool isJIT = true,
-    llvm::CodeGenOpt::Level optLevel = llvm::CodeGenOpt::Aggressive);
+    llvm::CodeGenOptLevel optLevel = llvm::CodeGenOptLevel::Aggressive);
 
 /// Returns a TargetInfo describing the consequences of the given `-march`,
 /// `-mcpu` and `-mtune` settings. These flags have target-dependent behaviour
