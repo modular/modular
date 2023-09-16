@@ -18,7 +18,7 @@
 !simdTest = !pop.simd<8, ui32>
 !structTest = !pop.struct<scalar<bool>, array<5, array<4, simd<8, si32>>>, struct<pointer<scalar<bool>>, array<4, simd<8, si32>>>>
 
-// CHECK-DAG: !basic = !debuginfo.basic<bool {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_boolean}>
+// CHECK-DAG: !basic = !debuginfo.basic<bool {sizeInBits = 1, alignInBits = 1, encoding = DW_ATE_boolean}>
 // CHECK-DAG: !basic1 = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
 // CHECK-DAG: !basic2 = !debuginfo.basic<ui8 {sizeInBits = 8, alignInBits = 1, encoding = DW_ATE_unsigned}>
 // CHECK-DAG: !basic3 = !debuginfo.basic<i8 {sizeInBits = 8, alignInBits = 1, encoding = DW_ATE_unsigned}>
