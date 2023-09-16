@@ -65,9 +65,7 @@ public:
 
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
-  LogicalResult populateMoveCopy(LIT::FuncOp func, StructDeclOp declOp,
-                                 ASTDecl &declScope, SMLoc location,
-                                 bool isMove);
+  LogicalResult populateMoveCopy(ASTDecl &functionDecl, bool isMove);
 
   /// Create a FuncOp within the scope of the given struct and add function
   /// terminators.

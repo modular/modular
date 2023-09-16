@@ -172,55 +172,71 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs.getDestructor();
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
+  ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
-  // Populate methods.
-  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
-      destructor.getLoc(), destructor.getBody());
-  Value dtorSelf = destructor.getBody()->getArgument(0);
-  // Return early if the impl is null.
-  Value dtorImpl =
-      builder.create<POP::LoadOp>(builder.create<StructGEPOp>(dtorSelf, impl));
-  Type scalarIndex = POP::SIMDType::get(
-      1, DTypeConstantAttr::get(builder.getContext(),
-                                KGENDType(KGENDType::ExtraCases::index)));
-  Value zero = builder.create<ParamConstantOp>(
-      IntegerAttr::get(IndexType::get(builder.getContext()), 0));
-  Value dtorImplAsIndex = builder.create<POP::CastToBuiltinOp>(
-      IndexType::get(builder.getContext()),
-      builder.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
-  Value isEqualToZero = builder.create<mlir::index::CmpOp>(
-      mlir::index::IndexCmpPredicate::EQ, dtorImplAsIndex, zero);
-  auto ifOp = builder.create<HLCF::IfOp>(isEqualToZero);
-  auto insertionPoint = builder.saveInsertionPoint();
+  // Populate destructor.
+  {
+    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+        destructor.getLoc(), destructor.getBody());
+    Value dtorSelf = destructor.getBody()->getArgument(0);
+    // Return early if the impl is null.
+    Value dtorImpl = builder.create<POP::LoadOp>(
+        builder.create<StructGEPOp>(dtorSelf, impl));
+    Type scalarIndex = POP::SIMDType::get(
+        1, DTypeConstantAttr::get(builder.getContext(),
+                                  KGENDType(KGENDType::ExtraCases::index)));
+    Value zero = builder.create<ParamConstantOp>(
+        IntegerAttr::get(IndexType::get(builder.getContext()), 0));
+    Value dtorImplAsIndex = builder.create<POP::CastToBuiltinOp>(
+        IndexType::get(builder.getContext()),
+        builder.create<POP::PointerToIndexOp>(scalarIndex, dtorImpl));
+    Value isEqualToZero = builder.create<mlir::index::CmpOp>(
+        mlir::index::IndexCmpPredicate::EQ, dtorImplAsIndex, zero);
+    auto ifOp = builder.create<HLCF::IfOp>(isEqualToZero);
+    auto insertionPoint = builder.saveInsertionPoint();
 
-  // If false, the impl is not null. Continue to destruction.
-  if (ifOp.getElseRegion().empty())
-    ifOp.getElseRegion().push_back(new Block);
-  builder =
-      ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
-  builder.create<HLCF::YieldOp>();
+    // If false, the impl is not null. Continue to destruction.
+    if (ifOp.getElseRegion().empty())
+      ifOp.getElseRegion().push_back(new Block);
+    builder =
+        ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getElseBlock());
+    builder.create<HLCF::YieldOp>();
 
-  // If true, the impl is null and no destruction is needed.
-  if (ifOp.getThenRegion().empty())
-    ifOp.getThenRegion().push_back(new Block);
-  builder =
-      ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
-  ExprEmitter::emitNormalReturn(
-      builder, builder.create<ParamConstantOp>(noneAttr), destructor);
-  builder.create<HLCF::YieldOp>();
-
-  builder.restoreInsertionPoint(insertionPoint);
-  builder.create<CallSignatureOp>(
-      noneType,
-      builder.create<POP::LoadOp>(builder.create<StructGEPOp>(dtorSelf, dtor)),
-      ValueRange({dtorImpl}));
+    // If true, the impl is null and no destruction is needed.
+    if (ifOp.getThenRegion().empty())
+      ifOp.getThenRegion().push_back(new Block);
+    builder =
+        ImplicitLocOpBuilder::atBlockEnd(ifOp.getLoc(), &ifOp.getThenBlock());
+    ExprEmitter::emitNormalReturn(
+        builder, builder.create<ParamConstantOp>(noneAttr), destructor);
+    builder.create<HLCF::YieldOp>();
+    builder.restoreInsertionPoint(insertionPoint);
+    builder.create<CallSignatureOp>(
+        noneType,
+        builder.create<POP::LoadOp>(
+            builder.create<StructGEPOp>(dtorSelf, dtor)),
+        ValueRange({dtorImpl}));
+  }
 
   // Populate the copy constructor.
   {
-    llvm::SaveAndRestore saveAndRestore(builder);
-    builder.setLoc(copyCtr.getLoc());
-    builder.setInsertionPoint(copyCtr.getBody(), copyCtr.getBody()->begin());
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (DebugInfo::DIScopeAttr spAttr = copyCtr.getLocScope())
+      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    Location translatedLocation =
+        shared.translateLocation(copyCtrDecl->getLoc());
+    // we want to insert before return at end of function. LIT::ReturnOp is not
+    // a terminator though, so let's find it and set it.
+    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+        translatedLocation, copyCtr.getBody());
+    auto returnOps = copyCtr.getBody()->getOps<LIT::ReturnOp>();
+    assert(std::distance(returnOps.begin(), returnOps.end()) == 1 &&
+           "copy should have exactly one return op.");
+    builder.setInsertionPoint(*returnOps.begin());
     Value copySelf = copyCtr.getBody()->getArgument(0);
     Value copyExisting = copyCtr.getBody()->getArgument(1);
     Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
@@ -232,30 +248,29 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
         noneType, loadedFuncPtr,
         ArrayRef<Value>{ptrToImpl, loadedExistingImpl});
   }
+  if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
+    return {};
+
   // Populate move constructor.
   {
-    Block *initialBlock = builder.getBlock();
-    Block::iterator initialInsertionPoint = builder.getInsertionPoint();
-    Location initialLocation = builder.getLoc();
-    builder.setLoc(moveCtr.getLoc());
-    builder.setInsertionPoint(moveCtr.getBody(), moveCtr.getBody()->begin());
-    Value copySelf = moveCtr.getBody()->getArgument(0);
-    Value copyExisting = moveCtr.getBody()->getArgument(1);
-    Value existingImpl = builder.create<StructGEPOp>(copyExisting, impl);
-    Value ptrToSelfImpl = builder.create<StructGEPOp>(copySelf, impl);
-    auto loadedExistingImpl = builder.create<POP::LoadOp>(existingImpl);
-
     // Take the impl from the existing.
-    builder.create<POP::StoreOp>(loadedExistingImpl, ptrToSelfImpl);
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (DebugInfo::DIScopeAttr spAttr = moveCtr.getLocScope())
+      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    Location translatedLocation =
+        shared.translateLocation(moveCtrDecl->getLoc());
+    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+        translatedLocation, moveCtr.getBody());
+    Value copyExisting = moveCtr.getBody()->getArgument(1);
     auto opaquePointerTypeAttr =
         M::PointerAttr::get(builder.getContext(), 0, opaquePointer);
     Value nullPtr =
         builder.create<ParamConstantOp>(opaquePointer, opaquePointerTypeAttr);
-    builder.create<POP::StoreOp>(nullPtr, existingImpl);
-
-    builder.setInsertionPoint(initialBlock, initialInsertionPoint);
-    builder.setLoc(initialLocation);
+    builder.create<POP::StoreOp>(
+        nullPtr, builder.create<StructGEPOp>(copyExisting, impl));
   }
+  if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))
+    return {};
 
   // Add the __call__ Method.
   SignatureType closureMethodSignatureType =
@@ -266,32 +281,40 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
       callMemberSignatureType.getArgNames(),
       signatureType.getValueResults().front(), astDecl,
       SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
+  ASTDecl *callDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(callMethod.getBoundReference()).getSymbol());
 
   // Populate the body of ClosureWrapper::__call__.
-  builder = ImplicitLocOpBuilder::atBlockBegin(callMethod.getLoc(),
-                                               callMethod.getBody());
-  Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
-                                 : callMethod.getBody()->getArgument(0);
-  SmallVector<Value> arguments;
-  if (hasResultSlot)
-    arguments.push_back(callMethod.getBody()->getArgument(0));
+  {
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (DebugInfo::DIScopeAttr spAttr = callMethod.getLocScope())
+      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    Location translatedLocation = shared.translateLocation(callDecl->getLoc());
+    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
+        translatedLocation, callMethod.getBody());
+    Value callSelf = hasResultSlot ? callMethod.getBody()->getArgument(1)
+                                   : callMethod.getBody()->getArgument(0);
+    SmallVector<Value> arguments;
+    if (hasResultSlot)
+      arguments.push_back(callMethod.getBody()->getArgument(0));
 
-  arguments.push_back(
-      builder.create<POP::LoadOp>(builder.create<StructGEPOp>(callSelf, impl)));
+    arguments.push_back(builder.create<POP::LoadOp>(
+        builder.create<StructGEPOp>(callSelf, impl)));
 
-  for (unsigned i = hasResultSlot ? 2 : 1, e = callMethod.getNumArguments();
-       i < e; i++)
-    arguments.push_back(callMethod.getBody()->getArgument(i));
+    for (unsigned i = hasResultSlot ? 2 : 1, e = callMethod.getNumArguments();
+         i < e; i++)
+      arguments.push_back(callMethod.getBody()->getArgument(i));
 
-  assert(callMemberSignatureType.getValueResults().size() == 1);
-  auto getCallMember =
-      builder.create<StructGEPOp>(PointerType::get(callMemberSignatureType),
-                                  callMember.getNameAttr(), callSelf);
-  auto callResult = builder.create<CallSignatureOp>(
-      callMemberSignatureType.getValueResults().front(),
-      builder.create<POP::LoadOp>(getCallMember), arguments);
-  ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
-  builder.create<LIT::EndFuncOp>();
+    assert(callMemberSignatureType.getValueResults().size() == 1);
+    auto getCallMember =
+        builder.create<StructGEPOp>(PointerType::get(callMemberSignatureType),
+                                    callMember.getNameAttr(), callSelf);
+    auto callResult = builder.create<CallSignatureOp>(
+        callMemberSignatureType.getValueResults().front(),
+        builder.create<POP::LoadOp>(getCallMember), arguments);
+    ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
+    builder.create<LIT::EndFuncOp>();
+  }
   return declOp;
 }
 
@@ -424,17 +447,19 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
                                          initSigConventions, initSigNames);
 
   LIT::FuncOp copyCtr = stubs.getCopyConstrucotr();
+  ASTDecl *copyCtrDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(copyCtr.getBoundReference()).getSymbol());
   LIT::FuncOp moveCtr = stubs.getMoveConstructor();
+  ASTDecl *moveCtrDecl = shared.declResolver->getDeclForFuncSymbol(
+      cast<SymbolConstantAttr>(moveCtr.getBoundReference()).getSymbol());
 
-  if (failed(structEmitter.populateMoveCopy(copyCtr, declOp, astDecl,
-                                            astDecl.getLoc(), false)))
+  if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, false)))
     shared.emitError(copyCtr.getLoc(), "Cannot copy captured value because")
         << declOp.getSymName() << "` does not implement copy constructor.";
 
   // It is permissible for a closure implementation to not have a move
   // constructor.
-  if (failed(structEmitter.populateMoveCopy(moveCtr, declOp, astDecl,
-                                            astDecl.getLoc(), true)))
+  if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, true)))
     moveCtr.erase();
   else
     declOp.setMoveInitAttr(moveCtr.getBoundReference());
