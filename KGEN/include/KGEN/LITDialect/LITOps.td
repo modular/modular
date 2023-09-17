@@ -1406,6 +1406,33 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RefToPointerOp
+//===----------------------------------------------------------------------===//
+
+// Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
+class RefPointerType<string lhs, string rhs> : TypesMatchWith<
+    "reference as pointer type", lhs, rhs,
+    "PointerType::get($_self.cast<RefType>().getElementType())">;
+
+def LIT_RefToPointerOp : LITOp<"ref_to_pointer",
+                              [RefPointerType<"ref", "ptr">]> {
+  let summary = "Extract a low-level pointer out of a reference";
+  let description = [{
+    This op extracts a kgen pointer out of a reference, exposing an untracked
+    and unsafe inner pointer.  This is used when lowering lifetimes.
+
+    ```mlir
+    lit.ref_to_pointer %0 : !lit.ref<@Foo, life>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs PointerType:$ptr);
+  let assemblyFormat = "$ref `:` type($ref) attr-dict";
+}
+
+
+//===----------------------------------------------------------------------===//
 // HandleVariantOp
 //===----------------------------------------------------------------------===//
 
