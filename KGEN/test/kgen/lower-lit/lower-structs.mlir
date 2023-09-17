@@ -169,10 +169,10 @@ kgen.generator @call_lifetime_lower() {
 }
 
 // CHECK-LABEL: kgen.generator @ref_type(
-// CHECK-SAME: %arg0: !kgen.pointer<@Foo>
-// CHECK-SAME: %arg1: !kgen.pointer<@Foo>)
-kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
-                                           %b: !lit.ref<mut @Foo, p>) {
+// CHECK-SAME: %arg0: !kgen.pointer<struct<>>
+// CHECK-SAME: %arg1: !kgen.pointer<struct<>>)
+kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
+                                           %b: !lit.ref<mut @Struct, p>) {
   // Random use of a parameter that goes away should be updated.
   // CHECK: kgen.param.declare A: struct<> = <{ }>
   kgen.param.declare A : !lit.lifetime = <p>
@@ -180,11 +180,20 @@ kgen.generator @ref_type<p: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
 }
 
 // CHECK-LABEL: kgen.generator @call_ref_type
-kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Foo, p>,
-                                                %b: !lit.ref<mut @Foo, p>) {
-  // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1) : (!kgen.pointer<@Foo>, !kgen.pointer<@Foo>)
-  kgen.call @ref_type<:lifetime q>(%a, %b): (!lit.ref<@Foo, p>, !lit.ref<mut @Foo, p>) -> ()
+kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
+                                                %b: !lit.ref<mut @Struct, p>) {
+  // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1) : (!kgen.pointer<struct<>>, !kgen.pointer<struct<>>)
+  kgen.call @ref_type<:lifetime q>(%a, %b): (!lit.ref<@Struct, p>, !lit.ref<mut @Struct, p>) -> ()
   kgen.return
+}
+
+// CHECK-LABEL: kgen.generator @raw_pointer_from_ref_type
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<>>) -> !kgen.pointer<struct<>>
+kgen.generator @raw_pointer_from_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>)
+  -> !kgen.pointer<@Struct> {
+  // CHECK-NEXT: kgen.return %a
+  %ptr = lit.ref_to_pointer %a: !lit.ref<@Struct, p>
+  kgen.return %ptr: !kgen.pointer<@Struct>
 }
 
 

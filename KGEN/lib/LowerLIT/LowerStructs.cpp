@@ -409,7 +409,7 @@ Type StructOperationLowerer::replace(Type type) {
     result = emptyStructAttr.getType();
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
-    result = PointerType::get(ref.getElementType());
+    result = replaceImpl(PointerType::get(ref.getElementAsType()));
   } else {
     // Recursively replace types.
     result = replaceImpl(type);
@@ -551,6 +551,13 @@ static Value lowerStructOp(StructGEPOp op, StructGEPOpAdaptor adaptor,
 
   return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
                                           lowerer.getIndexAttr(index));
+}
+
+static Value lowerStructOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  assert(isa<PointerType>(adaptor.getRef().getType()) &&
+         "operand should be lowered");
+  return adaptor.getRef();
 }
 
 static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
@@ -704,7 +711,8 @@ void LowerStructsPass::runOnOperation() {
   structLowerer.eraseRecursivePointerField = true;
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp>(
+        .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp,
+              RefToPointerOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });
