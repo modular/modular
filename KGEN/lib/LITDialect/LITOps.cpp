@@ -1152,33 +1152,53 @@ OpFoldResult LetRegDeclOp::fold(LetRegDeclOp::FoldAdaptor adaptor) {
 // VarLetDeclOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseLifetimeDecl(AsmParser &p, ParamDeclAttr &decl) {
-  StringAttr name;
-  if (parseParamName(p, name))
-    return failure();
-  decl = ParamDeclAttr::get(name, LifetimeType::get(p.getContext()));
-  return success();
-}
-
-static void printLifetimeDecl(AsmPrinter &p, Operation *op,
-                              ParamDeclAttr decl) {
-  printParamName(p, decl.getName());
-}
-
 void VarLetDeclOp::build(OpBuilder &b, OperationState &state, Type type,
-                         StringRef name, bool isVar, bool isSynth,
-                         StringRef lifetimeDecl) {
-  build(
-      b, state, type, name, isVar, isSynth,
-      lifetimeDecl.empty()
-          ? ParamDeclAttr()
-          : ParamDeclAttr::get(lifetimeDecl, LifetimeType::get(b.getContext())),
-      /*docString=*/{});
+                         StringRef name, bool isVar, bool isSynth) {
+  build(b, state, type, name, isVar, isSynth,
+        /*docString=*/{});
 }
 
 void VarLetDeclOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
+}
+
+//===----------------------------------------------------------------------===//
+// VarLetDecl2Op
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseVarLetDeclType(AsmParser &p, Type &resultType,
+                                       ParamDeclAttr &lifetimeDecl) {
+  if (p.parseType(resultType))
+    return failure();
+  auto refType = dyn_cast<RefType>(resultType);
+  if (!refType || !refType.getIsMutable())
+    return p.emitError(p.getNameLoc(),
+                       "expected a mutable !lit.ref<> result type");
+  // The lifetime must be a simple name, which becomes the name we are
+  // declaring.
+  auto lifetime = dyn_cast<ParamDeclRefAttr>(refType.getLifetime());
+  if (!lifetime)
+    return p.emitError(p.getNameLoc(),
+                       "expected a !lit.ref<> with named lifetime");
+
+  lifetimeDecl = ParamDeclAttr::get(lifetime.getName(), lifetime.getType());
+  return success();
+}
+
+static void printVarLetDeclType(AsmPrinter &p, Operation *op, Type resultType,
+                                ParamDeclAttr decl) {
+  p.printType(resultType);
+}
+
+void VarLetDecl2Op::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  setNameFn(getResult(), getName());
+}
+
+void VarLetDecl2Op::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), ParamDefValue());
 }
 
 //===----------------------------------------------------------------------===//

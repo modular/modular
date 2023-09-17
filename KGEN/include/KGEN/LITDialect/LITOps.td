@@ -758,20 +758,53 @@ def LIT_VarLetDeclOp : LITOp<"varlet.decl", [ASTDeclInterface,
   }];
 
   let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
-                       OptionalAttr<KGEN_ParamDeclAttr>:$lifetimeDecl,
                        OptionalAttr<LIT_DocStringAttr>:$docString);
   let results = (outs PointerType:$result);
 
   let assemblyFormat = [{
     $name (`var` $isVar^)? (`synth` $isSynthesized^)?
-    (`lifetime` `(` custom<LifetimeDecl>($lifetimeDecl)^ `)`)?
     `:` type($result) attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins "Type":$type, "StringRef":$name, "bool":$isVar,
-                   "bool":$isSynth, CArg<"StringRef", "{}">:$lifetimeDecl)>
+                   "bool":$isSynth)>
   ];
+}
+
+
+//===----------------------------------------------------------------------===//
+// VarLetDecl2Op
+//===----------------------------------------------------------------------===//
+
+def LIT_VarLetDecl2Op : LITOp<"varlet.decl2", [
+    ASTDeclInterface,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+    DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+  let summary = "Addressible local let or var declaration";
+  let description = [{
+    This declaration is used for var and let declarations with an exposed
+    address.  `isVar` indicates if this is mutable at the source level, and
+    `isSynthesized` bit indicates whether this was created internally, which
+    supresses some warnings.  This type defines a lifetime and returns a
+    mutable reference to its result in that lifetime.
+
+    Example:
+
+    ```mlir
+    %foo = lit.varlet.decl2 "foo" isVar, synth : !lit.ref<index, foo>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$name, UnitAttr:$isVar, UnitAttr:$isSynthesized,
+                       KGEN_ParamDeclAttr:$paramDecl,
+                       OptionalAttr<LIT_DocStringAttr>:$docString);
+  let results = (outs LIT_RefType:$result);
+
+  let assemblyFormat = [{
+    $name (`var` $isVar^)? (`synth` $isSynthesized^)?
+    `:` custom<VarLetDeclType>(type($result), $paramDecl) attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//

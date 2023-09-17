@@ -12,8 +12,8 @@ lit.func @vardecl<ty : dtype>(%x : i32) {
   // CHECK-NEXT: %a = lit.varlet.decl "a" var synth : <scalar<ty>>
   %a = lit.varlet.decl "a" var synth: !kgen.pointer<scalar<ty>>
 
-  // CHECK-NEXT: lit.varlet.decl "lifetime" lifetime(lt) : <index>
-  %lifetime = lit.varlet.decl "lifetime" lifetime(lt) : <index>
+  // CHECK-NEXT: %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
+  %lifetime = lit.varlet.decl2 "lifetime" : !lit.ref<mut index, lt>
 
   // CHECK-NEXT: %y = lit.letreg.decl "y" = %x : i32
   %y = lit.letreg.decl "y" = %x: i32
