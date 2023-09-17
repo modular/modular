@@ -23,6 +23,14 @@ lit.func @varDecl(%arg0: index) -> index {
   kgen.return %arg0 : index
 }
 
+// CHECK-LABEL: kgen.generator @varDecl2
+// CHECK-SAME:  (%[[ARG0:.*]]: index) {
+// TODO.
+lit.func @varDecl2(%arg0: index) {
+  %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, alife>
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @letDecl(%arg0
 // CHECK-NEXT:    kgen.return %arg0 : index
 lit.func @letDecl(%arg0: index) -> index {
