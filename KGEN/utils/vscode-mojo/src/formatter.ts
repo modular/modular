@@ -18,23 +18,18 @@ export function registerFormatter(loggingService: LoggingService,
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
       const backupFolder = vscode.workspace.workspaceFolders?.[0];
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
-      const formatter = get<string>('formatter', workspaceFolder);
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      // Grab the formatter, either a custom internal formatter, or the Mojo
-      // SDK.
-      var command = "";
-      let env = process.env;
-      if (formatter) {
-        command = formatter;
-      } else {
-        const mojoConfig = await mojoSDK.resolveConfig(workspaceFolder);
-        if (!mojoConfig)
-          return [];
+      const mojoConfig = await mojoSDK.resolveConfig(workspaceFolder);
+      if (!mojoConfig)
+        return [];
 
-        command = mojoConfig.mojoDriverPath + " format";
-        env['MODULAR_HOME'] = mojoConfig.modularHomePath;
-      }
+      // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
+      var command = mojoConfig.mojoDriverPath + " format";
+
+      let env = process.env;
+      env['MODULAR_HOME'] = mojoConfig.modularHomePath;
+
       command += " --quiet " + args.join(' ') + ' -';
 
       return new Promise<vscode.TextEdit[]>(function(resolve, reject) {
