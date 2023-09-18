@@ -722,6 +722,30 @@ std::optional<StringRef> DeclRefType::getAliasName() {
 }
 
 //===----------------------------------------------------------------------===//
+// IntLiteralType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult IntLiteralType::parseValue(AsmParser &p,
+                                               TypedAttr &value) const {
+  APInt resultAP;
+  OptionalParseResult parseResult = p.parseInteger(resultAP);
+  if (!parseResult.has_value() || failed(*parseResult)) {
+    value = {};
+    return failure();
+  }
+  value = IntLiteralAttr::get(p.getContext(), IPInt(resultAP));
+  return mlir::success();
+}
+
+LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto v = ::dyn_cast<IntLiteralAttr>(value);
+  if (!v)
+    return failure();
+  p.getStream() << v.getValue();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StringType
 //===----------------------------------------------------------------------===//
 
