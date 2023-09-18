@@ -121,6 +121,9 @@ public:
   bool isCapturing() const { return get(Impl::Capturing); }
   bool isEscaping() const { return get(Impl::Escaping); }
 
+  bool operator==(FnEffects rhs) const { return getImpl() == rhs.getImpl(); }
+  bool operator!=(FnEffects rhs) const { return getImpl() != rhs.getImpl(); }
+
   Impl getImpl() const { return impl; }
 
 private:
@@ -132,11 +135,27 @@ private:
 
   Impl impl;
 };
+template <typename StreamT>
+inline StreamT &operator<<(StreamT &os, FnEffects effects) {
+  os << impl::stringifyFnEffects(effects.getImpl());
+  return os;
+}
 namespace impl {
 inline FnEffects operator|=(FnEffects &lhs, FnEffects rhs) {
   return lhs = lhs | rhs;
 }
 } // namespace impl
+
+//===----------------------------------------------------------------------===//
+// ValueInputConvention
+//===----------------------------------------------------------------------===//
+
+template <typename StreamT>
+inline StreamT &operator<<(StreamT &os, ValueInputConvention convention) {
+  os << stringifyValueInputConvention(convention);
+  return os;
+}
+
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//

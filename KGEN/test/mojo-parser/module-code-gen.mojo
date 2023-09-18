@@ -168,8 +168,8 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT: } else {
 # CHECK-NEXT: hlcf.yield
 # CHECK-NEXT: }
-# CHECK-NEXT: [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT: [[DTOR:%.*]] = pop.load [[DTOR_PTR]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: [[DTOR_PTR:%.*]] = lit.struct.gep %self[dtor] : <("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: [[DTOR:%.*]] = pop.load [[DTOR_PTR]] : !kgen.pointer<("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
 # CHECK-NEXT: kgen.call_signature [[DTOR]]([[OPAQUE_IMPL]]) : ("self": !kgen.pointer<array<0, i1>>) -> !lit.none
 # CHECK-NEXT: kgen.param.constant: !lit.none = <#lit.none>
 # CHECK-NEXT: lit.ownership.mark.destroyed %self
@@ -282,12 +282,12 @@ struct Mem:
 
 # CHECK: lit.func @"__init__{{.*}}"(%self: !kgen.pointer<!escaping1> init_self, %impl: !kgen.pointer<!escaping> borrow_in_mem)
 # CHECK-NEXT: %[[callPtr:.*]] = lit.struct.gep %self[call]
-# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [<>("__result__": !kgen.pointer<!Mem> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
+# CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure [("__result__": !kgen.pointer<!Mem> byref_result, "self": !kgen.pointer<array<0, i1>> borrow_in_mem, "n": !kgen.pointer<!Mem> borrow_in_mem) -> !lit.none
 # CHECK-NEXT: pop.store %[[ptrToCall]], %[[callPtr]]
 
 # CHECK-NEXT: %[[V5:.*]] = lit.struct.gep %self[dtor]
 # CHECK-NEXT: %[[V6:.*]] = kgen.create_closure [{{.*}}]()
-# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT: pop.store %[[V6]], %[[V5]] : !kgen.pointer<("self": !kgen.pointer<array<0, i1>>) -> !lit.none>
 
 # CHECK-NEXT: %[[V9:.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT: %[[V10:.*]] = kgen.create_closure [{{.*}}]()

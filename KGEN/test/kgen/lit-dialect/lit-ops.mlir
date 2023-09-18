@@ -263,8 +263,8 @@ lit.func @async_fn() async {
 
 // CHECK-LABEL: lit.func @call_async_fn
 lit.func @call_async_fn() {
-  // CHECK-NEXT: lit.async.call[<>() async -> (): @async_fn]()
-  %0 = lit.async.call[<>() async -> (): @async_fn]()
+  // CHECK-NEXT: lit.async.call[() async -> (): @async_fn]()
+  %0 = lit.async.call[() async -> (): @async_fn]()
   lit.end_func
 }
 

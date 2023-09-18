@@ -229,7 +229,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
   size_t posOperandIdx = 0;
   for (auto [expectedArgIdx, expectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getValueInputs(),
-                       signature.getValueInputConventions(),
+                       signature.getInputConventions(),
                        signature.getArgNames())) {
 
     // There is no provided operand for a by-ref result.
@@ -845,7 +845,7 @@ OverloadFitness::calculateMinMaxArgs(SignatureType signature) {
   size_t minRequiredArgs = 0;
   size_t maxAllowedArgs = 0;
   for (auto [idx, convention] :
-       llvm::enumerate(signature.getValueInputConventions())) {
+       llvm::enumerate(signature.getInputConventions())) {
     // Ignore the return slot if present.
     if (convention == ValueInputConvention::ByRefResult)
       continue;
@@ -1084,7 +1084,7 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName] :
        llvm::enumerate(signature.getValueInputs(),
-                       signature.getValueInputConventions(),
+                       signature.getInputConventions(),
                        signature.getMetadata().getArgNames())) {
     assert(!signature.isKWVarArg(expectedArgIdx) &&
            "`**arg` variadics not supported yet");

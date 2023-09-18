@@ -2012,9 +2012,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
       generator.getLoc(),
       b.getStringAttr(baseName +
                       Twine(inputParamValues.empty() ? "_concrete" : "")),
-      SignatureType::get(TypeArrayAttr::get(generator.getContext(), {}),
-                         TypeArrayAttr::get(generator.getContext(), {}),
-                         generator.getFunctionType(), generator.getMetadata()),
+      SignatureType::get(generator.getFunctionType(),
+                         generator.getSignature().getInputConventions(),
+                         generator.getSignature().getFnEffects()),
       generator.getInlineLevel(), generator.getExportKind());
 
   // Insert the newFunc into the symbol table which will then know about it,

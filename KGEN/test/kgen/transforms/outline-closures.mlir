@@ -109,7 +109,7 @@ kgen.generator @raise2Closures() {
 // CHECK-LABEL: kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T>
 // CHECK-NEXT:    %0 = pop.struct.create(%arg0) : !pop.struct<T>
 // CHECK-NEXT:    pop.compiler.global_store "parametrizedClosure_context_var_2", %0 : !pop.struct<T>
-// CHECK-NEXT:    kgen.param.declare Fn: <>() capturing -> !kgen.paramref<T> = <@parametrizedClosure_Fn<:type T>>
+// CHECK-NEXT:    kgen.param.declare Fn: () capturing -> !kgen.paramref<T> = <@parametrizedClosure_Fn<:type T>>
 // CHECK-NEXT:    %1 = kgen.call_param[() -> !kgen.paramref<T>: Fn]()
 // CHECK-NEXT:    kgen.return %1 : !kgen.paramref<T>
 
@@ -121,10 +121,10 @@ kgen.generator @raise2Closures() {
 
 
 kgen.generator @parametrizedClosure<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
-  kgen.param.declare.region Fn = <>() capturing -> !kgen.paramref<T> {
+  kgen.param.declare.region Fn = () capturing -> !kgen.paramref<T> {
     kgen.return %arg0 : !kgen.paramref<T>
   }
-  %1 = kgen.call_param[<>() -> !kgen.paramref<T>: Fn]()
+  %1 = kgen.call_param[() -> !kgen.paramref<T>: Fn]()
   kgen.return %1 : !kgen.paramref<T>
 }
 
@@ -244,8 +244,8 @@ kgen.generator @capture_crosses_parameter_domain<T: type>(%arg0: !kgen.paramref<
 // COM: We have to parametrize the wrapper on captured SSA values as well, check that this actually happens.
 // CHECK-LABEL: @parametrizedSSACapture_fn<T: type>
 kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> index {
-  %0 = kgen.call_param[<>() -> index: fn]()
-  // CHECK: kgen.param.declare fn: <>() capturing -> index = <@parametrizedSSACapture_fn<:type T>>
+  %0 = kgen.call_param[() -> index: fn]()
+  // CHECK: kgen.param.declare fn: () capturing -> index = <@parametrizedSSACapture_fn<:type T>>
   kgen.param.declare.region fn = () capturing -> index {
     "op.use"(%arg0) : (!kgen.paramref<T>) -> ()
     %1 = kgen.param.constant = <0>
@@ -257,7 +257,7 @@ kgen.generator @parametrizedSSACapture<T: type>(%arg0 : !kgen.paramref<T>) -> in
 // COM: We should not try and capture input parameters.
 // CHECK-LABEL: @dontBindInputParameters_fn<T: type, N>
 kgen.generator @dontBindInputParameters<T: type, I>(%arg0 : !kgen.paramref<T>) -> index {
-  %0 = kgen.call_param[<>() -> index: bind_signature(:<index>() -> index fn, I)]()
+  %0 = kgen.call_param[() -> index: bind_signature(:<index>() -> index fn, I)]()
   // CHECK: kgen.param.declare fn: <index>() capturing -> index = <@dontBindInputParameters_fn<:type T, #kgen.unbound>>
   kgen.param.declare.region fn = <N>() capturing -> index {
     %1 = kgen.param.constant = <N>

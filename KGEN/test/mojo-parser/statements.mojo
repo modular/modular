@@ -159,8 +159,8 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 # CHECK-SAME: [[A:.*]]: !Bool, [[B:.*]]: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
-  # CHECK-SAME: :<>("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", cond(
-  # CHECK-SAME: apply(:<>("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME: :("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", cond(
+  # CHECK-SAME: apply(:("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v" var

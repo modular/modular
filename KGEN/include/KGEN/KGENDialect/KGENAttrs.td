@@ -239,31 +239,25 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
 
   let parameters = (ins
     "StringArrayAttr":$argNames,
-    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
-    "FnEffects":$fnEffects
+    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments
   );
   let assemblyFormat = [{
-    `<` $argNames `,`
-        `[` (`]`) : ($inputConventions^ `]`)? `,`
-        `[` (`]`) : ($defaultArguments^ `]`)? `,`
-    $fnEffects `>`
+    `<` $argNames `,` `[` (`]`) : ($defaultArguments^ `]`)? `>`
   }];
 
-  /// These builders returns the default metadata: all input arguments are
-  /// pass-by-value, and there are no function effects.
-  let builders = [
-    AttrBuilder<(ins "unsigned":$numInputs)>,
-    AttrBuilder<(ins "unsigned":$numInputs, "FnEffects":$effects)>
-  ];
+  let builders = [AttrBuilder<(ins "unsigned":$numInputs)>];
 
   let extraClassDeclaration = [{
     /// Returns true if all input argument conventions are pass-by-value, and
     /// there are no function effects.
     bool isDefault();
 
-    /// Get this metadata attr with the effects swapped out.
-    FnMetadataAttr getWithFnEffects(FnEffects effects);
+    /// Verify the signature this metadata attribute is attached to.
+    LogicalResult verifySignature(
+      function_ref<InFlightDiagnostic()> emitError,
+      ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
+      FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+      FnEffects effects);
   }];
 
   let genVerifyDecl = 1;

@@ -23,13 +23,12 @@ POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
 }
 
 bool LIT::canZeroCostConvertSignature(SignatureType from, SignatureType to) {
-  if (from.getArgNames().size() != to.getValueInputConventions().size())
+  if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
-  auto newMetadata = FnMetadataAttr::get(
-      from.getContext(), from.getArgNames(), to.getValueInputConventions(),
-      to.getDefaultArguments(), to.getFnEffects());
-  auto newSig =
-      SignatureType::get(to.getInputParamTypes(), to.getResultParamTypes(),
-                         to.getValues(), newMetadata);
+  auto newMetadata = FnMetadataAttr::get(from.getContext(), from.getArgNames(),
+                                         to.getDefaultArguments());
+  auto newSig = SignatureType::get(
+      to.getValues(), to.getInputParamTypes(), to.getResultParamTypes(),
+      to.getInputConventions(), to.getFnEffects(), newMetadata);
   return newSig == from;
 }

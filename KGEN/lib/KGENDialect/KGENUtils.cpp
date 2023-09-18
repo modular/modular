@@ -147,18 +147,6 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
       printOptionalParamBindSpec(p, ref.getParamValues());
     }
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
-    // If there are no parameters and no effects, print a SignatureType as a
-    // function type to keep things concise.
-    if (signature.getInputParamTypes().empty() &&
-        signature.getResultParamTypes().empty()) {
-      if (signature.getMetadata().isDefault()) {
-        p << signature.getValues();
-        return;
-      }
-      // If there are effects but no parameters, print "<>" to disambiguate the
-      // syntax.
-      p << "<>";
-    }
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
     printSignature(p, signature);
   } else {
@@ -984,8 +972,9 @@ template <bool optionalResultList>
 static OptionalParseResult parseOptionalSignatureValues(
     AsmParser &p,
     function_ref<FailureOr<std::pair<StringAttr, Type>>()> parseNameElt,
-    FunctionType &values, FnMetadataAttr &metadata) {
-  SmallVector<ValueInputConvention> inputConventions;
+    FunctionType &values,
+    SmallVectorImpl<ValueInputConvention> &inputConventions, FnEffects &effects,
+    FnMetadataAttr &metadata) {
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
   SmallVector<Type> argTypes, resTypes;
@@ -1031,12 +1020,12 @@ static OptionalParseResult parseOptionalSignatureValues(
 
   // Parse the function effects. Check for each case to disambiguate the syntax
   // for interfaces.
-  auto effects = impl::FnEffects::None;
+  auto effectsValue = impl::FnEffects::None;
   StringRef kw;
   while (succeeded(p.parseOptionalKeyword(
       &kw, {"throws", "async", "vararg", "packvararg", "kwvararg",
             "param_vararg", "capturing", "ownedresult", "escaping"}))) {
-    effects |= *impl::symbolizeFnEffects(kw);
+    effectsValue |= *impl::symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
     // can't specify more effects.
@@ -1051,12 +1040,13 @@ static OptionalParseResult parseOptionalSignatureValues(
 
   // FIXME: Force C++ to select the derived class getter, not the storage
   // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
-  using GetCheckedT = FnMetadataAttr (*)(
-      function_ref<InFlightDiagnostic()>, MLIRContext *, StringArrayAttr,
-      ArrayRef<ValueInputConvention>, ArrayRef<TypedAttr>, FnEffects);
+  using GetCheckedT =
+      FnMetadataAttr (*)(function_ref<InFlightDiagnostic()>, MLIRContext *,
+                         StringArrayAttr, ArrayRef<TypedAttr>);
+  effects = FnEffects(effectsValue);
   metadata = ((GetCheckedT)&FnMetadataAttr::getChecked)(
       emitError, p.getContext(), StringArrayAttr::get(p.getContext(), argNames),
-      inputConventions, defaults, FnEffects(effects));
+      defaults);
   if (!metadata)
     return failure();
   values = p.getBuilder().getFunctionType(argTypes, resTypes);
@@ -1067,9 +1057,11 @@ template <bool optionalResultList>
 static ParseResult parseSignatureValuesElt(
     AsmParser &p,
     function_ref<FailureOr<std::pair<StringAttr, Type>>()> parseElt,
-    FunctionType &values, FnMetadataAttr &metadata) {
+    FunctionType &values,
+    SmallVectorImpl<ValueInputConvention> &inputConventions, FnEffects &effects,
+    FnMetadataAttr &metadata) {
   OptionalParseResult result = parseOptionalSignatureValues<optionalResultList>(
-      p, parseElt, values, metadata);
+      p, parseElt, values, inputConventions, effects, metadata);
   if (result.has_value())
     return *result;
   return p.emitError(p.getCurrentLocation(), "expected '(' to begin signature");
@@ -1084,17 +1076,17 @@ printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
   FnMetadataAttr metadata = signature.getMetadata();
   ArrayRef<TypedAttr> defaults = metadata.getDefaultArguments();
   llvm::interleaveComma(
-      llvm::seq<unsigned>(0, metadata.getInputConventions().size()), p,
+      llvm::seq<unsigned>(0, signature.getInputConventions().size()), p,
       [&](unsigned i) {
         printElt(i);
-        ValueInputConvention conv = metadata.getInputConventions()[i];
+        ValueInputConvention conv = signature.getInputConventions()[i];
         if (conv != ValueInputConvention::OwnedInReg)
           p << ' ' << stringifyValueInputConvention(conv);
 
         // If a default argument value has been provided for the argument at
         // this index, print an `=`, followed by the value.
         size_t defaultIndex =
-            metadata.getInputConventions().size() - defaults.size();
+            signature.getInputConventions().size() - defaults.size();
         if (i >= defaultIndex) {
           p << " = ";
           printParamValue(p, defaults[i - defaultIndex]);
@@ -1103,7 +1095,7 @@ printSignatureValuesElt(AsmPrinter &p, function_ref<void(unsigned)> printElt,
   p << ')';
 
   // Print the function effects.
-  impl::FnEffects effects = metadata.getFnEffects().getImpl();
+  impl::FnEffects effects = signature.getFnEffects().getImpl();
   if (effects != impl::FnEffects::None)
     p << ' ' << impl::stringifyFnEffects(effects);
 
@@ -1142,14 +1134,16 @@ ParseResult KGEN::parseFunctionSignature(
     return std::make_pair(StringAttr::get(p.getContext(), argName), arg.type);
   };
 
+  SmallVector<ValueInputConvention> inputConventions;
+  FnEffects effects;
   FnMetadataAttr metadata;
   if (failed(parseSignatureValuesElt</*optionalResultList=*/true>(
-          p, parseElt, functionType, metadata)))
+          p, parseElt, functionType, inputConventions, effects, metadata)))
     return failure();
 
   signature = IndexRefRemapper::remapToSignature(
-      inputParams, resultParams, functionType, metadata,
-      [&] { return p.emitError(loc); });
+      inputParams, resultParams, functionType, inputConventions, effects,
+      metadata, [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
@@ -1224,16 +1218,18 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
     return std::make_pair(StringAttr::get(p.getContext(), argName), type);
   };
   FunctionType functionType;
+  SmallVector<ValueInputConvention> inputConventions;
+  FnEffects effects;
   FnMetadataAttr metadata;
   OptionalParseResult result =
       parseOptionalSignatureValues</*optionalResultList=*/false>(
-          p, parseElt, functionType, metadata);
+          p, parseElt, functionType, inputConventions, effects, metadata);
   if (result.has_value() && succeeded(*result)) {
     signature = SignatureType::getChecked(
-        [&] { return p.emitError(loc); },
+        [&] { return p.emitError(loc); }, functionType,
         TypeArrayAttr::get(p.getContext(), inputParamTypes),
-        TypeArrayAttr::get(p.getContext(), resultParamTypes), functionType,
-        metadata);
+        TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
+        effects, metadata);
     if (!signature)
       return failure();
   }
@@ -1305,12 +1301,14 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
       return failure();
     return std::make_pair(StringAttr::get(p.getContext(), argName), type);
   };
+  SmallVector<ValueInputConvention> inputConventions;
+  FnEffects effects;
   FnMetadataAttr metadata;
   if (parseSignatureValuesElt</*optionalResultList=*/false>(
-          p, parseElt, functionType, metadata))
+          p, parseElt, functionType, inputConventions, effects, metadata))
     return failure();
   signature = IndexRefRemapper::remapToSignature(
-      {}, resultParamDecls, functionType, metadata,
+      {}, resultParamDecls, functionType, inputConventions, effects, metadata,
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -1776,52 +1774,53 @@ static ParseResult verifyMatchingLists(
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult KGEN::verifyDeclSignaturesMatch(StringRef originatorName,
-                                              SignatureType originatorSignature,
-                                              Location originatorLoc,
-                                              StringRef targetName,
-                                              SignatureType targetSignature,
-                                              Location targetLoc) {
+LogicalResult
+KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
+                                Location lhsLoc, StringRef rhsName,
+                                SignatureType rhsSig, Location rhsLoc) {
   TimeTraceScope<> traceScope("verifyDeclSignaturesMatch");
 
-  FunctionType originatorType = originatorSignature.getValues();
-  FunctionType targetType = targetSignature.getValues();
+  FunctionType lhsType = lhsSig.getValues();
+  FunctionType rhsType = rhsSig.getValues();
 
   /// Verify that a list of parameter declarations from a generator or func
   /// matches those of an interface.  This produces an error diagnostic and
   /// returns failure when a problem is detected, or returns true if
   /// everything is ok.
-  if (failed(verifyMatchingLists(originatorSignature.getInputParamTypes(),
-                                 targetSignature.getInputParamTypes(),
-                                 originatorName, originatorLoc, targetName,
-                                 targetLoc, "input parameter", "type")) ||
-      failed(verifyMatchingLists(originatorSignature.getResultParamTypes(),
-                                 targetSignature.getResultParamTypes(),
-                                 originatorName, originatorLoc, targetName,
-                                 targetLoc, "result parameter", "type")) ||
-      verifyMatchingLists(originatorType.getInputs(), targetType.getInputs(),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          "argument", "type") ||
-      verifyMatchingLists(originatorType.getResults(), targetType.getResults(),
-                          originatorName, originatorLoc, targetName, targetLoc,
-                          "result", "type"))
+  if (failed(verifyMatchingLists(lhsSig.getInputParamTypes(),
+                                 rhsSig.getInputParamTypes(), lhsName, lhsLoc,
+                                 rhsName, rhsLoc, "input parameter", "type")) ||
+      failed(verifyMatchingLists(
+          lhsSig.getResultParamTypes(), rhsSig.getResultParamTypes(), lhsName,
+          lhsLoc, rhsName, rhsLoc, "result parameter", "type")) ||
+      verifyMatchingLists(lhsType.getInputs(), rhsType.getInputs(), lhsName,
+                          lhsLoc, rhsName, rhsLoc, "argument", "type") ||
+      verifyMatchingLists(lhsType.getResults(), rhsType.getResults(), lhsName,
+                          lhsLoc, rhsName, rhsLoc, "result", "type") ||
+      verifyMatchingLists(lhsSig.getInputConventions(),
+                          rhsSig.getInputConventions(), lhsName, lhsLoc,
+                          rhsName, rhsLoc, "argument", "convention"))
     return failure();
+
+  if (lhsSig.getFnEffects() != rhsSig.getFnEffects()) {
+    auto diag = emitError(lhsLoc, lhsName)
+                << " function effects are " << lhsSig.getFnEffects() << " but @"
+                << rhsName << " expected " << rhsSig.getFnEffects();
+    if (lhsLoc != rhsLoc)
+      diag.attachNote(rhsLoc) << rhsName << " declared here";
+    return failure();
+  }
 
   // Check the metadata matches up: input argument conventions and function
   // effects ought to match.
-  if (originatorSignature.getMetadata() != targetSignature.getMetadata()) {
-    auto newMetadata = FnMetadataAttr::get(
-        originatorSignature.getContext(), originatorSignature.getArgNames(),
-        targetSignature.getValueInputConventions(),
-        targetSignature.getDefaultArguments(), targetSignature.getFnEffects());
-    if (newMetadata == originatorSignature.getMetadata())
+  if (lhsSig.getMetadata() != rhsSig.getMetadata()) {
+    if (rhsSig.getMetadata() == lhsSig.getMetadata())
       return success();
-    auto diag = emitError(originatorLoc, originatorName)
-                << " metadata is " << originatorSignature.getMetadata()
-                << " but @" << targetName << " expected "
-                << targetSignature.getMetadata();
-    if (originatorLoc != targetLoc)
-      diag.attachNote(targetLoc) << targetName << " declared here";
+    auto diag = emitError(lhsLoc, lhsName)
+                << " metadata is " << lhsSig.getMetadata() << " but @"
+                << rhsName << " expected " << rhsSig.getMetadata();
+    if (lhsLoc != rhsLoc)
+      diag.attachNote(rhsLoc) << rhsName << " declared here";
     return failure();
   }
 

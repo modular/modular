@@ -1544,9 +1544,9 @@ kgen.generator @async_function() async {
 
 // CHECK-LABEL: kgen.func @call_it
 kgen.generator @call_it() {
-  // CHECK: lit.async.call[<>() async -> (): @async_function]
-  kgen.param.declare fn: <>() async -> () = <@async_function>
-  lit.async.call[<>() async -> (): fn]()
+  // CHECK: lit.async.call[() async -> (): @async_function]
+  kgen.param.declare fn: () async -> () = <@async_function>
+  lit.async.call[() async -> (): fn]()
   kgen.return
 }
 
@@ -1695,8 +1695,8 @@ kgen.generator @async_fn() async {
 
 // CHECK-LABEL: kgen.func export @nonparametric_async_call
 kgen.generator export @nonparametric_async_call() {
-  // CHECK-NEXT: call[<>() async -> (): @async_fn]
-  lit.async.call[<>() async -> (): @async_fn]()
+  // CHECK-NEXT: call[() async -> (): @async_fn]
+  lit.async.call[() async -> (): @async_fn]()
   kgen.return
 }
 
@@ -1795,8 +1795,8 @@ kgen.generator @foo_k<N, M>() capturing -> !pop.scalar<index> {
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !pop.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !pop.scalar<index>) {
   kgen.param.declare k: <index>() capturing -> !pop.scalar<index> = <@foo_k<N, #kgen.unbound>>
-  // CHECK: kgen.create_closure [<>() capturing -> !pop.scalar<index>: @"foo_k,N=5,M=3"]()
-  %1 = kgen.create_closure[<>() capturing -> !pop.scalar<index>: bind_signature(:<index>() capturing -> !pop.scalar<index> k, 3)]()
+  // CHECK: kgen.create_closure [() capturing -> !pop.scalar<index>: @"foo_k,N=5,M=3"]()
+  %1 = kgen.create_closure[() capturing -> !pop.scalar<index>: bind_signature(:<index>() capturing -> !pop.scalar<index> k, 3)]()
   kgen.return
 }
 
@@ -1820,9 +1820,9 @@ kgen.generator @bat(%arg0: index) capturing -> index {
 
 // CHECK-LABEL: kgen.func @bat_binder
 kgen.generator @bat_binder(%arg0: index) {
-  // CHECK: kgen.create_closure [<>(index) capturing -> index: @bat]()
-	%2 = kgen.create_closure[<>(index) capturing -> index: h]()
-	kgen.param.declare h: <>(index) capturing -> index = <@bat>
+  // CHECK: kgen.create_closure [(index) capturing -> index: @bat]()
+	%2 = kgen.create_closure[(index) capturing -> index: h]()
+	kgen.param.declare h: (index) capturing -> index = <@bat>
 	kgen.return
 }
 

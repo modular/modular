@@ -417,7 +417,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << '(';
     Type inMemResult;
     for (auto [i, type, convention, name] :
-         llvm::enumerate(sig.getValueInputs(), sig.getValueInputConventions(),
+         llvm::enumerate(sig.getValueInputs(), sig.getInputConventions(),
                          sig.getArgNames())) {
       if (i > (inMemResult ? 1 : 0))
         os << ", ";

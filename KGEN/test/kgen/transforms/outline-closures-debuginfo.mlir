@@ -22,7 +22,7 @@
 // CHECK-NEXT:    pop.compiler.global_store "foo_context_var_0", %[[VAL]] : !pop.struct<index> loc(#[[LOC_FOO]])
 // CHECK-NEXT:    kgen.param.declare Closure: () -> !pop.array<0, i8> = <@foo_Closure> loc(#[[LOC_CLOSURE_DEC:.*]])
 // CHECK-NEXT:    kgen.param.declare OtherClosure: () -> () = <@foo_OtherClosure> loc(#[[LOC_FOO]])
-// CHECK-NEXT:    kgen.param.declare Capturing: <>() capturing -> () = <@foo_Capturing> loc(#[[LOC_CAP:.*]])
+// CHECK-NEXT:    kgen.param.declare Capturing: () capturing -> () = <@foo_Capturing> loc(#[[LOC_CAP:.*]])
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_FOO]])
 // CHECK-NEXT:    kgen.return %array : !pop.array<0, i1> loc(#[[LOC_FOO]])
 // CHECK-NEXT:  } loc(#[[LOC_FOO]])

@@ -86,7 +86,7 @@ struct TestParamStruct[A: Int]:
     alias B = A*A+1
     # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
     alias C = B*A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:<>() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>> {{.*}}__init__()"<:!Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: !Int = [[C]]>>
     var temp: TestParamStruct[C]
@@ -398,11 +398,11 @@ fn testMultipleParamReturn[a: Bool -> b: Int]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"
-# CHECK-SAME: <[[CALLABLE:.*]]: <>(index borrow) -> index>(%a: index borrow) -> index
+# CHECK-SAME: <[[CALLABLE:.*]]: (index borrow) -> index>(%a: index borrow) -> index
 fn takeCallable[
      callable: __mlir_type[`!kgen.signature<(index borrow) -> index>`]
    ](a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call_param[<>(index borrow) -> index: [[CALLABLE]]](%a)
+  # CHECK-NEXT: %0 = kgen.call_param[(index borrow) -> index: [[CALLABLE]]](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -411,7 +411,7 @@ fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK: %0 = kgen.call @"$parameters"::@"takeCallable{{.*}}<:<>(index borrow) -> index rebind(:<>("x": index borrow) -> index @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK: %0 = kgen.call @"$parameters"::@"takeCallable{{.*}}<:(index borrow) -> index rebind(:("x": index borrow) -> index @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 ##===--------------------Test function with parameters---------------------===##
@@ -534,7 +534,7 @@ fn useParamVariadics():
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [<>() param_vararg -> !lit.none: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [() param_vararg -> !lit.none: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
   # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<() param_vararg -> !lit.none>
   let fnLet = fnWithVariadics
 
