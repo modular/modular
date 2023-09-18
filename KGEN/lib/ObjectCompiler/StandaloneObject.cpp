@@ -649,7 +649,7 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
                             buf = buf.copy()]() mutable {
           // Extract out the bitcode from the key, as LLVM bitcode dies if the
           // buffer contains other data.
-          StringRef bitcodeBuffer = ((Cache::BufferRef &)(keyBuf))->getBuffer();
+          StringRef bitcodeBuffer = ((BufferRef &)(keyBuf))->getBuffer();
           bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
 
           // Load the cached bytecode into a new context. This is necessary to

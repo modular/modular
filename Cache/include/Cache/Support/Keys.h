@@ -12,7 +12,7 @@
 #ifndef CACHE_SUPPORT_KEYS_H
 #define CACHE_SUPPORT_KEYS_H
 
-#include "Cache/Buffer.h"
+#include "Support/Buffer.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Casting.h"
@@ -46,8 +46,8 @@ struct TypeKey<llvm::ArrayRef<uint8_t>> {
 };
 
 template <>
-struct TypeKey<M::Cache::BufferRef> {
-  using KeyTy = M::Cache::BufferRef;
+struct TypeKey<M::BufferRef> {
+  using KeyTy = M::BufferRef;
   static std::string hashKey(KeyTy key) {
     llvm::BLAKE3 hashState{};
     hashState.update(key->getBuffer());

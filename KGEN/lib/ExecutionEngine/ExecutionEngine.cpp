@@ -149,8 +149,7 @@ StaticArchiveLayer::StaticArchiveLayer(llvm::orc::ObjectLayer &objLayer,
           sess, dl, std::move(add)),
       objectLayer(objLayer) {}
 
-ErrorOrSuccess StaticArchiveLayer::add(StringRef libName,
-                                       Cache::BufferRef archive) {
+ErrorOrSuccess StaticArchiveLayer::add(StringRef libName, BufferRef archive) {
   auto dylibOr = getOrCreateDylib(libName);
   if (dylibOr.isError())
     return dylibOr.takeError();

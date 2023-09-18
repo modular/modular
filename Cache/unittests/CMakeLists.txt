@@ -15,7 +15,6 @@ add_modular_unittest(
   CacheTests
 
   BlobCacheTest.cpp
-  BufferTest.cpp
   CachedTransformTest.cpp
   KeyTest.cpp
 

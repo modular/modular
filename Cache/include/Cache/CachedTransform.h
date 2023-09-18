@@ -8,7 +8,7 @@
 #define CACHE_CACHED_TRANSFORM_H
 
 #include "Cache/BlobCache.h"
-#include "Cache/Buffer.h"
+#include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
 
 namespace M::Cache {

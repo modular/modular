@@ -254,7 +254,7 @@ PackageBuilder::PackageBuilder(LIT::PackageOp parsedPackageOp,
 ErrorOrSuccess PackageBuilder::attachPreElaboratorBytecode(ModuleOp moduleOp) {
   // Write the package bytecode to the given buffer. This will be attached to
   // the exported high level functions.
-  Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
+  WriteableBufferRef str = WriteableBuffer::get();
   if (failed(mlir::writeBytecodeToFile(moduleOp, *str)))
     return Error("could not write bytecode for package module");
 

@@ -24,6 +24,7 @@ add_modular_unittest(
   ASN1Test.cpp
   BCastTest.cpp
   Base64Test.cpp
+  BufferTest.cpp
   ConfigurationTest.cpp
   DTypeTest.cpp
   DeviceSpecsTest.cpp
