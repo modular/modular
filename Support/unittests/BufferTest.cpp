@@ -4,12 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Cache/Buffer.h"
+#include "Support/Buffer.h"
 
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace Cache;
 
 TEST(BufferTest, RefCountingWorks) {
   auto buffer = Buffer::get("hello");
@@ -91,7 +90,7 @@ TEST(BufferTest, AlignmentWorks) {
   EXPECT_TRUE(((uintptr_t)buffer->getBufferStart() & 1023) == 0);
   // And ensure we still have all the data we put in.
   originalContents += "hello";
-  EXPECT_TRUE(((Cache::Buffer &)*buffer).getBuffer() == originalContents);
+  EXPECT_TRUE(((Buffer &)*buffer).getBuffer() == originalContents);
 }
 
 TEST(BufferTest, MemoryBufferConversion) {

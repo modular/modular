@@ -30,9 +30,9 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
-#include "Cache/Buffer.h"
 #include "Cache/CacheDialect/CachedTransform.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -416,8 +416,8 @@ struct SharedState::ModuleState {
   //===--------------------------------------------------------------------===//
 
   /// Build the cache key for this module.
-  Cache::WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
-    auto keyBuf = Cache::WriteableBuffer::get();
+  WriteableBufferRef buildCacheKey(const CompilationOptions &options) {
+    auto keyBuf = WriteableBuffer::get();
 
     // Add the module contents to the cache key.
     keyBuf->write((const char *)contentHash.data(), contentHash.size());
@@ -967,7 +967,7 @@ void SharedState::loadModulesFromCache(
     // try reading it from the cache.
     if (moduleState->decl->resolvedness > DeclResolvedness::unparsed)
       continue;
-    Cache::WriteableBufferRef keyBuf = moduleState->buildCacheKey(options);
+    WriteableBufferRef keyBuf = moduleState->buildCacheKey(options);
 
     auto out = AsyncValueRef<Chain>::allocate(runtime);
     auto f = impl->transformCache->find(
@@ -975,7 +975,7 @@ void SharedState::loadModulesFromCache(
                                moduleState->decl->getIfOperation()->getLoc()));
     std::move(f).andThenSync(
         [this, moduleState, out = out.copy()](
-            AsyncValueRef<std::optional<Cache::BufferRef>> &&f) mutable {
+            AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
           // If the module isn't in the cache, process it as normal. We will
           // attempt to cache it later instead of now, given that we can't
           // reliably resolve everything in the module right now.
@@ -1278,9 +1278,9 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
   // are. Caching this prevents the need to actually parse the buffer when the
   // content of the module hasn't changed.
   if (impl->transformCache) {
-    auto onCacheMiss = [&](Operation *op, Cache::WriteableBufferRef buf,
+    auto onCacheMiss = [&](Operation *op, WriteableBufferRef buf,
                            LLCL::AnyAsyncValueRef chain) {
-      auto output = LLCL::AsyncValueRef<Cache::BufferRef>::allocate(runtime);
+      auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
       chain.andThenSync([resolveDeclAndComputeDeps, &dependencies, &moduleDecl,
                          moduleBuffer, output = output.copy(),
                          buf = buf.copy()]() mutable {
@@ -1313,7 +1313,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
       });
       return output;
     };
-    auto onCacheHit = [&](Operation *op, Cache::BufferRef buf) {
+    auto onCacheHit = [&](Operation *op, BufferRef buf) {
       const char *data = buf->getBufferStart();
 
       // Functor for reading a uint64_t from the cache buffer.
@@ -1341,7 +1341,7 @@ void SharedState::resolveModuleDependencies(ModuleState &moduleState,
     };
 
     // Compute the cache key for this module, using the content hash.
-    Cache::WriteableBufferRef keyBuf = Cache::WriteableBuffer::get();
+    WriteableBufferRef keyBuf = WriteableBuffer::get();
     keyBuf->write_impl((const char *)moduleState.contentHash.data(),
                        moduleState.contentHash.size());
     options.print(*keyBuf << "mojoParser(");
@@ -1409,7 +1409,7 @@ void SharedState::cacheParsedModules() {
 
     // Re-check if the module is in the cache. If it isn't, we populate it
     // now.
-    Cache::BufferRef keyBuffer = module->buildCacheKey(options);
+    BufferRef keyBuffer = module->buildCacheKey(options);
     auto out = AsyncValueRef<Chain>::allocate(runtime);
     auto f = impl->transformCache->contains(
         keyBuffer.copy(),
@@ -1423,7 +1423,7 @@ void SharedState::cacheParsedModules() {
           TimeTraceScope<> timeScope(("Caching: " + moduleOp.getName()).str());
 
           // Write the module to the cache.
-          auto writeableTransformResult = Cache::WriteableBuffer::get();
+          auto writeableTransformResult = WriteableBuffer::get();
           if (failed(mlir::writeBytecodeToFile(moduleOp,
                                                *writeableTransformResult))) {
             return std::move(out).setToError(LLCL::getMLIRDiagnostic(

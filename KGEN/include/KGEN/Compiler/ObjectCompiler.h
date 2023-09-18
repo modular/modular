@@ -57,9 +57,8 @@ public:
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// archive.
-  ErrorOr<Cache::BufferRef>
-  produceStandaloneArchive(const SymbolTable &symtab,
-                           const ExportMap &exportedSymbols);
+  ErrorOr<BufferRef> produceStandaloneArchive(const SymbolTable &symtab,
+                                              const ExportMap &exportedSymbols);
 
   /// Produces a standalone archive as an ElementsAttr that can be used as an
   /// attribute on another operation. Using this function generally implies
@@ -170,7 +169,7 @@ public:
   /// for that module. Note that `nullopt` could be returned if codegen failed
   /// *or* if codegen simply didn't happen (which would be the case if the JIT's
   /// `lookup` method has not been called).
-  std::optional<Cache::BufferRef> lookupArchive(ModuleOp theModule) {
+  std::optional<BufferRef> lookupArchive(ModuleOp theModule) {
     auto found = generatedArchives.find(theModule);
     if (found != generatedArchives.end())
       return found->second.copy();
@@ -204,7 +203,7 @@ private:
 private:
   ObjectCompiler objectCompiler;
   llvm::orc::ObjectLayer &baseLayer;
-  DenseMap<ModuleOp, Cache::BufferRef> generatedArchives;
+  DenseMap<ModuleOp, BufferRef> generatedArchives;
 };
 } // namespace M::KGEN
 

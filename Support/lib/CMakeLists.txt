@@ -9,6 +9,7 @@ add_modular_library(MSupport
 
   AlignedAlloc.cpp
   Base64.cpp
+    Buffer.cpp
   BuildInfo.cpp
   CommonCLOptions.cpp
   Configuration.cpp

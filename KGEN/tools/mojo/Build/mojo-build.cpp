@@ -127,7 +127,7 @@ static std::optional<int>
 compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        ModuleOp moduleOp, TargetInfoAttr target,
-                       Cache::BufferRef &archive) {
+                       BufferRef &archive) {
   mlir::PassManager pm(&context);
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(runtime, pm, options, ExecutionEngineOptions(),
@@ -192,7 +192,7 @@ static int generateDSYM(const State &state, StringRef binaryOutputPath) {
 static int linkExecutable(const State &state,
                           const llvm::opt::InputArgList &args,
                           const CompilationOptions &options,
-                          Cache::BufferRef &archive) {
+                          BufferRef &archive) {
   // For now we just use the system C++ compiler as the linker on non-windows,
   // which makes it a tad bit easier to link in the necessary system and runtime
   // dependencies of KGENCompilerRT.
@@ -375,7 +375,7 @@ static int build(const State &state) {
     return state.reportError(moduleOp.getError());
 
   // Compile the module to a static archive.
-  Cache::BufferRef archive;
+  BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
           state, runtime, context, options, **moduleOp, target, archive))
     return *exitCode;

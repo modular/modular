@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Package/Package.h"
-#include "Cache/Buffer.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Buffer.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -32,7 +32,7 @@ M::KGEN::createElaboratedBytecodeAttr(const SymbolTable &symtab,
 
   // Write the package bytecode to the given buffer. This will be attached to
   // the exported high level functions.
-  Cache::WriteableBufferRef str = Cache::WriteableBuffer::get();
+  WriteableBufferRef str = WriteableBuffer::get();
   if (failed(mlir::writeBytecodeToFile(symtab.getOp(), *str)))
     return Error("could not write bytecode for package module");
 
@@ -63,15 +63,14 @@ ErrorOr<DenseResourceElementsAttr> M::KGEN::createPackageArchive(
   if (failed(objectCompiler))
     return objectCompiler.takeError();
 
-  ErrorOr<Cache::BufferRef> archiveOr =
+  ErrorOr<BufferRef> archiveOr =
       objectCompiler->produceStandaloneArchive(symtab, exportedSymbols);
   if (failed(archiveOr))
     return archiveOr.takeError();
-  Cache::BufferRef archive = std::move(*archiveOr);
+  BufferRef archive = std::move(*archiveOr);
 
   // Get the standalone archive key to use as the archive name.
-  Cache::WriteableBufferRef produceStandaloneArchiveKey =
-      Cache::WriteableBuffer::get();
+  WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
   compileOptions.print(*produceStandaloneArchiveKey
                        << "produceStandaloneArchive(");
   *produceStandaloneArchiveKey << ")";

@@ -25,9 +25,9 @@ using namespace Cache;
 
 namespace {
 /// This provides a zero-copy binary blob cache key struct. The idea is that it
-/// should operate directly on Cache::BufferRef because that's what we use in
+/// should operate directly on BufferRef because that's what we use in
 /// this tool, and it should be simple to read/write.
-using BinaryBlobCacheKey = Keys::VariantTypeKey<Cache::BufferRef, StringRef>;
+using BinaryBlobCacheKey = Keys::VariantTypeKey<BufferRef, StringRef>;
 
 /// Provides the CLOptions for this tool.
 class CLOptions : public CLOptionsBase {
@@ -128,7 +128,7 @@ ErrorOr<URI> CLOptions::getBackendPath() const {
 }
 
 static AsyncValueRef<std::string>
-putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, Cache::BufferRef value,
+putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, BufferRef value,
                     StringRef input,
                     RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
                     LLCL::Runtime &runtime, bool useHex) {
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
           std::move(*outCh));
     }
   } else {
-    auto bufOr = Cache::Buffer::getFile(clOptions.input.getValue());
+    auto bufOr = Buffer::getFile(clOptions.input.getValue());
     if (bufOr.isError())
       return clOptions.reportError(bufOr.getError());
     std::string keyToWrite =

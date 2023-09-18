@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CACHE_BUFFER_H
-#define CACHE_BUFFER_H
+#ifndef SUPPORT_BUFFER_H
+#define SUPPORT_BUFFER_H
 
 #include "Support/ADT/SmartVariant.h"
 #include "Support/AlignedAlloc.h"
@@ -20,7 +20,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <filesystem>
 
-namespace M::Cache {
+namespace M {
 class Buffer;
 using BufferRef = RCRef<Buffer>;
 
@@ -82,7 +82,7 @@ protected:
   Buffer(llvm::sys::fs::mapped_file_region &&mapped)
       : storage{std::move(mapped)} {}
 
-  /// Construct a `Cache::Buffer` from an `llvm::MemoryBuffer`. The buffer takes
+  /// Construct a `Buffer` from an `llvm::MemoryBuffer`. The buffer takes
   /// ownership of any storage owned by the `llvm::MemoryBuffer`.
   Buffer(std::unique_ptr<llvm::MemoryBuffer> buffer)
       : storage{std::move(buffer)} {}
@@ -200,6 +200,6 @@ private:
     SetUnbuffered();
   }
 };
-} // namespace M::Cache
+} // namespace M
 
-#endif // CACHE_BUFFER_H
+#endif // SUPPORT_BUFFER_H

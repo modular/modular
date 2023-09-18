@@ -4,11 +4,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Cache/Buffer.h"
+#include "Support/Buffer.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using namespace M;
-using namespace Cache;
 using mapped_file_region = llvm::sys::fs::mapped_file_region;
 
 //===----------------------------------------------------------------------===//

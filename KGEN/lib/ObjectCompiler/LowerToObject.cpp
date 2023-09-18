@@ -393,7 +393,7 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
                               const ExportMap &exports) {
   auto theModule = cast<ModuleOp>(symtab.getOp());
 
-  ErrorOr<Cache::BufferRef> bufOr = Error(" ");
+  ErrorOr<BufferRef> bufOr = Error(" ");
   if (exports.empty()) {
     bufOr = objectCompiler.produceStandaloneArchive(symtab,
                                                     getAllSymbols(theModule));
@@ -404,7 +404,7 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
   // No buffer - materialization fails.
   if (bufOr.isError())
     return bufOr.takeError();
-  Cache::BufferRef archiveBuf = std::move(*bufOr);
+  BufferRef archiveBuf = std::move(*bufOr);
   // Store a copy to the ref of the archive.
   generatedArchives[theModule] = archiveBuf.copy();
 

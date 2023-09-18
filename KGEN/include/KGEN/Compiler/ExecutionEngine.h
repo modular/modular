@@ -7,7 +7,7 @@
 #ifndef KGEN_COMPILER_EXECUTIONENGINE_H
 #define KGEN_COMPILER_EXECUTIONENGINE_H
 
-#include "Cache/Buffer.h"
+#include "Support/Buffer.h"
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/ErrorOr.h"
 #include "Support/FunctionExtras.h"
@@ -192,11 +192,11 @@ public:
   /// Add the archive in `archive` to the library `libName`. Stores a reference
   /// to `archive` inside the class to ensure its lifetime matches the lifetime
   /// of the ExecutionEngine.
-  ErrorOrSuccess add(StringRef libName, Cache::BufferRef archive);
+  ErrorOrSuccess add(StringRef libName, BufferRef archive);
 
 private:
   llvm::orc::ObjectLayer &objectLayer;
-  SmallVector<Cache::BufferRef> archiveBuffers;
+  SmallVector<BufferRef> archiveBuffers;
 };
 
 //===----------------------------------------------------------------------===//
@@ -381,7 +381,7 @@ private:
 
   /// List of buffers that contain archive files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
-  SmallVector<Cache::BufferRef> archiveBuffers;
+  SmallVector<BufferRef> archiveBuffers;
 };
 } // namespace M::KGEN
 

@@ -7,10 +7,10 @@
 #ifndef CACHE_BLOBCACHE_H
 #define CACHE_BLOBCACHE_H
 
-#include "Cache/Buffer.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/STLExtras.h"
