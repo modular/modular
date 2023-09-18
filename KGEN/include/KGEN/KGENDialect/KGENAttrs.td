@@ -220,38 +220,46 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
     The `#kgen.fn_metadata` attribute contains additional information about a
     function, such as its argument calling conventions (pass-by-value or
     pass-by-reference), any default argument values, the argument names and
-    kinds (e.g. positional or keyword-only), and the effects of the function
-    itself (e.g. none or throws).
+    kinds (e.g. positional or keyword-only), and the default parameter values.
 
     Example:
 
     ```mlir
-    // Metadata specifying input argument #0 is taken by reference,
-    // argument #1 is taken by value and has a default value of `4.2`,
-    // and the function has a "throws" function effect.
-    #kgen.fn_metadata<[byref, owned], [<1 : i64 = 4.2 : f32>], throws>
+    // Metadata specifying argument #0 is called "a", argument #1 is called "b",
+    // argument #1 is taken has a default value of `4.2`, and the default value
+    // for the last parameter is equal to 1.
+    #kgen.fn_metadata<["a", "b"], [4.2 : f32], [1: i64]>
 
-    // Metadata specifying the default input value conventions, no default
-    // arguments, and a "throws" function effect.
-    #kgen.fn_metadata<[], [], throws>
+    // Metadata specifying argument names only for arguments #1 and #2, no
+    // default arguments, and no default parameters.
+    #kgen.fn_metadata<["", "y", "z"], [], []>
     ```
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"StringAttr">:$argNames,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments
+    OptionalArrayRefParameter<"TypedAttr">:$defaultArguments,
+    OptionalArrayRefParameter<"TypedAttr">:$defaultParameters
   );
   let assemblyFormat = [{
     `<` `[` (`]`) : ($argNames^         `]`)? `,`
-        `[` (`]`) : ($defaultArguments^ `]`)? `>`
+        `[` (`]`) : ($defaultArguments^ `]`)? `,`
+        `[` (`]`) : ($defaultParameters^ `]`)?
+    `>`
   }];
 
   let builders = [
     AttrBuilder<(ins "unsigned":$numInputs)>,
     AttrBuilder<(ins "ArrayRef<StringRef>":$argNames,
-                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultArguments), [{
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultArguments,
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultParameters), [{
       auto fn = [&](StringRef name) { return StringAttr::get($_ctxt, name); };
-      return $_get($_ctxt, llvm::map_to_vector(argNames, fn), defaultArguments);
+      return $_get($_ctxt, llvm::map_to_vector(argNames, fn),
+                   defaultArguments, defaultParameters);
+    }]>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$argNames,
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultArguments), [{
+      return $_get($_ctxt, argNames, defaultArguments, ArrayRef<TypedAttr>());
     }]>
   ];
 
