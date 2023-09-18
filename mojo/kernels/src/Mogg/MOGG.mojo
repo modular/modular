@@ -100,6 +100,10 @@ from memory import memset_zero
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 from MOGGDecorators import *
+from NonMaxSuppression import (
+    non_max_suppression,
+    non_max_suppression_shape_func,
+)
 from Normalization import layer_norm
 from Pad import pad as _pad
 from Pad import pad_shape
@@ -186,6 +190,8 @@ fn MOGGExport():
     alias _matrix_band_part = matrix_band_part
     alias _matmul = matmul
     alias _negative = negative
+    alias _non_maximum_suppression = non_maximum_suppression
+    alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
     alias _batched_matmul = batched_matmul
     alias _mogg_max = mogg_max
     alias _mogg_min = mogg_min
@@ -2185,6 +2191,59 @@ fn logsoftmax[
         rank,
         DimList.create_unknown[rank](),
     ](input, output, rank - 1, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG non_maximum_suppression
+# ===----------------------------------------------------------------------===#
+
+
+fn non_maximum_suppression[
+    type: DType
+](
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    max_output_boxes_per_class: NDBuffer[1, DimList(1), DType.int64],
+    iou_threshold: NDBuffer[1, DimList(1), DType.float32],
+    score_threshold: NDBuffer[1, DimList(1), DType.float32],
+    output: NDBuffer[2, DimList.create_unknown[2](), DType.int64],
+    out_chain: OutputChainPtr,
+):
+    let max_output_boxes_int = max_output_boxes_per_class[0].to_int()
+    let iou_threshold_float = iou_threshold[0]
+    let score_threshold_float = score_threshold[0]
+
+    non_max_suppression[type](
+        boxes,
+        scores,
+        output,
+        max_output_boxes_int,
+        iou_threshold_float,
+        score_threshold_float,
+    )
+    mark_output_chain_ready(out_chain)
+
+
+fn non_maximum_suppression_shape_func[
+    type: DType, single_thread_blocking_override: Bool
+](
+    boxes: NDBuffer[3, DimList.create_unknown[3](), type],
+    scores: NDBuffer[3, DimList.create_unknown[3](), type],
+    max_output_boxes_per_class: NDBuffer[1, DimList(1), DType.int64],
+    iou_threshold: NDBuffer[1, DimList(1), DType.float32],
+    score_threshold: NDBuffer[1, DimList(1), DType.float32],
+) -> StaticIntTuple[2]:
+    let max_output_boxes_int = max_output_boxes_per_class[0].to_int()
+    let iou_threshold_float = iou_threshold[0]
+    let score_threshold_float = score_threshold[0]
+
+    return non_max_suppression_shape_func[type](
+        boxes,
+        scores,
+        max_output_boxes_int,
+        iou_threshold_float,
+        score_threshold_float,
+    )
 
 
 # ===----------------------------------------------------------------------===#
