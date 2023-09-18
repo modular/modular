@@ -2573,27 +2573,34 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   bool paramVarArg = false;
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
-  ParsedArgument::processParameterArgs(typeEmitter, dummyScope, inputParams,
-                                       inputParamDecls,
-                                       /*isResultParams=*/false, paramVarArg);
-  ParsedArgument::processParameterArgs(typeEmitter, dummyScope, resultParams,
-                                       resultParamDecls,
-                                       /*isResultParams=*/true, paramVarArg);
+  SmallVector<TypedAttr> paramDefaults;
+  ParsedArgument::processParameterInputArgs(typeEmitter, dummyScope,
+                                            inputParams, inputParamDecls,
+                                            paramDefaults, paramVarArg);
+  // TODO(#21428): handle parameter defaults
+  if (!paramDefaults.empty()) {
+    emitter.emitError(getLoc(), "default parameter values not supported yet");
+    return {};
+  }
+
+  ParsedArgument::processParameterResultArgs(
+      typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
   FnEffects effects = this->effects;
   if (paramVarArg)
     effects.setParamVarArgs();
 
   SmallVector<ParsedArgument> args = llvm::to_vector(arguments);
   SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> defaults;
+  SmallVector<TypedAttr> argDefaults;
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       [&] { return failure(); }, emitter.shared, typeEmitter, resultTypeExpr,
-      effects, args, argTypes, defaults, isDef, resultLoc, emitter.declScope);
+      effects, args, argTypes, argDefaults, isDef, resultLoc,
+      emitter.declScope);
   if (!resultType)
     return {};
 
   emitter.getDeclResolver().computeArgumentConventions(inputParamDecls, args,
-                                                       argTypes, defaults);
+                                                       argTypes, argDefaults);
 
   Builder b(emitter.getContext());
   SmallVector<ValueInputConvention> inputConventions = llvm::map_to_vector(
@@ -2632,7 +2639,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects, FnMetadataAttr::get(b.getContext(), argNames, defaults),
+      effects, FnMetadataAttr::get(b.getContext(), argNames, argDefaults),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

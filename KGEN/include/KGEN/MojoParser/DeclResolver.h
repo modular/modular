@@ -362,12 +362,22 @@ struct ParsedArgument {
       ParserBase &p, SmallVectorImpl<ParsedArgument> &args, ArgListKind kind,
       FnEffects *fnEffects);
 
-  /// Process parsed parameter arguments into input or result parameters by
-  /// determining the correct parameter types and conventions.
-  static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
-                                   ArrayRef<ParsedArgument> args,
-                                   SmallVectorImpl<ParamDeclAttr> &params,
-                                   bool isResultParams, bool &paramVarArg);
+  /// Process parsed parameter arguments into input parameters by determining
+  /// the correct parameter types, conventions, and default parameter values.
+  static void processParameterInputArgs(ExprEmitter &emitter,
+                                        ASTDecl &declScope,
+                                        ArrayRef<ParsedArgument> args,
+                                        SmallVectorImpl<ParamDeclAttr> &params,
+                                        SmallVectorImpl<TypedAttr> &defaults,
+                                        bool &paramVarArg);
+
+  /// Process parsed parameter arguments into result parameters by determining
+  /// the correct parameter types and conventions.
+  static void processParameterResultArgs(ExprEmitter &emitter,
+                                         ASTDecl &declScope,
+                                         ArrayRef<ParsedArgument> args,
+                                         SmallVectorImpl<ParamDeclAttr> &params,
+                                         bool &paramVarArg);
 
   /// Emit the argument types, default values, and result type and determine
   /// the argument conventions.

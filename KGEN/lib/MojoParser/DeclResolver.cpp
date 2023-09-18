@@ -1346,16 +1346,16 @@ ParseResult ParsedArgument::parseAndResolveParenthesizedArgumentList(
 // Parameter signature implementation
 //===----------------------------------------------------------------------===//
 
-void ParsedArgument::processParameterArgs(
-    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
-    SmallVectorImpl<ParamDeclAttr> &params, bool isResultParams,
-    bool &paramVarArg) {
+/// Core implementation of the parameter argument parsing logic.
+static void processParameterArgs(ExprEmitter &emitter, ASTDecl &declScope,
+                                 ArrayRef<ParsedArgument> args,
+                                 SmallVectorImpl<ParamDeclAttr> &params,
+                                 SmallVectorImpl<TypedAttr> &defaults,
+                                 bool isResultParams, bool &paramVarArg) {
+  bool seenInitExpr = false;
   for (const ParsedArgument &arg : args) {
     // Check for things supported in arguments that are not supported in
     // parameters.
-    if (arg.initExpr)
-      emitter.emitError(arg.loc,
-                        "TODO: default values in parameters not supported");
 
     ASTType type;
     if (arg.typeExpr)
@@ -1376,6 +1376,24 @@ void ParsedArgument::processParameterArgs(
       paramVarArg = true;
     }
 
+    if (const ExprNode *initExpr = arg.initExpr) {
+      seenInitExpr = true;
+      Type paramType = type;
+      PValue value =
+          emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
+      if (!value)
+        return;
+      defaults.push_back(value);
+      if (isResultParams) {
+        emitter.emitError(arg.loc,
+                          "unexpected default value for result parameter");
+      }
+    } else if (seenInitExpr) {
+      emitter.emitError(arg.loc,
+                        "non-default parameter follows default parameter")
+          << arg.typeExpr->getRange();
+    }
+
     // TODO: Parameter decls should support conventions at some point.
     if (arg.convention != ParsedArgument::kConventionUnspec)
       emitter.emitError(arg.loc, "parameters must always be passed by-value");
@@ -1393,6 +1411,22 @@ void ParsedArgument::processParameterArgs(
   }
 }
 
+void ParsedArgument::processParameterInputArgs(
+    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
+    SmallVectorImpl<ParamDeclAttr> &params,
+    SmallVectorImpl<TypedAttr> &defaults, bool &paramVarArg) {
+  processParameterArgs(emitter, declScope, args, params, defaults,
+                       /*isResultParams=*/false, paramVarArg);
+}
+
+void ParsedArgument::processParameterResultArgs(
+    ExprEmitter &emitter, ASTDecl &declScope, ArrayRef<ParsedArgument> args,
+    SmallVectorImpl<ParamDeclAttr> &params, bool &paramVarArg) {
+  SmallVector<TypedAttr> defaults;
+  processParameterArgs(emitter, declScope, args, params, defaults,
+                       /*isResultParams=*/true, paramVarArg);
+}
+
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
@@ -1400,6 +1434,7 @@ static ParseResult
 parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
                                 SmallVectorImpl<ParamDeclAttr> &inputParams,
                                 SmallVectorImpl<ParamDeclAttr> &resultParams,
+                                SmallVectorImpl<TypedAttr> &defaults,
                                 bool &paramVarArg) {
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
@@ -1421,8 +1456,8 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
 
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(p.shared, declScope, EC_Type);
-  ParsedArgument::processParameterArgs(emitter, declScope, args, inputParams,
-                                       /*isResultParams=*/false, paramVarArg);
+  ParsedArgument::processParameterInputArgs(emitter, declScope, args,
+                                            inputParams, defaults, paramVarArg);
 
   // Parse the meta results if present.
   if (p.consumeIf(Token::minus_greater)) {
@@ -1431,8 +1466,8 @@ parseOptionalParameterSignature(ParserBase &p, ASTDecl &declScope,
     if (ParsedArgument::parseAndResolvePresentArgumentList(
             p, args, ParsedArgument::ArgListKind::kParamList))
       return failure();
-    ParsedArgument::processParameterArgs(emitter, declScope, args, resultParams,
-                                         /*isResultParams=*/true, paramVarArg);
+    ParsedArgument::processParameterResultArgs(emitter, declScope, args,
+                                               resultParams, paramVarArg);
   }
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
 }
@@ -2453,6 +2488,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Parse declared meta parameters and add them to the current scope.
   SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
   SmallVector<ParsedArgument> args;
+  SmallVector<TypedAttr> paramDefaults;
 
   // Add the meta parameters to the symbol table, and resolve their types.  We
   // add all of these after generic signature parsing so types used in the
@@ -2460,8 +2496,14 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // value signature list so the types and parameters can resolve to the bound
   // values.
   if (parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramVarArg))
+                                      resultParamDecls, paramDefaults,
+                                      paramVarArg))
     return failure();
+  // TODO(#21428): handle parameter defaults
+  if (!paramDefaults.empty()) {
+    return emitError(decl.getLoc(),
+                     "default parameter values not supported yet");
+  }
 
   // Parse the argument list next if present.
   if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
@@ -2490,7 +2532,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Emit the argument and result types.
   SmallVector<Type> argTypes;
-  SmallVector<TypedAttr> defaults;
+  SmallVector<TypedAttr> argDefaults;
   auto reportError = [&] {
     decl.hasReferenceError = true;
     return success();
@@ -2499,7 +2541,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   ExprEmitter typeEmitter(shared, sigDecl, EC_Type);
   ASTType resultType = ParsedArgument::emitFunctionArgumentsAndResults(
       reportError, shared, typeEmitter, resultTypeExpr, effects, args, argTypes,
-      defaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
+      argDefaults, funcOp.getIsDef(), resultLoc, *decl.getParentDecl(), fnInfo);
   if (!resultType)
     return failure();
 
@@ -2528,7 +2570,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that all the types and signature information have been resolved,
   // compute the final MLIR types and KGEN conventions.  This also introduces
   // implicit lifetime parameters for borrows/inout/owned arguments.
-  computeArgumentConventions(inputParamDecls, args, argTypes, defaults);
+  computeArgumentConventions(inputParamDecls, args, argTypes, argDefaults);
 
   // Finally now that the full signature has been resolved, build our IR.
 
@@ -2597,7 +2639,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects, FnMetadataAttr::get(builder.getContext(), argNames, defaults),
+      effects, FnMetadataAttr::get(builder.getContext(), argNames, argDefaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -3318,8 +3360,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   ASTDecl &sigDecl = addFullyResolvedDecl(nullptr, StringAttr(), decl.getLoc(),
                                           decl.getParentDecl());
 
-  SmallVector<ParamDeclAttr> inputParamDecls;
-  SmallVector<ParamDeclAttr> resultParamDecls;
+  SmallVector<ParamDeclAttr> inputParamDecls, resultParamDecls;
+  SmallVector<TypedAttr> paramDefaults;
   bool paramVarArgs = false;
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
@@ -3327,9 +3369,15 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
       parseOptionalParameterSignature(p, sigDecl, inputParamDecls,
-                                      resultParamDecls, paramVarArgs) ||
+                                      resultParamDecls, paramDefaults,
+                                      paramVarArgs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
+  // TODO(#21428): handle parameter defaults
+  if (!paramDefaults.empty()) {
+    return emitError(decl.getLoc(),
+                     "default parameter values not supported yet");
+  }
 
   // Propagate signature errors and decls.
   moveDecls(decl, sigDecl);
