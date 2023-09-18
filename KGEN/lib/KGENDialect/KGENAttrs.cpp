@@ -1920,7 +1920,7 @@ static ParseResult parseIntLiteral(AsmParser &p, IPInt &result) {
 }
 
 static void printIntLiteral(AsmPrinter &p, const IPInt &value) {
-  p.getStream() << value.getAPInt();
+  p.getStream() << value;
 }
 
 Type IntLiteralAttr::getType() const {

@@ -514,7 +514,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = #kgen.int_literal<2>}>, #lit.struct<{value: !kgen.int_literal = #kgen.int_literal<3>}>)>
+  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
@@ -1452,7 +1452,7 @@ fn test_kw_args_param_infer():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl{{.*}}bigggNumber: !IntLiteral = <#lit.struct<{value: !kgen.int_literal = #kgen.int_literal<115792089237316195423570985008687907853269984665640564039457584007913129639936>}>>
+# CHECK: lit.alias.decl{{.*}}bigggNumber: !IntLiteral = <#lit.struct<{value: !kgen.int_literal = 115792089237316195423570985008687907853269984665640564039457584007913129639936}>>
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 512}>>

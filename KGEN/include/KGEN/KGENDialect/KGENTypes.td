@@ -103,7 +103,8 @@ def KGEN_StringType : KGENType<"String", "string",
 // IntLiteralType
 //===----------------------------------------------------------------------===//
 
-def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal"> {
+def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal",[
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Arbitrary-precision integer type for literals.";
   let description = [{
     The `!kgen.int_literal` type represents an infinite precision

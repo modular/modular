@@ -22,7 +22,7 @@ alias alias_Type = Int
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_Value",
 # CHECK:  "summary": "An example alias of a Value",
-# CHECK:  "value": "#kgen.int_literal<10>"
+# CHECK:  "value": "10"
 alias alias_Value = 10
 """An example alias of a Value"""
 
