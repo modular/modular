@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace M {
 
@@ -28,6 +29,10 @@ public:
   /// equality testing works.
   IPInt(const llvm::APInt val) : val(val.trunc(val.getSignificantBits())){};
   IPInt(const IPInt &val) : val(val.val){};
+  IPInt(const uint64_t uintV) {
+    llvm::APInt v = llvm::APInt(64, uintV, false);
+    val = v.trunc(v.getSignificantBits());
+  };
   IPInt() : val(){};
 
   const llvm::APInt &getAPInt() const { return val; }
@@ -53,9 +58,10 @@ public:
   IPInt operator&(const IPInt &rhs) const;
   IPInt operator|(const IPInt &rhs) const;
   IPInt operator^(const IPInt &rhs) const;
-  IPInt pow(const IPInt &rhs) const;
+  IPInt abs() const;
 
   friend llvm::hash_code hash_value(const IPInt &Arg);
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const IPInt &Arg);
 
 private:
   enum class BinOp {

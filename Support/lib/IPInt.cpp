@@ -12,6 +12,9 @@ using namespace M;
 llvm::hash_code M::hash_value(const IPInt &Arg) {
   return llvm::hash_value(Arg.val);
 }
+llvm::raw_ostream &M::operator<<(llvm::raw_ostream &OS, const IPInt &Arg) {
+  return OS << Arg.getAPInt();
+}
 
 bool IPInt::cmp(const IPInt &rhs, IPInt::CmpOp whichOp) const {
   const llvm::APInt &lOrig = getAPInt();
@@ -147,6 +150,12 @@ IPInt IPInt::operator|(const IPInt &rhs) const {
 }
 IPInt IPInt::operator^(const IPInt &rhs) const {
   return binop(rhs, IPInt::BinOp::kXor);
+}
+IPInt IPInt::abs() const {
+  if (*this < IPInt(0))
+    return IPInt(0) - *this;
+  else
+    return IPInt(*this);
 }
 
 // namespace M
