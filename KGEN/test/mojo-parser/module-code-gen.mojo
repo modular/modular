@@ -177,14 +177,14 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT: lit.end_func
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-NEXT:   [[P0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[P0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   [[P1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[P2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[P3:%.*]] = pop.load [[P2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   pop.store [[P3]], [[P1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[P0:%.*]] = lit.struct.gep %self[field0]
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
+# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[P0]]
+# CHECK-NEXT:   [[P1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:   [[P2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:   [[P3:%.*]] = pop.load [[P2]]
+# CHECK-NEXT:   pop.store [[P3]], [[P1]]
 # CHECK-NEXT:   [[P4:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:   [[P5:%.*]] = lit.struct.gep %existing[copy]
 # CHECK-NEXT:   [[P6:%.*]] = pop.load [[P5]]
@@ -205,10 +205,10 @@ fn makes_escaping_closure(m: String):
 # CHECK-NEXT:   [[mov_existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
 # CHECK-NEXT:   [[mov_loaded_existing_impl:%.*]] = lit.load.consume [[mov_existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
 # CHECK-NEXT:   pop.store [[mov_loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[M3:%.*]] = lit.load.consume [[M2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   pop.store [[M3]], [[M1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:   [[M3:%.*]] = lit.load.consume [[M2]]
+# CHECK-NEXT:   pop.store [[M3]], [[M1]]
 # CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %existing[copy]
 # CHECK-NEXT:   [[M6:%.*]] = lit.load.consume [[M5]]
@@ -607,13 +607,13 @@ fn makes_escaping_closure(m: String):
 
 # CHECK: lit.func @"__copyinit__{{.*}}(%self: !kgen.pointer<!escaping1> init_self, %existing: !kgen.pointer<!escaping1> borrow_in_mem) -> !lit.none attributes {specialFnKind = 3 : i8} {
 # CHECK-NEXT:   [[M0:%.*]] = lit.struct.gep %self[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0] : <pointer<array<0, i1>>>
-# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]] : !kgen.pointer<pointer<array<0, i1>>>
-# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
-# CHECK-NEXT:   pop.store [[M3]], [[M1]] : !kgen.pointer<(!kgen.pointer<array<0, i1>>) -> !lit.none>
+# CHECK-NEXT:   [[existing_impl:%.*]] = lit.struct.gep %existing[field0]
+# CHECK-NEXT:   [[loaded_existing_impl:%.*]] = pop.load [[existing_impl]]
+# CHECK-NEXT:   pop.store [[loaded_existing_impl]], [[M0]]
+# CHECK-NEXT:   [[M1:%.*]] = lit.struct.gep %self[dtor]
+# CHECK-NEXT:   [[M2:%.*]] = lit.struct.gep %existing[dtor]
+# CHECK-NEXT:   [[M3:%.*]] = pop.load [[M2]]
+# CHECK-NEXT:   pop.store [[M3]], [[M1]]
 # CHECK-NEXT:   [[M4:%.*]] = lit.struct.gep %self[copy]
 # CHECK-NEXT:   [[M5:%.*]] = lit.struct.gep %existing[copy]
 # CHECK-NEXT:   [[M6:%.*]] = pop.load [[M5]]
