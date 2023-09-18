@@ -10,17 +10,7 @@ from sys.info import simdwidthof, triple_is_nvidia_cuda
 
 from Activations import gelu
 from algorithm import elementwise
-from gpu import (
-    AddressSpace,
-    BlockDim,
-    BlockIdx,
-    DevicePointer,
-    DTypeDevicePointer,
-    GridDim,
-    ThreadIdx,
-    barrier,
-    stack_allocation,
-)
+from gpu import *
 from memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import OutputChainPtr
@@ -112,15 +102,16 @@ fn gelu_kernel(buf: DTypePointer[DType.float32], len: Int):
 # CHECK-LABEL: test_shared_stack_allocation
 # CHECK: .shared .align 8 .b8 [[SHM0:.*]][999];
 @export
-fn test_shared_stack_allocation() -> DTypeDevicePointer[
-    DType.int8, AddressSpace.SHARED
-]:
+fn test_shared_stack_allocation() -> (
+    DTypeDevicePointer[DType.int8, AddressSpace.SHARED]
+):
     return stack_allocation[999, DType.int8, 8, AddressSpace.SHARED]()
 
 
 # ===----------------------------------------------------------------------===#
 # Check barrier
 # ===----------------------------------------------------------------------===#
+
 
 # CHECK-LABEL: barrier
 # CHECK: bar.sync 0
@@ -129,9 +120,10 @@ fn test_barrier():
     barrier()
 
 
-# # ===----------------------------------------------------------------------===#
-# # SGEMM with register coarsening
-# # ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------===#
+# SGEMM with register coarsening
+# ===----------------------------------------------------------------------===#
+
 
 # CHECK-LABEL: .weak	gemm
 # CHECK: .shared .align 1 .b8 [[SHM1:.*]][512];
@@ -223,3 +215,65 @@ fn gemm(
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
             set_c(row, col + out_idx, c_reg.load(out_idx))
+
+
+# ===----------------------------------------------------------------------===#
+# shuffle ops
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _floorlog2[n: Int]() -> Int:
+    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
+
+
+@always_inline
+fn _static_log2[n: Int]() -> Int:
+    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
+
+
+# CHECK-LABEL: test_shuffle_up
+@export
+fn test_shuffle_up(val: Float32) -> Float32:
+    var res = val
+
+    alias limit = _static_log2[WARP_SIZE]()
+
+    # CHECK: shfl.sync.up.b32
+    @unroll
+    for mask in range(limit, 0, -1):
+        res += shuffle_up[DType.float32](val, 1 << mask)
+    return res
+
+
+# CHECK-LABEL: test_shuffle_down
+@export
+fn test_shuffle_down(val: Int32) -> Int32:
+    var res = val
+
+    alias limit = _static_log2[WARP_SIZE]()
+
+    # CHECK: shfl.sync.down.b32
+    @unroll
+    for mask in range(limit, 0, -1):
+        res += shuffle_down[DType.int32](val, 1 << mask)
+    return res
+
+
+# ===----------------------------------------------------------------------===#
+# Reduction
+# ===----------------------------------------------------------------------===#
+
+
+# CHECK-LABEL: warp_reduce
+@export
+fn warp_reduce(val: Float32) -> Float32:
+    var res = val
+
+    alias limit = _static_log2[WARP_SIZE]()
+
+    # CHECK: shfl.sync.bfly.b32
+    @unroll
+    for mask in range(limit, 0, -1):
+        res += shuffle_xor[DType.float32](val, 1 << mask)
+    return res
