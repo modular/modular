@@ -387,9 +387,10 @@ Type StructOperationLowerer::replace(Type type) {
     }
     if (inputParamTypes.size() != signature.getNumInputParams())
       signature = SignatureType::get(
+          signature.getValues(),
           TypeArrayAttr::get(signature.getContext(), inputParamTypes),
-          signature.getResultParamTypes(), signature.getValues(),
-          signature.getMetadata());
+          signature.getResultParamTypes(), signature.getInputConventions(),
+          signature.getFnEffects(), signature.getMetadata());
 
     return replaceImpl(signature);
   };

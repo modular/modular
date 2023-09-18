@@ -40,9 +40,6 @@ static void bundleRecursiveErrors(
     std::vector<ErrorTree *> &path,
     DenseMap<std::pair<Location, StringRef>, ErrorTree *> &seen, ErrorTree *cur,
     ErrorTree *parent, int last, int prog, int start) {
-  llvm::errs() << "last: " << last << "\n";
-  llvm::errs() << "prog: " << prog << "\n";
-  llvm::errs() << "start: " << start << "\n";
   // Run cycle detection.
   if (last == -1 &&
       !seen.try_emplace({cur->getLoc(), cur->getMessage()}, parent).second) {
@@ -126,7 +123,6 @@ void ErrorTree::emit(function_ref<InFlightDiagnostic(Location)> emitError) && {
   for (ErrorTree &cause : causes) {
     std::vector<ErrorTree *> path;
     DenseMap<std::pair<Location, StringRef>, ErrorTree *> seen;
-    llvm::errs() << "bundle errors:\n\n";
     bundleRecursiveErrors(path, seen, &cause, this, -1, -1, -1);
   }
 

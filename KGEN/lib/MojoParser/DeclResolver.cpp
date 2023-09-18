@@ -434,8 +434,9 @@ LogicalResult DeclResolver::aliasDeclsImpl(
         // inputs.
         auto getActualValueInputs =
             [](SignatureType signature) -> ArrayRef<mlir::Type> {
-          auto inputTypes = signature.getValueInputs();
-          auto inputConventions = signature.getValueInputConventions();
+          ArrayRef<Type> inputTypes = signature.getValueInputs();
+          ArrayRef<ValueInputConvention> inputConventions =
+              signature.getInputConventions();
           // If there's a by-ref result type, it'll be the first argument.
           if (!inputConventions.empty() &&
               inputConventions.front() == ValueInputConvention::ByRefResult) {
@@ -2167,7 +2168,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName,
 
   mangledName += '(';
   for (auto [argNo, convention, argType] : llvm::enumerate(
-           signature.getValueInputConventions(), signature.getValueInputs())) {
+           signature.getInputConventions(), signature.getValueInputs())) {
     // We do not mangle byref results into the signature.
     if (convention == ValueInputConvention::ByRefResult)
       continue;
@@ -2595,10 +2596,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
-      inputParamsAttr, resultParamsAttr, functionType,
+      inputParamsAttr, resultParamsAttr, functionType, inputConventions,
+      effects,
       builder.getAttr<FnMetadataAttr>(
-          builder.getAttr<StringArrayAttr>(argNames), inputConventions,
-          defaults, effects),
+          builder.getAttr<StringArrayAttr>(argNames), defaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -2800,7 +2801,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // parameters and adding them to the symbol table.
   for (auto [argName, bbArg, convention] :
        llvm::zip(funcOp.getArgNames(), funcOp.getBody()->getArguments(),
-                 funcSignature.getValueInputConventions())) {
+                 funcSignature.getInputConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
     if (convention == ValueInputConvention::ByRefResult)
       continue;

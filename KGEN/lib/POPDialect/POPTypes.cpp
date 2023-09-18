@@ -649,10 +649,9 @@ CoroutineType CoroutineType::get(SignatureType sig) {
   // Return a coroutine type whose result types match the signature type but
   // which inherits the `throws` bit.
   MLIRContext *ctx = sig.getContext();
-  auto coroSig = SignatureType::get(
-      TypeArrayAttr::get(ctx, {}), TypeArrayAttr::get(ctx, {}),
-      FunctionType::get(ctx, {}, sig.getValueResults()),
-      FnMetadataAttr::get(ctx, 0, FnEffects().setThrows(sig.isThrows())));
+  auto coroSig =
+      SignatureType::get(FunctionType::get(ctx, {}, sig.getValueResults()), {},
+                         {}, {}, FnEffects().setThrows(sig.isThrows()));
   return POP::CoroutineType::get(ctx, coroSig);
 }
 

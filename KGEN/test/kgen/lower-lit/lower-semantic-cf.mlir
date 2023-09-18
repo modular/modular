@@ -215,7 +215,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
               %f: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>) throws -> !pop.variant<@Error, !lit.none> {
   lit.try {
     // CHECK: = kgen.call @throws
-    kgen.call @throws(%e) : (!kgen.declref<@Error>) throws -> !pop.variant<@Error, index>
+    kgen.call @throws(%e) : ("e": !kgen.declref<@Error>) throws -> !pop.variant<@Error, index>
     lit.try.yield
   } except (%err: !kgen.declref<@Error>) {
     // CHECK: except (
@@ -237,7 +237,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
   }
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-  kgen.param.constant: <>(!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
+  kgen.param.constant: (!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
   lit.end_func
 }
 
@@ -259,15 +259,15 @@ lit.func @suppressed_try() throws -> !lit.none {
   } {"suppressWarnings" = true}
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-  kgen.param.constant: <>(!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
+  kgen.param.constant: (!kgen.declref<@Error>) throws -> !pop.variant<@Error, index> = <@throws>
   lit.end_func
 }
 
 // CHECK-LABEL: @parametric_throws
 // CHECK-SAME:  -> !pop.variant<@Error, !lit.none>
-lit.func @parametric_throws<fn: <>() throws -> !pop.variant<@Error, !lit.none>>() throws -> !pop.variant<@Error, !lit.none> {
-  // CHECK-NEXT: %[[MAYBE_ERR:.*]] = kgen.call_param[<>() throws -> !pop.variant<@Error, !lit.none>: fn]()
-  kgen.call_param[<>() throws -> !pop.variant<@Error, !lit.none>: fn]()
+lit.func @parametric_throws<fn: () throws -> !pop.variant<@Error, !lit.none>>() throws -> !pop.variant<@Error, !lit.none> {
+  // CHECK-NEXT: %[[MAYBE_ERR:.*]] = kgen.call_param[() throws -> !pop.variant<@Error, !lit.none>: fn]()
+  kgen.call_param[() throws -> !pop.variant<@Error, !lit.none>: fn]()
 
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
@@ -304,11 +304,11 @@ lit.func @coroutine() async -> index {
 }
 
 // CHECK-LABEL: lit.func @call_coroutine
-// CHECK-SAME: coro: <>() async -> !lit.none
+// CHECK-SAME: coro: () async -> !lit.none
 // CHECK-SAME: ) async -> !lit.none
-lit.func @call_coroutine<coro: <>() async -> !lit.none>() async -> !lit.none {
-  // CHECK-NEXT: lit.async.call[<>() async -> !lit.none: coro]()
-  lit.async.call[<>() async -> !lit.none: coro]()
+lit.func @call_coroutine<coro: () async -> !lit.none>() async -> !lit.none {
+  // CHECK-NEXT: lit.async.call[() async -> !lit.none: coro]()
+  lit.async.call[() async -> !lit.none: coro]()
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   lit.return %0 :  !lit.none
   lit.end_func
@@ -339,12 +339,12 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
 
 // CHECK-LABEL: lit.func @call_throwing_coro({{.*}}) throws|async ->
 lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, !lit.none> {
-  // CHECK-NEXT: callee: <>(!kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>
+  // CHECK-NEXT: callee: ("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>
   // CHECK-SAME: = <@throwing_coro<:i1 1, 0>>
-  kgen.param.declare callee: <>(!kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>
+  kgen.param.declare callee: ("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>
     = <@throwing_coro<:i1 1, 0>>
-  // CHECK: lit.async.call[<>(!kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>: callee](%err)
-  %hdl = lit.async.call[<>(!kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index> : callee](%err)
+  // CHECK: lit.async.call[("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>: callee](%err)
+  %hdl = lit.async.call[("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index> : callee](%err)
 
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
@@ -725,11 +725,11 @@ lit.func @try_in_loop(%arg0: i1) {
 
 // CHECK-LABEL: lit.func @recurse
 // CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
-// CHECK-NEXT: %0 = kgen.call @recurse(%x) : (!pop.scalar<index>) -> !pop.scalar<index>
+// CHECK-NEXT: %0 = kgen.call @recurse(%x) : ("x": !pop.scalar<index>) -> !pop.scalar<index>
 // CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
 // CHECK-NEXT:}
 lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
-  %0 = kgen.call @recurse(%x) : (!pop.scalar<index>) -> !pop.scalar<index>
+  %0 = kgen.call @recurse(%x) : ("x": !pop.scalar<index>) -> !pop.scalar<index>
   lit.return %0 : !pop.scalar<index>
   lit.end_func
 }

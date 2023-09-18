@@ -587,43 +587,18 @@ KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
   if (failed(reader.readAttribute(argNames)))
     return FnMetadataAttr();
 
-  SmallVector<ValueInputConvention> inputConventions;
-  auto parseConvention = [&](ValueInputConvention &convention) {
-    uint64_t value;
-    if (failed(reader.readVarInt(value)))
-      return failure();
-    convention = static_cast<ValueInputConvention>(value);
-    return mlir::success();
-  };
-  if (failed(reader.readList(inputConventions, parseConvention)))
-    return FnMetadataAttr();
-
   SmallVector<TypedAttr> defaultArguments;
   if (failed(reader.readAttributes(defaultArguments)))
     return FnMetadataAttr();
 
-  FailureOr<APInt> fnEffectsValue =
-      reader.readAPIntWithKnownWidth(/*bitWidth=*/16);
-  if (failed(fnEffectsValue))
-    return FnMetadataAttr();
-  auto fnEffects =
-      static_cast<impl::FnEffects>(fnEffectsValue->getLimitedValue());
-
-  return FnMetadataAttr::get(getContext(), argNames, inputConventions,
-                             defaultArguments, FnEffects(fnEffects));
+  return FnMetadataAttr::get(getContext(), argNames, defaultArguments);
 }
 
 void KGENBytecodeInterface::write(FnMetadataAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kFnMetadataAttr);
   writer.writeAttribute(attr.getArgNames());
-  writer.writeList(attr.getInputConventions(), [&](ValueInputConvention value) {
-    writer.writeVarInt(static_cast<uint64_t>(value));
-  });
   writer.writeAttributes(attr.getDefaultArguments());
-  APInt fnEffectsValue(/*numBits=*/16,
-                       static_cast<uint64_t>(attr.getFnEffects().getImpl()));
-  writer.writeAPIntWithKnownWidth(fnEffectsValue);
 }
 
 //===----------------------------------------------------------------------===//
@@ -999,8 +974,26 @@ Type KGENBytecodeInterface::readSignatureType(BytecodeReader &reader) const {
       failed(reader.readAttribute(resultParamTypes)) ||
       failed(reader.readType(values)) || failed(reader.readAttribute(metadata)))
     return Type();
+
+  SmallVector<ValueInputConvention> inputConventions;
+  auto parseConvention = [&](ValueInputConvention &convention) {
+    uint64_t value;
+    if (failed(reader.readVarInt(value)))
+      return failure();
+    convention = static_cast<ValueInputConvention>(value);
+    return mlir::success();
+  };
+  if (failed(reader.readList(inputConventions, parseConvention)))
+    return Type();
+  FailureOr<APInt> fnEffectsValue =
+      reader.readAPIntWithKnownWidth(/*bitWidth=*/16);
+  if (failed(fnEffectsValue))
+    return Type();
+  auto fnEffects =
+      static_cast<impl::FnEffects>(fnEffectsValue->getLimitedValue());
+
   return SignatureType::get(getContext(), inputParamTypes, resultParamTypes,
-                            values, metadata);
+                            values, inputConventions, fnEffects, metadata);
 }
 
 void KGENBytecodeInterface::write(SignatureType type,
@@ -1010,6 +1003,12 @@ void KGENBytecodeInterface::write(SignatureType type,
   writer.writeAttribute(type.getResultParamTypes());
   writer.writeType(type.getValues());
   writer.writeAttribute(type.getMetadata());
+  writer.writeList(type.getInputConventions(), [&](ValueInputConvention value) {
+    writer.writeVarInt(static_cast<uint64_t>(value));
+  });
+  APInt fnEffectsValue(/*numBits=*/16,
+                       static_cast<uint64_t>(type.getFnEffects().getImpl()));
+  writer.writeAPIntWithKnownWidth(fnEffectsValue);
 }
 
 //===----------------------------------------------------------------------===//

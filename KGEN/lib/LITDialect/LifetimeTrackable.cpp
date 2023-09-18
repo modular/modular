@@ -92,7 +92,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   unsigned argIdx = bbArg.getArgNumber();
-  switch (signature.getValueInputConventions()[argIdx]) {
+  switch (signature.getInputConvention(argIdx)) {
   case ValueInputConvention::OwnedInReg: // This gets an LValue slot.
   case ValueInputConvention::BorrowedInReg:
   case ValueInputConvention::BorrowedInMem:

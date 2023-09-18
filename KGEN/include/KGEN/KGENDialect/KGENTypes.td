@@ -133,19 +133,42 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     printed in the textual MLIR format.
   }];
 
-  let parameters = (ins "TypeArrayAttr":$inputParamTypes,
-                        "TypeArrayAttr":$resultParamTypes,
-                        "FunctionType":$values,
-                        "FnMetadataAttr":$metadata);
+  let parameters = (ins
+    "TypeArrayAttr":$inputParamTypes,
+    "TypeArrayAttr":$resultParamTypes,
+    "FunctionType":$values,
+    OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
+    "FnEffects":$fnEffects,
+    "FnMetadataAttr":$metadata
+  );
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
     /// This builder allows everything other than the function type to be null.
     TypeBuilderWithInferredContext<(ins
-      "TypeArrayAttr":$inputParamTypes, "TypeArrayAttr":$resultParamTypes,
-      "FunctionType":$values, "FnMetadataAttr":$metadata)>,
-    TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>,
-    TypeBuilderWithInferredContext<(ins "FunctionType":$values)>
+        "FunctionType":$values,
+        CArg<"TypeArrayAttr", "{}">:$inputParamTypes,
+        CArg<"TypeArrayAttr", "{}">:$resultParamTypes,
+        CArg<"ArrayRef<ValueInputConvention>", "{}">:$inputConvs,
+        CArg<"FnEffects", "{}">:$effects,
+        CArg<"FnMetadataAttr", "{}">:$metadata), [{
+      getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+      SmallVector<ValueInputConvention> convs = llvm::to_vector(inputConvs);
+      convs.resize(values.getNumInputs());
+      return $_get(values.getContext(), inputParamTypes, resultParamTypes,
+                   values, convs, effects, metadata);
+    }]>,
+    TypeBuilderWithInferredContext<(ins
+        "FunctionType":$values,
+        "ArrayRef<ValueInputConvention>":$inputConvs,
+        CArg<"FnEffects", "{}">:$effects,
+        CArg<"FnMetadataAttr", "{}">:$metadata), [{
+      TypeArrayAttr inputParamTypes, resultParamTypes;
+      getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+      return $_get(values.getContext(), inputParamTypes, resultParamTypes,
+                   values, inputConvs, effects, metadata);
+    }]>,
+    TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
 
   let extraClassDeclaration = [{
@@ -153,12 +176,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getValueInputs() const;
     ArrayRef<Type> getValueResults() const;
 
-    /// Get the callable function effects.
-    FnEffects getFnEffects() const { return getMetadata().getFnEffects(); }
-    /// Get the function input argument conventions.
-    ArrayRef<ValueInputConvention> getValueInputConventions() {
-      return getMetadata().getInputConventions();
-    }
     /// Get the function input argument names.
     StringArrayAttr getArgNames() { return getMetadata().getArgNames(); }
     /// Returns true if the argument at this index is a vararg.
@@ -192,7 +209,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 
     /// Return the convention for the specified value input argument.
     ValueInputConvention getInputConvention(size_t inputNo) {
-      return getValueInputConventions()[inputNo];
+      return getInputConventions()[inputNo];
     }
 
     /// Return the name for the specified value input argument.
@@ -215,7 +232,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
       function_ref<InFlightDiagnostic()> emitErrorFn,
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-      FunctionType values, FnMetadataAttr metadata);
+      FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+      FnEffects effects, FnMetadataAttr metadata);
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);

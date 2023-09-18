@@ -572,7 +572,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
   ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
   ArrayRef<ValueInputConvention> argConventions =
-      funcOp.getSignature().getValueInputConventions();
+      funcOp.getSignature().getInputConventions();
   ASTType resultType = funcOp.getUserResultType();
 
   // Check for a by-ref result type, which gets modeled as the first argument

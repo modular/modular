@@ -43,10 +43,10 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
     fnEffects.setOwnedRegisterResult();
 
   auto metadata = builder.getAttr<FnMetadataAttr>(
-      builder.getAttr<StringArrayAttr>(argNames), argConventions,
-      /*no default args=*/ArrayRef<TypedAttr>(), fnEffects);
-  auto none = TypeArrayAttr::get(builder.getContext(), {});
-  auto signature = SignatureType::get(none, none, fnType, metadata);
+      builder.getAttr<StringArrayAttr>(argNames),
+      /*no default args=*/ArrayRef<TypedAttr>());
+  auto signature =
+      SignatureType::get(fnType, {}, {}, argConventions, fnEffects, metadata);
 
   // Create the empty function.
   StringAttr nameAttr =
@@ -346,8 +346,7 @@ struct ValueInfo {
         continue;
       auto signature = func.getSignature();
       ArrayRef<Type> inputTypes = signature.getValueInputs();
-      ArrayRef<ValueInputConvention> convs =
-          signature.getValueInputConventions();
+      ArrayRef<ValueInputConvention> convs = signature.getInputConventions();
       if (isMemoryOnly) {
         inputTypes = inputTypes.drop_front();
         convs = convs.drop_front();

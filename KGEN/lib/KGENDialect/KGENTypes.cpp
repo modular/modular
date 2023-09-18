@@ -19,6 +19,16 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
+// FnEffects
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+static llvm::hash_code hash_value(FnEffects effects) {
+  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
+}
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
 // KGENDialect
 //===----------------------------------------------------------------------===//
 
@@ -149,37 +159,15 @@ static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
   }
 }
 
-SignatureType SignatureType::get(TypeArrayAttr inputParamTypes,
-                                 TypeArrayAttr resultParamTypes,
-                                 FunctionType values, FnMetadataAttr metadata) {
-  getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
-  return get(values.getContext(), inputParamTypes, resultParamTypes, values,
-             metadata);
-}
-
-SignatureType
-SignatureType::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          TypeArrayAttr inputParamTypes,
-                          TypeArrayAttr resultParamTypes, FunctionType values,
-                          FnMetadataAttr metadata) {
-  getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
-  return getChecked(emitError, values.getContext(), inputParamTypes,
-                    resultParamTypes, values, metadata);
-}
-
-SignatureType SignatureType::get(FunctionType values) {
-  return get(TypeArrayAttr(), {}, values, {});
-}
-
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
                                  TypeRange results) {
   return get(FunctionType::get(ctx, inputs, results));
 }
 
 SignatureType SignatureType::getWithFnEffects(FnEffects effects) {
-  return SignatureType::get(getInputParamTypes(), getResultParamTypes(),
-                            getValues(),
-                            getMetadata().getWithFnEffects(effects));
+  return SignatureType::get(getValues(), getInputParamTypes(),
+                            getResultParamTypes(), getInputConventions(),
+                            effects, getMetadata());
 }
 
 static bool isVarArgKind(FnEffects effects, size_t numInputs, size_t index) {
@@ -207,13 +195,13 @@ bool SignatureType::isKWVarArg(size_t index) {
 }
 
 bool SignatureType::hasMemoryOnlyResult() {
-  auto conventions = getValueInputConventions();
+  ArrayRef<ValueInputConvention> conventions = getInputConventions();
   return conventions.size() >= 1 &&
          conventions[0] == ValueInputConvention::ByRefResult;
 }
 
 bool SignatureType::hasInitSelfResult() {
-  auto conventions = getValueInputConventions();
+  ArrayRef<ValueInputConvention> conventions = getInputConventions();
   return conventions.size() >= 1 &&
          conventions[0] == ValueInputConvention::InitSelf;
 }
@@ -232,23 +220,26 @@ SignatureType SignatureType::getSpecializedSignature(
     return *this;
   return getSpecializedSignature(inputParamValues, emitErrorFn,
                                  getInputParamTypes(), getResultParamTypes(),
-                                 getValues(), getMetadata());
+                                 getValues(), getInputConventions(),
+                                 getFnEffects(), getMetadata());
 }
 
 SignatureType SignatureType::getSpecializedSignature(
     ArrayRef<TypedAttr> inputParamValues,
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, FnMetadataAttr metadata) {
+    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+    FnEffects effects, FnMetadataAttr metadata) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
   // perform.
   MLIRContext *ctx = values.getContext();
-  if (inputParamValues.empty())
-    return SignatureType::get(TypeArrayAttr::get(ctx, inputParamTypes),
-                              TypeArrayAttr::get(ctx, resultParamTypes), values,
-                              metadata);
+  if (inputParamValues.empty()) {
+    return SignatureType::get(values, TypeArrayAttr::get(ctx, inputParamTypes),
+                              TypeArrayAttr::get(ctx, resultParamTypes),
+                              inputConventions, effects, metadata);
+  }
 
   // We need to substitute and simplify expressions that occur in the argument
   // list and parameter types, e.g.:
@@ -321,10 +312,10 @@ SignatureType SignatureType::getSpecializedSignature(
                      llvm::map_range(values.getResults(), remapType));
 
   return SignatureType::get(
+      FunctionType::get(values.getContext(), inputTypes, resultTypes),
       TypeArrayAttr::get(values.getContext(), unboundParamTypes),
       TypeArrayAttr::get(values.getContext(), newParamResultTypes),
-      FunctionType::get(values.getContext(), inputTypes, resultTypes),
-      metadata);
+      inputConventions, effects, metadata);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {
@@ -336,13 +327,15 @@ ArrayRef<Type> SignatureType::getValueResults() const {
 
 /// Return this signature type with the value signature replaced.
 SignatureType SignatureType::getWithValuesReplaced(FunctionType fnType) {
-  return SignatureType::get(getInputParamTypes(), getResultParamTypes(), fnType,
+  return SignatureType::get(fnType, getInputParamTypes(), getResultParamTypes(),
+                            getInputConventions(), getFnEffects(),
                             getMetadata());
 }
 
 SignatureType SignatureType::dropParamValues() {
-  return get(TypeArrayAttr::get(getContext(), {}), getResultParamTypes(),
-             getValues(), getMetadata());
+  return get(getValues(), TypeArrayAttr::get(getContext(), {}),
+             getResultParamTypes(), getInputConventions(), getFnEffects(),
+             getMetadata());
 }
 
 bool SignatureType::isConcrete() {
@@ -366,15 +359,16 @@ void SignatureType::print(AsmPrinter &p) const {
 LogicalResult
 SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypeArrayAttr inputParams, TypeArrayAttr resultParams,
-                      FunctionType values, FnMetadataAttr metadata) {
+                      FunctionType values,
+                      ArrayRef<ValueInputConvention> inputConventions,
+                      FnEffects effects, FnMetadataAttr metadata) {
   if (!inputParams || !resultParams || !values || !metadata)
     return emitError() << "signature type parameters cannot be null";
 
   // Check we have the right number of conventions.
-  if (metadata.getInputConventions().size() != values.getInputs().size())
+  if (inputConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
-  FnEffects effects = metadata.getFnEffects();
   unsigned minNumArgs = effects.hasAnyVarArgs() + effects.hasKWVarArgs();
   if (values.getNumInputs() < minNumArgs) {
     return emitError()
@@ -384,11 +378,11 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
 
   // Verify input convention and argument types.
   for (auto [i, argType, conv] :
-       llvm::enumerate(values.getInputs(), metadata.getInputConventions())) {
+       llvm::enumerate(values.getInputs(), inputConventions)) {
     Type type = argType;
     // Verify variadics.
-    if (metadata.getFnEffects().hasVarArgs() &&
-        isVarArgKind(metadata.getFnEffects(), values.getNumInputs(), i)) {
+    if (effects.hasVarArgs() &&
+        isVarArgKind(effects, values.getNumInputs(), i)) {
       auto variadic = ::dyn_cast<VariadicType>(type);
       if (!variadic) {
         return emitError() << "argument #" << i
@@ -429,10 +423,11 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     }
   }
   // If the function throws an error, make sure it has one variant result.
-  if (metadata.getFnEffects().isThrows() && values.getNumResults() != 1)
+  if (effects.isThrows() && values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
 
-  return success();
+  return metadata.verifySignature(emitError, inputParams, resultParams, values,
+                                  inputConventions, effects);
 }
 
 std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
@@ -519,7 +514,8 @@ Type IndexRefRemapper::remapTypeImpl(Type type) {
 
 SignatureType IndexRefRemapper::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
-    FunctionType functionType, FnMetadataAttr metadata,
+    FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
+    FnEffects effects, FnMetadataAttr metadata,
     function_ref<InFlightDiagnostic()> emitError) {
   IndexRefRemapper remapper(inputParams, resultParams);
   SmallVector<Type> inputParamTypes, resultParamTypes;
@@ -536,8 +532,9 @@ SignatureType IndexRefRemapper::remapToSignature(
 
   MLIRContext *ctx = functionType.getContext();
   return SignatureType::getChecked(
-      emitError, TypeArrayAttr::get(ctx, inputParamTypes),
-      TypeArrayAttr::get(ctx, resultParamTypes), remapper.remap(functionType),
+      emitError, remapper.remap(functionType),
+      TypeArrayAttr::get(ctx, inputParamTypes),
+      TypeArrayAttr::get(ctx, resultParamTypes), inputConventions, effects,
       metadata ? remapper.remap(metadata) : nullptr);
 }
 
@@ -551,9 +548,10 @@ IndexRefRemapper::prependParams(SignatureType sig,
   for (Type type : sig.getInputParamTypes())
     inputParamTypes.push_back(remapper.remap(type));
   return SignatureType::get(
+      remapper.remap(sig.getValues()),
       TypeArrayAttr::get(sig.getContext(), inputParamTypes),
-      remapper.remap(sig.getResultParamTypes()),
-      remapper.remap(sig.getValues()), remapper.remap(sig.getMetadata()));
+      remapper.remap(sig.getResultParamTypes()), sig.getInputConventions(),
+      sig.getFnEffects(), remapper.remap(sig.getMetadata()));
 }
 
 //===----------------------------------------------------------------------===//

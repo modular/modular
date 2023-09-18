@@ -693,7 +693,7 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult FuncOp::verify() {
-  if (!llvm::all_of(getMetadata().getInputConventions(),
+  if (!llvm::all_of(getSignature().getInputConventions(),
                     [](ValueInputConvention inputConv) {
                       return inputConv == ValueInputConvention::OwnedInReg;
                     }))
@@ -1046,7 +1046,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
 
   ArrayRef<Type> newArgTypes = sig.getValueInputs().drop_front(numCaptures);
   ArrayRef<ValueInputConvention> newInputConvs =
-      sig.getValueInputConventions().drop_front(numCaptures);
+      sig.getInputConventions().drop_front(numCaptures);
   ArrayRef<StringAttr> newArgNames =
       sig.getArgNames().getValue().drop_front(numCaptures);
 
@@ -1058,10 +1058,11 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   if (!captures.empty())
     effects.setCapturing();
   results.push_back(SignatureType::get(
-      sig.getInputParamTypes(), sig.getResultParamTypes(),
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
+      sig.getInputParamTypes(), sig.getResultParamTypes(), newInputConvs,
+      effects,
       FnMetadataAttr::get(ctx, StringArrayAttr::get(ctx, newArgNames),
-                          newInputConvs, newDefaultArgs, effects)));
+                          newDefaultArgs)));
   return mlir::success();
 }
 

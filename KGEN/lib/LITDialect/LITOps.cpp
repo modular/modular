@@ -477,14 +477,14 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     for (size_t i = 0; i < (size_t)numPosArgs; ++i)
       newArgNames[i] = StringAttr::get(ctx);
 
-    auto newMetadata = FnMetadataAttr::get(
-        ctx, StringArrayAttr::get(ctx, newArgNames),
-        metadata.getInputConventions(), metadata.getDefaultArguments(),
-        metadata.getFnEffects());
+    auto newMetadata =
+        FnMetadataAttr::get(ctx, StringArrayAttr::get(ctx, newArgNames),
+                            metadata.getDefaultArguments());
 
-    signature = SignatureType::get(signature.getInputParamTypes(),
-                                   signature.getResultParamTypes(),
-                                   signature.getValues(), newMetadata);
+    signature = SignatureType::get(
+        signature.getValues(), signature.getInputParamTypes(),
+        signature.getResultParamTypes(), signature.getInputConventions(),
+        signature.getFnEffects(), newMetadata);
 
     parsedAttributes.erase("numPosArgs");
   } else {

@@ -49,41 +49,6 @@ struct FieldParser<KGENDType> {
 } // namespace mlir
 
 //===----------------------------------------------------------------------===//
-// FnEffects
-//===----------------------------------------------------------------------===//
-
-namespace mlir {
-/// Parse function effects.
-template <>
-struct FieldParser<FnEffects> {
-  static FailureOr<FnEffects> parse(AsmParser &parser) {
-    std::string str;
-    SMLoc loc = parser.getCurrentLocation();
-    if (parser.parseKeywordOrString(&str))
-      return failure();
-    std::optional<KGEN::impl::FnEffects> effects =
-        KGEN::impl::symbolizeFnEffects(str);
-    if (!effects)
-      return parser.emitError(loc, "invalid function effects");
-    return FnEffects(*effects);
-  }
-};
-} // namespace mlir
-
-namespace M::KGEN {
-static raw_ostream &operator<<(raw_ostream &os, FnEffects effects) {
-  os << impl::stringifyFnEffects(effects.getImpl());
-  return os;
-}
-static llvm::hash_code hash_value(FnEffects effects) {
-  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
-}
-static bool operator==(FnEffects lhs, FnEffects rhs) {
-  return lhs.getImpl() == rhs.getImpl();
-}
-} // namespace M::KGEN
-
-//===----------------------------------------------------------------------===//
 // KGENDialect attribute support
 //===----------------------------------------------------------------------===//
 
@@ -123,49 +88,42 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 //===----------------------------------------------------------------------===//
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
-  return get(ctx, numInputs, FnEffects());
-}
-
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs,
-                                   FnEffects effects) {
   auto emptyStr = StringAttr::get(ctx);
-  return get(
-      ctx,
-      StringArrayAttr::get(ctx, SmallVector<StringAttr>(numInputs, emptyStr)),
-      SmallVector<ValueInputConvention>(numInputs), {}, effects);
-}
-
-/// Get this metadata attr with the effects swapped out.
-FnMetadataAttr FnMetadataAttr::getWithFnEffects(FnEffects effects) {
-  return FnMetadataAttr::get(getContext(), getArgNames(), getInputConventions(),
-                             getDefaultArguments(), effects);
+  SmallVector<StringAttr> names(numInputs, emptyStr);
+  return get(ctx, StringArrayAttr::get(ctx, names), {});
 }
 
 bool FnMetadataAttr::isDefault() {
-  return getFnEffects() == FnEffects() &&
-         llvm::all_of(getInputConventions(),
-                      [](ValueInputConvention inputConv) {
-                        return inputConv == ValueInputConvention::OwnedInReg;
-                      });
+  return llvm::all_of(getArgNames(),
+                      [](StringAttr name) { return name.empty(); }) &&
+         getDefaultArguments().empty();
 }
 
-LogicalResult FnMetadataAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, StringArrayAttr argNames,
-    ArrayRef<ValueInputConvention> inputConventions,
-    ArrayRef<TypedAttr> defaultArguments, FnEffects effects) {
+LogicalResult
+FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       StringArrayAttr argNames,
+                       ArrayRef<TypedAttr> defaultArguments) {
   for (StringAttr name : argNames)
     if (!name)
       return emitError() << "arg name cannot be null";
+  return success();
+}
+
+LogicalResult FnMetadataAttr::verifySignature(
+    function_ref<InFlightDiagnostic()> emitError,
+    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
+    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+    FnEffects effects) {
   size_t numInputConv = inputConventions.size();
-  if (argNames.size() != numInputConv) {
+  if (getArgNames().size() != numInputConv) {
     return emitError() << "number of argument names does not match number of "
                           "input conventions: "
-                       << argNames.size() << " != " << numInputConv;
+                       << getArgNames().size() << " != " << numInputConv;
   }
-  if (defaultArguments.size() > numInputConv) {
+  if (getDefaultArguments().size() > numInputConv) {
     return emitError()
            << "there are more default arguments than value input conventions: "
-           << defaultArguments.size() << " > " << numInputConv;
+           << getDefaultArguments().size() << " > " << numInputConv;
   }
   return success();
 }
@@ -519,8 +477,8 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     declSignature = SignatureType::getSpecializedSignature(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
         remapper.remap(baseSig.getResultParamTypes()),
-        remapper.remap(baseSig.getValues()),
-        remapper.remap(baseSig.getMetadata()));
+        remapper.remap(baseSig.getValues()), baseSig.getInputConventions(),
+        baseSig.getFnEffects(), remapper.remap(baseSig.getMetadata()));
   }
   if (!declSignature)
     return failure();

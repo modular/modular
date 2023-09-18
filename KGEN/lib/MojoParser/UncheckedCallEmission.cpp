@@ -266,7 +266,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   argumentValues.reserve(calleeSig.getNumInputs());
   for (auto [argIdx, argName, expectedTypeX, convention] :
        llvm::enumerate(calleeSig.getArgNames(), calleeSig.getValueInputs(),
-                       calleeSig.getValueInputConventions())) {
+                       calleeSig.getInputConventions())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -381,7 +381,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   // Drop the first argument which is the return slot.
   ArrayRef<ValueInputConvention> argConventions =
-      calleeSig.getValueInputConventions();
+      calleeSig.getInputConventions();
   assert(argConventions[0] == ValueInputConvention::ByRefResult);
   argConventions = argConventions.drop_front();
   argumentValues = argumentValues.drop_front();
@@ -602,7 +602,7 @@ CValue CallEmitter::emitCallInParamContext(
       calleeSig.hasMemoryOnlyResult() || calleeSig.hasInitSelfResult();
   for (auto [argValAndExpr, calleeArgType, convention] : llvm::zip(
            argumentValues, calleeSig.getValueInputs().drop_front(dropFirst),
-           calleeSig.getValueInputConventions().drop_front(dropFirst))) {
+           calleeSig.getInputConventions().drop_front(dropFirst))) {
     PValue pValue = argValAndExpr.ir.getIfPValue();
     if (!pValue) {
       return emitter.emitErrorForDynamicValueInParameter(
@@ -684,7 +684,7 @@ CValue ExprEmitter::emitCallUnchecked(CRValue callee,
   SmallVector<Value> callArgs;
   SmallVector<Value, 1> byRefResults;
   for (auto [argValAndExpr, conventionX, calleeArgTypeAndIdx] :
-       llvm::zip(argumentValues, calleeSig.getValueInputConventions(),
+       llvm::zip(argumentValues, calleeSig.getInputConventions(),
                  llvm::enumerate(calleeSig.getValueInputs()))) {
     auto calleeArgType = calleeArgTypeAndIdx.value();
     auto argIdx = calleeArgTypeAndIdx.index();

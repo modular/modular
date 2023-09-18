@@ -148,19 +148,10 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   MLIRContext *ctx = op.getContext();
   ImplicitLocOpBuilder b(op.getLoc(), ctx);
   SignatureType oldSig = op.getType();
-  auto functionType =
+  FunctionType functionType =
       b.getFunctionType(body.getArgumentTypes(), oldSig.getValueResults());
-
-  SmallVector<StringAttr> newArgNames(captures.size(), b.getStringAttr(""));
-  ArrayRef<StringAttr> argNames = oldSig.getArgNames().getValue();
-  newArgNames.append(argNames.begin(), argNames.end());
-
-  auto none = TypeArrayAttr::get(ctx, {});
-  auto metadata = FnMetadataAttr::get(
-      ctx, StringArrayAttr::get(ctx, newArgNames),
-      SmallVector<ValueInputConvention>(body.getNumArguments()), {},
-      op.getResult().getType().getFnEffects());
-  auto sig = SignatureType::get(none, none, functionType, metadata);
+  auto sig =
+      SignatureType::get(functionType, {}, {}, {}, oldSig.getFnEffects());
 
   // Create the lifted function. Make sure it doesn't get inlined back.
   StringAttr name;

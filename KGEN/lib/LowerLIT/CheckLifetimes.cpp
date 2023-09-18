@@ -894,9 +894,9 @@ void UninitializedValueScan::checkOp(Operation &op) {
     }
 
     assert(isa<CreateClosureOp>(op) ||
-           signature.getValueInputConventions().size() == operands.size());
+           signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
-         llvm::zip(signature.getValueInputConventions(), operands)) {
+         llvm::zip(signature.getInputConventions(), operands)) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
@@ -1413,9 +1413,9 @@ void DestructorInsertion::checkOp(Operation &op) {
       checkDef(op.getResult(0), op);
 
     assert(isa<CreateClosureOp>(op) ||
-           signature.getValueInputConventions().size() == operands.size());
+           signature.getInputConventions().size() == operands.size());
     for (auto [convention, operand] :
-         llvm::zip(signature.getValueInputConventions(), operands)) {
+         llvm::zip(signature.getInputConventions(), operands)) {
       switch (convention) {
       case ValueInputConvention::OwnedInReg:
       case ValueInputConvention::OwnedInMem:
