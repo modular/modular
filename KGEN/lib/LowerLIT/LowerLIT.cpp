@@ -142,6 +142,30 @@ static void lowerLITOps(LIT::FuncOp func) {
         buildDebugInfoValue(b, allocOp, varName, funcSpAttr.getFile(), allocOp,
                             varType);
       }
+    } else if (auto varDecl = dyn_cast<VarLetDecl2Op>(op)) {
+      mlir::IRRewriter b{OpBuilder(op)};
+      StringAttr varName = varDecl.getNameAttr();
+      auto varType = PointerType::get(varDecl.getType().getElementType());
+
+      // Declare the lifetime used in the result type.
+      b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),
+                               b.getAttr<LifetimeAttr>());
+      // Lower a lit.varlet.decl to pop.stack_allocation.
+      auto allocOp =
+          b.create<POP::StackAllocationOp>(varDecl.getLoc(), varType, 1);
+      // Replace !lit.ref result type with a cast from the pointer.  This will
+      // get squashed by LowerStructs.
+      b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
+          varDecl, ArrayRef<Type>(varDecl.getType()), allocOp.getResult());
+
+      // Build information for this variable if necessary.
+      if (buildingDebugVars) {
+        // TODO: Mark the value op as describing the "address" of the
+        // variable, instead of claiming to describe the variable itself.
+        b.setInsertionPointAfter(allocOp);
+        buildDebugInfoValue(b, allocOp, varName, funcSpAttr.getFile(), allocOp,
+                            varType);
+      }
     } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
       lowerHandleVariant(handleVariant);
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
