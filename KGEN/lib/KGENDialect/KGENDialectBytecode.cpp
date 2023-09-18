@@ -591,7 +591,12 @@ KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
   if (failed(reader.readAttributes(defaultArguments)))
     return FnMetadataAttr();
 
-  return FnMetadataAttr::get(getContext(), argNames, defaultArguments);
+  SmallVector<TypedAttr> defaultParameters;
+  if (failed(reader.readAttributes(defaultParameters)))
+    return FnMetadataAttr();
+
+  return FnMetadataAttr::get(getContext(), argNames, defaultArguments,
+                             defaultParameters);
 }
 
 void KGENBytecodeInterface::write(FnMetadataAttr attr,
@@ -599,6 +604,7 @@ void KGENBytecodeInterface::write(FnMetadataAttr attr,
   writer.writeVarInt(Encoding::kFnMetadataAttr);
   writer.writeAttributes(attr.getArgNames());
   writer.writeAttributes(attr.getDefaultArguments());
+  writer.writeAttributes(attr.getDefaultParameters());
 }
 
 //===----------------------------------------------------------------------===//

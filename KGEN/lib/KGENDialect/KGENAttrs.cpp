@@ -90,19 +90,20 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
   auto emptyStr = StringAttr::get(ctx);
   SmallVector<StringAttr> names(numInputs, emptyStr);
-  return get(ctx, StringArrayAttr::get(ctx, names), {});
+  return get(ctx, names, {}, {});
 }
 
 bool FnMetadataAttr::isDefault() {
   return llvm::all_of(getArgNames(),
                       [](StringAttr name) { return name.empty(); }) &&
-         getDefaultArguments().empty();
+         getDefaultArguments().empty() && getDefaultParameters().empty();
 }
 
 LogicalResult
 FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<StringAttr> argNames,
-                       ArrayRef<TypedAttr> defaultArguments) {
+                       ArrayRef<TypedAttr> defaultArguments,
+                       ArrayRef<TypedAttr> defaultParameters) {
   for (StringAttr name : argNames)
     if (!name)
       return emitError() << "arg name cannot be null";

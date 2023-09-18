@@ -1,11 +1,11 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK: #kgen.fn_metadata<["someRef", "v"], [13 : index, 17 : i64]>
-"some.op"() {metadata = #kgen.fn_metadata<["someRef", "v"], [13 : index, 17: i64]>} : () -> ()
+// CHECK: #kgen.fn_metadata<["someRef", "v"], [13 : index, 17 : i64], [3.140000e+00 : f32]>
+"some.op"() {metadata = #kgen.fn_metadata<["someRef", "v"], [13 : index, 17: i64], [3.14: f32]>} : () -> ()
 
-// CHECK: #kgen.fn_metadata<[], []>
-"some.op"() {metadata = #kgen.fn_metadata<[], []>} : () -> ()
+// CHECK: #kgen.fn_metadata<[], [], []>
+"some.op"() {metadata = #kgen.fn_metadata<[], [], []>} : () -> ()
 
 // CHECK: *"mangled_fn{{.*}}$int
 "some.op"() {decl = #kgen<param.decl *"mangled_fn(Pointer[!kgen.declref<_\22$int\22::_Int>])" : index>} : () -> ()

@@ -1040,12 +1040,12 @@ static OptionalParseResult parseOptionalSignatureValues(
 
   // FIXME: Force C++ to select the derived class getter, not the storage
   // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
-  using GetCheckedT =
-      FnMetadataAttr (*)(function_ref<InFlightDiagnostic()>, MLIRContext *,
-                         ArrayRef<StringAttr>, ArrayRef<TypedAttr>);
+  using GetCheckedT = FnMetadataAttr (*)(
+      function_ref<InFlightDiagnostic()>, MLIRContext *, ArrayRef<StringAttr>,
+      ArrayRef<TypedAttr>, ArrayRef<TypedAttr>);
   effects = FnEffects(effectsValue);
   metadata = ((GetCheckedT)&FnMetadataAttr::getChecked)(
-      emitError, p.getContext(), argNames, defaults);
+      emitError, p.getContext(), argNames, defaults, ArrayRef<TypedAttr>{});
   if (!metadata)
     return failure();
   values = p.getBuilder().getFunctionType(argTypes, resTypes);
