@@ -479,7 +479,7 @@ fn scatter_nd_generator[
     """
 
     if data.get_shape() != output.get_shape():
-        out_chain.mark_error(
+        return out_chain.mark_error(
             "Input and output shapes in scatter_nd must be the same."
         )
 
@@ -487,7 +487,7 @@ fn scatter_nd_generator[
         len(updates.get_shape())
         != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
     ):
-        out_chain.mark_error(
+        return out_chain.mark_error(
             "updates rank must be: data_rank + indices_rank -"
             " indices_shape[-1] - 1"
         )
@@ -889,19 +889,20 @@ fn scatter_elements[
         "indices in scatter_elements must be int32 or int64",
     ]()
 
-    debug_assert(
-        input.get_shape() == output.get_shape(),
-        "input and output shape in scatter_elements must be the same",
-    )
-    debug_assert(
-        indices.get_shape() == updates.get_shape(),
-        "inidices and updates shape in scatter_elements must be the same",
-    )
+    if input.get_shape() != output.get_shape():
+        return out_chain.mark_error(
+            "input and output shape in scatter_elements must be the same"
+        )
 
-    debug_assert(
-        -rank <= _axis < rank,
-        "axis in scatter_elements must be in the range [-rank, rank)",
-    )
+    if indices.get_shape() != updates.get_shape():
+        return out_chain.mark_error(
+            "inidices and updates shape in scatter_elements must be the same"
+        )
+
+    if not (-rank <= _axis < rank):
+        return out_chain.mark_error(
+            "axis in scatter_elements must be in the range [-rank, rank)"
+        )
 
     let axis = _axis if _axis >= 0 else _axis + rank
 
@@ -1022,15 +1023,15 @@ fn gather_elements[
         "indices in gather_elements must be int32 or int64",
     ]()
 
-    debug_assert(
-        indices.get_shape() == output.get_shape(),
-        "indices and output shape in gather_elements must be the same",
-    )
+    if indices.get_shape() != output.get_shape():
+        return out_chain.mark_error(
+            "indices and output shape in gather_elements must be the same"
+        )
 
-    debug_assert(
-        -rank <= _axis < rank,
-        "axis in gather_elements must be in the range [-rank, rank)",
-    )
+    if not (-rank <= _axis < rank):
+        return out_chain.mark_error(
+            "axis in gather_elements must be in the range [-rank, rank)"
+        )
 
     let axis = _axis if _axis >= 0 else _axis + rank
 

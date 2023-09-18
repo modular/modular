@@ -90,8 +90,8 @@ fn _top_k[
     and their index along a specified axis.
 
     Parameters:
-        type: Data type of the input buffer.
         rank: Rank of the input.
+        type: Data type of the input buffer.
 
     Args:
         input: The input tensor.
@@ -99,11 +99,8 @@ fn _top_k[
         axis: On which axis it should operate.
         largest: If true, acts like top K. Otherwise, bottom K.
         out_vals: Output values.
-        out_idx: Output indices.
+        out_idxs: Output indices.
         out_chain: Output chain to notify for errors and ready states.
-
-    Returns:
-        The output shape.
     """
     let shape = input.get_shape()
 

@@ -169,7 +169,7 @@ fn non_max_suppression[
     iou_threshold: Float32,
     score_threshold: Float32,
 ):
-    """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression"""
+    """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression."""
 
     let batch_size = boxes.dim(0)
     let num_boxes = boxes.dim(1)
