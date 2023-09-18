@@ -25,6 +25,7 @@
 #include "lldb/DataFormatters/DumpValueObjectOptions.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Utility/AnsiTerminal.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "mlir/IR/Types.h"
@@ -611,6 +612,15 @@ bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
   // variable twice.
   auto options = DumpValueObjectOptions::DefaultOptions();
   options.SetShowTypes(true);
+
+  bool useColor = debugger.GetUseColor();
+  if (useColor)
+    fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_FG_COLOR_CYAN));
+
   valobj->Dump(*output, options);
+
+  if (useColor)
+    fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_CTRL_NORMAL));
+
   return true;
 }
