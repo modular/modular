@@ -583,8 +583,8 @@ void KGENBytecodeInterface::write(ExportKindAttr attr,
 
 FnMetadataAttr
 KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
-  StringArrayAttr argNames;
-  if (failed(reader.readAttribute(argNames)))
+  SmallVector<StringAttr> argNames;
+  if (failed(reader.readAttributes(argNames)))
     return FnMetadataAttr();
 
   SmallVector<TypedAttr> defaultArguments;
@@ -597,7 +597,7 @@ KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
 void KGENBytecodeInterface::write(FnMetadataAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kFnMetadataAttr);
-  writer.writeAttribute(attr.getArgNames());
+  writer.writeAttributes(attr.getArgNames());
   writer.writeAttributes(attr.getDefaultArguments());
 }
 

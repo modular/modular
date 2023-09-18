@@ -1042,11 +1042,10 @@ static OptionalParseResult parseOptionalSignatureValues(
   // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
   using GetCheckedT =
       FnMetadataAttr (*)(function_ref<InFlightDiagnostic()>, MLIRContext *,
-                         StringArrayAttr, ArrayRef<TypedAttr>);
+                         ArrayRef<StringAttr>, ArrayRef<TypedAttr>);
   effects = FnEffects(effectsValue);
   metadata = ((GetCheckedT)&FnMetadataAttr::getChecked)(
-      emitError, p.getContext(), StringArrayAttr::get(p.getContext(), argNames),
-      defaults);
+      emitError, p.getContext(), argNames, defaults);
   if (!metadata)
     return failure();
   values = p.getBuilder().getFunctionType(argTypes, resTypes);
@@ -1164,10 +1163,10 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
                                   FunctionType functionType,
                                   SignatureType signature) {
   // Print the function arguments.
-  StringArrayAttr argNames = signature.getArgNames();
+  ArrayRef<StringAttr> argNames = signature.getArgNames();
   auto printElt = [&](unsigned i) {
     if (!region) {
-      if (argNames && argNames[i].size())
+      if (argNames[i].size())
         p << "%" + argNames[i].getValue() + ": ";
       p << functionType.getInput(i);
     } else {

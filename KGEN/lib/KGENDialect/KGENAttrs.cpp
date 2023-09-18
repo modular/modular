@@ -101,7 +101,7 @@ bool FnMetadataAttr::isDefault() {
 
 LogicalResult
 FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       StringArrayAttr argNames,
+                       ArrayRef<StringAttr> argNames,
                        ArrayRef<TypedAttr> defaultArguments) {
   for (StringAttr name : argNames)
     if (!name)

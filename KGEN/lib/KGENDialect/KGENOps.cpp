@@ -1047,8 +1047,7 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   ArrayRef<Type> newArgTypes = sig.getValueInputs().drop_front(numCaptures);
   ArrayRef<ValueInputConvention> newInputConvs =
       sig.getInputConventions().drop_front(numCaptures);
-  ArrayRef<StringAttr> newArgNames =
-      sig.getArgNames().getValue().drop_front(numCaptures);
+  ArrayRef<StringAttr> newArgNames = sig.getArgNames().drop_front(numCaptures);
 
   ArrayRef<TypedAttr> newDefaultArgs = sig.getDefaultArguments();
   if (newArgTypes.size() < newDefaultArgs.size())
