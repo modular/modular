@@ -211,7 +211,7 @@ public:
   SmallVector<std::pair<ExprNode *, LexerCursor>>
   parseDecorators(ASTDecl &decl);
   SmallVector<std::pair<ExprNode *, LexerCursor>>
-  parseDecorators(ssize_t indention);
+  parseDecorators(ssize_t indentation);
 
   /// Expression parsing.  Each of these take a `stmtIndent` specifier that
   /// indicates the indentation level of the start of the statement that

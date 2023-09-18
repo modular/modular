@@ -261,7 +261,7 @@ PValue ParameterInferenceState::infer(SignatureType signature,
         continue;
       }
 
-      // TODO: If this argument is defaulted, infer against it.
+      // TODO(#21428): If this argument is defaulted, infer against it.
 
       // Otherwise we have an argument count mismatch, just fail.
       return {};
@@ -1013,7 +1013,6 @@ OverloadFitness OverloadFitness::evaluate(SignatureType signature,
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
 
   // Check that the signature can be rebound with this set of bindings.
-  // TODO(#21339): allow inferring parameters from keyword arguments.
   TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
