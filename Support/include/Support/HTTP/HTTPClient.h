@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MODULAR_COMMON_HTTPCLIENT_H
-#define MODULAR_COMMON_HTTPCLIENT_H
+#ifndef SUPPORT_HTTP_HTTPCLIENT_H
+#define SUPPORT_HTTP_HTTPCLIENT_H
 
 #include "Cache/BlobCache.h"
 #include "Support/ErrorOr.h"
@@ -16,12 +16,13 @@
 #include <string>
 
 namespace M {
-
+/// Convenience declarations.
 class HTTPContext;
 using HTTPContextRef = RCRef<HTTPContext>;
-/// Provides a presistant HTTP context to create HTTPClients.
-/// Initializes and cleans up the global CURL initalization.
-/// Ideally should scope to your applications main method.
+
+/// Provides a ref-counted HTTP context to create HTTPClients. Initializes and
+/// cleans up the global CURL initialization. Ideally should scope to your
+/// application's main method (similar to the LLCL::Runtime).
 class HTTPContext : public ReferenceCounted<HTTPContext> {
 public:
   ~HTTPContext();
@@ -30,21 +31,43 @@ public:
   static HTTPContextRef init();
 
 protected:
-  // Allow access to protected constructor.
+  /// Allow access to protected constructor.
   friend class RCRef<HTTPContext>;
 
   HTTPContext();
 };
 
-/// Represents an HTTP Request
-///
-/// TODO: Add support for passing HTTP headers, setting methods, etc.
+/// Represents an HTTP Request.
 struct HTTPRequest {
-  // Request URL.
+  /// Request URL.
   std::string URL;
-  // Used to disable HTTPS vertification. Typically used to test with self
-  // signed certicates.
+
+  /// Used to disable HTTPS vertification. Typically used to test with self
+  /// signed certicates.
   bool verifyTLSPeer = true;
+
+  /// Headers to set on the request.
+  llvm::StringMap<std::string> headers = {};
+
+  /// Method to use.
+  enum Method {
+    POST,
+    GET,
+  };
+  Method method = Method::GET;
+
+  /// curl generally recommends sending body data (when it's large) with a
+  /// callback. This allows the user to specify any state that may need to be
+  /// held. Write as much data as possible into `buffer`, but not more than
+  /// `bytes` bytes. The callback will be called until it returns 0 - returning
+  /// 0 signals EOF and the callback won't be called again. The callback may
+  /// also return an error, in which case we will abort the transfer.
+  using ReadCallback =
+      llvm::unique_function<ErrorOr<size_t>(char *buffer, size_t bytes)>;
+  ReadCallback body = nullptr;
+  /// If you know exactly how many bytes you want to send up front, set this
+  /// field. This allows libcurl to avoid some length checking.
+  std::optional<size_t> bodyLen = std::nullopt;
 };
 
 /// Typical HTTP response code errors.
@@ -106,7 +129,8 @@ struct HTTPResponse {
 
 /// HTTPClient that wraps libcurl.
 ///
-/// Thead safety: HTTPClient is thread safe but doesn't provide synchronization.
+/// Thread safety: HTTPClient is thread safe but doesn't provide
+/// synchronization.
 class HTTPClient {
 public:
   HTTPClient(HTTPContextRef ctx);
@@ -128,4 +152,4 @@ private:
 };
 } // namespace M
 
-#endif // MODULAR_COMMON_HTTPCLIENT_H
+#endif // SUPPORT_HTTP_HTTPCLIENT_H

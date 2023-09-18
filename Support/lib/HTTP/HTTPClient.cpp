@@ -10,6 +10,7 @@
 #include "Support/Base64.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include "curl/curl.h"
@@ -79,6 +80,17 @@ static size_t streamWriter(char *contents, size_t size, size_t members,
   return len;
 }
 
+/// Adapt an llvm::unique_function to a libcurl read callback.
+static size_t readCallback(char *buffer, size_t size, size_t nitems,
+                           void *userdata) {
+  auto *fn = (HTTPRequest::ReadCallback *)userdata;
+  auto sizeOr = (*fn)(buffer, size * nitems);
+  if (sizeOr.isError())
+    return CURL_READFUNC_ABORT;
+
+  return *sizeOr;
+}
+
 HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
                                         raw_ostream &os,
                                         std::chrono::milliseconds timeout,
@@ -89,10 +101,38 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   ret.limit = maxLength;
   ret.written = 0;
 
+  // Handle the headers. This will format them as "key: value".
+  curl_slist *list = nullptr;
+  auto freeList = llvm::make_scope_exit([&] { curl_slist_free_all(list); });
+  for (const auto &h : request.headers) {
+    curl_slist_append(
+        list, llvm::formatv("{0}: {1}", h.first(), h.second).str().c_str());
+  }
+
+  // TODO: All of these need return code checking - curl_easy_setopt returns a
+  // CURLcode...
+
   // Set HTTP Request timeout.
   curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout.count());
-  // For now we will only do HTTP GET requests.
-  curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+  // Set the headers.
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+
+  // Set the method.
+  if (request.method == HTTPRequest::GET)
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+  else
+    curl_easy_setopt(curl, CURLOPT_POST, 1);
+
+  // We can set the read data as a callback.
+  if (request.body) {
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, &readCallback);
+    curl_easy_setopt(curl, CURLOPT_READDATA, &request.body);
+
+    // If the user provided the full size of the data here, provide it to curl.
+    if (request.bodyLen)
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, *request.bodyLen);
+  }
+
   // Set URL we will perform the HTTP
   curl_easy_setopt(curl, CURLOPT_URL, request.URL.c_str());
   // Follow any HTTP 301 or 302  redirects implicity.
