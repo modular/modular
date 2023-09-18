@@ -64,16 +64,16 @@ public:
   void resolveAllReferencedFrom(ASTDecl &decl);
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(Operation *decl, llvm::SMLoc loc, StringAttr baseName,
+  ASTDecl &addDecl(Operation *op, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
-  ASTDecl &addDecl(DeclIRValue decl, llvm::SMLoc loc, StringAttr baseName,
+  ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
 
   /// Add a new declaration that needs to be resolved, but don't attach it to
   /// parent's name table.  It needs to be added later.
-  ASTDecl &createUnlistedDecl(DeclIRValue decl, llvm::SMLoc loc,
+  ASTDecl &createUnlistedDecl(DeclIRValue irValue, llvm::SMLoc loc,
                               ASTDecl *parentDecl, LexerCursor cursor,
                               LexerCursor endCursor, ssize_t indentation);
   ASTDecl &createUnlistedDecl(Operation *decl, llvm::SMLoc loc,

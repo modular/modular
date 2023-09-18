@@ -321,19 +321,19 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   decl->hasReferenceError = true;
   for (ASTDecl *previous : entries)
     previous->hasReferenceError = true;
-  return;
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc, StringAttr name,
-                               ASTDecl *parentDecl, LexerCursor cursor,
-                               LexerCursor endCursor, ssize_t indentation) {
+ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
+                               StringAttr baseName, ASTDecl *parentDecl,
+                               LexerCursor cursor, LexerCursor endCursor,
+                               ssize_t indentation) {
   ASTDecl &decl = createUnlistedDecl(irValue, loc, parentDecl, cursor,
                                      endCursor, indentation);
   // If this has a parent and a name, insert it into the parents name table so
   // name lookup will resolve it.  If it doesn't, then we're done.
-  if (name)
-    attachDeclToParentNameTable(&decl, name);
+  if (baseName)
+    attachDeclToParentNameTable(&decl, baseName);
   return decl;
 }
 
@@ -559,10 +559,10 @@ DeclResolver::lookupDeclInModule(ASTDecl &module, StringAttr sourceName,
 }
 
 /// Add a new declaration that needs to be resolved.
-ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr name,
+ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr baseName,
                                ASTDecl *parentDecl, LexerCursor cursor,
                                LexerCursor endCursor, ssize_t indentation) {
-  return addDecl(DeclIRValue(op), loc, name, parentDecl, cursor, endCursor,
+  return addDecl(DeclIRValue(op), loc, baseName, parentDecl, cursor, endCursor,
                  indentation);
 }
 
@@ -1608,7 +1608,7 @@ void DeclResolver::computeArgumentConventions(
       // Values passed by memory need an associated lifetime parameter, and need
       // to be passed by reference.  Fun fact: explicit ref/mutref arguments
       // have register conventions, so they won't get these.
-      if (0 &&
+      if (false &&
           // FIXME: This is currently disabled because it causes literally
           // everything to explode.  We'll need to stage stuff in more
           // aggressively before going down this path and we don't want to
@@ -1751,7 +1751,7 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
                         StringRef unmangledName, const CallNode &node,
                         ExportInterface itf) {
-  if (node.args.size() == 0 || node.args.size() > 2) {
+  if (node.args.empty() || node.args.size() > 2) {
     shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
     return;
   }
@@ -3464,7 +3464,7 @@ struct StructBodyDecorators : public SharedStateUser {
         structDecl(structDecl), resolver(resolver), structFields(structFields) {
   }
 
-  LogicalResult processDecorator(ExprNode *expr);
+  LogicalResult processDecorator(ExprNode *decorator);
 
 private:
   void processValueDecorator(SMLoc decoratorLoc);
