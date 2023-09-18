@@ -250,7 +250,7 @@ async def test_hover_alias_decls(client: LanguageClient):
     await assert_decl(
         "IntAlias",
         """```mojo
-alias IntAlias = 12
+alias IntAlias = #kgen.int_literal<12>
 ```
 ---
 
@@ -279,7 +279,7 @@ alias AliasInsideFunction = "sdfsdf"
     await assert_decl(
         "AliasToAlias",
         """```mojo
-alias AliasToAlias = 12
+alias AliasToAlias = #kgen.int_literal<12>
 ```""",
     )
 

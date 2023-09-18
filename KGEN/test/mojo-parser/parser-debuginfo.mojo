@@ -49,12 +49,12 @@ fn structured_for_loop() -> __mlir_type.index:
         # CHECK-NEXT: %idx1 = index.constant 1
         # CHECK-NEXT: %1 = index.add %arg0, %idx1 loc(#[[FOR_ADD_LOC:.*]])
         # CHECK-NEXT: hlcf.continue %1 : index loc(#[[FOR_YIELD_LOC:.*]])
-        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, (1).value))
+        __mlir_op.`hlcf.continue`(__mlir_op.`index.add`(i, Int(1).value))
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
         _type : __mlir_type.index, _region : "loop_body".value
-    ]((0).value)
+    ](Int(0).value)
 
 
 # // -----

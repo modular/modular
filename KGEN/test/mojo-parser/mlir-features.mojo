@@ -11,7 +11,7 @@ fn mlirMagicTest(
     x: __mlir_type.bf16, y: __mlir_type.f8E5M2
 ) -> __mlir_type.index:
     # CHECK: lit.alias.decl [[A:.*]] = <1>
-    alias a: __mlir_type.index = (1).value
+    alias a: __mlir_type.index = Int(1).value
     # CHECK: %b = lit.varlet.decl "b" var : <f64>
     var b: __mlir_type.f64
     # CHECK: %c = lit.varlet.decl "c" var : <pointer<pointer<float32>>>
@@ -30,7 +30,7 @@ fn mlirMagicTest(
     # CHECK-NEXT: %idxConstant = lit.varlet.decl
     # CHECK: index.constant 42
     var idxConstant = __mlir_op.`index.constant`[
-        value : (42).value
+        value : Int(42).value
     ]()
 
     # CHECK: [[TMP:%.*]] = pop.load %idxConstant
@@ -39,14 +39,14 @@ fn mlirMagicTest(
 
     # CHECK: lit.alias.decl [[NEW_LOWER:.*]] = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max, `, a, `, `, (42).value, `> : index`
+        `#kgen.param.expr<max, `, a, `, `, Int(42).value, `> : index`
     ]
 
     # CHECK: [[TMP1:%.*]] = kgen.param.constant = <[[NEW_LOWER]]>
     # CHECK: [[TMP2:%.*]] = index.constant 1
     # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
     # CHECK: lit.return [[SHRU]] : index
-    return __mlir_op.`index.shru`(new_lower, (1).value)
+    return __mlir_op.`index.shru`(new_lower, Int(1).value)
 
 
 # CHECK-LABEL: lit.func @"mlirTypesAndAttrs{{.*}}()"<
@@ -78,10 +78,10 @@ fn fancierSubstitutions():
     var complexInt: __mlir_type[`complex<`, __mlir_type.i32, `>`]
 
     # CHECK: lit.alias.decl [[A:.*]] = <1>
-    alias a: __mlir_type.index = (1).value
+    alias a: __mlir_type.index = Int(1).value
     # CHECK: lit.alias.decl {{.*}}new_lower = <max([[A]], 42)>
     alias new_lower = __mlir_attr[
-        `#kgen.param.expr<max,`, a, `, `, (42).value, `> : index`
+        `#kgen.param.expr<max,`, a, `, `, Int(42).value, `> : index`
     ]
 
 
@@ -95,7 +95,7 @@ fn testAttrConcatWithoutType[
     # CHECK: lit.alias.decl {{.*}}x: variadic<index> = <[1, [[LENGTH]]]>
     alias x = __mlir_attr[
         `#kgen.variadic<`,
-        +(1).value,
+        +Int(1).value,
         `,`,
         length,
         `> : !kgen.variadic<index>`,
@@ -136,10 +136,10 @@ fn structured_for_loop() -> __mlir_type.index:
         # CHECK-NEXT: %1 = index.add %arg0, %idx1
         # CHECK-NEXT: hlcf.continue %1 : index
         __mlir_op.`hlcf.continue`(
-            __mlir_op.`index.add`(i, (1).value)
+            __mlir_op.`index.add`(i, Int(1).value)
         )
 
     # CHECK: lit.return %0 : index
     return __mlir_op.`hlcf.loop`[
         _type : __mlir_type.index, _region : "loop_body".value
-    ]((0).value)
+    ](Int(0).value)

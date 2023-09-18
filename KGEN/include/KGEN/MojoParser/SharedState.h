@@ -330,6 +330,7 @@ public:
   ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinIntLiteralType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinSliceType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc);

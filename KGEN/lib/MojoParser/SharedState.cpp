@@ -903,6 +903,11 @@ ASTType SharedState::getBuiltinIntType(ASTDecl &context, llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "Int", *this);
 }
 
+ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
+                                              llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, "IntLiteral", *this);
+}
+
 ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
                                                  llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "StringLiteral", *this);

@@ -235,7 +235,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: [[ONE:%.*]] = kgen{{.*}}#lit.struct<{value = 1}>
   # CHECK-NEXT: [[RES:%.*]] = kgen.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"([[Z]], [[ONE]])
   # CHECK-NEXT: pop.store [[RES]], %z
-  z = (1).value + z
+  z = Int(1).value + z
 
   # div tests
   # CHECK: kgen.call {{.*}}__truediv__
@@ -247,40 +247,40 @@ fn precedence_associativity(a: Int):
 # CHECK-LABEL: lit.func @"reverse_operators
 fn reverse_operators(a: Int):
   # CHECK: [[RES:%.*]] = kgen.call {{.*}}Int::@"__radd__({{.*}}$int::Int,{{.*}}$int::Int)"
-  var z = (1).value + a
+  var z = Int(1).value + a
 
   # CHECK: [[RES:%.*]] = kgen.call {{.*}}Int::@"__rsub__({{.*}}$int::Int,{{.*}}$int::Int)"
-  z = (2).value - z
+  z = Int(2).value - z
 
   # CHECK: [[RES:%.*]] = kgen.call {{.*}}Int::@"__rmul__({{.*}}$int::Int,{{.*}}$int::Int)"
-  z = (3).value * z
+  z = Int(3).value * z
 
   # div tests
   # CHECK: kgen.call {{.*}}__rtruediv__
   # CHECK: kgen.call {{.*}}Int::@"__rfloordiv__({{.*}}$int::Int,{{.*}}$int::Int)"
   var r1 = 33.0 / Float32(42.0)
-  z = (33).value // z
+  z = Int(33).value // z
 
   # CHECK: kgen.call {{.*}}Int::@"__rmod__({{.*}}$int::Int,{{.*}}$int::Int)"
-  var i0 = (10).value % z
+  var i0 = Int(10).value % z
 
 # CHECK: kgen.call {{.*}}Int::@"__rpow__({{.*}}$int::Int,{{.*}}$int::Int)"
-  var i1 = (3).value ** z
+  var i1 = Int(3).value ** z
 
   # CHECK: kgen.call {{.*}}Int::@"__rlshift__({{.*}}$int::Int,{{.*}}$int::Int)"
-  var i2 = (1).value << z
+  var i2 = Int(1).value << z
 
   # CHECK: kgen.call {{.*}}Int::@"__rrshift__({{.*}}$int::Int,{{.*}}$int::Int)"
-  var i3 = (1).value >> z
+  var i3 = Int(1).value >> z
 
   # CHECK: kgen.call {{.*}}Int::@"__rand__({{.*}}$int::Int,{{.*}}$int::Int)"
-  z = (1).value & z
+  z = Int(1).value & z
 
   # CHECK: kgen.call {{.*}}Int::@"__ror__({{.*}}$int::Int,{{.*}}$int::Int)"
-  z = (2).value | z
+  z = Int(2).value | z
 
   # CHECK: kgen.call {{.*}}Int::@"__rxor__({{.*}}$int::Int,{{.*}}$int::Int)"
-  z = (3).value ^ z
+  z = Int(3).value ^ z
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: M) -> M:
@@ -481,13 +481,13 @@ fn listValues():
 fn initializers():
   # CHECK: %0 = kgen.param.constant: !Int = <#lit.struct<{value = 42}>>
   # CHECK: lit.letreg.decl "a" = %0
-  let a = Int{value: (42).value}
+  let a = Int{value: Int(42).value}
 
   # Issue #7343: Trailing comma ok too.
-  _ = Int{value: (42).value,}
+  _ = Int{value: Int(42).value,}
 
   # Issue #12067, suffix stuff ok.
-  _ = Int{ value: (1).value }.value
+  _ = Int{ value: Int(1).value }.value
 
 # CHECK-LABEL: lit.func @"test_if_cond
 fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
@@ -514,13 +514,13 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value = 2}>, #lit.struct<{value = 3}>)>
+  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = #kgen.int_literal<2>}>, #lit.struct<{value: !kgen.int_literal = #kgen.int_literal<3>}>)>
   alias i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <[[I_ALIAS]]>
+  # CHECK: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}$int::Int) -> {{.*}}$int::Int]({{.*}}$int::Int)"
@@ -620,15 +620,15 @@ fn byval_byref_function(a: Int, inout b: Int):
 fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[VALUE:%.*]] = index.constant 4
   # CHECK: lit.return [[VALUE]] : index
-  return (4).value
+  return Int(4).value
 
 # CHECK-LABEL: lit.func @"mvalueStructField()"
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <#lit.struct<{value = 4}>>
-  alias int = 4
+  alias int = Int(4)
   # CHECK: lit.alias.decl {{.*}}value = <#lit.struct.extract<:!Int [[INT]], "value">>
   alias value = int.value
-  alias foldToValue = (5).value
+  alias foldToValue = Int(5).value
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !kgen.pointer<!object> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
@@ -931,15 +931,15 @@ fn slice_expression(a: Slicable, i: Int):
   # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[::]
-  # CHECK: %[[I0:.*]] = kgen{{.*}} 1
+  # CHECK: %[[I0:.*]] = kgen{{.*}}1
   # CHECK: %[[I2:.*]] = kgen{{.*}}none
   # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %i, %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[1:i]
-  # CHECK: %[[C2:.*]] = kgen{{.*}} 2
+  # CHECK: %[[C2:.*]] = kgen{{.*}}2
   # CHECK: %[[I1:.*]] = {{.*}}@Int::@"__add__{{.*}}"(%[[C2]], %i)
   # CHECK: %[[I0:.*]] = kgen{{.*}}none
-  # CHECK: %[[I2:.*]] = kgen{{.*}} 3
+  # CHECK: %[[I2:.*]] = kgen{{.*}}3
   # CHECK-NEXT: call {{.*}}@slice::@"__init__{{.*}}"<{{.*}}>(%[[I0]], %[[I1]], %[[I2]])
   # CHECK-NEXT: call {{.*}}__getitem__
   a[:2+i:3]
@@ -1447,3 +1447,19 @@ fn test_kw_args_param_infer():
     # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 3
     # CHECK: kgen.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer(b=3, a="hello")
+
+##===----------------------------------------------------------------------===##
+# Test nonmaterializable IntLiteral beyond Int bounds.
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.alias.decl{{.*}}bigggNumber: !IntLiteral = <#lit.struct<{value: !kgen.int_literal = #kgen.int_literal<115792089237316195423570985008687907853269984665640564039457584007913129639936>}>>
+alias bigggNumber = 2 << 255
+fn useBigNumber() -> Int:
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 512}>>
+  # CHECK-NEXT: [[DECL:%.*]] lit.letreg.decl "notSoBig" = [[VAR]] : !Int
+  let notSoBig = bigggNumber // (2 << 246)
+  # Easy min-int
+  # CHECK-NEXT: [[VAR:%.*]] = kgen.param.constant: !Int = <#lit.struct<{value = -9223372036854775808}>>
+  # CHECK: [[DECL:%.*]] lit.letreg.decl "minInt" = [[VAR]] : !Int
+  let minInt = -(2<<62)
+  return notSoBig

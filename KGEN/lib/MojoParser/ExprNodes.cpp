@@ -270,18 +270,17 @@ bool ExprNode::isEmptyTuple() const {
 AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // TODO: Handle contextual types.
   APInt value = Lexer::getIntegerLiteralValue(spelling);
-
-  // Make sure the value fits in 64-bits.  There are no negative values here.
-  // TODO: Detect overflow errors.
-  value = value.zextOrTrunc(64);
-  auto attr = IntegerAttr::get(IndexType::get(emitter.getContext()), value);
-
-  // Convert this to an instance of Int. Int must be in scope since it is
-  // auto-imported.
-  ASTType type = emitter.shared.getBuiltinIntType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  // Values produced are sometimes produced unsigned, so we must add an extra
+  // sign bit.
+  if (value.slt(APInt::getZero(value.getBitWidth())))
+    value = value.zext(value.getBitWidth() + 1);
+  auto attr = KGEN::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
+  ASTType type =
+      emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
+  auto ret =
+      emitter.emitConstructorCall(type, CallOperands({{AnyValue(attr), this}}),
+                                  this, CallSyntax::kImplicitConvert, dest);
+  return ret;
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

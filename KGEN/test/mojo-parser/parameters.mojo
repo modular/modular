@@ -212,7 +212,7 @@ fn fnToCall[size: __mlir_type.index, array: __mlir_type[`!pop.array<`, size, `, 
 # CHECK-SAME: <[[ARR:.*]]: array<10, f32>
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: kgen.call @"$parameters"::@"fnToCall{{.*}}"<10, :array<10, f32> [[ARR]]>()
-   fnToCall[(10).value, array]()
+   fnToCall[Int(10).value, array]()
 
 # CHECK-LABEL: lit.func @"meta_str{{.*}}"<{{.*}}type: !StringLiteral>() -> !lit.none
 fn meta_str[type: StringLiteral]():
@@ -316,7 +316,7 @@ fn parametric_result_params[T: AnyType, input: T -> out: T]():
 # CHECK-LABEL: lit.func @"just_result_params{{.*}}"<() -> {{.*}}a>()
 fn just_result_params[() -> a: __mlir_type.index]():
   # CHECK: lit.param_return<42>
-  param_return[(42).value]
+  param_return[Int(42).value]
 
 
 # CHECK-LABEL: lit.func @"result_param_ref()"
@@ -451,7 +451,7 @@ fn pass_str_param():
 
 # CHECK: lit.alias.decl {{.*}}boolDtype: dtype = <bool>
 alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
-# CHECK: lit.alias.decl {{.*}}FOURTY_TWO: !Int = <{{.*}}42
+# CHECK: lit.alias.decl {{.*}}FOURTY_TWO: !IntLiteral = <{{.*}}42
 alias FOURTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
@@ -480,12 +480,12 @@ struct MyDType:
   fn __eq__(self, rhs: MyDType) -> Bool:
      return True  # TODO: buggy impl :-)
 
-  alias ui8 = MyDType((1).value)
-  alias float32 = MyDType((2).value)
-  alias float64 = MyDType((3).value)
+  alias ui8 = MyDType(Int(1).value)
+  alias float32 = MyDType(Int(2).value)
+  alias float64 = MyDType(Int(3).value)
 
   # CHECK: lit.alias.decl {{.*}}ui16: !MyDType = <#lit.struct<{state = 7}>>
-  alias ui16 = MyDType{state: (7).value}
+  alias ui16 = MyDType{state: Int(7).value}
 
 struct MyVector[size: Int, dtype: MyDType]:
   pass
@@ -686,3 +686,5 @@ fn call_with_tail_types():
     tail_types(1)
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}FloatLiteral]>
     tail_types(1, 1.2)
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
+    tail_types(1, 77)

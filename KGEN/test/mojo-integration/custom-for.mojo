@@ -65,7 +65,7 @@ fn printInt(x: Int):
 
 fn main():
     let buffer = __mlir_op.`pop.stack_allocation`[
-        count : (3).value,
+        count : Int(3).value,
         _type : __mlir_type[`!kgen.pointer<`, Int, `>`],
     ]()
     let my_pointer = Pointer[Int](buffer)
