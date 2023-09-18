@@ -1216,6 +1216,8 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
     return {};
   IPInt l = lAttr.getValue();
   IPInt r = rAttr.getValue();
+  IPInt zero(0);
+  IPInt one(1);
 
   IPInt result;
   switch (o) {
@@ -1228,11 +1230,29 @@ OpFoldResult IntLiteralBinop::fold(FoldAdaptor adaptor) {
   case IntLiteralBinopKind::Mul:
     result = l * r;
     break;
-  case IntLiteralBinopKind::Div:
-    result = l / r;
+  case IntLiteralBinopKind::FloorDiv:
+    if (l >= zero == r >= zero || l % r == zero) {
+      result = l / r;
+    } else {
+      result = (l / r) - one;
+    }
     break;
   case IntLiteralBinopKind::Mod:
-    result = l % r;
+    // Python's mod:
+    // The result sign matches the RHS sign.
+    // If the signs match, the value is the same as: sign(abs(l) % abs(r)),
+    // where sign is determined by the RHS sign. If the signs don't match, the
+    // value is the same as: sign((abs(r) - (abs(l) % abs(r))) % abs(r)).
+    {
+      bool signMatch = (l >= zero) == (r >= zero);
+      IPInt L = l.abs();
+      IPInt R = r.abs();
+      result = (L % R).abs();
+      if (!signMatch && result != zero)
+        result = R - result;
+      if (r < zero)
+        result = zero - result;
+    }
     break;
   case IntLiteralBinopKind::Lshift:
     result = l << r;
