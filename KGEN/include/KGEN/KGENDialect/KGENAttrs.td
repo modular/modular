@@ -238,14 +238,22 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata"> {
   }];
 
   let parameters = (ins
-    "StringArrayAttr":$argNames,
+    OptionalArrayRefParameter<"StringAttr">:$argNames,
     OptionalArrayRefParameter<"TypedAttr">:$defaultArguments
   );
   let assemblyFormat = [{
-    `<` $argNames `,` `[` (`]`) : ($defaultArguments^ `]`)? `>`
+    `<` `[` (`]`) : ($argNames^         `]`)? `,`
+        `[` (`]`) : ($defaultArguments^ `]`)? `>`
   }];
 
-  let builders = [AttrBuilder<(ins "unsigned":$numInputs)>];
+  let builders = [
+    AttrBuilder<(ins "unsigned":$numInputs)>,
+    AttrBuilder<(ins "ArrayRef<StringRef>":$argNames,
+                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultArguments), [{
+      auto fn = [&](StringRef name) { return StringAttr::get($_ctxt, name); };
+      return $_get($_ctxt, llvm::map_to_vector(argNames, fn), defaultArguments);
+    }]>
+  ];
 
   let extraClassDeclaration = [{
     /// Returns true if all input argument conventions are pass-by-value, and

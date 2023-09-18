@@ -177,7 +177,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getValueResults() const;
 
     /// Get the function input argument names.
-    StringArrayAttr getArgNames() { return getMetadata().getArgNames(); }
+    ArrayRef<StringAttr> getArgNames() { return getMetadata().getArgNames(); }
     /// Returns true if the argument at this index is a vararg.
     bool isVarArg(size_t index);
     /// Returns true if the argument at this index is a pack vararg.

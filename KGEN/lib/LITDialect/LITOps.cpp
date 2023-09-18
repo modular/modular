@@ -514,7 +514,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 SmallVector<StringAttr> LIT::FuncOp::getArgNames() {
-  SmallVector<StringAttr> argNames(getSignature().getArgNames().getValue());
+  SmallVector<StringAttr> argNames(getSignature().getArgNames());
   for (auto [i, posArgName] : llvm::enumerate(getPosArgNames()))
     argNames[i] = posArgName;
   return argNames;

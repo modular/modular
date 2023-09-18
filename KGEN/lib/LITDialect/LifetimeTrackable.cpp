@@ -128,8 +128,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     break;
   }
 
-  StringArrayAttr argNames = signature.getArgNames();
-  assert(argNames && "missing argument names");
+  ArrayRef<StringAttr> argNames = signature.getArgNames();
   name = argNames[argIdx];
   if (!name.size()) {
     name = StringAttr::get(v.getContext(), "(positional-only argument # " +

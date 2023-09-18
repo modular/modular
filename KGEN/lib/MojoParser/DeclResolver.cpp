@@ -2597,9 +2597,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects,
-      builder.getAttr<FnMetadataAttr>(
-          builder.getAttr<StringArrayAttr>(argNames), defaults),
+      effects, FnMetadataAttr::get(builder.getContext(), argNames, defaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();

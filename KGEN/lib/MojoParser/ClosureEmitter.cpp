@@ -91,8 +91,7 @@ addClosureSelfArgToFunctionSignature(Type closureType,
 
   assert(callMemberArgNames.size() == callMemberInputConventions.size());
   auto metadata =
-      FnMetadataAttr::get(functionType.getContext(),
-                          StringArrayAttr::get(ctx, callMemberArgNames), {});
+      FnMetadataAttr::get(functionType.getContext(), callMemberArgNames, {});
   return SignatureType::get(
       FunctionType::get(functionType.getContext(), callMemberSignatureInputs,
                         functionType.getValueResults()),
@@ -118,8 +117,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  auto dtorMetadata = FnMetadataAttr::get(
-      b.getContext(), b.getAttr<StringArrayAttr>(b.getStringAttr("self")), {});
+  auto dtorMetadata = FnMetadataAttr::get(b.getContext(), {"self"});
   auto dtorSig =
       SignatureType::get(b.getFunctionType(opaquePointer, noneType),
                          ValueInputConvention::OwnedInReg, {}, dtorMetadata);
@@ -140,12 +138,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
           noneType),
       {ValueInputConvention::BorrowedInReg,
        ValueInputConvention::BorrowedInMem},
-      {},
-      FnMetadataAttr::get(
-          b.getContext(),
-          b.getAttr<StringArrayAttr>(SmallVector<StringAttr>{
-              b.getStringAttr("ptrToImpl"), b.getStringAttr("other")}),
-          {}));
+      {}, FnMetadataAttr::get(b.getContext(), {"ptrToImpl", "other"}));
   auto copy = b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr,
                                       cpySignatureType, nullptr);
 
@@ -394,8 +387,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       closureWrapperSignature.getInputParamTypes(),
       closureWrapperSignature.getResultParamTypes(), closureImplSigConventions,
       closureWrapperSignature.getFnEffects(),
-      FnMetadataAttr::get(
-          ctx, StringArrayAttr::get(ctx, closureImplSigArgNames), {}));
+      FnMetadataAttr::get(ctx, closureImplSigArgNames, {}));
 
   std::pair<SignatureType, StringAttr> key(closureImplSignature,
                                            fileModuleOp.getSymNameAttrName());
