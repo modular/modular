@@ -37,7 +37,7 @@ fn testMLIR():
 
   # expected-error @+1 {{'index.constant' op MLIR verification error: 'index.constant' op requires attribute 'value'}}
   var c42e = __mlir_op.`index.constant`[value : 42.0]()
-  var c42 = __mlir_op.`index.constant`[value : (42).value]() # Good
+  var c42 = __mlir_op.`index.constant`[value : Int(42).value]() # Good
 
   # expected-error @+1 {{invalid MLIR attribute:}}
   __mlir_attr.`#index<cmp_predicate xeq>`
@@ -63,7 +63,7 @@ fn EqualInsteadOfColon():
   _ = __mlir_op.`lit.crazy`[value = 42]()
 
   # expected-error @+1 {{expected ':' after dictionary key, not '='}}
-  _ = Int{value = (42).value}
+  _ = Int{value = Int(42).value}
 
   var someInt : Int
   # expected-error @+1 {{unable to infer result type from MLIR operation 'pop.array.gep'}}

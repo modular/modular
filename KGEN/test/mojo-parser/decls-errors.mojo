@@ -105,7 +105,7 @@ fn mutArgAndImplicit(a: Int):
 fn missingColon()  # expected-error {{expected ':' in function definition}}
   # Don't get confused by comments or blank lines!
 
-  var x = 1 # expected-error {{could not find builtin 'Int' type}}
+  var x = 1 # expected-error {{could not find builtin 'IntLiteral' type}}
 
 # expected-error @below {{expected parameter name}}
 # expected-error @below {{unexpected token in expression}}
@@ -320,7 +320,7 @@ fn badPackCalls():
   # expected-error @+1 {{invalid call to 'examplePack': callee expects 2 arguments, but 1 was specified}}
   examplePack[Int, Float32](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'SIMD[{{.*}}f32{{.*}}]'}}
-  examplePack[Int, Float32](1, (2).value)
+  examplePack[Int, Float32](1, Int(2).value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': callee expects 1 input parameter but 0 were provided}}
   examplePack(packArgOverload)
@@ -540,7 +540,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(inout self, elem: BadInit[(1).value]):
+  fn __init__(inout self, elem: BadInit[Int(1).value]):
     var x : __mlir_type[`!pop.simd<`, size, `, Float32>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, Float32>' value to 'BadInit[size]' in assignment}}
     self = x

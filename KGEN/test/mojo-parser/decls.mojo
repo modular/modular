@@ -47,7 +47,7 @@ fn test_shadowing_reference_shadowed():
 
 
 fn fat_signature_types():
-    let x = (4).value
+    let x = Int(4).value
     # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) capturing -> index
     @parameter
     fn g(y: __mlir_type.index) -> __mlir_type.index:
@@ -70,7 +70,7 @@ fn take_closure(
 
 
 fn take_closure_no_param_main():
-    let x = (4).value
+    let x = Int(4).value
 
     @parameter
     fn g(y: __mlir_type.index) -> __mlir_type.index:
@@ -81,12 +81,12 @@ fn take_closure_no_param_main():
     # CHECK: %1 = kgen.rebind %W : !kgen.signature<("y": index borrow) capturing -> index> to !kgen.signature<(index borrow) capturing -> index>
     let W = g
     # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %idx3) : ("g": !kgen.signature<(index borrow) capturing -> index> borrow, "x": index borrow) -> !lit.none
-    take_closure(W, (3).value)
+    take_closure(W, Int(3).value)
 
 
 fn take_closure_with_param_main():
-    let x = (4).value
-    let w = (5).value
+    let x = Int(4).value
+    let w = Int(5).value
 
     @parameter
     fn h[
@@ -100,7 +100,7 @@ fn take_closure_with_param_main():
 
     # CHECK: lit.alias.decl [[BOUND:.*]]: ("y": index borrow) capturing -> index = <bind_signature(:<index>("y": index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
     # CHECK: %0 = kgen.create_closure [("y": index borrow) capturing -> index: [[BOUND]]]()
-    alias Bound = g[(3).value]
+    alias Bound = g[Int(3).value]
 
     # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<("y": index borrow) capturing -> index>
     let value = Bound
@@ -110,7 +110,7 @@ fn take_closure_with_param_main():
 
     # CHECK: %3 = kgen.create_closure [("y": index borrow) capturing -> index: bind_signature(:<index, index>("y": index borrow) capturing -> index *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
     # CHECK: %Q = lit.letreg.decl "Q" = %3 : !kgen.signature<("y": index borrow) capturing -> index>
-    let Q = h[(1).value, (8).value]
+    let Q = h[Int(1).value, Int(8).value]
     take_closure(Q, x)
 
 
@@ -127,7 +127,7 @@ fn take_closure_raises(
 
 
 fn throws_main() raises:
-    let x = (4).value
+    let x = Int(4).value
 
     # CHECK: lit.func *"g(__mlir_type.index)"(%y: index borrow) throws|capturing -> !pop.variant<!Error, index>
     @parameter
@@ -135,7 +135,7 @@ fn throws_main() raises:
         return x
 
     let W = g
-    take_closure_raises(W, (3).value)
+    take_closure_raises(W, Int(3).value)
 
 
 @register_passable
@@ -199,7 +199,7 @@ fn capture_by_copy():
 # CHECK-LABEL:  lit.func @"let_decls()
 def let_decls() -> None:
     # CHECK: %x = lit.letreg.decl "x" = %idx123 : index
-    let x = (123).value
+    let x = Int(123).value
     # CHECK: %0 = kgen.param.constant: {{.*}}FloatLiteral = <{{.*}}"1"{{.*}}>
     # CHECK: %y = lit.letreg.decl "y" = %0 : {{.*}}FloatLiteral
     let y = 1.0
@@ -223,7 +223,7 @@ def let_decls() -> None:
 def var_decls() -> None:
     # Implicit declaration is mutable.
     # CHECK: %x = lit.varlet.decl "x" var
-    x = (123).value
+    x = Int(123).value
     # CHECK: %y = lit.varlet.decl "y" var
     var y: Int
 
@@ -245,7 +245,7 @@ def var_decls() -> None:
     # CHECK-NEXT: [[TMP:%.*]] = pop.load %x : !kgen.pointer<index>
     # CHECK-NEXT: pop.store [[TMP]], %z
     var z = x
-    z = (42).value
+    z = Int(42).value
     # CHECK-NEXT: [[TMP:%.*]] = index.constant 42
     # CHECK-NEXT: pop.store [[TMP]], %z
 
@@ -484,7 +484,7 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %idx3 = index.constant 3
     # CHECK: %0 = kgen.call @"$decls"::@"math(
     # CHECK: lit.return %0 : index
-    return math(a, math((1).value, (2).value))
+    return math(a, math(Int(1).value, Int(2).value))
 
 
 @always_inline("nodebug")
@@ -496,13 +496,13 @@ fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 fn callReturnParam() -> __mlir_type.index:
     # CHECK-NEXT: %0 = kgen.call @"$decls"::@"returnParameter[__mlir_type.index]()"<3>()
     # CHECK-NEXT: return %0
-    return returnParameter[(3).value]()
+    return returnParameter[Int(3).value]()
 
 
 # CHECK: lit.func @"pleaseInline()"() -> index always_inline
 @always_inline
 fn pleaseInline() -> __mlir_type.index:
-    return (1).value
+    return Int(1).value
 
 
 # https://github.com/modularml/modular/issues/8500
@@ -817,37 +817,37 @@ fn usePacks(x: Float32, y: Int):
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!Int]>>
     let c = MyTuple[Int](1)
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = [!FloatLiteral, index]>>
-    let d = MyTuple(3.14, (6).value)
+    let d = MyTuple(3.14, Int(6).value)
     # CHECK: lit.varlet.decl {{.*}} : <@"$decls"::@MyTuple<[[TUPLETS]]: variadic<type> = []>>
     let e = MyTuple()
 
     # CHECK: %[[PACK1:.*]] = kgen.param.constant: !pop.pack<[index]> = <<1>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}}(%[[PACK1]])
-    pack((1).value)
+    pack(Int(1).value)
     # CHECK: %[[PACK2:.*]] = kgen.param.constant: !pop.pack<[index, {{.*}}FloatLiteral, index]> = <<1, {{.*}}3.14{{.*}}, 2>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, {{.*}}FloatLiteral, index]>(%[[PACK2]])
-    pack((1).value, 3.14, (2).value)
+    pack(Int(1).value, 3.14, Int(2).value)
     # CHECK: %[[PACK3:.*]] = kgen.param.constant: !pop.pack<[]> = <<>>
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} []>(%[[PACK3]])
     pack()
 
     # CHECK: %[[PACK4:.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [index, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK4]])
-    pack((1).value, x, y)
+    pack(Int(1).value, x, y)
     # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: %[[PACK5:.*]] = pop.pack.create(%[[INTCTOR]], %x, %y)
     # CHECK: kgen.call @"$decls"::@"pack{{.*}} [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}, !Int]>(%[[PACK5]])
-    pack[Int, Float32, Int]((1).value, x, y)
+    pack[Int, Float32, Int](Int(1).value, x, y)
 
     # CHECK: index.constant 1
     # CHECK-NEXT: [[PACK6:%.*]] = pop.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
     # CHECK-NEXT: kgen.call {{.*}}packBorrowed{{.*}}([[PACK6]])
-    packBorrowed((1).value, x, y)
+    packBorrowed(Int(1).value, x, y)
 
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, @"$builtin"::@"$simd"::@SIMD{{.*}}f32{{.*}}]>
     variadicParameter[Int, Float32](1)
     # CHECK: kgen.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
-    variadicParameter((2).value)
+    variadicParameter(Int(2).value)
 
 
 # CHECK-LABEL: lit.func @"implicit_return_obj
@@ -905,7 +905,7 @@ fn raisesReturnsNone() raises:
 fn raisesReturnsVariant() -> __mlir_type[`!pop.variant<`, Error, `, index>`]:
     return __mlir_op.`pop.variant.create`[
         _type : __mlir_type[`!pop.variant<`, Error, `, index>`]
-    ]((1).value)
+    ](Int(1).value)
 
 
 @value
@@ -1209,7 +1209,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.alias.decl {{.*}}thinref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
     # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction[__mlir_type.index]()", 2)]()
-    nestedFunction[(2).value]()
+    nestedFunction[Int(2).value]()
 
     let value = 0
 
@@ -1265,31 +1265,31 @@ fn returnTup1() -> Tuple[Int]:
   # CHECK-NEXT: %0 = kgen.param.constant: !pop.pack<[!Int]>
   # CHECK-NEXT: %1 = kgen.call{{.*}}__init__
   # CHECK-NEXT: lit.return
-  return (4,)
+  return (Int(4),)
 
 # CHECK-LABEL: lit.func @"returnTup1
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int]>>
 fn returnTup1a() -> (Int,):
-  return (4,)
+  return (Int(4),)
 
 fn returnTup1b() -> (Int,):
-  return 4,
+  return Int(4),
 
 # CHECK-LABEL: lit.func @"returnTup2
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2() -> Tuple[Int, FloatLiteral]:
   # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
-  return (4, 2.0)
+  return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2a
 # CHECK-SAME: -> !kgen.declref<{{.*}}@"$tuple"::@Tuple<{{.*}}Ts: variadic<type> = [!Int, !FloatLiteral]>>
 fn returnTup2a() -> (Int, FloatLiteral):
   # CHECK-NEXT: kgen.param.constant: !pop.pack<[!Int, !FloatLiteral]> = <<#lit.struct<{value = 4}>, #lit.struct<{value: scalar<f64> = "2"}>>>
-  return (4, 2.0)
+  return (Int(4), 2.0)
 
 # CHECK-LABEL: lit.func @"returnTup2b
 fn returnTup2b() -> (Int, FloatLiteral):
-  return 4, 2.0
+  return Int(4), 2.0
 
 ##===----------------------------------------------------------------------===##
 # Global Variables

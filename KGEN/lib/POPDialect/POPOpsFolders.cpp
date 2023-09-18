@@ -1012,6 +1012,7 @@ OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
   std::optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return {};
+  assert(size >= 0 && "size is non-negative");
   SmallVector<TypedAttr> args;
   args.reserve(operands.size());
   for (Attribute operand : operands) {

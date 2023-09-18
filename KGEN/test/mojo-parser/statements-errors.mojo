@@ -223,7 +223,7 @@ fn cannotRaise(err: Error):
 
 # Issue #12358
 fn raise_bad_type() raises:
-    raise 42  # expected-error {{cannot implicitly convert 'Int' value to 'Error' in raised value}}
+    raise 42  # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Error' in raised value}}
 
 # Issue #6909
 # expected-error @below {{expected name for 'alias' declaration}}

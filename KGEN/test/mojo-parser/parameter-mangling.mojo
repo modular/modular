@@ -14,10 +14,10 @@
 
 # COM: This file
 
-# CHECK: lit.alias.decl _18x1_MY_NUMBER: !Int =
+# CHECK: lit.alias.decl _18x1_MY_NUMBER: !IntLiteral =
 alias MY_NUMBER = 42
 
 
 fn foo():
-    # CHECK: lit.alias.decl _23x5_value: !Int =
+    # CHECK: lit.alias.decl _23x5_value: !IntLiteral =
     alias value = MY_NUMBER

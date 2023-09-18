@@ -94,7 +94,7 @@ def generic_fn[a: DType, b: Int](c : Int):
 
 def call_generic[dt: DType]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 input parameters but 3 were provided}}
-  generic_fn[1, dt](57) # expected-error {{cannot pass 'Int' value, parameter expected 'DType'}}
+  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'DType'}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}

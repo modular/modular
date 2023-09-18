@@ -1283,10 +1283,14 @@ OpFoldResult IntLiteralCastOp::fold(FoldAdaptor adaptor) {
     return {};
   unsigned outWidth = 64;
   APInt inval = in.getValue().getAPInt();
-  if (inval.getBitWidth() > outWidth)
-    return {};
-  return IntegerAttr::get(IndexType::get(in.getContext()),
-                          inval.sext(outWidth));
+  // TODO - this should fail if the bitwidth is greater, but our existing parser
+  // just truncates, and we rely on this to represent u64_max as a literal.  We
+  // need to instead have a cast from IntLiteral to SIMD types to not go through
+  // int, then we should detect this issue and raise some kind of error.
+  // if (inval.getBitWidth() > outWidth)
+  //  return {};
+  APInt result = inval.sextOrTrunc(outWidth);
+  return IntegerAttr::get(IndexType::get(in.getContext()), result);
 }
 
 //===----------------------------------------------------------------------===//
