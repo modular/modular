@@ -49,6 +49,7 @@ enum ExprContext {
   EC_FieldInitValue,        // SomeType{value: x}
   EC_DefaultArgument,       // def f(arg = x):
   EC_DefArgumentShadow,     // def f(x: Int):    -> var shadow slot.
+  EC_DefaultParam,          // fn f[p: Int = x]():
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_CondExpr,              // x if a else y
   EC_BoolParamCondition,    // @parameter if x

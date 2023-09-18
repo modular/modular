@@ -70,6 +70,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in default argument";
   case EC_DefArgumentShadow:
     return " in def argument shadow";
+  case EC_DefaultParam:
+    return " in default parameter";
   case EC_BoolCondition:
     return " in boolean condition";
   case EC_CondExpr:

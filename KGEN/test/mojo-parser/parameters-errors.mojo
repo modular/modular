@@ -106,6 +106,12 @@ fn meta_param_then_param_redef[
 def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
+# expected-error @+3 {{could not find builtin 'Tuple' type}}
+# expected-error @+2 {{default parameter values not supported yet}}
+# expected-error @+1 {{non-default parameter follows default parameter}}
+fn default_after_non_default[a: Int = 7, b: Int]():
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Variadic Parameters
 ##===----------------------------------------------------------------------===##
@@ -205,6 +211,10 @@ fn pass_simd():
     alias bar = add_param_arg
     # expected-error @below {{cannot be converted from 'SIMD[f32, bar[8](8)]' to 'SIMD[f32, 8]'}}
     take_simd8(SIMD[DType.float32, bar[8](8)]())
+
+# expected-error @+1 {{unexpected default value for result parameter}}
+fn default_result_param[a: Int -> b: Int = 7]():
+    param_return[5]
 
 ##===----------------------------------------------------------------------===##
 # Alias resolution
