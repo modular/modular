@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(ADT)
+add_subdirectory(Cryptography)
 add_subdirectory(Entitlements)
 add_subdirectory(HTTP)
 add_subdirectory(MArchTarget)
