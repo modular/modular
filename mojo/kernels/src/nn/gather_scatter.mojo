@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, min
+from math import div_ceil, min, max
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
@@ -26,6 +26,7 @@ from utils.optional_param import OptionalParamInt
 
 from memory import stack_allocation, memset_zero
 from MOGG import reshape
+from algorithm import elementwise
 
 
 ## gather_reduce_2D_axis_1
@@ -431,6 +432,216 @@ fn gather[
 
 
 # ===----------------------------------------------------------------------===#
+# scatter_nd op (general -- TODO: test perf. vs. existing before removing old)
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn scatter_nd_generator[
+    reduce_fn: fn[type: DType, width: Int] (
+        SIMD[type, width], SIMD[type, width]
+    ) capturing -> SIMD[type, width],
+    type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    updates_rank: Int,
+](
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), type
+    ],
+    output: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    """
+    Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
+
+    Parameters:
+        reduce_fn: Reduction function to apply: none (default), add, mul, max,
+                   min.
+        type: Type of data, updates, and output tensors.
+        data_rank: Rank of input (data) tensor (data_rank >= 1).
+        indices_rank: Rank of input (data) tensor (indices_rank >= 1).
+        updates_rank: Rank of updates tensor (updates_rank = data_rank +
+                      indices_rank - indices_shape[-1] - 1).
+
+    Args:
+        data: Tensor of rank data_rank >= 1.
+        indices: Tensor of rank indices_rank containing indices for the scatter
+                 operation.
+        updates: Tensor containing values to update output tensor based on
+                 indices tensor.
+        output: Tensor of rank data_rank, shaped the same as data tensor.
+        out_chain: The OutputChainPtr used to mark competion or error of the task.
+    """
+
+    if data.get_shape() != output.get_shape():
+        out_chain.mark_error(
+            "Input and output shapes in scatter_nd must be the same."
+        )
+
+    if (
+        len(updates.get_shape())
+        != data_rank + indices_rank - indices.get_shape()[indices_rank - 1] - 1
+    ):
+        out_chain.mark_error(
+            "updates rank must be: data_rank + indices_rank -"
+            " indices_shape[-1] - 1"
+        )
+
+    let output_flat = output.flatten()
+    let data_flat = data.flatten()
+    let updates_flat = updates.flatten()
+    memcpy(output_flat, data_flat)
+
+    let data_shape = data.get_shape()
+    let indices_shape = indices.get_shape()
+    let last_shape_of_indices = indices_shape[indices_rank - 1]
+
+    # idx[] stores the index to where to scatter the requested elements.
+    let idx_ptr = DTypePointer[DType.index].alloc(last_shape_of_indices)
+    let idx = NDBuffer[1, DimList.create_unknown[1](), DType.index](
+        idx_ptr, last_shape_of_indices
+    )
+
+    # Depending on r_minus_m = data_rank - last_shape_of_indices,
+    # we will be copying (gather):
+    #   element (r_minus_m = 0),
+    #   row (r_minus_m = 1),
+    #   sheet (r_minus_m = 2),
+    #   cuboid (r_minus_m = 3), etc.
+    let r_minus_m = data_rank - last_shape_of_indices
+    # Calculate how many elements to copy (this is from the innermost
+    # dimensions, and is continuous memory locations).
+    var count_copy = 1
+    for i in range(r_minus_m):
+        count_copy = count_copy * data_shape[data_rank - 1 - i]
+
+    # Stores the full index on output, where to copy updates to.
+    let output_index_tensor = NDBuffer[
+        1,
+        DimList(data_rank),
+        DType.index,
+    ]().stack_allocation()
+    # Zeroing here to avoid doing it selectively within the nested loop below.
+    output_index_tensor.zero()
+
+    # Stores the full index on updates, where to copy from.
+    let updates_index_tensor = NDBuffer[
+        1,
+        DimList(updates_rank),
+        DType.index,
+    ]().stack_allocation()
+    # Zeroing here to avoid doing it selectively within the nested loop below.
+    updates_index_tensor.zero()
+
+    @parameter
+    fn update_func[
+        simd_width: Int, _rank: Int
+    ](_indices_coords: StaticIntTuple[_rank]):
+        let indices_coords = rebind[StaticIntTuple[_rank]](_indices_coords)
+
+        # Construct the full index on updates tensor, i.e., where to copy from.
+        for dim in range(_rank):
+            updates_index_tensor[dim] = indices_coords[dim]
+
+        # Construct the full index on output, i.e., where to copy updates to.
+        for dim in range(last_shape_of_indices):
+            # Size of current dimension on data.
+            # Used to compare to index on this dimension (idx_on_axis).
+            let input_ax_dim = data_shape[dim]
+            let idx_on_axis = indices[indices_coords[dim], dim]
+            # Index (from indices tensor) needs to be [-s, s), where s is the
+            # max index of given dimension.
+            debug_assert(
+                -Int64(input_ax_dim)
+                <= idx_on_axis.cast[DType.int64]()
+                < Int64(input_ax_dim),
+                (
+                    "Indices value must be in range [-data_shape[axis],"
+                    " data_shape[axis])"
+                ),
+            )
+            # Handle conversion of negative indices.
+            let pos_idx_on_axis = (
+                idx_on_axis.__int__() if idx_on_axis
+                >= 0 else (idx_on_axis + input_ax_dim).__int__()
+            )
+            output_index_tensor[dim] = pos_idx_on_axis
+
+        # Calculate the updates_offset from where to copy the updates.
+        var updates_offset = 0
+        for i in range(updates_rank):
+            updates_offset = (
+                updates_offset
+                + updates.stride(i) * updates_index_tensor[i].to_int()
+            )
+
+        # Calculate the output_offset to where to copy the updates.
+        var output_offset = 0
+        for i in range(data_rank):
+            output_offset = (
+                output_offset
+                + output.stride(i) * output_index_tensor[i].to_int()
+            )
+
+        # Perform the actual copy of element/slice/sheet/cuboid/etc.
+        # Also handling any reduction operation reduce_fn.
+        for i in range(count_copy):
+            output_flat[output_offset + i] = reduce_fn[type, 1](
+                output_flat[output_offset + i], updates_flat[updates_offset + i]
+            )
+
+    # TODO: SEE: simd_width > 1
+    var iter_shape = StaticIntTuple[indices_rank - 1]()
+    for i in range(len(indices.get_shape()) - 1):
+        iter_shape[i] = indices.get_shape()[i]
+    elementwise[indices_rank - 1, 1, update_func](iter_shape, out_chain)
+
+    idx_ptr.free()
+
+
+@always_inline
+fn scatter_nd[
+    type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    updates_rank: Int,
+](
+    data: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    indices: NDBuffer[
+        indices_rank, DimList.create_unknown[indices_rank](), DType.int64
+    ],
+    updates: NDBuffer[
+        updates_rank, DimList.create_unknown[updates_rank](), type
+    ],
+    output: NDBuffer[data_rank, DimList.create_unknown[data_rank](), type],
+    out_chain: OutputChainPtr,
+):
+    """Scatter_nd operation without any reduction."""
+
+    @always_inline
+    @parameter
+    fn use_update[
+        _type: DType, width: Int
+    ](input_val: SIMD[_type, width], update_val: SIMD[_type, width]) -> SIMD[
+        _type, width
+    ]:
+        return update_val
+
+    scatter_nd_generator[
+        use_update,
+        type,
+        data_rank,
+        indices_rank,
+        updates_rank,
+    ](data, indices, updates, output, out_chain)
+
+
+# ===----------------------------------------------------------------------===#
 # ScatterNd
 # ===----------------------------------------------------------------------===#
 
@@ -559,7 +770,7 @@ fn scatter_nd[
     ],
     out_chain: OutputChainPtr,
 ):
-    """ScatterND operation without any reduction"""
+    """ScatterND operation without any reduction."""
 
     @always_inline
     fn identity_reduction(
@@ -948,18 +1159,19 @@ fn gather_nd[
 
     Parameters:
         type: Type of data tensor.
+        indices_type: Type of indices tensor.
         data_rank: Rank of data tensor (data_rank >= 1).
         indices_rank: Rank of indices tensor (indices_rank >= 1).
         output_rank: Rank of output tensor.
         batch_dims: Number of batch dimensions. The gather of indexing
-                    starts from dimension of data[batch_dims:]
+                    starts from dimension of data[batch_dims:].
 
     Args:
         data: Tensor of rank data_rank >= 1.
         indices: Tensor of rank indices_rank >= 1. All index values are expected
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
-        output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1.
+        output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
 
     """
 
