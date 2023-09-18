@@ -25,7 +25,10 @@ lit.func @varDecl(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.generator @varDecl2
 // CHECK-SAME:  (%[[ARG0:.*]]: index) {
-// TODO.
+// CHECK-NEXT: kgen.param.declare alife: lifetime = <#lit.lifetime>
+// CHECK-NEXT: %0 = pop.stack_allocation 1 x index
+// CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !kgen.pointer<index> to !lit.ref<mut index, alife>
+// CHECK-NEXT: kgen.return
 lit.func @varDecl2(%arg0: index) {
   %a = lit.varlet.decl2 "a" var : !lit.ref<mut index, alife>
   kgen.return
