@@ -159,6 +159,9 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 OptionalParseResult parseOptionalSignature(AsmParser &p, Type &signature);
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
 ParseResult parseSignature(AsmParser &p, Type &signature);
+ParseResult parseSignatureValues(AsmParser &p, function_ref<Type()> parseArg,
+                                 FunctionType &values, FnEffects &effects,
+                                 bool optionalResultList);
 ParseResult parseSignatureValues(AsmParser &p,
                                  ParamDeclArrayAttr resultParamDecls,
                                  FunctionType &functionType,
@@ -170,6 +173,9 @@ inline void printSignature(AsmPrinter &p, Operation *op, Type signatureType) {
 void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
                           SignatureType signature);
+void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
+                          FunctionType functionType, SignatureType signature,
+                          bool optionalResultList);
 
 /// Parse a function signature with optional metadata. In the assembly format,
 /// the SSA value names are optional in the argument list. If they are present,
@@ -187,12 +193,8 @@ ParseResult parseFunctionSignature(OpAsmParser &p,
 void printFunctionSignature(OpAsmPrinter &p, Region *region,
                             ArrayRef<ParamDeclAttr> inputParams,
                             ArrayRef<ParamDeclAttr> resultParams,
-                            FunctionType functionType, SignatureType signature);
-void printFunctionSignature(OpAsmPrinter &p,
-                            function_ref<void(unsigned i)> printElt,
-                            ArrayRef<ParamDeclAttr> inputParams,
-                            ArrayRef<ParamDeclAttr> resultParams,
-                            FunctionType functionType, SignatureType signature);
+                            FunctionType functionType, SignatureType signature,
+                            bool printNames = false);
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);

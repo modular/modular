@@ -533,12 +533,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(getSymName());
 
   // Print the function arguments.
-  SmallVector<StringAttr> argNames = getArgNames();
-  auto printElt = [&](unsigned i) {
-    p.printRegionArgument(getBodyRegion().getArgument(i));
-  };
-  printFunctionSignature(p, printElt, getInputParams(), getResultParams(),
-                         getFunctionType(), getSignature());
+  printFunctionSignature(p, &getBodyRegion(), getInputParams(),
+                         getResultParams(), getFunctionType(), getSignature(),
+                         /*printNames=*/true);
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());

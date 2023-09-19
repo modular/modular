@@ -24,12 +24,13 @@ def LITDialect : Dialect {
 
   let cppNamespace = "::M::KGEN::LIT";
   let dependentDialects = ["KGENDialect", "POP::POPDialect"];
-  let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
   let usePropertiesForAttributes = 0;
   let hasConstantMaterializer = 1;
 
   let extraClassDeclaration = [{
+    Type parseType(DialectAsmParser &p) const override;
+    void printType(Type type, DialectAsmPrinter &p) const override;
     void registerAttributes();
   }];
 }
