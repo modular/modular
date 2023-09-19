@@ -149,7 +149,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
       // Project self to the right field and store the RValue.
       auto fieldPtr = builder.create<StructGEPOp>(selfArg, field);
       SyntheticNode srcExpr(structDecl.getLoc());
-      emitter.emitStoreToLValue({argVal, &srcExpr}, SLValue(fieldPtr),
+      emitter.emitStoreToLValue({argVal, &srcExpr}, MLValue(fieldPtr),
                                 EC_AttributeRefBase);
       ++idx;
     }
@@ -217,7 +217,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
       auto srcFieldOp = b.create<StructGEPOp>(copyExisting, fieldOp);
       CValue src =
           isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-      SLValue destination(targetFieldOp);
+      MLValue destination(targetFieldOp);
       SyntheticNode srcExpr(location);
       emitter.emitStoreToLValue({src, &srcExpr}, destination,
                                 EC_AttributeRefBase);

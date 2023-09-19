@@ -180,12 +180,12 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return cast<LValue>(representation).getRValueType();
 }
 
-/// If this ValueDest specifies an SLValue that will be returned by
-/// getSLValueForResult with the specified type, return it.  Otherwise return
+/// If this ValueDest specifies an MLValue that will be returned by
+/// getMLValueForResult with the specified type, return it.  Otherwise return
 /// null.  This does not modify the ValueDest.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
-SLValue ValueDest::getDefinedSLValueIfExists(ASTType resultType,
+MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
                                              ExprEmitter &emitter) {
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
@@ -200,7 +200,7 @@ SLValue ValueDest::getDefinedSLValueIfExists(ASTType resultType,
 
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
-    if (auto slValue = lValue.getIfSLValue()) {
+    if (auto slValue = lValue.getIfMLValue()) {
       if (lValue.getRValueType().isEqualCanon(resultType))
         return slValue;
     }
@@ -224,10 +224,10 @@ SLValue ValueDest::getDefinedSLValueIfExists(ASTType resultType,
 /// will not consume the ValueDest, so any user should reemit the ultimate
 /// value through it with emitResult.
 ///
-/// NOTE: This needs to be kept in sync with getDefinedSLValueIfExists.
+/// NOTE: This needs to be kept in sync with getDefinedMLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
-                                     bool requireSLValue,
+                                     bool requireMLValue,
                                      ExprEmitter &emitter) {
   // If we are inferring the type for a var or let declaration, then we can
   // always succeed and consume this ValueDest.
@@ -240,7 +240,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       assert(isa<UnresolvedType>(varOp.getType().getElementAsType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(PointerType::get(materializedType));
-      return SLValue(varOp);
+      return MLValue(varOp);
     }
     auto globalOp = cast<GlobalVarDeclOp>(opDest);
     assert(isa<UnresolvedType>(globalOp.getType()) &&
@@ -274,7 +274,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         lValue.getRValueType().isEqualCanon(resultType)) {
       // If the client requires a stored LValue and we don't have one, don't
       // consume it.
-      if (!requireSLValue || lValue.getIfSLValue()) {
+      if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
@@ -312,34 +312,34 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   // We model this as an immutable let value with a separately stored
   // initializer.  We return an LValue for it because this method is used
   // for the initialization.
-  return SLValue(emitter.builder->create<VarLetDeclOp>(
+  return MLValue(emitter.builder->create<VarLetDeclOp>(
       emitter.translateLocation(loc), declIRType, nameAttr, /*isVar*/ true,
       /*isSynth=*/true));
 }
 
-/// Return an SLValue for this destination of the specified type that we can
+/// Return an MLValue for this destination of the specified type that we can
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest. If the underlying value is a DLValue, attempt to coerce
-/// it to an SLValue if possible.
-SLValue ValueDest::getSLValueForResult(SMLoc loc, ASTType resultType,
+/// it to an MLValue if possible.
+MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
                                        ExprEmitter &emitter) {
   // Save the operation if it is one so we can query the type of DLValue.
   auto *op = dyn_cast<Operation *>(representation);
 
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
-                         /*requireSLValue=*/true, emitter);
+                         /*requireMLValue=*/true, emitter);
 
   // Only a GlobalDLValue is possible at the moment.
   if (lv.getIfDLValue()) {
-    // Get an SLValue by taking the address of the global.
+    // Get an MLValue by taking the address of the global.
     auto global = cast<GlobalVarDeclOp>(op);
-    lv = SLValue(emitter.builder->create<GlobalVarRefOp>(
+    lv = MLValue(emitter.builder->create<GlobalVarRefOp>(
         emitter.translateLocation(loc), global));
   }
 
-  assert(!lv || lv.getIfSLValue());
-  return lv.getIfSLValue();
+  assert(!lv || lv.getIfMLValue());
+  return lv.getIfMLValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -460,8 +460,8 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     if (!value.ir)
       return {};
   }
-  // Handle SLValue's by decaying to MBValue.
-  if (auto lv = value.ir.getIfSLValue())
+  // Handle MLValue's by decaying to MBValue.
+  if (auto lv = value.ir.getIfMLValue())
     value.ir = MBValue(lv);
 
   // If the value being materialized is an unresolved overload set, try to
@@ -605,10 +605,10 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-MBValue ExprEmitter::emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
+MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                                          ExprContext context) {
   // PValues don't have lifetimes and are immortal with respect to the compiler.
-  // Emit a memcpy into the SLValue. Creating an SSA value of the memory-primary
+  // Emit a memcpy into the MLValue. Creating an SSA value of the memory-primary
   // type for the sake of memcpy is safe because the bulk store will ensure the
   // variable does not get promoted off the stack, and after struct lowering,
   // the type is erased down to its MLIR constituents anyways.
@@ -634,7 +634,7 @@ MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
       PointerType::get(pvalue.getType()),
       StringAttr::get(getContext(), "anonymous*"), /*isVar=*/false,
       /*isSynth=*/true);
-  if (!emitPValueToSLValue({pvalue, value.expr}, SLValue(var), context))
+  if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
     return {};
   return MRValue(var);
 }
@@ -804,8 +804,8 @@ static AnyValue rebindValue(AnyValue value, Type newType, SMLoc loc,
     return emitter.builder->create<RebindOp>(emitter.translateLocation(loc),
                                              newType, v);
   };
-  if (auto slValue = value.getIfSLValue())
-    return SLValue(rebind(slValue));
+  if (auto slValue = value.getIfMLValue())
+    return MLValue(rebind(slValue));
   if (auto mrValue = value.getIfMRValue())
     return MRValue(rebind(mrValue));
   if (auto mbValue = value.getIfMBValue())
@@ -943,7 +943,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // LValue.  Emit the dest to figure out where to store it.
   LValue destLV = dest.getLValueForResult(expr->getLoc(), rvalueType,
                                           /*allowIncompatibleTypes=*/true,
-                                          /*requireSLValue=*/false, *this);
+                                          /*requireMLValue=*/false, *this);
   if (!destLV)
     return {};
 
@@ -1014,7 +1014,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
     return dlValue->emitLoad(dest, *this);
 
   // Decay a stored LValue to an MBValue.
-  auto slValue = value.ir.getIfSLValue();
+  auto slValue = value.ir.getIfMLValue();
   assert(slValue && "unknown lvalue kind");
 
   // Emit a non-consuming __copyinit__ or load of the value.
@@ -1053,12 +1053,12 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
   case StructDeclOp::RP_MemoryOnly:
     // Memory-only __copyinit__ has signature: `(inout self, existing: Self)`.
-    SLValue destBuffer = dest.getSLValueForResult(exprLoc, valueType, *this);
+    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};
 
     if (auto pValue = value.ir.getIfPValue())
-      return emitPValueToSLValue({pValue, value.expr}, destBuffer,
+      return emitPValueToMLValue({pValue, value.expr}, destBuffer,
                                  dest.context);
 
     if (!valueType.isCopyable(exprLoc, shared)) {
@@ -1100,8 +1100,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   if (!address)
     address = value.ir.getIfMRValue();
   if (!address)
-    address = value.ir.getIfSLValue();
-  assert(address && "Unknown BValue/RValue/SLValue");
+    address = value.ir.getIfMLValue();
+  assert(address && "Unknown BValue/RValue/MLValue");
   Value result =
       builder->create<POP::LoadOp>(value.expr->getLocation(*this), address,
                                    /*alignment=*/std::nullopt);
@@ -1144,8 +1144,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return emitBValue(value, context, {});
   }
 
-  // Otherwise we have an SLValue destination.
-  SLValue destPtr = destLV.getIfSLValue();
+  // Otherwise we have an MLValue destination.
+  MLValue destPtr = destLV.getIfMLValue();
   assert(destPtr && "No other known LValue");
 
   ASTType valueType = value.ir.getRValueType();
@@ -1182,7 +1182,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   }
 
   if (auto pvalue = value.ir.getIfPValue())
-    return emitPValueToSLValue({pvalue, value.expr}, destPtr, context);
+    return emitPValueToMLValue({pvalue, value.expr}, destPtr, context);
 
   // Otherwise, assign with a move constructor.  We own the CRValue, so prefer
   // to use __moveinit__ if present.
@@ -1538,7 +1538,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     else
       mlirValue = bvalue.getIfSBValue();
     value = bvalue;
-  } else if (auto lvalue = decl.getIfSLValue()) {
+  } else if (auto lvalue = decl.getIfMLValue()) {
     mlirValue = lvalue;
     value = lvalue;
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
@@ -1546,7 +1546,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
         translateLocation(expr->getLoc()), globalOp);
     mlirValue = ref;
     if (globalOp.getIsVar())
-      value = SLValue(mlirValue);
+      value = MLValue(mlirValue);
     else
       value = MBValue(mlirValue);
   } else {
@@ -1554,7 +1554,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
         << spelling << "\" as a value isn't supported yet" << expr->getRange();
     return {};
   }
-  if (auto slValue = value.getIfSLValue()) {
+  if (auto slValue = value.getIfMLValue()) {
     if (ASTType(slValue.getRValueType())
             .isRegisterPassable(expr->getLoc(), shared)) {
       capture = Capture(value, value.getRValueType(), value.getRValueType());
@@ -1619,7 +1619,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
                                             /*isVar=*/false, /*isSynth=*/false);
 
   // Load the entire base LValue into tmpDecl.
-  ValueDest tmpValueDest(SLValue(tmpDecl), EC_AttributeRefBase);
+  ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
   auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
     tmpValueDest.resetForError();
@@ -1629,7 +1629,7 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // Store into the field.
   auto fieldPtr =
       emitter.builder->create<StructGEPOp>(loc, tmpDecl, getField());
-  emitter.emitStoreToLValue(value, SLValue(fieldPtr), EC_AttributeRefBase);
+  emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transfering ownership as an MRValue.
   baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
@@ -1740,7 +1740,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
-    LValue lv = lvalue.ir.getIfSLValue();
+    LValue lv = lvalue.ir.getIfMLValue();
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 
@@ -1756,7 +1756,7 @@ CValue GlobalDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   assert(emitter.builder && "cannot reference dynamic value");
   auto global = emitter.builder->create<GlobalVarRefOp>(
       emitter.translateLocation(loc), getGlobal());
-  return SLValue(global);
+  return MLValue(global);
 }
 
 void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
@@ -1764,5 +1764,5 @@ void GlobalDLValue::emitStore(ASTExprAnd<CValue> value,
   assert(emitter.builder && "cannot reference dynamic value");
   auto global = emitter.builder->create<GlobalVarRefOp>(
       emitter.translateLocation(loc), getGlobal());
-  emitter.emitStoreToLValue(value, SLValue(global), EC_Assignment);
+  emitter.emitStoreToLValue(value, MLValue(global), EC_Assignment);
 }

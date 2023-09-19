@@ -425,7 +425,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // subsequent uses find this one.
     emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
-    return emitter.emitResult(SLValue(varDecl), this, dest);
+    return emitter.emitResult(MLValue(varDecl), this, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -518,7 +518,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       auto ptrType = PointerType::get(value.getRValueType());
       Value tmp = emitter.builder->create<POP::StackAllocationOp>(
           parentFunc.getLoc(), ptrType, 1);
-      ValueDest copyDest(SLValue(tmp), EC_CaptureCopy);
+      ValueDest copyDest(MLValue(tmp), EC_CaptureCopy);
       DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
       if (DebugInfo::DIScopeAttr funcSpAttr = parentFunc.getLocScope())
         diScopeGuard = emitter.shared.diBuilder->pushScopeGuard(funcSpAttr);
@@ -600,11 +600,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 
   // If the base is an stored lvalue, then we can return an lvalue to the
   // field.
-  if (SLValue baseLV = base.ir.getIfSLValue()) {
+  if (MLValue baseLV = base.ir.getIfMLValue()) {
     assert(emitter.builder && "Must have a builder given dynamic base value");
     auto fieldPtr =
         emitter.builder->create<StructGEPOp>(mlirLoc, baseLV, fieldOp);
-    return emitter.emitCResult(SLValue(fieldPtr), expr, dest);
+    return emitter.emitCResult(MLValue(fieldPtr), expr, dest);
   }
 
   // We know the base.ir is a BValue or CRValue, decay to BValue.
@@ -2169,12 +2169,12 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an SLValue to emit into, it may be
+  // the ValueDest.  It may specify an MLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an SLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  SLValue destBuffer = dest.getSLValueForResult(getLoc(), resultType, emitter);
+  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder = falseBuilder;
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2230,7 +2230,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
 
   // The transfer expression expects the result to be a ownable value that it
   // can launder into an RValue.
-  if (auto sl = argValue.getIfSLValue()) {
+  if (auto sl = argValue.getIfMLValue()) {
     if (auto result = handleLifetimeEnd(sl, /*isRegister=*/false))
       return result;
     // TODO: When we support explicit move operations and have an lvalue, we
@@ -2460,12 +2460,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // If we have a memory only type, we have to handle the various issues with
-  // the ValueDest.  It may specify an SLValue to emit into, it may be
+  // the ValueDest.  It may specify an MLValue to emit into, it may be
   // ambiguous (like a call argument) or it may even be something like a
-  // DLValue.  We handle this by projecting the ValueDest to an SLValue if we
+  // DLValue.  We handle this by projecting the ValueDest to an MLValue if we
   // can, but otherwise using a scratch buffer if not.
   emitter.builder->setInsertionPoint(ifOp);
-  SLValue destBuffer = dest.getSLValueForResult(getLoc(), resultType, emitter);
+  MLValue destBuffer = dest.getMLValueForResult(getLoc(), resultType, emitter);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
@@ -2671,12 +2671,12 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
-  // __get_lvalue_as_address(someSLValue) returns a pop.pointer.
+  // __get_lvalue_as_address(someMLValue) returns a pop.pointer.
   if (kind == kGetLValueAsAddress) {
     LValue result = emitter.emitExprLValue(subExpr, EC_Unknown);
     if (!result)
       return {};
-    SLValue resultPtr = result.getIfSLValue();
+    MLValue resultPtr = result.getIfMLValue();
     if (!resultPtr) {
       emitter.emitError(getLoc(),
                         "cannot use a dynamic LValue in this operator")
@@ -2687,7 +2687,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultPtr);
 
-    // Return the SLValue as an SRValue since the pointer itself is the
+    // Return the MLValue as an SRValue since the pointer itself is the
     // result.
     return emitter.emitResult(SRValue(resultPtr), this, dest);
   }
@@ -2718,7 +2718,7 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
     return emitter.emitResult(MRValue(exprVal), this, dest);
   }
 
-  // These both return an SLValue with different ownership semantics.
+  // These both return an MLValue with different ownership semantics.
   // __get_address_as_lvalue(ptr) & __get_address_as_uninit_lvalue(ptr)
   assert(kind == kGetAddressAsLValue || kind == kGetAddressAsUninitLValue);
   if (needsLifetime)
@@ -2726,5 +2726,5 @@ AnyValue AddressConvertNode::emitIR(ValueDest &dest,
         getLocation(emitter), exprVal,
         /*isLiveOnEntry=*/kind == kGetAddressAsLValue, /*isLiveOnExit=*/true);
 
-  return emitter.emitResult(SLValue(exprVal), this, dest);
+  return emitter.emitResult(MLValue(exprVal), this, dest);
 }

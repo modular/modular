@@ -104,7 +104,7 @@ void ASTDecl::dump() const {
         op->print(llvm::errs(), mlir::OpPrintingFlags().printGenericOpForm());
         llvm::errs() << "\n";
       })
-      .Case<PValue, SRValue, MRValue, SBValue, MBValue, SLValue>(
+      .Case<PValue, SRValue, MRValue, SBValue, MBValue, MLValue>(
           [](auto v) { v.dump(); })
       .Default([](DeclIRValue v) { llvm::errs() << "<null decl>\n"; });
 }
@@ -118,7 +118,7 @@ MLIRContext *ASTDecl::getContext() const {
     return dr.getContext();
   if (auto value = dyn_cast_or_null<MRValue>(irValue))
     return value.getContext();
-  return cast<SLValue>(getIRValue()).getContext();
+  return cast<MLValue>(getIRValue()).getContext();
 }
 
 /// If this is an RValue, return it otherwise return null.
@@ -231,7 +231,7 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   if (auto rv = decl->getIfRValue()) {
     if (rv.getType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
-  } else if (auto lv = decl->getIfSLValue()) {
+  } else if (auto lv = decl->getIfMLValue()) {
     if (lv.getRValueType().isTypeCheckErrorType())
       decl->hasReferenceError = true;
   } else if (auto bv = decl->getIfBValue()) {
@@ -2752,7 +2752,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Create a mutable VarDecl for a function argument that captures its value.
 /// argValue specifies the argument with the correct valuetype.
-static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
+static MLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
                                     ASTDecl &parentDecl, OpBuilder &builder,
                                     SMLoc loc, SharedState &shared) {
   Location mloc = shared.translateLocation(loc);
@@ -2764,18 +2764,17 @@ static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   std::string lifetimeName = "`" + argName.str();
   auto varDecl =
       builder.create<VarLetDecl2Op>(mloc, declType, argName, lifetimeName,
-                                    /*isVar*/ true,
-                                    /*isSynthesized*/ true);
+                                    /*isVar*/ true, /*isSynthesized*/ true);
   // TODO: Maintain the reference in the type system.
   auto varPtr = builder.create<RefToPointerOp>(mloc, varDecl);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  ValueDest dest(SLValue(varPtr), EC_DefArgumentShadow);
+  ValueDest dest(MLValue(varPtr), EC_DefArgumentShadow);
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
 
-  return SLValue(varPtr);
+  return MLValue(varPtr);
 };
 
 /// This adds a default return (lit.return of None, potentially converted
@@ -2811,7 +2810,7 @@ static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
       // Emit `object()` into the memory type return slot.
       ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
       emitter.builder = b;
-      ValueDest resultDest(SLValue(func.getArgument(0)), EC_ReturnValue);
+      ValueDest resultDest(MLValue(func.getArgument(0)), EC_ReturnValue);
       // Create a dummy node to pass down.
       SyntheticNode locExpr(funcDecl.getLoc());
       CValue result = emitter.emitConstructorCall(
@@ -2864,7 +2863,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       if (auto rv = argDecl.getIfRValue()) {
         if (rv.getType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
-      } else if (auto lv = argDecl.getIfSLValue()) {
+      } else if (auto lv = argDecl.getIfMLValue()) {
         if (lv.getRValueType().isTypeCheckErrorType())
           argDecl.hasReferenceError = true;
       } else if (auto bv = argDecl.getIfBValue()) {
@@ -2895,7 +2894,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     case ValueInputConvention::OwnedInMem:
       // OwnedInMem passes ownership of the argument into the callee so we
       // can directly mutate it if we want to.
-      argIRValue = SLValue(bbArg);
+      argIRValue = MLValue(bbArg);
       break;
 
     case ValueInputConvention::OwnedInReg:

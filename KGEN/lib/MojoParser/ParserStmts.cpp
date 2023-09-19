@@ -609,7 +609,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   SignatureType declSig = decl.getSignature();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
-    ValueDest resultDest(SLValue(decl.getArgument(0)), EC_ReturnValue);
+    ValueDest resultDest(MLValue(decl.getArgument(0)), EC_ReturnValue);
     if (!operandExpr->emitIR(resultDest, emitter)) {
       resultDest.resetForError();
       return success();
@@ -983,7 +983,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // For Loop condition: if the length of the range is greater than zero,
   // continue. Otherwise break
   AnyValue currentLength = getEmitter().emitNamedMethodCall(
-      "__len__", CallOperands({{SLValue(rangeRef), seqExpr}}),
+      "__len__", CallOperands({{MLValue(rangeRef), seqExpr}}),
       ValueDest::none(), CallSyntax::kImplicitConvert, seqExpr);
   CValue lengthIndex =
       getEmitter().emitMLIRIndex({currentLength, seqExpr}, EC_ForIterator);
@@ -1010,7 +1010,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   builder.setInsertionPointAfter(condOp);
   ValueDest ivarDest(varDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{SLValue(rangeRef), seqExpr}}), ivarDest,
+          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), ivarDest,
           CallSyntax::kImplicitConvert, seqExpr)) {
     ivarDest.resetForError();
     return {};
@@ -1195,7 +1195,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
     if (!useLexicalScope && !decls.empty()) {
       SMLoc declLoc = decls[0]->getLoc();
       AnyValue emitted = getEmitter().emitDeclReference(name.getValue(), decls);
-      if (auto slval = emitted.getIfSLValue()) {
+      if (auto slval = emitted.getIfMLValue()) {
         enterDest = ValueDest(slval, EC_WithContextMgr);
       } else {
         (emitError(targetLoc)
@@ -1238,7 +1238,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // Inject the target into our scope if asked for.
   if (addDecl) {
     auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
-        SLValue(targetDecl), targetDecl.getNameAttr(), targetLoc, curDeclScope);
+        MLValue(targetDecl), targetDecl.getNameAttr(), targetLoc, curDeclScope);
     if (!enterResult)
       targetDeclResolved.hasReferenceError = true;
   }
@@ -1882,7 +1882,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     ExprContext exprContext = varOp.getIsVar() ? EC_VarInit : EC_LetInit;
     if (parsedType) {
       varOp.getResult().setType(PointerType::get(parsedType));
-      dest = ValueDest(SLValue(varOp), exprContext);
+      dest = ValueDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.
