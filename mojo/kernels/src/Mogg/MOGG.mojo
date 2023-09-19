@@ -8,6 +8,7 @@ from math import (
     abs,
     add,
     ceil,
+    cos,
     div,
     div_ceil,
     equal,
@@ -33,6 +34,7 @@ from math import (
     round,
     roundeven,
     select,
+    sin,
     sqrt,
     sub,
     tanh,
@@ -155,6 +157,7 @@ fn MOGGExport():
     alias _concat_shape = concat_shape
     alias _conv_shape = conv_shape
     alias _conv = conv
+    alias _cos = cos
     alias _div = div
     alias _erf = erf
     alias _exp = exp
@@ -201,6 +204,7 @@ fn MOGGExport():
     alias _rsqrt = rsqrt
     alias _select = select
     alias _sigmoid = sigmoid
+    alias _sin = sin
     alias _sqrt = sqrt
     alias _sub = sub
     alias _tanh = tanh
