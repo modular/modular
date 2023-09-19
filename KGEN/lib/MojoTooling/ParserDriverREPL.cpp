@@ -860,7 +860,8 @@ MojoParserContext::codeCompleteREPLExpresion(
         results = MojoParserContext::codeComplete(
             llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
             impl->sharedState.getContext(), impl->sharedState.runtime,
-            impl->sharedState.options, parserCallback);
+            impl->sharedState.options, parserCallback,
+            /*disableModuleCaching=*/true);
       });
 
   // Filter out results pointing to internal decls.
@@ -890,7 +891,8 @@ MojoParserContext::signatureHelpREPLExpresion(
         result = MojoParserContext::signatureHelp(
             llvm::MemoryBufferRef(wrappedExprText, ""), position,
             impl->sharedState.getContext(), impl->sharedState.runtime,
-            impl->sharedState.options, parserCallback);
+            impl->sharedState.options, parserCallback,
+            /*disableModuleCaching=*/true);
       });
   return result;
 }

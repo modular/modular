@@ -134,7 +134,8 @@ public:
   codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
                MLIRContext *context, LLCL::Runtime &runtime,
                const KGEN::CompilationOptions &options,
-               function_ref<void(MojoParserContext &, int)> parserCallback);
+               function_ref<void(MojoParserContext &, int)> parserCallback,
+               bool disableModuleCaching = false);
 
   //===--------------------------------------------------------------------===//
   // Signature Help
@@ -154,7 +155,8 @@ public:
   signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
                 MLIRContext *context, LLCL::Runtime &runtime,
                 const KGEN::CompilationOptions &options,
-                function_ref<void(MojoParserContext &, int)> parserCallback);
+                function_ref<void(MojoParserContext &, int)> parserCallback,
+                bool disableModuleCaching = false);
 
   //===--------------------------------------------------------------------===//
   // REPL
