@@ -488,12 +488,9 @@ fn get_partitioned_matmul_mojo[
     let num_packs_n = max(n // micro_kernel_n, 1)
     let num_packs_m = max(m // micro_kernel_m, 1)
 
-    fn int_sqrt_floor(val: Int) -> Int:
-        return Int(sqrt(Float32(val)).cast[DType.index]().value)
-
     if (
         num_packs_n < 2 * num_col_tasks
-        and int_sqrt_floor(num_packs_m * num_packs_n) > num_col_tasks
+        and sqrt(num_packs_m * num_packs_n) > num_col_tasks
     ):
         var num_col_partitions: Int = num_tasks
         var aligned_partition_found: Bool = False
@@ -528,11 +525,6 @@ fn get_partitioned_matmul_im2col[
     micro_kernel_m: Int,
     micro_kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    @always_inline
-    @noncapturing
-    fn int_sqrt_floor(val: Int) -> Int:
-        return Int(sqrt(Float32(val)).cast[DType.index]().value)
-
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to let the heuristic bias on partitioning M.
     # TODO: make this bias factor part of function parameter/argument and
@@ -541,7 +533,7 @@ fn get_partitioned_matmul_im2col[
     let m_biased = m * bias
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
-    let ideal_num_col_tasks = int_sqrt_floor(div_ceil(n * num_tasks, m_biased))
+    let ideal_num_col_tasks = sqrt(div_ceil(n * num_tasks, m_biased))
     var num_row_tasks = num_tasks // ideal_num_col_tasks
     var num_col_tasks = ideal_num_col_tasks
 
