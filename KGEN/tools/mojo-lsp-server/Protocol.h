@@ -26,6 +26,44 @@ using NotebookDocumentIdentifier = TextDocumentIdentifier;
 using VersionedNotebookDocumentIdentifier = VersionedTextDocumentIdentifier;
 
 //===----------------------------------------------------------------------===//
+// SignatureInformation
+//===----------------------------------------------------------------------===//
+
+/// Represents the signature of something callable.
+struct SignatureInformation2 {
+  /// The label of this signature. Mandatory.
+  std::string label;
+
+  /// The documentation of this signature. Optional.
+  std::optional<MarkupContent> documentation;
+
+  /// The parameters of this signature.
+  std::vector<ParameterInformation> parameters;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const SignatureInformation2 &value);
+
+//===----------------------------------------------------------------------===//
+// SignatureHelp
+//===----------------------------------------------------------------------===//
+
+/// Represents the signature of a callable.
+struct SignatureHelp2 {
+  /// The resulting signatures.
+  std::vector<SignatureInformation2> signatures;
+
+  /// The active signature.
+  int activeSignature = 0;
+
+  /// The active parameter of the active signature.
+  int activeParameter = 0;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const SignatureHelp2 &value);
+
+//===----------------------------------------------------------------------===//
 // NotebookCell
 //===----------------------------------------------------------------------===//
 

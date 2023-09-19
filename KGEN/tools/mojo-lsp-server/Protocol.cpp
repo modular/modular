@@ -33,6 +33,37 @@ static bool mapOptOrNull(const llvm::json::Value &params,
 }
 
 //===----------------------------------------------------------------------===//
+// SignatureInformation
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value mlir::lsp::toJSON(const SignatureInformation2 &value) {
+  assert(!value.label.empty() && "signature information label is required");
+  llvm::json::Object result{
+      {"label", value.label},
+      {"parameters", llvm::json::Array(value.parameters)},
+  };
+  if (value.documentation)
+    result["documentation"] = value.documentation;
+  return std::move(result);
+}
+
+//===----------------------------------------------------------------------===//
+// SignatureHelp
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value mlir::lsp::toJSON(const SignatureHelp2 &value) {
+  assert(value.activeSignature >= 0 &&
+         "Unexpected negative value for number of active signatures.");
+  assert(value.activeParameter >= 0 &&
+         "Unexpected negative value for active parameter index");
+  return llvm::json::Object{
+      {"activeSignature", value.activeSignature},
+      {"activeParameter", value.activeParameter},
+      {"signatures", llvm::json::Array(value.signatures)},
+  };
+}
+
+//===----------------------------------------------------------------------===//
 // NotebookCell
 //===----------------------------------------------------------------------===//
 

@@ -100,6 +100,11 @@ public:
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
+  /// Get the signature help for the position within the given document.
+  void getSignatureHelp(const mlir::lsp::URIForFile &uri,
+                        const mlir::lsp::Position &pos,
+                        OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl;

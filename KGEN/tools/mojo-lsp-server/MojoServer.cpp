@@ -919,6 +919,49 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
 }
 
 //===----------------------------------------------------------------------===//
+// MojoDocument: Signature Help
+//===----------------------------------------------------------------------===//
+
+void MojoDocument::onSignatureHelp(
+    const mlir::lsp::URIForFile &uri, const lsp::Position &pos,
+    OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
+  startTaskAfterParsing(
+      [uri, pos, onHelpFn = std::move(onHelpFn)](MojoDocument &doc) mutable {
+        if (doc.isInvalidated)
+          return onHelpFn({});
+        SMLoc loc = doc.getLocFromPos(uri, pos);
+        if (!loc.isValid())
+          return onHelpFn({});
+        onHelpFn(doc.onSignatureHelpSync(loc));
+      });
+}
+
+lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
+  if (!context)
+    return lsp::SignatureHelp();
+
+  // Call the parser to get the signature help.
+  std::optional<KGEN::Mojo::SignatureHelpResult> result =
+      onSignatureHelpSyncImpl(loc);
+  if (!result)
+    return lsp::SignatureHelp();
+
+  // Map the Mojo results to LSP results.
+  lsp::SignatureHelp help;
+  help.activeSignature = result->activeSignature;
+  help.activeParameter = result->activeParameter;
+  for (const auto &signature : result->signatures) {
+    lsp::SignatureInformation info;
+    info.label = signature.label;
+    info.documentation = signature.documentation;
+    for (const auto &param : signature.parameters)
+      info.parameters.push_back({"", param.labelOffset, param.documentation});
+    help.signatures.push_back(info);
+  }
+  return help;
+}
+
+//===----------------------------------------------------------------------===//
 // MojoTextDocument
 //===----------------------------------------------------------------------===//
 
@@ -971,6 +1014,23 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
                                          getRuntime(), getCompilationOptions());
+}
+
+//===----------------------------------------------------------------------===//
+// MojoTextDocument: Signature Help
+//===----------------------------------------------------------------------===//
+
+std::optional<KGEN::Mojo::SignatureHelpResult>
+MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+  const llvm::MemoryBuffer *buffer =
+      sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+
+  // Query the mojo parser for potential help results.
+  uint64_t rawPos = loc.getPointer() - buffer->getBuffer().data();
+  MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
+  return MojoParserContext::signatureHelp(
+      *buffer, rawPos, &mlirContext, getRuntime(), getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1062,6 +1122,24 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
   return getParserContext().codeCompleteREPLExpresion(
       cell.contents, rawCompletePos, cell.persistentVariables, cell.decl);
+}
+
+//===----------------------------------------------------------------------===//
+// MojoTextDocument: Signature Help
+//===----------------------------------------------------------------------===//
+
+std::optional<KGEN::Mojo::SignatureHelpResult>
+MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
+  llvm::SourceMgr &sourceMgr = getSourceMgr();
+  int cellBufferId = sourceMgr.FindBufferContainingLoc(loc);
+  assert(cellBufferId > 0 && cellBufferId <= static_cast<int>(cells.size()) &&
+         "expected to find cell buffer containing location");
+  Cell &cell = *cells[cellBufferId - 1];
+
+  // Query the mojo parser for potential help results.
+  uint64_t rawPos = loc.getPointer() - cell.contents.data();
+  return getParserContext().signatureHelpREPLExpresion(
+      cell.contents, rawPos, cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1353,4 +1431,11 @@ void MojoServer::onHover(
     OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn) {
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
     doc->onHover(uri, pos, std::move(onHoverFn));
+}
+
+void MojoServer::getSignatureHelp(
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    OnResultFn<mlir::lsp::SignatureHelp> onHelpFn) {
+  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
+    doc->onSignatureHelp(uri, pos, std::move(onHelpFn));
 }

@@ -29,6 +29,7 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class PackageOp;
 class ParserListener;
+struct CallOperands;
 
 //===----------------------------------------------------------------------===//
 // ParserConfig
@@ -192,6 +193,10 @@ public:
   /// i.e. its declarations are known.
   virtual void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                      llvm::SMLoc loc);
+
+  /// Notify the listener that a call is being resolved with the given operands.
+  virtual void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
+                      const CallOperands &operands);
 };
 } // namespace M::KGEN::LIT
 

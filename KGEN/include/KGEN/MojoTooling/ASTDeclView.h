@@ -278,10 +278,21 @@ public:
   /// Return true if this is a static struct method, i.e., marked with @static.
   bool isStatic() const { return isStaticFlag; }
 
+  /// Return true if this is a non-static struct method.
+  bool isMethod() const { return isMethodFlag; }
+
   /// Return the list of arguments of this function.
   ArrayRef<ArgumentDeclView> getArgs() const { return args; }
 
   std::string getDeclarationSnippet() const override;
+
+  /// Get the declaration snippet for the function. The positions of parameters
+  /// and arguments within the printed signature may be extracted via the
+  /// optional `parameterOffsets` and `argumentOffsets`. nullptr should be
+  /// provided if collecting the offsets isn't desired.
+  std::string getDeclarationSnippet(
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
@@ -298,8 +309,14 @@ public:
   std::optional<StringRef> getReturnType() const { return returnType; }
 
   /// Generate a string for the signature of this function, given its
-  /// components.
-  std::string getSignature() const;
+  /// components. The positions of parameters and arguments within the printed
+  /// signature may be extracted via the optionally null `parameterOffsets` and
+  /// `argumentOffsets` parameters.
+  std::string getSignature(
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+          nullptr,
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+          nullptr) const;
 
   /// Return true if this function raises.
   bool raises() const { return raisesFlag; }
@@ -352,6 +369,7 @@ private:
 
   bool isAsyncFlag;
   bool isDefFlag;
+  bool isMethodFlag;
   bool isStaticFlag;
   bool raisesFlag;
 

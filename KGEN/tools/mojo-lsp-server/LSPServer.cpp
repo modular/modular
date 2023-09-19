@@ -68,6 +68,9 @@ struct LSPServer {
   void onHover(const TextDocumentPositionParams &params,
                Callback<llvm::json::Value> reply);
 
+  void onSignatureHelp(const TextDocumentPositionParams &params,
+                       Callback<SignatureHelp2> reply);
+
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//
@@ -99,6 +102,10 @@ void LSPServer::onInitialize(const InitializeParams &params,
              "&",  "#", "?", ".", "=", "\"", "'", "|"}},
            {"resolveProvider", false},
            {"triggerCharacters", {"."}},
+       }},
+      {"signatureHelpProvider",
+       llvm::json::Object{
+           {"triggerCharacters", {"(", "[", ","}},
        }},
       {"definitionProvider", true},
       {"hoverProvider", true},
@@ -234,6 +241,28 @@ void LSPServer::onHover(const TextDocumentPositionParams &params,
       });
 }
 
+void LSPServer::onSignatureHelp(const TextDocumentPositionParams &params,
+                                Callback<SignatureHelp2> reply) {
+  server.getSignatureHelp(
+      params.textDocument.uri, params.position,
+      [repl = std::move(reply)](SignatureHelp help) mutable {
+        // TODO: Remove this when the changes to SignatureHelp are upstreamed.
+        SignatureHelp2 help2;
+        help2.activeParameter = help.activeParameter;
+        help2.activeSignature = help.activeSignature;
+        for (auto &sig : help.signatures) {
+          SignatureInformation2 sig2;
+          sig2.label = sig.label;
+          sig2.documentation =
+              MarkupContent{MarkupKind::Markdown, sig.documentation};
+          sig2.parameters = std::move(sig.parameters);
+          help2.signatures.push_back(sig2);
+        }
+
+        repl(std::move(help2));
+      });
+}
+
 //===----------------------------------------------------------------------===//
 // Entry Point
 //===----------------------------------------------------------------------===//
@@ -279,6 +308,8 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport,
   messageHandler.method("textDocument/definition", &lspServer,
                         &LSPServer::onDefinition);
   messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
+  messageHandler.method("textDocument/signatureHelp", &lspServer,
+                        &LSPServer::onSignatureHelp);
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {

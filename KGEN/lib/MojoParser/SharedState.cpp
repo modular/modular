@@ -2058,3 +2058,10 @@ void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
   if (shouldNotifyListenerForCall(syntax))
     notifyListenerOnRef(decls, spelling, expr);
 }
+
+void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
+                                       SMLoc rParenLoc,
+                                       const CallOperands &callOperands) {
+  if (isListenerInterestedInLoc(parserListener, rParenLoc))
+    parserListener->onCall(decls, rParenLoc, callOperands);
+}

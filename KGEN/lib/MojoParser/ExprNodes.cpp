@@ -1178,12 +1178,19 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << calledType << callee->getRange();
       return {};
     }
-    return emitter.emitConstructorCall(calledType, operands, this,
+
+    // Check to see if we can invoke an __init__ method to convert it.
+    OverloadSet callee(calledType, "__init__", this, CallSyntax::kTypeCall,
+                       emitter.shared, /*errorHandler=*/{});
+    emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
+    return emitter.emitConstructorCall(calledType, callee, operands, this,
                                        CallSyntax::kTypeCall, dest);
   }
 
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfORValue()) {
+    emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
+                                        operands);
     overloads->expr = this;
     return overloads->emitCall(operands, dest, emitter);
   }

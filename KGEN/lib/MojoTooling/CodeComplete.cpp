@@ -7,7 +7,9 @@
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"
@@ -23,6 +25,39 @@ using namespace M::KGEN::LIT;
 using namespace M::KGEN::Mojo;
 
 using llvm::SMLoc;
+using llvm::SMRange;
+
+/// Returns if the given range, inclusive, contains `loc`.
+static bool containsLoc(SMRange range, SMLoc loc) {
+  return range.Start.getPointer() <= loc.getPointer() &&
+         loc.getPointer() <= range.End.getPointer();
+}
+
+//===----------------------------------------------------------------------===//
+// BaseCompletionListener
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class implements a base listener for completion or signature help that
+/// handles shared listener setup.
+struct BaseCompletionListener : public ParserListener {
+  BaseCompletionListener(SourceMgr &sourceMgr) : sourceMgr(sourceMgr) {}
+  ~BaseCompletionListener() override = default;
+
+  /// The source manager.
+  llvm::SourceMgr &sourceMgr;
+
+  /// The range of acceptable locations for the completion.
+  llvm::SMRange completionRange;
+
+  /// The current parser context.
+  MojoParserContext *parserContext = nullptr;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// Code Completion: Listener
+//===----------------------------------------------------------------------===//
 
 /// Returns true if the given member should be shown during lookup within
 /// `decl`. If `isModuleLookup` is true, we are looking up nested modules.
@@ -39,23 +74,18 @@ static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
   return true;
 }
 
-//===----------------------------------------------------------------------===//
-// Listener
-//===----------------------------------------------------------------------===//
-
 namespace {
 /// This class implements a listener that collects code completion results.
-struct CodeCompletionListener : public ParserListener {
+struct CodeCompletionListener : public BaseCompletionListener {
   CodeCompletionListener(std::vector<CodeCompletionResult> &results,
                          llvm::SourceMgr &sourceMgr)
-      : results(results), sourceMgr(sourceMgr) {}
+      : BaseCompletionListener(sourceMgr), results(results) {}
   ~CodeCompletionListener() override = default;
 
   /// Returns true if the listener is interested in being notified for the given
   /// location.
   bool isInterestedInLoc(SMLoc parserLoc) override {
-    return completionRange.Start.getPointer() <= parserLoc.getPointer() &&
-           parserLoc.getPointer() <= completionRange.End.getPointer();
+    return containsLoc(completionRange, parserLoc);
   }
 
   /// Notify the listener that an import is currently being resolved.
@@ -160,15 +190,82 @@ struct CodeCompletionListener : public ParserListener {
   /// The results that have been collected so far.
   DenseSet<ASTDecl *> addedResults;
   std::vector<CodeCompletionResult> &results;
+};
+} // namespace
 
-  /// The range of acceptable locations for the completion.
-  llvm::SMRange completionRange;
+//===----------------------------------------------------------------------===//
+// Signature Help: Listener
+//===----------------------------------------------------------------------===//
 
-  /// The source manager.
-  llvm::SourceMgr &sourceMgr;
+namespace {
+/// This class implements a listener that collects signature help results.
+struct SignatureHelpListener : public BaseCompletionListener {
+  SignatureHelpListener(llvm::SourceMgr &sourceMgr, SignatureHelpResult &result)
+      : BaseCompletionListener(sourceMgr), result(result) {}
+  ~SignatureHelpListener() override = default;
 
-  /// The current parser context.
-  MojoParserContext *parserContext = nullptr;
+  /// Returns true if the listener is interested in being notified for the given
+  /// location.
+  bool isInterestedInLoc(SMLoc loc) override {
+    // Filter at a high level for locations in the main document, we'll filter
+    // further when examining calls.
+    return sourceMgr.getMainFileID() == sourceMgr.FindBufferContainingLoc(loc);
+  }
+
+  void onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
+              const CallOperands &operands) override {
+    auto findInterestedOperand = [&]() -> std::optional<size_t> {
+      for (const auto &[index, operand] :
+           llvm::enumerate(operands.posOperands)) {
+        if (containsLoc(completionRange, operand.expr->getRangeStart()))
+          return index;
+      }
+
+      // Consider the rparen location if it is within the completion range.
+      if (!operands.hasKwOperands() && containsLoc(completionRange, rparenLoc))
+        return operands.posOperands.size();
+
+      // TODO: Consider kwargs.
+      return std::nullopt;
+    };
+
+    // Check if any of the operands are within the completion range.
+    std::optional<size_t> operandIndex = findInterestedOperand();
+    if (!operandIndex)
+      return;
+    result.activeParameter = *operandIndex;
+
+    // Collect the signatures for each of the decls.
+    for (MojoASTDeclRef decl : decls) {
+      std::unique_ptr<DeclView> declView = decl.getView();
+      if (!declView)
+        continue;
+      if (auto *fnView = dyn_cast<FunctionDeclView>(declView.get())) {
+        if (operands.posOperands.size() > fnView->getArgs().size())
+          continue;
+
+        // If this is the first function and it's a method, bump the active
+        // parameter past the self argument.
+        if (result.signatures.empty() && fnView->isMethod())
+          ++result.activeParameter;
+
+        SignatureHelpResult::Signature signature;
+
+        SmallVector<std::pair<unsigned, unsigned>> argOffsets;
+        signature.label = fnView->getDeclarationSnippet(
+            /*parameterOffsets=*/nullptr, &argOffsets);
+        signature.documentation = fnView->getFullMarkdownString();
+        for (const auto &[arg, offset] :
+             llvm::zip(fnView->getArgs(), argOffsets)) {
+          signature.parameters.push_back({offset, arg.getMarkdownDocString()});
+        }
+        result.signatures.emplace_back(std::move(signature));
+      }
+    }
+  }
+
+  /// The result that has been collected so far.
+  SignatureHelpResult &result;
 };
 } // namespace
 
@@ -176,35 +273,23 @@ struct CodeCompletionListener : public ParserListener {
 // Entrypoint
 //===----------------------------------------------------------------------===//
 
-std::vector<CodeCompletionResult>
-MojoParserContext::codeComplete(llvm::MemoryBufferRef buffer,
-                                uint64_t completionPosition,
-                                MLIRContext *context, LLCL::Runtime &runtime,
-                                const KGEN::CompilationOptions &options) {
-  return codeComplete(
-      buffer, completionPosition, context, runtime, options,
-      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
-}
-
-std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
-    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &options,
-    function_ref<void(MojoParserContext &, int)> parserCallback) {
+/// Parse the given buffer for completion results using the given listener
+/// implementation.
+static void
+parseCompletionImpl(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+                    MLIRContext *context, LLCL::Runtime &runtime,
+                    const KGEN::CompilationOptions &options,
+                    function_ref<void(MojoParserContext &, int)> parserCallback,
+                    BaseCompletionListener &listener) {
   if (buffer.getBufferSize() < completionPosition)
-    return {};
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(buffer),
-                               SMLoc());
+    return;
+  listener.sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBuffer(buffer), SMLoc());
 
   // Add a diagnostic handler that consumes anything emitted during parsing. We
   // don't care about diagnostics here, there will almost always be a diagnostic
   // emitted when grabbing completion results from a partial file.
-  sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
-
-  // Build the listener that collects the results.
-  std::vector<CodeCompletionResult> results;
-  CodeCompletionListener listener(results, sourceMgr);
+  listener.sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
 
   ParserConfig config(context, runtime, options);
   config.parserListener = &listener;
@@ -217,7 +302,7 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
   config.maxNotesPerDiagnostic = 0;
 
   // Build the parser context with our listener.
-  MojoParserContext parserContext(sourceMgr, config);
+  MojoParserContext parserContext(listener.sourceMgr, config);
   listener.parserContext = &parserContext;
 
   // Compute the start completion location. We first trim the buffer to the
@@ -242,6 +327,55 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
               completionPosStr.data());
   listener.completionRange.End = lexer.getToken().getLoc();
 
-  parserCallback(parserContext, sourceMgr.getMainFileID());
+  parserCallback(parserContext, listener.sourceMgr.getMainFileID());
+}
+
+//===----------------------------------------------------------------------===//
+// Code Completion
+
+std::vector<CodeCompletionResult>
+MojoParserContext::codeComplete(llvm::MemoryBufferRef buffer,
+                                uint64_t completionPosition,
+                                MLIRContext *context, LLCL::Runtime &runtime,
+                                const KGEN::CompilationOptions &options) {
+  return codeComplete(
+      buffer, completionPosition, context, runtime, options,
+      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
+}
+
+std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &options,
+    function_ref<void(MojoParserContext &, int)> parserCallback) {
+  llvm::SourceMgr sourceMgr;
+  std::vector<CodeCompletionResult> results;
+  CodeCompletionListener listener(results, sourceMgr);
+  parseCompletionImpl(buffer, completionPosition, context, runtime, options,
+                      parserCallback, listener);
   return results;
+}
+
+//===----------------------------------------------------------------------===//
+// Signature Help
+
+std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
+    llvm::MemoryBufferRef buffer, uint64_t position, MLIRContext *context,
+    LLCL::Runtime &runtime, const KGEN::CompilationOptions &options) {
+  return signatureHelp(
+      buffer, position, context, runtime, options,
+      [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
+}
+
+std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &options,
+    function_ref<void(MojoParserContext &, int)> parserCallback) {
+  llvm::SourceMgr sourceMgr;
+  SignatureHelpResult result;
+  SignatureHelpListener listener(sourceMgr, result);
+  parseCompletionImpl(buffer, completionPosition, context, runtime, options,
+                      parserCallback, listener);
+  return result.signatures.empty() ? std::nullopt : std::optional(result);
 }
