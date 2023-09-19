@@ -456,6 +456,13 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     result.addAttribute(getParamDeclAttrName(result.name),
                         ParamDeclAttr::get(nameAttr, signature));
 
+  size_t numPosArgs = 0;
+  if (succeeded(parser.parseOptionalKeyword("numPosArgs"))) {
+    if (parser.parseLParen() || parser.parseInteger(numPosArgs) ||
+        parser.parseRParen())
+      return failure();
+  }
+
   // If function attributes are present, parse them.
   NamedAttrList parsedAttributes;
   llvm::SMLoc attributeDictLocation = parser.getCurrentLocation();
@@ -465,16 +472,14 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   // We store positional-only argument names separately.
   MLIRContext *ctx = parser.getContext();
   StringArrayAttr posArgNames;
-  if (Attribute numPosArgsAttr = parsedAttributes.get("numPosArgs")) {
-    int64_t numPosArgs = cast<IntegerAttr>(numPosArgsAttr).getInt();
-
+  if (numPosArgs) {
     FnMetadataAttr metadata = signature.getMetadata();
     ArrayRef<StringAttr> argNames = metadata.getArgNames();
 
     posArgNames = StringArrayAttr::get(ctx, argNames.take_front(numPosArgs));
 
     SmallVector<StringAttr> newArgNames(argNames);
-    for (size_t i = 0; i < (size_t)numPosArgs; ++i)
+    for (size_t i = 0; i < numPosArgs; ++i)
       newArgNames[i] = StringAttr::get(ctx);
 
     auto newMetadata =
@@ -485,8 +490,6 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
         signature.getValues(), signature.getInputParamTypes(),
         signature.getResultParamTypes(), signature.getInputConventions(),
         signature.getFnEffects(), newMetadata);
-
-    parsedAttributes.erase("numPosArgs");
   } else {
     posArgNames = StringArrayAttr::get(ctx, {});
   }
@@ -545,13 +548,11 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
       (ArrayRef<StringRef>(disallowedAttrNames)));
   ignoredAttrNames.emplace_back(mlir::SymbolTable::getSymbolAttrName());
 
-  MLIRContext *ctx = getContext();
-  SmallVector<mlir::NamedAttribute> dict(getOperation()->getAttrs());
-  if (size_t numPosArgs = getPosArgNames().size()) {
-    dict.emplace_back(NamedAttribute(StringAttr::get(ctx, "numPosArgs"),
-                                     OpBuilder(ctx).getIndexAttr(numPosArgs)));
-  }
-  p.printOptionalAttrDictWithKeyword(dict, ignoredAttrNames);
+  if (size_t numPosArgs = getPosArgNames().size())
+    p << " numPosArgs(" << numPosArgs << ')';
+
+  p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
+                                     ignoredAttrNames);
 
   p << ' ';
   p.printRegion(getBodyRegion(), /*printEntryBlockArgs=*/false);
