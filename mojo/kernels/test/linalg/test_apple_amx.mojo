@@ -82,17 +82,17 @@ fn test_amx_matmul():
     if is_apple_m1():
         print("== test_amx_matmul")
 
-    var a_matrix = NDBuffer[
+    let a_matrix = NDBuffer[
         2,
         DimList(16, 16),
         DType.float32,
     ].stack_allocation()
-    var b_matrix = NDBuffer[
+    let b_matrix = NDBuffer[
         2,
         DimList(16, 16),
         DType.float32,
     ].stack_allocation()
-    var c_matrix = NDBuffer[
+    let c_matrix = NDBuffer[
         2,
         DimList(16, 16),
         DType.float32,

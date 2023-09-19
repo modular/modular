@@ -411,8 +411,8 @@ struct amx_detail:
 
         # TODO: We can elide the copy if the data is already is already aligned.
 
-        alias c256 = (256).value
-        alias c128 = (128).value
+        alias c256 = Int(256).value
+        alias c128 = Int(128).value
         let a_buffer: DTypePointer[
             DType.float32
         ] = __mlir_op.`pop.stack_allocation`[
