@@ -250,7 +250,7 @@ static bool tryHandleFromImportAliasFunctionOrStruct(
         break;
       // Skip past comments.
       if (unparsedCode[pos] == '#') {
-        pos = unparsedCode.find('\n', pos);
+        pos = unparsedCode.find('\n', pos) - 1;
         continue;
       }
 
