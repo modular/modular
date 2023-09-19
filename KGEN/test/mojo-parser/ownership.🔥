@@ -328,13 +328,7 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 
 
 # CHECK-LABEL: lit.func @"indirect_call
-fn indirect_call[
-        detail_fn: __mlir_type[
-            `!kgen.signature<(!kgen.pointer<`,
-            MemExample,
-            `> byref_result) -> !lit.none>`,
-        ],
-    ]():
+fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK: %mem = lit.varlet.decl
        # CHECK-NEXT: kgen.call_param{{.*}}(%mem)
        let mem = detail_fn()

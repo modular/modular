@@ -246,6 +246,12 @@ static bool isBareIdentifier(StringRef name) {
   });
 }
 
+void StreamAsmPrinter::printString(StringRef string) {
+  os << "\"";
+  llvm::printEscapedString(string, os);
+  os << '"';
+}
+
 void StreamAsmPrinter::printKeywordOrString(StringRef keyword) {
   if (isBareIdentifier(keyword)) {
     os << keyword;

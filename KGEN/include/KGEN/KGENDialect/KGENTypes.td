@@ -140,7 +140,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     "FunctionType":$values,
     OptionalArrayRefParameter<"ValueInputConvention">:$inputConventions,
     "FnEffects":$fnEffects,
-    "FnMetadataAttr":$metadata
+    "FnMetadataAttrInterface":$metadata
   );
   let hasCustomAssemblyFormat = 1;
 
@@ -152,22 +152,24 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
         CArg<"TypeArrayAttr", "{}">:$resultParamTypes,
         CArg<"ArrayRef<ValueInputConvention>", "{}">:$inputConvs,
         CArg<"FnEffects", "{}">:$effects,
-        CArg<"FnMetadataAttr", "{}">:$metadata), [{
-      getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+        CArg<"Attribute", "{}">:$metadata), [{
+      getSignatureDefaults(inputParamTypes, resultParamTypes, values);
       SmallVector<ValueInputConvention> convs = llvm::to_vector(inputConvs);
       convs.resize(values.getNumInputs());
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
-                   values, convs, effects, metadata);
+                   values, convs, effects,
+                   ::cast_or_null<FnMetadataAttrInterface>(metadata));
     }]>,
     TypeBuilderWithInferredContext<(ins
         "FunctionType":$values,
         "ArrayRef<ValueInputConvention>":$inputConvs,
         CArg<"FnEffects", "{}">:$effects,
-        CArg<"FnMetadataAttr", "{}">:$metadata), [{
+        CArg<"Attribute", "{}">:$metadata), [{
       TypeArrayAttr inputParamTypes, resultParamTypes;
-      getSignatureDefaults(inputParamTypes, resultParamTypes, values, metadata);
+      getSignatureDefaults(inputParamTypes, resultParamTypes, values);
       return $_get(values.getContext(), inputParamTypes, resultParamTypes,
-                   values, inputConvs, effects, metadata);
+                   values, inputConvs, effects,
+                   ::cast_or_null<FnMetadataAttrInterface>(metadata));
     }]>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
@@ -177,8 +179,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ArrayRef<Type> getValueInputs() const;
     ArrayRef<Type> getValueResults() const;
 
-    /// Get the function input argument names.
-    ArrayRef<StringAttr> getArgNames() { return getMetadata().getArgNames(); }
     /// Returns true if the argument at this index is a vararg.
     bool isVarArg(size_t index);
     /// Returns true if the argument at this index is a pack vararg.
@@ -192,11 +192,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return true if this signature's first argument is an initializer result
     /// returned through memory.
     bool hasInitSelfResult();
-
-    /// Get the function default arguments.
-    ArrayRef<TypedAttr> getDefaultArguments() {
-      return getMetadata().getDefaultArguments();
-    }
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
@@ -212,9 +207,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ValueInputConvention getInputConvention(size_t inputNo) {
       return getInputConventions()[inputNo];
     }
-
-    /// Return the name for the specified value input argument.
-    StringAttr getArgName(size_t inputNo) { return getArgNames()[inputNo]; }
 
     /// Set a function convention.
     SignatureType getWithFnEffects(FnEffects effect);
@@ -234,7 +226,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       function_ref<InFlightDiagnostic()> emitErrorFn,
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
       FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
-      FnEffects effects, FnMetadataAttr metadata);
+      FnEffects effects, Attribute metadata);
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);

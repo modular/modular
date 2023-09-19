@@ -10,6 +10,8 @@
 
 #include "Utils.h"
 
+#include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 
 using namespace M;
@@ -22,7 +24,8 @@ POP::PackType LIT::getIfPackType(SignatureType sig, size_t index) {
              : nullptr;
 }
 
-bool LIT::canZeroCostConvertSignature(SignatureType from, SignatureType to) {
+bool LIT::canZeroCostConvertSignature(LITSignatureType from,
+                                      LITSignatureType to) {
   if (from.getArgNames().size() != to.getInputConventions().size())
     return false;
   auto newMetadata = FnMetadataAttr::get(from.getContext(), from.getArgNames(),

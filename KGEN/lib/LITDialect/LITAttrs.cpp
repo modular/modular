@@ -32,6 +32,112 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// FnMetadataAttr
+//===----------------------------------------------------------------------===//
+
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
+  auto emptyStr = StringAttr::get(ctx);
+  SmallVector<StringAttr> names(numInputs, emptyStr);
+  return get(ctx, names, {}, {});
+}
+
+LogicalResult
+FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       ArrayRef<StringAttr> argNames,
+                       ArrayRef<TypedAttr> defaultArguments,
+                       ArrayRef<TypedAttr> defaultParameters) {
+  for (StringAttr name : argNames)
+    if (!name)
+      return emitError() << "arg name cannot be null";
+  return success();
+}
+
+FnMetadataAttrInterface
+FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
+  size_t numArgs = getArgNames().size() - numBound;
+
+  ArrayRef<StringAttr> newArgNames = getArgNames().drop_front(numBound);
+  ArrayRef<TypedAttr> newDefaultArgs = getDefaultArguments();
+  if (numArgs < newDefaultArgs.size())
+    newDefaultArgs = newDefaultArgs.take_back(numArgs);
+  return get(getContext(), newArgNames, newDefaultArgs);
+}
+
+LogicalResult FnMetadataAttr::verifySignature(
+    function_ref<InFlightDiagnostic()> emitError,
+    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
+    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
+    FnEffects effects) const {
+  // Verify default arguments.
+  ArrayRef<TypedAttr> defaults = getDefaultArguments();
+  if (defaults.size() > values.getNumInputs()) {
+    return emitError() << "there are more default arguments than inputs : "
+                       << defaults.size() << " > " << values.getNumInputs();
+  }
+  for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
+    size_t index = values.getInputs().size() - defaults.size() + defaultsIndex;
+    Type expected = values.getInputs()[index];
+    if (value.getType() != expected) {
+      return emitError() << "argument #" << index << " has type " << expected
+                         << " but default argument has type "
+                         << value.getType();
+    }
+  }
+
+  // Verify input conventions.
+  size_t numInputConv = inputConventions.size();
+  if (getArgNames().size() != numInputConv) {
+    return emitError() << "number of argument names does not match number of "
+                          "input conventions: "
+                       << getArgNames().size() << " != " << numInputConv;
+  }
+  return success();
+}
+
+void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
+  p << "!lit.signature<";
+  auto signature = ::cast<LITSignatureType>(sig);
+  if (!signature.getInputParamTypes().empty() ||
+      !signature.getResultParamTypes().empty()) {
+    p << '<';
+    if (signature.getInputParamTypes().empty())
+      p << "[]";
+    llvm::interleaveComma(signature.getInputParamTypes(), p,
+                          [&](Type type) { printKGENType(p, type); });
+    if (!signature.getResultParamTypes().empty()) {
+      p << " -> ";
+      llvm::interleaveComma(signature.getResultParamTypes(), p,
+                            [&](Type type) { printKGENType(p, type); });
+    }
+    p << '>';
+  }
+
+  auto printElt = [&](unsigned i) {
+    StringAttr argName = signature.getArgName(i);
+    if (argName.size()) {
+      p.printString(argName);
+      p << ": ";
+    }
+
+    p << signature.getValueInputs()[i];
+
+    ValueInputConvention conv = signature.getInputConvention(i);
+    if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
+      p << ' ' << stringifyValueInputConvention(conv);
+    size_t defaultIndex =
+        signature.getNumInputs() - signature.getDefaultArguments().size();
+    if (i >= defaultIndex) {
+      p << " = ";
+      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
+    }
+  };
+
+  printSignatureValues(p, printElt, signature.getValues(), signature,
+                       /*optionalResultList=*/false);
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 

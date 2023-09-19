@@ -146,17 +146,12 @@ LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 static void getSignatureDefaults(TypeArrayAttr &inputParamTypes,
                                  TypeArrayAttr &resultParamTypes,
-                                 FunctionType values,
-                                 FnMetadataAttr &metadata) {
+                                 FunctionType values) {
   MLIRContext *ctx = values.getContext();
   if (!inputParamTypes)
     inputParamTypes = TypeArrayAttr::get(ctx, {});
   if (!resultParamTypes)
     resultParamTypes = TypeArrayAttr::get(ctx, {});
-  if (!metadata) {
-    // Default value input conventions to take each argument by-value.
-    metadata = FnMetadataAttr::get(ctx, values.getNumInputs());
-  }
 }
 
 SignatureType SignatureType::get(MLIRContext *ctx, TypeRange inputs,
@@ -229,7 +224,7 @@ SignatureType SignatureType::getSpecializedSignature(
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
-    FnEffects effects, FnMetadataAttr metadata) {
+    FnEffects effects, Attribute metadata) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
@@ -339,7 +334,7 @@ SignatureType SignatureType::dropParamValues() {
 }
 
 bool SignatureType::isConcrete() {
-  return getMetadata().isDefault() && getInputParamTypes().empty() &&
+  return !getMetadata() && getInputParamTypes().empty() &&
          getResultParamTypes().empty();
 }
 
@@ -361,8 +356,8 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypeArrayAttr inputParams, TypeArrayAttr resultParams,
                       FunctionType values,
                       ArrayRef<ValueInputConvention> inputConventions,
-                      FnEffects effects, FnMetadataAttr metadata) {
-  if (!inputParams || !resultParams || !values || !metadata)
+                      FnEffects effects, FnMetadataAttrInterface metadata) {
+  if (!inputParams || !resultParams || !values)
     return emitError() << "signature type parameters cannot be null";
 
   // Check we have the right number of conventions.
@@ -412,22 +407,15 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     }
   }
 
-  ArrayRef<TypedAttr> defaults = metadata.getDefaultArguments();
-  for (auto [defaultsIndex, value] : llvm::enumerate(defaults)) {
-    size_t index = values.getInputs().size() - defaults.size() + defaultsIndex;
-    Type expected = values.getInputs()[index];
-    if (value.getType() != expected) {
-      return emitError() << "argument #" << index << " has type " << expected
-                         << " but default argument has type "
-                         << value.getType();
-    }
-  }
   // If the function throws an error, make sure it has one variant result.
   if (effects.isThrows() && values.getNumResults() != 1)
     return emitError() << "a function that throws should have 1 result";
 
-  return metadata.verifySignature(emitError, inputParams, resultParams, values,
-                                  inputConventions, effects);
+  if (metadata)
+    return metadata.verifySignature(emitError, inputParams, resultParams,
+                                    values, inputConventions, effects);
+
+  return success();
 }
 
 std::optional<int64_t> SignatureType::getTypeSize(TargetInfoAttr target) const {
@@ -448,6 +436,8 @@ SignatureType::getTypeAlign(TargetInfoAttr target) const {
 template <typename T>
 auto IndexRefRemapper::normalizeSignatureWalk(T value, size_t depth)
     -> std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute> {
+  if (!value)
+    return nullptr;
   if constexpr (std::is_base_of_v<Attribute, T>) {
     if (!mapping.empty()) {
       if (auto ref = dyn_cast<ParamDeclRefAttr>(value)) {
@@ -515,7 +505,7 @@ Type IndexRefRemapper::remapTypeImpl(Type type) {
 SignatureType IndexRefRemapper::remapToSignature(
     ArrayRef<ParamDeclAttr> inputParams, ArrayRef<ParamDeclAttr> resultParams,
     FunctionType functionType, ArrayRef<ValueInputConvention> inputConventions,
-    FnEffects effects, FnMetadataAttr metadata,
+    FnEffects effects, Attribute metadata,
     function_ref<InFlightDiagnostic()> emitError) {
   IndexRefRemapper remapper(inputParams, resultParams);
   SmallVector<Type> inputParamTypes, resultParamTypes;
@@ -551,7 +541,8 @@ IndexRefRemapper::prependParams(SignatureType sig,
       remapper.remap(sig.getValues()),
       TypeArrayAttr::get(sig.getContext(), inputParamTypes),
       remapper.remap(sig.getResultParamTypes()), sig.getInputConventions(),
-      sig.getFnEffects(), remapper.remap(sig.getMetadata()));
+      sig.getFnEffects(),
+      sig.getMetadata() ? remapper.remap(sig.getMetadata()) : nullptr);
 }
 
 //===----------------------------------------------------------------------===//

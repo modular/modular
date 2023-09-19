@@ -56,7 +56,7 @@ public:
   /// signature, try to infer the value of the next 'decl' parameter.  This
   /// should always return null /without/ an error if it cannot be inferred, and
   /// return a specific value if unambiguously determined.
-  PValue infer(SignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
+  PValue infer(LITSignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
                const CallOperands &callOperands);
 
 private:
@@ -211,7 +211,7 @@ LogicalResult ParameterInferenceState::checkOneOperand(
   }
 };
 
-PValue ParameterInferenceState::infer(SignatureType signature,
+PValue ParameterInferenceState::infer(LITSignatureType signature,
                                       ArrayRef<TypedAttr> bindingsSoFar,
                                       const CallOperands &callOperands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
@@ -600,7 +600,7 @@ struct OverloadFitness {
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
   /// `operands`.
-  static OverloadFitness evaluate(SignatureType signature,
+  static OverloadFitness evaluate(LITSignatureType signature,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,
                                   bool allowImplicitConversions,
@@ -629,7 +629,8 @@ private:
 
   /// Calculate the minimum required and maximum allowed number of arguments
   /// from a signature.
-  static std::pair<size_t, size_t> calculateMinMaxArgs(SignatureType signature);
+  static std::pair<size_t, size_t>
+  calculateMinMaxArgs(LITSignatureType signature);
 
   /// Check the expected type against the provided operand. This identifies any
   /// problems with the operand type and also returns the type to be used for
@@ -841,7 +842,7 @@ private:
 };
 
 std::pair<size_t, size_t>
-OverloadFitness::calculateMinMaxArgs(SignatureType signature) {
+OverloadFitness::calculateMinMaxArgs(LITSignatureType signature) {
   size_t minRequiredArgs = 0;
   size_t maxAllowedArgs = 0;
   for (auto [idx, convention] :
@@ -973,7 +974,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `posOperands`.
-OverloadFitness OverloadFitness::evaluate(SignatureType signature,
+OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
                                           bool allowImplicitConversions,

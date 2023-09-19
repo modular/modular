@@ -21,6 +21,14 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// SignatureType
+//===----------------------------------------------------------------------===//
+
+def LIT_SignatureType : DialectType<LITDialect,
+    CPred<"llvm::isa<LITSignatureType>($_self)">, "LIT signature type",
+    "LITSignatureType">;
+
+//===----------------------------------------------------------------------===//
 // TypeCheckErrorType
 //===----------------------------------------------------------------------===//
 

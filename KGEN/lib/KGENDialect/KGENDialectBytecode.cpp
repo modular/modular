@@ -70,34 +70,27 @@ enum AttributeCode {
   ///   }
   kConstraintArrayAttr = 8,
   ///
-  ///   FnMetadataAttr {
-  ///     inputConventions: varint[]
-  ///     defaultArguments: TypedAttr[]
-  ///     fnEffects: varint
-  ///   }
-  kFnMetadataAttr = 9,
-  ///
   ///   VariadicAttr {
   ///     values: TypedAttr[]
   ///     type: VariadicType
   ///   }
-  kVariadicAttr = 10,
+  kVariadicAttr = 9,
   ///
   ///   UnknownAttr {
   ///     type: Type
   ///   }
-  kUnknownAttr = 11,
+  kUnknownAttr = 10,
   ///
   ///   UnboundAttr {
   ///     type: Type
   ///   }
-  kUnboundAttr = 12,
+  kUnboundAttr = 11,
   ///
   ///   ParamDeclRefAttr {
   ///     name: StringAttr
   ///     type: Type
   ///   }
-  kParamDeclRefAttr = 13,
+  kParamDeclRefAttr = 12,
   ///
   ///   ParamIndexRefAttr {
   ///     depth: varint
@@ -105,73 +98,73 @@ enum AttributeCode {
   ///     index: varint
   ///     type: Type
   ///   }
-  kParamIndexRefAttr = 14,
+  kParamIndexRefAttr = 13,
   ///
   ///   ConcreteTypeConstantAttr {
   ///     value: Type
   ///   }
-  kConcreteTypeConstantAttr = 15,
+  kConcreteTypeConstantAttr = 14,
   ///
   ///   ParameterizedTypeConstantAttr {
   ///     value: Type
   ///   }
-  kParameterizedTypeConstantAttr = 16,
+  kParameterizedTypeConstantAttr = 15,
   ///
   ///   DTypeConstantAttr {
   ///     dtype: varint
   ///   }
-  kDTypeConstantAttr = 17,
+  kDTypeConstantAttr = 16,
   ///
   ///   IntLiteralAttr {
   ///     value: varint
   ///   }
-  kIntLiteralAttr = 18,
+  kIntLiteralAttr = 17,
   ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
   ///     paramValues: TypedAttr[]
   ///     type: SignatureType
   ///   }
-  kSymbolConstantAttr = 19,
+  kSymbolConstantAttr = 18,
   ///
   ///   TargetParamAttr {
   ///     target: TargetInfoAttr
   ///   }
-  kTargetParamAttr = 20,
+  kTargetParamAttr = 19,
   ///
   ///   BuildInfoParamAttr {
   ///     info: BuildInfoAttr
   ///   }
-  kBuildInfoParamAttr = 21,
+  kBuildInfoParamAttr = 20,
   ///
   ///  EnvAttr {
   ///    values: DictionaryAttr
   ///  }
-  kEnvAttr = 22,
+  kEnvAttr = 21,
   ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 23,
+  kParamOperatorAttr = 22,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 24,
+  kMLIROpAttr = 23,
   ///
   ///  DecoratorsAttr {
   ///    value: TypedAttr[]
   ///  }
-  kDecoratorsAttr = 25,
+  kDecoratorsAttr = 24,
   ///
   ///  ExportKindAttr {
   ///    value: varint
   ///  }
-  kExportKindAttr = 26,
+  kExportKindAttr = 25,
 };
 
 /// This enum contains marker codes used to indicate which type is currently
@@ -205,7 +198,7 @@ enum TypeCode {
   ///     inputParams: ParamDeclArrayAttr
   ///     resultParams: ParamDeclArrayAttr
   ///     values: FunctionType
-  ///     metadata: FnMetadataAttr
+  ///     metadata: Attribute
   ///   }
   kSignatureType = 5,
   ///
@@ -254,7 +247,6 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   DTypeConstantAttr readDTypeConstantAttr(BytecodeReader &reader) const;
   EnvAttr readEnvAttr(BytecodeReader &reader) const;
   ExportKindAttr readExportKindAttr(BytecodeReader &reader) const;
-  FnMetadataAttr readFnMetadataAttr(BytecodeReader &reader) const;
   IntLiteralAttr readIntLiteralAttr(BytecodeReader &reader) const;
   Attribute readMLIROpAttr(BytecodeReader &reader) const;
   ParamBindAttr readParamBindAttr(BytecodeReader &reader) const;
@@ -283,7 +275,6 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   void write(DTypeConstantAttr attr, BytecodeWriter &writer) const;
   void write(EnvAttr attr, BytecodeWriter &writer) const;
   void write(ExportKindAttr attr, BytecodeWriter &writer) const;
-  void write(FnMetadataAttr attr, BytecodeWriter &writer) const;
   void write(IntLiteralAttr attr, BytecodeWriter &writer) const;
   void write(MLIROpAttr attr, BytecodeWriter &writer) const;
   void write(ParamBindAttr attr, BytecodeWriter &writer) const;
@@ -342,8 +333,6 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
     return readConstraintAttr(reader);
   case Encoding::kConstraintArrayAttr:
     return readArrayOfAttrs<ConstraintArrayAttr>(reader);
-  case Encoding::kFnMetadataAttr:
-    return readFnMetadataAttr(reader);
   case Encoding::kUnknownAttr:
     return readUnknownAttr(reader);
   case Encoding::kUnboundAttr:
@@ -397,11 +386,11 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
                                       BytecodeWriter &writer) const {
   return TypeSwitch<Attribute, LogicalResult>(attr)
       .Case<BuildInfoParamAttr, ConcreteTypeConstantAttr, ConstraintAttr,
-            DTypeConstantAttr, EnvAttr, ExportKindAttr, FnMetadataAttr,
-            IntLiteralAttr, MLIROpAttr, ParamBindAttr, ParamDeclAttr,
-            ParamDeclRefAttr, ParamIndexRefAttr, ParamOperatorAttr,
-            ParameterizedTypeConstantAttr, SymbolConstantAttr, TargetParamAttr,
-            UnboundAttr, UnknownAttr, VariadicAttr>([&](auto attr) {
+            DTypeConstantAttr, EnvAttr, ExportKindAttr, IntLiteralAttr,
+            MLIROpAttr, ParamBindAttr, ParamDeclAttr, ParamDeclRefAttr,
+            ParamIndexRefAttr, ParamOperatorAttr, ParameterizedTypeConstantAttr,
+            SymbolConstantAttr, TargetParamAttr, UnboundAttr, UnknownAttr,
+            VariadicAttr>([&](auto attr) {
         write(attr, writer);
         return success();
       })
@@ -546,35 +535,6 @@ void KGENBytecodeInterface::write(ExportKindAttr attr,
                                   BytecodeWriter &writer) const {
   writer.writeVarInt(Encoding::kExportKindAttr);
   writer.writeVarInt(static_cast<uint64_t>(attr.getValue()));
-}
-
-//===----------------------------------------------------------------------===//
-// FnMetadataAttr
-
-FnMetadataAttr
-KGENBytecodeInterface::readFnMetadataAttr(BytecodeReader &reader) const {
-  SmallVector<StringAttr> argNames;
-  if (failed(reader.readAttributes(argNames)))
-    return FnMetadataAttr();
-
-  SmallVector<TypedAttr> defaultArguments;
-  if (failed(reader.readAttributes(defaultArguments)))
-    return FnMetadataAttr();
-
-  SmallVector<TypedAttr> defaultParameters;
-  if (failed(reader.readAttributes(defaultParameters)))
-    return FnMetadataAttr();
-
-  return FnMetadataAttr::get(getContext(), argNames, defaultArguments,
-                             defaultParameters);
-}
-
-void KGENBytecodeInterface::write(FnMetadataAttr attr,
-                                  BytecodeWriter &writer) const {
-  writer.writeVarInt(Encoding::kFnMetadataAttr);
-  writer.writeAttributes(attr.getArgNames());
-  writer.writeAttributes(attr.getDefaultArguments());
-  writer.writeAttributes(attr.getDefaultParameters());
 }
 
 //===----------------------------------------------------------------------===//
@@ -945,10 +905,11 @@ void KGENBytecodeInterface::write(ParamRefType type,
 Type KGENBytecodeInterface::readSignatureType(BytecodeReader &reader) const {
   TypeArrayAttr inputParamTypes, resultParamTypes;
   FunctionType values;
-  FnMetadataAttr metadata;
+  FnMetadataAttrInterface metadata;
   if (failed(reader.readAttribute(inputParamTypes)) ||
       failed(reader.readAttribute(resultParamTypes)) ||
-      failed(reader.readType(values)) || failed(reader.readAttribute(metadata)))
+      failed(reader.readType(values)) ||
+      failed(reader.readOptionalAttribute(metadata)))
     return Type();
 
   SmallVector<ValueInputConvention> inputConventions;
@@ -978,7 +939,7 @@ void KGENBytecodeInterface::write(SignatureType type,
   writer.writeAttribute(type.getInputParamTypes());
   writer.writeAttribute(type.getResultParamTypes());
   writer.writeType(type.getValues());
-  writer.writeAttribute(type.getMetadata());
+  writer.writeOptionalAttribute(type.getMetadata());
   writer.writeList(type.getInputConventions(), [&](ValueInputConvention value) {
     writer.writeVarInt(static_cast<uint64_t>(value));
   });

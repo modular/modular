@@ -90,7 +90,7 @@ private:
   /// The destination context we're emitting into.
   ValueDest &dest;
   /// The signature type of the callee, stored for convenience.
-  SignatureType calleeSig;
+  LITSignatureType calleeSig;
 
   /// This struct accumulates information about IR to emit after the call, e.g.
   /// writebacks for computed inout lvalues, and lifetime markers.

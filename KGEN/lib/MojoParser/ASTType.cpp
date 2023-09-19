@@ -383,7 +383,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
   } else if (isNoneType()) {
     os << "None";
-  } else if (auto sig = dyn_cast<SignatureType>(type)) {
+  } else if (auto sig = dyn_cast<LITSignatureType>(type)) {
     if (sig.isAsync())
       os << "async ";
     os << "fn";

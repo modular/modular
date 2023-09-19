@@ -124,12 +124,6 @@ def FuncInterface : OpInterface<"FuncInterface"> {
     /// higher scopes.
     SignatureType getFullSignature() { return KGEN::getFullSignature($_op); }
 
-    /// Returns the metadata associated with the function, such as function
-    /// effects and value argument conventions.
-    FnMetadataAttr getMetadata() {
-      return $_op.getSignature().getMetadata();
-    }
-
     /// Returns the argument types of this function.
     ArrayRef<Type> getArgumentTypes() {
       return $_op.getFunctionType().getInputs();

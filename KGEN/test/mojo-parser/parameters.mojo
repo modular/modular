@@ -86,7 +86,7 @@ struct TestParamStruct[A: Int]:
     alias B = A*A+1
     # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__mul__{{.*}}, [[B]], [[A]])>
     alias C = B*A
-    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>> {{.*}}__init__()"<:!Int {{.*}}1
+    # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}> = <apply(:!lit.signature<() ownedresult -> {{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}1{{.*}}>>> {{.*}}__init__()"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
     # CHECK: %temp = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: !Int = [[C]]>>
     var temp: TestParamStruct[C]
@@ -103,7 +103,7 @@ struct TestParamStruct[A: Int]:
 # Test that we support partially bound parameters.
 fn testTestParamStruct(a: TestParamStruct[4]):
   # CHECK: %arg11 = lit.varlet.decl {{.*}} : <{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
-  # CHECK: %0 = kgen.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>() : () ownedresult -> !kgen.declref<{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
+  # CHECK: %0 = kgen.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
   # CHECK: pop.store %0, %arg11 : !kgen.pointer<{{.*}}@TestParamStruct<[[A]]: !Int = {{.*}}11
   var arg11 = TestParamStruct[11]()
 
@@ -220,7 +220,7 @@ fn meta_str[type: StringLiteral]():
 
 # CHECK-LABEL: lit.func @"str_input_param()"() -> !lit.none
 fn str_input_param():
-  # CHECK: %0 = kgen.call @"$parameters"::@"meta_str{{.*}}"<:!StringLiteral {{.*}}"123"{{.*}}>() : () -> !lit.none
+  # CHECK: %0 = kgen.call @"$parameters"::@"meta_str{{.*}}"<:!StringLiteral {{.*}}"123"{{.*}}>()
   meta_str["123"]()
 
 @value
@@ -229,8 +229,8 @@ struct TwoParams[a: Int, b: Int]:
     pass
 
 # CHECK-LABEL: lit.func @"signature_capture
-# CHECK-SAME: {{.*}}a: {{.*}}Int, {{.*}}f: <{{.*}}Int>() ownedresult ->
-# CHECK-SAME: {{.*}}TwoParams<{{.*}}a: {{.*}}Int = {{.*}}a, {{.*}}b: {{.*}}Int = *(0,0)>
+# CHECK-SAME: {{.*}}a: {{.*}}Int, {{.*}}f: !lit.signature<<{{.*}}Int>() ownedresult ->
+# CHECK-SAME: {{.*}}TwoParams<{{.*}}a: {{.*}}Int = {{.*}}a, {{.*}}b: {{.*}}Int = *(0,0)>>
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
@@ -321,9 +321,9 @@ fn just_result_params[() -> a: __mlir_type.index]():
 
 # CHECK-LABEL: lit.func @"result_param_ref()"
 fn result_param_ref():
-    # CHECK: unbound_ref: <[] -> index>() -> !lit.none = <{{.*}}@"just_result_params()">
+    # CHECK: unbound_ref: !lit.signature<<[] -> index>() -> !lit.none> = <{{.*}}@"just_result_params()">
     alias unbound_ref = just_result_params
-    # CHECK: bound_ref: <[] -> !Int, !Int>() -> !Int = <{{.*}}idx_result_params{{.*}}<:!Int #lit.struct<{value = 1}>>>
+    # CHECK: bound_ref: !lit.signature<<[] -> !Int, !Int>() -> !Int> = <{{.*}}idx_result_params{{.*}}<:!Int #lit.struct<{value = 1}>>>
     alias bound_ref = idx_result_params[1]
 
 
@@ -398,11 +398,11 @@ fn testMultipleParamReturn[a: Bool -> b: Int]():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.func @"takeCallable{{.*}}"
-# CHECK-SAME: <[[CALLABLE:.*]]: (index borrow) -> index>(%a: index borrow) -> index
+# CHECK-SAME: <[[CALLABLE:.*]]: !lit.signature<(index borrow) -> index>>(%a: index borrow) -> index
 fn takeCallable[
-     callable: __mlir_type[`!kgen.signature<(index borrow) -> index>`]
+     callable: fn(__mlir_type.index) -> __mlir_type.index
    ](a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK-NEXT: %0 = kgen.call_param[(index borrow) -> index: [[CALLABLE]]](%a)
+  # CHECK-NEXT: %0 = kgen.call_param[!lit.signature<(index borrow) -> index>: [[CALLABLE]]](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -411,7 +411,8 @@ fn takeAndReturnIndex(x: __mlir_type.index) -> __mlir_type.index:
 
 # CHECK-LABEL: lit.func @"takeAndReturnIndex
 fn passFunction(a: __mlir_type.index) -> __mlir_type.index:
-  # CHECK: %0 = kgen.call @"$parameters"::@"takeCallable{{.*}}<:(index borrow) -> index rebind(:("x": index borrow) -> index @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
+  # CHECK: kgen.call @"$parameters"::@"takeCallable{{.*}}<:!lit.signature<(index borrow) -> index>
+  # CHECK-SAME: rebind(:!lit.signature<("x": index borrow) -> index> @"$parameters"::@"takeAndReturnIndex{{.*}}")>(%a)
   return takeCallable[takeAndReturnIndex](a)
 
 ##===--------------------Test function with parameters---------------------===##
@@ -429,7 +430,7 @@ fn takeCallable2[
 # CHECK-LABEL: lit.func @"passFunctionParam2
 fn passFunctionParam2():
   # CHECK: kgen.call @"$parameters"::@"takeCallable2{{.*}}"<
-  # CHECK-SAME: :<dtype>() -> !lit.none @"$parameters"::@"callableWithParam{{.*}}">()
+  # CHECK-SAME: :!lit.signature<<dtype>() -> !lit.none> @"$parameters"::@"callableWithParam{{.*}}">()
   takeCallable2[callableWithParam]()
 
 # CHECK-LABEL: lit.func @"my_constrained{{.*}}()"
@@ -530,12 +531,13 @@ fn useParamVariadics():
   fnWithVariadics[1, 2]()
 
   # This keeps the parameters unbound, allowing them to be used with different length..
-  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: <variadic<!Int>>() param_vararg -> !lit.none = <@"$parameters"::@"fnWithVariadics{{.*}}">
+  # CHECK-NEXT: lit.alias.decl {{.*}}fnAlias: !lit.signature<<variadic<!Int>>() param_vararg -> !lit.none>
+  # CHECK-SAME: = <@"$parameters"::@"fnWithVariadics{{.*}}">
   alias fnAlias = fnWithVariadics
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
-  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [() param_vararg -> !lit.none: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
-  # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<() param_vararg -> !lit.none>
+  # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure [!lit.signature<() param_vararg -> !lit.none>: @"$parameters"::@"fnWithVariadics{{.*}}"<:variadic<!Int> []>]()
+  # CHECK-NEXT:  %fnLet = lit.letreg.decl "fnLet" = [[TMP]] : !kgen.signature<!lit.signature<() param_vararg -> !lit.none>>
   let fnLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.varlet.decl {{.*}} <@"{{.*}}::@StructWithVariadics<[[B]]: variadic<!Int> = []>>

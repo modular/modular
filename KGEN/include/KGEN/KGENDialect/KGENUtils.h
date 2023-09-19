@@ -155,6 +155,10 @@ void printOptionalParameterSpec(AsmPrinter &p,
 void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
+/// Parse an argument convention.
+ParseResult parseInputConvention(AsmParser &p,
+                                 ValueInputConvention &convention);
+
 /// Parse and print an operand and result type list with metadata.
 OptionalParseResult parseOptionalSignature(AsmParser &p, Type &signature);
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
@@ -186,15 +190,13 @@ ParseResult parseFunctionSignature(OpAsmParser &p,
                                    ParamDeclArrayAttr &inputParams,
                                    ParamDeclArrayAttr &resultParams,
                                    FunctionType &functionType,
-                                   SignatureType &signature,
-                                   bool parseNames = false);
+                                   SignatureType &signature);
 /// Print a function signature with optional metadata. If `region` is non-null,
 /// then the SSA value names of the region arguments are printed.
 void printFunctionSignature(OpAsmPrinter &p, Region *region,
                             ArrayRef<ParamDeclAttr> inputParams,
                             ArrayRef<ParamDeclAttr> resultParams,
-                            FunctionType functionType, SignatureType signature,
-                            bool printNames = false);
+                            FunctionType functionType, SignatureType signature);
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);

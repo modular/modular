@@ -965,8 +965,8 @@ void KGEN::printParamDeclaration(OpAsmPrinter &p, ParamDeclAttr paramDecl,
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseInputConvention(AsmParser &p,
-                                        ValueInputConvention &convention) {
+ParseResult KGEN::parseInputConvention(AsmParser &p,
+                                       ValueInputConvention &convention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
@@ -1060,39 +1060,16 @@ void KGEN::printSignatureValues(AsmPrinter &p,
     p.printArrowTypeList(functionType.getResults());
 }
 
-static FnMetadataAttr getMetadataAttr(AsmParser &p, llvm::SMLoc loc,
-                                      ArrayRef<StringAttr> argNames,
-                                      ArrayRef<TypedAttr> defaults) {
-  // FIXME: Force C++ to select the derived class getter, not the storage
-  // uniquer getter, which won't compile outside of `KGENAttrs.cpp`.
-  using GetCheckedT = FnMetadataAttr (*)(
-      function_ref<InFlightDiagnostic()>, MLIRContext *, ArrayRef<StringAttr>,
-      ArrayRef<TypedAttr>, ArrayRef<TypedAttr>);
-  return ((GetCheckedT)&FnMetadataAttr::getChecked)(
-      [&] { return p.emitError(loc); }, p.getContext(), argNames, defaults, {});
-}
-
 ParseResult KGEN::parseFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureType &signature, bool parseNames) {
+    FunctionType &functionType, SignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   if (parseOptionalParameterSpec(p, inputParams, resultParams))
     return failure();
 
-  SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
   auto parseElt = [&]() -> Type {
-    // Parse an optional argument name.
-    if (!parseNames) {
-      std::string argName;
-      if (succeeded(p.parseOptionalString(&argName)))
-        if (failed(p.parseColon()))
-          return {};
-      argNames.push_back(p.getBuilder().getStringAttr(argName));
-    }
-
     // Parse the argument type and its input convention.
     OptionalParseResult result =
         p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
@@ -1104,21 +1081,6 @@ ParseResult KGEN::parseFunctionSignature(
     if (parseInputConvention(p, inputConventions.emplace_back()))
       return {};
 
-    if (parseNames) {
-      StringRef argName = args.back().ssaName.name;
-      if (!argName.empty())
-        argName = argName.drop_front();
-      argNames.push_back(p.getBuilder().getStringAttr(argName));
-    }
-
-    // Parse an optional default value.
-    if (succeeded(p.parseOptionalEqual())) {
-      TypedAttr value;
-      if (parseParamValue(p, value, args.back().type))
-        return {};
-      defaults.push_back(value);
-    }
-
     return args.back().type;
   };
 
@@ -1127,12 +1089,9 @@ ParseResult KGEN::parseFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  FnMetadataAttr metadata = getMetadataAttr(p, loc, argNames, defaults);
-  if (!metadata)
-    return failure();
   signature = IndexRefRemapper::remapToSignature(
-      inputParams, resultParams, functionType, inputConventions, effects,
-      metadata, [&] { return p.emitError(loc); });
+      inputParams, resultParams, functionType, inputConventions, effects, {},
+      [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
@@ -1140,14 +1099,9 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
                                   ArrayRef<ParamDeclAttr> inputParams,
                                   ArrayRef<ParamDeclAttr> resultParams,
                                   FunctionType functionType,
-                                  SignatureType signature, bool printNames) {
+                                  SignatureType signature) {
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
-    if (!printNames && !signature.getArgName(i).empty()) {
-      p.printString(signature.getArgName(i));
-      p << ": ";
-    }
-
     if (!region)
       p << functionType.getInput(i);
     else
@@ -1156,12 +1110,6 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
     ValueInputConvention conv = signature.getInputConvention(i);
     if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
       p << ' ' << stringifyValueInputConvention(conv);
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
-    if (i >= defaultIndex) {
-      p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
-    }
   };
 
   printOptionalParameterSpec(p, inputParams, resultParams);
@@ -1194,31 +1142,13 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
     }
   }
 
-  SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaults;
   SmallVector<ValueInputConvention> inputConventions;
   auto parseElt = [&]() -> Type {
-    // Parse an optional argument name.
-    std::string argName;
-    if (succeeded(p.parseOptionalString(&argName)))
-      if (failed(p.parseColon()))
-        return {};
-    argNames.push_back(p.getBuilder().getStringAttr(argName));
-
     // Parse the argument type and its input convention.
     Type type;
     if (p.parseType(type) ||
         parseInputConvention(p, inputConventions.emplace_back()))
       return {};
-
-    // Parse an optional default value.
-    if (succeeded(p.parseOptionalEqual())) {
-      TypedAttr value;
-      if (parseParamValue(p, value, type))
-        return {};
-      defaults.push_back(value);
-    }
-
     return type;
   };
 
@@ -1227,14 +1157,11 @@ OptionalParseResult KGEN::parseOptionalSignature(AsmParser &p,
   OptionalParseResult result = parseOptionalSignatureValues(
       p, parseElt, functionType, effects, /*optionalResultList=*/false);
   if (result.has_value() && succeeded(*result)) {
-    FnMetadataAttr metadata = getMetadataAttr(p, loc, argNames, defaults);
-    if (!metadata)
-      return failure();
     signature = SignatureType::getChecked(
         [&] { return p.emitError(loc); }, functionType,
         TypeArrayAttr::get(p.getContext(), inputParamTypes),
         TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
-        effects, metadata);
+        effects, {});
     if (!signature)
       return failure();
   }
@@ -1245,8 +1172,15 @@ ParseResult KGEN::parseSignature(AsmParser &p, Type &signature) {
   OptionalParseResult result = parseOptionalSignature(p, signature);
   if (result.has_value())
     return *result;
-  return p.emitError(p.getCurrentLocation(),
-                     "expected '<' or '(' to begin a signature");
+  result = p.parseOptionalType(signature);
+  if (!result.has_value())
+    return p.emitError(p.getCurrentLocation(),
+                       "expected '<' or '(' to begin a signature");
+  if (failed(*result))
+    return failure();
+  if (!isa<SignatureType>(signature))
+    return p.emitError(p.getCurrentLocation(), "expected a signature type");
+  return success();
 }
 
 ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
@@ -1259,6 +1193,13 @@ ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
 
 void KGEN::printSignature(AsmPrinter &p, Type signatureType) {
   auto signature = cast<SignatureType>(signatureType);
+
+  // If the signature has metadata, ask its dialect to print the signature.
+  if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
+    metadata.printSignature(p, signature);
+    return;
+  }
+
   if (!signature.getInputParamTypes().empty() ||
       !signature.getResultParamTypes().empty()) {
     p << '<';
@@ -1275,21 +1216,11 @@ void KGEN::printSignature(AsmPrinter &p, Type signatureType) {
   }
 
   auto printElt = [&](unsigned i) {
-    StringAttr argName = signature.getArgName(i);
-    if (argName.size())
-      p << "\"" << argName.strref() << "\": ";
-
     p << signature.getValueInputs()[i];
 
     ValueInputConvention conv = signature.getInputConvention(i);
     if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
       p << ' ' << stringifyValueInputConvention(conv);
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
-    if (i >= defaultIndex) {
-      p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
-    }
   };
 
   printSignatureValues(p, printElt, signature.getValues(), signature,
@@ -1355,33 +1286,26 @@ ParseResult KGEN::parseSignatureValues(AsmParser &p,
     return success();
   }
 
-  FnMetadataAttr metadata = getMetadataAttr(p, loc, argNames, defaults);
-  if (!metadata)
-    return failure();
   signature = IndexRefRemapper::remapToSignature(
-      {}, resultParamDecls, functionType, inputConventions, effects, metadata,
+      {}, resultParamDecls, functionType, inputConventions, effects, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
 void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
                                 SignatureType signature) {
-  auto printElt = [&](unsigned i) {
-    StringAttr argName = signature.getArgName(i);
-    if (argName.size())
-      p << "\"" << argName.strref() << "\": ";
+  // If the signature has metadata, ask its dialect to print the signature.
+  if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
+    metadata.printSignature(p, signature);
+    return;
+  }
 
+  auto printElt = [&](unsigned i) {
     p << functionType.getInput(i);
 
     ValueInputConvention conv = signature.getInputConvention(i);
     if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
       p << ' ' << stringifyValueInputConvention(conv);
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
-    if (i >= defaultIndex) {
-      p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
-    }
   };
 
   printSignatureValues(p, printElt, functionType, signature,

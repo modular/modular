@@ -22,7 +22,7 @@
 # CHECK-DAG:   [[loaded_other_impl:%.*]] = pop.load [[other_impl]] : !kgen.pointer<pointer<array<0, i1>>> loc(#[[LOC_COPY]])
 # CHECK-DAG:   pop.store [[loaded_other_impl]], [[M0]] {{.*}} loc(#[[LOC_COPY]])
 # CHECK-DAG:   [[M1:%.*]] = lit.struct.gep %self[dtor] {{.*}} loc(#[[LOC_COPY]])
-# CHECK-DAG:   [[M2:%.*]] = lit.struct.gep %existing[dtor] : <("self": !kgen.pointer<array<0, i1>>) -> !lit.none> {{.*}} loc(#[[LOC_COPY]])
+# CHECK-DAG:   [[M2:%.*]] = lit.struct.gep %existing[dtor] {{.*}} loc(#[[LOC_COPY]])
 # CHECK-DAG:   [[M3:%.*]] = pop.load [[M2]] {{.*}} loc(#[[LOC_COPY]])
 # CHECK-DAG:   pop.store [[M3]], [[M1]] {{.*}} loc(#[[LOC_COPY]])
 # CHECK-DAG:   [[M4:%.*]] = lit.struct.gep %self[copy] {{.*}} loc(#[[LOC_COPY]])

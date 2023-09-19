@@ -84,52 +84,6 @@ static void printConstraintLoc(AsmPrinter &printer, Location loc) {
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetadataAttr
-//===----------------------------------------------------------------------===//
-
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, unsigned numInputs) {
-  auto emptyStr = StringAttr::get(ctx);
-  SmallVector<StringAttr> names(numInputs, emptyStr);
-  return get(ctx, names, {}, {});
-}
-
-bool FnMetadataAttr::isDefault() {
-  return llvm::all_of(getArgNames(),
-                      [](StringAttr name) { return name.empty(); }) &&
-         getDefaultArguments().empty() && getDefaultParameters().empty();
-}
-
-LogicalResult
-FnMetadataAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       ArrayRef<StringAttr> argNames,
-                       ArrayRef<TypedAttr> defaultArguments,
-                       ArrayRef<TypedAttr> defaultParameters) {
-  for (StringAttr name : argNames)
-    if (!name)
-      return emitError() << "arg name cannot be null";
-  return success();
-}
-
-LogicalResult FnMetadataAttr::verifySignature(
-    function_ref<InFlightDiagnostic()> emitError,
-    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
-    FnEffects effects) {
-  size_t numInputConv = inputConventions.size();
-  if (getArgNames().size() != numInputConv) {
-    return emitError() << "number of argument names does not match number of "
-                          "input conventions: "
-                       << getArgNames().size() << " != " << numInputConv;
-  }
-  if (getDefaultArguments().size() > numInputConv) {
-    return emitError()
-           << "there are more default arguments than value input conventions: "
-           << getDefaultArguments().size() << " > " << numInputConv;
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ConstraintAttr
 //===----------------------------------------------------------------------===//
 
