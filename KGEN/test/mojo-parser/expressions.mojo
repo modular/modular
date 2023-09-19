@@ -1456,6 +1456,45 @@ fn test_kw_args_param_infer():
     # CHECK: kgen.call @"{{.*}}@"take_kw_param_infer[AnyType]{{.*}}"<:type !Int>(%[[A]], %[[B]])
     take_kw_param_infer(b=3, a="hello")
 
+
+fn print_kw_args(a: Int, b: Int = 7):
+    print(a, b)
+
+
+struct KwCallable:
+    fn __init__(inout self):
+        pass
+
+    fn __call__(self, msg: StringLiteral, n: Int = 5):
+        print(msg, n)
+
+
+# CHECK-LABEL: lit.func @"indirect_kw_args()"
+fn indirect_kw_args():
+    # CHECK: lit.alias.decl [[CALLEE:.*]]: (
+    alias callee = print_kw_args
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 9
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK: kgen.call_param[{{.*}} [[CALLEE]]](%[[A]], %[[B]])
+    callee(a=9)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 4
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 5
+    # CHECK: kgen.call_param[{{.*}} [[CALLEE]]](%[[A]], %[[B]])
+    callee(4, b=5)
+
+    # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK-DAG: %[[B:.*]] = kgen.param.constant: {{.*}}value = 2
+    # CHECK: kgen.call_param[{{.*}} [[CALLEE]]](%[[A]], %[[B]])
+    callee(b=2, a=7)
+
+    # CHECK: %[[CALLABLE:.*]] = lit.varlet.decl {{.*}} <!KwCallable>
+    # CHECK-DAG: %[[MSG:.*]] = kgen.param.constant: {{.*}}value: string = "woof"
+    # CHECK-DAG: %[[N:.*]] = kgen.param.constant: {{.*}}value = 7
+    # CHECK: kgen.call @{{.*}}@KwCallable::@"__call__{{.*}}"(%[[CALLABLE]], %[[MSG]], %[[N]])
+    KwCallable()(n=7, msg="woof")
+
 ##===----------------------------------------------------------------------===##
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
