@@ -793,6 +793,7 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
   }];
 
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1454,7 +1455,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $address_space) 
+    custom<PointerOf>(type($result), $address_space)
     (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 
@@ -1609,7 +1610,7 @@ def POP_GlobalAllocOp : POPOp<"global_alloc"> {
 
   let assemblyFormat = [{
     custom<IndexParamValue>($count) `x`
-    custom<PointerOf>(type($result), $address_space) 
+    custom<PointerOf>(type($result), $address_space)
     (`align` custom<IndexParamValue>($alignment)^)? attr-dict
   }];
 }
