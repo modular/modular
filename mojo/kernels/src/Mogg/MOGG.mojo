@@ -151,6 +151,7 @@ fn MOGGExport():
     alias _add = add
     alias _avg_pool_shape = pool_shape
     alias _avg_pool = avg_pool
+    alias _broadcast_shape = broadcast_shape
     alias _cast = cast
     alias _ceil = ceil
     alias _concat = concat
@@ -633,6 +634,70 @@ fn simd_store[
 # ===----------------------------------------------------------------------===#
 # Broadcast
 # ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn broadcast_shape[
+    lhs_type: DType,
+    rhs_type: DType,
+    out_type: DType,
+    # single_thread_blocking_override: Bool,
+](
+    lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
+    rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
+    out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
+    out_chain: OutputChainPtr,
+):
+    let lhs_size = lhs_buf.size()
+    let rhs_size = rhs_buf.size()
+    if lhs_size > rhs_size:
+        return broadcast_shape_impl(rhs_buf, lhs_buf, out_buf, out_chain)
+    return broadcast_shape_impl(lhs_buf, rhs_buf, out_buf, out_chain)
+
+
+@always_inline
+fn broadcast_shape_impl[
+    lhs_type: DType,
+    rhs_type: DType,
+    out_type: DType,
+    # single_thread_blocking_override: Bool,
+](
+    lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
+    rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
+    out_buf: NDBuffer[1, DimList.create_unknown[1](), out_type],
+    out_chain: OutputChainPtr,
+):
+    # Ensure lhs is always the smaller shape
+    let lhs_rank = lhs_buf.size()
+    let rhs_rank = rhs_buf.size()
+    debug_assert(lhs_rank <= rhs_rank, "lhs shape must be the smaller one")
+
+    # lhs_buf =      [l0, l1, ...]
+    # rhs_buf = [..., r0, r1, ...]
+    # out_buf = [..., o0, o1, ...]
+    let size_diff = rhs_rank - lhs_rank
+    for i in range(size_diff):
+        out_buf[i] = rhs_buf[i].cast[out_type]()
+
+    for lhs_idx in range(lhs_rank):
+        let rhs_idx = lhs_idx + size_diff
+        let lhs_dim = lhs_buf[lhs_idx].to_int()
+        let rhs_dim = rhs_buf[rhs_idx].to_int()
+        if lhs_dim == rhs_dim:
+            out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
+
+        elif lhs_dim != 1 and rhs_dim != 1:
+            debug_assert(
+                rhs_dim == 1, "one of the differing dimensions must be 1"
+            )
+
+        elif lhs_dim != 1:
+            out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_type]()
+
+        elif rhs_dim != 1:
+            out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
+
+    out_chain.mark_ready()
 
 
 @mogg_register("mo.static.broadcast_to")
