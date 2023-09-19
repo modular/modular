@@ -410,7 +410,7 @@ Type StructOperationLowerer::replace(Type type) {
     result = emptyStructAttr.getType();
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
-    result = replaceImpl(PointerType::get(ref.getElementAsType()));
+    result = replaceImpl(ref.getAsPointerType());
   } else {
     // Recursively replace types.
     result = replaceImpl(type);

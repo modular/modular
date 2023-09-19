@@ -400,9 +400,12 @@ struct ValueSet {
 
     // Determine if we should reject mutations after initialization.
     bool isLet = false;
-    if (val)
-      if (VarLetDeclOp varLet = val.getDefiningOp<VarLetDeclOp>())
+    if (val) {
+      if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
         isLet = !varLet.getIsVar();
+      if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
+        isLet = !varLet.getIsVar();
+    }
 
     valueInfoIndex[val] = valueInfos.size();
     valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
@@ -551,6 +554,10 @@ ValueRef ValueSet::getValueRef(Value value) const {
         return valueRef;
       }
     }
+
+  // If this is a RefToPointerOp get the underlying ref.
+  if (auto refToPointer = value.getDefiningOp<RefToPointerOp>())
+    return getValueRef(refToPointer.getRef());
 
   // Otherwise, we don't know what this is.
   return ValueRef();
@@ -861,7 +868,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<StructGEPOp>(op))
+  if (isa<StructGEPOp, RefToPointerOp>(op))
     return;
 
   // A store of a whole value is an initialization.
@@ -1387,7 +1394,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // This op is handled when used.
-  if (isa<StructGEPOp>(op))
+  if (isa<StructGEPOp, RefToPointerOp>(op))
     return;
 
   // If this is a call, investigate each of the operands along with the
@@ -1841,6 +1848,11 @@ void DestructorInsertion::destroyValueIfNeeded(
   LIT::StructDeclOp structDecl =
       valueSet.typeDeclInfo.getStructDeclForType(valueType);
 
+  // Convert lit.ref into pointers until
+  // TODO(references): pass references to destructors, not pointeres.
+  if (isa<RefType>(value.getType()))
+    value = builder.create<RefToPointerOp>(value);
+
   unsigned nextBit = 0;
   for (auto field : structDecl.getFieldDecls()) {
     Operation *fieldVal;
@@ -1982,11 +1994,19 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     if (srcValue != value) {
       // With var's we can have indirect operands.
       bool isOk = false;
-      if (auto load = srcValue.getDefiningOp<POP::LoadOp>())
-        if (load.getOperand() == value)
+      if (auto load = srcValue.getDefiningOp<POP::LoadOp>()) {
+        if (load.getOperand() == value) {
           isOk = true;
-      if (!isOk)
-        return failure();
+        } else if (auto refToPointer =
+                       load.getOperand().getDefiningOp<RefToPointerOp>()) {
+          if (refToPointer.getRef() == value) {
+            // TODO(references) remove support for pointers.
+            isOk = true;
+          }
+        }
+        if (!isOk)
+          return failure();
+      }
     }
 
     // Transform into:
@@ -2085,6 +2105,12 @@ void DestructorInsertion::emitDestructorCallAt(Value value, ValueRef valueRef,
   // We may have a @register_passable value indirect (e.g. because it is in a
   // var).  If so, it needs to be loaded to invoke the destructor.
   Value valueToDestroy = value;
+
+  // Convert lit.ref into pointers until
+  // TODO(references): pass references to destructors, not pointeres.
+  if (isa<RefType>(valueToDestroy.getType()))
+    valueToDestroy = builder.create<RefToPointerOp>(valueToDestroy);
+
   if (valueToDestroy.getType() != signature.getValueInputs()[0]) {
     assert(PointerType::get(signature.getValueInputs()[0]) ==
            valueToDestroy.getType());
@@ -2236,14 +2262,22 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
       if (info.hasErrorDiagnosed || info.isMutatedWhenInitialized ||
           !info.value)
         continue;
-      VarLetDeclOp varLet = info.value.getDefiningOp<VarLetDeclOp>();
-      if (!varLet || varLet.getIsSynthesized() || !varLet.getIsVar())
-        continue;
-      mlir::emitWarning(varLet.getLoc())
-          << "'" << varLet.getName()
-          << "' was declared as a 'var' but never mutated, consider switching "
-             "to "
-             "a 'let'";
+
+      auto checkVarLet = [&](auto varLet) {
+        if (varLet.getIsSynthesized() || !varLet.getIsVar())
+          return;
+        mlir::emitWarning(varLet.getLoc())
+            << "'" << varLet.getName()
+            << "' was declared as a 'var' but never mutated, consider "
+               "switching "
+               "to "
+               "a 'let'";
+      };
+
+      if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())
+        checkVarLet(varLet);
+      if (auto varLet = info.value.getDefiningOp<VarLetDecl2Op>())
+        checkVarLet(varLet);
     }
 
   // Remove copy ctors and allocations that have been elided.

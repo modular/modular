@@ -805,6 +805,12 @@ def LIT_VarLetDecl2Op : LITOp<"varlet.decl2", [
     $name (`var` $isVar^)? (`synth` $isSynthesized^)?
     `:` custom<VarLetDeclType>(type($result), $paramDecl) attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$elementType, "StringRef":$name,
+                   "StringRef":$lifetimeName, "bool":$isVar,
+                   "bool":$isSynth)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1445,7 +1451,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "PointerType::get($_self.cast<RefType>().getElementType())">;
+    "$_self.cast<RefType>().getAsPointerType()">;
 
 def LIT_RefToPointerOp : LITOp<"ref_to_pointer",
                               [RefPointerType<"ref", "ptr">]> {

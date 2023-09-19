@@ -36,6 +36,14 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     endsUninit = true;
     return;
   }
+  // VarLetDecl2Op is uninit and ends that way.
+  if (auto varLet = v.getDefiningOp<VarLetDecl2Op>()) {
+    name = varLet.getNameAttr();
+    isIndirect = true;
+    startsUninit = true;
+    endsUninit = true;
+    return;
+  }
 
   if (auto loadConsume = v.getDefiningOp<LoadConsumeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
@@ -142,9 +150,18 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
   // If there are any GEP operations into the struct, dig through them.
   bool hadGEP = false;
-  while (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
-    hadGEP = true;
-    value = structGEP.getContainer();
+
+  // TODO(references): Eliminate pointer operations and be exclusively about
+  // references.
+  while (1) {
+    if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
+      hadGEP = true;
+      value = structGEP.getContainer();
+    } else if (auto refToPointer = value.getDefiningOp<RefToPointerOp>()) {
+      value = refToPointer.getRef();
+    } else {
+      break;
+    }
   }
 
   // Check if there is a base value.
@@ -165,8 +182,8 @@ Type LifetimeTrackable::getTypeOrPointeeType(Type type, bool isIndirect) {
   if (!isIndirect)
     return type;
 
-  auto pointee = llvm::cast<PointerType>(type).getElementType();
-  if (auto type = dyn_cast<TypeConstantAttr>(pointee))
-    return type.getValue();
-  return ParamRefType::get(pointee);
+  // TODO(references): Remove support for raw pointers.
+  if (auto refType = dyn_cast<RefType>(type))
+    return refType.getElementAsType();
+  return llvm::cast<PointerType>(type).getElementAsType();
 }

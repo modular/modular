@@ -608,10 +608,11 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.varlet.decl "a" var
-    # CHECK: pop.store %a, %a_0 : !kgen.pointer<!RPStructWithInit>
+    # CHECK: %a_0 = lit.varlet.decl2 "a" var
+    # CHECK: [[APTR:%.*]] = lit.ref_to_pointer %a_0
+    # CHECK: pop.store %a, [[APTR]] : !kgen.pointer<!RPStructWithInit>
 
-    # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
+    # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]
     # CHECK:  = pop.load [[AX]]
     _ = a.x
     # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
@@ -621,7 +622,7 @@ fn ownedConventionReg(
     # No copy call.
     let t = triv
 
-    # CHECK: [[AX:%.*]] = lit.struct.gep %a_0[x]
+    # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]
     # CHECK: [[ONE:%.*]]  = kgen.param.constant: !Int = <#lit.struct<{value = 1}>>
     # CHECK: pop.store [[ONE]], [[AX]]
     a.x = 1

@@ -2755,23 +2755,27 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 static SLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
                                     ASTDecl &parentDecl, OpBuilder &builder,
                                     SMLoc loc, SharedState &shared) {
+  Location mloc = shared.translateLocation(loc);
+
   // Emit the initializer expression into the slot.
   ExprEmitter emitter(shared, parentDecl, builder);
 
   ASTType declType = argValue.getRValueType();
-  Type varType = PointerType::get(declType);
-  auto varDecl = builder.create<VarLetDeclOp>(shared.translateLocation(loc),
-                                              varType, argName,
-                                              /*isVar*/ true,
-                                              /*isSynthesized*/ true);
+  std::string lifetimeName = "`" + argName.str();
+  auto varDecl =
+      builder.create<VarLetDecl2Op>(mloc, declType, argName, lifetimeName,
+                                    /*isVar*/ true,
+                                    /*isSynthesized*/ true);
+  // TODO: Maintain the reference in the type system.
+  auto varPtr = builder.create<RefToPointerOp>(mloc, varDecl);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  ValueDest dest(SLValue(varDecl), EC_DefArgumentShadow);
+  ValueDest dest(SLValue(varPtr), EC_DefArgumentShadow);
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
 
-  return SLValue(varDecl);
+  return SLValue(varPtr);
 };
 
 /// This adds a default return (lit.return of None, potentially converted
