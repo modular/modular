@@ -8,7 +8,8 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# some comment
+alias x = 5 # some comment
+# another comment
 def foo():
   print("foo")
   # another comment
