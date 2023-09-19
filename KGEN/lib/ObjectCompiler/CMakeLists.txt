@@ -23,6 +23,7 @@ add_modular_library(KGENEmitObject
   KGENToLLVM
   KGENExecutionEngine
   KGENToolCommon
+  KGENPipeline
 
   MCache
   MCompilerSupport

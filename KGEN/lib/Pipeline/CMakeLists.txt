@@ -4,8 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENCompiler
-  KGENCompiler.cpp
+add_modular_mlir_library(KGENPipeline
+  Pipeline.cpp
 
   DEPENDS
   MLIRKGENPasses
@@ -13,15 +13,7 @@ add_modular_library(KGENCompiler
   LINK_LIBS PUBLIC
   DebugInfoToLLVM
   DebugInfoTransforms
-
   KGENElaborator
-  KGENEmitObject
   KGENTransforms
   LowerLIT
-
-  KGENDialect
-  LITDialect
-  POPDialect
-
-  MLIRIR
 )
