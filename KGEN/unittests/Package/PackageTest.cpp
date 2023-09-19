@@ -21,8 +21,8 @@ TEST(Package, createElaboratedBytecodeAttr) {
   ctx.loadDialect<KGENDialect>();
 
   Location loc = UnknownLoc::get(&ctx);
-  ModuleOp module = ModuleOp::create(loc);
-  OpBuilder b(module.getBody(), module.getBody()->begin());
+  OwningOpRef<ModuleOp> module = ModuleOp::create(loc);
+  OpBuilder b(module->getBody(), module->getBody()->begin());
 
   auto noTypes = TypeArrayAttr::get(&ctx, {});
   auto func = b.create<FuncOp>(loc, b.getStringAttr("foo"),
@@ -30,7 +30,7 @@ TEST(Package, createElaboratedBytecodeAttr) {
 
   // Technically this function expects an elaborated module, but it doesn't
   // check.
-  SymbolTable symtab(module);
+  SymbolTable symtab(*module);
   auto bytecodeOr = createElaboratedBytecodeAttr(
       symtab, FlatSymbolRefAttr::get(StringAttr::get(&ctx, "bar")));
 
