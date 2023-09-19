@@ -612,6 +612,7 @@ fn ownedConventionReg(
     # CHECK: [[APTR:%.*]] = lit.ref_to_pointer %a_0
     # CHECK: pop.store %a, [[APTR]] : !kgen.pointer<!RPStructWithInit>
 
+    # CHECK: [[APTR:%.*]] = lit.ref_to_pointer %a_0
     # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]
     # CHECK:  = pop.load [[AX]]
     _ = a.x

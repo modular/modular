@@ -14,13 +14,14 @@
 //
 // AnyValue       <- Expr emitted to MLIR...
 //   LValue         <- mutable reference to storage
+//     XLValue        <- value is in memory with a reference
 //     MLValue        <- value is in memory
 //     DLValue        <- with dynamic get/set accessors
 //   BValue         <- with a borrowed value
 //     SBValue          <- value is register-passable and in an SSA register
 //     MBValue          <- value is in memory
 //     PValue           <- value is a parameter expression.
-//   RValue         <- with an owned immutable value
+//   RValue         <- with an owned value
 //     URValue         <- value cannot be materialized
 //       ORValue        <- with an unresolved overload set
 //     CRValue        <- with a concrete resolved type
@@ -51,6 +52,7 @@
 #include "mlir/IR/Value.h"
 
 namespace M::KGEN::LIT {
+class AnyValue;
 class BaseDLValue;
 class ExprNode;
 class ExprEmitter;
@@ -147,7 +149,7 @@ public:
 };
 
 /// Instances of MLValue model a loadable/storable address as an SSA value.  It
-/// always has pointer type.
+/// always has !kgen.pointer type.
 class MLValue : public Value {
 public:
   using Value::Value;
@@ -158,7 +160,17 @@ public:
   ASTType getType() const { return ASTType(Value::getType()); }
 };
 
-class AnyValue;
+/// Instances of XLValue model a loadable/storable address as an SSA value with
+/// a mutable !lit.ref reference type.
+class XLValue : public Value {
+public:
+  using Value::Value;
+  XLValue(Value v) : Value(v) {}
+
+  /// This returns the declared type of the value without the wrapping pointer.
+  ASTType getRValueType() const { return getType().getReferenceElementType(); }
+  ASTType getType() const { return ASTType(Value::getType()); }
+};
 
 /// DLValue's model a dynamic LValue which has a getter and setter.  Lit
 /// supports two ways to spell this - with property access `a.x =`
@@ -268,8 +280,9 @@ raw_ostream &operator<<(raw_ostream &os, ORValue value);
 template <typename DerivedType>
 struct VariantValueStorage {
   /// These are all the forms of storage we can have.
-  using Storage = SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
-                               ORValue, SBValue, MBValue, DLValue, MLValue>;
+  using Storage =
+      SmartVariant<NullRepresentation, PValue, SRValue, MRValue, ORValue,
+                   SBValue, MBValue, DLValue, MLValue, XLValue>;
 
   VariantValueStorage()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -448,9 +461,14 @@ struct VariantLValue {
     if (value)
       getStorageL() = value;
   }
+  VariantLValue(XLValue value) {
+    if (value)
+      getStorageL() = value;
+  }
   VariantLValue(DLValue value) { getStorageL() = value; }
 
   MLValue getIfMLValue() const { return dyn_cast<MLValue>(getStorageL()); }
+  XLValue getIfXLValue() const { return dyn_cast<XLValue>(getStorageL()); }
   DLValue getIfDLValue() const { return dyn_cast<DLValue>(getStorageL()); }
 
 private:
@@ -465,7 +483,7 @@ private:
   }
 };
 
-/// LValue = MLValue|DLValue.
+/// LValue = MLValue|XLValue|DLValue.
 class LValue : public VariantValueStorage<LValue>,
                public VariantLValue<LValue> {
 public:
@@ -475,7 +493,7 @@ public:
   static LValue getFrom(Storage storage) {
     LValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<MLValue, DLValue>(storage))
+    if (isa<MLValue, XLValue, DLValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
@@ -570,8 +588,8 @@ public:
   static CValue getFrom(Storage storage) {
     CValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, DLValue>(
-            storage))
+    if (isa<PValue, SRValue, MRValue, SBValue, MBValue, MLValue, XLValue,
+            DLValue>(storage))
       result.storage = std::move(storage);
     return result;
   }
@@ -765,6 +783,10 @@ struct MLIRValueWrapper {
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::MLValue>
     : public MLIRValueWrapper<M::KGEN::LIT::MLValue> {};
+
+template <>
+struct PointerLikeTypeTraits<M::KGEN::LIT::XLValue>
+    : public MLIRValueWrapper<M::KGEN::LIT::XLValue> {};
 
 template <>
 struct PointerLikeTypeTraits<M::KGEN::LIT::SRValue>

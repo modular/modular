@@ -1144,6 +1144,17 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return emitBValue(value, context, {});
   }
 
+  // If we have a reference destination, convert to a pointer.
+  // TODO(references): make this the primary path.
+  if (auto ref = destLV.getIfXLValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    destLV = MLValue(builder->create<RefToPointerOp>(
+        translateLocation(value.expr->getLoc()), ref));
+  }
+
   // Otherwise we have an MLValue destination.
   MLValue destPtr = destLV.getIfMLValue();
   assert(destPtr && "No other known LValue");
@@ -1523,7 +1534,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     // We handle both var and let's as mutable lvalues and let check lifetimes
     // diagnose any problems.  This allows us to handle late-initialized lets.
     mlirValue = var.getResult();
-    value = LValue(mlirValue);
+    value = MLValue(mlirValue);
 
     // RValue's and LValues always resolve to their known value.
   } else if (auto rvalue = decl.getIfRValue()) {

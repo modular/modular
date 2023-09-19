@@ -55,7 +55,11 @@ static raw_ostream &printStorage(raw_ostream &os,
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
-      os << "SLV: ";
+      os << "MLV: ";
+    os << val;
+  } else if (auto val = dyn_cast<XLValue>(storage)) {
+    if (isDump)
+      os << "XLV: ";
     os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
@@ -134,6 +138,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<XLValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
   assert(!isa<ORValue>(storage) && "overloaded rvalue has no type");
@@ -171,15 +177,21 @@ ASTType CRValue::getRValueType() const {
 }
 
 ASTType CValue::getRValueType() const {
+  auto type = getType();
   if (isa<MLValue, MRValue, MBValue>(storage))
-    return getType().getPointerElementType();
-  return getType();
+    return type.getPointerElementType();
+  if (isa<XLValue>(storage))
+    return type.getReferenceElementType();
+  return type;
 }
 
 ASTType LValue::getRValueType() const {
+  auto type = getType();
   if (isa<MLValue>(storage))
-    return getType().getPointerElementType();
-  return getType();
+    return type.getPointerElementType();
+  if (isa<XLValue>(storage))
+    return type.getReferenceElementType();
+  return type;
 }
 
 ASTType BValue::getRValueType() const {

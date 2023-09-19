@@ -2765,14 +2765,15 @@ static MLValue makeArgLValueVarSlot(const CValue &argValue, StringAttr argName,
   auto varDecl =
       builder.create<VarLetDecl2Op>(mloc, declType, argName, lifetimeName,
                                     /*isVar*/ true, /*isSynthesized*/ true);
-  // TODO: Maintain the reference in the type system.
-  auto varPtr = builder.create<RefToPointerOp>(mloc, varDecl);
 
   // Expr to provide location information.
   DeclRefNode srcExpr(StringRef(loc.getPointer(), argName.size()));
-  ValueDest dest(MLValue(varPtr), EC_DefArgumentShadow);
+  ValueDest dest(XLValue(varDecl), EC_DefArgumentShadow);
   if (!emitter.emitBValue({argValue, &srcExpr}, dest))
     dest.resetForError();
+
+  // TODO: Maintain the reference in the type system.
+  auto varPtr = builder.create<RefToPointerOp>(mloc, varDecl);
 
   return MLValue(varPtr);
 };

@@ -452,6 +452,7 @@ fn foo(owned y:Int):
 # CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
 # CHECK-NEXT: %[[QPTR:.*]] = lit.ref_to_pointer %q_0
 # CHECK-NEXT: pop.store %q, %[[QPTR]] : !kgen.pointer<!Int>
+# CHECK-NEXT: %[[QPTR:.*]] = lit.ref_to_pointer %q_0
 # CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : ("self": !Int borrow, "rhs": !Int borrow) -> !Int
