@@ -57,7 +57,7 @@ def LIT_FuncOp : LITOp<"func", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
-    KGEN_StringArrayAttr:$posArgNames,
+    StringArrayAttr:$posArgNames,
     TypeAttrOf<KGEN_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -434,7 +434,7 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands,
-                       KGEN_StringArrayAttr:$fields);
+                       StringArrayAttr:$fields);
   let results = (outs KGEN_DeclRefType:$result);
   let hasFolder = 1;
   let assemblyFormat = [{

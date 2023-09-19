@@ -23,7 +23,6 @@ class FuncInterface;
 class ParamBindAttr;
 class ParamBindArrayAttr;
 class ParamDeclArrayAttr;
-class TypeArrayAttr;
 class VariadicType;
 class VariadicAttr;
 

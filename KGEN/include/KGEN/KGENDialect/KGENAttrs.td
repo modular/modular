@@ -44,24 +44,6 @@ def KGEN_ParameterExprArrayAttr
     : ArrayOfAttr<KGENDialect, "ParameterExprArray", "exprs", "TypedAttr">;
 
 //===----------------------------------------------------------------------===//
-// StringArrayAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_StringArrayAttr
-    : ArrayOfAttr<KGENDialect, "StringArray", "strings", "StringAttr">;
-
-//===----------------------------------------------------------------------===//
-// TypeArrayAttr
-//===----------------------------------------------------------------------===//
-
-// This is an array of type objects, stored in a dense representation that can
-/// be turned into an ArrayRef.
-/// NOTE: We have to define this as TypeArrayAttr because ODS squats on the
-/// `TypeArrayAttr` name with something different.
-def KGEN_TypeArrayAttr
-    : ArrayOfAttr<KGENDialect, "TypeArray", "type.array", "Type">;
-
-//===----------------------------------------------------------------------===//
 // ParamDeclAttr
 //===----------------------------------------------------------------------===//
 
