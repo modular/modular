@@ -93,13 +93,31 @@ static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
   handleVariantOp->erase();
 }
 
+/// Given a function, check to see if it is a top-level function.  If not, lower
+/// it to a ParamDeclareRegionOp.
+static void lowerNestedFunction(LIT::FuncOp func) {
+  // Process a nested function by lowering it straight to a
+  // `kgen.param.declare.region`. Nested functions are denoted with an
+  // parameter declaration on the function declaration.
+  ParamDeclAttr decl = func.getParamDeclAttr();
+  assert(decl && "expected nested function to declare a parameter");
+
+  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
+  auto region = b.create<ParamDeclareRegionOp>(
+      decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
+      func.getResultParams(), ArrayRef<ConstraintAttr>(),
+      /*isolated=*/false, func.getInlineLevel());
+  region.getBodyRegion().takeBody(func.getBodyRegion());
+  func.erase();
+}
+
 static void lowerLITOps(LIT::FuncOp func) {
   // Check if we are building debug info for source variables.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
   bool buildingDebugVars =
       funcSpAttr && funcSpAttr.getCompileUnit().getEmissionKind() ==
                         DebugInfo::EmissionKind::Full;
-  func.walk([&](Operation *op) {
+  func.getBodyRegion().walk([&](Operation *op) {
     // Lower any aliases within the function body to param declare.
     if (AliasDeclOp alias = dyn_cast<AliasDeclOp>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
@@ -175,6 +193,8 @@ static void lowerLITOps(LIT::FuncOp func) {
       mlir::IRRewriter b{OpBuilder(op)};
       b.replaceOpWithNewOp<GlobalAddressOp>(globalRefOp, globalRefOp.getType(),
                                             globalRefOp.getGlobal());
+    } else if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+      lowerNestedFunction(funcOp);
     }
   });
 }

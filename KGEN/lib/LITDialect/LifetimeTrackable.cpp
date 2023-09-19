@@ -92,11 +92,9 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   SignatureType signature;
   Operation *parentOp = bbArg.getOwner()->getParentOp();
-  if (auto func = dyn_cast<LIT::FuncOp>(parentOp)) {
+  if (auto func = dyn_cast<LIT::FuncOp>(parentOp))
     signature = func.getSignature();
-  } else if (auto func = dyn_cast<ParamDeclareRegionOp>(parentOp)) {
-    signature = func.getSignature();
-  } else
+  else
     return;
 
   unsigned argIdx = bbArg.getArgNumber();

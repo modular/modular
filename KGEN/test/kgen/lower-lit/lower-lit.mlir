@@ -54,6 +54,53 @@ lit.func @decorated_fn()
 }
 
 //===----------------------------------------------------------------------===//
+// Nested Functions
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @StructWithNestedFn<a_param> {
+  // CHECK-LABEL: kgen.generator @"StructWithNestedFn::topLevelFunction"<a_param, b_param>() -> index
+  lit.func @topLevelFunction<b_param>() -> index {
+    // CHECK: kgen.param.declare.region nestedFunction = () -> index
+    lit.func nestedFunction() -> index {
+      kgen.unreachable
+    }
+    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
+    kgen.param.declare b: !lit.signature<() -> index> = <nestedFunction>
+
+    // CHECK: kgen.param.declare.region paramNestedFunc = <c_param -> d_param>()
+    lit.func paramNestedFunc<c_param -> d_param>() {
+      // CHECK-NEXT: kgen.param.result_bind<c_param>
+      kgen.param.result_bind<c_param>
+      kgen.return
+    }
+    // CHECK: kgen.param.declare c: <[] -> index>() -> () = <bind_signature(:<index -> index>() -> () paramNestedFunc, 2)>
+    kgen.param.declare c: !lit.signature<<[] -> index>() -> ()> = <bind_signature(:!lit.signature<<index -> index>() -> ()> paramNestedFunc, 2)>
+
+    %idx0_0 = index.constant 0
+    kgen.return %idx0_0 : index
+  }
+}
+
+// CHECK-LABEL: lit.struct.decl @StructWithNestedFn<a_param>
+
+// CHECK-LABEL: kgen.generator @topFunc
+lit.func @topFunc() {
+  // CHECK: kgen.param.declare.region midFunc
+  lit.func midFunc() {
+    // CHECK: kgen.param.declare.region botFunc
+    lit.func botFunc() {
+      kgen.return
+    }
+    // CHECK: declare bot: () -> () = <botFunc>
+    kgen.param.declare bot: !lit.signature<() -> ()> = <botFunc>
+    kgen.return
+  }
+  // CHECK: declare mid: () -> () = <midFunc>
+  kgen.param.declare mid: !lit.signature<() -> ()> = <midFunc>
+  kgen.return
+}
+
+//===----------------------------------------------------------------------===//
 // Aliases
 //===----------------------------------------------------------------------===//
 

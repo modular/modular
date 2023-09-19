@@ -29,23 +29,21 @@ using namespace LIT;
 using llvm::BitVector;
 
 /// Find all the functions and types in the module.
-static std::tuple<std::vector<mlir::FunctionOpInterface>,
+static std::tuple<std::vector<LIT::FuncOp>,
                   DenseMap<SymbolRefAttr, LIT::FuncOp>,
                   DenseMap<SymbolRefAttr, LIT::StructDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
-  std::vector<mlir::FunctionOpInterface> funcList;
+  std::vector<LIT::FuncOp> funcList;
   DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
-    if (auto funcOp = dyn_cast<mlir::FunctionOpInterface>(op)) {
-      if (auto fOp = dyn_cast<LIT::FuncOp>(op)) {
-        funcMap[getFullyResolvedSymbolRef(fOp)] = fOp;
+    if (auto funcOp = dyn_cast<LIT::FuncOp>(op)) {
+      funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
 
-        // We don't process external functions. They don't have a body to check.
-        if (fOp.isExternal())
-          return;
-      }
+      // We don't process external functions. They don't have a body to check.
+      if (funcOp.isExternal())
+        return;
       funcList.push_back(funcOp);
     }
     // Collect structs.
@@ -369,7 +367,7 @@ struct ValueSet {
   /// Initialize the value set with one entry, so index #0 is always invalid and
   /// can be used as a sentinel, and so a null Value is always treated as
   /// untracked.
-  ValueSet(TypeDeclInfo &typeDeclInfo, mlir::FunctionOpInterface func)
+  ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func)
       : typeDeclInfo(typeDeclInfo), func(func) {
     addValue(Value(), LifetimeTrackable(Value()));
   }
@@ -448,7 +446,7 @@ struct ValueSet {
 private:
   SmallVector<ValueInfo> valueInfos;
   DenseMap<Value, unsigned> valueInfoIndex;
-  mlir::FunctionOpInterface func;
+  LIT::FuncOp func;
 };
 } // namespace
 
@@ -574,7 +572,7 @@ struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
-  void scanFunction(mlir::FunctionOpInterface func);
+  void scanFunction(LIT::FuncOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -829,7 +827,7 @@ ValueRef UninitializedValueScan::checkConsume(Value value, Operation &op) {
   return valueRef;
 }
 
-void UninitializedValueScan::scanFunction(mlir::FunctionOpInterface func) {
+void UninitializedValueScan::scanFunction(LIT::FuncOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
@@ -1141,7 +1139,7 @@ struct DestructorInsertion {
     return result;
   }
 
-  void scanFunction(mlir::FunctionOpInterface func);
+  void scanFunction(LIT::FuncOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -1277,7 +1275,7 @@ void DestructorInsertion::dump() const {
   os.flush();
 }
 
-void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
+void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   if (auto fnInterface = dyn_cast<FuncInterface>(func.getOperation()))
     functionSignature = fnInterface.getSignature();
   else // Unknown function kind.
@@ -1298,7 +1296,8 @@ void DestructorInsertion::scanFunction(mlir::FunctionOpInterface func) {
       continue;
 
     Location loc = valueInfo.value.getLoc();
-    if (DebugInfo::DISubprogramAttr scope = DebugInfo::extractScope(func))
+    if (DebugInfo::DISubprogramAttr scope =
+            DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     mlir::ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
@@ -2204,12 +2203,11 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(mlir::FunctionOpInterface func,
-                                TypeDeclInfo &typeDeclInfo);
+  LogicalResult processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo);
 };
 } // namespace
 
-LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
+LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
                                               TypeDeclInfo &typeDeclInfo) {
   // Pass #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
@@ -2221,7 +2219,7 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
 
   func->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
     // Skip looking at nested functions, they are handled as separate contexts.
-    if (isa<ParamDeclareRegionOp>(op) && op != func) {
+    if (op != func && isa<LIT::FuncOp>(op)) {
       hasClosures = true;
       return WalkResult::skip();
     }

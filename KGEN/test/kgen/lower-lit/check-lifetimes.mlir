@@ -62,7 +62,7 @@ lit.file_module @check_lifetimes {
   // fn indirectCall(a: Struct):
   lit.func @indirectCall(%a: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
     // @noncapturing fn byrefResultFn(x: Struct) -> Struct:
-    kgen.param.declare.region byrefResultFn = (
+    lit.func byrefResultFn(
         %result: !kgen.pointer<@check_lifetimes::@Struct> byref_result,
         %x: !kgen.pointer<@check_lifetimes::@Struct> borrow_in_mem) {
       kgen.call @check_lifetimes::@Struct::@__copyinit__(%result, %x)
@@ -228,7 +228,7 @@ lit.struct.decl @DestructSome attributes {destructor = #kgen.symbol.constant<@De
       %13 = pop.variant.create %12 : !kgen.declref<@Error> -> !pop.variant<@Error, !lit.none>
       lit.error_return %13 : !pop.variant<@Error, !lit.none>
     } else {
-        hlcf.yield
+      hlcf.yield
     }
     %2 = lit.struct.gep %self[uninitialized] : <@S> from <@DestructSome>
     %3 = kgen.call @S::@"__copyinit__"(%2, %y) : (!kgen.pointer<@S> init_self, !kgen.pointer<@S> borrow_in_mem) -> !lit.none

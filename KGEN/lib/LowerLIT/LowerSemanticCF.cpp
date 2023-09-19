@@ -12,8 +12,6 @@
 //     diagnoses it if it is anything interesting.
 //  2) It lowers 'lit.param.return' instances into a single
 //     'kgen.param.result_bind' instance.
-//  3) It hoists nested functions from being lit.func to being
-//     ParamDeclareRegionOp's.
 //
 //===----------------------------------------------------------------------===//
 
@@ -231,7 +229,7 @@ static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
   // in one pass over the IR.
   auto checkRegion = [&](Operation *op) {
     // Control-flow will never cross nested functions.
-    if (isa<ParamDeclareRegionOp>(op))
+    if (isa<LIT::FuncOp>(op))
       return WalkResult::skip();
 
     // Check for a terminator that will branch past the enclosing try operation.
@@ -367,7 +365,7 @@ static void lowerSemanticCFForBlock(Block &block, bool &doesRaise,
 
     // Ignore nested functions, they are handled (and lowered) separately by the
     // outer walker, which we are recursing within post-order.
-    if (isa<LIT::FuncOp, ParamDeclareRegionOp>(op))
+    if (isa<LIT::FuncOp>(op))
       continue;
 
     // Process a try op specially to identify dead code and warn.
@@ -561,37 +559,6 @@ static LogicalResult lowerSemanticCF(LIT::FuncOp func) {
 }
 
 //===----------------------------------------------------------------------===//
-// lowerNestedFunctions
-//===----------------------------------------------------------------------===//
-
-/// Given a function, check to see if it is a top-level function.  If not, lower
-/// it to a ParamDeclareRegionOp.
-static LogicalResult lowerNestedFunctions(LIT::FuncOp func) {
-  // If this is a top-level function, leave it alone.
-  if (!func->getParentOfType<LIT::FuncOp>())
-    return success();
-
-  // Process a nested function by lowering it straight to a
-  // `kgen.param.declare.region`. Nested functions are denoted with an
-  // parameter declaration on the function declaration.
-  ParamDeclAttr decl = func.getParamDeclAttr();
-  if (!decl) {
-    emitError(func.getLoc(),
-              "nested function must have a parameter declaration");
-    return failure();
-  }
-
-  ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(func));
-  auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignature(), func.getFunctionType(), func.getInputParams(),
-      func.getResultParams(), ArrayRef<ConstraintAttr>(),
-      /*isolated=*/false, func.getInlineLevel());
-  region.getBodyRegion().takeBody(func.getBodyRegion());
-  func.erase();
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -618,10 +585,6 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
 
       // Lower 'lit.param.return' into 'kgen.param.result_bind'.
       hadError |= failed(lowerParamResults(func));
-
-      // Lower nested functions by converting them to region declarations.
-      // This could erase func!
-      hadError |= failed(lowerNestedFunctions(func));
     });
     if (hadError)
       return signalPassFailure();
