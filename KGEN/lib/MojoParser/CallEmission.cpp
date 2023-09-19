@@ -2050,7 +2050,15 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Check to see if we can invoke an __init__ method to convert it.
   OverloadSet callee(type, "__init__", expr, syntax, shared,
                      /*errorHandler*/ {});
+  return emitConstructorCall(type, callee, callOperands, expr, syntax, dest,
+                             allowImplicitConversion);
+}
 
+CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
+                                        const CallOperands &callOperands,
+                                        const ExprNode *expr, CallSyntax syntax,
+                                        ValueDest &dest,
+                                        bool allowImplicitConversion) {
   // Init for memory-only types get their self argument implicitly initialized
   // and passed in as the first argument.
   ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;

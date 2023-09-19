@@ -126,6 +126,10 @@ public:
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
 
+  void onSignatureHelp(const mlir::lsp::URIForFile &uri,
+                       const mlir::lsp::Position &pos,
+                       OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
+
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
@@ -153,6 +157,10 @@ protected:
   /// Hook that is invoked to perform code completion at the given position.
   virtual std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) = 0;
+
+  /// Hook that is invoked to perform signature help at the given position.
+  virtual std::optional<KGEN::Mojo::SignatureHelpResult>
+  onSignatureHelpSyncImpl(llvm::SMLoc loc) = 0;
 
 private:
   /// Parse the document and populate the index based on the current contents.
@@ -196,6 +204,8 @@ private:
   std::vector<mlir::lsp::Location> onDefinitionSync(llvm::SMLoc loc);
 
   std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
+
+  mlir::lsp::SignatureHelp onSignatureHelpSync(llvm::SMLoc loc);
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -296,6 +306,9 @@ private:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
 
+  std::optional<KGEN::Mojo::SignatureHelpResult>
+  onSignatureHelpSyncImpl(llvm::SMLoc loc) override;
+
   //===--------------------------------------------------------------------===//
   // Fields
   //===--------------------------------------------------------------------===//
@@ -382,6 +395,9 @@ private:
 
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
+
+  std::optional<KGEN::Mojo::SignatureHelpResult>
+  onSignatureHelpSyncImpl(llvm::SMLoc loc) override;
 
   //===--------------------------------------------------------------------===//
   // Fields

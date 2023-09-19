@@ -24,6 +24,7 @@ from lsprotocol.types import NotebookDocument as LspNotebookDocument
 from lsprotocol.types import (
     Position,
     Range,
+    SignatureHelpParams,
     TextDocumentIdentifier,
     TextDocumentItem,
 )
@@ -198,3 +199,10 @@ class Requests:
         if results is None:
             return None
         return results.items if isinstance(results, CompletionList) else results
+
+    async def signature_help(self, doc: Document, pos: Position):
+        return await self.client.text_document_signature_help_async(
+            params=SignatureHelpParams(
+                position=pos, text_document=doc.identifier
+            )
+        )

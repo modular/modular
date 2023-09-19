@@ -206,3 +206,39 @@ fu
         item.label == "function" and item.kind == CompletionItemKind.Function
         for item in items
     )
+
+
+async def test_signature_help(client: LanguageClient):
+    cell_contents = [
+        """
+struct SomeStruct:
+    var a_field: Int
+
+    fn __init__(inout self):
+        pass
+
+    fn __init__(inout self, a_field: Int):
+        pass
+""",
+        """
+SomeStruct()
+""",
+    ]
+    doc = NotebookDocument("test", cell_contents)
+
+    requests = Requests(client)
+    requests.open_notebook_document(doc)
+
+    result = fail_if_none(
+        await requests.signature_help(
+            doc.cells[1], doc.cells[1].find_last_range("SomeStruct(").end
+        )
+    )
+    assert len(result.signatures) == 2
+    assert result.active_signature == 0
+    assert result.active_parameter == 1
+    assert result.signatures[0].label == "fn __init__(inout self: Self)"
+    assert (
+        result.signatures[1].label
+        == "fn __init__(inout self: Self, a_field: Int)"
+    )

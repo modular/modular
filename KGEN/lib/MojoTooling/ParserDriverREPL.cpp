@@ -758,6 +758,80 @@ MojoASTDeclRef MojoParserContext::parseREPLExpresion(
   return MojoASTDeclRef(&lookupSingleDecl(moduleDecl, replExprFnName));
 }
 
+void MojoParserContext::removeLastREPLExpression() {
+  assert(!impl->replModuleDecls.empty() && "expected at least one REPL module");
+  ASTDecl *moduleDecl = impl->replModuleDecls.pop_back_val();
+  impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
+  moduleDecl->getIfOperation()->remove();
+}
+
+//===----------------------------------------------------------------------===//
+// Code Completion/Signature Help
+//===----------------------------------------------------------------------===//
+
+/// This function provides a shared implementation for parsing completion like
+/// utilities, such as code completion and signature help. It handles preparing
+/// the parser context for parsing, updating the completion position, and more.
+static void parseCompletionImpl(
+    uint64_t &completionPosition, StringRef exprText,
+    MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
+    ArrayRef<std::pair<StringRef, Type>> variables,
+    ArrayRef<ASTDecl *> replModuleDecls, ASTDecl *replDecl,
+    SharedState &origSharedState,
+    function_ref<void(StringRef, function_ref<void(MojoParserContext &, int)>)>
+        parserCallback) {
+  // Insert a marker into the expression text at the completion position. This
+  // is only really necessary because we currently do string splicing to fake
+  // support for top-level code, meaning that we don't know where the completion
+  // position will end up after that process is done.
+  constexpr StringLiteral kCompletionMarker = "<#COMPLETION_MARKER#>";
+  std::string exprTextWithMarker = exprText.substr(0, completionPosition).str();
+  exprTextWithMarker += kCompletionMarker;
+  exprTextWithMarker += exprText.drop_front(completionPosition).str();
+
+  // Wrap the expression text in a function so that we can execute it.
+  std::string wrappedExprText = wrapExpressionText(
+      locMapper, "__mojo_repl_code_complete_fn", exprTextWithMarker, variables,
+      /*isFirstREPLCell=*/replModuleDecls.empty());
+
+  // Remove the completion marker from the wrapped expression text and grab the
+  // new completion position.
+  completionPosition = wrappedExprText.find(kCompletionMarker);
+  wrappedExprText.erase(completionPosition, kCompletionMarker.size());
+
+  // Functor used to parse a REPL expression for use by code completion.
+  parserCallback(wrappedExprText, [&](MojoParserContext &ctx, int fileId) {
+    SourceMgr &mainSourceMgr = origSharedState.getSourceMgr();
+    SourceMgr &sourceMgr = ctx.getSourceMgr();
+    const llvm::MemoryBuffer *sourceBuf =
+        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+
+    // Pull in the existing REPL module state.
+    SmallVector<ASTDecl *> completionReplModuleDecls;
+    for (ASTDecl *module : replModuleDecls) {
+      if (module == replDecl)
+        break;
+
+      int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
+      const llvm::MemoryBuffer *moduleBuf =
+          mainSourceMgr.getMemoryBuffer(bufferId);
+
+      // Add the copy of the decl and resolve its body.
+      int completionBufferId = sourceMgr.AddNewSourceBuffer(
+          llvm::MemoryBuffer::getMemBuffer(*moduleBuf),
+          SMLoc::getFromPointer(sourceBuf->getBufferStart()));
+      ASTDecl &newModuleDecl = buildAndResolveREPLModule(
+          sourceMgr.getMemoryBuffer(completionBufferId), ctx.getSharedState(),
+          completionReplModuleDecls);
+      completionReplModuleDecls.push_back(&newModuleDecl);
+    }
+
+    // Resolve a module decl for this REPL expression.
+    buildAndResolveREPLModule(sourceBuf, ctx.getSharedState(),
+                              completionReplModuleDecls);
+  });
+}
+
 std::vector<Mojo::CodeCompletionResult>
 MojoParserContext::codeCompleteREPLExpresion(
     StringRef exprText, uint64_t completionPosition,
@@ -771,68 +845,23 @@ MojoParserContext::codeCompleteREPLExpresion(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
     MojoASTDeclRef replDecl) {
-  // Insert a marker into the expression text at the completion position. This
-  // is only really necessary because we currently do string splicing to fake
-  // support for top-level code, meaning that we don't know where the completion
-  // position will end up after that process is done.
-  constexpr StringLiteral kCompletionMarker = "<#COMPLETION_MARKER#>";
-  std::string exprTextWithMarker = exprText.substr(0, completionPosition).str();
-  exprTextWithMarker += kCompletionMarker;
-  exprTextWithMarker += exprText.drop_front(completionPosition).str();
-
   // Build a location mapper for this expression.
   REPLLocMapper locMapper(getSourceMgr());
   locMapper.exprMappers.emplace_back(
       std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
 
-  // Wrap the expression text in a function so that we can execute it.
-  std::string wrappedExprText = wrapExpressionText(
-      *locMapper.exprMappers.back(), "__mojo_repl_code_complete_fn",
-      exprTextWithMarker, replVariables,
-      /*isFirstREPLCell=*/impl->replModuleDecls.empty());
-
-  // Remove the completion marker from the wrapped expression text and grab the
-  // new completion position.
-  completionPosition = wrappedExprText.find(kCompletionMarker);
-  wrappedExprText.erase(completionPosition, kCompletionMarker.size());
-
-  // Functor used to parse a REPL expression for use by code completion.
-  auto replParseFn = [&](MojoParserContext &ctx, int fileId) {
-    SourceMgr &mainSourceMgr = impl->sharedState.getSourceMgr();
-    SourceMgr &sourceMgr = ctx.getSourceMgr();
-    const llvm::MemoryBuffer *sourceBuf =
-        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
-
-    // Pull in the existing REPL module state.
-    SmallVector<ASTDecl *> completionReplModuleDecls;
-    for (ASTDecl *module : impl->replModuleDecls) {
-      if (module == replDecl.decl)
-        break;
-
-      int bufferId = mainSourceMgr.FindBufferContainingLoc(module->getLoc());
-      const llvm::MemoryBuffer *moduleBuf =
-          mainSourceMgr.getMemoryBuffer(bufferId);
-
-      // Add the copy of the decl and resolve its body.
-      int completionBufferId = sourceMgr.AddNewSourceBuffer(
-          llvm::MemoryBuffer::getMemBuffer(*moduleBuf),
-          SMLoc::getFromPointer(sourceBuf->getBufferStart()));
-      ASTDecl &newModuleDecl = buildAndResolveREPLModule(
-          sourceMgr.getMemoryBuffer(completionBufferId), ctx.impl->sharedState,
-          completionReplModuleDecls);
-      completionReplModuleDecls.push_back(&newModuleDecl);
-    }
-
-    // Resolve a module decl for this REPL expression.
-    buildAndResolveREPLModule(sourceBuf, ctx.impl->sharedState,
-                              completionReplModuleDecls);
-  };
-
-  std::vector<KGEN::Mojo::CodeCompletionResult> results =
-      MojoParserContext::codeComplete(
-          llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
-          impl->sharedState.getContext(), impl->sharedState.runtime,
-          impl->sharedState.options, replParseFn);
+  // Invoke the parser and collect code completion results.
+  std::vector<KGEN::Mojo::CodeCompletionResult> results;
+  parseCompletionImpl(
+      completionPosition, exprText, *locMapper.exprMappers.back(),
+      replVariables, impl->replModuleDecls, replDecl.decl, impl->sharedState,
+      [&](StringRef wrappedExprText,
+          function_ref<void(MojoParserContext &, int)> parserCallback) {
+        results = MojoParserContext::codeComplete(
+            llvm::MemoryBufferRef(wrappedExprText, ""), completionPosition,
+            impl->sharedState.getContext(), impl->sharedState.runtime,
+            impl->sharedState.options, parserCallback);
+      });
 
   // Filter out results pointing to internal decls.
   llvm::erase_if(results, [&](const KGEN::Mojo::CodeCompletionResult &result) {
@@ -841,9 +870,27 @@ MojoParserContext::codeCompleteREPLExpresion(
   return results;
 }
 
-void MojoParserContext::removeLastREPLExpression() {
-  assert(!impl->replModuleDecls.empty() && "expected at least one REPL module");
-  ASTDecl *moduleDecl = impl->replModuleDecls.pop_back_val();
-  impl->detachedREPLModules.push_back(moduleDecl->getIfOperation());
-  moduleDecl->getIfOperation()->remove();
+std::optional<KGEN::Mojo::SignatureHelpResult>
+MojoParserContext::signatureHelpREPLExpresion(
+    StringRef exprText, uint64_t position,
+    ArrayRef<std::pair<StringRef, Type>> replVariables,
+    MojoASTDeclRef replDecl) {
+  // Build a location mapper for this expression.
+  REPLLocMapper locMapper(getSourceMgr());
+  locMapper.exprMappers.emplace_back(
+      std::make_unique<REPLLocMapper::ExprLocMapper>(exprText));
+
+  // Invoke the parser and collect the signature help result.
+  std::optional<KGEN::Mojo::SignatureHelpResult> result;
+  parseCompletionImpl(
+      position, exprText, *locMapper.exprMappers.back(), replVariables,
+      impl->replModuleDecls, replDecl.decl, impl->sharedState,
+      [&](StringRef wrappedExprText,
+          function_ref<void(MojoParserContext &, int)> parserCallback) {
+        result = MojoParserContext::signatureHelp(
+            llvm::MemoryBufferRef(wrappedExprText, ""), position,
+            impl->sharedState.getContext(), impl->sharedState.runtime,
+            impl->sharedState.options, parserCallback);
+      });
+  return result;
 }

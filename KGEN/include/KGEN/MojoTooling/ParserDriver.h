@@ -27,6 +27,7 @@ struct ParserConfig;
 } // namespace LIT
 namespace Mojo {
 struct CodeCompletionResult;
+struct SignatureHelpResult;
 } // namespace Mojo
 } // namespace KGEN
 namespace LLCL {
@@ -136,6 +137,26 @@ public:
                function_ref<void(MojoParserContext &, int)> parserCallback);
 
   //===--------------------------------------------------------------------===//
+  // Signature Help
+
+  /// Returns the signature help result for the given buffer at the given
+  /// position.
+  static std::optional<KGEN::Mojo::SignatureHelpResult>
+  signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
+                MLIRContext *context, LLCL::Runtime &runtime,
+                const KGEN::CompilationOptions &options);
+
+  /// Returns the signature help result for the given buffer at the given
+  /// position. The given callback is invoked with the parsing context, and
+  /// source manager buffer file id, allowing for custom additional setup and
+  /// parser invocation.
+  static std::optional<KGEN::Mojo::SignatureHelpResult>
+  signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
+                MLIRContext *context, LLCL::Runtime &runtime,
+                const KGEN::CompilationOptions &options,
+                function_ref<void(MojoParserContext &, int)> parserCallback);
+
+  //===--------------------------------------------------------------------===//
   // REPL
 
   /// The following methods provide functionality for interacting with the
@@ -215,6 +236,14 @@ public:
   codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
                             ArrayRef<std::pair<StringRef, Type>> replVariables,
                             MojoASTDeclRef replDecl);
+
+  /// Return a signature help result for the given REPL expression. `replDecl`
+  /// corresponds to the decl of a previously parsed repl expression. Signature
+  /// results will only consider state before that expression was parsed.
+  std::optional<KGEN::Mojo::SignatureHelpResult>
+  signatureHelpREPLExpresion(StringRef exprText, uint64_t position,
+                             ArrayRef<std::pair<StringRef, Type>> replVariables,
+                             MojoASTDeclRef replDecl);
 
   /// Remove the previously parsed REPL expression. This allows for removing an
   /// erroneous expression when it is only detected as invalid after it has been

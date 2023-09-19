@@ -43,6 +43,7 @@ class NoneAttr;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
+struct CallOperands;
 struct ParserConfig;
 enum class CallSyntax : uint8_t;
 
@@ -320,6 +321,11 @@ public:
                            const ExprNode *expr);
   void notifyListenerOnRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
                            const ExprNode *expr, CallSyntax syntax);
+
+  /// Notify the parser listener, if present, that a call is being resolved with
+  /// the given operands.
+  void notifyListenerOnCall(ArrayRef<ASTDecl *> decls, SMLoc rparenLoc,
+                            const CallOperands &callOperands);
 
   //===--------------------------------------------------------------------===//
   // Builtin Module

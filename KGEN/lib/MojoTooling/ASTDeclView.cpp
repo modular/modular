@@ -491,14 +491,37 @@ void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
 }
 
 std::string FunctionDeclView::getDeclarationSnippet() const {
+  return getDeclarationSnippet(/*parameterOffsets=*/nullptr,
+                               /*argumentOffsets=*/nullptr);
+}
+
+std::string FunctionDeclView::getDeclarationSnippet(
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   if (isAsync())
     os << "async ";
 
-  std::string signature = getSignature();
+  std::string signature = getSignature(parameterOffsets, argumentOffsets);
   StringRef typeLessSignature = StringRef(signature).split(" ->").first;
-  os << (isDef() ? "def" : "fn") << " " << typeLessSignature;
+  os << (isDef() ? "def" : "fn") << " ";
+
+  // Adjust the signature offsets.
+  size_t signatureStart = os.str().size();
+  auto adjustOffsets = [&](auto *v) {
+    for (auto &offset : *v) {
+      offset.first += signatureStart;
+      offset.second += signatureStart;
+    }
+  };
+  if (parameterOffsets)
+    adjustOffsets(parameterOffsets);
+  if (argumentOffsets)
+    adjustOffsets(argumentOffsets);
+
+  // Emit the signature.
+  os << typeLessSignature;
 
   if (raises())
     os << " raises";
@@ -521,7 +544,9 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   return markdown;
 }
 
-std::string FunctionDeclView::getSignature() const {
+std::string FunctionDeclView::getSignature(
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
   std::string signature;
   llvm::raw_string_ostream signatureOS(signature);
 
@@ -532,7 +557,10 @@ std::string FunctionDeclView::getSignature() const {
   if (!parameters.empty()) {
     signatureOS << "[";
     interleaveComma(getParameters(), signatureOS, [&](const auto &param) {
+      unsigned paramStart = signature.size();
       signatureOS << param.getDeclarationSnippet();
+      if (parameterOffsets)
+        parameterOffsets->push_back({paramStart, signature.size()});
     });
     signatureOS << "]";
   }
@@ -540,7 +568,10 @@ std::string FunctionDeclView::getSignature() const {
   // Emit the arguments of the function.
   signatureOS << "(";
   interleaveComma(args, signatureOS, [&](const auto &arg) {
+    unsigned argStart = signature.size();
     signatureOS << arg.getDeclarationSnippet();
+    if (argumentOffsets)
+      argumentOffsets->push_back({argStart, signature.size()});
   });
   signatureOS << ")";
 
@@ -621,6 +652,8 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 
   raisesFlag = funcOp.isThrows();
   isAsyncFlag = funcOp.isAsync();
+  isStaticFlag = funcOp.getIsStatic();
+  isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.getIsDef();
 }
 
