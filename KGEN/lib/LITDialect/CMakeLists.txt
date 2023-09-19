@@ -5,11 +5,12 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_dialect_library(LITDialect
+  LifetimeTrackable.cpp
   LITAttrs.cpp
   LITDialect.cpp
   LITInterfaces.cpp
   LITOps.cpp
-  LifetimeTrackable.cpp
+  LITTypes.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${MODULAR_MAIN_INCLUDE_DIR}/LIT/LITDialect
