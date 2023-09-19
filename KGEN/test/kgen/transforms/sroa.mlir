@@ -387,6 +387,14 @@ kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
 // MEM2REG: %[[OUT:.*]] = pop.array.create [%[[FIRST]], %[[INDEX]], %[[THIRD]], %[[FOURTH]]] : !pop.array<4, index>
 // MEM2REG: kgen.return %[[OUT]] : !pop.array<4, index>
 
+// CHECK-LABEL: @offset_of_offset
+kgen.func @offset_of_offset() -> !kgen.pointer<index> {
+  %0 = pop.stack_allocation 2 x index
+  %idx1 = index.constant 1
+  %1 = pop.offset %0[%idx1] : !kgen.pointer<index>
+  kgen.return %1 : !kgen.pointer<index>
+}
+
 // -----
 
 !subroutine = !debuginfo.subroutine<() -> (): DW_CC_normal>
