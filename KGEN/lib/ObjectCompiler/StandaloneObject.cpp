@@ -14,7 +14,7 @@
 #include "LowerToObjectImpl.h"
 #include "Support/Compiler/MLIRDenseAttrStorage.h"
 #include "Support/FileSystemExtras.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectResourceBlobManager.h"

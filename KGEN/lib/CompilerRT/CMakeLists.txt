@@ -14,7 +14,7 @@ set(SOURCES
   Random.cpp
   System.cpp
   Tracing.cpp
-  )
+)
 
 # A statically built CompilerRT library.
 add_modular_library(KGENCompilerRT
@@ -22,9 +22,8 @@ add_modular_library(KGENCompilerRT
 
   LINK_LIBS PUBLIC
   MSupport
-  MThreading
-  MProfiling
-  LLCLRuntime)
+  LLCLRuntime
+)
 
 target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT)
 
@@ -34,24 +33,23 @@ add_modular_library(KGENCompilerRTShared SHARED
 
   LINK_LIBS PRIVATE
   MSupport
-  MThreading
-  MProfiling
   MSupportGlobals
   LLCLRuntime
-  LLCLRuntimeGlobals)
+  LLCLRuntimeGlobals
+)
 
 target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)
 
 # The LLVM libraries generally aren't OBJECT libraries, but we need
 # KGENCompilerRT-static to be fully self contained, so we need to extract the
 # object files from the LLVM libraries and link them into KGENCompilerRT-static.
-function(add_static_dep_lib target)
+function (add_static_dep_lib target)
   get_property(target_file TARGET ${target} PROPERTY LOCATION)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${target_file})
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps)
   execute_process(
-    COMMAND ${LLVM_BUILD_DIR}/bin/llvm-ar${CMAKE_EXECUTABLE_SUFFIX} -x ${target_file}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps
+      COMMAND ${LLVM_BUILD_DIR}/bin/llvm-ar${CMAKE_EXECUTABLE_SUFFIX} -x ${target_file}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/static_deps
   )
 endfunction()
 
@@ -85,19 +83,16 @@ add_modular_library(KGENCompilerRT-static
   $<TARGET_OBJECTS:obj.MSupportGlobals-static>
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.MSupport>
-  $<TARGET_OBJECTS:obj.MThreading>
-  $<TARGET_OBJECTS:obj.MProfiling>
-  $<TARGET_OBJECTS:obj.MArchTarget>
   $<TARGET_OBJECTS:obj.MVersion>
   $<TARGET_OBJECTS:obj.LLCLRuntime>
   $<TARGET_OBJECTS:obj.LLCLSupport>
 
   ${StaticDepObjects}
-  )
+)
 target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
 set_property(TARGET KGENCompilerRT-static PROPERTY KGEN_SYSTEM_LIBS "${kgen_system_libs}")
 
 # Copy to the binary directory so that `mojo` can find this easily at runtime.
 add_custom_command(TARGET KGENCompilerRT-static POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:KGENCompilerRT-static> ${CMAKE_BINARY_DIR}/bin/
-  )
+)

@@ -467,28 +467,3 @@ const DeviceSpec &DeviceSpecCollection::getHostDeviceSpec() const {
   assert(!specOr.isError() && "no such host device spec");
   return **specOr;
 }
-
-//===----------------------------------------------------------------------===//
-// SIMD Width
-//===----------------------------------------------------------------------===//
-
-size_t M::simdWidthFromFeatures(StringRef feature) {
-  if (feature.contains("avx512"))
-    return 512;
-  if (feature.contains("avx2"))
-    return 256;
-  // The fallback is going to be 128.
-  return 128;
-}
-
-size_t M::simdWidthFromFeatures(ArrayRef<std::string> features) {
-  size_t maxWidth = 128;
-  for (StringRef feature : features) {
-    maxWidth = std::max(maxWidth, simdWidthFromFeatures(feature));
-    if (maxWidth == 512) {
-      // We can return now. It can't get bigger than this.
-      return maxWidth;
-    }
-  }
-  return maxWidth;
-}

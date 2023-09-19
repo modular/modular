@@ -5,18 +5,11 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MArchTarget
-  STATIC OBJECT # Always generate an obj.${name} target.
-
-  Host.cpp
   MArchTarget.cpp
-
-  DEPENDS
-  MLIRMIncGen
 
   LINK_LIBS
   clangBasic
   MDialect
-  MThreading
-  )
+)
 
 target_include_directories(MArchTarget PRIVATE ${CLANG_INCLUDE_DIRS})

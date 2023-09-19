@@ -9,7 +9,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/MDialect/MTypeInterfaces.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Types.h"

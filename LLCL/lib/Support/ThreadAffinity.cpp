@@ -10,10 +10,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLCL/Support/ThreadAffinity.h"
-#include "Support/Threading/HWInfo.h"
-#include "Support/Threading/ThreadAffinity.h"
 
-#include "Support/MArchTarget/Host.h"
+#include "Support/Host.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"

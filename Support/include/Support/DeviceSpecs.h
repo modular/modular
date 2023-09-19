@@ -182,15 +182,6 @@ struct DeviceSpecCollection {
   const DeviceSpec &getHostDeviceSpec() const;
 };
 
-//===----------------------------------------------------------------------===//
-// SIMD Width
-//===----------------------------------------------------------------------===//
-
-/// Gets the SIMD width from the processor features. The features are comma
-/// separated.
-size_t simdWidthFromFeatures(StringRef features);
-size_t simdWidthFromFeatures(ArrayRef<std::string> features);
-
 } // namespace M
 
 #endif // SUPPORT_DEVICE_SPECS_H
