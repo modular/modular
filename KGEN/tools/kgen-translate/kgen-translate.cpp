@@ -33,6 +33,11 @@ int main(int argc, char *argv[]) {
       cl::desc("Disable caching when parsing the input Mojo file."),
       cl::init(false)};
 
+  cl::opt<bool> enablePrebuiltPackages{
+      "mojo-enable-prebuilt-packages",
+      cl::desc("Use prebuilt packages when parsing the input Mojo file."),
+      cl::init(false)};
+
   cl::opt<bool> warnMissingDocStrings{
       "mojo-warn-missing-doc-strings",
       cl::desc("Emit warnings for partial or missing doc strings."),
@@ -66,8 +71,7 @@ int main(int argc, char *argv[]) {
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.experimentalLifetimes = experimentalLifetimes;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
-        // Disable binary packages when using `kgen-translate`.
-        config.parsingStandardLibrary = true;
+        config.parsingStandardLibrary = !enablePrebuiltPackages;
         if (disableParserCaching)
           config.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
         return LIT::importMojoFile(sourceMgr, config, ts);
