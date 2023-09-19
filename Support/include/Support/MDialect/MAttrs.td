@@ -18,6 +18,23 @@ class MAttr<string attrName, string attrMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// StringArrayAttr
+//===----------------------------------------------------------------------===//
+
+def StringArrayAttr
+    : ArrayOfAttr<MDialect, "StringArray", "strings", "StringAttr">;
+
+//===----------------------------------------------------------------------===//
+// TypeArrayAttr
+//===----------------------------------------------------------------------===//
+
+// This is an array of type objects, stored in a dense representation that can
+/// be turned into an ArrayRef.
+/// NOTE: We have to define this as M_TypeArrayAttr because ODS squats on the
+/// `TypeArrayAttr` name with something different.
+def M_TypeArrayAttr : ArrayOfAttr<MDialect, "TypeArray", "type.array", "Type">;
+
+//===----------------------------------------------------------------------===//
 // PrimitivesArrayAttr
 //===----------------------------------------------------------------------===//
 

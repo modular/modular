@@ -29,9 +29,7 @@
 namespace M::KGEN {
 class DTypeType;
 class PointerType;
-class StringArrayAttr;
 class StringType;
-class TypeArrayAttr;
 class VariadicType;
 } // namespace M::KGEN
 

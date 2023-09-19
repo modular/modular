@@ -31,6 +31,20 @@ def MDialectTypes : DialectTypes<"M"> {
 // MDialect Attributes
 //===----------------------------------------------------------------------===//
 
+def StringArrayAttr : DialectAttribute<(attr
+  StringAttrArray:$value
+)>;
+
+def TypeArray :
+  WithParser<"succeeded($_reader.readTypes($_var))",
+  WithBuilder<"$_args",
+  WithPrinter<"$_writer.writeTypes($_getter)",
+  WithType<"SmallVector<Type>">>>>;
+
+def TypeArrayAttr : DialectAttribute<(attr
+  TypeArray:$value
+)>;
+
 def SignlessBytes :
   WithParser<"succeeded($_reader.readBlob($_var))",
   WithBuilder<"$_args",
@@ -92,6 +106,8 @@ def BuildInfoAttr : DialectAttribute<(attr
 
 def MDialectAttributes : DialectAttributes<"M"> {
   let elems = [
+    StringArrayAttr,
+    TypeArrayAttr,
     PrimitiveArrayAttr,
     ArrayElementsAttr,
     AlignedBytesAttr,

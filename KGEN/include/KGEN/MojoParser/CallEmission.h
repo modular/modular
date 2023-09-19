@@ -19,7 +19,6 @@ class ParamBindAttr;
 class ParameterExprArrayAttr;
 class SignatureType;
 class SymbolConstantAttr;
-class TypeArrayAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {

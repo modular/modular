@@ -36,16 +36,6 @@ enum AttributeCode {
   ///   }
   kParameterExprArrayAttr = 0,
   ///
-  ///   StringArrayAttr {
-  ///     value: Attribute[]
-  ///   }
-  kStringArrayAttr = 1,
-  ///
-  ///   TypeArrayAttr {
-  ///     value: Attribute[]
-  ///   }
-  kTypeArrayAttr = 2,
-  ///
   ///   ParamDeclAttr {
   ///     name: StringAttr
   ///     type: Type
@@ -257,8 +247,6 @@ struct KGENBytecodeInterface : public mlir::BytecodeDialectInterface {
   Attribute readAttribute(BytecodeReader &reader) const override;
   template <typename T>
   T readArrayOfAttrs(BytecodeReader &reader) const;
-  template <typename T>
-  T readArrayOfTypes(BytecodeReader &reader) const;
 
   BuildInfoParamAttr readBuildInfoParamAttr(BytecodeReader &reader) const;
   Attribute readConcreteTypeConstantAttr(BytecodeReader &reader) const;
@@ -342,10 +330,6 @@ Attribute KGENBytecodeInterface::readAttribute(BytecodeReader &reader) const {
   switch (code) {
   case Encoding::kParameterExprArrayAttr:
     return readArrayOfAttrs<ParameterExprArrayAttr>(reader);
-  case Encoding::kStringArrayAttr:
-    return readArrayOfAttrs<StringArrayAttr>(reader);
-  case Encoding::kTypeArrayAttr:
-    return readArrayOfTypes<TypeArrayAttr>(reader);
   case Encoding::kParamDeclAttr:
     return readParamDeclAttr(reader);
   case Encoding::kParamDeclArrayAttr:
@@ -408,14 +392,6 @@ T KGENBytecodeInterface::readArrayOfAttrs(BytecodeReader &reader) const {
   return T::get(getContext(), elements);
 }
 
-template <typename T>
-T KGENBytecodeInterface::readArrayOfTypes(BytecodeReader &reader) const {
-  SmallVector<std::decay_t<decltype(std::declval<T>().getValue()[0])>> elements;
-  if (failed(reader.readTypes(elements)))
-    return T();
-  return T::get(getContext(), elements);
-}
-
 LogicalResult
 KGENBytecodeInterface::writeAttribute(Attribute attr,
                                       BytecodeWriter &writer) const {
@@ -441,12 +417,6 @@ KGENBytecodeInterface::writeAttribute(Attribute attr,
       .Case([&](ParameterExprArrayAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kParameterExprArrayAttr,
                                  writer);
-      })
-      .Case([&](StringArrayAttr attr) {
-        return writeArrayOfAttrs(attr, Encoding::kStringArrayAttr, writer);
-      })
-      .Case([&](TypeArrayAttr attr) {
-        return writeArrayOfTypes(attr, Encoding::kTypeArrayAttr, writer);
       })
       .Case([&](DecoratorsAttr attr) {
         return writeArrayOfAttrs(attr, Encoding::kDecoratorsAttr, writer);
