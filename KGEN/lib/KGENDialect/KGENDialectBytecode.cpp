@@ -40,57 +40,57 @@ enum AttributeCode {
   ///     name: StringAttr
   ///     type: Type
   ///   }
-  kParamDeclAttr = 3,
+  kParamDeclAttr = 1,
   ///
   ///   ParamDeclArrayAttr {
   ///     value: Attribute[]
   ///   }
-  kParamDeclArrayAttr = 4,
+  kParamDeclArrayAttr = 2,
   ///
   ///   ParamBindAttr {
   ///     name: StringAttr
   ///     value: TypedAttr
   ///   }
-  kParamBindAttr = 5,
+  kParamBindAttr = 3,
   ///
   ///   ParamBindArrayAttr {
   ///     value: Attribute[]
   ///   }
-  kParamBindArrayAttr = 6,
+  kParamBindArrayAttr = 4,
   ///
   ///   ConstraintAttr {
   ///     expr: TypedAttr
   ///     message: StringAttr
   ///     loc: LocationAttr
   ///   }
-  kConstraintAttr = 7,
+  kConstraintAttr = 5,
   ///
   ///   ConstraintArrayAttr {
   ///     value: Attribute[]
   ///   }
-  kConstraintArrayAttr = 8,
+  kConstraintArrayAttr = 6,
   ///
   ///   VariadicAttr {
   ///     values: TypedAttr[]
   ///     type: VariadicType
   ///   }
-  kVariadicAttr = 9,
+  kVariadicAttr = 7,
   ///
   ///   UnknownAttr {
   ///     type: Type
   ///   }
-  kUnknownAttr = 10,
+  kUnknownAttr = 8,
   ///
   ///   UnboundAttr {
   ///     type: Type
   ///   }
-  kUnboundAttr = 11,
+  kUnboundAttr = 9,
   ///
   ///   ParamDeclRefAttr {
   ///     name: StringAttr
   ///     type: Type
   ///   }
-  kParamDeclRefAttr = 12,
+  kParamDeclRefAttr = 10,
   ///
   ///   ParamIndexRefAttr {
   ///     depth: varint
@@ -98,73 +98,73 @@ enum AttributeCode {
   ///     index: varint
   ///     type: Type
   ///   }
-  kParamIndexRefAttr = 13,
+  kParamIndexRefAttr = 11,
   ///
   ///   ConcreteTypeConstantAttr {
   ///     value: Type
   ///   }
-  kConcreteTypeConstantAttr = 14,
+  kConcreteTypeConstantAttr = 12,
   ///
   ///   ParameterizedTypeConstantAttr {
   ///     value: Type
   ///   }
-  kParameterizedTypeConstantAttr = 15,
+  kParameterizedTypeConstantAttr = 13,
   ///
   ///   DTypeConstantAttr {
   ///     dtype: varint
   ///   }
-  kDTypeConstantAttr = 16,
+  kDTypeConstantAttr = 14,
   ///
   ///   IntLiteralAttr {
   ///     value: varint
   ///   }
-  kIntLiteralAttr = 17,
+  kIntLiteralAttr = 15,
   ///
   ///   SymbolConstantAttr {
   ///     symbol: SymbolRefAttr
   ///     paramValues: TypedAttr[]
   ///     type: SignatureType
   ///   }
-  kSymbolConstantAttr = 18,
+  kSymbolConstantAttr = 16,
   ///
   ///   TargetParamAttr {
   ///     target: TargetInfoAttr
   ///   }
-  kTargetParamAttr = 19,
+  kTargetParamAttr = 17,
   ///
   ///   BuildInfoParamAttr {
   ///     info: BuildInfoAttr
   ///   }
-  kBuildInfoParamAttr = 20,
+  kBuildInfoParamAttr = 18,
   ///
   ///  EnvAttr {
   ///    values: DictionaryAttr
   ///  }
-  kEnvAttr = 21,
+  kEnvAttr = 19,
   ///
   ///   ParamOperatorAttr {
   ///     opcode: varint
   ///     operands: TypedAttr[]
   ///     type: Type
   ///   }
-  kParamOperatorAttr = 22,
+  kParamOperatorAttr = 20,
   ///
   ///   MLIROpAttr {
   ///     name: StringAttr
   ///     attrs: DictionaryAttr
   ///     type: SignatureType
   ///   }
-  kMLIROpAttr = 23,
+  kMLIROpAttr = 21,
   ///
   ///  DecoratorsAttr {
   ///    value: TypedAttr[]
   ///  }
-  kDecoratorsAttr = 24,
+  kDecoratorsAttr = 22,
   ///
   ///  ExportKindAttr {
   ///    value: varint
   ///  }
-  kExportKindAttr = 25,
+  kExportKindAttr = 23,
 };
 
 /// This enum contains marker codes used to indicate which type is currently

@@ -94,49 +94,6 @@ LogicalResult FnMetadataAttr::verifySignature(
   return success();
 }
 
-void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
-  p << "!lit.signature<";
-  auto signature = ::cast<LITSignatureType>(sig);
-  if (!signature.getInputParamTypes().empty() ||
-      !signature.getResultParamTypes().empty()) {
-    p << '<';
-    if (signature.getInputParamTypes().empty())
-      p << "[]";
-    llvm::interleaveComma(signature.getInputParamTypes(), p,
-                          [&](Type type) { printKGENType(p, type); });
-    if (!signature.getResultParamTypes().empty()) {
-      p << " -> ";
-      llvm::interleaveComma(signature.getResultParamTypes(), p,
-                            [&](Type type) { printKGENType(p, type); });
-    }
-    p << '>';
-  }
-
-  auto printElt = [&](unsigned i) {
-    StringAttr argName = signature.getArgName(i);
-    if (argName.size()) {
-      p.printString(argName);
-      p << ": ";
-    }
-
-    p << signature.getValueInputs()[i];
-
-    ValueInputConvention conv = signature.getInputConvention(i);
-    if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
-      p << ' ' << stringifyValueInputConvention(conv);
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
-    if (i >= defaultIndex) {
-      p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
-    }
-  };
-
-  printSignatureValues(p, printElt, signature.getValues(), signature,
-                       /*optionalResultList=*/false);
-  p << '>';
-}
-
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//

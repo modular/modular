@@ -32,6 +32,7 @@ def LITDialect : Dialect {
     Type parseType(DialectAsmParser &p) const override;
     void printType(Type type, DialectAsmPrinter &p) const override;
     void registerAttributes();
+    void registerTypes();
   }];
 }
 
