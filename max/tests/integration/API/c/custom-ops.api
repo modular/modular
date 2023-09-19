@@ -1,0 +1,26 @@
+// RUN: not modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full %s 2>&1 | FileCheck %s --check-prefix=CHECK-DEFAULT
+// RUN: not modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full --user-ops=invalid-path %s 2>&1 | FileCheck %s --check-prefix=CHECK-ERROR
+// RUN: kgen --gen-lib -o %t %mojo_user_kernels
+// RUN: modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full --user-ops=%t %s | FileCheck %s --check-prefix=CHECK-WITH-CUSTOM-OPS
+
+// CHECK-DEFAULT: Mojo registry doesn't have entry for: test_make_indices
+mo.graph @test_indices_deduction(%arg0 : !mo.tensor<[50], f32>, %unused : !mo.tensor<[3, 4, 5, 6], f32>) -> (!mo.tensor<[5, 5, 2, 1], f32>) no_inline attributes {argument_names = ["input0", "input1"], result_names = ["output"]} {
+  %0 = mogg.kernel (%arg0) : (%arg1: !mo.tensor<[50], f32>) -> !mo.tensor<[5, 5, 2, 1], f32>{
+    %0 = mogg.output_placeholders : !mo.tensor<[5, 5, 2, 1], f32>
+
+    %indices = mogg.call "test_make_indices" () {num_indices = 5} -> !mogg.indices
+    mogg.call "test_indices_deduction" (%indices) : !mogg.indices
+
+    // Still have to return something, will be junk.
+    mogg.call "mark_output_chain_ready"()
+    mogg.output %0 : !mo.tensor<[5, 5, 2, 1], f32>
+  }
+  mo.output %0 : !mo.tensor<[5, 5, 2, 1], f32>
+}
+
+// CHECK-ERROR: invalid path to custom ops
+
+// CHECK-WITH-CUSTOM-OPS: Indices size:
+// CHECK-WITH-CUSTOM-OPS: 5
+// CHECK-WITH-CUSTOM-OPS: Indices:
+// CHECK-WITH-CUSTOM-OPS: (0, 1, 2, 3, 4)
