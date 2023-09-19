@@ -99,7 +99,7 @@ private:
 
     // The first entry of this is a ValueDest for a DLValue that we can invoke
     // for the setter.
-    SmallVector<std::pair<ValueDest, SLValue>> lvalueWritebacks;
+    SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
 
     /// This is a list of values that we need to keep alive across the duration
     /// of the call.  They will get lit.ownership.use operations at the end of
@@ -283,7 +283,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       auto resultTmp = builder->create<VarLetDeclOp>(
           loc, expectedType, "__call_result_tmp__", /*isVar=*/true,
           /*isSynth=*/true);
-      argumentValues.push_back({SLValue(resultTmp), callExpr});
+      argumentValues.push_back({MLValue(resultTmp), callExpr});
       continue;
     }
 
@@ -388,7 +388,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
-  Value destBuffer = dest.getDefinedSLValueIfExists(destRValueType, emitter);
+  Value destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
   if (!destBuffer)
     return true;
 
@@ -427,7 +427,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
       // Parameter values will never alias.
       if (value.ir.getIfPValue())
         continue;
-      if (auto sl = value.ir.getIfSLValue()) {
+      if (auto sl = value.ir.getIfMLValue()) {
         if (ptrGuaranteedNoAlias(sl))
           continue;
         return false;
@@ -498,7 +498,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Promote PValue's if needed.
     return emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
   case ValueInputConvention::ByRefResult: {
-    auto tmpSlotAddr = argValAndExpr.ir.getIfSLValue();
+    auto tmpSlotAddr = argValAndExpr.ir.getIfMLValue();
     assert(tmpSlotAddr && "byref_result value start in a temp slot");
     auto rvalueType = ASTType(tmpSlotAddr.getType()).getReferenceElementType();
 
@@ -517,8 +517,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Okay it is safe to use, so remove the temporary allocation we aren't
     // going to use.
     tmpSlotAddr.getDefiningOp<VarLetDeclOp>()->erase();
-    // Get the SLValue of the destination slot.
-    return dest.getSLValueForResult(callExpr->getLoc(), rvalueType, emitter);
+    // Get the MLValue of the destination slot.
+    return dest.getMLValueForResult(callExpr->getLoc(), rvalueType, emitter);
   }
   case ValueInputConvention::ByRef:
   case ValueInputConvention::InitSelf: {
@@ -526,13 +526,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // dynamic/computed.
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
-    if (auto sl = lv.getIfSLValue())
+    if (auto sl = lv.getIfMLValue())
       return sl;
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
     ValueDest dlvBuffer(lv, EC_CallArgValue);
-    SLValue slvBuffer = dlvBuffer.getSLValueForResult(
+    MLValue slvBuffer = dlvBuffer.getMLValueForResult(
         argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
     // Emit the 'get' into the buffer.
     ValueDest bufferDest(slvBuffer, EC_CallArgValue);

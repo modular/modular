@@ -2269,9 +2269,7 @@ LogicalResult CheckLifetimes::processFunction(mlir::FunctionOpInterface func,
         mlir::emitWarning(varLet.getLoc())
             << "'" << varLet.getName()
             << "' was declared as a 'var' but never mutated, consider "
-               "switching "
-               "to "
-               "a 'let'";
+               "switching to a 'let'";
       };
 
       if (auto varLet = info.value.getDefiningOp<VarLetDeclOp>())

@@ -309,8 +309,8 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
   return declOp;
 }
 
-static bool isSLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
-  if (astDecl->getIfSLValue())
+static bool isMLValue(ASTDecl *astDecl, SMLoc loc, SharedState &shared) {
+  if (astDecl->getIfMLValue())
     return true;
   if (Operation *op = astDecl->getIfOperation()) {
     if (auto varlet = dyn_cast<VarLetDeclOp>(op)) {
@@ -541,7 +541,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     bool isRegisterPassable =
         ASTType(fieldOp.getType()).isRegisterPassable(location, shared);
     bool expectsPointer = !isRegisterPassable;
-    if (isSLValue(declAndCapture.first, location, shared))
+    if (isMLValue(declAndCapture.first, location, shared))
       expectsPointer = true;
     Value target = expectsPointer
                        ? ptrToField
@@ -807,11 +807,11 @@ Type Capture::getFieldType() const { return fieldType; }
 Type Capture::getInitType() const { return initType; }
 
 Value Capture::getMlirValue() const {
-  if (auto v = anyValue.getIfSLValue()) {
+  if (auto v = anyValue.getIfMLValue()) {
     return v;
   } else if (auto v = anyValue.getIfSBValue()) {
     return v;
-  } else if (auto v = anyValue.getIfSLValue()) {
+  } else if (auto v = anyValue.getIfMLValue()) {
     return v;
   } else if (auto v = anyValue.getIfMRValue()) {
     return v;

@@ -205,19 +205,19 @@ public:
   /// will not consume the ValueDest, so any user should reemit the ultimate
   /// value through it with emitResult.
   LValue getLValueForResult(SMLoc loc, ASTType resultType,
-                            bool allowIncompatibleTypes, bool requireSLValue,
+                            bool allowIncompatibleTypes, bool requireMLValue,
                             ExprEmitter &emitter);
 
-  /// Return an SLValue for this destination of the specified type that we can
+  /// Return an MLValue for this destination of the specified type that we can
   /// initialize.  This uses and consumes the destination if it matches the type
   /// of the value dest.
-  SLValue getSLValueForResult(SMLoc loc, ASTType resultType,
+  MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
-  /// If this ValueDest specifies an SLValue that will be returned by
-  /// getSLValueForResult with the specified type, return it.  Otherwise return
+  /// If this ValueDest specifies an MLValue that will be returned by
+  /// getMLValueForResult with the specified type, return it.  Otherwise return
   /// null.
-  SLValue getDefinedSLValueIfExists(ASTType resultType, ExprEmitter &emitter);
+  MLValue getDefinedMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
@@ -305,8 +305,8 @@ public:
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
-  /// Emit any kind of PValue to an SLValue.
-  MBValue emitPValueToSLValue(ASTExprAnd<PValue> value, SLValue dest,
+  /// Emit any kind of PValue to an MLValue.
+  MBValue emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                               ExprContext context);
   /// This helpers emits a PValue to an MRValue that has a memory
   /// representation, materializing the PValue.

@@ -27,7 +27,7 @@ using namespace M::KGEN::LIT;
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, BlockArgument>(declRef->getIRValue())
-      .Case<SBValue, SRValue, SLValue, MBValue>([&](auto val) -> BlockArgument {
+      .Case<SBValue, SRValue, MLValue, MBValue>([&](auto val) -> BlockArgument {
         if (auto bbArg = dyn_cast<BlockArgument>(Value(val)))
           if (isa<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
             return bbArg;
@@ -48,7 +48,7 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, SLValue, MBValue>([&](auto val) -> Operation * {
+      .Case<SBValue, SRValue, MLValue, MBValue>([&](auto val) -> Operation * {
         Operation *result = Value(val).getDefiningOp();
         // Look through PointerToRef to find the VarLetDecl2Op if present.
         // TODO(references): remove this.

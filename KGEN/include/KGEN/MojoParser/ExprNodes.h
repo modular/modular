@@ -571,8 +571,8 @@ struct FunctionTypeNode final : public ExprNode {
   AnyValue emitIR(ValueDest &dest, ExprEmitter &emitter) const override;
 };
 
-/// __get_lvalue_as_address(someSLValue)        # returns pop.pointer
-/// __get_address_as_lvalue(pop_pointer)        # returns SLValue
+/// __get_lvalue_as_address(someMLValue)        # returns pop.pointer
+/// __get_address_as_lvalue(pop_pointer)        # returns MLValue
 /// __get_address_as_owned_value(pop_pointer) # returns RValue
 struct AddressConvertNode final : public ExprNode {
   AddressConvertNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,

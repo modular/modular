@@ -53,7 +53,7 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
-  } else if (auto val = dyn_cast<SLValue>(storage)) {
+  } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
       os << "SLV: ";
     os << val;
@@ -132,7 +132,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MBValue>(storage))
     return value.getType();
-  if (auto value = dyn_cast<SLValue>(storage))
+  if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
@@ -171,13 +171,13 @@ ASTType CRValue::getRValueType() const {
 }
 
 ASTType CValue::getRValueType() const {
-  if (isa<SLValue, MRValue, MBValue>(storage))
+  if (isa<MLValue, MRValue, MBValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }
 
 ASTType LValue::getRValueType() const {
-  if (isa<SLValue>(storage))
+  if (isa<MLValue>(storage))
     return getType().getPointerElementType();
   return getType();
 }
