@@ -159,6 +159,10 @@ def LIT_RefType : LITType<"Ref", "ref"> {
   let extraClassDeclaration = [{
     /// Return the elementType attribute as a type.
     Type getElementAsType();
+
+    /// Return the pointer type that corresponds to this reference type,
+    /// ignoring the lifetime and the mutability.
+    PointerType getAsPointerType();
   }];
 }
 

@@ -145,7 +145,7 @@ static void lowerLITOps(LIT::FuncOp func) {
     } else if (auto varDecl = dyn_cast<VarLetDecl2Op>(op)) {
       mlir::IRRewriter b{OpBuilder(op)};
       StringAttr varName = varDecl.getNameAttr();
-      auto varType = PointerType::get(varDecl.getType().getElementType());
+      auto varType = varDecl.getType().getAsPointerType();
 
       // Declare the lifetime used in the result type.
       b.create<ParamDeclareOp>(varDecl.getLoc(), varDecl.getParamDecl(),

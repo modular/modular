@@ -449,8 +449,9 @@ fn foo(owned y:Int):
 # CHECK: lit.func @"__call__({{.*}}_CI_{{.*}})"(%self: !kgen.pointer<{{.*}}> borrow_in_mem, %q: !Int, %ww: !Int borrow) -> !lit.none
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
-# CHECK-NEXT: %q_0 = lit.varlet.decl "q" var synth : <!Int>
-# CHECK-NEXT: pop.store %q, %q_0 : !kgen.pointer<!Int>
+# CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
+# CHECK-NEXT: %[[QPTR:.*]] = lit.ref_to_pointer %q_0
+# CHECK-NEXT: pop.store %q, %[[QPTR]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V4:.*]] = kgen.call @{{.*}}::@Int::@"__add__{{.*}}"(%[[V2]], %[[V3]]) : ("self": !Int borrow, "rhs": !Int borrow) -> !Int

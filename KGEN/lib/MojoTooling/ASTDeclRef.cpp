@@ -48,8 +48,14 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
-      .Case<SBValue, SRValue, SLValue, MBValue>(
-          [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
+      .Case<SBValue, SRValue, SLValue, MBValue>([&](auto val) -> Operation * {
+        Operation *result = Value(val).getDefiningOp();
+        // Look through PointerToRef to find the VarLetDecl2Op if present.
+        // TODO(references): remove this.
+        if (auto refToPtr = dyn_cast_or_null<RefToPointerOp>(result))
+          result = refToPtr.getRef().getDefiningOp();
+        return result;
+      })
       .Default((Operation *)nullptr);
 }
 
@@ -59,7 +65,7 @@ Operation *MojoASTDeclRef::getIfOperation() const {
 
 MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
-      .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(
+      .Case<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp, VarLetDecl2Op>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
       .Default({});
 }
@@ -94,7 +100,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
       return std::nullopt;
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, LetRegDeclOp, StructDeclOp, StructFieldOp,
-              VarLetDeclOp>([](auto op) { return op.getName(); })
+              VarLetDeclOp, VarLetDecl2Op>([](auto op) { return op.getName(); })
         .Case([&](FuncOp op) -> std::optional<StringRef> {
           // If not fully resolved, the function may not have a name set yet.
           StringAttr name =
@@ -152,7 +158,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
   if (isa<StructFieldOp>(*decl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp>(*decl))
+  if (isa<GlobalVarDeclOp, LetRegDeclOp, VarLetDeclOp, VarLetDecl2Op>(*decl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
   if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
@@ -234,6 +240,12 @@ std::string MojoASTTypeRef::getAsString() const {
 
 MojoASTTypeRef MojoASTTypeRef::getPointerElementType() const {
   return type.getPointerElementType();
+}
+
+/// If the current type is a reference, return the type of the pointee. This
+/// aborts if the current type isn't a reference.
+MojoASTTypeRef MojoASTTypeRef::getReferenceElementType() const {
+  return type.getReferenceElementType();
 }
 
 Type MojoASTTypeRef::getMLIRType() const { return type.mlirType; }

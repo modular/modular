@@ -231,10 +231,12 @@ fn test_simple(a: Bool):
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
+    # CHECK: %a_0 = lit.varlet.decl2 "a"
+    # CHECK: [[APTR:%.*]] = lit.ref_to_pointer %a_0
     # CHECK: hlcf.if {{.+}} {
     if b:
         # CHECK: hlcf.loop
-        # CHECK: {{.+}} = pop.load %a_0
+        # CHECK: {{.+}} = pop.load [[APTR]]
         while a:
             # CHECK: pop.store {{.+}}, %inside_a
             inside_a = 0
@@ -505,7 +507,9 @@ fn propagateErrorInTry():
 
 # CHECK-LABEL: lit.func @"raiseError
 def raiseErrorInDef(err: Error):
-    # CHECK: %[[ERRVAL:.*]] = pop.load %err_0
+    # CHECK: %err_0 = lit.varlet.decl2 "err"
+    # CHECK: %0 = lit.ref_to_pointer %err_0
+    # CHECK: %[[ERRVAL:.*]] = pop.load %0
     # CHECK: %[[ERRVALCOPY:.*]] = kgen.call {{.*}}@Error::@"__copyinit__
     # CHECK: lit.raise %[[ERRVALCOPY]] : !Error
     raise err
@@ -808,5 +812,3 @@ fn useNonmaterializable():
   tail_types(NmStruct(5))
   # CHECK: call {{.*}}tail_types{{.*}}<:type !NmTarget, :variadic<type> [{{.*}}NmTarget]>
   tail_types(NmStruct(5), NmStruct(6))
-
-

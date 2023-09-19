@@ -1201,6 +1201,19 @@ void VarLetDecl2Op::walkDefinitions(
   walkDef(getParamDecl(), ParamDefValue());
 }
 
+void VarLetDecl2Op::build(OpBuilder &b, OperationState &state, Type elementType,
+                          StringRef name, StringRef lifetimeName, bool isVar,
+                          bool isSynth) {
+  auto lifetimeType = b.getType<LifetimeType>();
+  auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
+  auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
+  auto resultType = RefType::get(
+      /*mutable=*/true, elementType,
+      ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
+  build(b, state, resultType, name, isVar, isSynth, lifetimeDecl,
+        /*docString=*/{});
+}
+
 //===----------------------------------------------------------------------===//
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//

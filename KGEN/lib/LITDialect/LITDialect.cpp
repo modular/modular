@@ -214,6 +214,12 @@ Type RefType::getElementAsType() {
   return ParamRefType::get(elemType);
 }
 
+/// Return the pointer type that corresponds to this reference type, ignoring
+/// the lifetime and the mutability.
+PointerType RefType::getAsPointerType() {
+  return PointerType::get(getElementType());
+}
+
 REPLResultRefType REPLResultRefType::get(Type elementType) {
   auto *ctx = elementType.getContext();
   return get(ctx, elementType);

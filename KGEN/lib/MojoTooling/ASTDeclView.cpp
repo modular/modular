@@ -353,6 +353,10 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
         flagIsVar = op.getIsVar();
         type = declRef.getType().getPointerElementType().getAsString();
       })
+      .Case([&](VarLetDecl2Op op) {
+        flagIsVar = op.getIsVar();
+        type = declRef.getType().getReferenceElementType().getAsString();
+      })
       .Case([&](LetRegDeclOp op) {
         flagIsVar = false;
         type = declRef.getType().getAsString();

@@ -414,7 +414,8 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
       lookupSingleDecl(exprFnDecl, "__mojo_repl_expr_body__");
   SmallVector<std::pair<StringAttr, ASTDecl *>> variables;
   for (auto &[name, decls] : exprBodyDecl.getDeclsInScope())
-    if (decls.size() == 1 && isa<LetRegDeclOp, VarLetDeclOp>(*decls.front()))
+    if (decls.size() == 1 &&
+        isa<LetRegDeclOp, VarLetDeclOp, VarLetDecl2Op>(*decls.front()))
       variables.emplace_back(name, decls.front());
   llvm::sort(variables, [](const auto &lhs, const auto &rhs) {
     return lhs.first.getValue() < rhs.first.getValue();
@@ -509,6 +510,10 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
       }
       continue;
     }
+    // Handle memory based let decls.
+    if (auto letOp = dyn_cast<LIT::VarLetDecl2Op>(*decl))
+      llvm_unreachable(
+          "add support when we have IRValue support for references");
   }
 }
 
