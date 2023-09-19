@@ -1252,6 +1252,10 @@ static PValue substituteParametersIntoUserDefinedType(
     return {};
   }
 
+  // Notify the listener on the parameter binding.
+  emitter.shared.notifyListenerOnParameterBinding(
+      &typeDecl, subscript.rsquareLoc, subscript.indices);
+
   // Build up a InputParamBindings set to validate and check the bindings.
   InputParamBindings paramBindings;
   for (ExprNode *indexExpr : subscript.indices) {
@@ -1341,6 +1345,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the baseAnyValue has a bound callable symbol, then this is applying
   // (more?) parameter expressions to bind its parameters.
   if (auto overloads = baseAnyValue.getIfORValue()) {
+    emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
+                                                    rsquareLoc, indices);
     auto result = bindParamValuesToDirectCall(overloads, indices, emitter);
     return emitter.emitResult(result, this, dest);
   }

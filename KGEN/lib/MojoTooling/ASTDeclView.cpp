@@ -744,6 +744,11 @@ void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
 }
 
 std::string StructDeclView::getDeclarationSnippet() const {
+  return getDeclarationSnippet(/*parameterOffsets=*/nullptr);
+}
+
+std::string StructDeclView::getDeclarationSnippet(
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "struct " << getName();
@@ -751,7 +756,10 @@ std::string StructDeclView::getDeclarationSnippet() const {
   if (!parameters.empty()) {
     os << "[";
     interleaveComma(getParameters(), os, [&](const auto &param) {
+      unsigned paramStart = snippet.size();
       os << param.getDeclarationSnippet();
+      if (parameterOffsets)
+        parameterOffsets->push_back({paramStart, snippet.size()});
     });
     os << "]";
   }

@@ -2065,3 +2065,10 @@ void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
   if (isListenerInterestedInLoc(parserListener, rParenLoc))
     parserListener->onCall(decls, rParenLoc, callOperands);
 }
+
+void SharedState::notifyListenerOnParameterBinding(
+    ArrayRef<ASTDecl *> decls, llvm::SMLoc rsquareLoc,
+    ArrayRef<ExprNode *> parameters) {
+  if (isListenerInterestedInLoc(parserListener, rsquareLoc))
+    parserListener->onParameterBinding(decls, rsquareLoc, parameters);
+}
