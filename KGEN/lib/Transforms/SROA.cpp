@@ -369,6 +369,20 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
         if (static_cast<int64_t>(index.getLimitedValue()) >=
             cast<IntegerAttr>(alloc.getCount()).getInt())
           return false;
+
+        // Offsets are aliases to the original stack allocation, not element
+        // accesses. Require that all uses of the alias access the element.
+        // We don't have to worry about handling constant offsets of constant
+        // offsets, because they are canonicalized down to just one offset.
+        for (Operation *user : offset->getUsers()) {
+          if (!isa<POP::StoreOp, POP::LoadOp, POP::ArrayGEPOp,
+                   POP::StructGEPOp>(user))
+            return false;
+          // If the user is the argument of the store, then we cannot elide.
+          if (auto store = dyn_cast<POP::StoreOp>(user))
+            if (store.getArg() == offset)
+              return false;
+        }
       }
     }
 
