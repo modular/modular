@@ -16,7 +16,7 @@
 
 #include "llvm/Support/raw_ostream.h"
 
-#include "Support/Profiling/TimeProfiler.h"
+#include "Support/TimeProfiler.h"
 
 #include "gtest/gtest.h"
 

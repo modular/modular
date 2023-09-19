@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
+#include "Support/Host.h"
 #include "Support/SymbolExport.h"
-#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include <cstdarg>
 #include <thread>
@@ -18,9 +18,8 @@
 /// Returns the number of cores on the system.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_CoreCount() {
-  auto numCoresOr = M::getNumPhysicalCores();
-  if (!numCoresOr.isError())
-    return *numCoresOr;
+  if (auto info = M::getHostMachineInfo())
+    return info->numPhysicalCores;
   // The above will always succeed, but in case it does not we are going to have
   // a fallback.
   return std::thread::hardware_concurrency();

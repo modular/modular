@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Profiling/TimeProfiler.h"
+#include "Support/TimeProfiler.h"
 
 #include "Config/Version.h"
 #include "Support/Globals/GlobalProfilerContext.h"
-#include "Support/MArchTarget/Host.h"
+#include "Support/Host.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"

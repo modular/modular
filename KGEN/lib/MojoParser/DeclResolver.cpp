@@ -31,7 +31,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
-#include "Support/Profiling/TimeProfiler.h"
+#include "Support/TimeProfiler.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Support/DebugStringHelper.h"
