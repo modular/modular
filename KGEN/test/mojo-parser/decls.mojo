@@ -62,10 +62,10 @@ fn fat_signature_types():
 
 
 fn take_closure(
-    g: __mlir_type.`!kgen.signature<(index borrow) capturing -> index>`,
+    g: fn(borrowed __mlir_type.index) capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ):
-    # CHECK: %0 = kgen.call_signature  %g(%x) : (index borrow) capturing -> index
+    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow) capturing -> index>
     let result = g(x)
 
 
@@ -76,11 +76,12 @@ fn take_closure_no_param_main():
     fn g(y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: %0 = kgen.create_closure [("y": index borrow) capturing -> index: *"g(__mlir_type.index)"]()
-    # CHECK: %W = lit.letreg.decl "W" = %0 : !kgen.signature<("y": index borrow) capturing -> index>
-    # CHECK: %1 = kgen.rebind %W : !kgen.signature<("y": index borrow) capturing -> index> to !kgen.signature<(index borrow) capturing -> index>
+    # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: *"g(__mlir_type.index)"]()
+    # CHECK: %W = lit.letreg.decl "W" = %0
+    # CHECK: %1 = kgen.rebind %W : !kgen.signature<!lit.signature<("y": index borrow) capturing -> index>>
+    # CHECK-SAME: to !kgen.signature<!lit.signature<(index borrow) capturing -> index>>
     let W = g
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %idx3) : ("g": !kgen.signature<(index borrow) capturing -> index> borrow, "x": index borrow) -> !lit.none
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %idx3) : !lit.signature<("g": !kgen.signature<!lit.signature<(index borrow) capturing -> index>> borrow, "x": index borrow) -> !lit.none>
     take_closure(W, Int(3).value)
 
 
@@ -98,31 +99,28 @@ fn take_closure_with_param_main():
     fn g[N: __mlir_type.index](y: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: lit.alias.decl [[BOUND:.*]]: ("y": index borrow) capturing -> index = <bind_signature(:<index>("y": index borrow) capturing -> index *"g[__mlir_type.index](__mlir_type.index)", 3)>
-    # CHECK: %0 = kgen.create_closure [("y": index borrow) capturing -> index: [[BOUND]]]()
+    # CHECK: lit.alias.decl [[BOUND:.*]]: !lit.signature<("y": index borrow) capturing -> index> =
+    # CHECK-SAME: <bind_signature(:!lit.signature<<index>("y": index borrow) capturing -> index> *"g[__mlir_type.index](__mlir_type.index)", 3)>
+    # CHECK: %0 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: [[BOUND]]]()
     alias Bound = g[Int(3).value]
 
-    # CHECK: %value = lit.letreg.decl "value" = %0 : !kgen.signature<("y": index borrow) capturing -> index>
+    # CHECK: %value = lit.letreg.decl "value" = %0
     let value = Bound
-    # CHECK: %1 = kgen.rebind %value : !kgen.signature<("y": index borrow) capturing -> index> to !kgen.signature<(index borrow) capturing -> index>
-    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %x) : ("g": !kgen.signature<(index borrow) capturing -> index> borrow, "x": index borrow) -> !lit.none
+    # CHECK: %1 = kgen.rebind %value
+    # CHECK: kgen.call @"$decls"::@"take_closure{{.*}}"(%1, %x)
     take_closure(value, x)
 
-    # CHECK: %3 = kgen.create_closure [("y": index borrow) capturing -> index: bind_signature(:<index, index>("y": index borrow) capturing -> index *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
-    # CHECK: %Q = lit.letreg.decl "Q" = %3 : !kgen.signature<("y": index borrow) capturing -> index>
+    # CHECK: %3 = kgen.create_closure [!lit.signature<("y": index borrow) capturing -> index>: bind_signature(:!lit.signature<<index, index>("y": index borrow) capturing -> index> *"h[__mlir_type.index,__mlir_type.index](__mlir_type.index)", 1, 8)]()
+    # CHECK: %Q = lit.letreg.decl "Q" = %3
     let Q = h[Int(1).value, Int(8).value]
     take_closure(Q, x)
 
 
 fn take_closure_raises(
-    g: __mlir_type[
-        `!kgen.signature<(index borrow) throws|capturing -> !pop.variant<`,
-        Error,
-        `, index>>`,
-    ],
+    g: fn(borrowed __mlir_type.index) raises capturing -> __mlir_type.index,
     x: __mlir_type.index,
 ) raises:
-    # CHECK: %0 = kgen.call_signature %g(%x) : (index borrow) throws|capturing -> !pop.variant<!Error, index>
+    # CHECK: %0 = kgen.call_signature %g(%x) : !lit.signature<(index borrow) throws|capturing -> !pop.variant<!Error, index>>
     let result = g(x)
 
 
@@ -271,9 +269,7 @@ fn testThing(a: Int, b: Int) -> Int:
     return 1
 
 
-alias IntToFloat32Type = __mlir_type[
-    `!kgen.signature<(`, Int, ` borrow) -> `, Float32, `>`
-]
+alias IntToFloat32Type = fn(Int) -> Float32
 
 
 fn takeIntToFloat32Param[f: IntToFloat32Type]():
@@ -311,17 +307,21 @@ fn callOverload(a: Int):
     # CHECK: kgen.call @"$decls"::@"testThing({{.*}}$int::Int,{{.*}}$int::Int)"(%a, %a)
     _ = testThing(a, a)
 
-    # CHECK: %2 = kgen.create_closure [(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
+    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     var float1: IntToFloat32Type = testThing
 
-    # CHECK: %3 = kgen.create_closure [(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
+    # CHECK: kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     # CHECK-NEXT: pop.store %3, %float1
     float1 = testThing
 
-    # CHECK: %4 = kgen.create_closure [(!Int borrow) -> !kgen.declref<{{.*}}>: rebind(:("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")]()
+    # CHECK: %4 = kgen.create_closure [!lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}>>:
+    # CHECK-SAME: rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing({{.*}}$int::Int)")]()
     let float2: IntToFloat32Type = testThing
 
-    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}> rebind(:("a": !Int borrow) -> !kgen.declref<{{.*}}> @"$decls"::@"testThing({{.*}}$int::Int)")>()
+    # CHECK: kgen.call @"$decls"::@"takeIntToFloat32Param[fn({{.*}}$int::Int) -> $builtin::$simd::SIMD[{f32}, {1}]]()"<:
+    # CHECK-SAME: !lit.signature<(!Int borrow) -> !kgen.declref<{{.*}}SIMD{{.*}}f32{{.*}}>> rebind(:!lit.signature<("a": !Int borrow) -> !kgen.declref<{{.*}}>> @"$decls"::@"testThing{{.*}}")>()
     takeIntToFloat32Param[testThing]()
 
     # Issue #10036.  This should call the exact match, consider the varargs match
@@ -548,7 +548,7 @@ fn nestedFnInLoop():
             # CHECK-NEXT: return %[[I]]
             return i
 
-        # CHECK: kgen.call_param[() -> !Int: *"foo()"]()
+        # CHECK: kgen.call_param[!lit.signature<() -> !Int>: *"foo()"]()
         let result = foo()
 
 
@@ -562,7 +562,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type ("x": index borrow) -> index>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:type !lit.signature<("x": index borrow) -> index>>
     paramRefFunc(func)
 
 
@@ -672,8 +672,8 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int borrow = apply(:("self": !Int borrow, "rhs": !Int borrow)
-# CHECK-SAME: -> !Int {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
+# CHECK-SAME: (%a: !Int borrow = apply(:!lit.signature<("self": !Int borrow, "rhs": !Int borrow)
+# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -704,7 +704,7 @@ fn callNonRegisterDefaultArg():
 
 # CHECK: lit.func @"referencesDefaultArgumentFunction
 fn referencesDefaultArgumentFunction():
-    # CHECK: %f = lit.letreg.decl "f" = %0 : !kgen.signature<("a": !Int borrow, "b": !Int borrow = #lit.struct<{value = 3}>, "c": !Int borrow = #lit.struct<{value = 5}>)
+    # CHECK: %f = lit.letreg.decl "f" = %0
     let f = defaultArgument
 
 
@@ -1044,7 +1044,7 @@ struct ShadowsOuterName:
 
 # CHECK-LABEL: lit.struct.decl @ValueMem attributes {
 # CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
-# CHECK-SAME: !kgen.signature<({{.*}} init_self, {{.*}} owned_in_mem)
+# CHECK-SAME: !kgen.signature<!lit.signature<({{.*}} init_self, {{.*}} owned_in_mem)
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -1130,7 +1130,7 @@ async fn coroutine() -> Int:
 struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}"({{.*}}) async -> !lit.none
     async fn do_something(self: StructWithAsync):
-        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[() async -> !Int: @"$decls"::@"coroutine()"]()
+        # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<() async -> !Int>: @"$decls"::@"coroutine()"]()
         # CHECK-NEXT: %[[COROUTINE:.*]] = kgen.call {{.*}}@Coroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
         # CHECK-NEXT: lit.letreg.decl "a" = %[[COROUTINE]]
         let a = coroutine()
@@ -1138,7 +1138,7 @@ struct StructWithAsync:
 
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}"({{.*}}) async -> !lit.none
 async fn call_struct_async(f: StructWithAsync):
-    # CHECK-NEXT: lit.async.call[({{.*}}) async -> !lit.none: @{{.*}}](%f)
+    # CHECK-NEXT: lit.async.call[!lit.signature<({{.*}}) async -> !lit.none>: @{{.*}}](%f)
     _ = f.do_something()
 
 
@@ -1170,9 +1170,9 @@ fn topLevelFunction() -> Int:
         # CHECK-NEXT: pop.load %a
         return a
 
-    # CHECK: lit.alias.decl {{.*}}b: () capturing -> !Int = <*"nestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}b: !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call_param[() capturing -> !Int: *"nestedFunction()"]()
+    # CHECK: call_param[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1187,16 +1187,16 @@ struct SomeStruct:
             # CHECK-NEXT: pop.load %a
             return a
 
-        # CHECK: lit.alias.decl {{.*}}b: () capturing -> !Int = <*"nestedFunction()">
+        # CHECK: lit.alias.decl {{.*}}b: !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
         alias b = nestedFunction
-        # CHECK: call_param[() capturing -> !Int: *"nestedFunction()"]()
+        # CHECK: call_param[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
 
 # CHECK-LABEL: lit.func @"closureParameter[fn() capturing -> __mlir_type.index]()"
 # CHECK-SAME: capturing ->
 fn closureParameter[
-    func: __mlir_type.`!kgen.signature<() capturing -> index>`
+    func: fn() capturing -> __mlir_type.index
 ]():
     pass
 
@@ -1208,9 +1208,9 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl {{.*}}thinref: <index>() -> !lit.none = <*"nestedFunction[__mlir_type.index]()">
+    # CHECK: lit.alias.decl {{.*}}thinref: !lit.signature<<index>() -> !lit.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call_param[{{.*}}: bind_signature(:<index>() -> !lit.none *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<index>() -> !lit.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     let value = 0
@@ -1219,7 +1219,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     fn capturingNestedFunction() -> Int:
         return value
 
-    # CHECK: lit.alias.decl {{.*}}fatRef: () capturing -> !Int = <*"capturingNestedFunction()">
+    # CHECK: lit.alias.decl {{.*}}fatRef: !lit.signature<() capturing -> !Int> = <*"capturingNestedFunction()">
     alias fatRef = capturingNestedFunction
 
 
@@ -1231,9 +1231,9 @@ struct SomeParamStruct[c_param: Int]:
         fn nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl {{.*}}reff: <!Int>() -> !lit.none = <*"nestedFunction[{{.*}}$int::Int]()">
+        # CHECK: lit.alias.decl {{.*}}reff: !lit.signature<<!Int>() -> !lit.none> = <*"nestedFunction[{{.*}}$int::Int]()">
         alias reff = nestedFunction
-        # CHECK: call_param[{{.*}}: bind_signature(:<!Int>() -> !lit.none *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<!Int>() -> !lit.none> *"nestedFunction[{{.*}}$int::Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 
@@ -1414,7 +1414,7 @@ fn decorator_arg(a: Int):
     return
 
 # CHECK-LABEL: lit.func @"decorated_fn()"
-# CHECK-NEXT: decorators <:() -> !lit.none @{{.*}}::@"decorator()">
+# CHECK-NEXT: decorators <:!lit.signature<() -> !lit.none> @{{.*}}::@"decorator()">
 @decorator
 fn decorated_fn():
     pass

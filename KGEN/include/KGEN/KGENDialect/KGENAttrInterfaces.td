@@ -77,4 +77,39 @@ def DeclRefAttrInterface : AttrInterface<"DeclRefAttrInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// FnMetadataAttrInterface
+//===----------------------------------------------------------------------===//
+
+def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
+  let description = [{
+    This interface describes attributes that are attached to a `!kgen.signature`
+    type. Function metadata attributes carry additional information about a
+    callable on top of the information in the base `SignatureType`. This
+    interface defines the require methods for this metadata attribute, including
+    verification and print hooks.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Verify the signature type parameters using the current metadata.
+    }], "LogicalResult", "verifySignature", (ins
+      "function_ref<InFlightDiagnostic()>":$emitError,
+      "ArrayRef<Type>":$inputParamTypes, "ArrayRef<Type>":$resultParamTypes,
+      "FunctionType":$values,
+      "ArrayRef<ValueInputConvention>":$inputConventions,
+      "FnEffects":$effects)>,
+    InterfaceMethod<[{
+      Request the custom metadata attribute print the provided signature.
+    }], "void", "printSignature", (ins "AsmPrinter &":$p,
+                                       "SignatureType":$sig)>,
+    InterfaceMethod<[{
+      Get a new metadata attribute for a signature where the first `numBound`
+      arguments have been removed from the signature by being explicitly bound
+      to values, such as in closure formation.
+    }], "FnMetadataAttrInterface", "getWithBoundArgs", (ins "size_t":$numBound)>
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_TD

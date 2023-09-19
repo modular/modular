@@ -215,7 +215,7 @@ lit.func @ref(%e: !kgen.declref<@Error>,
               %f: !kgen.signature<() throws -> !pop.variant<@Error, !lit.none>>) throws -> !pop.variant<@Error, !lit.none> {
   lit.try {
     // CHECK: = kgen.call @throws
-    kgen.call @throws(%e) : ("e": !kgen.declref<@Error>) throws -> !pop.variant<@Error, index>
+    kgen.call @throws(%e) : !lit.signature<("e": !kgen.declref<@Error>) throws -> !pop.variant<@Error, index>>
     lit.try.yield
   } except (%err: !kgen.declref<@Error>) {
     // CHECK: except (
@@ -339,12 +339,12 @@ lit.func @throwing_coro<cond: i1, a>(%err: !kgen.declref<@Error>) async|throws -
 
 // CHECK-LABEL: lit.func @call_throwing_coro({{.*}}) throws|async ->
 lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, !lit.none> {
-  // CHECK-NEXT: callee: ("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>
+  // CHECK-NEXT: callee: !lit.signature<("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>>
   // CHECK-SAME: = <@throwing_coro<:i1 1, 0>>
-  kgen.param.declare callee: ("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>
+  kgen.param.declare callee: !lit.signature<("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>>
     = <@throwing_coro<:i1 1, 0>>
-  // CHECK: lit.async.call[("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>: callee](%err)
-  %hdl = lit.async.call[("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index> : callee](%err)
+  // CHECK: lit.async.call[!lit.signature<("err": !kgen.declref<@Error>) throws|async -> !pop.variant<@Error, index>>: callee](%err)
+  %hdl = lit.async.call[!lit.signature<("err": !kgen.declref<@Error>) async|throws -> !pop.variant<@Error, index>> : callee](%err)
 
   %0 = kgen.param.constant: !lit.none = <#lit.none>
   %tmp2 = pop.variant.create %0 : !lit.none -> !pop.variant<@Error, !lit.none>
@@ -663,11 +663,11 @@ lit.func @try_in_loop(%arg0: i1) {
 
 // CHECK-LABEL: lit.func @recurse
 // CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
-// CHECK-NEXT: %0 = kgen.call @recurse(%x) : ("x": !pop.scalar<index>) -> !pop.scalar<index>
+// CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.signature<("x": !pop.scalar<index>) -> !pop.scalar<index>>
 // CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
 // CHECK-NEXT:}
 lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
-  %0 = kgen.call @recurse(%x) : ("x": !pop.scalar<index>) -> !pop.scalar<index>
+  %0 = kgen.call @recurse(%x) : !lit.signature<("x": !pop.scalar<index>) -> !pop.scalar<index>>
   lit.return %0 : !pop.scalar<index>
   lit.end_func
 }

@@ -350,7 +350,7 @@ static void lowerAttributesAndTypes(
     return POP::ArrayAttr::get(attr.getContext(), {}, emptyList);
   });
 
-  // Remove all input conventions.
+  // Remove signature metadata.
   replacer.addReplacement([](SignatureType sig) {
     return SignatureType::get(sig.getValues(), sig.getInputParamTypes(),
                               sig.getResultParamTypes(), {},
@@ -455,7 +455,7 @@ orderAndLowerGlobalVariables(ModuleOp module,
     }
 
     // Outline the constructor and destructor into functions.
-    auto sig = SignatureType::get(ctx, {}, {});
+    auto sig = LITSignatureType::get(b.getContext());
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
       auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, sig);

@@ -427,13 +427,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}c: !Boolish = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:("self": !Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
+  # CHECK: lit.alias.decl {{.*}}c: !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[B]], [[A]])>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl {{.*}}d: !Boolish = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__{{.*}}", apply(:("self": !Boolish borrow) -> !Bool {{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
+  # CHECK: lit.alias.decl {{.*}}d: !Boolish = <cond(apply({{.*}}@Bool::@"__mlir_i1__{{.*}}", apply({{.*}}Boolish::@"__bool__{{.*}}", [[A]])), [[A]], [[B]])>
   alias d = a or b
 
 # CHECK-LABEL: lit.func @"do_math
@@ -516,25 +516,25 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 # CHECK-LABEL: lit.func @"test_param_if_cond{{.*}}()"
 # CHECK-SAME: <[[COND:.*]]: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
+  # CHECK: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: !kgen.int_literal = 2}>, #lit.struct<{value: !kgen.int_literal = 3}>)>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply(:("self": !Bool borrow) -> i1 {{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
+  # CHECK-NEXT: lit.alias.decl {{.*}}j: !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", [[COND]]), #lit.struct<{value: scalar<f64> = "2"}>, #lit.struct<{value: scalar<f64> = "3"}>)>
   alias j = 2.0 if cond else 3
 
   # CHECK: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}$int::Int) -> {{.*}}$int::Int]({{.*}}$int::Int)"
-# CHECK-SAME: <[[CALLABLE:.*]]: (!Int borrow) -> !Int>(%a: !Int borrow) -> !Int
+# CHECK-SAME: <[[CALLABLE:.*]]: !lit.signature<(!Int borrow) -> !Int>>(%a: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[(!Int borrow) -> !Int: [[CALLABLE]]](%a)
+  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: [[CALLABLE]]](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
-# CHECK-SAME: [[CALLABLE:.*]]: <!Int>(!Int borrow) -> !Int, [[B:.*]]: !Int>(%a: !Int borrow) -> !Int
+# CHECK-SAME: [[CALLABLE:.*]]: !lit.signature<<!Int>(!Int borrow) -> !Int>, [[B:.*]]: !Int>(%a: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: kgen.call_param[(!Int borrow) -> !Int: bind_signature(:<!Int>(!Int borrow) -> !Int [[CALLABLE]], [[B]])](%a)
+  # CHECK-NEXT: kgen.call_param[!lit.signature<(!Int borrow) -> !Int>: bind_signature({{.*}}[[CALLABLE]], [[B]])](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<{{.*}}a: !Int>() -> !Int
@@ -547,14 +547,14 @@ fn returnIndex() -> Int:
 
 # CHECK-LABEL: lit.func @"returnIndex2()"() -> !Int
 fn returnIndex2() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}"<:!Int apply(:() -> !Int @"$expressions"::@"returnIndex()")>() : () -> !Int
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}"<:!Int apply({{.*}}@"$expressions"::@"returnIndex()")>()
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
 # CHECK-LABEL: lit.func @"callInParam[fn[{{.*}}$int::Int]({{.*}}$int::Int) -> {{.*}}$int::Int]()"
-# CHECK-SAME: <[[CALLABLE:.*]]: <!Int>(!Int borrow) -> !Int>() -> !Int
+# CHECK-SAME: <[[CALLABLE:.*]]: !lit.signature<<!Int>(!Int borrow) -> !Int>>() -> !Int
 fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
-  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply(:(!Int borrow) -> !Int bind_signature(:<!Int>(!Int borrow) -> !Int [[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>() : () -> !Int
+  # CHECK-NEXT: %0 = kgen.call @"$expressions"::@"takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_signature({{.*}}[[CALLABLE]], #lit.struct<{value = 1}>), #lit.struct<{value = 1}>)>()
   # CHECK-NEXT: return %0
   return takeIndexParam[callable[1](1)]()
 
@@ -1166,10 +1166,10 @@ fn foo_adaptive[x: Int]() -> Int:
 
 # CHECK-LABEL: lit.func @"test_adaptive_set
 fn test_adaptive_set():
-    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<<!Int>() -> !Int> =
+    # CHECK: lit.alias.decl {{.*}}not_bound: variadic<!lit.signature<<!Int>() -> !Int>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()", @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"]>
     alias not_bound = foo_adaptive.__adaptive_set
-    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<() -> !Int> =
+    # CHECK-NEXT: lit.alias.decl {{.*}}bound: variadic<!lit.signature<() -> !Int>> =
     # CHECK-SAME: <[@"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()"<:!Int {{.*}}1{{.*}}>, @"$expressions"::@"foo_adaptive[{{.*}}$int::Int]()_0"<:!Int {{.*}}1{{.*}}>]>
     alias bound = foo_adaptive[1].__adaptive_set
 
@@ -1243,7 +1243,7 @@ fn function_types(
 
 # CHECK-LABEL: lit.struct.decl @Mem
 # CHECK-NEXT: lit.alias.decl _{{.*}}_x: type = <i8>
-# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <("foo": i8 borrow) -> !lit.none>
+# CHECK-NEXT: lit.alias.decl _{{.*}}_B: type = <!lit.signature<("foo": i8 borrow) -> !lit.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None
@@ -1479,7 +1479,7 @@ struct KwCallable:
 
 # CHECK-LABEL: lit.func @"indirect_kw_args()"
 fn indirect_kw_args():
-    # CHECK: lit.alias.decl [[CALLEE:.*]]: (
+    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = print_kw_args
 
     # CHECK-DAG: %[[A:.*]] = kgen.param.constant: {{.*}}value = 9

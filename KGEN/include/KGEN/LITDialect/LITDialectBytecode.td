@@ -61,6 +61,12 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
+def FnMetadataAttr : DialectAttribute<(attr
+  StringAttrArray:$argNames,
+  TypedAttrArray:$defaultArguments,
+  TypedAttrArray:$defaultParameters
+)>;
+
 def DocStringAttr : DialectAttribute<(attr
   ConcreteAttribute<"StringAttr">:$string,
   OptionalAttribute<"FileLineColLoc">:$location
@@ -92,6 +98,7 @@ def StructAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
+    FnMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
     NoneAttr,

@@ -112,6 +112,7 @@ public:
 
   /// Less trivial hooks.
 
+  void printString(StringRef string) override;
   void printKeywordOrString(StringRef keyword) override;
   void printSymbolName(StringRef symbolRef) override;
   void

@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -407,6 +408,82 @@ static StringRef disallowedAttrNames[] = {
     "evaluator",   "defaultImpl",  "inlineLevel", "paramDecl",
     "inputParams", "resultParams", "decorators",  "posArgNames"};
 
+static ParseResult parseLITFunctionSignature(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
+    FunctionType &functionType, LITSignatureType &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (parseOptionalParameterSpec(p, inputParams, resultParams))
+    return failure();
+
+  SmallVector<StringAttr> argNames;
+  SmallVector<TypedAttr> defaults;
+  SmallVector<ValueInputConvention> inputConventions;
+  auto parseElt = [&]() -> Type {
+    // Parse the argument type and its input convention.
+    OptionalParseResult result =
+        p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
+    if (result.has_value() && failed(*result))
+      return {};
+    else if (!result.has_value() && p.parseType(args.back().type))
+      return {};
+
+    if (parseInputConvention(p, inputConventions.emplace_back()))
+      return {};
+
+    StringRef argName = args.back().ssaName.name;
+    if (!argName.empty())
+      argName = argName.drop_front();
+    argNames.push_back(p.getBuilder().getStringAttr(argName));
+
+    // Parse an optional default value.
+    if (succeeded(p.parseOptionalEqual())) {
+      TypedAttr value;
+      if (parseParamValue(p, value, args.back().type))
+        return {};
+      defaults.push_back(value);
+    }
+
+    return args.back().type;
+  };
+
+  FnEffects effects;
+  if (failed(parseSignatureValues(p, parseElt, functionType, effects,
+                                  /*optionalResultList=*/true)))
+    return failure();
+
+  signature = IndexRefRemapper::remapToSignature(
+      inputParams, resultParams, functionType, inputConventions, effects,
+      FnMetadataAttr::get(p.getContext(), argNames, defaults),
+      [&] { return p.emitError(loc); });
+  return success(!!signature);
+}
+
+static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
+                                      ArrayRef<ParamDeclAttr> inputParams,
+                                      ArrayRef<ParamDeclAttr> resultParams,
+                                      FunctionType functionType,
+                                      LITSignatureType signature) {
+  // Print the function arguments.
+  auto printElt = [&](unsigned i) {
+    p.printRegionArgument(region->getArgument(i));
+
+    ValueInputConvention conv = signature.getInputConvention(i);
+    if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
+      p << ' ' << stringifyValueInputConvention(conv);
+    size_t defaultIndex =
+        signature.getNumInputs() - signature.getDefaultArguments().size();
+    if (i >= defaultIndex) {
+      p << " = ";
+      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
+    }
+  };
+
+  printOptionalParameterSpec(p, inputParams, resultParams);
+  printSignatureValues(p, printElt, functionType, signature,
+                       /*optionalResultList=*/true);
+}
+
 /// Parses a LIT Generator.
 ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   ExportKindAttr exportKind;
@@ -429,9 +506,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::Argument> entryArgs;
   ParamDeclArrayAttr inputParams, resultParams;
   FunctionType functionType;
-  SignatureType signature;
-  if (parseFunctionSignature(parser, entryArgs, inputParams, resultParams,
-                             functionType, signature, /*parseNames=*/true))
+  LITSignatureType signature;
+  if (parseLITFunctionSignature(parser, entryArgs, inputParams, resultParams,
+                                functionType, signature))
     return failure();
   for (StringAttr name : signature.getArgNames())
     if (!name.size())
@@ -536,9 +613,9 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(getSymName());
 
   // Print the function arguments.
-  printFunctionSignature(p, &getBodyRegion(), getInputParams(),
-                         getResultParams(), getFunctionType(), getSignature(),
-                         /*printNames=*/true);
+  printLITFunctionSignature(p, &getBodyRegion(), getInputParams(),
+                            getResultParams(), getFunctionType(),
+                            getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalConstraints(p, *this, getConstraints());
   printOptionalDecorators(p, *this, getDecorators());
@@ -572,7 +649,8 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
 LogicalResult LIT::FuncOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
-  if (getMetadata().getArgNames().size() != getFunctionType().getNumInputs())
+  if (getSignature().getMetadata().getArgNames().size() !=
+      getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
   if (isExternal()) {
@@ -618,7 +696,7 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   // invariants (that functions always have a single result).
   auto errorType = builder.getType<TypeCheckErrorType>();
   auto signatureType =
-      SignatureType::get(context, ArrayRef<Type>(), {errorType});
+      LITSignatureType::get(context, ArrayRef<Type>(), {errorType});
 
   auto emptyParamNames = StringArrayAttr::get(context, {});
   auto emptyParamDecls = ParamDeclArrayAttr::get(context, {});

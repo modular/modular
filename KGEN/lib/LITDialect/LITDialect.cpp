@@ -255,6 +255,71 @@ static ParseResult parseMutFlag(AsmParser &p, bool &value) {
 // SignatureType
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  SmallVector<Type> inputParamTypes, resultParamTypes;
+  if (succeeded(p.parseOptionalLess())) {
+    if (p.parseOptionalGreater()) {
+      if (succeeded(p.parseOptionalLSquare())) {
+        if (p.parseRSquare())
+          return failure();
+      } else if (p.parseCommaSeparatedList([&] {
+                   return parseKGENType(p, inputParamTypes.emplace_back());
+                 })) {
+        return failure();
+      }
+      if (succeeded(p.parseOptionalArrow())) {
+        if (p.parseCommaSeparatedList([&] {
+              return parseKGENType(p, resultParamTypes.emplace_back());
+            }))
+          return failure();
+      }
+      if (p.parseGreater())
+        return failure();
+    }
+  }
+
+  SmallVector<StringAttr> argNames;
+  SmallVector<TypedAttr> defaults;
+  SmallVector<ValueInputConvention> inputConventions;
+  auto parseElt = [&]() -> Type {
+    // Parse an optional argument name.
+    std::string argName;
+    if (succeeded(p.parseOptionalString(&argName)))
+      if (failed(p.parseColon()))
+        return {};
+    argNames.push_back(p.getBuilder().getStringAttr(argName));
+
+    // Parse the argument type and its input convention.
+    Type type;
+    if (p.parseType(type) ||
+        parseInputConvention(p, inputConventions.emplace_back()))
+      return {};
+
+    // Parse an optional default value.
+    if (succeeded(p.parseOptionalEqual())) {
+      TypedAttr value;
+      if (parseParamValue(p, value, type))
+        return {};
+      defaults.push_back(value);
+    }
+
+    return type;
+  };
+
+  FunctionType functionType;
+  FnEffects effects;
+  if (parseSignatureValues(p, parseElt, functionType, effects,
+                           /*optionalResultList=*/false))
+    return failure();
+  signature = SignatureType::getChecked(
+      [&] { return p.emitError(loc); }, functionType,
+      TypeArrayAttr::get(p.getContext(), inputParamTypes),
+      TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
+      effects, FnMetadataAttr::get(p.getContext(), argNames, defaults));
+  return success(!!signature);
+}
+
 Type LITDialect::parseType(DialectAsmParser &p) const {
   llvm::SMLoc typeLoc = p.getCurrentLocation();
   StringRef mnemonic;
@@ -265,7 +330,7 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
 
   // Special alias for `!lit.signature` type.
   if (mnemonic == "signature") {
-    if (p.parseLess() || parseSignature(p, genType) || p.parseGreater())
+    if (p.parseLess() || parseLITSignature(p, genType) || p.parseGreater())
       return {};
     return genType;
   }
@@ -278,14 +343,52 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
 void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
   if (succeeded(generatedTypePrinter(type, p)))
     return;
+}
 
-  // Special alias for `!lit.signature` type.
-  if (auto sig = dyn_cast<SignatureType>(type)) {
-    p << "signature<";
-    printSignature(p, sig);
-    p << '>';
-    return;
-  }
+// FIXME: Split out a LITTypes.cpp from this file.
+LITSignatureType::LITSignatureType(SignatureType sig) : SignatureType(sig) {
+  assert(::isa_and_nonnull<FnMetadataAttr>(sig.getMetadata()) &&
+         "expected LIT function metadata");
+}
 
-  llvm_unreachable("unknown LIT dialect type");
+FnMetadataAttr LITSignatureType::getMetadata() {
+  return ::cast<FnMetadataAttr>(SignatureType::getMetadata());
+}
+
+ArrayRef<StringAttr> LITSignatureType::getArgNames() {
+  return getMetadata().getArgNames();
+}
+
+StringAttr LITSignatureType::getArgName(size_t inputNo) {
+  return getArgNames()[inputNo];
+}
+
+ArrayRef<TypedAttr> LITSignatureType::getDefaultArguments() {
+  return getMetadata().getDefaultArguments();
+}
+
+bool LITSignatureType::classof(SignatureType type) {
+  return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
+}
+
+bool LITSignatureType::classof(Type type) {
+  if (auto sig = ::dyn_cast<SignatureType>(type))
+    return classof(sig);
+  return false;
+}
+
+LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
+                                       TypeRange results) {
+  return get(FunctionType::get(ctx, inputs, results));
+}
+
+LITSignatureType LITSignatureType::get(FunctionType values,
+                                       TypeArrayAttr inputParams,
+                                       TypeArrayAttr resultParams,
+                                       ArrayRef<ValueInputConvention> convs,
+                                       FnEffects effects, Attribute metadata) {
+  if (!metadata)
+    metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs());
+  return SignatureType::get(values, inputParams, resultParams, convs, effects,
+                            metadata);
 }

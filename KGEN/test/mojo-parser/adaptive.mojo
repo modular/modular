@@ -56,20 +56,20 @@ fn foobar[w: Int]() -> TrivialStuff[w]:
 
 # CHECK: lit.func @"main_func[{{.*}}$int::Int]()"<[[X:.*]]: !Int
 fn main_func[x: Int]():
-    # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": () -> !lit.none = <[@{{.*}}::@"foo()", @{{.*}}::@"foo()_0"]>
-    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S0]]"]()
+    # CHECK: kgen.param.fork *"(adaptive)foo[[S0:.*]]": !lit.signature<() -> !lit.none> = <[@{{.*}}::@"foo()", @{{.*}}::@"foo()_0"]>
+    # CHECK-NEXT: call_param[!lit.signature<() -> !lit.none>: *"(adaptive)foo[[S0]]"]()
     foo()
-    # CHECK: kgen.param.fork *"(adaptive)foo[[S1:.*]]": () -> !lit.none =
-    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)foo[[S1]]"]()
+    # CHECK: kgen.param.fork *"(adaptive)foo[[S1:.*]]": !lit.signature<() -> !lit.none> =
+    # CHECK-NEXT: call_param[!lit.signature<() -> !lit.none>: *"(adaptive)foo[[S1]]"]()
     foo()
 
-    # CHECK: kgen.param.fork *"(adaptive)bar{{.*}}": () -> !lit.none = <[@{{.*}}::@"bar()", @{{.*}}::@"bar()_0"]>
-    # CHECK-NEXT: call_param[() -> !lit.none: *"(adaptive)bar{{.*}}"]()
+    # CHECK: kgen.param.fork *"(adaptive)bar{{.*}}": !lit.signature<() -> !lit.none> = <[@{{.*}}::@"bar()", @{{.*}}::@"bar()_0"]>
+    # CHECK-NEXT: call_param[!lit.signature<() -> !lit.none>: *"(adaptive)bar{{.*}}"]()
     bar()
 
-    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": () -> !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<!Int> = [[[X]]]>>
+    # CHECK: kgen.param.fork *"(adaptive)foobar{{.*}}": !lit.signature<() -> !kgen.declref<@{{.*}}::@TrivialStuff<[[S]]: variadic<!Int> = [[[X]]]>>>
     # CHECK-SAME: = <[@{{.*}}::@"foobar[{{.*}}$int::Int]()"<:!Int [[X]]>, @{{.*}}::@"foobar[{{.*}}$int::Int]()_0"<:!Int [[X]]>]>
-    # CHECK-NEXT: call_param[() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<[[S]]: variadic<!Int> = [[[X]]]>>: *"(adaptive)foobar{{.*}}]()
+    # CHECK-NEXT: call_param[!lit.signature<() -> !kgen.declref<@"{{.*}}"::@TrivialStuff<[[S]]: variadic<!Int> = [[[X]]]>>>: *"(adaptive)foobar{{.*}}]()
     _ = foobar[x]()
 
     return

@@ -12,17 +12,20 @@
 #define KGEN_KGENDIALECT_KGENTYPES_H
 
 #include "KGEN/Interpreter/InterpreterInterface.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/ForwardDecls.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 
 namespace M::KGEN {
+class FnMetadataAttrInterface;
 class FuncInterface;
 class ParamBindAttr;
 class ParamBindArrayAttr;
+class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class SignatureType;
 class VariadicType;
 class VariadicAttr;
 
@@ -57,7 +60,7 @@ public:
                    ArrayRef<ParamDeclAttr> resultParams,
                    FunctionType functionType,
                    ArrayRef<ValueInputConvention> inputConventions = {},
-                   FnEffects effects = {}, FnMetadataAttr metadata = {},
+                   FnEffects effects = {}, Attribute metadata = {},
                    function_ref<InFlightDiagnostic()> emitError = {});
 
   /// Reconstruct the signature using a list of named input parameters. These

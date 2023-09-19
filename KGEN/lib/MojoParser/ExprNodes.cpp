@@ -583,6 +583,13 @@ static ASTType parseMLIRType(StringRef name, const ExprNode *node,
       diag.print(os);
       diagnostic.attachNote(node->getLoc()) << "MLIR error: " << str;
     }
+  } else if (isa<SignatureType>(result)) {
+    // Reject bare `!kgen.signature` types.
+    shared.emitError(node->getLoc(),
+                     "use of bare signature type is not supported, please use "
+                     "function type syntax instead")
+        << node->getRange();
+    return {};
   }
   return result;
 }

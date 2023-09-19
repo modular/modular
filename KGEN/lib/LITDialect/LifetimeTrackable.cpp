@@ -90,7 +90,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   auto bbArg = dyn_cast<BlockArgument>(v);
   if (!bbArg || !bbArg.getOwner())
     return;
-  SignatureType signature;
+  LITSignatureType signature;
   Operation *parentOp = bbArg.getOwner()->getParentOp();
   if (auto func = dyn_cast<LIT::FuncOp>(parentOp))
     signature = func.getSignature();

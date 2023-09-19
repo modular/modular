@@ -58,7 +58,7 @@ def LIT_FuncOp : LITOp<"func", [
     SymbolNameAttr:$sym_name,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     StringArrayAttr:$posArgNames,
-    TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<LIT_SignatureType>:$signature,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_ParamDeclArrayAttr:$resultParams,

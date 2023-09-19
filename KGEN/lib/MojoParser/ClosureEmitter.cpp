@@ -58,9 +58,8 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
 /// Given a signature of a function, create a new signature by inserting a
 /// closure argument at index 0 or 1 depending on the result type.
 static SignatureType
-addClosureSelfArgToFunctionSignature(Type closureType,
-                                     SignatureType functionType) {
-  unsigned callArgCount = functionType.getNumInputs() + 1;
+addClosureSelfArgToFunctionSignature(Type closureType, LITSignatureType sig) {
+  unsigned callArgCount = sig.getNumInputs() + 1;
   SmallVector<Type> callMemberSignatureInputs;
   callMemberSignatureInputs.reserve(callArgCount);
   SmallVector<ValueInputConvention> callMemberInputConventions;
@@ -68,10 +67,10 @@ addClosureSelfArgToFunctionSignature(Type closureType,
   SmallVector<StringAttr> callMemberArgNames;
   callMemberArgNames.reserve(callArgCount);
   // Add result slot if necessary.
-  bool hasResultSlot = functionType.hasMemoryOnlyResult();
-  MLIRContext *ctx = functionType.getContext();
+  bool hasResultSlot = sig.hasMemoryOnlyResult();
+  MLIRContext *ctx = sig.getContext();
   if (hasResultSlot) {
-    callMemberSignatureInputs.push_back(functionType.getValueInputs()[0]);
+    callMemberSignatureInputs.push_back(sig.getValueInputs()[0]);
     callMemberInputConventions.push_back(ValueInputConvention::ByRefResult);
     callMemberArgNames.push_back(StringAttr::get(ctx, "__result__"));
   }
@@ -80,24 +79,22 @@ addClosureSelfArgToFunctionSignature(Type closureType,
   callMemberInputConventions.push_back(ValueInputConvention::BorrowedInMem);
   callMemberArgNames.push_back(StringAttr::get(ctx, "self"));
   // Add the rest of the arguments.
-  for (unsigned j = hasResultSlot, e = functionType.getNumInputs(); j < e;
-       j++) {
-    callMemberSignatureInputs.push_back(functionType.getValueInputs()[j]);
-    callMemberInputConventions.push_back(functionType.getInputConvention(j));
-    callMemberArgNames.push_back(functionType.getArgName(j));
+  for (unsigned j = hasResultSlot, e = sig.getNumInputs(); j < e; j++) {
+    callMemberSignatureInputs.push_back(sig.getValueInputs()[j]);
+    callMemberInputConventions.push_back(sig.getInputConvention(j));
+    callMemberArgNames.push_back(sig.getArgName(j));
   }
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
 
   assert(callMemberArgNames.size() == callMemberInputConventions.size());
-  auto metadata =
-      FnMetadataAttr::get(functionType.getContext(), callMemberArgNames, {});
-  return SignatureType::get(
-      FunctionType::get(functionType.getContext(), callMemberSignatureInputs,
-                        functionType.getValueResults()),
-      functionType.getInputParamTypes(), functionType.getResultParamTypes(),
-      callMemberInputConventions,
-      functionType.getFnEffects().setEscaping(false), metadata);
+  auto metadata = FnMetadataAttr::get(sig.getContext(), callMemberArgNames, {});
+  return SignatureType::get(FunctionType::get(sig.getContext(),
+                                              callMemberSignatureInputs,
+                                              sig.getValueResults()),
+                            sig.getInputParamTypes(), sig.getResultParamTypes(),
+                            callMemberInputConventions,
+                            sig.getFnEffects().setEscaping(false), metadata);
 }
 
 StructDeclOp
@@ -144,7 +141,7 @@ ClosureEmitter::createClosureWrapperStructDecl(StringAttr name,
 
   // Add the call member
   bool hasResultSlot = signatureType.hasMemoryOnlyResult();
-  SignatureType callMemberSignatureType =
+  LITSignatureType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(opaquePointer, signatureType);
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType, nullptr);
@@ -329,7 +326,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   FuncOp nestedFunction = dyn_cast<LIT::FuncOp>(nestedFunctionDecl);
   assert(nestedFunction && "a function must back the nestedFunctionDecl");
 
-  SignatureType closureWrapperSignature = nestedFunction.getSignature();
+  LITSignatureType closureWrapperSignature = nestedFunction.getSignature();
   size_t wrapperNumArgs = closureWrapperSignature.getNumInputs();
 
   auto captureRange = shared.getCaptureRangeInScope(nestedFunctionDecl);
@@ -746,7 +743,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
          "The closure signature should have been set at creation time");
   auto functionSignature =
       cast<SignatureType>(closureWrapper.getClosureSignatureAttr().getValue());
-  SignatureType closureSignature =
+  LITSignatureType closureSignature =
       addClosureSelfArgToFunctionSignature(opaquePointer, functionSignature);
   assert(closureSignature.getValueResults().size() == 1);
 

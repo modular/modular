@@ -159,8 +159,8 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 # CHECK-SAME: [[A:.*]]: !Bool, [[B:.*]]: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
   # CHECK: kgen.param.if <apply(
-  # CHECK-SAME: :("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", cond(
-  # CHECK-SAME: apply(:("self": !Bool borrow) -> i1 {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
+  # CHECK-SAME: !lit.signature<("self": !Bool borrow) -> i1> {{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", cond(
+  # CHECK-SAME: apply({{.*}}@Bool::@"__mlir_i1__($builtin::$bool::Bool)", [[A]]), [[B]], [[A]]))> {
   @parameter
   if a and b:
   # CHECK:   lit.varlet.decl "v" var
@@ -474,7 +474,7 @@ def propagateErrorInDef():
 fn propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.varlet.decl {{.*}} : <!Int>
     var a: Int
-    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<!Error, !Int>
+    # CHECK:  %0 = kgen.call @"$statements"::@"maybeRaises()"() : !lit.signature<() throws -> !pop.variant<!Error, !Int>>
     # CHECK:  %1 = lit.handle_variant %0 : (!pop.variant<!Error, !Int>) -> !Int
     # CHECK:  {
     # CHECK:    [[ERR:%.*]] = pop.variant.get %0
@@ -492,7 +492,7 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"() : () throws -> !pop.variant<!Error, !Int>
+        # CHECK: %1 = kgen.call @"$statements"::@"maybeRaises()"()
         # CHECK: %2 = lit.handle_variant %1 : (!pop.variant<!Error, !Int>) -> !Int
         # CHECK: {
         # CHECK: } else {

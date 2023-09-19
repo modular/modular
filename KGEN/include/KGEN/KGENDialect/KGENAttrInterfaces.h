@@ -7,6 +7,7 @@
 #ifndef KGEN_KGENDIALECT_KGENATTRINTERFACES_H
 #define KGEN_KGENDIALECT_KGENATTRINTERFACES_H
 
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Location.h"

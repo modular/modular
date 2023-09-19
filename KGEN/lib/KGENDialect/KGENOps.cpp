@@ -1047,11 +1047,6 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   ArrayRef<Type> newArgTypes = sig.getValueInputs().drop_front(numCaptures);
   ArrayRef<ValueInputConvention> newInputConvs =
       sig.getInputConventions().drop_front(numCaptures);
-  ArrayRef<StringAttr> newArgNames = sig.getArgNames().drop_front(numCaptures);
-
-  ArrayRef<TypedAttr> newDefaultArgs = sig.getDefaultArguments();
-  if (newArgTypes.size() < newDefaultArgs.size())
-    newDefaultArgs = newDefaultArgs.take_back(newArgTypes.size());
 
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
@@ -1060,8 +1055,8 @@ LogicalResult CreateClosureOp::inferReturnTypes(
       OpBuilder(ctx).getFunctionType(newArgTypes, sig.getValueResults()),
       sig.getInputParamTypes(), sig.getResultParamTypes(), newInputConvs,
       effects,
-      FnMetadataAttr::get(ctx, StringArrayAttr::get(ctx, newArgNames),
-                          newDefaultArgs)));
+      sig.getMetadata() ? sig.getMetadata().getWithBoundArgs(numCaptures)
+                        : nullptr));
   return mlir::success();
 }
 
