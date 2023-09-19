@@ -265,9 +265,9 @@ fn test_shuffle_down(val: Int32) -> Int32:
 # ===----------------------------------------------------------------------===#
 
 
-# CHECK-LABEL: warp_reduce
+# CHECK-LABEL: warp_sum_reduce
 @export
-fn warp_reduce(val: Float32) -> Float32:
+fn warp_sum_reduce(val: Float32) -> Float32:
     var res = val
 
     alias limit = _static_log2[WARP_SIZE]()
@@ -277,3 +277,29 @@ fn warp_reduce(val: Float32) -> Float32:
     for mask in range(limit, 0, -1):
         res += shuffle_xor[DType.float32](val, 1 << mask)
     return res
+
+
+# CHECK-LABEL: block_reduce
+@export
+fn block_reduce(val: Float32) -> Float32:
+    let shared = stack_allocation[
+        WARP_SIZE, DType.float32, AddressSpace.SHARED
+    ]()
+
+    alias warp_shift = _static_log2[WARP_SIZE]()
+
+    # CHECK-DAG: mov.u32         %r{{.*}}, %laneid;
+    let lane = lane_id()
+    # CHECK-DAG: mov.u32         %r{{.*}}, %warpid;
+    let warp = warp_id()
+
+    let warp_sum = warp_sum_reduce(val)
+
+    if lane == 0:
+        shared.store(warp, warp_sum)
+
+    barrier()
+
+    return warp_sum_reduce(
+        shared.load(lane) if ThreadIdx.x() < BlockDim.x() // 32 else 0
+    )
