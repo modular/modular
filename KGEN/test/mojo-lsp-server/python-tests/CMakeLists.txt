@@ -12,7 +12,7 @@ endif()
 add_test(NAME mojo-lsp-server-pytests
   COMMAND ${CMAKE_COMMAND} -E env
     MOJO_LSP_SERVER=$<TARGET_FILE:mojo-lsp-server>
-    LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/mojo-lsl-server-pytests%4m.profraw
+    LLVM_PROFILE_FILE=${CMAKE_BINARY_DIR}/profiles/mojo-lsp-server-pytests%4m.profraw
     ${Python3_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}
 
 )
