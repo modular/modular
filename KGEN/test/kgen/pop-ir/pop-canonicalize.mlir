@@ -941,3 +941,14 @@ kgen.func @string_ops() -> (index, !kgen.string) {
   %1 = pop.string.concat %str, %str
   kgen.return %0, %1 : index, !kgen.string
 }
+
+// CHECK-LABEL: @offset_of_offset
+kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index> {
+  %idx3 = index.constant 3
+  %0 = pop.offset %arg0[%idx3] : !kgen.pointer<index>
+  %idx200 = index.constant 200
+  // CHECK: %0 = pop.offset %arg0[%index203]
+  %1 = pop.offset %0[%idx200] : !kgen.pointer<index>
+  // CHECK: return %0
+  kgen.return %1 : !kgen.pointer<index>
+}

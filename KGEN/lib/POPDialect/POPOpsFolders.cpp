@@ -826,6 +826,33 @@ OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
   return getPtr();
 }
 
+LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
+  // Canonicalize `%ptr[%c0][%c1] -> %ptr[%c0 + %c1]`, where the indices are
+  // constants.
+  APInt c1;
+  if (!mlir::matchPattern(op.getIndex(), mlir::m_ConstantInt(&c1)))
+    return b.notifyMatchFailure(op, "not a constant offset");
+  auto parent = op.getPtr().getDefiningOp<OffsetOp>();
+  if (!parent)
+    return b.notifyMatchFailure(op, "parent is not an offset");
+  APInt c0;
+  if (!mlir::matchPattern(parent.getIndex(), mlir::m_ConstantInt(&c0)))
+    return b.notifyMatchFailure(op, "parent is not a constant offset");
+
+  // However unlikely, don't canonicalize if the arithmetic overflows. Note that
+  // it is always valid to fold addition of index values, regardless of width.
+  bool ov = false;
+  APInt newOffset = c0.sadd_ov(c1, ov);
+  if (ov)
+    return b.notifyMatchFailure(op, "offset addition overflows");
+
+  b.replaceOpWithNewOp<OffsetOp>(
+      op, parent.getPtr(),
+      b.create<ParamConstantOp>(op.getLoc(),
+                                b.getIndexAttr(newOffset.getSExtValue())));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // SelectOp
 //===----------------------------------------------------------------------===//
