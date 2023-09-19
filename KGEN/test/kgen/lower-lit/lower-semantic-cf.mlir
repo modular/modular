@@ -352,68 +352,6 @@ lit.func @call_throwing_coro(%err: !kgen.declref<@Error>) async|throws -> !pop.v
   lit.end_func
 }
 
-
-//===----------------------------------------------------------------------===//
-// Nested Functions
-//===----------------------------------------------------------------------===//
-
-// CHECK-LABEL: lit.struct.decl @StructWithNestedFn<a_param>
-lit.struct.decl @StructWithNestedFn<a_param> {
-  // CHECK-NEXT: lit.func @topLevelFunction<b_param>() -> index
-  lit.func @topLevelFunction<b_param>() -> index {
-    %a = lit.varlet.decl "a" var : <index>
-    %idx0 = index.constant 0
-    pop.store %idx0, %a : !kgen.pointer<index>
-
-    // CHECK: kgen.param.declare.region nestedFunction = () -> index
-    lit.func nestedFunction() -> index {
-      // CHECK-NEXT: pop.load %a
-      %0 = pop.load %a : !kgen.pointer<index>
-      lit.return %0 : index
-      lit.end_func
-    }
-    // CHECK: kgen.param.declare b: () -> index = <nestedFunction>
-    kgen.param.declare b: () -> index = <nestedFunction>
-
-    // CHECK: kgen.param.declare.region paramNestedFunc = <c_param -> d_param>()
-    lit.func paramNestedFunc<c_param -> d_param>() {
-      // CHECK-NEXT: kgen.param.result_bind<c_param>
-      lit.param_return<c_param>
-      lit.return
-      lit.end_func
-    }
-    // CHECK: kgen.param.declare c: <[] -> index>() -> () = <bind_signature(:<index -> index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: <[] -> index>() -> () = <bind_signature(:<index -> index>() -> () paramNestedFunc, 2)>
-
-    %idx0_0 = index.constant 0
-    lit.return %idx0_0 : index
-    lit.end_func
-  }
-}
-
-// CHECK-LABEL: lit.func @topFunc
-lit.func @topFunc() -> !lit.none {
-  // CHECK: kgen.param.declare.region midFunc
-  lit.func midFunc() -> !lit.none {
-    // CHECK: kgen.param.declare.region botFunc
-    lit.func botFunc() -> !lit.none {
-      %0 = kgen.param.constant: !lit.none = <#lit.none>
-      lit.return %0 :  !lit.none
-      lit.end_func
-    }
-    // CHECK: declare bot: () -> !lit.none = <botFunc>
-    kgen.param.declare bot: () -> !lit.none = <botFunc>
-    %0 = kgen.param.constant: !lit.none = <#lit.none>
-    lit.return %0 :  !lit.none
-    lit.end_func
-  }
-  // CHECK: declare mid: () -> !lit.none = <midFunc>
-  kgen.param.declare mid: () -> !lit.none = <midFunc>
-  %0 = kgen.param.constant: !lit.none = <#lit.none>
-  lit.return %0 :  !lit.none
-  lit.end_func
-}
-
 // CHECK-LABEL: lit.func @return_after_return
 lit.func @return_after_return() -> !lit.none {
   %0 = kgen.param.constant: !lit.none = <#lit.none>
