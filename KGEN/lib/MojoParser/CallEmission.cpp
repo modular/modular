@@ -1916,9 +1916,6 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
                                      const CallOperands &callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
-  if (callOperands.hasKwOperands())
-    return {};
-
   auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType().mlirType);
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
