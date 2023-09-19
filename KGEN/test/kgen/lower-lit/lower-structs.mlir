@@ -196,6 +196,8 @@ kgen.generator @raw_pointer_from_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct
   kgen.return %ptr: !kgen.pointer<@Struct>
 }
 
+// CHECK: kgen.extern.generator @empty_region_dont_crash
+kgen.extern.generator @empty_region_dont_crash()
 
 // -----
 

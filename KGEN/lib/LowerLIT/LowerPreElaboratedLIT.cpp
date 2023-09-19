@@ -99,10 +99,9 @@ void LowerPreElaboratedLITPass::runOnOperation() {
 
   // Collect the functions that need inflation, and the source containing
   // their bodies.
-  llvm::MapVector<StringAttr, SmallVector<LIT::FuncOp>> toInflate;
-  for (LIT::FuncOp it : theModule.getOps<LIT::FuncOp>())
-    if (it.isExternal())
-      toInflate[it.getPreCompiledModuleRefAttr().getAttr()].emplace_back(it);
+  llvm::MapVector<StringAttr, SmallVector<ExternGeneratorOp>> toInflate;
+  for (auto func : theModule.getOps<ExternGeneratorOp>())
+    toInflate[func.getPreCompiledModuleRefAttr().getAttr()].emplace_back(func);
 
   mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
   for (auto &[moduleRef, funcs] : toInflate) {
@@ -175,7 +174,7 @@ void LowerPreElaboratedLITPass::runOnOperation() {
     // Replace the high level functions with the precompiled counter parts in
     // the bytecode module.
     SmallVector<Operation *> operationsToInflate;
-    for (LIT::FuncOp func : funcs) {
+    for (ExternGeneratorOp func : funcs) {
       auto result = bytecodeSymtab.lookup<ExportInterface>(func.getName());
       if (!result) {
         func.emitError() << "unable to find " << func.getName()

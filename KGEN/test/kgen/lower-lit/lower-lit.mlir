@@ -414,3 +414,8 @@ lit.file_module @module {
   // CHECK-NOT: lit.alias.decl
   lit.alias.decl A = <42>
 }
+
+// CHECK: kgen.extern.generator @extern() attributes {preCompiledModuleRef = @module}
+lit.func @extern() attributes {preCompiledModuleRef = @module} {
+  lit.extern_func
+}
