@@ -11,6 +11,7 @@
 #ifndef KGEN_LITDIALECT_H
 #define KGEN_LITDIALECT_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Dialect.h"
 
 // Pull in the dialect definition.

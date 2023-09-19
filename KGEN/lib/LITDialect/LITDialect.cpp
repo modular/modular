@@ -244,5 +244,48 @@ static ParseResult parseMutFlag(AsmParser &p, bool &value) {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/LITDialect/LITTypes.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// SignatureType
+//===----------------------------------------------------------------------===//
+
+Type LITDialect::parseType(DialectAsmParser &p) const {
+  llvm::SMLoc typeLoc = p.getCurrentLocation();
+  StringRef mnemonic;
+  Type genType;
+  OptionalParseResult parseResult = generatedTypeParser(p, &mnemonic, genType);
+  if (parseResult.has_value())
+    return genType;
+
+  // Special alias for `!lit.signature` type.
+  if (mnemonic == "signature") {
+    if (p.parseLess() || parseSignature(p, genType) || p.parseGreater())
+      return {};
+    return genType;
+  }
+
+  p.emitError(typeLoc) << "unknown  type `" << mnemonic << "` in dialect `"
+                       << getNamespace() << "`";
+  return {};
+}
+
+void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
+  if (succeeded(generatedTypePrinter(type, p)))
+    return;
+
+  // Special alias for `!lit.signature` type.
+  if (auto sig = dyn_cast<SignatureType>(type)) {
+    p << "signature<";
+    printSignature(p, sig);
+    p << '>';
+    return;
+  }
+
+  llvm_unreachable("unknown LIT dialect type");
+}
