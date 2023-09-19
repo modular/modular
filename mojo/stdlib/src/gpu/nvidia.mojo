@@ -237,6 +237,34 @@ struct GridDim:
 
 
 # ===----------------------------------------------------------------------===#
+# lane_id
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn lane_id() -> Int:
+    """Returns the lane ID of the current thread.
+
+    Returns: The lane ID of the the current thread.
+    """
+    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.laneid", Int32]().to_int()
+
+
+# ===----------------------------------------------------------------------===#
+# warp_id
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn warp_id() -> Int:
+    """Returns the warp ID of the current thread.
+
+    Returns: The warp ID of the the current thread.
+    """
+    return llvm_intrinsic["llvm.nvvm.read.ptx.sreg.warpid", Int32]().to_int()
+
+
+# ===----------------------------------------------------------------------===#
 # barrier
 # ===----------------------------------------------------------------------===#
 
