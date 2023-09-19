@@ -205,7 +205,7 @@ fn MOGGExport():
     alias _select = select
     alias _sigmoid = sigmoid
     alias _sin = sin
-    alias _sqrt = sqrt
+    alias _sqrt = sqrt_wrapped
     alias _sub = sub
     alias _tanh = tanh
     alias _arange = arange
@@ -923,6 +923,21 @@ fn pow_wrapped[
     type, simd_width
 ]:
     return pow[type, power_type, simd_width](value, power)
+
+
+# ===----------------------------------------------------------------------===#
+# Sqrt wrapper op
+# ===----------------------------------------------------------------------===#
+
+
+# Call sqrt, needed as it has multiple overloads which can't be aliased
+@mogg_register("mo.sqrt")
+@mogg_elementwise
+@always_inline
+fn sqrt_wrapped[
+    type: DType, simd_width: Int
+](value: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return sqrt(value)
 
 
 # ===----------------------------------------------------------------------===#
