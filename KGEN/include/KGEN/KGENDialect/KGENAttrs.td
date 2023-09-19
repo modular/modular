@@ -37,21 +37,11 @@ class KGEN_ExprAttr<string attrName, string attrMnemonic,
                 DeclareAttrInterfaceMethods<ParameterAttrInterface>] # traits>;
 
 //===----------------------------------------------------------------------===//
-// ArrayOfAttrsAttr
-//===----------------------------------------------------------------------===//
-
-/// An array attribute of other attributes. This one supports sub-element
-/// interface.
-class KGEN_ArrayOfAttrsAttr<string attrName, string attrMnemonic,
-                            string eltName>
-    : ArrayOfAttr<KGENDialect, attrName, attrMnemonic, eltName>;
-
-//===----------------------------------------------------------------------===//
 // ParameterExprArrayAttr
 //===----------------------------------------------------------------------===//
 
 def KGEN_ParameterExprArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ParameterExprArray", "exprs", "TypedAttr">;
+    : ArrayOfAttr<KGENDialect, "ParameterExprArray", "exprs", "TypedAttr">;
 
 //===----------------------------------------------------------------------===//
 // StringArrayAttr
@@ -69,7 +59,7 @@ def KGEN_StringArrayAttr
 /// NOTE: We have to define this as TypeArrayAttr because ODS squats on the
 /// `TypeArrayAttr` name with something different.
 def KGEN_TypeArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"TypeArray", "type.array", "Type">;
+    : ArrayOfAttr<KGENDialect, "TypeArray", "type.array", "Type">;
 
 //===----------------------------------------------------------------------===//
 // ParamDeclAttr
@@ -104,8 +94,8 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
 
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
-def KGEN_ParamDeclArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ParamDeclArray", "param.decls", "ParamDeclAttr"> {
+def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
+    "param.decls", "ParamDeclAttr"> {
   let builders = [
     AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$paramDecl), [{
       return get(paramDecl.getContext(), paramDecl);
@@ -165,8 +155,8 @@ def KGEN_ParamBindAttr : KGENAttr<"ParamBind", "param.bind"> {
 //===----------------------------------------------------------------------===//
 
 /// An array of ParamBindAttr's.
-def ParamBindArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ParamBindArray", "param.binds", "ParamBindAttr">;
+def ParamBindArrayAttr : ArrayOfAttr<KGENDialect, "ParamBindArray",
+    "param.binds", "ParamBindAttr">;
 
 //===----------------------------------------------------------------------===//
 // ConstraintAttr
@@ -207,8 +197,8 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
 //===----------------------------------------------------------------------===//
 
 /// An array of ConstraintAttr's.
-def ConstraintArrayAttr
-    : KGEN_ArrayOfAttrsAttr<"ConstraintArray", "constraints", "ConstraintAttr">;
+def ConstraintArrayAttr : ArrayOfAttr<KGENDialect, "ConstraintArray",
+    "constraints", "ConstraintAttr">;
 
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
@@ -872,8 +862,8 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
 // DecoratorsAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_DecoratorsAttr
-    : KGEN_ArrayOfAttrsAttr<"Decorators", "decorators", "TypedAttr"> {
+def KGEN_DecoratorsAttr : ArrayOfAttr<KGENDialect, "Decorators", "decorators",
+    "TypedAttr"> {
   let summary = "Compile-time decorator invocations.";
   let description = [{
     The `#kgen.decorators` attribute represents a list of decorator invocations
