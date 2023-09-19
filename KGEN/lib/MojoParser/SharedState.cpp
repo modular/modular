@@ -423,7 +423,7 @@ struct SharedState::ModuleState {
     keyBuf->write((const char *)contentHash.data(), contentHash.size());
 
     // Add the module dependencies to the cache key.
-    for (auto *dep : dependencies) {
+    for (ModuleState *dep : dependencies) {
       keyBuf->write((const char *)dep->contentHash.data(),
                     dep->contentHash.size());
     }
@@ -1530,20 +1530,37 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   if (decl.resolvedness < DeclResolvedness::signature) {
     decl.resolvedness = DeclResolvedness::signature;
 
-    if (auto funcOp = dyn_cast<LIT::FuncOp>(declOp)) {
-      declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
+    LogicalResult result =
+        llvm::TypeSwitch<Operation *, LogicalResult>(declOp)
+            .Case([&](LIT::FuncOp funcOp) {
+              declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
 
-      // Resolve the references from the signature.
-      typeWalker.walk<mlir::WalkOrder::PreOrder>(declOp->getAttrDictionary());
-    } else if (auto structOp = dyn_cast<StructDeclOp>(declOp)) {
-      // Resolve the types of any parameters.
-      typeWalker.walk<mlir::WalkOrder::PreOrder>(structOp.getInputParamsAttr());
-    } else if (auto unresolvedImport = dyn_cast<UnresolvedImportOp>(declOp)) {
-      // Let the normal decl resolver handling insert aliases and other import
-      // behavior.
-      if (failed(declResolver->resolveSignature(unresolvedImport, decl)))
-        return failure();
-    }
+              // Resolve the references from the signature.
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(
+                  declOp->getAttrDictionary());
+              return success();
+            })
+            .Case([&](StructDeclOp structOp) {
+              // Resolve the types of any parameters.
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(
+                  structOp.getInputParamsAttr());
+              return success();
+            })
+            .Case([&](UnresolvedImportOp unresolvedImport) {
+              // Let the normal decl resolver handling insert aliases and other
+              // import behavior.
+              if (failed(
+                      declResolver->resolveSignature(unresolvedImport, decl)))
+                return failure();
+              return mlir::success();
+            })
+            .Case<GlobalVarDeclOp, AliasDeclOp>([&](auto varDecl) {
+              typeWalker.walk<mlir::WalkOrder::PreOrder>(varDecl.getType());
+              return mlir::success();
+            })
+            .Default([](auto) { return mlir::success(); });
+    if (failed(result))
+      return failure();
   }
   if (resolvedness < DeclResolvedness::fully)
     return success();
