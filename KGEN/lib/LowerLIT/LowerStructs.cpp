@@ -641,7 +641,9 @@ void StructOperationLowerer::replaceElementsIn(Operation *op) {
 
   // Update any nested block arguments.
   for (Region &region : op->getRegions()) {
-    // Our IR will only have single-block regions.
+    if (region.empty())
+      continue;
+    // Our IR has at most single-block regions.
     Block &block = region.front();
     for (BlockArgument &arg : block.getArguments()) {
       if (Attribute newLoc = replaceIfDifferent(arg.getLoc()))

@@ -214,7 +214,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
 def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
-    ExportInterface]> {
+    ExportInterface, DeclareOpInterfaceMethods<FunctionOpInterface>]> {
   let summary = "External generator declaration.";
   let description = [{
     The `kgen.extern.generator` operation declares a KGEN generator with a
@@ -235,16 +235,20 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
                        TypeAttrOf<FunctionType>:$functionType,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_ParamDeclArrayAttr:$resultParams,
-                       KGEN_ExportKindAttr:$exportKind);
+                       KGEN_ExportKindAttr:$exportKind,
+                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef);
+  let regions = (region SizedRegion<0>:$body);
 
   let extraClassDeclaration = [{
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
+    Region *getCallableRegion() { return &getBody(); }
   }];
 
   let assemblyFormat = [{
     custom<SymbolExport>($exportKind) $sym_name ``
     custom<ExternGenerator>($signature, $functionType, $inputParams,
                             $resultParams) attr-dict-with-keyword
+    ($body^)?
   }];
 }
 

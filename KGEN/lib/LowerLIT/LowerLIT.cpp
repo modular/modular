@@ -241,22 +241,29 @@ lowerLITFunc(LIT::FuncOp gen, SymbolTable &symbolTable,
     renamedSymbols[gen.getNameAttr()] = newName;
     gen.setSymName(newName);
   }
-  // If the function is external, it will get lowered later.
-  if (gen.isExternal())
-    return success();
 
-  // Directly lower since these operations are exactly identical right now.
   OpBuilder b(gen->getContext());
-  auto result = b.create<GeneratorOp>(
-      gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
-      gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
-      gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
-      gen.getInlineLevelAttr(), gen.getExportKindAttr());
+  Operation *result;
+  if (gen.isExternal()) {
+    // Replace external functions with `kgen.extern.generator` ops.
+    result = b.create<ExternGeneratorOp>(
+        gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
+        gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
+        gen.getExportKindAttr(), gen.getPreCompiledModuleRefAttr());
+  } else {
+    // Directly lower since these operations are exactly identical right now.
+    auto newGen = b.create<GeneratorOp>(
+        gen.getLoc(), gen.getSymNameAttr(), TypeAttr::get(signature),
+        gen.getFunctionTypeAttr(), inputParams, gen.getResultParamsAttr(),
+        gen.getConstraintsAttr(), gen.getDecoratorsAttr(),
+        gen.getInlineLevelAttr(), gen.getExportKindAttr());
+    result = newGen;
 
-  // Move over the body.
-  auto *bodyBlock = gen.getBody();
-  gen.getBodyRegion().getBlocks().remove(bodyBlock);
-  result.getBodyRegion().push_back(bodyBlock);
+    // Move over the body.
+    auto *bodyBlock = gen.getBody();
+    gen.getBodyRegion().getBlocks().remove(bodyBlock);
+    newGen.getBodyRegion().push_back(bodyBlock);
+  }
 
   // Move over the symbol, and we're done.
   Block::iterator genIter = gen->getIterator();
