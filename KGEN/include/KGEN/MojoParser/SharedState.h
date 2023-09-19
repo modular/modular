@@ -327,6 +327,12 @@ public:
   void notifyListenerOnCall(ArrayRef<ASTDecl *> decls, SMLoc rparenLoc,
                             const CallOperands &callOperands);
 
+  /// Notify the listener, if present, that parameters are being bound to one of
+  /// the given decls.
+  void notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
+                                        llvm::SMLoc rsquareLoc,
+                                        ArrayRef<ExprNode *> parameters);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 

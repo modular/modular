@@ -250,18 +250,63 @@ struct SignatureHelpListener : public BaseCompletionListener {
           ++result.activeParameter;
 
         SignatureHelpResult::Signature signature;
-
         SmallVector<std::pair<unsigned, unsigned>> argOffsets;
         signature.label = fnView->getDeclarationSnippet(
             /*parameterOffsets=*/nullptr, &argOffsets);
-        signature.documentation = fnView->getFullMarkdownString();
-        for (const auto &[arg, offset] :
-             llvm::zip(fnView->getArgs(), argOffsets)) {
-          signature.parameters.push_back({offset, arg.getMarkdownDocString()});
-        }
+        addDeclDocAndParametersToSignature(signature, *fnView,
+                                           fnView->getArgs(), argOffsets);
         result.signatures.emplace_back(std::move(signature));
       }
     }
+  }
+
+  void onParameterBinding(ArrayRef<ASTDecl *> decls, llvm::SMLoc rsquareLoc,
+                          ArrayRef<ExprNode *> parameters) override {
+    auto findInterestedParam = [&]() -> std::optional<size_t> {
+      for (const auto &[index, param] : llvm::enumerate(parameters))
+        if (containsLoc(completionRange, param->getRangeStart()))
+          return index;
+
+      // Consider the rparen location if it is within the completion range.
+      if (containsLoc(completionRange, rsquareLoc))
+        return parameters.size();
+      return std::nullopt;
+    };
+
+    // Check if any of the operands are within the completion range.
+    std::optional<size_t> paramIndex = findInterestedParam();
+    if (!paramIndex)
+      return;
+    result.activeParameter = *paramIndex;
+
+    // Collect the signatures for each of the decls.
+    for (MojoASTDeclRef decl : decls) {
+      std::unique_ptr<DeclView> declView = decl.getView();
+      if (!declView)
+        continue;
+      TypeSwitch<DeclView *>(declView.get())
+          .Case<FunctionDeclView, StructDeclView>([&](auto *declView) {
+            if (parameters.size() > declView->getParameters().size())
+              return;
+            SignatureHelpResult::Signature signature;
+            SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
+            signature.label = declView->getDeclarationSnippet(&paramOffsets);
+            addDeclDocAndParametersToSignature(
+                signature, *declView, declView->getParameters(), paramOffsets);
+            result.signatures.emplace_back(std::move(signature));
+          });
+    }
+  }
+
+  /// Utility function for adding the documentation and parameter information
+  /// form the given decl to a signature.
+  template <typename RangeT>
+  static void addDeclDocAndParametersToSignature(
+      SignatureHelpResult::Signature &signature, DeclView &declView,
+      RangeT &&range, ArrayRef<std::pair<unsigned, unsigned>> offsets) {
+    signature.documentation = declView.getFullMarkdownString();
+    for (const auto &[arg, offset] : llvm::zip(range, offsets))
+      signature.parameters.push_back({offset, arg.getMarkdownDocString()});
   }
 
   /// The result that has been collected so far.

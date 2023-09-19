@@ -292,7 +292,8 @@ public:
   /// provided if collecting the offsets isn't desired.
   std::string getDeclarationSnippet(
       SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const;
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+          nullptr) const;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
@@ -473,6 +474,12 @@ public:
   ArrayRef<StructFieldDeclView> getFields() const { return fields; }
 
   std::string getDeclarationSnippet() const override;
+
+  /// Get the declaration snippet for the struct. The positions of parameters
+  /// within the printed snippet may be extracted via `parameterOffsets`, which
+  /// may be null if parameter offsets are not desired.
+  std::string getDeclarationSnippet(
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const;
 
   std::string getMarkdownDocString() const override;
 

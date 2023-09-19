@@ -129,3 +129,74 @@ fn test():
         items.signatures[1].label
         == "fn __init__(inout self: Self, a_field: Int)"
     )
+
+
+async def test_signature_help_overload_params(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn function[type: DType](): # skip
+    return
+fn function[type: DType, type2: DType](): # skip
+    return
+
+fn test():
+    function[DType.bool]()
+    function[DType.bool, DType.bool]()
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    # Test possible results for `function[`.
+    result = fail_if_none(
+        await requests.signature_help(
+            doc, doc.find_first_range("function[").end
+        )
+    )
+    assert len(result.signatures) == 2
+    assert result.active_signature == 0
+    assert result.active_parameter == 0
+    assert result.signatures[0].label == "fn function[type: DType]()"
+    assert (
+        result.signatures[1].label == "fn function[type: DType, type2: DType]()"
+    )
+
+    # Test possible results for `function[DType.bool,`.
+    result = fail_if_none(
+        await requests.signature_help(
+            doc, doc.find_last_range("DType.bool,").end
+        )
+    )
+    assert len(result.signatures) == 1
+    assert result.active_signature == 0
+    assert result.active_parameter == 1
+    assert (
+        result.signatures[0].label == "fn function[type: DType, type2: DType]()"
+    )
+
+
+async def test_signature_help_type_params(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+struct SomeStruct[dtype: DType]: # skip
+    fn __init__(inout self):
+        pass
+
+fn test():
+    SomeStruct[DType.bool]()
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    items = fail_if_none(
+        await requests.signature_help(
+            doc, doc.find_last_range("SomeStruct[").end
+        )
+    )
+    assert len(items.signatures) == 1
+    assert items.active_signature == 0
+    assert items.active_parameter == 0
+    assert items.signatures[0].label == "struct SomeStruct[dtype: DType]"
