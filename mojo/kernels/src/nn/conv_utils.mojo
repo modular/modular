@@ -22,6 +22,7 @@ from memory.buffer import NDBuffer
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
 
+
 # conv uses a different kernel than matmul
 fn get_conv_a_row_size() -> Int:
     @parameter
@@ -334,11 +335,6 @@ fn get_conv_num_partitions[
     The actual number of tasks are the product of return num_partitions.
     """
 
-    @always_inline
-    @noncapturing
-    fn int_sqrt_floor(val: Int) -> Int:
-        return Int(sqrt(Float32(val)).cast[DType.index]().value)
-
     alias min_rows_per_task = (196 // micro_kernel_w) * micro_kernel_w
     alias min_c_per_task = 64
 
@@ -357,7 +353,7 @@ fn get_conv_num_partitions[
 
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
-    let ideal_num_col_tasks = int_sqrt_floor(
+    let ideal_num_col_tasks = sqrt(
         div_ceil(matmul_N * max_num_tasks, matmul_M_biased)
     )
     var num_row_tasks = max_num_tasks // ideal_num_col_tasks
