@@ -21,6 +21,12 @@ namespace M {
 /// (unencrypted) data alongside the data to be encrypted whose integrity will
 /// also be covered by the MAC.
 ///
+/// The threat model this is designed to address is one where the protected data
+/// is being sent between trusted peers. For that reason, there is little effort
+/// paid to (for example) prevent dumping the key bytes in a core dump, or
+/// preventing them from being paged to disk. Changing this is possible as the
+/// threat model evolves.
+///
 /// Note that though the algorithm technically supports using this key as a
 /// stream cipher, we disallow that from *this* API in favor of providing a
 /// separate stream encryption API.
@@ -75,9 +81,15 @@ public:
   static ErrorOr<AuthenticatedEncryptionKey> generate();
 
   /// Static constants that describe various important buffer lengths.
-  static constexpr size_t ivLenBytes = 12;
+  static constexpr size_t ivLenBytes = 24;
   static constexpr size_t keyLenBytes = 32;
   static constexpr size_t tagLenBytes = 16;
+
+  /// Create a new key from raw bytes. This is useful for testing our
+  /// implementation, but is generally not user-friendly or necessarily even
+  /// secure. Most users should use the parse/generate methods to obtain keys.
+  static ErrorOr<AuthenticatedEncryptionKey>
+  unsafeFromRawBytes(std::array<uint8_t, keyLenBytes> keyBytes);
 
   /// This layout of an encrypted message contains all the information needed to
   /// decrypt the message.
@@ -86,12 +98,12 @@ public:
     std::vector<uint8_t> ciphertext;
 
     /// This is the authentication code provided for the message.
-    uint8_t tag[tagLenBytes] = {};
+    std::array<uint8_t, tagLenBytes> tag = {};
 
     /// This is the initialization vector (IV or nonce) used to encrypt this
     /// message. The IV is chosen uniquely per (key, message) combination, but
     /// it is not considered a secret.
-    uint8_t iv[ivLenBytes] = {};
+    std::array<uint8_t, ivLenBytes> iv = {};
   };
 
   /// Encrypt a message. Optionally, add additional data to be authenticated
@@ -117,7 +129,6 @@ public:
   ///
   ///   AuthenticatedEncryptionKey ::= SEQUENCE {
   ///        keyBytes     OCTET STRING,
-  ///        ivBytes      OCTET STRING,
   ///   }
   ///
   /// This DER format can be PEM (Base64) encoded as desired, but take care to
@@ -130,7 +141,8 @@ public:
   /// Parse this key and associated state. The inverse of `print`. This parses
   /// the full state from the provided ArrayRef. The caller may provide extra
   /// bytes if desired, this function will simply consume the bytes from the
-  /// front of the buffer.
+  /// front of the buffer. The caller should wipe the bytes provided to `parse`
+  /// once parsing has completed.
   ///
   /// The user *MUST NOT* `parse` the same buffer multiple times, as such an
   /// action could result in IV re-use and has the potential for key compromise.
@@ -155,31 +167,19 @@ private:
   /// generated.
   AuthenticatedEncryptionKey() = default;
 
-  /// Used to update the IV before encrypting a message. This MUST be called
-  /// before encrypting any data because it is what ensures we do not re-use an
-  /// IV for a given symmetric key.
-  ErrorOrSuccess updateIV();
-
   /// Set the actual bytes for this key. The `bytes` field of the particular
   /// instance this is the first argument, and the second is keyLenBytes (i.e.
   /// the length of the bytes field in bytes).
   ErrorOrSuccess
   setKeyBytes(llvm::function_ref<ErrorOrSuccess(uint8_t *, size_t)> fill);
 
-  /// The bytes of the key itself.
+  /// The bytes of the key itself. This is not an std::array because it needs to
+  /// be passed into C APIs and this form is cleaner.
   uint8_t bytes[keyLenBytes] = {};
 
-  /// The bytes of the current IV. Because we use a counter to ensure we don't
-  /// re-use a (key, IV) pair, the current IV needs to be serialized with the
-  /// key if it's written to disk. The IV always starts at zero, and is updated
-  /// for every message we encrypt with this key.
-  uint8_t ivBytes[ivLenBytes] = {};
-
   /// The number of bytes inside the sequence is:
-  ///   tag (1 octet) + length (1 octet; constant keyLenBytes) + keyLenBytes +
-  ///   tag (1 octet) + length (1 octet; constant ivLenBytes) + ivLenBytes
-  static constexpr size_t serializedNumBytes =
-      1 + 1 + keyLenBytes + 1 + 1 + ivLenBytes;
+  ///   tag (1 octet) + length (1 octet; constant keyLenBytes) + keyLenBytes
+  static constexpr size_t serializedNumBytes = 1 + 1 + keyLenBytes;
   static_assert(serializedNumBytes <= 0x7f,
                 "total key length in bytes must be less than 0x7f to fit in a "
                 "single length octet when encoded");
