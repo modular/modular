@@ -609,8 +609,7 @@ fn ownedConventionReg(
     borrowed triv: RPStructWithInitTrivial,
 ):
     # CHECK: %a_0 = lit.varlet.decl2 "a" var
-    # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-    # CHECK: pop.store %a, [[APTR]] : !kgen.pointer<!RPStructWithInit>
+    # CHECK: lit.ref.store %a, %a_0
 
     # CHECK: [[APTR:%.*]] = lit.ref.to_pointer %a_0
     # CHECK: [[AX:%.*]] = lit.struct.gep [[APTR]][x]

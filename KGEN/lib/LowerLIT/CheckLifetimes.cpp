@@ -870,7 +870,8 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // A store of a whole value is an initialization.
-  if (isa<POP::StoreOp, OwnershipDefLValueOp>(op)) {
+  // TODO(references): Remove POP::StoreOp.
+  if (isa<LIT::RefStoreOp, POP::StoreOp, OwnershipDefLValueOp>(op)) {
     // Mark the pointer as being mutated.
     checkDef(op.getOperands().back(), op);
     return;
@@ -1453,9 +1454,17 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // A store consumes a value and overwrites the destination.
+  // TODO(references): Remove POP::StoreOp.
   if (auto storeOp = dyn_cast<POP::StoreOp>(op)) {
     markConsumed(storeOp.getArg(), op);
     checkDef(storeOp.getPtr(), op);
+    return;
+  }
+
+  // A store consumes a value and overwrites the destination.
+  if (auto storeOp = dyn_cast<LIT::RefStoreOp>(op)) {
+    markConsumed(storeOp.getArg(), op);
+    checkDef(storeOp.getRef(), op);
     return;
   }
 
