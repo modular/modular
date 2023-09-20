@@ -67,6 +67,9 @@ fn _insertion_sort[
 fn _partition[
     type: AnyType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], start: Int, end: Int) -> Int:
+    if start == end:
+        return end
+
     let pivot = start + (end - start) // 2
 
     let pivot_value = array.load(pivot)
@@ -139,6 +142,43 @@ fn _quicksort[
 
         stack.push_back(start)
         stack.push_back(pivot)
+    stack._del_old()
+
+
+# ===----------------------------------------------------------------------===#
+# partition
+# ===----------------------------------------------------------------------===#
+fn partition[
+    type: AnyType, cmp_fn: _cmp_fn_type
+](buff: Pointer[type], k: Int, size: Int):
+    """Partition the input vector inplace such that first k elements are the
+    largest (or smallest if cmp_fn is <= operator) elements.
+    The ordering of the first k elements is undefined.
+
+    Parameters:
+        type: DType of the underlying data.
+        cmp_fn: Comparison functor of type, type) capturing -> Bool type.
+
+    Args:
+        buff: Input buffer.
+        k: Index of the partition element.
+        size: The length of the buffer.
+    """
+    var stack = DynamicVector[Int](_estimate_initial_height(size))
+    stack.push_back(0)
+    stack.push_back(size)
+    while stack.__len__() > 0:
+        let end = stack.pop_back()
+        let start = stack.pop_back()
+        let pivot = _partition[type, cmp_fn](buff, start, end)
+        if pivot == k:
+            break
+        elif k < pivot:
+            stack.push_back(start)
+            stack.push_back(pivot)
+        else:
+            stack.push_back(pivot + 1)
+            stack.push_back(end)
     stack._del_old()
 
 
