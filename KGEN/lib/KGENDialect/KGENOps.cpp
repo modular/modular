@@ -764,7 +764,7 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
 
   SignatureType signature;
   FunctionType functionType;
-  if (parseSignatureValues(p, paramDecls, functionType, signature))
+  if (parseKGENSignature(p, paramDecls, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
   llvm::append_range(operandTypes, functionType.getInputs());

@@ -97,26 +97,8 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   SmallVector<Type> inputParamTypes, resultParamTypes;
-  if (succeeded(p.parseOptionalLess())) {
-    if (p.parseOptionalGreater()) {
-      if (succeeded(p.parseOptionalLSquare())) {
-        if (p.parseRSquare())
-          return failure();
-      } else if (p.parseCommaSeparatedList([&] {
-                   return parseKGENType(p, inputParamTypes.emplace_back());
-                 })) {
-        return failure();
-      }
-      if (succeeded(p.parseOptionalArrow())) {
-        if (p.parseCommaSeparatedList([&] {
-              return parseKGENType(p, resultParamTypes.emplace_back());
-            }))
-          return failure();
-      }
-      if (p.parseGreater())
-        return failure();
-    }
-  }
+  if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes)))
+    return failure();
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaults;
@@ -136,13 +118,11 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       return {};
 
     // Parse an optional default value.
-    if (succeeded(p.parseOptionalEqual())) {
-      TypedAttr value;
-      if (parseParamValue(p, value, type))
-        return {};
-      defaults.push_back(value);
-    }
-
+    TypedAttr defaultVal;
+    if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
+      return {};
+    if (defaultVal)
+      defaults.emplace_back(defaultVal);
     return type;
   };
 
@@ -187,33 +167,19 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
-  if (!signature.getInputParamTypes().empty() ||
-      !signature.getResultParamTypes().empty()) {
-    p << '<';
-    if (signature.getInputParamTypes().empty())
-      p << "[]";
-    llvm::interleaveComma(signature.getInputParamTypes(), p,
-                          [&](Type type) { printKGENType(p, type); });
-    if (!signature.getResultParamTypes().empty()) {
-      p << " -> ";
-      llvm::interleaveComma(signature.getResultParamTypes(), p,
-                            [&](Type type) { printKGENType(p, type); });
-    }
-    p << '>';
-  }
+  printOptionalParamSignature(p, signature.getInputParamTypes(),
+                              signature.getResultParamTypes());
 
   auto printElt = [&](unsigned i) {
     StringAttr argName = signature.getArgName(i);
-    if (argName.size()) {
+    if (!argName.empty()) {
       p.printString(argName);
       p << ": ";
     }
 
     p << signature.getValueInputs()[i];
 
-    ValueInputConvention conv = signature.getInputConvention(i);
-    if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
-      p << ' ' << stringifyValueInputConvention(conv);
+    printInputConvention(p, signature.getInputConvention(i));
     size_t defaultIndex =
         signature.getNumInputs() - signature.getDefaultArguments().size();
     if (i >= defaultIndex) {
@@ -276,4 +242,17 @@ LITSignatureType LITSignatureType::get(FunctionType values,
     metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs());
   return SignatureType::get(values, inputParams, resultParams, convs, effects,
                             metadata);
+}
+
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
+/// Parse an optional default value of the given type. `defaultVal` is not
+/// modified if a default value was not present.
+ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
+                                           Type type) {
+  if (succeeded(p.parseOptionalEqual()))
+    return parseParamValue(p, defaultVal, type);
+  return success();
 }
