@@ -85,11 +85,13 @@ private:
 
   Impl impl;
 };
+
 template <typename StreamT>
 inline StreamT &operator<<(StreamT &os, FnEffects effects) {
   os << impl::stringifyFnEffects(effects.getImpl());
   return os;
 }
+
 namespace impl {
 inline FnEffects operator|=(FnEffects &lhs, FnEffects rhs) {
   return lhs = lhs | rhs;
