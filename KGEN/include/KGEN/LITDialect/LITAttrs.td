@@ -42,8 +42,8 @@ def KGEN_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
     ```mlir
     // Metadata specifying argument #0 is called "a", argument #1 is called "b",
-    // argument #1 is taken has a default value of `4.2`, and the default value
-    // for the last parameter is equal to 1.
+    // argument #1 has a default value of `4.2`, and the default value for the
+    // last parameter is equal to 1.
     #lit.fn_metadata<["a", "b"], [4.2 : f32], [1: i64]>
 
     // Metadata specifying argument names only for arguments #1 and #2, no

@@ -159,17 +159,24 @@ void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
 ParseResult parseInputConvention(AsmParser &p,
                                  ValueInputConvention &convention);
 
-/// Parse and print an operand and result type list with metadata.
-OptionalParseResult parseOptionalSignature(AsmParser &p, Type &signature);
+/// Print an argument convention if not the default (OwnedInReg);
+void printInputConvention(AsmPrinter &p, ValueInputConvention convention);
+
+/// Print the parameter type signature if there are any input or result types.
+void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
+                                 TypeArrayAttr resultParamTypes);
+
+/// Parse a parameter signature (input/result types) if present.
+ParseResult
+parseOptionalParamSignature(AsmParser &p,
+                            SmallVectorImpl<Type> &inputParamTypes,
+                            SmallVectorImpl<Type> &resultParamTypes);
+
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
 ParseResult parseSignature(AsmParser &p, Type &signature);
 ParseResult parseSignatureValues(AsmParser &p, function_ref<Type()> parseArg,
                                  FunctionType &values, FnEffects &effects,
                                  bool optionalResultList);
-ParseResult parseSignatureValues(AsmParser &p,
-                                 ParamDeclArrayAttr resultParamDecls,
-                                 FunctionType &functionType,
-                                 SignatureType &signature);
 void printSignature(AsmPrinter &p, Type signatureType);
 inline void printSignature(AsmPrinter &p, Operation *op, Type signatureType) {
   printSignature(p, signatureType);
@@ -180,6 +187,12 @@ void printSignatureValues(AsmPrinter &p, FunctionType functionType,
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           FunctionType functionType, SignatureType signature,
                           bool optionalResultList);
+
+/// Parse a plain (i.e. non-lit) signature.
+ParseResult parseKGENSignature(AsmParser &p,
+                               ParamDeclArrayAttr resultParamDecls,
+                               FunctionType &functionType,
+                               SignatureType &signature);
 
 /// Parse a function signature with optional metadata. In the assembly format,
 /// the SSA value names are optional in the argument list. If they are present,

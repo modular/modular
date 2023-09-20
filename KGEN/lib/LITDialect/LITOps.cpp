@@ -425,7 +425,8 @@ static ParseResult parseLITFunctionSignature(
         p.parseOptionalArgument(args.emplace_back(), /*allowType=*/true);
     if (result.has_value() && failed(*result))
       return {};
-    else if (!result.has_value() && p.parseType(args.back().type))
+    Type &type = args.back().type;
+    if (!result.has_value() && p.parseType(type))
       return {};
 
     if (parseInputConvention(p, inputConventions.emplace_back()))
@@ -437,14 +438,13 @@ static ParseResult parseLITFunctionSignature(
     argNames.push_back(p.getBuilder().getStringAttr(argName));
 
     // Parse an optional default value.
-    if (succeeded(p.parseOptionalEqual())) {
-      TypedAttr value;
-      if (parseParamValue(p, value, args.back().type))
-        return {};
-      defaults.push_back(value);
-    }
+    TypedAttr defaultVal;
+    if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
+      return {};
+    if (defaultVal)
+      defaults.emplace_back(defaultVal);
 
-    return args.back().type;
+    return type;
   };
 
   FnEffects effects;
@@ -467,10 +467,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
     p.printRegionArgument(region->getArgument(i));
+    printInputConvention(p, signature.getInputConvention(i));
 
-    ValueInputConvention conv = signature.getInputConvention(i);
-    if (signature.getInputConvention(i) != ValueInputConvention::OwnedInReg)
-      p << ' ' << stringifyValueInputConvention(conv);
     size_t defaultIndex =
         signature.getNumInputs() - signature.getDefaultArguments().size();
     if (i >= defaultIndex) {
@@ -511,7 +509,7 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
                                 functionType, signature))
     return failure();
   for (StringAttr name : signature.getArgNames())
-    if (!name.size())
+    if (name.empty())
       return parser.emitError(sigLoc, "arguments require SSA names");
 
   // Parse additional function attributes.
