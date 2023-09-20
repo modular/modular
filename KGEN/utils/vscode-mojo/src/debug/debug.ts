@@ -75,6 +75,15 @@ class MojoDebugConfigurationProvider implements
       ...initCommands,
       ...(debugConfiguration["initCommands"] || []),
     ];
+
+    // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
+    // giving preference to the env specified by the user.
+    if (config) {
+      debugConfiguration["env"] = [
+        `MODULAR_HOME=${config.modularHomePath}`,
+        ...(debugConfiguration["env"] || [])
+      ];
+    }
     return debugConfiguration;
   }
 }
