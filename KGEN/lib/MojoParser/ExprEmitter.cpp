@@ -338,6 +338,11 @@ MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
         emitter.translateLocation(loc), global));
   }
 
+  // Decay XLValue to MLValue on demand.
+  if (auto ref = lv.getIfXLValue())
+    lv = MLValue(emitter.builder->create<RefToPointerOp>(
+        emitter.translateLocation(loc), ref));
+
   assert(!lv || lv.getIfMLValue());
   return lv.getIfMLValue();
 }
@@ -1143,28 +1148,13 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return emitBValue(value, context, {});
   }
 
-  // If we have a reference destination, convert to a pointer.
-  // TODO(references): make this the primary path.
-  if (auto ref = destLV.getIfXLValue()) {
-    if (!builder) {
-      emitErrorForDynamicValueInParameter(value.expr);
-      return {};
-    }
-    destLV = MLValue(builder->create<RefToPointerOp>(
-        translateLocation(value.expr->getLoc()), ref));
-  }
-
-  // Otherwise we have an MLValue destination.
-  MLValue destPtr = destLV.getIfMLValue();
-  assert(destPtr && "No other known LValue");
-
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
   // isn't movable, then copy it the destination.
   if (!valueType.isMovableFrom(value, shared)) {
-    ValueDest dest(destPtr, context);
+    ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     assert((!result || result.getIfBValue()) &&
            "dest specified, so this should return BValue");
@@ -1186,10 +1176,31 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     }
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
     auto loc = translateLocation(value.expr->getLoc());
-    builder->create<POP::StoreOp>(loc, val, destPtr,
-                                  /*alignment=*/std::nullopt);
+
+    if (MLValue destPtr = destLV.getIfMLValue()) {
+      builder->create<POP::StoreOp>(loc, val, destPtr);
+    } else {
+      XLValue destPtr2 = destLV.getIfXLValue();
+      assert(destPtr2);
+      builder->create<LIT::RefStoreOp>(loc, val, destPtr2);
+    }
     return SBValue(val);
   }
+
+  // If we have a reference destination, convert to a pointer.
+  // TODO(references): make this the primary path.
+  if (auto ref = destLV.getIfXLValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    destLV = MLValue(builder->create<RefToPointerOp>(
+        translateLocation(value.expr->getLoc()), ref));
+  }
+
+  // Otherwise we have an MLValue destination.
+  MLValue destPtr = destLV.getIfMLValue();
+  assert(destPtr && "No other known LValue");
 
   if (auto pvalue = value.ir.getIfPValue())
     return emitPValueToMLValue({pvalue, value.expr}, destPtr, context);
@@ -1392,15 +1403,21 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
     // box and we want to treat the box as the thing that we track.
     if (func.getSignature().getInputConvention(0) ==
         ValueInputConvention::OwnedInReg) {
-      // Find the single store and ignore debug.value operations.
-      POP::StoreOp store;
+      // Find the single thing that got stored to, ignoring debug.value ops.
+      Value storedMem;
       for (auto user : selfArg.getUsers()) {
         if (isa<DebugInfo::ValueOp>(user))
           continue;
-        assert(!store && "Should only have a single store");
-        store = cast<POP::StoreOp>(user);
+        assert(!storedMem && "Should only have a single store");
+        if (auto storeOp = dyn_cast<POP::StoreOp>(user))
+          storedMem = storeOp.getPtr();
+        else {
+          auto store = cast<LIT::RefStoreOp>(user);
+          // TODO(references): Make OwnershipMarkDestroyedOp take a ref.
+          storedMem = MLValue(builder.create<RefToPointerOp>(store.getRef()));
+        }
       }
-      selfArg = store.getPtr();
+      selfArg = storedMem;
     }
     builder.create<LIT::OwnershipMarkDestroyedOp>(selfArg);
     break;

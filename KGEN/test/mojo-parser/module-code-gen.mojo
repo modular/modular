@@ -450,8 +450,7 @@ fn foo(owned y:Int):
 # CHECK-NEXT: %[[V0:.*]] = lit.struct.gep %self[field0] : <!Int>
 # CHECK-NEXT: %[[V1:.*]] = lit.struct.gep %self[field1] : <!Int>
 # CHECK-NEXT: %q_0 = lit.varlet.decl2 "q" var synth :
-# CHECK-NEXT: %[[QPTR:.*]] = lit.ref.to_pointer %q_0
-# CHECK-NEXT: pop.store %q, %[[QPTR]] : !kgen.pointer<!Int>
+# CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[QPTR:.*]] = lit.ref.to_pointer %q_0
 # CHECK-NEXT: %[[V2:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
 # CHECK-NEXT: %[[V3:.*]] = pop.load %[[V0]] : !kgen.pointer<!Int>
