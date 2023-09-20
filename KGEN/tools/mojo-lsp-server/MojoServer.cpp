@@ -521,7 +521,7 @@ void MojoDocument::parseDocument() {
   crc.DumpStackAndCleanupOnFailure = true;
 
   context = std::make_unique<Context>(*this);
-  if (!crc.RunSafelyOnThread([&]() { parseDocumentImpl(); })) {
+  if (!crc.RunSafely([&]() { parseDocumentImpl(); })) {
     lsp::Logger::error("Crash recovered: CrashRecoveryContext::RetCode (on "
                        "POSIX: signal number + 128) = {0}",
                        crc.RetCode);
