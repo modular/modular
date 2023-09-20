@@ -41,6 +41,10 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "MR: ";
     os << val;
+  } else if (auto val = dyn_cast<XRValue>(storage)) {
+    if (isDump)
+      os << "XR: ";
+    os << val;
   } else if (auto val = dyn_cast<SBValue>(storage)) {
     if (isDump)
       os << "SB: ";
@@ -49,17 +53,21 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "MB: ";
     os << val;
+  } else if (auto val = dyn_cast<XBValue>(storage)) {
+    if (isDump)
+      os << "XB: ";
+    os << val;
   } else if (auto val = dyn_cast<ORValue>(storage)) {
     if (isDump)
       os << "OR: ";
     os << '"' << val->baseName << "\" " << val->fnDecls.size() << " candidates";
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
-      os << "MLV: ";
+      os << "ML: ";
     os << val;
   } else if (auto val = dyn_cast<XLValue>(storage)) {
     if (isDump)
-      os << "XLV: ";
+      os << "XL: ";
     os << val;
   } else if (auto dlv = dyn_cast<DLValue>(storage)) {
     if (isDump)
@@ -132,9 +140,13 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
     return value.getType();
   if (auto value = dyn_cast<MRValue>(storage))
     return value.getType();
+  if (auto value = dyn_cast<XRValue>(storage))
+    return value.getType();
   if (auto value = dyn_cast<SBValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<MBValue>(storage))
+    return value.getType();
+  if (auto value = dyn_cast<XBValue>(storage))
     return value.getType();
   if (auto value = dyn_cast<MLValue>(storage))
     return value.getType();
@@ -171,16 +183,19 @@ ASTType PValue::getIfTypeValue() const {
 /// This method looks through the pointer in a MRValue to return the
 /// underlying type.
 ASTType CRValue::getRValueType() const {
+  auto type = getType();
   if (isa<MRValue>(storage))
-    return getType().getPointerElementType();
-  return getType();
+    return type.getPointerElementType();
+  if (isa<XRValue>(storage))
+    return type.getReferenceElementType();
+  return type;
 }
 
 ASTType CValue::getRValueType() const {
   auto type = getType();
   if (isa<MLValue, MRValue, MBValue>(storage))
     return type.getPointerElementType();
-  if (isa<XLValue>(storage))
+  if (isa<XLValue, XRValue, XBValue>(storage))
     return type.getReferenceElementType();
   return type;
 }
@@ -195,9 +210,12 @@ ASTType LValue::getRValueType() const {
 }
 
 ASTType BValue::getRValueType() const {
+  auto type = getType();
   if (isa<MBValue>(storage))
-    return getType().getPointerElementType();
-  return getType();
+    return type.getPointerElementType();
+  if (isa<XBValue>(storage))
+    return type.getReferenceElementType();
+  return type;
 }
 
 //===----------------------------------------------------------------------===//
