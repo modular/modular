@@ -16,6 +16,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -1166,7 +1167,9 @@ buildDebugTypeFromPOPType(MLIRContext *ctx, Type type,
                                                    target);
   }
 
-  return DebugInfo::DIUnresolvedMLIRType::get(type);
+  // Fallback to an unspecified type with a string representation.
+  return DebugInfo::DIUnspecifiedType::get(type.getContext(),
+                                           mlir::debugString(type));
 }
 
 POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
@@ -1206,11 +1209,6 @@ POPToLLVMDebugInfoTypeConverter::POPToLLVMDebugInfoTypeConverter(
   });
 
   addConversion([&converter, target](POP::StructType type) {
-    return buildDebugTypeFromPOPType(type.getContext(), type, converter,
-                                     target);
-  });
-
-  addConversion([&converter, target](POP::VariantType type) {
     return buildDebugTypeFromPOPType(type.getContext(), type, converter,
                                      target);
   });

@@ -302,7 +302,7 @@ kgen.generator @unknown_region_op() {
   subprogramFlags = "Definition"
 > : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
 
-#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 0, arg = 0, alignInBits = 0> : !debuginfo.unresolved<index>
+#local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0", file = #file, line = 0, arg = 0, alignInBits = 0> : !debuginfo.unresolved<!kgen.pointer<index>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#callerSp>[#fileLoc])

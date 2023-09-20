@@ -61,6 +61,7 @@ private:
 /// Populate conversion patterns for transforming debug info dialect operations
 /// in the presence of type conversions.
 void populateTypeConversionPatterns(RewritePatternSet &patterns,
+                                    DebugInfoTypeConverter &diConverter,
                                     TypeConverter &converter);
 
 } // namespace M::DebugInfo

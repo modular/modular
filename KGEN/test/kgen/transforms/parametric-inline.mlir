@@ -812,7 +812,7 @@ kgen.generator @callee<A>() always_inline constraints <[eq(A, 1), "A == 1"]> {
   file = #file,
   line = 10,
   arg = 1
-> : !debuginfo.unresolved<index>
+> : !debuginfo.unresolved<!kgen.paramref<T>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])
