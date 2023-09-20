@@ -436,15 +436,17 @@ InputParamBindings::verifyBindings(
 
     // Check to see if we ran out of bindings to provide to this param decl.
     if (bindingIdx == numBindings) {
+      // Determine what type we expect next.
+      Type requestedType = evaluator.getReboundType(type);
+      Type expectedType = requestedType;
+      // If this is a vararg parameter, infer using the element type.
+      if (isVarArg)
+        if (auto varType = dyn_cast<VariadicType>(expectedType))
+          expectedType = ASTType(varType.getElementType());
+
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
-        Type requestedType = evaluator.getReboundType(type);
-        Type expectedType = requestedType;
-        // If this is a vararg parameter, infer using the element type.
-        if (isVarArg)
-          if (auto varType = dyn_cast<VariadicType>(expectedType))
-            expectedType = ASTType(varType.getElementType());
         if (PValue pValue =
                 parameterInferenceHook(idx, type, expectedType, newBindings)) {
           assert(pValue.getType().mlirType == requestedType &&
@@ -453,6 +455,8 @@ InputParamBindings::verifyBindings(
           continue;
         }
       }
+
+      fitness.lastExpectedType = expectedType;
 
       // If the parameter decl is a variadic parameter list, and do not have
       // pack operands that could be used to infer those parameters, then we can
@@ -470,7 +474,7 @@ InputParamBindings::verifyBindings(
 
       // Otherwise, we're simply missing bindings.
       emitParamCountDiag();
-      return {};
+      return {{}, fitness};
     }
 
     Binding binding = bindings[bindingIdx];
@@ -513,7 +517,7 @@ InputParamBindings::verifyBindings(
   // Check and complain if we have bindings that didn't get used.
   if (bindingIdx != numBindings) {
     emitParamCountDiag();
-    return {};
+    return {{}, fitness};
   }
 
   return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
@@ -548,28 +552,6 @@ InputParamBindings::verifyBindings(
                     << binding.expr->getRange();
         diag.attachNote(opLoc) << "'" << baseName << "' declared here";
       });
-}
-
-/// Given a candidate that may or may not be compatible with the given
-/// parameter set so far, indicate what the next parameter's expected type
-/// should be, or return null if the current parameters are incompatible with
-/// it.
-ASTType
-InputParamBindings::getNextExpectedBindingType(SignatureType candidateType,
-                                               ExprEmitter &emitter) const {
-
-  // We can get the next expected type by calling verifyBindings and seeing what
-  // it queries for parameterInferenceHook.
-  ASTType nextExpectedType;
-
-  (void)verifyBindings(candidateType.getInputParamTypes(), {}, emitter,
-                       candidateType.hasParamVarArgs(),
-                       [&](size_t index, Type type, ASTType expectedType,
-                           ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
-                         nextExpectedType = expectedType;
-                         return {};
-                       });
-  return nextExpectedType;
 }
 
 //===----------------------------------------------------------------------===//
