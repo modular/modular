@@ -222,30 +222,30 @@ public:
   /// In the case of success, the decl corresponding to the expr function is
   /// returned. In the case of an error, a null decl is returned.
   MojoASTDeclRef
-  parseREPLExpresion(MojoParserREPLListener &listener, unsigned exprFileId,
-                     StringRef replExprFnName,
-                     ArrayRef<std::pair<StringRef, Type>> replVariables);
+  parseREPLExpression(MojoParserREPLListener &listener, unsigned exprFileId,
+                      StringRef replExprFnName,
+                      ArrayRef<std::pair<StringRef, Type>> replVariables);
 
   /// Return the code completion results for the given REPL expression.
-  std::vector<KGEN::Mojo::CodeCompletionResult>
-  codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
-                            ArrayRef<std::pair<StringRef, Type>> replVariables);
+  std::vector<KGEN::Mojo::CodeCompletionResult> codeCompleteREPLExpression(
+      StringRef exprText, uint64_t completionPosition,
+      ArrayRef<std::pair<StringRef, Type>> replVariables);
   /// Return the code completion results for the given REPL expression.
   /// `replDecl` corresponds to the decl if a previously parsed repl expression.
   /// Completion results will only consider state before that expression was
   /// parsed.
   std::vector<KGEN::Mojo::CodeCompletionResult>
-  codeCompleteREPLExpresion(StringRef exprText, uint64_t completionPosition,
-                            ArrayRef<std::pair<StringRef, Type>> replVariables,
-                            MojoASTDeclRef replDecl);
+  codeCompleteREPLExpression(StringRef exprText, uint64_t completionPosition,
+                             ArrayRef<std::pair<StringRef, Type>> replVariables,
+                             MojoASTDeclRef replDecl);
 
   /// Return a signature help result for the given REPL expression. `replDecl`
   /// corresponds to the decl of a previously parsed repl expression. Signature
   /// results will only consider state before that expression was parsed.
-  std::optional<KGEN::Mojo::SignatureHelpResult>
-  signatureHelpREPLExpresion(StringRef exprText, uint64_t position,
-                             ArrayRef<std::pair<StringRef, Type>> replVariables,
-                             MojoASTDeclRef replDecl);
+  std::optional<KGEN::Mojo::SignatureHelpResult> signatureHelpREPLExpression(
+      StringRef exprText, uint64_t position,
+      ArrayRef<std::pair<StringRef, Type>> replVariables,
+      MojoASTDeclRef replDecl);
 
   /// Remove the previously parsed REPL expression. This allows for removing an
   /// erroneous expression when it is only detected as invalid after it has been

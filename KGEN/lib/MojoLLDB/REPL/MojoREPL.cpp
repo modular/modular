@@ -595,7 +595,7 @@ MojoREPL::handleREPLCodeComplete(MojoTypeSystem &typeSystem, StringRef code,
   persistentState->collectPersistentVariables(variables);
 
   // Call into the parser context to perform the code completion.
-  return typeSystem.getParserContext().codeCompleteREPLExpresion(
+  return typeSystem.getParserContext().codeCompleteREPLExpression(
       code, completionPos, variables);
 }
 

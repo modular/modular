@@ -1073,7 +1073,7 @@ void MojoNotebookDocument::parseDocumentImpl() {
       continue;
 
     cell.persistentVariables = persistentVariables;
-    cell.decl = ctx.parseREPLExpresion(
+    cell.decl = ctx.parseREPLExpression(
         listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
   }
 }
@@ -1120,7 +1120,7 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 
   // Query the mojo parser for potential completion results.
   uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
-  return getParserContext().codeCompleteREPLExpresion(
+  return getParserContext().codeCompleteREPLExpression(
       cell.contents, rawCompletePos, cell.persistentVariables, cell.decl);
 }
 
@@ -1138,7 +1138,7 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - cell.contents.data();
-  return getParserContext().signatureHelpREPLExpresion(
+  return getParserContext().signatureHelpREPLExpression(
       cell.contents, rawPos, cell.persistentVariables, cell.decl);
 }
 

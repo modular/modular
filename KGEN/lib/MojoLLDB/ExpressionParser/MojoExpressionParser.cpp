@@ -641,7 +641,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
       llvm::MemoryBuffer::getMemBufferCopy(impl->expr.Text(), exprModuleName),
       llvm::SMLoc());
   impl->expr.setFunctionName(exprFnName);
-  MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpresion(
+  MojoASTDeclRef exprFnDecl = parserContext.parseREPLExpression(
       listener, exprFileId, exprFnName, variables);
 
   // If the parser supplied a fixed expression, abort processing and use that

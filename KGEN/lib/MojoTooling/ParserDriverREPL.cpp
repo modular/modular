@@ -693,7 +693,7 @@ MojoParserContext::REPLLocMapper &MojoParserContext::getREPLLocMapper() {
   return impl->replLocMapper;
 }
 
-MojoASTDeclRef MojoParserContext::parseREPLExpresion(
+MojoASTDeclRef MojoParserContext::parseREPLExpression(
     MojoParserREPLListener &listener, unsigned exprFileId,
     StringRef replExprFnName,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
@@ -833,15 +833,15 @@ static void parseCompletionImpl(
 }
 
 std::vector<Mojo::CodeCompletionResult>
-MojoParserContext::codeCompleteREPLExpresion(
+MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables) {
-  return codeCompleteREPLExpresion(exprText, completionPosition, replVariables,
-                                   MojoASTDeclRef());
+  return codeCompleteREPLExpression(exprText, completionPosition, replVariables,
+                                    MojoASTDeclRef());
 }
 
 std::vector<KGEN::Mojo::CodeCompletionResult>
-MojoParserContext::codeCompleteREPLExpresion(
+MojoParserContext::codeCompleteREPLExpression(
     StringRef exprText, uint64_t completionPosition,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
     MojoASTDeclRef replDecl) {
@@ -872,7 +872,7 @@ MojoParserContext::codeCompleteREPLExpresion(
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
-MojoParserContext::signatureHelpREPLExpresion(
+MojoParserContext::signatureHelpREPLExpression(
     StringRef exprText, uint64_t position,
     ArrayRef<std::pair<StringRef, Type>> replVariables,
     MojoASTDeclRef replDecl) {
