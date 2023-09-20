@@ -1063,21 +1063,39 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 
 LogicalResult
 StructGEPOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  TypedAttr refExpr = getContainer().getType().getElementType();
-  return verifyStructFieldAndType(
-      symbolTable, *this,
-      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue()),
-      getFieldAttr(),
-      ParamRefType::get(getResult().getType().getElementType()));
+  Type structType = getContainer().getType().getElementAsType();
+  return verifyStructFieldAndType(symbolTable, *this,
+                                  cast<DeclRefType>(structType), getFieldAttr(),
+                                  getResult().getType().getElementAsType());
 }
 
 void StructGEPOp::build(OpBuilder &builder, OperationState &result,
                         Value structBasePtr, StructFieldOp field) {
-  TypedAttr refExpr =
-      cast<PointerType>(structBasePtr.getType()).getElementType();
-  auto structType =
-      cast<DeclRefType>(cast<TypeConstantAttr>(refExpr).getValue());
-  build(builder, result, PointerType::get(field.getReboundType(structType)),
+  Type eltType = cast<PointerType>(structBasePtr.getType()).getElementAsType();
+  auto structType = field.getReboundType(cast<DeclRefType>(eltType));
+  build(builder, result, PointerType::get(structType), field.getNameAttr(),
+        structBasePtr);
+}
+
+//===----------------------------------------------------------------------===//
+// RefStructGEROp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  Type structType = getContainer().getType().getElementAsType();
+  return verifyStructFieldAndType(symbolTable, *this,
+                                  cast<DeclRefType>(structType), getFieldAttr(),
+                                  getResult().getType().getElementAsType());
+}
+
+void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
+                           Value structBasePtr, StructFieldOp field) {
+  auto refType = cast<RefType>(structBasePtr.getType());
+  Type eltType = refType.getElementAsType();
+  auto structType = field.getReboundType(cast<DeclRefType>(eltType));
+  build(builder, result,
+        RefType::get(refType.getIsMutable(), structType, refType.getLifetime()),
         field.getNameAttr(), structBasePtr);
 }
 

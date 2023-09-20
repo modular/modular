@@ -561,6 +561,40 @@ static Value lowerStructOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
   return adaptor.getRef();
 }
 
+static Value lowerStructOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  assert(isa<PointerType>(adaptor.getRef().getType()) &&
+         "operand should be lowered");
+
+  return lowerer.create<POP::LoadOp>(op.getLoc(), adaptor.getRef());
+}
+
+static Value lowerStructOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  assert(isa<PointerType>(adaptor.getRef().getType()) &&
+         "operand should be lowered");
+
+  lowerer.create<POP::StoreOp>(op.getLoc(), adaptor.getArg(), adaptor.getRef());
+  lowerer.eraseOp(op);
+  return {};
+}
+
+static Value lowerStructOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
+                           StructOperationLowerer &lowerer) {
+  auto structType =
+      cast<DeclRefType>(op.getContainer().getType().getElementAsType());
+  int64_t index = lowerer.getField(op.getFieldAttr(), structType);
+
+  // Check to see if we need to flatten this.  A flattened gep is a noop.
+  if (index == 0) {
+    if (isa<Type>(lowerer.substituteStructRef(structType)))
+      return adaptor.getContainer();
+  }
+
+  return lowerer.create<POP::StructGEPOp>(op.getLoc(), adaptor.getContainer(),
+                                          lowerer.getIndexAttr(index));
+}
+
 static Value getCastedToType(Value value, Type destType, OpBuilder &b) {
   // If already casted, done.
   if (value.getType() == destType)
@@ -600,15 +634,18 @@ LogicalResult StructOperationLowerer::materializeLowering(OpT op) {
   }
 
   typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary());
-  assert(op->getNumResults() == 1);
-  auto resultType = op->getResult(0).getType();
-
-  Value result = lowerStructOp(op, adaptor, *this);
-
-  if (result.getType() != resultType)
-    result = getCastedToType(result, resultType, *this);
-
-  replaceOp(op, {result});
+  if (op->getNumResults() == 1) {
+    auto resultType = op->getResult(0).getType();
+    Value result = lowerStructOp(op, adaptor, *this);
+    if (result.getType() != resultType)
+      result = getCastedToType(result, resultType, *this);
+    replaceOp(op, {result});
+  } else {
+    assert(op->getNumResults() == 0);
+    Value result = lowerStructOp(op, adaptor, *this);
+    (void)result;
+    assert(!result && "nullary lowering shouldn't produce an op");
+  }
 
   if (LLVM_UNLIKELY(errDeclRef)) {
     return op.emitError("operation contains a declref type that does not refer "
@@ -715,7 +752,7 @@ void LowerStructsPass::runOnOperation() {
   WalkResult result = getOperation()->walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<StructCreateOp, StructInsertOp, StructExtractOp, StructGEPOp,
-              RefToPointerOp>(
+              RefToPointerOp, RefStructGEROp, RefLoadOp, RefStoreOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Case<GeneratorOp>([&](auto op) { return lowerFuncOp(op); })
         .Default([](auto) { return success(); });

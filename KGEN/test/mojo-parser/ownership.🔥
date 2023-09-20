@@ -35,9 +35,9 @@ struct RegExample:
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
-  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref_to_pointer %self_0
+  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: pop.store %self, [[SELFPTR]]
-  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref_to_pointer %self_0
+  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: lit.ownership.mark.destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
@@ -498,13 +498,13 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
   # CHECK-NEXT: %x_0 = lit.varlet.decl2 "x" var synth
-  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref_to_pointer %x_0
+  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: pop.store %x, [[XPTR]]
-  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref_to_pointer %x_0
+  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}([[XPTR]])
   x.mutate()
 
-  # CHECK-NEXT: [[XPTR2:%.*]] = lit.ref_to_pointer %x_0
+  # CHECK-NEXT: [[XPTR2:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: [[X:%.*]] = pop.load [[XPTR2]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[X]])
   # CHECK-NEXT: [[X:%.*]] = {{.*}}"__init__
@@ -513,7 +513,7 @@ fn regpassable_owned_args_mutable(owned x: RegExample):
 
   # CHECK-NEXT: kgen.call {{.*}}mutate{{.*}}([[XPTR]])
   x.mutate()
-  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref_to_pointer %x_0
+  # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer %x_0
   # CHECK-NEXT: [[X:%.*]] = pop.load [[XPTR]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[X]])
 
@@ -665,7 +665,7 @@ struct BigRegExample:
 
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
-  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref_to_pointer %self_0
+  # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT: pop.store %self, [[SELFPTR]]
 
   # CHECK-NEXT: [[APTR:%.*]] = lit.struct.gep [[SELFPTR]][a]
@@ -674,7 +674,7 @@ struct BigRegExample:
   # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
   # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[BVAL]])
-  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref_to_pointer %self_0
+  # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: lit.ownership.mark.destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
@@ -718,14 +718,14 @@ struct ExoticDelExample:
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
     # CHECK-NEXT: %self_0 = lit.varlet.decl2 "self" var
-    # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref_to_pointer %self_0
+    # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
     # CHECK-NEXT: pop.store %self, [[SELFPTR]]
 
     # self.b gets destroyed ASAP since it isn't used.
     # CHECK-NEXT: [[BPTR:%.*]] = lit.struct.gep [[SELFPTR]][b]
     # CHECK-NEXT: [[BVAL:%.*]] = pop.load [[BPTR]]
     # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[BVAL]])
-    # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref_to_pointer %self_0
+    # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
 
     # Test the condition
     # CHECK-NEXT: [[CONDPTR:%.*]] = lit.struct.gep [[SELFPTR2]][cond] : <i1> from <!ExoticDelExample>
@@ -743,7 +743,7 @@ struct ExoticDelExample:
 
     # CHECK-NEXT: } else {
     # Destroy C automatically on the else side.
-    # CHECK-NEXT:  [[SELFPTR2:%.*]] = lit.ref_to_pointer %self_0
+    # CHECK-NEXT:  [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
     # CHECK-NEXT:  [[CPTR:%.*]] = lit.struct.gep [[SELFPTR2]][c]
     # CHECK-NEXT:  [[CVAL:%.*]] = pop.load [[CPTR]]
     # CHECK-NEXT:  kgen.call {{.*}}__del__{{.*}}([[CVAL]])
@@ -864,9 +864,9 @@ struct RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: pop.store %a, [[APTR]]
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end.lifetime [[APTR]]
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
   # CHECK-NEXT: kgen.return [[AVAL]]
@@ -875,9 +875,9 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a_0
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: pop.store %a, [[APTR]]
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a_0
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: [[A:%.*]] = pop.load [[APTR]]
   # CHECK-NEXT: kgen.return [[A]]
   return a
@@ -885,9 +885,9 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a_0
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: pop.store %a, [[APTR]]
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a_0
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
   # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end.lifetime [[APTR]]
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
   # CHECK-NEXT: kgen.return [[A]]
@@ -896,10 +896,10 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: pop.store %a, [[APTR]]
 
-  # CHECK-NEXT: [[APTR:%.*]] = lit.ref_to_pointer %a
+  # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
   # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end.lifetime [[APTR]]
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
   # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]

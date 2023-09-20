@@ -174,6 +174,19 @@ def LIT_RefType : LITType<"Ref", "ref"> {
   }];
 }
 
+class ReferenceElementType<string lhs, string rhs> : TypesMatchWith<
+    "reference element type", lhs, rhs,
+    "$_self.cast<RefType>().getElementAsType()">;
+
+class RefOf<Type type> : ConfinedType<LIT_RefType,
+    [CPred<"$_self.cast<::M::KGEN::LIT::RefType>().getElementType()">,
+     SubstLeaves<"$_self",
+      "$_self.cast<::M::KGEN::LIT::RefType>().getElementAsType()",
+      type.predicate>],
+    "reference to " # type.summary> {
+  let cppClassName = "::M::KGEN::LIT::RefType";
+}
+
 //===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//
