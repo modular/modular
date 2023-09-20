@@ -8,9 +8,7 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-# CHECK: (Int) x = {
-# CHECK:   (index) value = 12
-# CHECK: }
+# CHECK: (Int) x = 12
 let x = 12
 
 # CHECK: (FloatLiteral) x = {
@@ -51,9 +49,7 @@ let x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 # CHECK:  }
 let x = SIMD[DType.int64, 4](1, 2, 3, 4)
 
-# CHECK: (Int) v = {
-# CHECK:   (index) value = -101
-# CHECK: }
+# CHECK: (Int) v = -101
 let v = -101
 
 # CHECK: (SIMD[si8, 2]) w = {
@@ -64,22 +60,27 @@ let v = -101
 # CHECK: }
 let w = SIMD[DType.int8, 2](-50, 31)
 
+# CHECK: (DynamicVector[Int]) z = {
+# CHECK:   (Int) [0] = 1
+# CHECK:   (Int) [1] = 2
+# CHECK:   (Int) [2] = 3
+# CHECK: }
+let z = DynamicVector[Int](2)
+z.push_back(1)
+z.push_back(2)
+z.push_back(3)
+
+
 # CHECK: (Foo) f = {
-# CHECK:   (Int) v = {
-# CHECK:     (index) value = -101
-# CHECK:   }
+# CHECK:   (Int) v = -101
 # CHECK:   (SIMD[si8, 2]) w = {
 # CHECK:     (simd<2, si8>) value = {
 # CHECK:       (si8) [0] = -50
 # CHECK:       (si8) [1] = 31
 # CHECK:     }
 # CHECK:   }
-# CHECK:   (Int) x = {
-# CHECK:     (index) value = 101
-# CHECK:   }
-# CHECK:   (StringLiteral) y = {
-# CHECK:     (string) value = "fofofo"
-# CHECK:   }
+# CHECK:   (Int) x = 101
+# CHECK:   (StringLiteral) y = "fofofo"
 # CHECK:   (SIMD[f32, 4]) z = {
 # CHECK:     (simd<4, f32>) value = {
 # CHECK:       (f32) [0] = 1
@@ -107,15 +108,9 @@ struct Foo:
     }
 let f = Foo()
 
-# CHECK: (StringLiteral) empty = {
-# CHECK:   (string) value =
-# CHECK: }
-# CHECK: (StringLiteral) long = {
-# CHECK:   (string) value = "abcdefghijklmnopqrstuvwxyz1234567890"
-# CHECK: }
-# CHECK: (StringLiteral) short = {
-# CHECK:   (string) value = "123"
-# CHECK: }
+# CHECK: (StringLiteral) empty =
+# CHECK: (StringLiteral) long = "abcdefghijklmnopqrstuvwxyz1234567890"
+# CHECK: (StringLiteral) short = "123"
 let empty = ""
 let long = "abcdefghijklmnopqrstuvwxyz1234567890"
 let short = "123"

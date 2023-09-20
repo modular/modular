@@ -542,6 +542,15 @@ public:
                                 std::vector<uint32_t> &childIndices) override;
 
   //===--------------------------------------------------------------------===//
+  // Mojo-specific Type Queries
+  //===--------------------------------------------------------------------===//
+
+  /// Return the list of decorators attached to the struct type, or an empty
+  /// list if the type is not a struct.
+  llvm::ArrayRef<TypedAttr>
+  GetStructDecorators(lldb::opaque_compiler_type_t type);
+
+  //===--------------------------------------------------------------------===//
   // Expressions
   //===--------------------------------------------------------------------===//
 

@@ -23,6 +23,4 @@ let bigValue = SIMD[DType.float32, 64]()
 # Check that we can define variables with weird names.
 let `^ weird name` = 12
 
-# CHECK: (Int) ^ weird name = {
-# CHECK:   (index) value = 12
-# CHECK: }
+# CHECK: (Int) ^ weird name = 12

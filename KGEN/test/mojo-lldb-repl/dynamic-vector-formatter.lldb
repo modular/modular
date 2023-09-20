@@ -9,21 +9,11 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # CHECK: (DynamicVector[Int]) vec = {
-# CHECK:   (Int) [0] = {
-# CHECK:     (index) value = 1
-# CHECK:   }
-# CHECK:   (Int) [1] = {
-# CHECK:     (index) value = 2
-# CHECK:   }
-# CHECK:   (Int) [2] = {
-# CHECK:     (index) value = 3
-# CHECK:   }
-# CHECK:   (Int) [3] = {
-# CHECK:     (index) value = 4
-# CHECK:   }
-# CHECK:   (Int) [4] = {
-# CHECK:     (index) value = 5
-# CHECK:   }
+# CHECK:   (Int) [0] = 1
+# CHECK:   (Int) [1] = 2
+# CHECK:   (Int) [2] = 3
+# CHECK:   (Int) [3] = 4
+# CHECK:   (Int) [4] = 5
 # CHECK: }
 let vec = DynamicVector[Int](5)
 vec.push_back(1)
@@ -49,54 +39,30 @@ vec.push_back(4.3)
 vec.push_back(8.8)
 
 # CHECK: (Point) p1 = {
-# CHECK:   (Int) x = {
-# CHECK:     (index) value = 1
-# CHECK:   }
-# CHECK:   (Int) y = {
-# CHECK:     (index) value = 1
-# CHECK:   }
+# CHECK:   (Int) x = 1
+# CHECK:   (Int) y = 1
 # CHECK: }
 # CHECK: (Point) p2 = {
-# CHECK:   (Int) x = {
-# CHECK:     (index) value = 2
-# CHECK:   }
-# CHECK:   (Int) y = {
-# CHECK:     (index) value = 2
-# CHECK:   }
+# CHECK:   (Int) x = 2
+# CHECK:   (Int) y = 2
 # CHECK: }
 # CHECK: (Point) p3 = {
-# CHECK:   (Int) x = {
-# CHECK:     (index) value = 3
-# CHECK:   }
-# CHECK:   (Int) y = {
-# CHECK:     (index) value = 3
-# CHECK:   }
+# CHECK:   (Int) x = 3
+# CHECK:   (Int) y = 3
 # CHECK: }
 # CHECK: (DynamicVector[Point]) pointVec =
 # CHECK:  {
 # CHECK:   (Point) [0] = {
-# CHECK:     (Int) x = {
-# CHECK:       (index) value = 1
-# CHECK:     }
-# CHECK:     (Int) y = {
-# CHECK:       (index) value = 1
-# CHECK:     }
+# CHECK:     (Int) x = 1
+# CHECK:     (Int) y = 1
 # CHECK:   }
 # CHECK:   (Point) [1] = {
-# CHECK:     (Int) x = {
-# CHECK:       (index) value = 2
-# CHECK:     }
-# CHECK:     (Int) y = {
-# CHECK:       (index) value = 2
-# CHECK:     }
+# CHECK:     (Int) x = 2
+# CHECK:     (Int) y = 2
 # CHECK:   }
 # CHECK:   (Point) [2] = {
-# CHECK:     (Int) x = {
-# CHECK:       (index) value = 3
-# CHECK:     }
-# CHECK:     (Int) y = {
-# CHECK:       (index) value = 3
-# CHECK:     }
+# CHECK:     (Int) x = 3
+# CHECK:     (Int) y = 3
 # CHECK:   }
 # CHECK: }
 @register_passable("trivial")
