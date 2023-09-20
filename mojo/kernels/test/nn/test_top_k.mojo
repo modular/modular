@@ -43,7 +43,13 @@ fn test_case[
     fill_fn: fn[rank: Int, type: DType] (
         inout NDBuffer[rank, DimList.create_unknown[rank](), type]
     ) capturing -> None,
-](K: Int, axis: Int, input_shape: StaticIntTuple[rank], largest: Bool = True):
+](
+    K: Int,
+    axis: Int,
+    input_shape: StaticIntTuple[rank],
+    largest: Bool = True,
+    sorted: Bool = True,
+):
     var input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape
@@ -64,7 +70,8 @@ fn test_case[
             out_vals.to_ndbuffer(),
             out_idxs.to_ndbuffer(),
             out_chain.borrow(),
-            1,  # force multithreading for small test cases
+            1,  # force multithreading for small test cases,
+            sorted,
         )
         out_chain.wait()
 
@@ -87,14 +94,49 @@ fn main():
     ](inout buf: NDBuffer[rank, DimList.create_unknown[rank](), type]):
         iota[type](buf.data, buf.get_shape().flattened_length())
 
+    fn test_1d_sorted():
+        print("== test_1d_sorted")
+        test_case[1, DType.float32, fill_iota](
+            5, 0, StaticIntTuple[1](10), sorted=True
+        )
+
+    # CHECK-LABEL: test_1d_sorted
+    # CHECK: 9.0,8.0,7.0,6.0,5.0,
+    # CHECK: 9,8,7,6,5,
+    test_1d_sorted()
+
+    fn test_1d_notsorted():
+        print("== test_1d_notsorted")
+        test_case[1, DType.float32, fill_iota](
+            5, 0, StaticIntTuple[1](10), sorted=False
+        )
+
+    # CHECK-LABEL: test_1d_notsorted
+    # CHECK: 8.0,7.0,6.0,9.0,5.0,
+    # CHECK: 8,7,6,9,5,
+    test_1d_notsorted()
+
     fn test_axis_1():
         print("== test_axis_1")
-        test_case[2, DType.float32, fill_iota](2, 1, StaticIntTuple[2](4, 4))
+        test_case[2, DType.float32, fill_iota](
+            2, 1, StaticIntTuple[2](4, 4), sorted=True
+        )
 
     # CHECK-LABEL: test_axis_1
     # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
     # CHECK-NEXT: 3,2,3,2,3,2,3,2,
     test_axis_1()
+
+    fn test_axis_1_notsorted():
+        print("== test_axis_1_notsorted")
+        test_case[2, DType.float32, fill_iota](
+            2, 1, StaticIntTuple[2](4, 4), sorted=False
+        )
+
+    # CHECK-LABEL: test_axis_1_notsorted
+    # CHECK: 3.0,2.0,7.0,6.0,11.0,10.0,15.0,14.0,
+    # CHECK-NEXT: 3,2,3,2,3,2,3,2,
+    test_axis_1_notsorted()
 
     fn test_smallest():
         print("== test_smallest")
@@ -132,6 +174,17 @@ fn main():
     # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
     # CHECK-NEXT: 0,0,0,0,1,1,1,1,2,2,2,2,
     test_identical()
+
+    fn test_identical_large():
+        print("== test_identical_large")
+        test_case[2, DType.float32, fill_identical](
+            3, 0, StaticIntTuple[2](33, 33)
+        )
+
+    # CHECK-LABEL: test_identical_large
+    # CHECK: 1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
+    # CHECK: 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    test_identical_large()
 
     fn test_max_k():
         print("== test_max_k")

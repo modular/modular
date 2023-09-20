@@ -7,7 +7,7 @@
 
 from memory.buffer import NDBuffer
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from algorithm.sort import _quicksort, sort
+from algorithm.sort import partition, _quicksort, sort
 from math import iota
 from algorithm.functional import parallelize_over_rows
 
@@ -68,9 +68,20 @@ fn top_k[
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
+    sorted: Bool = True,
 ):
     alias grain_size = 1000
-    _top_k(input, k, axis, largest, out_vals, out_idxs, out_chain, grain_size)
+    _top_k(
+        input,
+        k,
+        axis,
+        largest,
+        out_vals,
+        out_idxs,
+        out_chain,
+        grain_size,
+        sorted,
+    )
 
 
 fn _top_k[
@@ -84,6 +95,7 @@ fn _top_k[
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
     parallelism_grain_size: Int,  # impl detail, exposed for testing
+    sorted: Bool,
 ):
     """
     Implementation of the Top K algorithm. Returns the top or bottom K elements
@@ -124,12 +136,19 @@ fn _top_k[
 
                 @parameter
                 @always_inline
-                fn _val_greater_than[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
-                    return indices_to_val(rebind[Int64](lhs)) > indices_to_val(
+                fn _val_greater_than_eq[ty: AnyType](lhs: ty, rhs: ty) -> Bool:
+                    return indices_to_val(rebind[Int64](lhs)) >= indices_to_val(
                         rebind[Int64](rhs)
                     )
 
-                _quicksort[Int64, _val_greater_than](idxs.data, idxs.__len__())
+                if sorted:
+                    _quicksort[Int64, _val_greater_than_eq](
+                        idxs.data, idxs.__len__()
+                    )
+                else:
+                    partition[Int64, _val_greater_than_eq](
+                        idxs.data, k, idxs.__len__()
+                    )
             else:
 
                 @parameter
@@ -139,28 +158,36 @@ fn _top_k[
                         rebind[Int64](rhs)
                     )
 
-                _quicksort[Int64, _val_less_than_eq](idxs.data, idxs.__len__())
+                if sorted:
+                    _quicksort[Int64, _val_less_than_eq](
+                        idxs.data, idxs.__len__()
+                    )
+                else:
+                    partition[Int64, _val_less_than_eq](
+                        idxs.data, k, idxs.__len__()
+                    )
 
-            # for duplicate vals, the smaller index needs to appear first
-            # _quicksort is not stable, so do another pass to enforce this
-            # could use a stable sorting algorithm but the complexity is O(n*log(n)*log(n))
-            # this is also what tensorflow and PT do:
-            # https://github.com/tensorflow/tensorflow/blob/v2.10.0/tensorflow/core/kernels/topk_op.cc#L171-L172
-            var i = 0
-            while i < shape[axis] - 1:
-                indices[axis] = idxs[i].__int__()
-                let curr = input[indices]
-                var num_equal = 1
-                for j in range(i + 1, shape[axis]):
-                    indices[axis] = idxs[j].__int__()
-                    let next = input[indices]
-                    if curr != next:
-                        break
-                    num_equal += 1
-                if num_equal > 1:
-                    var ptr = rebind[Pointer[Int64]](idxs.data.offset(i))
-                    sort[DType.int64](ptr, num_equal)
-                i += num_equal
+            if sorted:
+                # for duplicate vals, the smaller index needs to appear first
+                # _quicksort is not stable, so do another pass to enforce this
+                # could use a stable sorting algorithm but the complexity is O(n*log(n)*log(n))
+                # this is also what tensorflow and PT do:
+                # https://github.com/tensorflow/tensorflow/blob/v2.10.0/tensorflow/core/kernels/topk_op.cc#L171-L172
+                var i = 0
+                while i < shape[axis] - 1:
+                    indices[axis] = idxs[i].__int__()
+                    let curr = input[indices]
+                    var num_equal = 1
+                    for j in range(i + 1, shape[axis]):
+                        indices[axis] = idxs[j].__int__()
+                        let next = input[indices]
+                        if curr != next:
+                            break
+                        num_equal += 1
+                    if num_equal > 1:
+                        var ptr = rebind[Pointer[Int64]](idxs.data.offset(i))
+                        sort[DType.int64](ptr, num_equal)
+                    i += num_equal
 
             for i in range(k):
                 indices[axis] = idxs[i].__int__()
