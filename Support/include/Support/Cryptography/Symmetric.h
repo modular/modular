@@ -10,6 +10,7 @@
 #include "Support/ErrorOr.h"
 #include "mbedtls/chachapoly.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include <array>
 #include <cstdint>
 
 namespace M {
