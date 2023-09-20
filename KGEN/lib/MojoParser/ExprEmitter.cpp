@@ -406,7 +406,7 @@ RValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
   ValueDest dest(resultType, context);
   CValue result = emitCRValue(value, dest);
-  while (1) {
+  while (true) {
     if (!result) {
       dest.resetForError();
       return {};
@@ -1430,7 +1430,7 @@ PValue ExprEmitter::resolveAliasDeclareValue(AliasDeclOp param,
                                              SMLoc errLoc) {
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
-  while (1) {
+  while (true) {
     // If this reference is within a function then keep it symbolic.
     if (parent && isa<LIT::FuncOp>(parent))
       return ParamDeclRefAttr::get(param.getName(), param.getType());
@@ -1481,7 +1481,7 @@ AnyValue ExprEmitter::emitDeclReference(StringRef spelling,
     // Form an overload set value with all the candidates.
     auto result = ORValue::create(spelling, decls, paramBindings, expr,
                                   CallSyntax::kDirectCall);
-    return emitResult(std::move(result), expr, dest);
+    return emitResult(result, expr, dest);
   }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");

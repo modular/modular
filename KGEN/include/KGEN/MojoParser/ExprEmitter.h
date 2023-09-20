@@ -397,8 +397,8 @@ public:
   /// Note that the `value` provided here may require an implicit conversion
   /// into the destination slot, so the input may be memory-only and result be
   /// register-passable (and visa-versa).
-  AnyValue emitResult(AnyValue value, const ExprNode *node, ValueDest &dest);
-  CValue emitCResult(CValue value, const ExprNode *node, ValueDest &dest);
+  AnyValue emitResult(AnyValue value, const ExprNode *expr, ValueDest &dest);
+  CValue emitCResult(CValue value, const ExprNode *expr, ValueDest &dest);
 
   /// Emit the specified node with the indicated expression context and an
   /// optional contextual type.

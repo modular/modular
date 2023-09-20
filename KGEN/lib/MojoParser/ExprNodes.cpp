@@ -238,7 +238,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 // ExprNode Implementation
 //===----------------------------------------------------------------------===//
 
-ExprNode::~ExprNode() {}
+ExprNode::~ExprNode() = default;
 
 /// Return the start or end of the source range.
 llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
@@ -327,7 +327,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
       return {};
     }
     DLValue result(RCRef<DiscardDLValue>::create(initializerType, this));
-    return emitter.emitResult(std::move(result), this, dest);
+    return emitter.emitResult(result, this, dest);
   }
 
   assert(kind == kSelfLiteral && "Unknown simple literal kind");
@@ -736,7 +736,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
   }
 
   DLValue result(RCRef<SubscriptDLValue>::create(callArgs, elementType, node));
-  return emitter.emitResult(std::move(result), node, dest);
+  return emitter.emitResult(result, node, dest);
 }
 
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
@@ -884,7 +884,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       result->baseValue = {baseVal, base};
       result->syntax = CallSyntax::kMethodCall;
     }
-    return emitter.emitResult(std::move(result), this, dest);
+    return emitter.emitResult(result, this, dest);
   }
 
   assert(memberDecls.size() == 1 && "only methods may be overloaded");
@@ -916,7 +916,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           fieldOp.getReboundType(cast<DeclRefType>(baseRVType.mlirType));
       DLValue result(RCRef<StoredAttributeRefDLValue>::create(
           ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
-      return emitter.emitResult(std::move(result), this, dest);
+      return emitter.emitResult(result, this, dest);
     }
 
     // Otherwise, emit the stored field reference.
@@ -1608,14 +1608,14 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // TODO: Add support for list LValues as well.
   if (allEltsLValue && isa<TupleNode>(node)) {
     SmallVector<Type> typeElts;
-    for (auto elt : elements)
+    for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
     type = emitter.shared.getBuiltinTupleInstantion(emitter.declScope,
                                                     node->getLoc(), typeElts);
     if (type.isTypeCheckErrorType())
       return {};
     DLValue result(RCRef<TupleDLValue>::create(elements, type, node));
-    return emitter.emitResult(std::move(result), node, dest);
+    return emitter.emitResult(result, node, dest);
   }
 
   // If this tuple has all type elements (and is not empty) then we can form a
@@ -1623,7 +1623,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // a value, and the ambiguity is handled in emitExprType.
   if (allEltsTypes && isa<TupleNode>(node) && !elements.empty()) {
     SmallVector<Type> typeElts;
-    for (auto elt : elements)
+    for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfTypeValue());
 
     auto result = emitter.shared.getBuiltinTupleInstantion(
