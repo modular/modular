@@ -54,20 +54,27 @@ class MojoDebugConfigurationProvider implements
                                   debugConfiguration: vscode.DebugConfiguration,
                                   token?: vscode.CancellationToken):
       Promise<vscode.DebugConfiguration> {
-    // Enable some features that enhance the debugging experience.
-    if (!("enableSyntheticChildDebugging" in debugConfiguration))
-      debugConfiguration["enableSyntheticChildDebugging"] = true;
+    // This setting indicates LLDB to generate a useful summary for each
+    // non-primitive type that is displayed right away in the IDE.
     if (!("enableAutoVariableSummaries" in debugConfiguration))
       debugConfiguration["enableAutoVariableSummaries"] = true;
+
+    // This setting shortens the length of address strings.
+    const initCommands =
+        [ "settings set target.show-hex-values-with-leading-zeroes false" ];
 
     // Load the MojoLLDB plugin.
     let config = await this.context?.getSDK().resolveConfig(folder);
     if (config && config.mojoLLDBPluginPath &&
         config.mojoLLDBPluginPath.length > 0) {
-      const initCommands = debugConfiguration["initCommands"] || [];
       initCommands.push(`plugin load '${config.mojoLLDBPluginPath}'`);
-      debugConfiguration["initCommands"] = initCommands;
     }
+
+    // We give preference to the init commands specified by the user.
+    debugConfiguration["initCommands"] = [
+      ...initCommands,
+      ...(debugConfiguration["initCommands"] || []),
+    ];
     return debugConfiguration;
   }
 }
