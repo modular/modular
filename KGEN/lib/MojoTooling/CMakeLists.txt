@@ -10,6 +10,7 @@ add_modular_library(MojoTooling
   CodeComplete.cpp
   ParserDriver.cpp
   ParserDriverREPL.cpp
+  REPLPythonExprUtils.cpp
 
   LINK_LIBS PUBLIC
   MojoParser
