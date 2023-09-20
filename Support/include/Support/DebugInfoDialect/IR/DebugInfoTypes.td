@@ -261,12 +261,11 @@ def DebugInfo_DIUnresolvedMLIRType : DIType<
   }];
   let parameters = (ins "Type":$type);
   let assemblyFormat = "`<` $type `>`";
+  let genVerifyDecl = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$type), [{
       // Don't wrap a DIUnresolvedMLIRType again - just return the type itself.
-      // TODO: This is a bit of a hack - we really should be checking before
-      //       wrapping a type with another DIUnresolvedMLIRType...
       if (auto t = llvm::dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type))
         return t;
       return $_get(type.getContext(), type);

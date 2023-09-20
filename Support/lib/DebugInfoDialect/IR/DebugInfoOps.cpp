@@ -58,7 +58,24 @@ static ErrorOr<DIScopeAttr> getValueOpLocationScope(Location loc) {
   return getValueOpLocationScope(callSiteLoc.getCallee());
 }
 
+/// The local variable type must match the value type. Compare the types while
+/// unwrapping debuginfo types.
+static LogicalResult verifyValueOpType(ValueOp op) {
+  Type type = op.getValue().getType();
+  auto unresolved = dyn_cast<DIUnresolvedMLIRType>(op.getValueInfo().getType());
+  // If the variable debuginfo type has been lowered, we can't check the types.
+  if (!unresolved)
+    return success();
+  if (unresolved.getType() == type)
+    return success();
+  return op.emitOpError("local variable type '")
+         << unresolved.getType() << "' does not match value type: " << type;
+}
+
 LogicalResult ValueOp::verify() {
+  if (failed(verifyValueOpType(*this)))
+    return failure();
+
   ErrorOr<DIScopeAttr> scopeOr = getValueOpLocationScope(getLoc());
   if (scopeOr.isError())
     return emitOpError(scopeOr.getError());

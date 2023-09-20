@@ -666,7 +666,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
   SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
   InterpreterMemoryConverter imc(symtab, typeConverter);
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc);
-  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+  DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
+                                            typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });
 
@@ -690,6 +693,5 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
 
   // Convert the debug info within the IR.
-  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
   debugTypeConverter.applyRecursively(theModule);
 }

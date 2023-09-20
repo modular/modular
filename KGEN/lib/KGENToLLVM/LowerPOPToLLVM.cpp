@@ -1549,7 +1549,10 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate>(
       typeConverter, &func->getFunctionBody().front(), targetInfo);
-  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+  DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
+                                            typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });
 
@@ -1557,11 +1560,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // If this function has debug info, update any unresolved pop types.
-  if (DebugInfo::extractScope(*func)) {
-    POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter,
-                                                       targetInfo);
+  if (DebugInfo::extractScope(*func))
     debugTypeConverter.applyRecursively(*func);
-  }
 }
 
 namespace {
@@ -1954,7 +1954,9 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  DebugInfo::populateTypeConversionPatterns(patterns, typeConverter);
+  POPToLLVMDebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+  DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
+                                            typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
       [&](Operation *op) { return typeConverter.isLegal(op); });
 

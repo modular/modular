@@ -103,19 +103,39 @@ void DebugInfoTypeConverter::applyRecursively(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct ConvertDebugValue : public mlir::OpConversionPattern<ValueOp> {
-  using OpConversionPattern<ValueOp>::OpConversionPattern;
+class ConvertDebugValue : public mlir::OpConversionPattern<ValueOp> {
+public:
+  ConvertDebugValue(TypeConverter &tc, DebugInfoTypeConverter &ditc,
+                    MLIRContext *ctx)
+      : OpConversionPattern(tc, ctx), ditc(ditc) {}
 
   LogicalResult
   matchAndRewrite(ValueOp op, ValueOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    rewriter.updateRootInPlace(op, [&] { op.setOperand(adaptor.getValue()); });
+    DIType diType = ditc.convertDebugType(op.getValueInfo().getType());
+    if (!diType) {
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to convert debuginfo type");
+    }
+    rewriter.updateRootInPlace(op, [&] {
+      op.setOperand(adaptor.getValue());
+      DILocalVariableAttr info = op.getValueInfo();
+      op.setValueInfoAttr(DILocalVariableAttr::get(
+          info.getScope(), info.getName(), info.getFile(), info.getLine(),
+          info.getArg(), info.getAlignInBits(), diType));
+    });
     return success();
   }
+
+private:
+  /// The converter for the local variable type.
+  DebugInfoTypeConverter &ditc;
 };
 } // namespace
 
-void DebugInfo::populateTypeConversionPatterns(RewritePatternSet &patterns,
-                                               TypeConverter &converter) {
-  patterns.add<ConvertDebugValue>(converter, patterns.getContext());
+void DebugInfo::populateTypeConversionPatterns(
+    RewritePatternSet &patterns, DebugInfoTypeConverter &diConverter,
+    TypeConverter &converter) {
+  patterns.add<ConvertDebugValue>(converter, diConverter,
+                                  patterns.getContext());
 }

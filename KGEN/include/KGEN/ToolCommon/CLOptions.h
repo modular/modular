@@ -115,7 +115,7 @@ public:
       cl::init(false)};
 
   cl::opt<bool> enableLocalMLIRReproducer{
-      "enable-mlir-local-reproducer",
+      "enable-mlir-local-repro",
       cl::desc("If set, MLIR will attempt to generate a local reproducer."),
       cl::init(false)};
 

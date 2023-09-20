@@ -50,7 +50,7 @@ lit.struct.decl @SmallVector<N, T: type> {
   file = #file,
   line = 10,
   arg = 1
-> : !debuginfo.unresolved<!pop.array<3, i32>>
+> : !debuginfo.unresolved<!pop.array<0, i32>>
 
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])

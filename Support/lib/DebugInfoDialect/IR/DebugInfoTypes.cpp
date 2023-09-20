@@ -167,6 +167,19 @@ uint32_t DIStructType::getAlignInBits() const {
 }
 
 //===----------------------------------------------------------------------===//
+// DIUnresolvedMLIRType
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+DIUnresolvedMLIRType::verify(function_ref<InFlightDiagnostic()> emitError,
+                             Type type) {
+  if (::isa<DIUnresolvedMLIRType>(type))
+    return emitError() << "should not wrap unresolved type in another: "
+                       << type;
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // AsmFormat Utilities
 //===----------------------------------------------------------------------===//
 
