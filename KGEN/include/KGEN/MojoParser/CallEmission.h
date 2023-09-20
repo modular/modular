@@ -89,6 +89,9 @@ public:
 
     /// Index and type of the expected binding, if it doesn't fit.
     std::optional<std::pair<size_t, ASTType>> expectedBinding = std::nullopt;
+
+    /// The last expected type if there aren't enough bindings.
+    Type lastExpectedType = {};
   };
 
   /// Check that our set of parameter bindings work with the specified input
@@ -121,13 +124,6 @@ public:
       function_ref<void()> emitParamCountDiag = []() {},
       function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag =
           [](size_t, Binding &, ASTType) {}) const;
-
-  /// Given a candidate that may or may not be compatible with the given
-  /// parameter set so far, indicate what the next parameter's expected type
-  /// should be, or return null if the current parameters are incompatible with
-  /// it.
-  ASTType getNextExpectedBindingType(SignatureType candidateType,
-                                     ExprEmitter &emitter) const;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

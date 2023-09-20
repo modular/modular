@@ -1313,10 +1313,13 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     // use it for parameter type inference.
     ASTType paramType;
     if (!value->fnDecls.empty()) {
+      // This lambda returns the next expected parameter type.
       auto getCandidateParamType = [&](ASTDecl *fnDecl) -> Type {
         auto signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-        return value->inputParamBindings.getNextExpectedBindingType(signature,
-                                                                    emitter);
+        const auto &[_, fitness] = value->inputParamBindings.verifyBindings(
+            signature.getInputParamTypes(), {}, emitter,
+            signature.hasParamVarArgs());
+        return fitness.lastExpectedType;
       };
       paramType = getCandidateParamType(value->fnDecls[0]);
       if (paramType && value->fnDecls.size() != 1 &&
