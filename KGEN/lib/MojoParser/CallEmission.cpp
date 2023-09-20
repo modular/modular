@@ -261,7 +261,7 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
         continue;
       }
 
-      // TODO(#21428): If this argument is defaulted, infer against it.
+      // TODO: If this argument is defaulted, infer against it.
 
       // Otherwise we have an argument count mismatch, just fail.
       return {};
@@ -342,6 +342,40 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
 // InputParamBindings Implementation
 //===----------------------------------------------------------------------===//
 
+/// Check a single binding and emit a parameter value if possible. If an
+/// implicit conversion is required, the provided counter is incremented.
+static PValue emitSingleParameterValue(size_t index,
+                                       InputParamBindings::Binding binding,
+                                       ASTType expectedType,
+                                       size_t &numImplicitConversions,
+                                       ExprEmitter &emitter,
+                                       ParserParamEvaluator &evaluator) {
+  assert(binding.expr &&
+         "should always have an expr tree for unchecked bindings");
+
+  // Check the type matches what is expected, and perform an implicit
+  // conversion if needed.
+  expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
+
+  PValue bindingPVal = PValue(binding.getValue());
+
+  // If the parameter already has the right type, then we're good.
+  if (expectedType.isEqualCanon(binding.getValue().getType()))
+    return bindingPVal;
+
+  // If the parameter can be implicitly converted, do so.
+  if (emitter.canImplicitlyConvertToType({bindingPVal, binding.expr},
+                                         expectedType)) {
+    auto argValue = emitter.emitPValue({bindingPVal, binding.expr},
+                                       EC_CallParamValue, expectedType);
+    assert(argValue && "Already checked this would succeed");
+    ++numImplicitConversions;
+    return argValue;
+  }
+
+  return {};
+};
+
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
@@ -367,24 +401,41 @@ InputParamBindings::verifyBindings(
   // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
   // so far and remap types on demand.
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
-  size_t nextBinding = 0;
-  InputParamBindings::Fitness fitness{0, false};
+
+  // This lambda installs the decl's value in the parameter evaluator and new
+  // binding array.
+  auto setParamValue = [&](TypedAttr value) {
+    if (actualParamDecls)
+      evaluator.setParameterValue(actualParamDecls[newBindings.size()], value);
+    else
+      evaluator.addInputValue(value);
+    newBindings.push_back(value);
+  };
+
+  // This lambda hides the diagnostic and error handling logic for checking a
+  // single parameter bdingin.
+  Fitness fitness{0, false};
+  auto handleSingleBinding = [&](size_t index, Binding binding,
+                                 ASTType expectedType) -> PValue {
+    PValue pValue = emitSingleParameterValue(index, binding, expectedType,
+                                             fitness.numImplicitConversions,
+                                             emitter, evaluator);
+    if (!pValue) {
+      // Set the diagnostic metadata and call the custom diagnostic handler.
+      fitness.expectedBinding = std::make_pair(index, expectedType);
+      emitParamTypeDiag(index, binding, expectedType);
+    }
+
+    return pValue;
+  };
+
+  size_t bindingIdx = 0;
+  size_t numBindings = bindings.size();
   for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
     bool isVarArg = idx + 1 == actualParamTypes.size() && hasParamVarArgs;
 
-    // This lambda installs the decl's value in the parameter evaluator and new
-    // binding array.
-    auto setParamValue = [&](TypedAttr value) {
-      if (actualParamDecls)
-        evaluator.setParameterValue(actualParamDecls[newBindings.size()],
-                                    value);
-      else
-        evaluator.addInputValue(value);
-      newBindings.push_back(value);
-    };
-
     // Check to see if we ran out of bindings to provide to this param decl.
-    if (nextBinding == bindings.size()) {
+    if (bindingIdx == numBindings) {
       // If we have a method to infer parameter values, invoke it to see if we
       // can get an inferred value for the parameter.
       if (parameterInferenceHook) {
@@ -422,54 +473,24 @@ InputParamBindings::verifyBindings(
       return {};
     }
 
-    InputParamBindings::Binding binding = bindings[nextBinding++];
+    Binding binding = bindings[bindingIdx];
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
       setParamValue(binding.value);
+      ++bindingIdx;
       continue;
     }
-
-    auto handleSingleParameterValue = [&](size_t index, Binding binding,
-                                          ASTType expectedType) -> PValue {
-      assert(binding.expr &&
-             "should always have an expr tree for unchecked bindings");
-
-      // Check the type matches what is expected, and perform an implicit
-      // conversion if needed.
-      expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
-
-      PValue bindingPVal = PValue(binding.getValue());
-
-      // If the parameter already has the right type, then we're good.
-      if (expectedType.isEqualCanon(binding.getValue().getType()))
-        return bindingPVal;
-
-      // If the parameter can be implicitly converted, do so.
-      if (emitter.canImplicitlyConvertToType({bindingPVal, binding.expr},
-                                             expectedType)) {
-        auto argValue = emitter.emitPValue({bindingPVal, binding.expr},
-                                           EC_CallParamValue, expectedType);
-        assert(argValue && "Already checked this would succeed");
-        ++fitness.numImplicitConversions;
-        return argValue;
-      }
-
-      // Handle conversion failure with a custom error.
-      fitness.expectedBinding =
-          std::make_pair(newBindings.size(), expectedType);
-      emitParamTypeDiag(index, binding, expectedType);
-      return {};
-    };
 
     // Scalar parameter values are installed directly. Or, if we have a variadic
     // of the same type, we can use it as the value of the parameter directly.
     // FIXME: This allows passing a variadic `Ts` directly. Do we want a new
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!isVarArg || binding.getValue().getType() == type) {
-      PValue paramValue = handleSingleParameterValue(idx, binding, type);
+      PValue paramValue = handleSingleBinding(idx, binding, type);
       if (!paramValue)
         return {{}, fitness};
       setParamValue(paramValue);
+      ++bindingIdx;
       continue;
     }
 
@@ -478,23 +499,19 @@ InputParamBindings::verifyBindings(
     fitness.hasVariadicParams = true;
     SmallVector<TypedAttr> elements;
     Type expectedType = ASTType(type).getVariadicElementType();
-    PValue pValue = handleSingleParameterValue(idx, binding, expectedType);
-    if (!pValue)
-      return {{}, fitness};
-    elements.emplace_back(pValue);
-    while (nextBinding != bindings.size()) {
-      binding = bindings[nextBinding++];
-      PValue pValue = handleSingleParameterValue(idx, binding, expectedType);
+    do {
+      binding = bindings[bindingIdx++];
+      PValue pValue = handleSingleBinding(idx, binding, expectedType);
       if (!pValue)
         return {{}, fitness};
       elements.emplace_back(pValue);
-    }
+    } while (bindingIdx != numBindings);
     setParamValue(VariadicAttr::get(
         elements, VariadicType::get(evaluator.getReboundType(expectedType))));
   }
 
   // Check and complain if we have bindings that didn't get used.
-  if (nextBinding != bindings.size()) {
+  if (bindingIdx != numBindings) {
     emitParamCountDiag();
     return {};
   }
