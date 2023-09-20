@@ -178,15 +178,15 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // a `StringType` type that makes pointer comparisons fails.
   Attribute value = env.getValues().get(name.getValue());
   if (isa<IndexType, StringType>(op.getType()) && !value) {
-    emitError({*errorLoc, "environment variable '" + name.getValue() +
-                              "' does not exist"});
+    emitError({*errorLoc, "define '" + name.getValue() +
+                              "' does not exist, please provide it via -D"});
     return failure();
   }
 
   if (isa<IndexType>(op.getType())) {
     if (auto intVal = dyn_cast<IntegerAttr>(value))
       return {intVal};
-    emitError({*errorLoc, "environment variable '" + name.getValue() +
+    emitError({*errorLoc, "define '" + name.getValue() +
                               "' is not an integer, got " +
                               mlir::debugString(value)});
     return failure();
@@ -195,7 +195,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   if (isa<StringType>(op.getType())) {
     if (auto strVal = dyn_cast<StringAttr>(value))
       return {strVal};
-    emitError({*errorLoc, "environment variable '" + name.getValue() +
+    emitError({*errorLoc, "define '" + name.getValue() +
                               "' is not a string, got " +
                               mlir::debugString(value)});
     return failure();
