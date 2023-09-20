@@ -5,17 +5,17 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_unittest(
-    TOP_LEVEL_CHECK
-    check-support
+  TOP_LEVEL_CHECK
+  check-support
 
-    SUITE_NAME
-    SupportCryptographyUnitTests
+  SUITE_NAME
+  SupportCryptographyUnitTests
 
-    TEST_NAME
-    SupportCryptographyTests
+  TEST_NAME
+  SupportCryptographyTests
 
-    SymmetricTest.cpp
+  SymmetricTest.cpp
 
-    LINK_LIBS PRIVATE
-    MSupportCryptography
+  LINK_LIBS PRIVATE
+  MSupportCryptography
 )
