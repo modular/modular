@@ -48,22 +48,7 @@ fn resize_nearest_neighbor[
     var scales = StaticTuple[rank, Float32]()
     for i in range(rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
-    return resize_nearest_neighbor[coordinate_transformation_mode, round_mode](
-        input, output, scales, out_chain
-    )
 
-
-fn resize_nearest_neighbor[
-    coordinate_transformation_mode: CoordinateTransformationMode,
-    round_mode: RoundMode,
-    rank: Int,
-    type: DType,
-](
-    input: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    output: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    scales: StaticTuple[rank, Float32],
-    out_chain: OutputChainPtr,
-):
     @parameter
     @always_inline
     fn coord_transform(out_coord: Int, dim: Int) -> Float32:
