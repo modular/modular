@@ -4,14 +4,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-import {debug} from 'console';
 import * as vscode from 'vscode';
 
 import {MOJOContext} from '../mojoContext';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 
-import {RpcLaunchServer, UriLaunchServer} from './externalDebugLauncher';
+import {
+  RpcLaunchServer,
+  RpcLaunchServerOptions,
+  UriLaunchServer
+} from './externalDebugLauncher';
 
 /**
  * This class defines a factory used to find the lldb-vscode binary to use
@@ -125,8 +128,8 @@ export class MojoDebugContext extends DisposableContext {
    * workspace is undefined, then a global config is used instead.
    */
   private updateOrCreateRpcServer(workspaceFolder?: vscode.WorkspaceFolder) {
-    let options = config.get<{[key: string] : string | number}>(
-        'lldb.rpcServer', workspaceFolder);
+    let options =
+        config.get<RpcLaunchServerOptions>('lldb.rpcServer', workspaceFolder);
     if (!options || Object.keys(options).length == 0)
       return;
 
@@ -139,11 +142,10 @@ export class MojoDebugContext extends DisposableContext {
           "Starting RPC server defined by global config", options);
 
     this.disposeRpcServer(workspaceFolder);
-    let rpcServer =
-        new RpcLaunchServer(this.context.getLoggingService(), workspaceFolder,
-                            {token : options.token as string});
+    let rpcServer = new RpcLaunchServer(this.context.getLoggingService(),
+                                        workspaceFolder, options);
     this.pushSubscription(rpcServer);
-    rpcServer.listen(options);
+    rpcServer.listen();
     this.rpcServers.set(uri, rpcServer);
   }
 

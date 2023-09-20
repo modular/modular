@@ -115,6 +115,9 @@ export class UriLaunchServer implements UriHandler {
   }
 }
 
+export type RpcLaunchServerOptions =
+    net.ListenOptions&{token : string | undefined};
+
 /**
  * RPC-based debug launcher.
  *
@@ -123,7 +126,7 @@ export class UriLaunchServer implements UriHandler {
  */
 export class RpcLaunchServer extends DisposableContext {
   private inner: net.Server;
-  private token: string|undefined;
+  private options: RpcLaunchServerOptions;
   private errorEmitter = new EventEmitter<Error>();
   readonly workspaceFolder: vscode.WorkspaceFolder|undefined;
   private loggingService: LoggingService;
@@ -135,15 +138,19 @@ export class RpcLaunchServer extends DisposableContext {
    */
   constructor(loggingService: LoggingService,
               workspaceFolder: vscode.WorkspaceFolder|undefined,
-              options: {token?: string}) {
+              options: RpcLaunchServerOptions) {
     super();
     this.loggingService = loggingService;
     this.workspaceFolder = workspaceFolder;
-    this.pushSubscription(this.errorEmitter.event(
-        (e: Error) => {this.loggingService.logError("RPC Server error", e)}));
-    this.token = options.token;
+    this.pushSubscription(this.errorEmitter.event((e: Error) => {
+      this.loggingService.logError(
+          "RPC Server error. You might need to restart VS Code to fix this issue.",
+          e);
+    }));
+    this.options = options;
+
     this.inner = net.createServer({allowHalfOpen : true});
-    this.inner.on('error', err => this.errorEmitter.fire(err));
+    this.inner.on('error', err => { this.errorEmitter.fire(err); });
     this.inner.on('connection', socket => {
       let request = '';
       socket.on('data', chunk => request += chunk);
@@ -170,9 +177,9 @@ export class RpcLaunchServer extends DisposableContext {
     };
     Object.assign(debugConfig, YAML.parse(request));
     debugConfig.name = debugConfig.name || debugConfig.program;
-    if (this.token) {
-      if (debugConfig.token != this.token)
-        return '';
+    if (this.options.token) {
+      if (debugConfig.token !== this.options.token)
+        return 'Invalid secret';
       delete debugConfig.token;
     }
     try {
@@ -187,10 +194,10 @@ export class RpcLaunchServer extends DisposableContext {
   /**
    * Listens to messages using the provided network options.
    */
-  public async listen(options: net.ListenOptions) {
+  public async listen() {
     return new Promise<net.AddressInfo|string>(
         resolve => this.inner.listen(
-            options, () => resolve(this.inner.address() || "")));
+            this.options, () => resolve(this.inner.address() || "")));
   }
 
   /**
