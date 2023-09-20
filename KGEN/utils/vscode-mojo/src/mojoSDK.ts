@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 
 import {LoggingService} from './logging';
 import * as config from './utils/config';
+import {substituteVariables} from './utils/vscodeVariables';
 
 /**
  * This class represents a subset of the Modular config object used by extension
@@ -81,7 +82,8 @@ export class MOJOSDK {
       return mojoConfig;
 
     // Check to see if a path was specified in the config.
-    let modularPath = config.get<string>('modularHomePath', workspaceFolder);
+    let modularPath =
+        await this.tryGetModularHomePathFromConfig(workspaceFolder);
 
     // Otherwise, check to see if the environment variable is set.
     if (!modularPath) {
@@ -101,19 +103,21 @@ export class MOJOSDK {
 
     // Read in the config file.
     const modularCfg = path.join(modularPath, "modular.cfg");
-    let configPath = vscode.Uri.from({scheme : 'file', path : modularCfg});
+    let configPath = vscode.Uri.file(modularCfg);
 
     try {
       let configPathStat = await vscode.workspace.fs.stat(configPath);
       if (!(configPathStat.type & vscode.FileType.File)) {
-        this.loggingService.logInfo(
-            `Missing or invalid modular.cfg file: '${modularCfg}'.`);
+        this.showSDKErrorMessage(
+            `The modular config file '${modularCfg}' is not a file.`);
         this.promptInstallSDK();
         return undefined;
       }
     } catch (e) {
-      this.loggingService.logInfo(
-          `Error when stat'ing modular.cfg file: '${modularCfg}'. ` + e);
+      this.showSDKErrorMessage(
+          `The modular config file '${
+              modularCfg}' does not exist or VS Code does not have permissions to access it.`,
+          e);
       this.promptInstallSDK();
       return undefined;
     }
@@ -160,5 +164,55 @@ export class MOJOSDK {
           'workbench.action.openWorkspaceSettings',
           {openToSide : false, query : `mojo.modularHomePath`});
     }
+  }
+
+  /**
+   * Attempt to retrieve the modular home path from the config. This will also
+   * perform the substitution of some common VSCode variables.
+   *
+   * If the setting does not exist or the resolved path is not a directory,
+   * return undefined.
+   */
+  private async tryGetModularHomePathFromConfig(workspaceFolder:
+                                                    vscode.WorkspaceFolder|
+                                                undefined):
+      Promise<string|undefined> {
+    let modularPath = config.get<string>('modularHomePath', workspaceFolder);
+    if (!modularPath)
+      return undefined;
+    const substituted = substituteVariables(modularPath, workspaceFolder);
+
+    const showError = (reason: string) => {
+      let message = `The mojo.modularHomePath setting '${modularPath}'`;
+      if (substituted !== modularPath)
+        message += `, which resolves to '${substituted}',`;
+      message += " " + reason + ".";
+      this.showSDKErrorMessage(message);
+      return undefined;
+    };
+
+    if (substituted.length == 0) {
+      return showError("is empty");
+    }
+
+    try {
+      let configPathStat =
+          await vscode.workspace.fs.stat(vscode.Uri.file(substituted));
+      if (configPathStat.type & vscode.FileType.Directory)
+        return substituted;
+      return showError("is not a directory");
+    } catch (err) {
+      return showError("does not exist");
+    }
+  }
+
+  /**
+   * Show an error message as a VSCode notification and log it to the output
+   * channel as well.
+   */
+  private showSDKErrorMessage(message: string, error?: unknown): void {
+    message = "Mojo SDK initialization error: " + message;
+    this.loggingService.logError(message, error);
+    vscode.window.showErrorMessage(message);
   }
 }
