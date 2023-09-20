@@ -488,7 +488,7 @@ static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
     return refType.getParam() == expr;
   if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
     return typeCst.getValue() == type;
-  // `expr` is a parameter expresion but `type` is not.
+  // `expr` is a parameter expression but `type` is not.
   return false;
 }
 
