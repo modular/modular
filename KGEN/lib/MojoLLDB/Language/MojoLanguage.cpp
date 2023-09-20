@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoLanguage.h"
+#include "MojoDecoratorBasedTypeFormatter.h"
 #include "MojoDynamicVectorTypeFormatter.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -47,10 +48,16 @@ static void LoadLibMojoFormatters(lldb::TypeCategoryImplSP mojoCategorySP) {
 
   SyntheticChildren::Flags synthFlags;
   synthFlags.SetCascades(true).SetSkipPointers(true).SetSkipReferences(true);
+  // Formatters are matched in reverse order, so this one that uses .* should
+  // be added first so that it's the last one to be used.
+  AddCXXSynthetic(mojoCategorySP,
+                  MojoDecoratorBasedTypeSyntheticFrontEndCreator,
+                  "Mojo decorator-based synthetic children", ".*", synthFlags,
+                  /*regex=*/true);
   AddCXXSynthetic(
       mojoCategorySP, MojoDynamicVectorSyntheticFrontEndCreator,
-      "mojo DynamicVector synthetic children",
-      "^!kgen.declref<@\"\\$utils\"::@\"\\$vector\"::@DynamicVector<.*>>$",
+      "Mojo DynamicVector synthetic children",
+      R"(^!kgen.declref<@"\$utils"::@"\$vector"::@DynamicVector<.*>>$)",
       synthFlags, /*regex=*/true);
 }
 

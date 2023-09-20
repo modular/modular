@@ -641,9 +641,9 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
 size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     lldb::opaque_compiler_type_t type, llvm::StringRef name,
     bool omitEmptyBaseClasses, std::vector<uint32_t> &childIndices) {
-  // This method should return the total number of indices in `childIndices` in
-  // the case of success. As a remark, the `childIndices` vector passed in might
-  // not be empty.
+  // This method should return the total number of indices in `childIndices`
+  // in the case of success. As a remark, the `childIndices` vector passed in
+  // might not be empty.
   MojoASTTypeRef astType = dereferenceType(type);
 
   // Check if the name is an index of a SIMD.
@@ -668,6 +668,20 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     return 0;
   }
   return 0;
+}
+
+//===--------------------------------------------------------------------===//
+// Mojo-specific Type Queries
+//===--------------------------------------------------------------------===//
+
+llvm::ArrayRef<TypedAttr>
+MojoTypeSystem::GetStructDecorators(lldb::opaque_compiler_type_t type) {
+  if (!type)
+    return {};
+  MojoASTTypeRef astType = dereferenceType(type);
+  if (LIT::StructDeclOp structDeclOp = impl->getIfStructDecl(astType))
+    return structDeclOp.getDecorators();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
