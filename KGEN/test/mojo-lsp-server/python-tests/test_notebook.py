@@ -242,3 +242,30 @@ SomeStruct()
         result.signatures[1].label
         == "fn __init__(inout self: Self, a_field: Int)"
     )
+
+
+async def test_python(client: LanguageClient):
+    cell_contents = [
+        """%%python
+def function():
+  return
+""",
+        """
+function
+""",
+    ]
+    doc = NotebookDocument("test", cell_contents)
+
+    requests = Requests(client)
+    requests.open_notebook_document(doc)
+
+    result = fail_if_none(
+        await requests.hover(doc.cells[1], Position(line=1, character=2))
+    )
+    assert isinstance(result.contents, MarkupContent)
+    assert (
+        result.contents.value
+        == """```mojo
+(argument) inout function: PythonObject
+```"""
+    )

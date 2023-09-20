@@ -13,6 +13,7 @@
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/REPLPythonExprUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
@@ -428,12 +429,18 @@ public:
   // Queries
 
   bool shouldPersistVariable(StringRef name, mlir::Type type) override {
-    newPersistentVariables.emplace_back(name, type);
+    auto [it, inserted] =
+        nameToVariable.insert({name, newPersistentVariables.size()});
+    if (inserted)
+      newPersistentVariables.emplace_back(name, type);
+    else
+      newPersistentVariables[it->second].second = type;
     return true;
   }
 
 private:
   StringRef currentModuleName;
+  llvm::StringMap<unsigned> nameToVariable;
   SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
 
   /// The main diagnostic handler used to notify diagnostics.
@@ -1065,16 +1072,39 @@ void MojoNotebookDocument::parseDocumentImpl() {
   // Parse each of the cells in the notebook.
   MojoParserContext &ctx = getParserContext();
   for (Cell &cell : getCells()) {
-    // Ignore cells that contain python expressions.
-    // TODO: Extract the variables that are implicitly imported into mojo and
-    // create stub definitions so that future cells can reference them without
-    // error.
-    if (StringRef(cell.contents).starts_with("%%python"))
+    // If the cell isn't a python expression, parse it as normal.
+    StringRef contents(cell.contents);
+    if (!contents.consume_front("%%python")) {
+      cell.persistentVariables = persistentVariables;
+      cell.decl = ctx.parseREPLExpression(
+          listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
       continue;
+    }
 
-    cell.persistentVariables = persistentVariables;
-    cell.decl = ctx.parseREPLExpression(
-        listener, cell.bufferId, "__mojo_repl_lsp_main", persistentVariables);
+    // Otherwise, this is a python expression. Extract the variables that are
+    // implicitly imported into mojo and create stub definitions so that future
+    // cells can reference them without error.
+    ErrorOr<std::vector<std::unique_ptr<KGEN::Mojo::ExtractedPythonSymbol>>>
+        symbolsOr = KGEN::Mojo::extractPythonSymbolsFromReplExpr(contents);
+    if (failed(symbolsOr)) {
+      getSourceMgr().PrintMessage(SMLoc::getFromPointer(contents.data()),
+                                  llvm::SourceMgr::DK_Warning,
+                                  symbolsOr.getError());
+      continue;
+    }
+
+    // Build a new expression string containing variables for each of the
+    // imported symbols.
+    std::string pythonCell;
+    llvm::raw_string_ostream os(pythonCell);
+    for (auto &symbol : *symbolsOr)
+      os << "let " << symbol->getName() << ": PythonObject\n";
+    int pythonCellId = getSourceMgr().AddNewSourceBuffer(
+        llvm::MemoryBuffer::getMemBuffer(pythonCell,
+                                         (cell.uri.file() + "_py").str()),
+        SMLoc());
+    ctx.parseREPLExpression(listener, pythonCellId, "__mojo_repl_lsp_main",
+                            persistentVariables);
   }
 }
 
