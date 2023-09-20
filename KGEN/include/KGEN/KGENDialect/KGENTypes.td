@@ -327,7 +327,7 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "ParamRefType::get($_self.cast<PointerType>().getElementType())">;
+    "$_self.cast<PointerType>().getElementAsType()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
     [CPred<"$_self.cast<PointerType>().getElementType()">,

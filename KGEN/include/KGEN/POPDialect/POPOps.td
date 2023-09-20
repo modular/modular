@@ -704,8 +704,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer load operation";
   let description = [{
-    Loads the data at the given pointer. Returns a scalar of the same dtype. The
-    pointer cannot have a `?` element type.
+    Loads the data at the given pointer. Returns a scalar of the element type.
 
     Example:
 
@@ -738,9 +737,9 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer store operation";
   let description = [{
-    Store the given scalar data to the given pointer of the same dtype. The
-    pointer cannot have a `?` element type. An optional `alignment` attribute
-    can be provided to specify the alignment of the store.
+    Store the given value to the given pointer of the element type. An
+    optional `alignment` attribute can be provided to specify the alignment of
+    the store.
 
     Example:
 

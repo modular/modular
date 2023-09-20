@@ -1445,33 +1445,6 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark.destroyed"> {
 }
 
 //===----------------------------------------------------------------------===//
-// RefToPointerOp
-//===----------------------------------------------------------------------===//
-
-// Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
-class RefPointerType<string lhs, string rhs> : TypesMatchWith<
-    "reference as pointer type", lhs, rhs,
-    "$_self.cast<RefType>().getAsPointerType()">;
-
-def LIT_RefToPointerOp : LITOp<"ref_to_pointer",
-                              [RefPointerType<"ref", "ptr">]> {
-  let summary = "Extract a low-level pointer out of a reference";
-  let description = [{
-    This op extracts a kgen pointer out of a reference, exposing an untracked
-    and unsafe inner pointer.  This is used when lowering lifetimes.
-
-    ```mlir
-    lit.ref_to_pointer %0 : !lit.ref<@Foo, life>
-    ```
-  }];
-
-  let arguments = (ins LIT_RefType:$ref);
-  let results = (outs PointerType:$ptr);
-  let assemblyFormat = "$ref `:` type($ref) attr-dict";
-}
-
-
-//===----------------------------------------------------------------------===//
 // HandleVariantOp
 //===----------------------------------------------------------------------===//
 
@@ -1553,4 +1526,112 @@ def LIT_YieldOp : LITOp<"yield", [Pure,
   let arguments = (ins Variadic<AnyType>:$operands);
   let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
   let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+}
+
+//===----------------------------------------------------------------------===//
+// RefToPointerOp
+//===----------------------------------------------------------------------===//
+
+// Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
+class RefPointerType<string lhs, string rhs> : TypesMatchWith<
+    "reference as pointer type", lhs, rhs,
+    "$_self.cast<RefType>().getAsPointerType()">;
+
+def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
+                              [RefPointerType<"ref", "ptr">]> {
+  let summary = "Extract a low-level pointer out of a reference";
+  let description = [{
+    This op extracts a kgen pointer out of a reference, exposing an untracked
+    and unsafe inner pointer.  This is used when lowering lifetimes.
+
+    ```mlir
+    lit.ref.to_pointer %0 : !lit.ref<@Foo, life>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs PointerType:$ptr);
+  let assemblyFormat = "$ref `:` type($ref) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// RefStructGEROp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Get a pointer to a struct field.";
+  let description = [{
+    The `lit.ref.struct.ger` operation computes a reference to a struct field by
+    name from a parametric struct.  The result has the same lifetime as the
+    source value.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @MyStruct<T: dtype> {
+      lit.struct.field a : !pop.scalar<T>
+    }
+
+    %0 = lit.ref.struct.ger %struct[a] : !lit.ref<mut @MyStruct<...>, life>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$field, RefOf<KGEN_DeclRefType>:$container);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
+    type($result) `from` type($container)
+  }];
+
+  let builders = [
+    // Infer the result type based on the result of lookup.
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// RefLoadOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
+  let summary = "reference load operation";
+  let description = [{
+    Loads the data at the given reference. Returns a scalar of the element type.
+    The reference may either be mutable or immutable.
+
+    Example:
+
+    ```mlir
+    %0 = lit.ref.load %ref0 : !lit.ref<scalar<f32>, lifetime>
+    %1 = lit.ref.load %ref1 : !lit.ref<simd<4, type>, lifetime>
+    %2 = lit.ref.load %ref0 : !lit.ref<mut scalar<f32>, lifetime>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$ref attr-dict `:` type($ref)";
+}
+
+//===----------------------------------------------------------------------===//
+// RefStoreOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"ref", "arg">]> {
+  let summary = "Reference store operation";
+  let description = [{
+    Store the given value to the given pointer of the same element type.  The
+    reference must be mutable.
+
+    Example:
+
+    ```mlir
+    lit.ref.store %0, %ref0 : !lit.ref<mut scalar<f32>, lifetime>
+    lit.ref.store %1, %ref1 : !lit.ref<mut simd<4, type>, lifetime>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$arg, LIT_RefType:$ref);
+  let assemblyFormat = "$arg `,` $ref attr-dict `:` type($ref)";
 }

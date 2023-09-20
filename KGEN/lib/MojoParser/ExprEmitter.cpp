@@ -1103,8 +1103,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     address = value.ir.getIfMLValue();
   assert(address && "Unknown BValue/RValue/MLValue");
   Value result =
-      builder->create<POP::LoadOp>(value.expr->getLocation(*this), address,
-                                   /*alignment=*/std::nullopt);
+      builder->create<POP::LoadOp>(value.expr->getLocation(*this), address);
   return emitCResult(SRValue(result), value.expr, dest);
 }
 

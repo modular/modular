@@ -192,12 +192,39 @@ kgen.generator @call_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>,
 kgen.generator @raw_pointer_from_ref_type<q: !lit.lifetime>(%a: !lit.ref<@Struct, p>)
   -> !kgen.pointer<@Struct> {
   // CHECK-NEXT: kgen.return %a
-  %ptr = lit.ref_to_pointer %a: !lit.ref<@Struct, p>
+  %ptr = lit.ref.to_pointer %a: !lit.ref<@Struct, p>
   kgen.return %ptr: !kgen.pointer<@Struct>
 }
 
 // CHECK: kgen.extern.generator @empty_region_dont_crash
 kgen.extern.generator @empty_region_dont_crash()
+
+
+
+//===----------------------------------------------------------------------===//
+// Reference Lowering
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @PairStruct {
+  lit.struct.field x : si32
+  lit.struct.field y : ui32
+}
+
+// CHECK-LABEL: @gerToGEPFooFromBar
+kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime>
+  (%arg0: !lit.ref<mut @PairStruct, l>, %arg1: si32) -> si32 {
+  // CHECK-NEXT: %0 = pop.struct.gep %arg0[0] : <struct<si32, ui32>>
+  %0 = lit.ref.struct.ger %arg0[x] : !lit.ref<mut si32, l> from !lit.ref<mut @PairStruct, l>
+
+  // CHECK-NEXT: pop.store %arg1, %0
+  lit.ref.store %arg1, %0 : !lit.ref<mut si32, l>
+
+  // CHECK-NEXT: %1 = pop.load %0 : !kgen.pointer<si32>
+  %a = lit.ref.load %0 : !lit.ref<mut si32, l>
+  // CHECK-NEXT: kgen.return %1
+  kgen.return %a : si32
+}
+
 
 // -----
 

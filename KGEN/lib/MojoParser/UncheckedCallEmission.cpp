@@ -487,8 +487,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         return {};
       }
       auto load =
-          builder->create<POP::LoadOp>(expr->getLocation(emitter), mbVal,
-                                       /*alignment=*/std::nullopt);
+          builder->create<POP::LoadOp>(expr->getLocation(emitter), mbVal);
       argValAndExpr.ir = SBValue(load);
     }
 
