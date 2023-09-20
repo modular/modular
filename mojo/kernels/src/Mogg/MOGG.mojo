@@ -186,7 +186,6 @@ fn MOGGExport():
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _pack_conv_filter = pack_conv_filter
     alias _pow = pow_wrapped
-    alias _load_scalar = load_scalar
     alias _max_pool_shape = pool_shape
     alias _max_pool = max_pool
     alias _mean = mean
@@ -231,10 +230,6 @@ fn MOGGExport():
     alias _slice = slice
     alias _simd_load = simd_load
     alias _simd_store = simd_store
-    alias _simd_load_1D = simd_load_1D
-    alias _simd_load_splat = simd_load_splat
-    alias _simd_load_maybe_splat = simd_load_maybe_splat
-    alias _simd_load_strided = simd_load_strided
     alias _simd_target = get_target_simd
     alias _simd_width_to_int = simd_width_to_int
     alias _softmax = softmax
@@ -248,7 +243,6 @@ fn MOGGExport():
     alias _round = round
     alias _roundeven = roundeven
     alias _slice_shape = slice_shape
-    alias _splat = splat
     alias _transpose = transpose
     alias _transpose_shape = transpose_shape
     alias _trunc = trunc
@@ -484,42 +478,6 @@ fn _compute_flat_index[
     return flat_index
 
 
-# If we know the tensor is 1D then we can avoid the stride calculation. If
-# the stride is 0 then we just splat the value. Hopefully LLVM is able to hoist
-# this `if` as it should be a constant.
-@always_inline
-fn simd_load_1D[
-    type: DType, simd_width: Int, rank: Int
-](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    let stride = buffer.dynamic_stride[rank - 1]
-    if stride == 0:
-        let scalar = load_scalar[type, rank](buffer)
-        return splat[type, simd_width](scalar)
-
-    let i = stride * index[rank - 1]
-    return _simd_load_internal[simd_width, type, rank](buffer, i)
-
-
-# If we know the tensor is actually a scalar tensor we can avoid all indexing
-# calculation. It's broken into the two parts (load followed by splat) so we can
-# hoist the load from the lambda body.
-@always_inline
-fn load_scalar[
-    type: DType, rank: Int
-](buffer: NDBuffer[rank, DimList.create_unknown[rank](), type]) -> SIMD[
-    type, 1
-]:
-    @parameter
-    if type == DType.bool:
-        let v = buffer.data.bitcast[DType.uint8]().load(0)
-        return v.cast[type]()
-    else:
-        return buffer.data.load(0)
-
-
 @always_inline
 fn _simd_load_internal[
     simd_width: Int, type: DType, rank: Int
@@ -534,44 +492,7 @@ fn _simd_load_internal[
         return buffer.data.simd_load[simd_width](index)
 
 
-@always_inline
-fn splat[
-    type: DType,
-    simd_width: Int,
-](val: SIMD[type, 1]) -> SIMD[type, simd_width]:
-    return SIMD[type, simd_width].splat(val)
-
-
-# Load a tensor which might splat along the last dimension.
-@always_inline
-fn simd_load_maybe_splat[
-    type: DType, simd_width: Int, rank: Int
-](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
-
-    if buffer.dynamic_stride[rank - 1] == 0:
-        return buffer.data.load(flat_index)
-
-    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
-
-
-# Load a tensor which does a splat along the last dimension.
-@always_inline
-fn simd_load_splat[
-    type: DType, simd_width: Int, rank: Int
-](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    # Last dimension will be 0 for splats so don't compute last dim.
-    let flat_index = _compute_flat_index[type, rank, rank - 1](buffer, index)
-
-    return buffer.data.load(flat_index)
-
-
+@mogg_register("simd_load")
 @always_inline
 fn simd_load[
     type: DType, simd_width: Int, rank: Int
@@ -580,23 +501,11 @@ fn simd_load[
     index: StaticIntTuple[rank],
 ) -> SIMD[type, simd_width]:
     let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
-    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
-
-
-@always_inline
-fn simd_load_strided[
-    type: DType, simd_width: Int, rank: Int
-](
-    buffer: NDBuffer[rank, DimList.create_unknown[rank](), type],
-    index: StaticIntTuple[rank],
-) -> SIMD[type, simd_width]:
-    let flat_index = _compute_flat_index[type, rank, rank](buffer, index)
-
     let stride = buffer.dynamic_stride[rank - 1]
 
-    # We aren't loading from something of stride == 1 or stride == 0 then
-    # we have to use a gather load unfortunately.
-    if stride > 1:
+    if buffer.dynamic_stride[rank - 1] == 0:
+        return buffer.data.load(flat_index)
+    elif stride > 1:
 
         @parameter
         if type == DType.bool:
@@ -608,10 +517,10 @@ fn simd_load_strided[
             return strided_load[type, simd_width](
                 buffer.data.offset(flat_index), stride
             )
-    else:
-        return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
+    return _simd_load_internal[simd_width, type, rank](buffer, flat_index)
 
 
+@mogg_register("simd_store")
 @always_inline
 fn simd_store[
     type: DType, simd_width: Int, rank: Int
