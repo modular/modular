@@ -96,6 +96,15 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   return {};
 }
 
+/// Create an anonymous lifetime name for the specified value name that cannot
+/// collide with any other parameters.  This is done by prepending a ` and
+/// postpending a unique ID.
+StringAttr ASTDecl::getAnonymousLifetimeFor(StringAttr valueName) {
+  return StringAttr::get(valueName.getContext(),
+                         Twine("`") + valueName.strref() +
+                             Twine(anonymousLifetimeCounter++));
+}
+
 void ASTDecl::dump() const {
   // The value is either an operation or a type of MLIR `Value`.
   TypeSwitch<DeclIRValue>(getIRValue())

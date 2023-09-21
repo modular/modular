@@ -522,6 +522,7 @@ ValueRef ValueSet::getValueRef(Value value) const {
     return getFullValueRef(it->second);
 
   // If this is a GEP, check the base and focus in on a field of it.
+  // TODO(references) remove this.
   if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
     ValueRef baseVal = getValueRef(structGEP.getContainer());
     if (!baseVal || !baseVal.isIndirect)
@@ -538,10 +539,40 @@ ValueRef ValueSet::getValueRef(Value value) const {
                     /*isIndirect=*/true};
   }
 
+  // If this is a GER, check the base and focus in on a field of it.
+  if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
+    ValueRef baseVal = getValueRef(structGER.getContainer());
+    if (!baseVal || !baseVal.isIndirect)
+      return {};
+
+    // Figure out what subset of elements we have indexed to.
+    auto containerType = structGER.getContainer().getType().getElementAsType();
+    unsigned fieldOffset = typeDeclInfo.getFieldIndex(
+        cast<DeclRefType>(containerType), structGER.getFieldAttr());
+    unsigned startBit = baseVal.startBit + fieldOffset;
+    auto resultType = structGER.getType().getElementAsType();
+    return ValueRef{baseVal.valueId, startBit,
+                    startBit + typeDeclInfo.getNumFieldsInType(resultType),
+                    /*isIndirect=*/true};
+  }
+
   // If this is a load from a lifetime tracked indirect value, then this is a
   // borrow of that value.
   if (auto load = value.getDefiningOp<POP::LoadOp>())
     if (auto valueRef = getValueRef(load.getPtr())) {
+      if (valueRef.isIndirect) {
+        // We don't track trivial types, so make sure there is a destructor for
+        // the type loaded out.
+        if (!typeDeclInfo.getDestructorForType(load.getType()))
+          return {};
+
+        valueRef.isIndirect = false;
+        return valueRef;
+      }
+    }
+
+  if (auto load = value.getDefiningOp<RefLoadOp>())
+    if (auto valueRef = getValueRef(load.getRef())) {
       if (valueRef.isIndirect) {
         // We don't track trivial types, so make sure there is a destructor for
         // the type loaded out.
@@ -866,7 +897,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
     return;
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefToPointerOp>(op))
+  if (isa<StructGEPOp, RefStructGEROp, RefToPointerOp>(op))
     return;
 
   // A store of a whole value is an initialization.
@@ -878,7 +909,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
   }
 
   // A load is a use of whatever fields are being referenced.
-  if (isa<POP::LoadOp, LoadConsumeOp>(op)) {
+  if (isa<POP::LoadOp, RefLoadOp, LoadConsumeOp>(op)) {
     checkUse(op.getOperand(0), op);
     if (isa<LoadConsumeOp>(op))
       checkDef(op.getResult(0), op);
@@ -1394,7 +1425,7 @@ void DestructorInsertion::checkOp(Operation &op) {
   }
 
   // This op is handled when used.
-  if (isa<StructGEPOp, RefToPointerOp>(op))
+  if (isa<StructGEPOp, RefStructGEROp, RefToPointerOp>(op))
     return;
 
   // If this is a call, investigate each of the operands along with the
@@ -1474,6 +1505,10 @@ void DestructorInsertion::checkOp(Operation &op) {
   // value.
   if (auto loadOp = dyn_cast<POP::LoadOp>(op)) {
     checkUse(loadOp.getPtr(), op);
+    return;
+  }
+  if (auto loadOp = dyn_cast<RefLoadOp>(op)) {
+    checkUse(loadOp.getRef(), op);
     return;
   }
 

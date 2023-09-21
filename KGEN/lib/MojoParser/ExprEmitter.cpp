@@ -180,13 +180,14 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return cast<LValue>(representation).getRValueType();
 }
 
-/// If this ValueDest specifies an MLValue that will be returned by
-/// getMLValueForResult with the specified type, return it.  Otherwise return
-/// null.  This does not modify the ValueDest.
+/// If this ValueDest specifies an MLValue (or an XLValue) that will be
+/// returned by getMLValueForResult with the specified type, return it.
+/// Otherwise return null.
+/// TODO(references): switch this to return XLValue instead.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
-MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
-                                             ExprEmitter &emitter) {
+Value ValueDest::getDefinedXMLValueIfExists(ASTType resultType,
+                                            ExprEmitter &emitter) {
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
@@ -200,9 +201,15 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
-    if (auto slValue = lValue.getIfMLValue()) {
+    if (auto mlValue = lValue.getIfMLValue()) {
       if (lValue.getRValueType().isEqualCanon(resultType))
-        return slValue;
+        return mlValue;
+    }
+
+    // If emitting into an XLValue, convert the location to a pointer.
+    if (Value refValue = lValue.getIfXLValue()) {
+      if (lValue.getRValueType().isEqualCanon(resultType) && emitter.builder)
+        return refValue;
     }
   }
 
@@ -224,7 +231,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 /// will not consume the ValueDest, so any user should reemit the ultimate
 /// value through it with emitResult.
 ///
-/// NOTE: This needs to be kept in sync with getDefinedMLValueIfExists.
+/// NOTE: This needs to be kept in sync with getDefinedXMLValueIfExists.
 LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
                                      bool requireMLValue,
@@ -277,6 +284,15 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
+      }
+
+      // If we have an XLValue and required an MLValue, then convert.
+      if (Value refValue = lValue.getIfXLValue()) {
+        if (emitter.builder) {
+          representation = LValueBufferTaken(); // Buffer taken!
+          return MLValue(emitter.builder->create<RefToPointerOp>(
+              refValue.getLoc(), refValue));
+        }
       }
     }
 
@@ -684,6 +700,17 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
                                  ExprContext context) {
   if (auto mr = value.ir.getIfMRValue())
     return mr;
+
+  // Decay XRValues to MRValues on demand.
+  if (Value ref = value.ir.getIfXRValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    return MRValue(builder->create<RefToPointerOp>(
+        translateLocation(value.expr->getLoc()), ref));
+  }
+
   assert(value.ir.getIfPValue() && "expected a PValue if not an MRValue");
   return emitPValueToMRValue({value.ir.getIfPValue(), value.expr}, context);
 }
@@ -1629,6 +1656,7 @@ CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
 
 void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
                                           ExprEmitter &emitter) const {
+
   if (!emitter.builder) {
     emitter.emitErrorForDynamicValueInParameter(expr);
     return;
@@ -1639,14 +1667,14 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // store(tmp -> base)
   auto loc = expr->getLocation(emitter);
   ASTType rvalueType = baseVal.ir->elementType;
-  Type declIRType = PointerType::get(rvalueType);
   auto nameAttr = StringAttr::get(loc.getContext(), "__store_tmp__");
-  auto tmpDecl =
-      emitter.builder->create<VarLetDeclOp>(loc, declIRType, nameAttr,
-                                            /*isVar=*/false, /*isSynth=*/false);
+  auto lifetimeAttr = emitter.declScope.getAnonymousLifetimeFor(nameAttr);
+  Value tmpDecl = emitter.builder->create<VarLetDecl2Op>(
+      loc, rvalueType, nameAttr, lifetimeAttr,
+      /*isVar=*/false, /*isSynth=*/false);
 
   // Load the entire base LValue into tmpDecl.
-  ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
+  ValueDest tmpValueDest(XLValue(tmpDecl), EC_AttributeRefBase);
   auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
     tmpValueDest.resetForError();
@@ -1655,11 +1683,11 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store into the field.
   auto fieldPtr =
-      emitter.builder->create<StructGEPOp>(loc, tmpDecl, getField());
-  emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
+      emitter.builder->create<RefStructGEROp>(loc, tmpDecl, getField());
+  emitter.emitStoreToLValue(value, XLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transfering ownership as an MRValue.
-  baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
+  baseVal.ir->emitStore({XRValue(tmpDecl), expr}, emitter);
 }
 
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {

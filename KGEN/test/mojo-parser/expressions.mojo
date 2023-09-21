@@ -971,12 +971,15 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = arr[x]
 
-  # CHECK: [[ANON:%.*]] = lit.varlet.decl "__store_tmp__"
-  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANON]], %arr, %x)
-  # CHECK: [[XP:%.*]] = lit.struct.gep %__store_tmp__[x]
+  # CHECK: [[ANON:%.*]] = lit.varlet.decl2 "__store_tmp__"
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__0">
+  # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer [[ANON]]
+  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[ANONPTR]], %arr, %x)
+  # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
   # CHECK: %[[C1:.*]] = {{.*}}constant{{.*}} = 1
-  # CHECK: pop.store %[[C1:.*]], [[XP]]
-  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANON]])
+  # CHECK: lit.ref.store %[[C1:.*]], [[XP]]
+  # CHECK: [[ANONPTR:%.*]] = lit.ref.to_pointer [[ANON]]
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[ANONPTR]])
   arr[x].x = 1
 
   # Initialize in memory through a temp + setitem.
@@ -985,11 +988,14 @@ fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: Memo
   # CHECK: kgen.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
 
-  # CHECK: [[STORETMP:%.*]] = lit.varlet.decl "__store_tmp__"
-  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[STORETMP]], %arr, %x)
-  # CHECK: [[XP:%.*]] = lit.struct.gep [[STORETMP]][x]
-  # CHECK:  pop.store {{.*}}, [[XP]]
-  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[STORETMP]])
+  # CHECK: [[STORETMP:%.*]] = lit.varlet.decl2 "__store_tmp__"
+  # CHECK-SAME: : !lit.ref<mut !MemoryOnlyInt, *"`__store_tmp__1">
+  # CHECK: [[STORETMPPTR:%.*]] = lit.ref.to_pointer [[STORETMP]]
+  # CHECK: kgen.call {{.*}}__getitem__{{.*}}([[STORETMPPTR]], %arr, %x)
+  # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
+  # CHECK: lit.ref.store {{.*}}, [[XP]]
+  # CHECK: [[STORETMPPTR:%.*]] = lit.ref.to_pointer [[STORETMP]]
+  # CHECK: kgen.call {{.*}}__setitem__{{.*}}(%arr, %x, [[STORETMPPTR]])
   arr[x].x += 1
 
 
