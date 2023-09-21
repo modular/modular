@@ -550,7 +550,6 @@ fn broadcast_shape[
     lhs_type: DType,
     rhs_type: DType,
     out_type: DType,
-    # single_thread_blocking_override: Bool,
 ](
     lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
     rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
@@ -569,7 +568,6 @@ fn broadcast_shape_impl[
     lhs_type: DType,
     rhs_type: DType,
     out_type: DType,
-    # single_thread_blocking_override: Bool,
 ](
     lhs_buf: NDBuffer[1, DimList.create_unknown[1](), lhs_type],
     rhs_buf: NDBuffer[1, DimList.create_unknown[1](), rhs_type],
