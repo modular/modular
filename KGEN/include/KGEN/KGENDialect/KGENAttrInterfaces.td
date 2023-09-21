@@ -105,6 +105,12 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     }], "void", "printSignature", (ins "AsmPrinter &":$p,
                                        "SignatureType":$sig)>,
     InterfaceMethod<[{
+      Get a new metadata attribute for a signature where the parameters
+      indicated by set bits in `boundParams` been removed from the signature by
+      being explicitly bound to values, such as in call signatures.
+    }], "FnMetadataAttrInterface", "getWithBoundParams", (ins
+      "const llvm::BitVector &":$boundParams)>,
+    InterfaceMethod<[{
       Get a new metadata attribute for a signature where the first `numBound`
       arguments have been removed from the signature by being explicitly bound
       to values, such as in closure formation.
