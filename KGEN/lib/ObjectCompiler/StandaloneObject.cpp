@@ -610,7 +610,7 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
 
   WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
   options.print(*produceStandaloneArchiveKey << "produceStandaloneArchive(");
-  *produceStandaloneArchiveKey << ")";
+  *produceStandaloneArchiveKey << ", isJIT=" << isJIT << ')';
 
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
