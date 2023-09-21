@@ -45,6 +45,16 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  // Global variable references start and end initialzied.
+  if (auto globalRef = v.getDefiningOp<GlobalVarRefOp>()) {
+    // FIXME: The global variable's name is attached to the symbol op.
+    name = StringAttr::get(v.getContext(), "(global variable)");
+    isIndirect = true;
+    startsUninit = false;
+    endsUninit = false;
+    return;
+  }
+
   if (auto loadConsume = v.getDefiningOp<LoadConsumeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;

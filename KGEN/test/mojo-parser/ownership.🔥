@@ -405,7 +405,7 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
   # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
   # before the overwrite.
 
-  # CHECK-NEXT: [[PTR:%.*]]  = lit.ownership.make.pointer.lvalue %ptr live_on_entry = true, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make.pointer.lvalue %ptr live_on_entry = true, exit = true
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_lvalue(ptr) = MemExample()

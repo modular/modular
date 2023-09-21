@@ -401,7 +401,7 @@ struct ValueSet {
     if (val) {
       if (auto varLet = val.getDefiningOp<VarLetDeclOp>())
         isLet = !varLet.getIsVar();
-      if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
+      else if (auto varLet = val.getDefiningOp<VarLetDecl2Op>())
         isLet = !varLet.getIsVar();
     }
 
@@ -1320,13 +1320,23 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   Block &funcBody = func.getFunctionBody().front();
   scanBlock(funcBody);
 
-  // If any owned argument values are unconsumed then they must be unused. Emit
-  // their destructor calls at the start of the function by acting as though
-  // there is a use.
   for (auto [valueID, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
     if (valueInfo.startsUninit || valueID == 0)
       continue;
 
+    // If an op result initialized on entry was overwritten, make sure to
+    // destroy the value.
+    if (auto result = dyn_cast<OpResult>(valueInfo.value)) {
+      Operation *op = result.getOwner();
+      mlir::ImplicitLocOpBuilder builder(result.getLoc(), op->getBlock(),
+                                         ++op->getIterator());
+      checkUse(valueInfo.value, builder, /*opWithUse=*/nullptr);
+      continue;
+    }
+
+    // If any owned argument values are unconsumed then they must be unused.
+    // Emit their destructor calls at the start of the function by acting as
+    // though there is a use.
     Location loc = valueInfo.value.getLoc();
     if (DebugInfo::DISubprogramAttr scope =
             DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
@@ -1789,7 +1799,7 @@ void DestructorInsertion::checkUse(Value value,
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
 void DestructorInsertion::checkDef(Value value, Operation &op) {
-  // If there is no use of the value we are defined, emit a dtor after the op.
+  // If there is no use of the value we are defining, emit a dtor after the op.
   // This happens when we have things like:
   //
   //   init(&aggregate)

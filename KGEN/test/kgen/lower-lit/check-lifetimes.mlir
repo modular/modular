@@ -352,9 +352,10 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
 
 // COM: Verify that initialized values are masked out of the function value set.
 
-lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !kgen.signature<(!kgen.pointer<@MyStruct> owned_in_mem) -> !lit.none>} {
+lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__> : !kgen.signature<(!kgen.pointer<@MyStruct> owned_in_mem) -> !lit.none>} {
   lit.struct.field a : index
 }
+
 
 lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none {
   %1 = kgen.param.constant: !lit.none = <#lit.none>
@@ -378,6 +379,44 @@ lit.func @nestedLocalValueThatNeedsDestruct(%cond1: i1, %cond2: i1) -> !lit.none
     hlcf.yield
   }
   kgen.return %1 : !lit.none
+}
+
+lit.globalvar.decl @x : !kgen.declref<@MyStruct> isVar {}, {}
+
+// CHECK-LABEL: lit.func @byref_result_global_ref
+lit.func @byref_result_global_ref() {
+  // CHECK-NEXT: lit.globalvar.ref @x
+  %0 = lit.globalvar.ref @x : <@MyStruct>
+  // CHECK-NEXT: call @MyStruct::@__del__
+  // CHECK-NEXT: call @memory_result
+  kgen.call @memory_result(%0) : !lit.signature<(!kgen.pointer<@MyStruct> byref_result) -> ()>
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @global_ref_no_use
+lit.func @global_ref_no_use() {
+  // CHECK-NOT: call @MyStruct::@__del__
+  %0 = lit.globalvar.ref @x : <@MyStruct>
+  kgen.return
+}
+
+// -----
+
+lit.struct.decl @MyRegStruct attributes {destructor = #kgen.symbol.constant<@MyRegStruct::@__del__> : !kgen.signature<(!kgen.declref<@MyRegStruct>) -> !lit.none>} {
+  lit.struct.field a : index
+}
+
+lit.globalvar.decl @y : !kgen.declref<@MyRegStruct> isVar {}, {}
+
+// CHECK-LABEL: lit.func @global_ref_reg_store
+lit.func @global_ref_reg_store(%x: !kgen.declref<@MyRegStruct> borrow) {
+  // CHECK-NEXT: %0 = lit.globalvar.ref @y
+  %0 = lit.globalvar.ref @y : <@MyRegStruct>
+  // CHECK-NEXT: %1 = pop.load %0
+  // CHECK-NEXT: call @MyRegStruct::@__del__(%1)
+  // CHECK-NEXT: pop.store %x, %0
+  pop.store %x, %0 : !kgen.pointer<@MyRegStruct>
+  kgen.return
 }
 
 // -----

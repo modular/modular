@@ -43,7 +43,7 @@ struct LifetimeTrackable {
   /// starts out initialized.
   bool startsUninit = false;
 
-  /// This is true if the value is uninitialized at function exist, false if it
+  /// This is true if the value is uninitialized at function exit, false if it
   /// ends up defined (e.g. as with a byref argument).
   bool endsUninit = false;
 
