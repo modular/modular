@@ -22,6 +22,16 @@
 COMPILERRT_EXPORT LLVM_ATTRIBUTE_USED bool KGEN_CompilerRT_Initialize();
 
 //===----------------------------------------------------------------------===//
+// Globals.cpp
+//===----------------------------------------------------------------------===//
+
+namespace M::KGEN {
+/// Register the global handling functions.
+void registerGlobals(
+    std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
+} // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
 // InitIntelAMX.cpp
 //===----------------------------------------------------------------------===//
 

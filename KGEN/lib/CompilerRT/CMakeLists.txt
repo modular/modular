@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 set(SOURCES
+  Globals.cpp
   InitIntelAMX.cpp
   Initialize.cpp
   LLCL.cpp

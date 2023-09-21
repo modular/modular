@@ -22,7 +22,9 @@ class bar:
 # CHECK-NOT: (PythonObject) a =
 # CHECK: (PythonObject) b = {
 # CHECK:   (PyObjectPtr) py_object = {
-# CHECK:     (pointer<scalar<si8>>) value = 0x
+# CHECK:     (DTypePointer[si8]) value = {
+# CHECK:       (pointer<scalar<si8>>) address = 0x
+# CHECK:     }
 # CHECK:   }
 # CHECK: }
 # CHECK: (PythonObject) foo =
