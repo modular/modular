@@ -218,6 +218,10 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultArguments() {
   return getMetadata().getDefaultArguments();
 }
 
+ArrayRef<TypedAttr> LITSignatureType::getDefaultParameters() {
+  return getMetadata().getDefaultParameters();
+}
+
 bool LITSignatureType::classof(SignatureType type) {
   return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
 }

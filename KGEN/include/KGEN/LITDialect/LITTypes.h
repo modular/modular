@@ -39,6 +39,9 @@ public:
   /// Get the function default arguments.
   ArrayRef<TypedAttr> getDefaultArguments();
 
+  /// Get the function's default parameters.
+  ArrayRef<TypedAttr> getDefaultParameters();
+
   /// A `SignatureType` is a LIT signature if it contains function metadata.
   static bool classof(SignatureType type);
   static bool classof(Type type);
