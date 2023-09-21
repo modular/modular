@@ -100,8 +100,22 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   auto bbArg = dyn_cast<BlockArgument>(v);
   if (!bbArg || !bbArg.getOwner())
     return;
-  LITSignatureType signature;
   Operation *parentOp = bbArg.getOwner()->getParentOp();
+  /// FIXME: https://github.com/modularml/modular/issues/21818
+  if (auto tryBlock = dyn_cast<LIT::TryOp>(parentOp)) {
+    // Except blocks own the error instance(s) they accept.
+    // We assume that except blocks only have error typed arguments.
+    if (bbArg.getOwner() == &tryBlock.getExceptRegion().front()) {
+      isIndirect = false;
+      startsUninit = true;
+      endsUninit = true;
+      name = StringAttr::get(v.getContext(), "(error argument # " +
+                                                 Twine(bbArg.getArgNumber()) +
+                                                 ")");
+      return;
+    }
+  }
+  LITSignatureType signature;
   if (auto func = dyn_cast<LIT::FuncOp>(parentOp))
     signature = func.getSignature();
   else

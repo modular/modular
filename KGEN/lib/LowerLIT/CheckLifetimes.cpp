@@ -1129,6 +1129,9 @@ void UninitializedValueScan::checkOp(Operation &op) {
     bodySets.scanBlock(tryOp.getTryRegion().front());
 
     // The live-ins to the except block are the exceptSet.
+    for (Value arg : tryOp.getExceptRegion().getArguments())
+      if (ValueRef ref = valueSet.getValueRef(arg))
+        ref.markBits(exceptSet, true);
     liveValues = std::move(exceptSet);
     everMutatedValues = std::move(exceptEverMutatedSet);
     scanBlock(tryOp.getExceptRegion().front());
@@ -1625,6 +1628,24 @@ void DestructorInsertion::checkOp(Operation &op) {
     auto exceptSets = DestructorInsertion::copy(*this);
     exceptSets.raiseSet = raiseSet;
     exceptSets.scanBlock(tryOp.getExceptRegion().front());
+    // The except block initializes its block arguments, so if these are tracked
+    // we must mark them as consumed.
+    for (Value blockArg : tryOp.getExceptRegion().getArguments())
+      if (ValueRef valueRef = valueSet.getValueRef(blockArg)) {
+        if (!exceptSets.consumedValues[valueRef.startBit]) {
+          // There were no references to the owned arguments, so generate a
+          // destructor at beginning of the block.
+          mlir::ImplicitLocOpBuilder builder =
+              ImplicitLocOpBuilder::atBlockBegin(
+                  tryOp.getExceptRegion().getLoc(),
+                  &tryOp.getExceptRegion().front());
+          destroyValueIfNeeded(blockArg, valueRef, builder,
+                               /*opWithUse=*/nullptr);
+          valueRef.markBits(consumedValues, false);
+        } else {
+          valueRef.markBits(exceptSets.consumedValues, false);
+        }
+      }
 
     // The normal flow finishes with the else block, process it to see what the
     // input consumedValues set to the else block is.
