@@ -12,6 +12,7 @@
 #include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
@@ -96,7 +97,10 @@ static int doc(const State &state) {
   sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
   sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
-  mlir::MLIRContext context;
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  mlir::MLIRContext context(registry);
+
   CompilationOptions compilationOptions;
   LIT::ParserConfig parserConfig(&context, runtime, compilationOptions);
   parserConfig.warnMissingDocStrings =

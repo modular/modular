@@ -189,9 +189,6 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
   impl->experimentalLifetimes = config.experimentalLifetimes;
 
-  DialectRegistry registry;
-  registerAllKGENDialects(registry);
-  config.context->appendDialectRegistry(registry);
   config.context->loadDialect<DebugInfo::DebugInfoDialect, HLCF::HLCFDialect,
                               POP::POPDialect, LITDialect,
                               mlir::index::IndexDialect, KGENDialect>();
