@@ -779,7 +779,7 @@ try:
     let np2 = foo()
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-    print(e.value)
+    print(e.message())
 
 alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
