@@ -45,11 +45,18 @@ fn _get_dylib_function[
     return dylib.get_function[result_type](name)
 
 
-fn device_count() -> Int:
+fn _check_error(err: Result) raises:
+    if err != Result.SUCCESS:
+        raise Error(err.__str__())
+
+
+fn device_count() raises -> Int:
     var res: Int32 = 0
-    let ok = _get_dylib_function[fn (Pointer[Int32]) -> Result](
-        "cuDeviceGetCount"
-    )(Pointer.address_of(res))
+    _check_error(
+        _get_dylib_function[fn (Pointer[Int32]) -> Result]("cuDeviceGetCount")(
+            Pointer.address_of(res)
+        )
+    )
     return res.to_int()
 
 
@@ -78,7 +85,7 @@ struct Device:
     fn __init__(id: Int = 0) -> Self:
         return Self {id: id}
 
-    fn __str__(self) -> String:
+    fn __str__(self) raises -> String:
         let dylib = _get_dylib()
         var res = String("name: ") + self._name(dylib) + "\n"
         res += (
@@ -137,18 +144,24 @@ struct Device:
 
         return StringRef(buffer.address)
 
-    fn _total_memory(self, dylib: DLHandle) -> Int:
+    fn _total_memory(self, dylib: DLHandle) raises -> Int:
         var res: Int = 0
-        let ok = _get_dylib_function[fn (Pointer[Int], Device) -> Result](
-            dylib, "cuDeviceTotalMem_v2"
-        )(Pointer.address_of(res), self)
+        _check_error(
+            _get_dylib_function[fn (Pointer[Int], Device) -> Result](
+                dylib, "cuDeviceTotalMem_v2"
+            )(Pointer.address_of(res), self)
+        )
         return res
 
-    fn _query(self, dylib: DLHandle, attr: DeviceAttribute) -> Int:
+    fn _query(self, dylib: DLHandle, attr: DeviceAttribute) raises -> Int:
         var res: Int32 = 0
-        let ok = _get_dylib_function[
-            fn (Pointer[Int32], DeviceAttribute, Device) -> Result
-        ](dylib, "cuDeviceGetAttribute")(Pointer.address_of(res), attr, self)
+        _check_error(
+            _get_dylib_function[
+                fn (Pointer[Int32], DeviceAttribute, Device) -> Result
+            ](dylib, "cuDeviceGetAttribute")(
+                Pointer.address_of(res), attr, self
+            )
+        )
         return res.to_int()
 
 
@@ -690,7 +703,7 @@ struct Result:
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __str__(self) -> String:
+    fn __str__(self) -> StringRef:
         if self == Result.SUCCESS:
             return "SUCCESS"
         elif self == Result.INVALID_VALUE:
