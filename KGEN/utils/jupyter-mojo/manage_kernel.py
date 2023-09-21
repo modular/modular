@@ -18,13 +18,6 @@ def create_argparser() -> argparse.ArgumentParser:
     """Helper for CL option definition and parsing logic."""
     parser = argparse.ArgumentParser()
 
-    # Stub argument used when invoked from the mojo SDK installer.
-    parser.add_argument(
-        "-installer-outfile",
-        help="Stub argument used when invoked from the mojo SDK installer.",
-        type=str,
-    )
-
     subparsers = parser.add_subparsers(help="sub-command help", dest="command")
     common_parser = argparse.ArgumentParser(add_help=False)
 
