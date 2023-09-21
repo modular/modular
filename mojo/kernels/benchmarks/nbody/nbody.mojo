@@ -98,7 +98,6 @@ fn energy(bodies: StaticTuple[NUM_BODIES, Planet]) -> Float64:
 
 
 fn run():
-
     let Sun = Planet(
         0,
         0,
