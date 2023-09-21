@@ -52,4 +52,4 @@ fn main():
         let m = MemType1(42)
         let x = PartialInitType(3, m)
     except e:
-        print(e.value)
+        print(e.message())
