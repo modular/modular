@@ -1,0 +1,221 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: %mojo -debug-level full %s | FileCheck %s
+
+from Cumsum import cumsum
+from memory.buffer import Buffer, NDBuffer
+from math import iota
+
+
+# CHECK-LABEL: test_cumsum_1d
+# CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,
+fn test_cumsum_1d():
+    print("== test_cumsum_1d")
+    alias exclusive = 0
+    alias reverse = 0
+    alias axis = 0
+
+    var vec_data = DTypePointer[DType.float64].alloc(5)
+    let vec = Buffer[5, DType.float64](vec_data)
+
+    iota[DType.float64](vec_data, 5, 1)
+
+    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+
+    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+
+    for i in range(5):
+        print_no_newline(cumsum_vec[i], ",")
+    print()
+
+    vec_data.free()
+
+
+# CHECK-LABEL: test_cumsum_1d_exclusive
+# CHECK: 0.0 ,1.0 ,3.0 ,6.0 ,10.0 ,
+fn test_cumsum_1d_exclusive():
+    print("== test_cumsum_1d_exclusive")
+    alias exclusive = 1
+    alias reverse = 0
+    alias axis = 0
+
+    var vec_data = DTypePointer[DType.float64].alloc(5)
+    let vec = Buffer[5, DType.float64](vec_data)
+
+    iota[DType.float64](vec_data, 5, 1)
+
+    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+
+    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+
+    for i in range(5):
+        print_no_newline(cumsum_vec[i], ",")
+    print()
+
+    vec_data.free()
+
+
+# CHECK-LABEL: test_cumsum_1d_reverse
+# CHECK: 15.0 ,14.0 ,12.0 ,9.0 ,5.0 ,
+fn test_cumsum_1d_reverse():
+    print("== test_cumsum_1d_reverse")
+    alias exclusive = 0
+    alias reverse = 1
+    alias axis = 0
+
+    var vec_data = DTypePointer[DType.float64].alloc(5)
+    let vec = Buffer[5, DType.float64](vec_data)
+
+    iota[DType.float64](vec_data, 5, 1)
+
+    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+
+    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+
+    for i in range(5):
+        print_no_newline(cumsum_vec[i], ",")
+    print()
+
+    vec_data.free()
+
+
+# CHECK-LABEL: test_cumsum_1d_reverse_exclusive
+# CHECK: 14.0 ,12.0 ,9.0 ,5.0 ,0.0 ,
+fn test_cumsum_1d_reverse_exclusive():
+    print("== test_cumsum_1d_reverse_exclusive")
+    alias exclusive = 1
+    alias reverse = 1
+    alias axis = 0
+
+    var vec_data = DTypePointer[DType.float64].alloc(5)
+    let vec = Buffer[5, DType.float64](vec_data)
+
+    iota[DType.float64](vec_data, 5, 1)
+
+    let cumsum_vec = Buffer[5, DType.float64].stack_allocation()
+
+    cumsum[1, 5, DType.float64, exclusive, reverse, axis](cumsum_vec, vec)
+
+    for i in range(5):
+        print_no_newline(cumsum_vec[i], ",")
+    print()
+
+    vec_data.free()
+
+
+# CHECK-LABEL: test_cumsum_2d_axis_0
+# CHECK: 1.0 ,2.0 ,3.0 ,5.0 ,7.0 ,9.0 ,
+fn test_cumsum_2d_axis_0():
+    print("== test_cumsum_2d_axis_0")
+    alias exclusive = 0
+    alias reverse = 0
+    alias axis = 0
+
+    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ](matrix_data, DimList(2, 3))
+
+    iota[DType.float64](matrix_data, 6, 1)
+
+    let cumsum_matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ].stack_allocation()
+
+    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    )
+
+    for i in range(2):
+        for j in range(3):
+            print_no_newline(cumsum_matrix[i, j], ",")
+    print()
+
+    matrix_data.free()
+
+
+# CHECK-LABEL: test_cumsum_2d_axis_1
+# CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
+fn test_cumsum_2d_axis_1():
+    print("== test_cumsum_2d_axis_1")
+    alias exclusive = 0
+    alias reverse = 0
+    alias axis = 1
+
+    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ](matrix_data, DimList(2, 3))
+
+    iota[DType.float64](matrix_data, 6, 1)
+
+    let cumsum_matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ].stack_allocation()
+
+    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    )
+
+    for i in range(2):
+        for j in range(3):
+            print_no_newline(cumsum_matrix[i, j], ",")
+    print()
+
+    matrix_data.free()
+
+
+# CHECK-LABEL: test_cumsum_2d_negative_axis
+# CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
+fn test_cumsum_2d_negative_axis():
+    print("== test_cumsum_2d_negative_axis")
+    alias exclusive = 0
+    alias reverse = 0
+    alias axis = -1
+
+    var matrix_data = DTypePointer[DType.float64].alloc(6)
+    let matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ](matrix_data, DimList(2, 3))
+
+    iota[DType.float64](matrix_data, 6, 1)
+
+    let cumsum_matrix = NDBuffer[
+        2,
+        DimList(2, 3),
+        DType.float64,
+    ].stack_allocation()
+
+    cumsum[2, 6, DType.float64, exclusive, reverse, axis](
+        cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown()
+    )
+
+    for i in range(2):
+        for j in range(3):
+            print_no_newline(cumsum_matrix[i, j], ",")
+    print()
+
+    matrix_data.free()
+
+
+fn main():
+    test_cumsum_1d()
+    test_cumsum_1d_exclusive()
+    test_cumsum_1d_reverse()
+    test_cumsum_1d_reverse_exclusive()
+    test_cumsum_2d_axis_0()
+    test_cumsum_2d_axis_1()
+    test_cumsum_2d_negative_axis()
