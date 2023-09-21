@@ -7,6 +7,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
@@ -61,6 +62,10 @@ int main(int argc, char *argv[]) {
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
         sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+
+        DialectRegistry registry;
+        registerAllKGENDialects(registry);
+        context->appendDialectRegistry(registry);
 
         // Set up the runtime.
         std::unique_ptr<LLCL::Runtime> runtime = clOptions.createRuntime();

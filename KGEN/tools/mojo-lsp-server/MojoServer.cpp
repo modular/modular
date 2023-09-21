@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoServer.h"
+#include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MojoDocument.h"
 
 #include "KGEN/LITDialect/LITOps.h"
@@ -462,6 +463,10 @@ struct MojoDocument::Context {
         parserConfig(&mlirContext, mainDoc.getRuntime(), compilationOptions),
         symbolIndex(mainDoc), parserListener(mainDoc, symbolIndex) {
     parserConfig.parserListener = &parserListener;
+
+    DialectRegistry registry;
+    registerAllKGENDialects(registry);
+    parserConfig.context->appendDialectRegistry(registry);
 
     // TODO: Enable full caching here when we can symbolize references from
     // IR. We can enable references from imported modules though, as we just

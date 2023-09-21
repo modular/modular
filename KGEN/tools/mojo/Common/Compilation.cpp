@@ -158,6 +158,10 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   mlir::DefaultTimingManager timingManager;
   mlir::TimingScope timing = timingManager.getRootScope();
 
+  DialectRegistry registry;
+  registerAllKGENDialects(registry);
+  ctx->appendDialectRegistry(registry);
+
   // Parse the input Mojo file into an MLIR module.
   ParserConfig parseConfig(ctx, runtime, compilationOptions);
   parseConfig.warnMissingDocStrings = args.hasArg(docWarnMissingId);
