@@ -140,7 +140,7 @@ struct Device:
     fn _total_memory(self, dylib: DLHandle) -> Int:
         var res: Int = 0
         let ok = _get_dylib_function[fn (Pointer[Int], Device) -> Result](
-            dylib, "cuDeviceTotalMem"
+            dylib, "cuDeviceTotalMem_v2"
         )(Pointer.address_of(res), self)
         return res
 
