@@ -15,6 +15,13 @@
 #include "llvm/Support/Program.h"
 #include <filesystem>
 
+#if defined(_WIN32)
+#include <process.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 using namespace M;
 
 /// Returns the path to the `lldb` executable, or an error if not found.
@@ -69,5 +76,17 @@ int M::invokeLLDB(const State &state, llvm::opt::InputArgList &args,
   lldbArgs.insert(lldbArgs.begin(),
                   {lldb.get(), "-Q", "--one-line-before-file", loadCommand});
   lldbArgs.insert(lldbArgs.end(), extraOptions);
-  return llvm::sys::ExecuteAndWait(lldb.get(), lldbArgs);
+
+  // We use execv to ensure LLDB replaces the same process so that we can more
+  // easily debug it with `lldb -- mojo lldb` or `lldb -- mojo repl`.
+  size_t size = lldbArgs.size();
+  char **execvArgs = new char *[size + 1];
+  for (size_t i = 0; i < size; ++i)
+    execvArgs[i] = const_cast<char *>(lldbArgs[i].data());
+  execvArgs[size] = nullptr;
+#if defined(_WIN32)
+  return _execv(lldb.get().c_str(), execvArgs);
+#else
+  return execv(lldb.get().c_str(), execvArgs);
+#endif
 }
