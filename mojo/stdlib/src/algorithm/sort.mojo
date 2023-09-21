@@ -95,7 +95,7 @@ fn _partition[
 
 fn _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
-    return bitwidthof[DType.index]() - ctlz(size | 1) - 1
+    return max(2, bitwidthof[DType.index]() - ctlz(size | 1) - 1)
 
 
 fn _quicksort[
