@@ -42,6 +42,13 @@ KGEN_CompilerRT_RandomUInt64(std::default_random_engine *engine, uint64_t min,
   return dist(*engine);
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT double
+KGEN_CompilerRT_NormalDouble(std::default_random_engine *engine, double mean,
+                             double var) {
+  std::normal_distribution<double> dist{mean, var};
+  return dist(*engine);
+}
+
 void M::KGEN::registerRandom(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_GetRandomState",
@@ -54,4 +61,6 @@ void M::KGEN::registerRandom(
       {"KGEN_CompilerRT_RandomSInt64", (void *)&KGEN_CompilerRT_RandomSInt64});
   funcs.push_back(
       {"KGEN_CompilerRT_RandomUInt64", (void *)&KGEN_CompilerRT_RandomUInt64});
+  funcs.push_back(
+      {"KGEN_CompilerRT_NormalDouble", (void *)&KGEN_CompilerRT_RandomUInt64});
 }
