@@ -214,10 +214,11 @@ public:
   MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
                               ExprEmitter &emitter);
 
-  /// If this ValueDest specifies an MLValue that will be returned by
-  /// getMLValueForResult with the specified type, return it.  Otherwise return
-  /// null.
-  MLValue getDefinedMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
+  /// If this ValueDest specifies an MLValue (or an XLValue) that will be
+  /// returned by getMLValueForResult with the specified type, return it.
+  /// Otherwise return null.
+  /// TODO(references): switch this to return XLValue instead.
+  Value getDefinedXMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.

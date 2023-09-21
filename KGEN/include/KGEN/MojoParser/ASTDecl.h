@@ -177,6 +177,11 @@ public:
   /// to persist until body resolution.
   void setBodyDecorators(ArrayRef<ExprNode *> decorators, SharedState &state);
 
+  /// Create an anonymous lifetime name for the specified value name that cannot
+  /// collide with any other parameters.  This is done by prepending a ` and
+  /// postpending a unique ID.
+  StringAttr getAnonymousLifetimeFor(StringAttr valueName);
+
 private:
   /// This is set to true if there is an entry for body-decorators in a backing
   /// hashtable.  Clients should use "getBodyDecorators().
@@ -187,6 +192,10 @@ private:
   /// than source decls, and e.g., do not resolve in the same way as source
   /// decls.
   bool loadedFromBytecode = false;
+
+  /// Anonymous lifetimes are given unique names so their parameters don't
+  /// collide.  This is the next ID number to assign.
+  unsigned anonymousLifetimeCounter = 0;
 
   friend class DeclResolver;
   friend class SharedState;

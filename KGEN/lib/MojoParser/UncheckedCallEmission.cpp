@@ -388,7 +388,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
-  Value destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
+  Value destBuffer = dest.getDefinedXMLValueIfExists(destRValueType, emitter);
   if (!destBuffer)
     return true;
 

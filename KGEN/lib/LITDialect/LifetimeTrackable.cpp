@@ -155,6 +155,9 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
     if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
       hadGEP = true;
       value = structGEP.getContainer();
+    } else if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
+      hadGEP = true;
+      value = structGER.getContainer();
     } else if (auto refToPointer = value.getDefiningOp<RefToPointerOp>()) {
       value = refToPointer.getRef();
     } else {
