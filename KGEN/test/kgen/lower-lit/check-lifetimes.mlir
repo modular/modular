@@ -89,6 +89,10 @@ lit.file_module @check_lifetimes {
 
 // -----
 
+lit.struct.decl @Error {
+  lit.struct.field a : index
+}
+
 lit.struct.decl @S attributes {destructor = #kgen.symbol.constant<@S::@"__del__" > : !kgen.signature<(!kgen.pointer<@S> owned_in_mem) -> !lit.none>} {
   lit.struct.field a : index
   lit.func @__init__(%self: !kgen.pointer<@S> init_self) -> !lit.none {
@@ -475,7 +479,7 @@ lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStru
   lit.struct.field str : !kgen.declref<@SomeData>
 }
 
-// CHECK: lit.func @init
+// CHECK-LABEL: lit.func @init
 lit.func @init(%self: !kgen.pointer<@MyStruct> init_self) {
   // CHECK-NEXT: debuginfo.value #local_variable
   debuginfo.value #local_variable = %self : !kgen.pointer<@MyStruct> loc(#loc)
@@ -483,3 +487,76 @@ lit.func @init(%self: !kgen.pointer<@MyStruct> init_self) {
   %2 = kgen.call @bar(%self) : (!kgen.pointer<@MyStruct> init_self) -> !lit.none loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
+
+// -----
+
+// COM: Test that destructors are inserted for error instances.
+
+!Error = !kgen.declref<@Error>
+
+// CHECK-LABEL: lit.struct.decl @Error
+lit.struct.decl @Error attributes {destructor = #kgen.symbol.constant<@Error::@__del__ > : !kgen.signature<(!Error) -> !lit.none>, registerPassable = 1 : i8}  {
+  lit.struct.field a : index
+  lit.func @__init__() -> !Error {
+     %idx0 = index.constant 0
+     %0 = lit.struct.create(a=%idx0) : (index) -> !Error
+     kgen.return %0 : !Error
+  }
+}
+
+lit.func @doSomething(%e: !Error borrow) {
+   kgen.return
+}
+
+lit.func @i_raise() throws -> !pop.variant<!Error, index> {
+  %0 = kgen.call @Error::@__init__() : () ownedresult -> !Error
+  %1 = pop.variant.create %0 : !Error -> !pop.variant<!Error, index>
+  lit.error_return %1 : <!Error, index>
+}
+
+// CHECK-LABEL: lit.func @eatErrorNoRef
+lit.func @eatErrorNoRef() {
+  lit.try {
+    %3 = kgen.call @i_raise() : !lit.signature<() throws -> !pop.variant<!Error, index>>
+    %4 = lit.handle_variant %3 : (!pop.variant<!Error, index>) -> index {
+      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as index
+      lit.yield %6 : index
+    } else {
+      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as !Error
+      lit.try.raise %6 : !Error
+    }
+    lit.try.yield
+  } except (%arg0: !Error) {
+    // CHECK: except
+    // CHECK-NEXT: %0 = kgen.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !lit.none
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @eatErrorRef
+lit.func @eatErrorRef() {
+  lit.try {
+    %3 = kgen.call @i_raise() : !lit.signature<() throws -> !pop.variant<!Error, index>>
+    %4 = lit.handle_variant %3 : (!pop.variant<!Error, index>) -> index {
+      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as index
+      lit.yield %6 : index
+    } else {
+      %6 = pop.variant.get %3 : !pop.variant<!Error, index> as !Error
+      lit.try.raise %6 : !Error
+    }
+    lit.try.yield
+  } except (%arg0: !Error) {
+    // CHECK: except
+    // CHECK-NEXT: kgen.call @doSomething(%arg0)
+    // CHECK-NEXT: kgen.call @Error::@__del__(%arg0) : (!kgen.declref<@Error>) -> !lit.none
+    kgen.call @doSomething(%arg0) : !lit.signature<("e": !Error borrow) -> !lit.none>
+    lit.try.yield
+  } else {
+    lit.try.yield
+  }
+  kgen.return
+}

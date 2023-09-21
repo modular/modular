@@ -167,6 +167,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     raise err
   # CHECK: } except (%arg0:
   except:
+    # CHECK-NEXT: kgen.call @{{.*}}Error::@"__del__{{.*}}"
     # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%a)
     a = MemExample()
     # CHECK-NEXT: lit.try.yield
@@ -186,6 +187,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: kgen.call @{{.*}}__del__{{.*}}(%b)
     raise err
   # CHECK: } except (%arg0:
+  # CHECK-NEXT: kgen.call @{{.*}}Error::@"__del__{{.*}}"
   # CHECK-NEXT: lit.try.yield
   except:
     pass
@@ -206,6 +208,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NOT: %c
     raise err
   # CHECK: } except (%arg0:
+  # CHECK-NEXT: kgen.call @{{.*}}Error::@"__del__{{.*}}"
   # CHECK-NEXT: lit.try.yield
   except:
     pass
@@ -226,6 +229,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NOT: %d
   # CHECK: } except (%arg0:
   except:
+    # CHECK-NEXT: kgen.call @{{.*}}Error::@"__del__{{.*}}"
     # CHECK-NEXT: kgen.call @{{.*}}__init__{{.*}}(%d)
     d = MemExample()
     # CHECK-NEXT: lit.try.yield
