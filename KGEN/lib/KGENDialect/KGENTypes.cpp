@@ -191,13 +191,13 @@ bool SignatureType::isKWVarArg(size_t index) {
 
 bool SignatureType::hasMemoryOnlyResult() {
   ArrayRef<ValueInputConvention> conventions = getInputConventions();
-  return conventions.size() >= 1 &&
+  return !conventions.empty() &&
          conventions[0] == ValueInputConvention::ByRefResult;
 }
 
 bool SignatureType::hasInitSelfResult() {
   ArrayRef<ValueInputConvention> conventions = getInputConventions();
-  return conventions.size() >= 1 &&
+  return !conventions.empty() &&
          conventions[0] == ValueInputConvention::InitSelf;
 }
 
@@ -224,7 +224,7 @@ SignatureType SignatureType::getSpecializedSignature(
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
     FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
-    FnEffects effects, Attribute metadata) {
+    FnEffects effects, FnMetadataAttrInterface metadata) {
   TimeTraceScope<> traceScope("SignatureType::getSpecializedSignature");
 
   // If the signature isn't parameterized, then there are no substitutions to
@@ -255,9 +255,10 @@ SignatureType SignatureType::getSpecializedSignature(
     return evaluator.getReboundType(type);
   };
 
-  unsigned paramNo = 0;
   SmallVector<Type, 16> unboundParamTypes;
-  for (auto [value, type] : llvm::zip(inputParamValues, inputParamTypes)) {
+  llvm::BitVector boundParams(inputParamTypes.size());
+  for (auto [paramNo, value, type] :
+       llvm::enumerate(inputParamValues, inputParamTypes)) {
     // Bound parameters are allowed to refine the type of subsequent parameters,
     // e.g. in `<ty: type, fn: () -> !kgen.paramref<ty>>`, the expected type of
     // the second parameter will be refined when the first parameter is bound.
@@ -282,9 +283,8 @@ SignatureType SignatureType::getSpecializedSignature(
       evaluator.addInputValue(value);
     } else {
       evaluator.addInputValue(value);
+      boundParams.set(paramNo);
     }
-
-    ++paramNo;
   }
 
   // FIXME: Signature typed attributes need to contain result parameter
@@ -294,13 +294,11 @@ SignatureType SignatureType::getSpecializedSignature(
         ParamIndexRefAttr::get(/*depth=*/-1, /*isResult=*/true, idx, type));
   }
 
-  // Remap the parameter decls and result parameter types.
-  SmallVector<Type, 16> newParamResultTypes;
+  // Remap the result parameter types, and input/result argument types. The size
+  // of the SmallVector here has been determined by manual microoptimizations.
+  SmallVector<Type, 16> newParamResultTypes, inputTypes, resultTypes;
   llvm::append_range(newParamResultTypes,
                      llvm::map_range(resultParamTypes, remapType));
-
-  // Remap the value types.
-  SmallVector<Type, 16> inputTypes, resultTypes;
   llvm::append_range(inputTypes,
                      llvm::map_range(values.getInputs(), remapType));
   llvm::append_range(resultTypes,
@@ -310,7 +308,8 @@ SignatureType SignatureType::getSpecializedSignature(
       FunctionType::get(values.getContext(), inputTypes, resultTypes),
       TypeArrayAttr::get(values.getContext(), unboundParamTypes),
       TypeArrayAttr::get(values.getContext(), newParamResultTypes),
-      inputConventions, effects, metadata);
+      inputConventions, effects,
+      metadata ? metadata.getWithBoundParams(boundParams) : nullptr);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {

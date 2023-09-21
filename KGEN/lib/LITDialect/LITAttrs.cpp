@@ -63,6 +63,22 @@ FnMetadataAttr::getWithBoundArgs(size_t numBound) const {
   return get(getContext(), newArgNames, newDefaultArgs);
 }
 
+FnMetadataAttrInterface
+FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
+  SmallVector<TypedAttr> newDefaultParams;
+
+  size_t numParams = boundParams.size();
+  ssize_t defaultIdx = getDefaultParameters().size() - numParams;
+  for (size_t idx = 0; idx < numParams; ++idx, ++defaultIdx) {
+    // TODO: handle parameter names when available.
+    if (defaultIdx >= 0 && !boundParams[idx])
+      newDefaultParams.emplace_back(getDefaultParameters()[defaultIdx]);
+  }
+
+  return get(getContext(), getArgNames(), getDefaultArguments(),
+             newDefaultParams);
+}
+
 LogicalResult FnMetadataAttr::verifySignature(
     function_ref<InFlightDiagnostic()> emitError,
     ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,

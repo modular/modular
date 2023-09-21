@@ -226,7 +226,7 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
       function_ref<InFlightDiagnostic()> emitErrorFn,
       ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
       FunctionType values, ArrayRef<ValueInputConvention> inputConventions,
-      FnEffects effects, Attribute metadata);
+      FnEffects effects, FnMetadataAttrInterface metadata);
 
     /// Return this signature type with the value signature replaced.
     SignatureType getWithValuesReplaced(FunctionType fnType);
