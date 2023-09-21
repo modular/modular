@@ -136,22 +136,49 @@ void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result);
 void printParamDecl(AsmPrinter &p, ParamDeclAttr decl);
 
-/// Parse and print ParamDeclArrayAttr as a canonical list of comma separated
-/// information.
-void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
-ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result);
+/// Type of hooks that customize parameter declaration printing.
+using ParamDeclPrintHookTy = function_ref<void(ParamDeclAttr decl)>;
+
+/// Type of hooks that customize parameter declaration parsing.
+using ParamDeclParseHookTy =
+    function_ref<ParseResult(SmallVectorImpl<ParamDeclAttr> &)>;
+
+/// Print a ParamDeclArrayAttr as a canonical list of comma separated
+/// information. If the element printing hook is provided, it is called by the
+/// given parser for each element in the list, and is responsible for printing
+/// the decl.
+void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls,
+                     ParamDeclPrintHookTy printElt = {});
+
+/// Parse a ParamDeclArrayAttr as a canonical list of comma separated
+/// information. If the element parsing hook is provided, it is called by the
+/// given parser for each element in the list, and is responsible for parsing
+/// the decl and placing it in the provided array.
+ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
+                            ParamDeclParseHookTy parseElt = {});
 
 /// Parse and print a parameter specification on a generator or region type. The
 /// parameter spec includes input parameter declarations and types and
-/// optionally result parameter declarations and types.
+/// optionally result parameter declarations and types. If the input element
+/// parsing hook is provided, it is called by the given parser for each element
+/// of the inputs, and is responsible for parsing the decl and placing it in the
+/// provided array.
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls);
 ParseResult parseOptionalParameterSpec(AsmParser &parser,
                                        ParamDeclArrayAttr &inputParamDecls,
-                                       ParamDeclArrayAttr &resultParamDecls);
+                                       ParamDeclArrayAttr &resultParamDecls,
+                                       ParamDeclParseHookTy parseInputElt = {});
+
+/// Print a parameter specification on a generator or region type. The parameter
+/// spec includes input parameter declarations and types and optionally result
+/// parameter declarations and types. If the input element printing hook is
+/// provided, it is called by the given parser for each element of the inputs,
+/// and is responsible for printing the decl.
 void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
-                                ArrayRef<ParamDeclAttr> resultParams = {});
+                                ArrayRef<ParamDeclAttr> resultParams = {},
+                                ParamDeclPrintHookTy printInputElt = {});
 void printOptionalParameterSpec(AsmPrinter &p, Operation *op,
                                 ArrayRef<ParamDeclAttr> inputParamDecls);
 
@@ -163,14 +190,21 @@ ParseResult parseInputConvention(AsmParser &p,
 void printInputConvention(AsmPrinter &p, ValueInputConvention convention);
 
 /// Print the parameter type signature if there are any input or result types.
+/// If the input type printing hook is provided, it is called by the given
+/// parser for each element of the inputs, and is responsible for printing the
+/// type.
 void printOptionalParamSignature(AsmPrinter &p, TypeArrayAttr inputParamTypes,
-                                 TypeArrayAttr resultParamTypes);
+                                 TypeArrayAttr resultParamTypes,
+                                 function_ref<void(Type)> printInputTy = {});
 
-/// Parse a parameter signature (input/result types) if present.
-ParseResult
-parseOptionalParamSignature(AsmParser &p,
-                            SmallVectorImpl<Type> &inputParamTypes,
-                            SmallVectorImpl<Type> &resultParamTypes);
+/// Parse a parameter signature (input/result types) if present. If the input
+/// type parsing hook is provided, it is called by the given parser for each
+/// element of the inputs, and is responsible for parsing the type and placing
+/// it in the provided array.
+ParseResult parseOptionalParamSignature(
+    AsmParser &p, SmallVectorImpl<Type> &inputParamTypes,
+    SmallVectorImpl<Type> &resultParamTypes,
+    function_ref<ParseResult(SmallVectorImpl<Type> &)> parseInputTy = {});
 
 ParseResult parseSignature(AsmParser &p, TypeAttr &signature);
 ParseResult parseSignature(AsmParser &p, Type &signature);

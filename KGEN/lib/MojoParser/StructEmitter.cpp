@@ -42,7 +42,7 @@ StructEmitter::createFunction(StringRef name, ArrayRef<Type> argTypes,
       StructDeclOp::RP_RegisterPassableTrivial)
     fnEffects.setOwnedRegisterResult();
 
-  auto metadata = FnMetadataAttr::get(builder.getContext(), argNames, {});
+  auto metadata = FnMetadataAttr::get(builder.getContext(), argNames);
   auto signature =
       SignatureType::get(fnType, {}, {}, argConventions, fnEffects, metadata);
 
