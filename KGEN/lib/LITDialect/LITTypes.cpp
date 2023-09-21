@@ -7,6 +7,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -97,11 +98,13 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
   SmallVector<Type> inputParamTypes, resultParamTypes;
-  if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes)))
+  SmallVector<TypedAttr> defaultParamValues;
+  if (failed(parseOptionalParamSignature(p, inputParamTypes, resultParamTypes,
+                                         defaultParamValues)))
     return failure();
 
   SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaults;
+  SmallVector<TypedAttr> argDefaults;
   SmallVector<ValueInputConvention> inputConventions;
   auto parseElt = [&]() -> Type {
     // Parse an optional argument name.
@@ -122,7 +125,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
       return {};
     if (defaultVal)
-      defaults.emplace_back(defaultVal);
+      argDefaults.emplace_back(defaultVal);
     return type;
   };
 
@@ -135,7 +138,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       [&] { return p.emitError(loc); }, functionType,
       TypeArrayAttr::get(p.getContext(), inputParamTypes),
       TypeArrayAttr::get(p.getContext(), resultParamTypes), inputConventions,
-      effects, FnMetadataAttr::get(p.getContext(), argNames, defaults));
+      effects,
+      FnMetadataAttr::get(p.getContext(), argNames, argDefaults,
+                          defaultParamValues));
   return success(!!signature);
 }
 
@@ -168,8 +173,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   p << "!lit.signature<";
   auto signature = ::cast<LITSignatureType>(sig);
   printOptionalParamSignature(p, signature.getInputParamTypes(),
-                              signature.getResultParamTypes());
-
+                              signature.getResultParamTypes(),
+                              signature.getMetadata().getDefaultParameters());
   auto printElt = [&](unsigned i) {
     StringAttr argName = signature.getArgName(i);
     if (!argName.empty()) {
@@ -246,17 +251,4 @@ LITSignatureType LITSignatureType::get(FunctionType values,
     metadata = FnMetadataAttr::get(values.getContext(), values.getNumInputs());
   return SignatureType::get(values, inputParams, resultParams, convs, effects,
                             metadata);
-}
-
-//===----------------------------------------------------------------------===//
-// Utilities
-//===----------------------------------------------------------------------===//
-
-/// Parse an optional default value of the given type. `defaultVal` is not
-/// modified if a default value was not present.
-ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
-                                           Type type) {
-  if (succeeded(p.parseOptionalEqual()))
-    return parseParamValue(p, defaultVal, type);
-  return success();
 }

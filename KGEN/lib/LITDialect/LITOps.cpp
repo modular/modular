@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -413,7 +414,9 @@ static ParseResult parseLITFunctionSignature(
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
     FunctionType &functionType, LITSignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParams, resultParams))
+
+  SmallVector<TypedAttr> defaultParams;
+  if (parseOptionalParameterSpec(p, inputParams, resultParams, defaultParams))
     return failure();
 
   SmallVector<StringAttr> argNames;
@@ -454,7 +457,7 @@ static ParseResult parseLITFunctionSignature(
 
   signature = IndexRefRemapper::remapToSignature(
       inputParams, resultParams, functionType, inputConventions, effects,
-      FnMetadataAttr::get(p.getContext(), argNames, defaults),
+      FnMetadataAttr::get(p.getContext(), argNames, defaults, defaultParams),
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -477,7 +480,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     }
   };
 
-  printOptionalParameterSpec(p, inputParams, resultParams);
+  printOptionalParameterSpec(p, inputParams, resultParams,
+                             signature.getMetadata().getDefaultParameters());
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);
 }
@@ -557,9 +561,9 @@ ParseResult LIT::FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     for (size_t i = 0; i < numPosArgs; ++i)
       newArgNames[i] = StringAttr::get(ctx);
 
-    auto newMetadata =
-        FnMetadataAttr::get(ctx, StringArrayAttr::get(ctx, newArgNames),
-                            metadata.getDefaultArguments());
+    auto newMetadata = FnMetadataAttr::get(
+        ctx, StringArrayAttr::get(ctx, newArgNames),
+        metadata.getDefaultArguments(), metadata.getDefaultParameters());
 
     signature = SignatureType::get(
         signature.getValues(), signature.getInputParamTypes(),

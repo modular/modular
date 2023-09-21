@@ -122,6 +122,14 @@ lit.func @no_names(index)
 
 // -----
 
+// expected-error @below {{'lit.func' expected parameter with default value}}
+lit.func @default_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
+  %0 = kgen.param.constant: !lit.none = <#lit.none>
+  lit.end_func
+}
+
+// -----
+
 kgen.generator @not_lit_func() {
   // expected-error @below {{'lit.return' op expected to be nested inside a `lit.func` operation}}
   lit.return

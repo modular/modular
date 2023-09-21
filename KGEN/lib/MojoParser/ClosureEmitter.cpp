@@ -88,7 +88,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, LITSignatureType sig) {
   // captured in the self argument we are inserting in this function.
 
   assert(callMemberArgNames.size() == callMemberInputConventions.size());
-  auto metadata = FnMetadataAttr::get(sig.getContext(), callMemberArgNames, {});
+  auto metadata = FnMetadataAttr::get(sig.getContext(), callMemberArgNames);
   return SignatureType::get(FunctionType::get(sig.getContext(),
                                               callMemberSignatureInputs,
                                               sig.getValueResults()),
@@ -384,7 +384,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       closureWrapperSignature.getInputParamTypes(),
       closureWrapperSignature.getResultParamTypes(), closureImplSigConventions,
       closureWrapperSignature.getFnEffects(),
-      FnMetadataAttr::get(ctx, closureImplSigArgNames, {}));
+      FnMetadataAttr::get(ctx, closureImplSigArgNames));
 
   std::pair<SignatureType, StringAttr> key(closureImplSignature,
                                            fileModuleOp.getSymNameAttrName());

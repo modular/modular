@@ -13,7 +13,6 @@
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITDialect.h"
-#include "Support/ForwardDecls.h"
 
 //===----------------------------------------------------------------------===//
 // SignatureType
@@ -54,11 +53,6 @@ public:
                               ArrayRef<ValueInputConvention> convs = {},
                               FnEffects effects = {}, Attribute metadata = {});
 };
-
-/// Parse an optional default value of the given type. `defaultVal` is not
-/// modified if a default value was not present.
-ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
-                                      Type type);
 } // namespace M::KGEN::LIT
 
 //===----------------------------------------------------------------------===//
