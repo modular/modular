@@ -76,6 +76,14 @@ public:
 
   Impl getImpl() const { return impl; }
 
+  /// Given a function with `numInputs` inputs, return true if the argument at
+  /// `index` is the variadic argument.
+  bool isVarArg(size_t numInputs, size_t index) {
+    // If the function has keyword varargs, the vararg index is the second last.
+    // Otherwise, it's the last.
+    return (index + 1 + hasKWVarArgs()) == numInputs;
+  }
+
 private:
   FnEffects set(Impl bit, bool value) {
     impl = impl::bitEnumSet(impl, bit, value);

@@ -413,17 +413,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // If any of the arguments might alias, then we need to use a temporary
   // buffer.
   for (auto [value, convention] : llvm::zip(argumentValues, argConventions)) {
-    switch (convention) {
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::BorrowedInReg:
-      // Register conventions can never alias the result.
-      continue;
-
-    case ValueInputConvention::OwnedInMem:
-    case ValueInputConvention::BorrowedInMem:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::InitSelf:
+    if (SignatureType::hasAddress(convention)) {
       // Parameter values will never alias.
       if (value.ir.getIfPValue())
         continue;
@@ -611,10 +601,7 @@ CValue CallEmitter::emitCallInParamContext(
     TypedAttr arg = pValue.get();
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
-    if (!llvm::is_contained({ValueInputConvention::BorrowedInReg,
-                             ValueInputConvention::OwnedInReg},
-                            convention) &&
-        !isa<StoreToMemAttr>(arg))
+    if (SignatureType::hasAddress(convention) && !isa<StoreToMemAttr>(arg))
       arg = StoreToMemAttr::get(arg, PointerType::get(arg.getType()));
     // Emit a rebind if the refined type does not match the callee arg type.
     if (arg.getType() != calleeArgType)

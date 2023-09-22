@@ -350,7 +350,13 @@ lit.func @wrong_error_return(%arg0: i32) -> !pop.variant<index> {
 lit.unresolved_import @module as @newModule declNameLoc(loc(unknown))
 
 // -----
+
 lit.func @f() -> !lit.none {
   // expected-error @below {{'lit.trait_func' op expected a parent function in a trait}}
   lit.trait_func
 }
+
+// -----
+
+// expected-error @below {{argument #0 with convention 'borrow_in_mem' in signature type should be a `!kgen.pointer` or `!lit.ref` but got: 'index'}}
+!type = !lit.signature<(index borrow_in_mem) -> ()>

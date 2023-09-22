@@ -83,20 +83,8 @@ static std::string generateTypeString(
   }
 
   // Process the convention if present.
-  if (convention) {
-    switch (*convention) {
-    case ValueInputConvention::ByRef:
-    case ValueInputConvention::InitSelf:
-    case ValueInputConvention::ByRefResult:
-    case ValueInputConvention::OwnedInMem:
-    case ValueInputConvention::BorrowedInMem:
-      astType = astType.getReferenceElementType();
-      break;
-    case ValueInputConvention::OwnedInReg:
-    case ValueInputConvention::BorrowedInReg:
-      break;
-    }
-  }
+  if (convention && SignatureType::hasAddress(*convention))
+    astType = astType.getReferenceElementType();
 
   // If this type is the same as the self type, use the "Self" keyword.
   if (selfType && astType.isEqualCanon(*selfType))

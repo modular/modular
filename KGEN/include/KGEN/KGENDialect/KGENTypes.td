@@ -245,6 +245,10 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     size_t getNumInputs() { return getValueInputs().size(); }
     /// Return the number of results.
     size_t getNumResults() { return getValueResults().size(); }
+
+    /// Determine whether an argument with the given input convention expects to
+    /// have a pointer or reference type.
+    static bool hasAddress(ValueInputConvention conv);
   }];
 
   let genVerifyDecl = 1;
