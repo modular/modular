@@ -467,21 +467,39 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
                                       ArrayRef<ParamDeclAttr> resultParams,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
-  // Print the function arguments.
+  // Print the function parameters and arguments. Make sure to substitute input
+  // and result parameters when printing default arguments and parameters.
+  ParameterEvaluator evaluator;
+  for (ParamDeclAttr param : inputParams)
+    evaluator.addInputValue(ParamDeclRefAttr::get(param));
+  for (ParamDeclAttr param : resultParams)
+    evaluator.addResultValue(ParamDeclRefAttr::get(param));
+
+  ArrayRef<TypedAttr> defaultParams = signature.getDefaultParameters();
+  ssize_t defaultIdx = defaultParams.size() - inputParams.size();
+  auto printWithDefault = [&](ParamDeclAttr decl) {
+    printParamDecl(p, decl);
+    if (defaultIdx >= 0) {
+      p << " = ";
+      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
+                             defaultParams[defaultIdx])));
+    }
+    ++defaultIdx;
+  };
+  printOptionalParameterSpec(p, inputParams, resultParams, printWithDefault);
+
+  ArrayRef<TypedAttr> defaultArgs = signature.getDefaultArguments();
   auto printElt = [&](unsigned i) {
     p.printRegionArgument(region->getArgument(i));
     printInputConvention(p, signature.getInputConvention(i));
 
-    size_t defaultIndex =
-        signature.getNumInputs() - signature.getDefaultArguments().size();
+    size_t defaultIndex = signature.getNumInputs() - defaultArgs.size();
     if (i >= defaultIndex) {
       p << " = ";
-      printParamValue(p, signature.getDefaultArguments()[i - defaultIndex]);
+      printParamValue(p, cast<TypedAttr>(evaluator.getReboundAttribute(
+                             defaultArgs[i - defaultIndex])));
     }
   };
-
-  printOptionalParameterSpec(p, inputParams, resultParams,
-                             signature.getMetadata().getDefaultParameters());
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);
 }

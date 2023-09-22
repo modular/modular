@@ -32,19 +32,11 @@ ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 ParseResult parseParamDecl(AsmParser &p, ParamDeclAttr &result,
                            TypedAttr &defaultVal);
 
-/// Print a ParamDeclAttr which has syntactic form `name (: type (= default)?
-/// )?`. `defaultVal` is not printed if null.
-void printParamDecl(AsmPrinter &p, ParamDeclAttr decl, TypedAttr defaultVal);
-
 /// Parse and print a parameter specification in a lit.func.
 ParseResult
 parseOptionalParameterSpec(AsmParser &p, ParamDeclArrayAttr &inputParamDecls,
                            ParamDeclArrayAttr &resultParamDecls,
                            SmallVectorImpl<TypedAttr> &defaultParams);
-void printOptionalParameterSpec(AsmPrinter &p,
-                                ArrayRef<ParamDeclAttr> inputParamDecls,
-                                ArrayRef<ParamDeclAttr> resultParamDecls,
-                                ArrayRef<TypedAttr> defaultParams);
 
 /// Parse a parameter signature (input/result types with optional default
 /// values) if present.

@@ -203,8 +203,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
 //===----------------------------------------------------------------------===//
 
 LITSignatureType::LITSignatureType(SignatureType sig) : SignatureType(sig) {
-  assert(::isa_and_nonnull<FnMetadataAttr>(sig.getMetadata()) &&
-         "expected LIT function metadata");
+  assert(!sig || ::isa_and_nonnull<FnMetadataAttr>(sig.getMetadata()) &&
+                     "expected LIT function metadata");
 }
 
 FnMetadataAttr LITSignatureType::getMetadata() {
