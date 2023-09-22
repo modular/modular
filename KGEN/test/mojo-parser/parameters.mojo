@@ -690,3 +690,60 @@ fn call_with_tail_types():
     tail_types(1, 1.2)
     # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
     tail_types(1, 77)
+
+##===----------------------------------------------------------------------===##
+# Default parameters
+##===----------------------------------------------------------------------===##
+
+
+fn default_params[a: Int, b: Int = 7, c: StringLiteral = "woof"]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_default_params()"
+fn test_default_params():
+    # CHECK: kgen.call @"{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK-SAME: <:!Int #lit.struct<{value = 1}>, :!Int #lit.struct<{value = 7}>, :!StringLiteral #lit.struct<{value: string = "woof"}>>
+    default_params[1]()
+
+    # CHECK: kgen.call @"{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK-SAME: <:!Int #lit.struct<{value = 2}>, :!Int #lit.struct<{value = 8}>, :!StringLiteral #lit.struct<{value: string = "woof"}>>
+    default_params[2, 8]()
+
+    # CHECK: kgen.call @"{{.*}}@"default_params[{{.*}}::Int,{{.*}}::Int,{{.*}}::StringLiteral]()"
+    # CHECK-SAME: <:!Int #lit.struct<{value = 4}>, :!Int #lit.struct<{value = 9}>, :!StringLiteral #lit.struct<{value: string = "meow"}>>
+    default_params[4, 9, "meow"]()
+
+
+# COM: check that inferred parameter values take precedence over defaults
+# CHECK-LABEL: lit.func @"inferred_default_param
+fn inferred_default_param[dt: DType, w: Int = 8](a: OurSIMD[w, dt]):
+    pass
+
+
+# CHECK: lit.func @"test_inferred_default_param{{.*}}"<[[X:_.*_x]]: !Int>
+# CHECK: kgen.call @{{.*}}@"inferred_default_param[{{.*}}::DType,{{.*}}::Int]({{.*}}::OurSIMD[*(0,1), *(0,0)])"<:!DType #lit.struct<{value: dtype = f32}>, :!Int #lit.struct<{value = 4}>>
+# CHECK: kgen.call @{{.*}}@"inferred_default_param[{{.*}}::DType,{{.*}}::Int]({{.*}}::OurSIMD[*(0,1), *(0,0)])"<:!DType #lit.struct<{value: dtype = f32}>, :!Int [[X]]>
+fn test_inferred_default_param[
+    x: Int
+](concrete: OurSIMD[4, DType.float32], p: OurSIMD[x, DType.float32]):
+    inferred_default_param(concrete)
+    inferred_default_param(p)
+
+
+# COM: basic check for memory-only default parameters
+@value
+struct MemoryOnlyType:
+    pass
+
+
+# CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<_{{.*}}_x: !MemoryOnlyType =
+# CHECK-SAME: apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
+    pass
+
+# CHECK-LABEL: lit.func @"test_mem_only_default_param()"
+# CHECK: kgen.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
+# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<("self": !kgen.pointer<!MemoryOnlyType> init_self) -> !lit.none> @{{.*}}@MemoryOnlyType::@"__init__({{.*}}::MemoryOnlyType=&)")>
+fn test_mem_only_default_param():
+    mem_only_default_param()

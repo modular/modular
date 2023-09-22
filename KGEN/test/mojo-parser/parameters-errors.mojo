@@ -106,8 +106,6 @@ fn meta_param_then_param_redef[
 def param_redef(x: __mlir_type.index, x: __mlir_type.index):
   pass
 
-# expected-error @+3 {{could not find builtin 'Tuple' type}}
-# expected-error @+2 {{default parameter values not supported yet}}
 # expected-error @+1 {{non-default parameter follows default parameter}}
 fn default_after_non_default[a: Int = 7, b: Int]():
     pass

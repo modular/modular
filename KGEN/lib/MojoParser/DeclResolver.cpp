@@ -2508,11 +2508,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
                                       resultParamDecls, paramDefaults,
                                       paramVarArg))
     return failure();
-  // TODO(#21428): handle parameter defaults
-  if (!paramDefaults.empty()) {
-    return emitError(decl.getLoc(),
-                     "default parameter values not supported yet");
-  }
 
   // Parse the argument list next if present.
   if (ParsedArgument::parseAndResolveParenthesizedArgumentList(
@@ -2648,7 +2643,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects, FnMetadataAttr::get(builder.getContext(), argNames, argDefaults),
+      effects,
+      FnMetadataAttr::get(builder.getContext(), argNames, argDefaults,
+                          paramDefaults),
       [&] { return mlir::emitError(funcOp.getLoc()); });
   if (!signature)
     return failure();
@@ -3386,7 +3383,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                       paramVarArgs) ||
       p.parseToken(Token::colon, "expected ':' in struct definition"))
     return failure();
-  // TODO(#21428): handle parameter defaults
+  // TODO(#21636): support default parameters for structs
   if (!paramDefaults.empty()) {
     return emitError(decl.getLoc(),
                      "default parameter values not supported yet");
