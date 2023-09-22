@@ -298,12 +298,18 @@ SignatureType SignatureType::getSpecializedSignature(
   llvm::append_range(resultTypes,
                      llvm::map_range(values.getResults(), remapType));
 
+  if (metadata) {
+    // Rebind input parameter references in the metadata.
+    metadata = ::cast<FnMetadataAttrInterface>(
+        evaluator.getReboundAttribute(metadata));
+    // Tell the metadata which input parameters have been bound.
+    metadata = metadata.getWithBoundParams(boundParams);
+  }
   return SignatureType::get(
       FunctionType::get(values.getContext(), inputTypes, resultTypes),
       TypeArrayAttr::get(values.getContext(), unboundParamTypes),
       TypeArrayAttr::get(values.getContext(), newParamResultTypes),
-      inputConventions, effects,
-      metadata ? metadata.getWithBoundParams(boundParams) : nullptr);
+      inputConventions, effects, metadata);
 }
 
 ArrayRef<Type> SignatureType::getValueInputs() const {

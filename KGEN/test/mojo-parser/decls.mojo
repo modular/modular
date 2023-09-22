@@ -672,7 +672,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 # CHECK-LABEL: lit.func @"defaultArgumentReferencesParameter
 # CHECK-SAME: (%a: !Int borrow = apply(:!lit.signature<("self": !Int borrow, "rhs": !Int borrow)
-# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", *(0,0), #lit.struct<{value = 87}>))
+# CHECK-SAME: -> !Int> {{.*}}Int::@"__add__({{.*}}$int::Int,{{.*}}$int::Int)", {{.*}}p, #lit.struct<{value = 87}>))
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 

@@ -30,30 +30,6 @@ ParseResult LIT::parseParamDecl(AsmParser &p, ParamDeclAttr &result,
   return parseOptionalDefaultValue(p, defaultVal, result.getType());
 }
 
-void LIT::printParamDecl(AsmPrinter &p, ParamDeclAttr decl,
-                         TypedAttr defaultVal) {
-  KGEN::printParamDecl(p, decl);
-  if (defaultVal) {
-    p << " = ";
-    printParamValue(p, defaultVal);
-  }
-}
-
-void LIT::printOptionalParameterSpec(AsmPrinter &p,
-                                     ArrayRef<ParamDeclAttr> inputParamDecls,
-                                     ArrayRef<ParamDeclAttr> resultParamDecls,
-                                     ArrayRef<TypedAttr> defaultParams) {
-  ssize_t defaultIdx = defaultParams.size() - inputParamDecls.size();
-  auto printWithDefault = [&](ParamDeclAttr decl) {
-    printParamDecl(p, decl,
-                   defaultIdx >= 0 ? defaultParams[defaultIdx] : TypedAttr());
-    ++defaultIdx;
-  };
-
-  return KGEN::printOptionalParameterSpec(p, inputParamDecls, resultParamDecls,
-                                          printWithDefault);
-}
-
 /// Parse a parameter spec if present, including input and result parameter
 /// declarations, and default values.
 /// parameter-decl   ::= identifier (`:` type (`=` expression)? )?
