@@ -2083,13 +2083,21 @@ verifyFunctionNameBinding(ASTDecl &decl, LIT::FuncOp funcOp, StringAttr name,
   }
 
   // Verify the argument count lines up.
-  if (fnInfo.kind != SpecialFunctionKind::kNormal &&
-      fnInfo.numArguments != -1 &&
-      fnInfo.numArguments + std::max(selfArgNumber, ssize_t(0)) !=
-          ssize_t(args.size())) {
-    size_t numArguments = fnInfo.numArguments;
-    emitError("special function ") << name << " must have " << numArguments
-                                   << " operand" << plural(numArguments);
+  if (fnInfo.kind != SpecialFunctionKind::kNormal) {
+    size_t numActualArgs = args.size() - std::max(selfArgNumber, ssize_t(0));
+    size_t numMin = fnInfo.minNumArguments;
+    ssize_t numMax = fnInfo.maxNumArguments;
+    if (numMin == size_t(numMax) && numActualArgs != numMin) {
+      emitError("special function ")
+          << name << " must have " << numMin << " operand" << plural(numMin);
+    } else if (numActualArgs < numMin) {
+      emitError("special function ") << name << " must have at least " << numMin
+                                     << " operand" << plural(numMin);
+    } else if (numMax != -1 && numActualArgs > size_t(numMax)) {
+      emitError("special function ")
+          << name << " must have at most " << size_t(numMax) << " operand"
+          << plural(numMax);
+    }
   }
 
   // Check other invariants based on method flags.
