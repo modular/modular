@@ -111,7 +111,7 @@ lit.func @topFunc() {
 // CHECK-NEXT: kgen.return
 lit.func @aliasDecls() {
   lit.alias.decl aliasDecl = <5>
-  lit.alias.fwd.decl "aliasFwdDecl" : index
+  lit.alias.fwd_decl "aliasFwdDecl" : index
   kgen.return
 }
 

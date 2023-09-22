@@ -66,10 +66,15 @@
 # CHECK-DAG: #[[LOC_MOV]] = loc(fused<#[[SP2]]>
 # CHECK-DAG: #[[LOC_COPY]] = loc(fused<#[[SP3]]>
 
-fn capture_index(m:  __mlir_type.index, z: __mlir_type.index) -> fn(n:__mlir_type.index) escaping ->  __mlir_type.index:
-   fn myclosure(n: __mlir_type.index) escaping ->  __mlir_type.index:
-      return m
-   return myclosure
+
+fn capture_index(
+    m: __mlir_type.index, z: __mlir_type.index
+) -> fn (n: __mlir_type.index) escaping -> __mlir_type.index:
+    fn myclosure(n: __mlir_type.index) escaping -> __mlir_type.index:
+        return m
+
+    return myclosure
+
 
 # // -----
 
@@ -78,35 +83,41 @@ fn capture_index(m:  __mlir_type.index, z: __mlir_type.index) -> fn(n:__mlir_typ
 # CHECK-DAG: #[[SP3:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #file, name = "__copyinit__", linkageName = "__copyinit__{{.*}} : ![[SR5]]
 
 # CHECK-DAG: ![[ESCAPING:.*]] = !kgen.declref<{{.*}}CI{{.*}}InMemType{{.*}}>
-# CHECK-DAG: lit.ownership.mark.destroyed %self : !kgen.pointer<![[ESCAPING]]> loc(#[[CI_LOC_DEL:.*]])
-# CHECK-DAG: lit.ownership.mark.destroyed %existing : !kgen.pointer<![[ESCAPING]]> loc(#[[CI_LOC_MOV:.*]])
+# CHECK-DAG: lit.ownership.mark_destroyed %self : !kgen.pointer<![[ESCAPING]]> loc(#[[CI_LOC_DEL:.*]])
+# CHECK-DAG: lit.ownership.mark_destroyed %existing : !kgen.pointer<![[ESCAPING]]> loc(#[[CI_LOC_MOV:.*]])
 
 # CHECK-DAG: #[[CI_LOC_DEL]] = loc(fused<#[[SP1]]>[#[[CI_LOC:.*]]])
 # CHECK-DAG: #[[CI_LOC_MOV]] = loc(fused<#[[SP2]]>[#[[CI_LOC]]])
 
+
 @value
 struct InMemType:
-   fn __del__(owned self):
-       pass
+    fn __del__(owned self):
+        pass
+
 
 # CHECK-LABEL: lit.func @"capture_memory_type
-fn capture_memory_type(m:  InMemType, z: __mlir_type.index):
-   fn dummy(n: __mlir_type.index) escaping ->  InMemType:
-      return m
+fn capture_memory_type(m: InMemType, z: __mlir_type.index):
+    fn dummy(n: __mlir_type.index) escaping -> InMemType:
+        return m
+
 
 # // -----
 
 # CHECK: #subprogram[[ID:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = "capture_reg_type", linkageName = "capture_reg_type($builtin::$int::Int)", file = #file, line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : !subroutine
 
+
 # CHECK: lit.func @"capture_reg_type
 fn capture_reg_type(z: Int):
-   let w = z * z
-   var a = w
-   # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth : <!escaping> loc(#[[LOC:loc[0-9]*]])
-   # CHECK-NEXT: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int> loc(#[[LOC]])
-   # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w) {{.*}} loc(#[[LOC]])
-   fn myclosure_with_reg_types(x:Int) escaping -> Int:
-      a = a + 1
-      return x + w
+    let w = z * z
+    var a = w
+
+    # CHECK: %anonymous2A = lit.varlet.decl "anonymous*" var synth : <!escaping> loc(#[[LOC:loc[0-9]*]])
+    # CHECK-NEXT: %[[A:.*]] = pop.load %a : !kgen.pointer<!Int> loc(#[[LOC]])
+    # CHECK-NEXT: kgen.call @{{.*}}::@"__init__{{.*}}"(%anonymous2A, %[[A]], %w) {{.*}} loc(#[[LOC]])
+    fn myclosure_with_reg_types(x: Int) escaping -> Int:
+        a = a + 1
+        return x + w
+
 
 # CHECK: #[[LOC]] = loc(fused<#subprogram[[ID]]>[#loc[[LOC2:.*]]])

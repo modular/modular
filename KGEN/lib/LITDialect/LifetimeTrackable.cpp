@@ -63,7 +63,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  // The lit.ownership.end.lifetime op ends a register/mem lifetime and creates
+  // The lit.ownership.end_lifetime op ends a register/mem lifetime and creates
   // a new one.  This defines the properties of its new lifetime.
   if (auto endLifetime = v.getDefiningOp<OwnershipEndLifetimeOp>()) {
     name = StringAttr::get(v.getContext(), "(consumed value)");
@@ -73,7 +73,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
-  // The lit.ownership.make.pointer.lvalue op takes an address and projects to a
+  // The lit.ownership.make_pointer_lvalue op takes an address and projects to a
   // liveness tracked indirect value.
   if (auto makePointer = v.getDefiningOp<OwnershipMakePointerLValue>()) {
     name = StringAttr::get(v.getContext(), "(pointee value)");

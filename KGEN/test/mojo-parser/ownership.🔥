@@ -17,7 +17,7 @@ struct MemExample:
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT:    kgen.call {{.*}}noop{{.*}}(%self)
   # CHECK-NEXT:    %1 = kgen.param.constant{{.*}} <#lit.none>
-  # CHECK-NEXT:    lit.ownership.mark.destroyed %self
+  # CHECK-NEXT:    lit.ownership.mark_destroyed %self
   # CHECK-NEXT:    kgen.return %1 : !lit.none
   fn __del__(owned self):
     self.noop()
@@ -39,7 +39,7 @@ struct RegExample:
   # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK-NEXT: lit.ownership.mark.destroyed [[SELFPTR]]
+  # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
   fn __del__(owned self):
     pass
@@ -84,15 +84,15 @@ fn destructors(owned arg0: MemExample):
 
   # Test pointless transfers from RValues.
 
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end.lifetime %mem3
-  # CHECK-NEXT: [[T2:%.*]] = lit.ownership.end.lifetime [[T1]]
-  # CHECK-NEXT: [[T3:%.*]] = lit.ownership.end.lifetime [[T2]]
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %mem3
+  # CHECK-NEXT: [[T2:%.*]] = lit.ownership.end_lifetime [[T1]]
+  # CHECK-NEXT: [[T3:%.*]] = lit.ownership.end_lifetime [[T2]]
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T3]])
   consume(mem3^^^)
 
   # CHECK-NEXT: %anonymous2A = lit.varlet.decl "anonymous
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%anonymous2A)
-  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end.lifetime %anonymous2A
+  # CHECK-NEXT: [[T1:%.*]] = lit.ownership.end_lifetime %anonymous2A
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[T1]])
   consume(MemExample()^)
 
@@ -272,7 +272,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
                 return
     # CHECK: except
     except:
-        # CHECK: %[[DEAD:.*]] = lit.ownership.end.lifetime %x
+        # CHECK: %[[DEAD:.*]] = lit.ownership.end_lifetime %x
         # CHECK: __del__{{.*}}(%[[DEAD]])
         _ = x^
     # CHECK: else
@@ -381,17 +381,17 @@ fn testPointerGEP(ptr: __mlir_type[`!kgen.pointer<`, Complicated, `>`]) -> Int:
 fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
                           i1ptr: __mlir_type.`!kgen.pointer<i1>`):
   # This should run the destructor.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
   _ = __get_address_as_owned_value(ptr)
 
   # The RValue can be consumed directly.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end.lifetime %ptr
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.end_lifetime %ptr
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[PTR]])
   consume(__get_address_as_owned_value(ptr))
 
@@ -409,14 +409,14 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
   # Overwriting the value in a __get_address_as_lvalue forces it to be destroyed
   # before the overwrite.
 
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make.pointer.lvalue %ptr live_on_entry = true, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = true, exit = true
   # CHECK-NEXT: kgen.call {{.*}}__del__{{.*}}([[PTR]])
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_lvalue(ptr) = MemExample()
 
   # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
-  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make.pointer.lvalue %ptr live_on_entry = false, exit = true
+  # CHECK-NEXT: [[PTR:%.*]] = lit.ownership.make_pointer_lvalue %ptr live_on_entry = false, exit = true
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}([[PTR]])
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
@@ -465,9 +465,9 @@ struct FieldSensitiveMemExample:
  fn mutate2(inout self):
     # Disable the dtor of 'f1' before we overwrite it to show we can do this.
     # CHECK-NEXT: %0 = lit.struct.gep %self[f1]
-    # CHECK-NEXT: lit.ownership.def.lvalue %0
-    # CHECK-NEXT: lit.ownership.mark.destroyed %0
-    __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
+    # CHECK-NEXT: lit.ownership.def_lvalue %0
+    # CHECK-NEXT: lit.ownership.mark_destroyed %0
+    __mlir_op.`lit.ownership.mark_destroyed`[_type : None](
        __get_lvalue_as_address(self.f1)
     )
 
@@ -483,19 +483,19 @@ struct FieldSensitiveMemExample:
   # CHECK-NEXT: %2 = lit.struct.gep %self[f2]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%2)
   # CHECK-NEXT: kgen.param.constant: !lit.none
-  # CHECK-NEXT: lit.ownership.mark.destroyed %self
+  # CHECK-NEXT: lit.ownership.mark_destroyed %self
 
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: lit.ownership.def.lvalue %x
+  # CHECK-NEXT: lit.ownership.def_lvalue %x
   # CHECK-NEXT: %0 = lit.struct.gep %x[f1]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%0)
   # CHECK-NEXT: %2 = lit.struct.gep %x[f2]
   # CHECK-NEXT: kgen.call @{{.*}}@"__del__{{.*}}(%2)
-  # CHECK-NEXT: lit.ownership.mark.destroyed %x
+  # CHECK-NEXT: lit.ownership.mark_destroyed %x
   # CHECK-NEXT: kgen.param.constant: !lit.none
-  __mlir_op.`lit.ownership.mark.destroyed`[_type : None](
+  __mlir_op.`lit.ownership.mark_destroyed`[_type : None](
      __get_lvalue_as_address(x)
   )
 
@@ -578,7 +578,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     # Transferring ownership to the result means the copy ctor/dtor isn't
     # invoked.
 
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end.lifetime %example1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime %example1
     # CHECK-NEXT: kgen.return [[TMP]]
     return example1^
 
@@ -601,7 +601,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
 
   # CHECK-NEXT: hlcf.if %cond
   if (cond):
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end.lifetime %example2
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ownership.end_lifetime %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
@@ -629,7 +629,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   consumeMem(example)
 
   # This does consume example, so no copy needed.
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example
   # CHECK-NEXT: kgen.call {{.*}}consumeMem{{.*}}([[CONSUME]])
   consumeMem(example^)
 
@@ -637,7 +637,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   # CHECK-NEXT: kgen.call {{.*}}__init__{{.*}}(%example2)
   let example2 = MemExample()
 
-  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end.lifetime %example2
+  # CHECK-NEXT: [[CONSUME:%.*]] = lit.ownership.end_lifetime %example2
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, [[CONSUME]])
   # CHECK-NEXT: kgen.param.constant: !lit.none
   return example2^
@@ -680,7 +680,7 @@ struct BigRegExample:
   # CHECK-NEXT: [[SELFPTR2:%.*]] = lit.ref.to_pointer %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#lit.none>
   # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-  # CHECK-NEXT: lit.ownership.mark.destroyed [[SELFPTR]]
+  # CHECK-NEXT: lit.ownership.mark_destroyed [[SELFPTR]]
   # CHECK-NEXT: kgen.return
 
 
@@ -692,7 +692,7 @@ fn bigreg_test():
   var varThing = BigRegExample()
 
   # CHECK-NEXT: %1 = lit.struct.gep %varThing[a]
-  # CHECK-NEXT: %2 = lit.ownership.end.lifetime %1
+  # CHECK-NEXT: %2 = lit.ownership.end_lifetime %1
   # CHECK-NEXT: %3 = lit.load.consume %2
   # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}(%3)
   consume(varThing.a^)
@@ -739,7 +739,7 @@ struct ExoticDelExample:
       # This side we manually consume for c.
 
       # CHECK-NEXT: [[CPTR:%.*]] = lit.struct.gep [[SELFPTR2]][c]
-      # CHECK-NEXT: [[CPTR2:%.*]] = lit.ownership.end.lifetime [[CPTR]]
+      # CHECK-NEXT: [[CPTR2:%.*]] = lit.ownership.end_lifetime [[CPTR]]
       # CHECK-NEXT: [[CVAL:%.*]] = lit.load.consume [[CPTR2]]
       # CHECK-NEXT: kgen.call {{.*}}consume{{.*}}([[CVAL]])
       # CHECK-NEXT: hlcf.yield
@@ -756,7 +756,7 @@ struct ExoticDelExample:
 
     # CHECK-NEXT: = kgen.param.constant: !lit.none = <#lit.none>
     # CHECK-NEXT: [[SELFPTR:%.*]] = lit.ref.to_pointer %self_0
-    # CHECK-NEXT:lit.ownership.mark.destroyed [[SELFPTR]]
+    # CHECK-NEXT:lit.ownership.mark_destroyed [[SELFPTR]]
     # CHECK-NEXT:kgen.return
 
 ##===----------------------------------------------------------------------===##
@@ -775,13 +775,13 @@ struct MemoryUniqueMovable:
     # Mercilously steal 'existing's state which could be interesting.
 
     # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
-    # CHECK-NEXT: %1 = lit.ownership.end.lifetime %0
+    # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
     # CHECK-NEXT: %2 = lit.struct.gep %self[state]
     # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
     self.state = existing.state^
 
     # CHECK-NEXT: kgen.param.constant: !lit.none
-    # CHECK-NEXT: lit.ownership.mark.destroyed %existing
+    # CHECK-NEXT: lit.ownership.mark_destroyed %existing
     # CHECK-NEXT: kgen.return
 
 
@@ -796,7 +796,7 @@ struct MemoryDestroyMovable:
   fn __takeinit__(inout self, inout existing: Self):
     # Take 'existing's state which could be interesting.
     # CHECK-NEXT: %0 = lit.struct.gep %existing[state]
-    # CHECK-NEXT: %1 = lit.ownership.end.lifetime %0
+    # CHECK-NEXT: %1 = lit.ownership.end_lifetime %0
     # CHECK-NEXT: %2 = lit.struct.gep %self[state]
     # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%2, %1)
     self.state = existing.state^
@@ -833,7 +833,7 @@ struct MemoryMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
-  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a
+  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0)
   # CHECK-NEXT: kgen.param.constant: !lit.none
   # CHECK-NEXT: kgen.return
@@ -849,7 +849,7 @@ fn result_mem2(owned a: MemoryDestroyMovable) -> MemoryDestroyMovable:
 
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
-  # CHECK-NEXT: %0 = lit.ownership.end.lifetime %a
+  # CHECK-NEXT: %0 = lit.ownership.end_lifetime %a
   # CHECK-NEXT: kgen.call {{.*}}__moveinit__{{.*}}(%__result__, %0){{.*}}init_self{{.*}} owned_in_mem
   # CHECK-NEXT: kgen.param.constant: !lit.none
   # CHECK-NEXT: kgen.return
@@ -871,7 +871,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end.lifetime [[APTR]]
+  # CHECK-NEXT: [[EOL:%.*]] = lit.ownership.end_lifetime [[APTR]]
   # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
   # CHECK-NEXT: kgen.return [[AVAL]]
   return a^
@@ -890,7 +890,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: %a_0 = lit.varlet.decl2 "a" var
   # CHECK-NEXT: lit.ref.store %a, %a_0
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a_0
-  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end.lifetime [[APTR]]
+  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
   # CHECK-NEXT: kgen.return [[A]]
   return a^
@@ -901,12 +901,12 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
   # CHECK-NEXT: lit.ref.store %a, %a_0
 
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.to_pointer %a
-  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end.lifetime [[APTR]]
+  # CHECK-NEXT: [[APTR2:%.*]] = lit.ownership.end_lifetime [[APTR]]
   # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[APTR2]]
   # CHECK-NEXT: %x = lit.letreg.decl "x" = [[A]]
   let x = a^
 
-  # CHECK-NEXT: [[X:%.*]] = lit.ownership.end.lifetime %x
+  # CHECK-NEXT: [[X:%.*]] = lit.ownership.end_lifetime %x
   # CHECK-NEXT: kgen.return [[X]]
   return x^
 
