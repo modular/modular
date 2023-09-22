@@ -79,6 +79,9 @@ struct ParserConfig {
   /// library.
   bool parsingStandardLibrary = false;
 
+  /// If true, auto-import the builtin package.
+  bool useBuiltinModule = true;
+
   /// The level of module caching enabled in the parser.
   CachingLevel moduleCachingLevel = kCacheAll;
 

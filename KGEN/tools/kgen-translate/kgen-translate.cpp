@@ -27,6 +27,12 @@ using namespace KGEN;
 int main(int argc, char *argv[]) {
   KGENCommonOptions clOptions;
 
+  cl::opt<bool> disableBuiltinModule{
+      "mojo-disable-builtins",
+      cl::desc("Don't auto-import the builtin module. WARNING: A bunch of "
+               "stuff will break!"),
+      cl::init(false)};
+
   cl::opt<bool> disableParserCaching{
       "mojo-disable-parser-caching",
       cl::desc("Disable caching when parsing the input Mojo file."),
@@ -75,6 +81,7 @@ int main(int argc, char *argv[]) {
         config.experimentalLifetimes = experimentalLifetimes;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
+        config.useBuiltinModule = !disableBuiltinModule;
         if (disableParserCaching)
           config.moduleCachingLevel = LIT::ParserConfig::kCacheNone;
         return LIT::importMojoFile(sourceMgr, config, ts);
