@@ -801,7 +801,7 @@ HostMachineInfo HostMachineInfo::fromTargetInfo(const TargetInfo &targetInfo) {
   return result;
 }
 
-M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
+static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
   HostMachineInfo machineInfo;
 
   machineInfo.triple = llvm::sys::getDefaultTargetTriple();
@@ -869,6 +869,15 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   }
 
   return std::move(machineInfo);
+}
+
+M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
+  // We cache the host machine information to make query a lot faster, since it
+  // will not change between invocations.
+  static M::ErrorOr<HostMachineInfo> hostMachineInfo = getHostMachineInfoImpl();
+  if (hostMachineInfo.isError())
+    return M::Error(hostMachineInfo.getError());
+  return *hostMachineInfo;
 }
 
 //===----------------------------------------------------------------------===//
