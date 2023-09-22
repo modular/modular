@@ -372,9 +372,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   // they may target at run-time. This should follow IPSCCP.
   MPM.addPass(CalledValuePropagationPass());
 
-  // Optimize globals to try and fold them into constants.
-  MPM.addPass(GlobalOptPass());
-
   // Promote any localized globals to SSA registers.
   // FIXME: Should this instead by a run of SROA?
   // FIXME: We should probably run instcombine and simplifycfg afterward to
@@ -402,7 +399,6 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   MPM.addPass(CoroCleanupPass());
 
   // Optimize globals now that the module is fully simplified.
-  MPM.addPass(GlobalOptPass());
   MPM.addPass(GlobalDCEPass());
 
   // Do RPO function attribute inference across the module to forward-propagate
