@@ -5,14 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-# FIXME(#18257): Flaky LSAN crashes.
-# UNSUPPORTED: asan
-
 from math import div_ceil, min
 
 from algorithm import async_parallelize, map, parallelize, sync_parallelize
 from memory.buffer import Buffer
 from runtime.llcl import OwningOutputChainPtr, Runtime, num_cores
+
 
 # CHECK-LABEL: test_async_parallelize
 fn test_async_parallelize():

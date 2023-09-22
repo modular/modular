@@ -5,9 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-# FIXME(#18257): Flaky LSAN crashes.
-# UNSUPPORTED: asan
-
 from algorithm import (
     all_true,
     any_true,
