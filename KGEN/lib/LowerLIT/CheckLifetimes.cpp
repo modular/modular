@@ -280,17 +280,17 @@ struct ValueInfo {
 /// values.
 struct ValueRef {
   /// This is the entry # for the ValueInfo for the overall value.
-  unsigned valueId;
+  unsigned valueId = 0;
 
   /// This is the (start, end] span of bits for the reference that we're
   /// tracking, which may be a subset of the overall value.
-  unsigned startBit, endBit;
+  unsigned startBit = ~0U, endBit = ~0U;
 
   /// This is true if this value reference is looking at the value indirectly,
   /// not as a @register_passable value in an SSA value.
-  bool isIndirect;
+  bool isIndirect = false;
 
-  ValueRef() : valueId(0), startBit(~0U), endBit(~0U), isIndirect(false) {}
+  ValueRef() = default;
   ValueRef(unsigned valueId, unsigned startBit, unsigned endBit,
            bool isIndirect)
       : valueId(valueId), startBit(startBit), endBit(endBit),
@@ -1089,8 +1089,9 @@ void UninitializedValueScan::checkOp(Operation &op) {
     // Iteratively scan the loop body until the live-in set converges.  This is
     // a trivial lattice with each bit converging to "not live in", so we know
     // this will terminate.
-    size_t numLiveIn = continueSet.count();
-    while (1) {
+    size_t numLiveIn;
+    do {
+      numLiveIn = continueSet.count();
       // Scan the body: any breaks will intersect their live-out set with
       // 'breakSet', and any continues will intersect their live-out set with
       // 'continueSet'.
@@ -1099,11 +1100,7 @@ void UninitializedValueScan::checkOp(Operation &op) {
       bodySets.scanBlock(loopOp.getBody().front());
 
       // If any bits got cleared from the continueSet then we need to iterate.
-      size_t newLiveIn = continueSet.count();
-      if (newLiveIn == numLiveIn)
-        break;
-      numLiveIn = newLiveIn;
-    }
+    } while (continueSet.count() != numLiveIn);
     // Any code after the loop continues on with the breaks valid.
     return;
   }
@@ -1677,7 +1674,7 @@ void DestructorInsertion::checkOp(Operation &op) {
 
     // Iteratively scan the loop body until the continue set converges.
     [[maybe_unused]] unsigned numIters = 0;
-    while (1) {
+    while (true) {
       // Scan the body: any breaks will intersect their live-out set with
       // 'breakSet', and any continues will intersect their live-out set with
       // 'continueSet'.

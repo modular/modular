@@ -28,7 +28,7 @@ struct LifetimeTrackable {
   /// not, this returns a null value.
   static Value findUnderlyingValueFromField(Value value);
 
-  operator bool() const { return name != StringAttr(); }
+  operator bool() const { return !!name; }
 
   /// This is the user's declared name for the value declaration, or null if
   /// this isn't a tracked value.
