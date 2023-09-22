@@ -321,10 +321,10 @@ limitations in parallel executions, therefore it should only be preferred over
 
 ### Logging
 
-You can log information by using the methods on `MojoTypeSystem`. The way we log
-is by emitting events to the LLDB event handler interface.
+You can log information by using the methods on `MojoExpressionLogger`. The way
+we log is by emitting events to the LLDB event handler interface.
 
-The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
+The way we treat event kinds is as follows (list in `MojoExpressionLogger.h`):
 
 - `BroadcastUserMessage` events are flushed to the user's stderr immediately.
 - `DebugLog` events are only flushed when the `expr` LLDB log channel is
@@ -333,9 +333,9 @@ The way we treat event kinds is as follows (list in `MojoTypeSystem.h`):
   in verbose mode via `:log enable lldb expr -v`.
 - `ErrorLog` events are flushed immediately.
 
-Events are mostly handled by `MojoTypeSystem::handleEvent`, which implements the
-behavior above. A new user can do whatever they want with the various events as
-befits their specific application.
+Events are mostly handled by `MojoExpressionLogger::handleEvent`, which
+implements the behavior above. A new user can do whatever they want with the
+various events as befits their specific application.
 
 Feel free to add more event kinds as is appropriate - event kinds ending with
 `Message` are shown to the user in the notebook, while event kinds ending in

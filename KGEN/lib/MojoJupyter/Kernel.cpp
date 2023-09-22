@@ -10,9 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "../MojoLLDB/ExpressionParser/MojoExpressionVariable.h"
+#include "../MojoLLDB/Logging/MojoExpressionLogger.h"
 #include "../MojoLLDB/REPL/MojoREPL.h"
 #include "../MojoLLDB/ScriptingBridge/SBClassUtils.h"
-#include "../MojoLLDB/TypeSystem/MojoTypeSystem.h"
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
 #include "KGEN/MojoTooling/CodeComplete.h"
@@ -58,14 +58,6 @@ static MojoPersistentExpressionState *
 getPersistentExpressionState(const TargetSP &target) {
   return static_cast<MojoPersistentExpressionState *>(
       target->GetPersistentExpressionStateForLanguage(lldb::eLanguageTypeMojo));
-}
-
-static MojoTypeSystem &getMojoTypeSystem(const TargetSP &target) {
-  if (auto typeSystemOr =
-          target->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo))
-    return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
-  llvm::report_fatal_error(
-      "The Mojo type system plug-in must have already been registered.");
 }
 
 /// These values were chosen because both `finished` and `error` are 'truthy',
@@ -132,7 +124,7 @@ public:
   };
 
   MojoKernel(OutputFn outputFn)
-      : outputFn(outputFn), mojoTypeSystemListener(Listener::MakeListener(
+      : outputFn(outputFn), mojoExpressionListener(Listener::MakeListener(
                                 "mojo-type-system.listener")) {
     // Check for an environment variable we'll use to specify the log file path.
     std::optional<std::string> logFilePath =
@@ -235,7 +227,7 @@ private:
   ProcessSP process;
   MojoExpressionEvaluationOptions exprOpts;
   ThreadSP mainThread;
-  ListenerSP mojoTypeSystemListener;
+  ListenerSP mojoExpressionListener;
 
   /// The stream to write logs to. This may point to a file if the
   /// `MOJO_JUPYTER_LOG_FILE` env variable is specified, otherwise it points to
@@ -439,8 +431,8 @@ LogicalResult MojoKernel::launchReplProcess() {
         "Failed to launch `mojo-repl-entry-point` process: " +
         llvm::toString(std::move(err)));
   }
-  getMojoTypeSystem(target).AddListener(mojoTypeSystemListener,
-                                        MojoTypeSystem::eAllMessagesMask);
+  MojoExpressionLogger::getLoggerForTarget(*target).AddListener(
+      mojoExpressionListener, MojoExpressionLogger::eAllMessagesMask);
 
   return success();
 }
@@ -536,8 +528,8 @@ void MojoKernel::flushLLDBStreams() {
 
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
-  while (mojoTypeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-    MojoTypeSystem::handleEvent(event, reportMessage, [&](StringRef msg) {
+  while (mojoExpressionListener->GetEvent(event, std::chrono::seconds(0))) {
+    MojoExpressionLogger::handleEvent(event, reportMessage, [&](StringRef msg) {
       sendOutput("stderr", msg);
     });
     event->Clear();
@@ -619,8 +611,8 @@ void MojoKernel::interruptExecution() { process->SendAsyncInterrupt(); }
 
 void MojoKernel::codeComplete(StringRef code, int completionPos,
                               CompletionFn completionFn) {
-  std::vector<CodeCompletionResult> results = MojoREPL::handleREPLCodeComplete(
-      getMojoTypeSystem(target), code, completionPos);
+  std::vector<CodeCompletionResult> results =
+      MojoREPL::handleREPLCodeComplete(*target, code, completionPos);
   for (const CodeCompletionResult &result : results)
     completionFn(result.label.data());
 }

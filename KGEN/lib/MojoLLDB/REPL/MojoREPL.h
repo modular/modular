@@ -50,7 +50,7 @@ public:
 
   /// Perform a REPL code completion within the given type system.
   static std::vector<CodeCompletionResult>
-  handleREPLCodeComplete(MojoTypeSystem &typeSystem, StringRef code,
+  handleREPLCodeComplete(lldb_private::Target &target, StringRef code,
                          uint64_t completionPos);
 
 protected:
@@ -108,8 +108,8 @@ private:
       const lldb::ValueObjectSP &result_valobj_sp,
       const lldb_private::Status &error) override;
 
-  /// Flush TypeSystem events and the inferior's stdout/stderr streams.
-  void flushTypeSystemEventsAndProcessStreams();
+  /// Flush expression events and the inferior's stdout/stderr streams.
+  void flushExpressionEventsAndProcessStreams();
 
   lldb::TargetSP getTarget() { return targetWP.lock(); }
 
@@ -117,7 +117,7 @@ private:
   /// there is only one target at a time.
   std::thread eventThread;
   std::atomic_bool stopEventThread = false;
-  lldb::ListenerSP typeSystemListener;
+  lldb::ListenerSP mojoExpressionListener;
   lldb::TargetWP targetWP;
   lldb::StreamSP errorStream;
   std::mutex flushStreamsMutex;
