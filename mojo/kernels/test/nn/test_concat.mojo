@@ -13,9 +13,6 @@ from runtime.llcl import OwningOutputChainPtr, Runtime
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList, VariadicList
 
-# FIXME(#18257): Flaky LSAN crashes.
-# UNSUPPORTED: asan
-
 
 fn test_concat():
     print("== test_concat")

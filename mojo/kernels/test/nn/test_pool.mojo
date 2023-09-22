@@ -5,9 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-# FIXME(#18257): Flaky LSAN crashes.
-# UNSUPPORTED: asan
-
 from Image import Image2DLayout, ImageData, ImageShape
 from memory.buffer import Buffer, NDBuffer
 from Pool import (
