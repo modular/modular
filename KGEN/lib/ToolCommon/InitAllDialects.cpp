@@ -20,6 +20,8 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
 using namespace M;
 using namespace KGEN;
@@ -108,4 +110,9 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
 
   registry.addExtensions<InterpreterDialectExtension,
                          ParameterPrettyFormatExtension>();
+}
+
+void M::registerKGENToLLVMTranslation(mlir::DialectRegistry &registry) {
+  mlir::registerBuiltinDialectTranslation(registry);
+  mlir::registerLLVMDialectTranslation(registry);
 }

@@ -23,7 +23,6 @@ add_modular_tool(kgen-opt
   LLCLRuntimeGlobals
   MSupportGlobals
 
-  MLIRBuiltinToLLVMIRTranslation
   MLIRIR
   MLIRIndexToLLVM
   MLIROptLib

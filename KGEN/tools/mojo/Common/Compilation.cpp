@@ -15,8 +15,6 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
@@ -111,8 +109,7 @@ ErrorOrSuccess M::parseCompilationOptions(
   // Initialize the MLIR context.
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  registerBuiltinDialectTranslation(registry);
-  registerLLVMDialectTranslation(registry);
+  registerKGENToLLVMTranslation(registry);
   ctx.appendDialectRegistry(registry);
   ctx.loadDialect<MDialect>();
 

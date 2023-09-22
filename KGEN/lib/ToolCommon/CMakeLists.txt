@@ -19,4 +19,6 @@ add_modular_library(KGENToolCommon
 
   MLIRIndexDialect
   MLIRLLVMDialect
+  MLIRBuiltinToLLVMIRTranslation
+  MLIRLLVMToLLVMIRTranslation
   )

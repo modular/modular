@@ -30,7 +30,6 @@ add_modular_library(KGENEmitObject
   MTelemetry
 
   MLIRIndexToLLVM
-  MLIRLLVMToLLVMIRTranslation
   MLIRTargetLLVMIRExport
   MLIRBytecodeWriter
   MLIRBytecodeReader

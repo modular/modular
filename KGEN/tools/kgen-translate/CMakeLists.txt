@@ -13,8 +13,6 @@ add_modular_tool(kgen-translate
   MSupportGlobals
   MojoParser
   MArchTarget
-  MLIRBuiltinToLLVMIRTranslation
   MLIRTranslateLib
   MLIRTargetLLVMIRExport
-  MLIRLLVMToLLVMIRTranslation
 )

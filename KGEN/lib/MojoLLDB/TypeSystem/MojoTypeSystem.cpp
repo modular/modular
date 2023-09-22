@@ -30,8 +30,6 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "llvm/Support/Process.h"
 
 using namespace M;
@@ -57,8 +55,7 @@ struct MojoTypeSystem::Impl {
     // Register all of the various dialect state.
     DialectRegistry registry;
     registerAllKGENDialects(registry);
-    mlir::registerBuiltinDialectTranslation(registry);
-    mlir::registerLLVMDialectTranslation(registry);
+    registerKGENToLLVMTranslation(registry);
 
     // Set up the dialects in the context.
     mlirContext.appendDialectRegistry(registry);

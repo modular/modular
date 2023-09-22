@@ -57,7 +57,6 @@ add_modular_tool(mojo
 
   MLIRTransformUtils
   MLIRIR
-  MLIRBuiltinToLLVMIRTranslation
 
   LLVMOption
   )
