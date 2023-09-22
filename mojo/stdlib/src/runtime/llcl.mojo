@@ -124,6 +124,33 @@ fn _async_complete(chain: Pointer[Chain]):
 
 
 # ===----------------------------------------------------------------------===#
+# Global Runtime
+# ===----------------------------------------------------------------------===#
+
+
+fn _init_global_runtime() -> DTypePointer[DType.invalid]:
+    """Intialize the global runtime. This is a singleton that handle the common
+    case where the runtime has the same number of threads as the number of cores.
+    """
+    return external_call[
+        "KGEN_CompilerRT_LLCL_CreateRuntime", DTypePointer[DType.invalid]
+    ](num_cores())
+
+
+fn _destroy_global_runtime(ptr: DTypePointer[DType.invalid]):
+    """Destroy the global runtime if ever used."""
+    external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](ptr)
+
+
+@always_inline
+fn _get_global_runtime() -> Runtime:
+    """Gets or creats the global runtime."""
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOr", DTypePointer[DType.invalid]
+    ](StringRef("Runtime"), _init_global_runtime, _destroy_global_runtime)
+
+
+# ===----------------------------------------------------------------------===#
 # Runtime
 # ===----------------------------------------------------------------------===#
 
@@ -132,7 +159,7 @@ fn _async_complete(chain: Pointer[Chain]):
 # until we have traits for proper parametric types.
 @register_passable
 struct Runtime:
-    alias ptr_type = DTypePointer[DType.invalid.value]
+    alias ptr_type = DTypePointer[DType.invalid]
     var ptr: Self.ptr_type
 
     # TODO: Probably don't want the runtime to be implicitly copyable.
@@ -144,22 +171,22 @@ struct Runtime:
         """Construct an LLCL Runtime with the same number of threads as
         processor cores.
         """
-        return Runtime(num_cores())
+        return _get_global_runtime()
 
-    fn __init__(numThreads: Int) -> Runtime:
+    fn __init__(num_threads: Int) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads."""
         return external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntime", Self.ptr_type
-        ](numThreads)
+        ](num_threads)
 
-    fn __init__(numThreads: Int, profileFilename: StringRef) -> Runtime:
+    fn __init__(num_threads: Int, profileFilename: StringRef) -> Runtime:
         """Construct an LLCL Runtime with the specified number of threads
         that writes tracing events to profileFilename.
         """
         return external_call[
             "KGEN_CompilerRT_LLCL_CreateRuntimeWithProfile", Self.ptr_type
         ](
-            numThreads,
+            num_threads,
             profileFilename.data,
             profileFilename.length.value,
         )
@@ -180,14 +207,17 @@ struct Runtime:
         """Destroys the LLCL Runtime. Note that this must be explicitly called
         when the Runtime goes out of the context.
         """
-        external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](self.ptr)
+        if _get_global_runtime().ptr != self.ptr:
+            external_call["KGEN_CompilerRT_LLCL_DestroyRuntime", NoneType](
+                self.ptr
+            )
 
     fn parallelism_level(self) -> Int:
         """Gets the parallelism level of the Runtime."""
         return external_call[
             "KGEN_CompilerRT_LLCL_ParallelismLevel",
-            __mlir_type.`!pop.scalar<si32>`,
-        ](self.ptr)
+            Int32,
+        ](self.ptr).to_int()
 
     fn create_task[
         type: AnyType
