@@ -101,3 +101,6 @@ fn already_defined_fn():
 
 # expected-error @below {{invalid redefinition of 'already_defined_fn'}}
 from imported_module import imported_fn as already_defined_fn
+
+# expected-error @below {{ambiguous import}}
+from test_bad_package.extension_dup import getExtension

@@ -612,7 +612,8 @@ ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string>
-resolveModulePath(StringRef moduleName, StringRef includeDir,
+resolveModulePath(SharedState &shared, llvm::SMLoc includeLoc,
+                  StringRef moduleName, StringRef includeDir,
                   bool isParsingStandardLibrary) {
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
@@ -653,16 +654,34 @@ resolveModulePath(StringRef moduleName, StringRef includeDir,
   // when parsing the standard library, as many packages are interdependent,
   // which means we can't serialize their processing.
   std::error_code ec;
+  std::string foundName;
   if (!isParsingStandardLibrary) {
-    if (std::filesystem::exists(name.replace_extension("mojopkg"), ec) ||
-        std::filesystem::exists(name.replace_extension("📦"), ec))
-      return name.string();
+    if (std::filesystem::exists(name.replace_extension("mojopkg"), ec))
+      foundName = name.string();
+    if (std::filesystem::exists(name.replace_extension("📦"), ec)) {
+      if (!foundName.empty()) {
+        shared.emitError(includeLoc, "ambiguous import, both ")
+            << foundName << " and " << name.string()
+            << " exist in file system.";
+      }
+      foundName = name.string();
+    }
+    if (!foundName.empty())
+      return foundName;
   }
 
   // Otherwise, check for a source module with this name.
-  if (std::filesystem::exists(name.replace_extension("mojo"), ec) ||
-      std::filesystem::exists(name.replace_extension("🔥"), ec))
-    return name.string();
+  if (std::filesystem::exists(name.replace_extension("mojo"), ec))
+    foundName = name.string();
+  if (std::filesystem::exists(name.replace_extension("🔥"), ec)) {
+    if (!foundName.empty()) {
+      shared.emitError(includeLoc, "ambiguous import, both ")
+          << foundName << " and " << name.string() << " exist in file system.";
+    }
+    foundName = name.string();
+  }
+  if (!foundName.empty())
+    return foundName;
 
   return std::nullopt;
 }
@@ -684,7 +703,8 @@ resolveModulePath(SharedState &sharedState, StringRef moduleName,
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(moduleName, dir, isParsingStandardLibrary)))
+    if ((result = resolveModulePath(sharedState, includeLoc, moduleName, dir,
+                                    isParsingStandardLibrary)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -742,7 +762,7 @@ SharedState::ModuleState &SharedState::importSubModuleState(StringRef name,
       return createErrorModuleState(loc, mangledName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
-    modulePath = resolveModulePath(name, *parentState->sourcePath,
+    modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
                                    parsingStandardLibrary);
 
     // If the parent is a package, use the normal name for the decl. This allows
