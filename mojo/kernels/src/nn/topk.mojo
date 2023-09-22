@@ -70,6 +70,24 @@ fn top_k[
     out_chain: OutputChainPtr,
     sorted: Bool = True,
 ):
+    """
+    Implementation of the Top K algorithm. Returns the top or bottom K elements
+    and their index along a specified axis.
+
+    Parameters:
+        rank: Rank of the input.
+        type: Data type of the input buffer.
+
+    Args:
+        input: The input tensor.
+        k: Represents the K largest/smallest value.
+        axis: On which axis it should operate.
+        largest: If true, acts like top K. Otherwise, bottom K.
+        out_vals: Output values.
+        out_idxs: Output indices.
+        out_chain: Output chain to notify for errors and ready states.
+        sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
+    """
     alias grain_size = 1000
     _top_k(
         input,
@@ -97,23 +115,6 @@ fn _top_k[
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):
-    """
-    Implementation of the Top K algorithm. Returns the top or bottom K elements
-    and their index along a specified axis.
-
-    Parameters:
-        rank: Rank of the input.
-        type: Data type of the input buffer.
-
-    Args:
-        input: The input tensor.
-        k: Represents the K largest/smallest value.
-        axis: On which axis it should operate.
-        largest: If true, acts like top K. Otherwise, bottom K.
-        out_vals: Output values.
-        out_idxs: Output indices.
-        out_chain: Output chain to notify for errors and ready states.
-    """
     let shape = input.get_shape()
 
     @parameter

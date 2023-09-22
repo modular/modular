@@ -37,14 +37,15 @@ fn layer_norm[
 
     Parameters:
         simd_width: The vector width for the computation.
+        type: The x and out buffers' elements dtype.
         input_fn: Function called to generate an input value.
         shape: The x and out buffers' shape.
-        type: The x and out buffers' elements dtype.
+        inner_dim: The shape of gamma_buf and beta_buf.
 
     Args:
         out_buf: The output buffer.
-        gamma: The gamma value to use in the layernorm calculation.
-        beta: The beta value to use in the layernorm calculation.
+        gamma_buf: The gamma value to use in the layernorm calculation.
+        beta_buf: The beta value to use in the layernorm calculation.
         eps: The eps value to use in the layernorm calculation.
     """
 
