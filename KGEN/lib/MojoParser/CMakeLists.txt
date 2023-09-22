@@ -14,6 +14,7 @@ add_modular_library(MojoParser
   ExprEmitter.cpp
   ExprNodes.cpp
   IRValues.cpp
+  Lexer.cpp
   ParserBase.cpp
   ParserExprs.cpp
   ParserStmts.cpp
@@ -27,7 +28,6 @@ add_modular_library(MojoParser
 
   LINK_LIBS PUBLIC
   MCompilerSupport
-  MojoLexer
   KGENToolCommon
   LLCLRuntime
   MTelemetry

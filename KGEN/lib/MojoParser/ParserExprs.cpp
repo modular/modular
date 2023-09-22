@@ -21,9 +21,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNodes.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "llvm/Support/SaveAndRestore.h"
 

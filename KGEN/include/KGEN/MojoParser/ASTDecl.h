@@ -11,8 +11,8 @@
 #ifndef ASTDECL_H
 #define ASTDECL_H
 
-#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
