@@ -2601,6 +2601,7 @@ fn bottom_k[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
@@ -2613,6 +2614,7 @@ fn bottom_k[
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
         out_chain,
+        sorted[0],
     )
 
 
@@ -2625,6 +2627,7 @@ fn top_k[
     input: NDBuffer[rank, DimList.create_unknown[rank](), type],
     k_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
     axis_buf: NDBuffer[1, DimList.create_unknown[1](), axis_type],
+    sorted: NDBuffer[1, DimList.create_unknown[1](), DType.bool],
     out_vals: NDBuffer[rank, DimList.create_unknown[rank](), type],
     out_idxs: NDBuffer[rank, DimList.create_unknown[rank](), DType.int64],
     out_chain: OutputChainPtr,
@@ -2637,6 +2640,7 @@ fn top_k[
         rebind[NDBuffer[rank, DimList.create_unknown[rank](), type]](out_vals),
         out_idxs,
         out_chain,
+        sorted[0],
     )
 
 
