@@ -1,7 +1,7 @@
 // RUN: not modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full %s 2>&1 | FileCheck %s --check-prefix=CHECK-DEFAULT
 // RUN: not modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full --user-ops=invalid-path %s 2>&1 | FileCheck %s --check-prefix=CHECK-ERROR
-// RUN: kgen --gen-lib -o %t %mojo_user_kernels
-// RUN: modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full --user-ops=%t %s | FileCheck %s --check-prefix=CHECK-WITH-CUSTOM-OPS
+// RUN: mojo package %mojo_user_pkg -o %t.mojopkg
+// RUN: modular-api-executor --model-inputs=zeros --allocator=malloc --num-threads=0 --result-output-style=full --user-ops=%t.mojopkg %s | FileCheck %s --check-prefix=CHECK-WITH-CUSTOM-OPS
 
 // CHECK-DEFAULT: Mojo registry doesn't have entry for: test_make_indices
 mo.graph @test_indices_deduction(%arg0 : !mo.tensor<[50], f32>, %unused : !mo.tensor<[3, 4, 5, 6], f32>) -> (!mo.tensor<[5, 5, 2, 1], f32>) no_inline attributes {argument_names = ["input0", "input1"], result_names = ["output"]} {
