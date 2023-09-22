@@ -9,5 +9,4 @@ add_modular_tool(compare-timings
 
   LINK_LIBS PRIVATE
   MSupport
-  MSupportBenchmark
 )
