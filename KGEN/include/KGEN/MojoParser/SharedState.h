@@ -442,6 +442,9 @@ private:
   /// A flag indicating if we're currently parsing the standard library.
   bool parsingStandardLibrary = false;
 
+  /// If true, auto-import the builtin package.
+  bool useBuiltinModule = true;
+
   std::unique_ptr<Impl> impl;
 };
 

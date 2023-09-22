@@ -184,6 +184,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener), runtime(config.runtime),
       parsingStandardLibrary(config.parsingStandardLibrary),
+      useBuiltinModule(config.useBuiltinModule),
       impl(std::make_unique<Impl>(config.context, config.moduleCachingLevel)) {
   collectDefaultImportPaths(impl->autoImportDirs);
   impl->warnMissingDocStrings = config.warnMissingDocStrings;
@@ -1114,7 +1115,8 @@ SharedState::createModuleState(StringAttr declName, StringAttr mangledName,
   impl->moduleStates[&moduleDecl] = &moduleState;
 
   // Auto-import the core language modules.
-  importBuiltinModules(moduleDecl);
+  if (useBuiltinModule)
+    importBuiltinModules(moduleDecl);
 
   // Build a content hash for the module from its input buffer.
   llvm::BLAKE3 contentHash;

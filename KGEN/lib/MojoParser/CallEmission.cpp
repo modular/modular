@@ -824,7 +824,7 @@ private:
   void describeArgumentNo(InflightDiag &diag, size_t argIdx) {
     // If this is a method syntax call, don't count the receiver.
     if (callSyntax == CallSyntax::kMethodCall) {
-      // it is probably possible for this assert to fire, if it does we should
+      // It is probably possible for this assert to fire, if it does we should
       // tailor the error message.
       assert(argIdx != 0 && "TODO: unexpected self mismatch");
       diag << "method argument #" << (argIdx - 1);
