@@ -20,6 +20,7 @@
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/NVVMDialect.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
 using namespace M;
@@ -35,9 +36,8 @@ namespace {
 struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
   using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
 
-  LogicalResult
-  matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
     // Convert the func signature.
     TypeConverter::SignatureConversion result(func.getNumArguments());
     Type funcType = getTypeConverter()->convertFunctionSignature(
@@ -48,21 +48,28 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
       return emitError(func.getLoc(), "failed to convert func signature");
 
     // Mark all functions as internal for now - we'll clean this up later.
-    auto funcOp =
-        createLLVMFunc(rewriter, getTypeConverter()->getTarget(), func.getLoc(),
-                       func.getNameAttr(), funcType, LLVM::Linkage::Internal);
+    auto funcOp = createLLVMFunc(b, getTypeConverter()->getTarget(),
+                                 func.getLoc(), func.getNameAttr(), funcType,
+                                 func.isExported() ? LLVM::Linkage::Weak
+                                                   : LLVM::Linkage::Internal);
+
+    // NVVM-exported functions get a special metadata attribute to tell LLVM
+    // that these are kernel functions.
+    if (func.isNVVMExported()) {
+      funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
+                      b.getUnitAttr());
+    }
 
     // And move the func's body into the new function.
-    rewriter.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
-                                funcOp.end());
-    (void)rewriter.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
+    b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
+    (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
 
     // Remove the function.
     symtab.remove(func);
     Block::iterator insertPt(func->getNextNode());
     funcOp->remove();
     symtab.insert(funcOp, insertPt);
-    rewriter.eraseOp(func);
+    b.eraseOp(func);
     return success();
   }
 };
@@ -87,9 +94,10 @@ struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
     if (!funcType)
       return emitError(func.getLoc(), "failed to convert func signature");
 
-    auto funcOp =
-        createLLVMFunc(rewriter, getTypeConverter()->getTarget(), func.getLoc(),
-                       func.getNameAttr(), funcType, LLVM::Linkage::ExternWeak);
+    auto funcOp = createLLVMFunc(rewriter, getTypeConverter()->getTarget(),
+                                 func.getLoc(), func.getNameAttr(), funcType,
+                                 func.isExported() ? LLVM::Linkage::External
+                                                   : LLVM::Linkage::ExternWeak);
 
     // Remove the function.
     symtab.remove(func);
@@ -495,6 +503,7 @@ static void emitCWrapper(LLVM::LLVMFuncOp func,
   symbolUsers.replaceAllUsesWith(func, newName);
   symtab.remove(func);
   func.setSymNameAttr(newName);
+  func.setLinkage(LLVM::Linkage::Internal);
   symtab.insert(func);
 
   // Update the subprogram scope of the wrapped function if it has one, but save
@@ -631,9 +640,12 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<KGEN::CallSignatureOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
 
-  // Capture all the exported symbols.
-  llvm::MapVector<StringAttr, ExportedSymbol> publicSymbols =
-      getExportedSymbols(theModule);
+  // Collect C exported symbols. The calling convention will have to be
+  // rewritten after the lowering.
+  SmallVector<StringAttr> exportCFuncs;
+  for (auto symbol : theModule.getOps<ExportInterface>())
+    if (symbol.isCExported())
+      exportCFuncs.push_back(symbol.getLinkageNameAttr());
 
   // Configure the type converter.
   TargetInfoAttr targetInfo = lookupTargetInfo(theModule);
@@ -679,18 +691,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Process updates to any exported functions.
   mlir::SymbolUserMap symbolUsers(symtabAnalysis.getSymbolTables(), theModule);
-  for (auto [sym, exportSymbol] : publicSymbols) {
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym);
-    // If the function is not C exported, just update its linkage. Otherwise,
-    // generate a wrapper function.
-    if (!func)
-      continue;
-    else if (!exportSymbol.isCExport)
-      func.setLinkage(func.isExternal() ? LLVM::Linkage::External
-                                        : LLVM::Linkage::Weak);
-    else
+  for (StringAttr sym : exportCFuncs)
+    if (auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym))
       processCExportedFunction(func, symbolUsers, symtab, targetInfo);
-  }
 
   // Convert the debug info within the IR.
   debugTypeConverter.applyRecursively(theModule);

@@ -816,6 +816,7 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
     #kgen.export_kind<not_exported>
     #kgen.export_kind<exported>
     #kgen.export_kind<c_exported>
+    #kgen.export_kind<nvvm_exported>
     ```
   }];
 

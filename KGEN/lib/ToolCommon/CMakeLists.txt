@@ -21,4 +21,5 @@ add_modular_library(KGENToolCommon
   MLIRLLVMDialect
   MLIRBuiltinToLLVMIRTranslation
   MLIRLLVMToLLVMIRTranslation
+  MLIRNVVMToLLVMIRTranslation
   )
