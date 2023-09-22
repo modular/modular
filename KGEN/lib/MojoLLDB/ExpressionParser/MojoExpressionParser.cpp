@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoExpressionParser.h"
+#include "../Logging/MojoExpressionLogger.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "JITExecutionUnit.h"
 #include "Logging.h"
@@ -101,6 +102,12 @@ struct MojoExpressionParser::Impl {
   /// A set of new persistent variables to be added to the persistent expression
   /// state if compilation of the expression succeeds.
   SmallVector<std::pair<StringRef, mlir::Type>> newPersistentVariables;
+
+  /// The target on which expressions will be evaluated.
+  lldb::TargetSP target;
+
+  /// The expression logger for the current target.
+  MojoExpressionLogger *expressionLogger;
 };
 
 MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
@@ -108,9 +115,11 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
                                  const EvaluateExpressionOptions &options)
     : expr(expr), exeScope(exeScope), options(options) {
   // Bail out if we don't have a valid execution context.
-  lldb::TargetSP target = exeScope ? exeScope->CalculateTarget() : nullptr;
+  target = exeScope ? exeScope->CalculateTarget() : nullptr;
   if (!target)
     return;
+
+  expressionLogger = &MojoExpressionLogger::getLoggerForTarget(*target);
 
   // Grab the type system from the target, bailing out if we can't.
   auto typeSystemOr =
@@ -167,8 +176,8 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
   KGEN::ExportMap exports;
   for (auto e : funcsToCompile) {
     StringAttr symName = e.getSymNameAttr();
-    typeSystem->debugLog("[evaluateSpecializations] Exporting {0}",
-                         symName.getValue());
+    expressionLogger->debugLog("[evaluateSpecializations] Exporting {0}",
+                               symName.getValue());
     exports.insert({symName, ExportedSymbol()});
   }
 
@@ -176,7 +185,7 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
   auto targetMachineOr =
       KGEN::createTargetMachine(compilationOptions, /*isJIT=*/true);
   if (targetMachineOr.isError()) {
-    typeSystem->errorLog(
+    expressionLogger->errorLog(
         "[evaluateSpecializations] Failed to create the target machine: {0}",
         targetMachineOr.getError());
     return M::Error("failed to create the target machine");
@@ -187,14 +196,16 @@ MojoExpressionParser::Impl::compileFuncsToLLVM(
   auto module = compiler->lowerAllFuncsToLLVM(symtab, exports, *llvmContext);
   compiler->setForSearch(false);
   if (!module) {
-    typeSystem->errorLog("[evaluateSpecializations] failed to lower to LLVM");
+    expressionLogger->errorLog(
+        "[evaluateSpecializations] failed to lower to LLVM");
     return M::Error("failed to lower to LLVM");
   }
 
   if (failed(KGEN::runLLVMOptPasses(*module, **targetMachineOr,
                                     compilationOptions,
                                     typeSystem->getRuntime()))) {
-    typeSystem->errorLog("[evaluateSpecializations] LLVM optimization failed");
+    expressionLogger->errorLog(
+        "[evaluateSpecializations] LLVM optimization failed");
     return M::Error("LLVM optimization failed");
   }
 
@@ -288,7 +299,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
   auto resetPM = llvm::make_scope_exit(
       [&]() { compiler->updatePassManager(*fullCompilationPM); });
 
-  typeSystem->debugLog(
+  expressionLogger->debugLog(
       "[evaluateSpecializations] Got {0} specializations to evaluate",
       specializations.size());
 
@@ -309,8 +320,8 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
   if (error.Fail())
     return toModularError(error.ToError());
 
-  typeSystem->debugLog("[evaluateSpecializations] Evaluator at {0}",
-                       (void *)funcAddr);
+  expressionLogger->debugLog("[evaluateSpecializations] Evaluator at {0}",
+                             (void *)funcAddr);
 
   // Compute the target info to use for the persistent variable state.
   lldb_private::Process *process = exeCtx.GetProcessPtr();
@@ -324,7 +335,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
                               return fn.name == ConstString(s.getName());
                             });
     if (fn == executionUnit->getJittedFunctions().end()) {
-      typeSystem->errorLog(
+      expressionLogger->errorLog(
           "[evaluateSpecializations] could not find specialization {0}",
           s.getName());
       return M::Error("could not find specialization " + s.getName());
@@ -366,7 +377,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
   bool missingWeak;
   lldb::addr_t lldbEvaluateSpecializationsAddr = executionUnit->findSymbol(
       ConstString("lldb_evaluate_specializations"), missingWeak);
-  typeSystem->debugLog(
+  expressionLogger->debugLog(
       "[evaluateSpecializations] lldb_evaluate_specializations at {0}",
       (void *)lldbEvaluateSpecializationsAddr);
 
@@ -385,7 +396,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
 
   StreamString ss;
   if (!callPlan || !callPlan->ValidatePlan(&ss)) {
-    typeSystem->errorLog(ss.GetString());
+    expressionLogger->errorLog(ss.GetString());
     return M::Error("could not set up the expression");
   }
 
@@ -394,7 +405,7 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
           allocForSpecializations = std::move(allocForSpecializations),
           allocForBest = std::move(allocForBest),
           error = std::move(error)]() mutable -> ErrorOr<ssize_t> {
-    typeSystem->debugLog(
+    expressionLogger->debugLog(
         "-- [evaluateSpecializations] Execution of expression begins --");
 
     DiagnosticManager diagnosticManager;
@@ -402,13 +413,14 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
         exeCtx.GetProcessRef().RunThreadPlan(exeCtx, callPlan, opts,
                                              diagnosticManager);
 
-    typeSystem->debugLog("-- [evaluateSpecializations] Execution of expression "
-                         "completed --");
+    expressionLogger->debugLog(
+        "-- [evaluateSpecializations] Execution of expression "
+        "completed --");
 
     if (executionResult != lldb::eExpressionCompleted) {
       allocForSpecializations.leak();
       allocForBest.leak();
-      typeSystem->errorLog(
+      expressionLogger->errorLog(
           "[evaluateSpecializations] Couldn't execute function; result was {0}",
           Process::ExecutionResultAsCString(executionResult));
       return M::Error("couldn't execute the evaluator");
@@ -420,7 +432,8 @@ ErrorOr<ElaboratorSearchFn> MojoExpressionParser::Impl::evaluateSpecializations(
     if (error.Fail())
       return toModularError(error.ToError());
 
-    typeSystem->debugLog("[evaluateSpecializations] Got best = {0}", bestVar);
+    expressionLogger->debugLog("[evaluateSpecializations] Got best = {0}",
+                               bestVar);
     return bestVar;
   };
 };
@@ -482,20 +495,23 @@ namespace {
 class LLDBMojoREPLListener : public MojoParserREPLListener {
 public:
   LLDBMojoREPLListener(
-      StringRef currentModuleName, MojoTypeSystem &typeSystem,
-      MojoUserExpression &expr, DiagnosticManager &diagnosticManager,
+      StringRef currentModuleName, MojoUserExpression &expr,
+      DiagnosticManager &diagnosticManager,
       const EvaluateExpressionOptions &options,
-      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables)
-      : currentModuleName(currentModuleName), typeSystem(typeSystem),
-        expr(expr), diagnosticManager(diagnosticManager), options(options),
-        newPersistentVariables(newPersistentVariables) {}
+      SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables,
+      MojoExpressionLogger &expressionLogger)
+      : currentModuleName(currentModuleName), expr(expr),
+        diagnosticManager(diagnosticManager), options(options),
+        newPersistentVariables(newPersistentVariables),
+        expressionLogger(expressionLogger) {}
   ~LLDBMojoREPLListener() override = default;
 
   //===--------------------------------------------------------------------===//
   // Notifications
 
   void notifyWrappedExpr(StringRef wrappedExpr) override {
-    typeSystem.debugLog("Parsing the following code:\n{0}", wrappedExpr.data());
+    expressionLogger.debugLog("Parsing the following code:\n{0}",
+                              wrappedExpr.data());
   }
 
   void notifyFixedExpr(StringRef fixedExpr) override {
@@ -503,12 +519,12 @@ public:
   }
 
   void notifyDiagnostics(ArrayRef<llvm::SMDiagnostic> diagnostics) override {
-    typeSystem.debugLog("Found {0} diagnostic{1}\n", diagnostics.size(),
-                        diagnostics.size() == 1 ? "" : "s");
+    expressionLogger.debugLog("Found {0} diagnostic{1}\n", diagnostics.size(),
+                              diagnostics.size() == 1 ? "" : "s");
 
     for (const llvm::SMDiagnostic &diag : diagnostics) {
-      typeSystem.debugLog("Diagnostic with fixits: {0}, message:\n{1}",
-                          diag.getFixIts().size(), diag.getMessage());
+      expressionLogger.debugLog("Diagnostic with fixits: {0}, message:\n{1}",
+                                diag.getFixIts().size(), diag.getMessage());
 
       // If this is a warning or remark from a previous module, ignore it. This
       // removes problems with emitting multiple diagnostics for the same
@@ -575,11 +591,11 @@ public:
 
 private:
   StringRef currentModuleName;
-  MojoTypeSystem &typeSystem;
   MojoUserExpression &expr;
   DiagnosticManager &diagnosticManager;
   const EvaluateExpressionOptions &options;
   SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
+  MojoExpressionLogger &expressionLogger;
 
   /// A flag indicating if that the last processed diagnostic was ignored.
   bool lastDiagnosticIgnored = false;
@@ -601,7 +617,7 @@ M::LogicalResult
 MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                             DiagnosticManager &diagnosticManager) {
   if (!impl->compiler) {
-    impl->typeSystem->errorLog("No compiler");
+    impl->expressionLogger->errorLog("No compiler");
     return failure();
   }
 
@@ -622,7 +638,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   auto printOnError = llvm::make_scope_exit([&]() {
     if (errs.empty())
       return;
-    impl->typeSystem->errorLog("{0}", errs);
+    impl->expressionLogger->errorLog("{0}", errs);
   });
 
   // Collect the current persistent variables.
@@ -631,9 +647,9 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Parse the expression.
   auto [expressionId, exprModuleName] = state.getNextExpressionModuleName();
-  LLDBMojoREPLListener listener(exprModuleName, *impl->typeSystem, impl->expr,
-                                diagnosticManager, impl->options,
-                                impl->newPersistentVariables);
+  LLDBMojoREPLListener listener(exprModuleName, impl->expr, diagnosticManager,
+                                impl->options, impl->newPersistentVariables,
+                                *impl->expressionLogger);
   // Create a function name for the expression. This string must be a valid Mojo
   // identifier.
   std::string exprFnName = ("__lldb_expr__" + Twine(expressionId)).str();
@@ -648,7 +664,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // expression instead.
   if (!impl->expr.GetFixedText().empty() &&
       impl->options.GetAutoApplyFixIts()) {
-    impl->typeSystem->debugLog(
+    impl->expressionLogger->debugLog(
         "Rewrote the input, next parse will be the fixed code:\n{0}",
         impl->expr.GetFixedText());
 
@@ -657,7 +673,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     // emit all of the fixed diagnostics that were collected, given that these
     // won't be shown on the next parse.
     auto filterFn = [](MojoDiagnostic &diag) { return diag.hadFixits(); };
-    impl->typeSystem->broadcastDiagnostics(diagnosticManager, filterFn);
+    impl->expressionLogger->broadcastDiagnostics(diagnosticManager, filterFn);
     diagnosticManager.Clear();
 
     // If the parser was actually successful, make sure to reset it so that we
@@ -668,10 +684,10 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   }
 
   if (!exprFnDecl) {
-    impl->typeSystem->errorLog("Failed to parse the module");
+    impl->expressionLogger->errorLog("Failed to parse the module");
     return failure();
   }
-  impl->typeSystem->debugLog("Parsed module successfully");
+  impl->expressionLogger->debugLog("Parsed module successfully");
 
   // Setup a diagnostic handler to process diagnostics emitted during lowering.
   struct MLIRDiagnosticHandlerContext {
@@ -725,14 +741,14 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
 
   // Run the elaboration pipeline.
   if (failed(impl->fullCompilationPM->run(*module))) {
-    impl->typeSystem->errorLog("Elaboration failed");
+    impl->expressionLogger->errorLog("Elaboration failed");
     return returnErrorCleanup();
   }
 
   if (isVerboseLoggingEnabled) {
-    impl->typeSystem->dumpIR("Pre-elaboration module:\n{0}",
-                             preElaborationModuleLog);
-    impl->typeSystem->dumpIR("Elaborated module:\n{0}", *module);
+    impl->expressionLogger->dumpIR("Pre-elaboration module:\n{0}",
+                                   preElaborationModuleLog);
+    impl->expressionLogger->dumpIR("Elaborated module:\n{0}", *module);
   }
 
   // Lower the module to LLVM IR.
@@ -741,28 +757,28 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   impl->llvmModule = impl->compiler->lowerAllFuncsToLLVM(
       symtab, exportedSymbols, *impl->llvmContext);
   if (!impl->llvmModule) {
-    impl->typeSystem->errorLog("Lowering to LLVM failed");
+    impl->expressionLogger->errorLog("Lowering to LLVM failed");
     return returnErrorCleanup();
   }
 
   if (isVerboseLoggingEnabled) {
-    impl->typeSystem->dumpIR("Pre-optimization LLVM module:\n{0}",
-                             *impl->llvmModule);
+    impl->expressionLogger->dumpIR("Pre-optimization LLVM module:\n{0}",
+                                   *impl->llvmModule);
   }
 
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
       KGEN::createTargetMachine(impl->compilationOptions, /*isJIT=*/true);
   if (targetMachineOr.isError()) {
-    impl->typeSystem->errorLog("Failed to create the target machine: {0}",
-                               targetMachineOr.getError());
+    impl->expressionLogger->errorLog("Failed to create the target machine: {0}",
+                                     targetMachineOr.getError());
     return returnErrorCleanup();
   }
 
   if (failed(KGEN::runLLVMOptPasses(*impl->llvmModule, **targetMachineOr,
                                     impl->compilationOptions,
                                     impl->typeSystem->getRuntime()))) {
-    impl->typeSystem->errorLog("LLVM optimization failed");
+    impl->expressionLogger->errorLog("LLVM optimization failed");
     return returnErrorCleanup();
   }
   return success();

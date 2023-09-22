@@ -14,7 +14,6 @@
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/TypeSystem.h"
-#include "lldb/Utility/Broadcaster.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Flags.h"
 #include "lldb/lldb-enumerations.h"
@@ -34,8 +33,7 @@ namespace M::KGEN::Mojo {
 /// Forward declaration for use below.
 class MojoDiagnostic;
 
-class MojoTypeSystem : public lldb_private::TypeSystem,
-                       public lldb_private::Broadcaster {
+class MojoTypeSystem : public lldb_private::TypeSystem {
   static char ID;
 
 public:
@@ -69,76 +67,6 @@ public:
 
   llvm::StringRef GetPluginName() override { return getPluginNameStatic(); }
   static llvm::StringRef getPluginNameStatic() { return "Mojo"; }
-
-  //===--------------------------------------------------------------------===//
-  // Broadcaster
-  //===--------------------------------------------------------------------===//
-
-  /// The convention for message naming is that a `Message` suffix means
-  /// something we should display to the user, while other suffixes are used for
-  /// various kinds of logging.
-  enum MessageKind : uint32_t {
-    /// Informational messages related to Mojo targets that are not part of
-    /// the inferior's stderr or stdout but should still be displayed to the
-    /// users when not using the CLI.
-    eBroadcastUserMessage = (1u << 0),
-    /// An IR dump that we are emitting for debug purposes. This will not be
-    /// emitted unless verbose logs are enabled.
-    eDumpIR = (1u << 1),
-    /// A debug log message. This will not be flushed to stderr unless
-    /// `eFlushToStderr` is produced.
-    eDebugLog = (1u << 2),
-    /// A log message that we should always flush to the stderr.
-    eErrorLog = (1u << 4),
-    /// A mask that we can use to listen for all MojoTypeSystem messages.
-    eAllMessagesMask = (1u << 6) - 1,
-  };
-
-  void broadcastUserMessage(StringRef message);
-
-  /// Log the provided IR, copying the underlying bytes into the Event object
-  /// (to avoid lifetime issues).
-  void dumpIR(StringRef message);
-  /// Use llvm::formatv to log an IR.
-  template <typename... Args>
-  void dumpIR(StringRef fmt, Args &&...args) {
-    dumpIR(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
-  }
-
-  /// Log the provided message, copying the underlying bytes into the Event
-  /// object (to avoid lifetime issues).
-  void debugLog(StringRef message);
-  /// Use llvm::formatv to log a message.
-  template <typename... Args>
-  void debugLog(StringRef fmt, Args &&...args) {
-    debugLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
-  }
-
-  /// Log an error message, copying the underlying bytes into the Event object
-  /// (to avoid lifetime issues).
-  void errorLog(StringRef message);
-  /// Use llvm::formatv to log a message.
-  template <typename... Args>
-  void errorLog(StringRef fmt, Args &&...args) {
-    errorLog(llvm::formatv(fmt.data(), std::forward<Args>(args)...).str());
-  }
-
-  /// Broadcast the diagnostics within the given diagnostic manager. An optional
-  /// filter function can be provided to determine which diagnostics should be
-  /// included in the output.
-  void broadcastDiagnostics(lldb_private::DiagnosticManager &diagnosticManager,
-                            function_ref<bool(MojoDiagnostic &)> filter = {});
-
-  /// This function provides a reasonable default message handling policy. Users
-  /// that want different behavior are encouraged to provide their own handler.
-  /// The behavior of this function is to:
-  ///  - Send eBroadcastUserMessage to `sendUserOutput`
-  ///  - Treat eDebugMessage same as eIRMessage
-  ///  - Send eErrorMessage to `reportMessage`
-  static void
-  handleEvent(const lldb::EventSP &event,
-              function_ref<void(StringRef, StringRef)> reportMessage,
-              function_ref<void(StringRef)> sendUserOutput);
 
   //===--------------------------------------------------------------------===//
   // Dumping

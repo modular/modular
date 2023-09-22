@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoUserExpression.h"
+#include "../Logging/MojoExpressionLogger.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/MojoTooling/REPLPythonExprUtils.h"
 #include "LLCL/Runtime/Runtime.h"
@@ -117,7 +118,8 @@ struct MojoUserExpression::Impl {
       : target(target), typeSystemHelper(target),
         resultDelegate(target.shared_from_this()),
         typeSystem(getMojoTypeSystem(target)),
-        persistentState(getMojoPersistentState(typeSystem)) {}
+        persistentState(getMojoPersistentState(typeSystem)),
+        expressionLogger(MojoExpressionLogger::getLoggerForTarget(target)) {}
 
   /// The target associated with this expression.
   Target &target;
@@ -140,6 +142,7 @@ struct MojoUserExpression::Impl {
   std::unique_ptr<MojoExpressionParser> parser;
   MojoTypeSystem &typeSystem;
   MojoPersistentExpressionState &persistentState;
+  MojoExpressionLogger &expressionLogger;
 };
 
 //===----------------------------------------------------------------------===//
@@ -191,7 +194,7 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
   // On exit, log all of the diagnostics that were collected.
   auto broadcastDiagnostics = llvm::make_scope_exit([&] {
-    impl->typeSystem.broadcastDiagnostics(diagnosticManager);
+    impl->expressionLogger.broadcastDiagnostics(diagnosticManager);
     diagnosticManager.Clear();
   });
 
@@ -286,24 +289,14 @@ static void dumpTraceOnSignal(void *cookie) {
   lldb::TargetSP currentTarget = debugger->GetSelectedTarget();
   if (!currentTarget)
     return;
-  auto typeSystemOr =
-      currentTarget->GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo);
-  if (!typeSystemOr)
-    return;
-
-  // Make sure it's the Mojo type system, otherwise we can't necessarily
-  // broadcast on its channel.
-  std::shared_ptr<MojoTypeSystem> typeSystem =
-      dyn_cast<MojoTypeSystem>(*typeSystemOr);
-  if (!typeSystem)
-    return;
 
   // Great - now we can broadcast to it.
   std::string traceStr;
   llvm::raw_string_ostream trace(traceStr);
   llvm::sys::PrintStackTrace(trace);
   // This will also flush the debug logs.
-  typeSystem->errorLog("Backtrace:\n{0}", traceStr);
+  MojoExpressionLogger::getLoggerForTarget(*currentTarget)
+      .errorLog("Backtrace:\n{0}", traceStr);
 }
 
 /// Register the trace dumping signal handler exactly once.
@@ -343,7 +336,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
   LogicalResult result = failure();
   if (!crc.RunSafelyOnThread(
           [&]() { result = impl->parser->parse(state, diagnosticManager); })) {
-    impl->typeSystem.errorLog(
+    impl->expressionLogger.errorLog(
         "Crash recovered: CrashRecoveryContext::RetCode (on POSIX: "
         "signal number + 128) = {0}",
         crc.RetCode);
@@ -409,8 +402,8 @@ LogicalResult MojoUserExpression::wrapTextAndParsePythonExpression(
     lldb_private::ExecutionContext &exeCtx,
     lldb_private::ExecutionContextScope *exeScope,
     MojoPersistentExpressionState &state) {
-  impl->typeSystem.debugLog("Parsing the following python code:\n{0}",
-                            pythonExpr.data());
+  impl->expressionLogger.debugLog("Parsing the following python code:\n{0}",
+                                  pythonExpr.data());
 
   // Generate a wrapper python expression that builds a new module from the
   // given source expression string.
@@ -443,8 +436,8 @@ sys.modules['{1}'] = expr_module
   std::string moduleName = state.getNextPythonExpressionModuleName();
   std::string wrappedPythonExpr =
       llvm::formatv(pythonWrapperExpr, escapedPythonExpr, moduleName).str();
-  impl->typeSystem.debugLog("Wrapped python code:\n{0}",
-                            wrappedPythonExpr.data());
+  impl->expressionLogger.debugLog("Wrapped python code:\n{0}",
+                                  wrappedPythonExpr.data());
 
   // Build the Mojo expression we'll use to process the python. This consists of
   // the wrapped python expression, and implicit imports for any of the

@@ -7,6 +7,7 @@
 #include "MojoREPL.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../Language/MojoLanguage.h"
+#include "../Logging/MojoExpressionLogger.h"
 
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
@@ -53,11 +54,19 @@ static llvm::Error createStringError(const char *format, Args &&...args) {
       llvm::formatv(format, std::forward<Args>(args)...).str());
 }
 
+static MojoTypeSystem &getMojoTypeSystem(Target &target) {
+  if (auto typeSystemOr =
+          target.GetScratchTypeSystemForLanguage(lldb::eLanguageTypeMojo))
+    return *static_cast<MojoTypeSystem *>(typeSystemOr.get().get());
+  llvm::report_fatal_error(
+      "The Mojo type system plug-in must have already been registered.");
+}
+
 //===----------------------------------------------------------------------===//
 // Target event listening
 //===----------------------------------------------------------------------===//
 
-void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
+void MojoREPL::flushExpressionEventsAndProcessStreams() {
   std::scoped_lock<std::mutex> lock(flushStreamsMutex);
 
   lldb::TargetSP target = getTarget();
@@ -78,9 +87,10 @@ void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
   };
 
   lldb::EventSP event;
-  while (typeSystemListener->GetEvent(event, std::chrono::seconds(0))) {
-    // Handle the mojo type system events by logging them to error stream.
-    MojoTypeSystem::handleEvent(event, reportMessage, sendUserOutput);
+  while (mojoExpressionListener->GetEvent(event, std::chrono::seconds(0))) {
+    // Handle the mojo expression events by logging them to error stream.
+    MojoExpressionLogger::getLoggerForTarget(*target).handleEvent(
+        event, reportMessage, sendUserOutput);
   }
 
   if (lldb::ProcessSP process = target->GetProcessSP()) {
@@ -91,16 +101,16 @@ void MojoREPL::flushTypeSystemEventsAndProcessStreams() {
 
 static void eventThreadFunction(
     const std::atomic_bool &stopEventThread,
-    std::function<void(void)> flushTypeSystemEventsAndProcessStreams) {
+    std::function<void(void)> flushExpressionEventsAndProcessStreams) {
   while (!stopEventThread) {
-    flushTypeSystemEventsAndProcessStreams();
+    flushExpressionEventsAndProcessStreams();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
   // We flush one last time in case the process emitted some messages after the
   // previous loop was told to stop by the REPL's destructor. Otherwise the
   // debugger might exit before the messages are displayed to the user.
-  flushTypeSystemEventsAndProcessStreams();
+  flushExpressionEventsAndProcessStreams();
 }
 
 llvm::Error MojoREPL::OnExpressionEvaluated(
@@ -157,7 +167,7 @@ llvm::Error MojoREPL::OnExpressionEvaluated(
   // expression are merged with the events of a subsequent expression. This
   // makes this method a synchronization point between event processing and the
   // REPL.
-  flushTypeSystemEventsAndProcessStreams();
+  flushExpressionEventsAndProcessStreams();
   return llvm::Error::success();
 }
 
@@ -169,7 +179,7 @@ char MojoREPL::ID;
 
 MojoREPL::MojoREPL(Target &target)
     : llvm::RTTIExtends<MojoREPL, REPL>(target),
-      typeSystemListener(
+      mojoExpressionListener(
           Listener::MakeListener("mojo-repl.type-system-listener")),
       targetWP(target.shared_from_this()),
       errorStream(target.GetDebugger().GetAsyncErrorStream()) {
@@ -185,11 +195,12 @@ MojoREPL::MojoREPL(Target &target)
   if (!typeSystem)
     llvm::report_fatal_error("must be able to get the mojo type system");
 
-  typeSystem->AddListener(typeSystemListener, MojoTypeSystem::eAllMessagesMask);
+  MojoExpressionLogger::getLoggerForTarget(target).AddListener(
+      mojoExpressionListener, MojoExpressionLogger::eAllMessagesMask);
 
   eventThread = std::thread([this] {
     eventThreadFunction(stopEventThread,
-                        [this]() { flushTypeSystemEventsAndProcessStreams(); });
+                        [this]() { flushExpressionEventsAndProcessStreams(); });
   });
 
   // Here we set the default expr eval options for all REPL expressions.
@@ -586,10 +597,11 @@ void MojoREPL::CompleteCode(const std::string &current_code,
 }
 
 std::vector<CodeCompletionResult>
-MojoREPL::handleREPLCodeComplete(MojoTypeSystem &typeSystem, StringRef code,
+MojoREPL::handleREPLCodeComplete(Target &target, StringRef code,
                                  uint64_t completionPos) {
   // Collect the current persistent variables.
   SmallVector<std::pair<StringRef, mlir::Type>> variables;
+  MojoTypeSystem &typeSystem = getMojoTypeSystem(target);
   auto *persistentState = static_cast<MojoPersistentExpressionState *>(
       typeSystem.GetPersistentExpressionState());
   persistentState->collectPersistentVariables(variables);

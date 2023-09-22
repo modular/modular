@@ -140,9 +140,7 @@ struct MojoTypeSystem::Impl {
 //===----------------------------------------------------------------------===//
 
 MojoTypeSystem::MojoTypeSystem(Target &target)
-    : Broadcaster(target.GetDebugger().GetBroadcasterManager(),
-                  "mojo-type-system.broadcaster"),
-      impl(std::make_unique<Impl>(target)) {}
+    : impl(std::make_unique<Impl>(target)) {}
 MojoTypeSystem::~MojoTypeSystem() = default;
 char MojoTypeSystem::ID = 0;
 
@@ -180,128 +178,6 @@ void MojoTypeSystem::Initialize() {
 
 void MojoTypeSystem::Terminate() {
   PluginManager::UnregisterPlugin(createInstance);
-}
-
-//===----------------------------------------------------------------------===//
-// Logging
-//===----------------------------------------------------------------------===//
-
-void MojoTypeSystem::broadcastUserMessage(StringRef message) {
-  lldb::EventSP event = std::make_shared<Event>(eBroadcastUserMessage,
-                                                new EventDataBytes(message));
-  BroadcastEvent(event);
-}
-
-void MojoTypeSystem::dumpIR(StringRef message) {
-  lldb::EventSP event =
-      std::make_shared<Event>(eDumpIR, new EventDataBytes(message));
-  BroadcastEvent(event);
-}
-
-void MojoTypeSystem::debugLog(StringRef message) {
-  lldb::EventSP event =
-      std::make_shared<Event>(eDebugLog, new EventDataBytes(message));
-  BroadcastEvent(event);
-}
-
-void MojoTypeSystem::errorLog(StringRef message) {
-  lldb::EventSP event =
-      std::make_shared<Event>(eErrorLog, new EventDataBytes(message));
-  BroadcastEvent(event);
-}
-
-void MojoTypeSystem::broadcastDiagnostics(
-    DiagnosticManager &diagnosticManager,
-    function_ref<bool(MojoDiagnostic &)> filter) {
-  debugLog("Emitted diagnostics");
-
-  std::string msg;
-  llvm::raw_string_ostream msgOS(msg);
-  for (const auto &diag : diagnosticManager.Diagnostics()) {
-    if (auto *mojoDiag = dyn_cast<MojoDiagnostic>(diag.get())) {
-      if (filter && !filter(*mojoDiag))
-        continue;
-    }
-
-    switch (diag->GetSeverity()) {
-    case eDiagnosticSeverityError:
-      msgOS << "error: ";
-
-      // Log error diagnostics explicitly so they get captured in the error log,
-      // the full diagnostic message will be available in the debug logs.
-      errorLog(diag->GetMessage());
-      break;
-    case eDiagnosticSeverityWarning:
-      msgOS << "warning: ";
-      break;
-    case eDiagnosticSeverityRemark:
-      break;
-    }
-    msgOS << diag->GetMessage() << "\n";
-  }
-  if (!msg.empty())
-    broadcastUserMessage(msg);
-}
-
-//===----------------------------------------------------------------------===//
-// Listener Support
-//===----------------------------------------------------------------------===//
-
-/// Get a null-terminated string from an event.
-static std::string getStringFromEvent(const lldb::EventSP &event) {
-  size_t readLen = EventDataBytes::GetByteSizeFromEvent(event.get());
-  const char *rawData =
-      static_cast<const char *>(EventDataBytes::GetBytesFromEvent(event.get()));
-  return {rawData, readLen};
-}
-
-/// Stringify the event type.
-static std::string stringifyType(MojoTypeSystem::MessageKind type) {
-  SmallVector<std::string, 1> typeStrs;
-  if (type & MojoTypeSystem::eBroadcastUserMessage)
-    typeStrs.push_back("BroadcastUser");
-  if (type & MojoTypeSystem::eDumpIR)
-    typeStrs.push_back("DumpIR");
-  if (type & MojoTypeSystem::eDebugLog)
-    typeStrs.push_back("DebugLog");
-  if (type & MojoTypeSystem::eErrorLog)
-    typeStrs.push_back("ErrorLog");
-
-  std::string out;
-  llvm::raw_string_ostream outStream(out);
-  llvm::interleave(typeStrs, outStream, "|");
-  return out;
-}
-
-void MojoTypeSystem::handleEvent(
-    const lldb::EventSP &event,
-    function_ref<void(StringRef, StringRef)> reportMessage,
-    function_ref<void(StringRef)> sendUserOutput) {
-  assert(llvm::popcount(event->GetType()) == 1 &&
-         "a message must contain one single type");
-
-  if (event->GetType() & MojoTypeSystem::eBroadcastUserMessage) {
-    // If it's a user message broadcast, send that output.
-    sendUserOutput(getStringFromEvent(event));
-  } else if (event->GetType() & (MojoTypeSystem::eErrorLog)) {
-    // If it's an error log, send that output as well.
-    reportMessage(stringifyType(MessageKind(event->GetType())),
-                  getStringFromEvent(event));
-  } else if (event->GetType() & (eDumpIR | eDebugLog)) {
-    Log *log = GetLog(LLDBLog::Expressions);
-    if (!log)
-      return;
-    // DumpIR messages are extremely heavy, so we don't want to log them unless
-    // verbose logs are enabled.
-    if ((event->GetType() & eDumpIR) && !log->GetVerbose())
-      return;
-    LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
-             getStringFromEvent(event));
-    reportMessage(stringifyType(MessageKind(event->GetType())),
-                  getStringFromEvent(event));
-  } else {
-    llvm_unreachable("Unexpected message type");
-  }
 }
 
 //===----------------------------------------------------------------------===//
