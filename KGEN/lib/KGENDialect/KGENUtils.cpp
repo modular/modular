@@ -1893,8 +1893,7 @@ LogicalResult KGEN::checkResultArgumentTypes(Operation *op,
   return checkOperandTypes(op, func.getResultTypes());
 }
 
-llvm::MapVector<StringAttr, ExportedSymbol>
-KGEN::getExportedSymbols(ModuleOp module) {
+ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   llvm::MapVector<StringAttr, ExportedSymbol> exportedSymbols;
   for (auto op : module.getOps<ExportInterface>()) {
     if (op.isExported())
