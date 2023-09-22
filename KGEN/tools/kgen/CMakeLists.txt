@@ -28,7 +28,6 @@ add_modular_tool(kgen
   MVersion
   MojoParser
 
-  MLIRBuiltinToLLVMIRTranslation
   MLIRBytecodeWriter
   MLIRParser
   )

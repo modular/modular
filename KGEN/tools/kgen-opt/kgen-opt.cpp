@@ -24,8 +24,6 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/Support/TargetSelect.h"
@@ -172,8 +170,7 @@ int main(int argc, char **argv) {
   llvm::InitializeNativeTargetAsmPrinter();
 
   // Initialize LLVM exporters.
-  mlir::registerBuiltinDialectTranslation(registry);
-  mlir::registerLLVMDialectTranslation(registry);
+  registerKGENToLLVMTranslation(registry);
 
   // Register the standard passes we want.
   mlir::registerCSEPass();

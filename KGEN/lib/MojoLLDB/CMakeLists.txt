@@ -42,8 +42,6 @@ add_modular_library(MojoLLDB SHARED
   MVersion
   MojoTooling
 
-  MLIRBuiltinToLLVMIRTranslation
-
   liblldb
 )
 
