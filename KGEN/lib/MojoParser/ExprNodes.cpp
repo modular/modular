@@ -1278,8 +1278,9 @@ static PValue substituteParametersIntoUserDefinedType(
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structOp.getInputParams())
     paramTypes.push_back(decl.getType());
+  // TODO(#21636): support default parameters for structs
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structOp.getInputParamsAttr(), emitter,
+      paramTypes, structOp.getInputParamsAttr(), /*defaultParams=*/{}, emitter,
       structOp.getParamVarArgs(), structOp.getName(), structOp.getLoc(),
       subscript.getLoc());
   if (!bindingValuesAttr)
@@ -1307,7 +1308,7 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     return value;
 
   // Process each subscript entry as a binding.
-  // TODO: Support named bindings in addition to positional ones: `A[x: 42]`.
+  // TODO(#21618): Support keyword parameters: `A[x = 42]`.
   for (auto idx : indices) {
     // If all entries in this overload set take a parameter with a common type,
     // use it for parameter type inference.
@@ -1315,9 +1316,11 @@ static ORValue bindParamValuesToDirectCall(ORValue value,
     if (!value->fnDecls.empty()) {
       // This lambda returns the next expected parameter type.
       auto getCandidateParamType = [&](ASTDecl *fnDecl) -> Type {
-        auto signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+        LITSignatureType signature =
+            cast<LIT::FuncOp>(*fnDecl).getFullSignature();
         const auto &[_, fitness] = value->inputParamBindings.verifyBindings(
-            signature.getInputParamTypes(), {}, emitter,
+            signature.getInputParamTypes(), /*actualParamDecls=*/{},
+            signature.getDefaultParameters(), emitter,
             signature.hasParamVarArgs());
         return fitness.lastExpectedType;
       };
@@ -2600,11 +2603,6 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   ParsedArgument::processParameterInputArgs(typeEmitter, dummyScope,
                                             inputParams, inputParamDecls,
                                             paramDefaults, paramVarArg);
-  // TODO(#21428): handle parameter defaults
-  if (!paramDefaults.empty()) {
-    emitter.emitError(getLoc(), "default parameter values not supported yet");
-    return {};
-  }
 
   ParsedArgument::processParameterResultArgs(
       typeEmitter, dummyScope, resultParams, resultParamDecls, paramVarArg);
@@ -2662,7 +2660,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Compute the signature of the function.
   auto signature = IndexRefRemapper::remapToSignature(
       inputParamsAttr, resultParamsAttr, functionType, inputConventions,
-      effects, FnMetadataAttr::get(b.getContext(), argNames, argDefaults),
+      effects,
+      FnMetadataAttr::get(b.getContext(), argNames, argDefaults, paramDefaults),
       [&] { return mlir::emitError(emitter.translateLocation(getLoc())); });
   if (!signature) {
     typeEmitter.emitError(getLoc(), "failed to construct signature type");

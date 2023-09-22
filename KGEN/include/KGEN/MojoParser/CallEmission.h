@@ -101,13 +101,12 @@ public:
   /// this emits a diagnostic using the locations and `baseName` provided.
   ///
   /// This rejects the signature list if all the parameters are not bound.
-  std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(ArrayRef<Type> actualParamTypes,
-                 ParamDeclArrayAttr actualParamDecls, ExprEmitter &emitter,
-                 bool hasParamVarArgs, StringRef baseName, Location opLoc,
-                 llvm::SMLoc exprLoc,
-                 ParameterInferenceHookTy parameterInferenceHook = {},
-                 bool isPackVarArg = false) const;
+  std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
+      ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
+      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+      bool hasParamVarArgs, StringRef baseName, Location opLoc,
+      llvm::SMLoc exprLoc, ParameterInferenceHookTy parameterInferenceHook = {},
+      bool isPackVarArg = false) const;
 
   /// Check that our set of parameter bindings work with the specified input
   /// parameters and call operands (if any). If so, return a checked
@@ -118,7 +117,8 @@ public:
   /// This rejects the signature list if all the parameters are not bound.
   std::pair<ParameterExprArrayAttr, Fitness> verifyBindings(
       ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-      ExprEmitter &emitter, bool hasParamVarArgs,
+      ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+      bool hasParamVarArgs,
       ParameterInferenceHookTy parameterInferenceHook = {},
       bool isPackVarArg = false,
       function_ref<void()> emitParamCountDiag = []() {},

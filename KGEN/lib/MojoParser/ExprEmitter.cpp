@@ -562,14 +562,14 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // it.
   // TODO: We should have a general predicate from this provided by the KGEN
   // parameter utilities.
-  if (auto signature = dyn_cast<SignatureType>(attr.getType())) {
+  if (auto signature = dyn_cast<LITSignatureType>(attr.getType())) {
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
       InputParamBindings paramBindings;
-      auto [bindingAttr, _] =
-          paramBindings.verifyBindings(signature.getInputParamTypes(), {},
-                                       *this, signature.hasParamVarArgs());
+      auto [bindingAttr, _] = paramBindings.verifyBindings(
+          signature.getInputParamTypes(), /*actualParamDecls=*/{},
+          signature.getDefaultParameters(), *this, signature.hasParamVarArgs());
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
         // values cannot be used in a dynamic context.
@@ -1313,8 +1313,9 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr) {
   SmallVector<Type> paramTypes;
   for (ParamDeclAttr decl : structDecl.getInputParams())
     paramTypes.push_back(decl.getType());
+  // TODO(#21636): support default parameters for structs
   auto [bindingValuesAttr, _] = paramBindings.verifyBindings(
-      paramTypes, structDecl.getInputParamsAttr(), *this,
+      paramTypes, structDecl.getInputParamsAttr(), /*defaultParams=*/{}, *this,
       structDecl.getParamVarArgs(), structDecl.getName(), structDecl.getLoc(),
       expr->getLoc());
   if (!bindingValuesAttr)

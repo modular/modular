@@ -379,14 +379,15 @@ static PValue emitSingleParameterValue(size_t index,
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ExprEmitter &emitter, bool hasParamVarArgs,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg,
-    function_ref<void()> emitParamCountDiag,
+    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+    bool hasParamVarArgs, ParameterInferenceHookTy parameterInferenceHook,
+    bool isPackVarArg, function_ref<void()> emitParamCountDiag,
     function_ref<void(size_t, Binding &, ASTType)> emitParamTypeDiag) const {
 
   // If we have bound parameters, type check them now and bind names to them.
+  size_t numParams = actualParamTypes.size();
   SmallVector<TypedAttr> newBindings;
-  newBindings.reserve(actualParamTypes.size());
+  newBindings.reserve(numParams);
 
   // We use the contextual emitter to perform implicit conversions, but these
   // conversions must be done within a parameter context.  Make sure we don't
@@ -432,7 +433,7 @@ InputParamBindings::verifyBindings(
   size_t bindingIdx = 0;
   size_t numBindings = bindings.size();
   for (auto [idx, type] : llvm::enumerate(actualParamTypes)) {
-    bool isVarArg = idx + 1 == actualParamTypes.size() && hasParamVarArgs;
+    bool isVarArg = idx + 1 == numParams && hasParamVarArgs;
 
     // Check to see if we ran out of bindings to provide to this param decl.
     if (bindingIdx == numBindings) {
@@ -456,8 +457,6 @@ InputParamBindings::verifyBindings(
         }
       }
 
-      fitness.lastExpectedType = expectedType;
-
       // If the parameter decl is a variadic parameter list, and do not have
       // pack operands that could be used to infer those parameters, then we can
       // fulfill it with an empty list.  We know it must be the last parameter
@@ -466,13 +465,19 @@ InputParamBindings::verifyBindings(
       if (isVarArg && !isPackVarArg) {
         if (auto varType = dyn_cast<VariadicType>(type)) {
           setParamValue(VariadicAttr::get({}, varType));
+          fitness.lastExpectedType = expectedType;
           continue;
         }
       }
 
-      // TODO(#21428): Apply default values for parameters.
+      // If available, we use a default parameter value.
+      if (idx >= numParams - defaultParams.size()) {
+        setParamValue(defaultParams[idx + defaultParams.size() - numParams]);
+        continue;
+      }
 
       // Otherwise, we're simply missing bindings.
+      fitness.lastExpectedType = expectedType;
       emitParamCountDiag();
       return {{}, fitness};
     }
@@ -527,12 +532,14 @@ InputParamBindings::verifyBindings(
 std::pair<ParameterExprArrayAttr, InputParamBindings::Fitness>
 InputParamBindings::verifyBindings(
     ArrayRef<Type> actualParamTypes, ParamDeclArrayAttr actualParamDecls,
-    ExprEmitter &emitter, bool hasParamVarArgs, StringRef baseName,
-    Location opLoc, llvm::SMLoc exprLoc,
-    ParameterInferenceHookTy parameterInferenceHook, bool isPackVarArg) const {
+    ArrayRef<TypedAttr> defaultParams, ExprEmitter &emitter,
+    bool hasParamVarArgs, StringRef baseName, Location opLoc,
+    llvm::SMLoc exprLoc, ParameterInferenceHookTy parameterInferenceHook,
+    bool isPackVarArg) const {
   return verifyBindings(
-      actualParamTypes, actualParamDecls, emitter, hasParamVarArgs,
-      parameterInferenceHook, isPackVarArg, /*emitParamCountDiag=*/
+      actualParamTypes, actualParamDecls, defaultParams, emitter,
+      hasParamVarArgs, parameterInferenceHook,
+      isPackVarArg, /*emitParamCountDiag=*/
       [&]() {
         auto expectedNumParams = actualParamTypes.size();
         auto actualNumParams = bindings.size();
@@ -1013,10 +1020,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
 
   // Check that the signature can be rebound with this set of bindings.
-  TypeArrayAttr inputParamTypes = signature.getInputParamTypes();
   auto [newBindings, bindingFitness] =
       callable.inputParamBindings.verifyBindings(
-          inputParamTypes, {}, emitter, signature.hasParamVarArgs(),
+          signature.getInputParamTypes(), /*actualParamDecls=*/{},
+          signature.getDefaultParameters(), emitter,
+          signature.hasParamVarArgs(),
           [&](size_t index, Type type, ASTType expectedParamType,
               ArrayRef<TypedAttr> bindingsSoFar) -> PValue {
             return ParameterInferenceState(emitter.shared, index, type)
@@ -1402,17 +1410,18 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   // We could also support generating a lambda for fancy implicit conversions
   // and subtyping some day.
   auto getBindingsForSignature =
-      [&](SignatureType candidateType) -> ParameterExprArrayAttr {
+      [&](LITSignatureType candidateType) -> ParameterExprArrayAttr {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.
     // TODO: Parameter inference.
     auto [newBindings, _] = inputParamBindings.verifyBindings(
-        candidateType.getInputParamTypes(), {}, emitter,
+        candidateType.getInputParamTypes(), /*actualParamDecls=*/{},
+        candidateType.getDefaultParameters(), emitter,
         candidateType.hasParamVarArgs());
     return newBindings;
   };
 
-  auto isValidCandidate = [&](SignatureType candidateType) -> bool {
+  auto isValidCandidate = [&](LITSignatureType candidateType) -> bool {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -1441,7 +1450,8 @@ PValue OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<ASTDecl *> validCandidates;
   for (ASTDecl *candidate : fnDecls) {
-    auto candidateType = cast<LIT::FuncOp>(*candidate).getFullSignature();
+    LITSignatureType candidateType =
+        cast<LIT::FuncOp>(*candidate).getFullSignature();
     if (isValidCandidate(candidateType))
       validCandidates.push_back(candidate);
   }
@@ -1508,10 +1518,11 @@ static TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
     return funcOp.getBoundReference();
 
   // Check that the signature can be rebound with our set of bindings.
+  LITSignatureType signature = funcOp.getFullSignature();
   auto [newBindings, _] = inputParamBindings.verifyBindings(
-      funcOp.getFullSignature().getInputParamTypes(), {}, emitter,
-      funcOp.getSignature().hasParamVarArgs(), baseName, funcOp.getLoc(),
-      expr->getLoc());
+      signature.getInputParamTypes(), /*actualParamDecls=*/{},
+      signature.getDefaultParameters(), emitter, signature.hasParamVarArgs(),
+      baseName, funcOp.getLoc(), expr->getLoc());
   if (!newBindings)
     return {};
 
