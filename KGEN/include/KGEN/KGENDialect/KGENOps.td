@@ -1239,8 +1239,10 @@ def KGEN_IntLiteralCastOp : KGENOp<"int_literal.cast", [Pure]> {
   }];
 
   let arguments = (ins KGEN_IntLiteralType:$input);
-  let results = (outs Index:$output);
+  let results = (outs AnyTypeOf<[AnyInteger, Index]>:$output);
 
-  let assemblyFormat = "`(` $input `)` attr-dict";
+  let assemblyFormat = [{
+    $input attr-dict `:` `to` qualified(type($output))
+  }];
   let hasFolder = 1;
 }

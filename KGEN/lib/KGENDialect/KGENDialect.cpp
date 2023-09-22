@@ -110,6 +110,11 @@ std::optional<StringRef> KGENDialect::getTypeName(TypeID id) {
   return it->second;
 }
 
+Operation *KGENDialect::materializeConstant(OpBuilder &b, Attribute value,
+                                            Type type, Location loc) {
+  return b.create<ParamConstantOp>(loc, type, cast<TypedAttr>(value));
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

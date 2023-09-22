@@ -26,6 +26,7 @@ def KGENDialect : Dialect {
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
   let usePropertiesForAttributes = 0;
+  let hasConstantMaterializer = 1;
 
   let dependentDialects = ["MDialect", "InterpreterDialect"];
 
