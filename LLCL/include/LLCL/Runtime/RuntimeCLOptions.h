@@ -143,9 +143,7 @@ public:
   }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(
-      StringRef profileName = {},
-      RCRef<SharedGenericUniquePtrSet> globalContextObjects = {}) const;
+  std::unique_ptr<Runtime> createRuntime(StringRef profileName = {}) const;
 };
 
 /// Contains a number of command-line options that are shared among binaries
@@ -244,8 +242,7 @@ public:
   }
 
   /// Create a Runtime based on the CL argument specifications.
-  std::unique_ptr<Runtime> createRuntime(
-      RCRef<SharedGenericUniquePtrSet> globalContextObjects = {}) const;
+  std::unique_ptr<Runtime> createRuntime() const;
 
   //===--------------------------------------------------------------------===//
   // Behavior indicating what to do when a test fails.

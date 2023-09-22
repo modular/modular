@@ -33,30 +33,16 @@ struct ContextC {
   char c = 'a';
 };
 
-struct ContextD {
-  int x = 1;
-  int y = 2;
-};
-
 std::unique_ptr<Runtime> createRuntime() {
-  auto globalContextObjects = RCRef<SharedGenericUniquePtrSet>::create();
-  auto &dRef = globalContextObjects->emplace<ContextD>();
-  dRef.x = 3;
-
   std::unique_ptr<Allocator> allocator =
       createLeakCheckAllocator(createMallocAllocator());
   std::unique_ptr<WorkQueue> workQueue = createSingleThreadWorkQueue();
   return std::make_unique<Runtime>(std::move(allocator), std::move(workQueue),
-                                   /*profileFilename=*/"",
-                                   std::move(globalContextObjects));
+                                   /*profileFilename=*/"");
 }
 
 TEST(RuntimeTest, Contexts) {
   auto runtime = createRuntime();
-
-  ContextD *contextDPtr = runtime->getContext<ContextD>();
-  ASSERT_NE(contextDPtr, nullptr);
-  ASSERT_EQ(contextDPtr->x, 3);
 
   ContextA &contextARef = runtime->emplaceContext<ContextA>(5);
   runtime->emplaceContext<ContextB>();
@@ -102,9 +88,6 @@ TEST(RuntimeTest, Contexturations_ExpectDeath) {
   runtime->emplaceContext<ContextA>();
 
   ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextA>(),
-                            "set already holds object of type");
-
-  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextD>(),
                             "set already holds object of type");
 }
 #endif

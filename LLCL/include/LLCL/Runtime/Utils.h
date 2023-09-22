@@ -18,9 +18,8 @@ namespace M::LLCL {
 /// according to the command line argument specification.  Encircle this with
 /// a AsyncValue leak checker to catch simple bugs in the test suite.
 template <typename BodyFn>
-auto runWithLeakCheckedRuntime(
-    const RuntimeCLOptions &options, const char *testName, BodyFn bodyFn,
-    RCRef<SharedGenericUniquePtrSet> globalContextObjects = {}) {
+auto runWithLeakCheckedRuntime(const RuntimeCLOptions &options,
+                               const char *testName, BodyFn bodyFn) {
   // If we are leak checking, remember how many AsyncValue's we started with.
   ssize_t numStartingLiveAsyncValues = 0;
   if constexpr (AsyncValue::isAllocationTrackingEnabled())
@@ -49,7 +48,7 @@ auto runWithLeakCheckedRuntime(
 
   // Execute the body with a new runtime, which is destroyed when the body is
   // done.
-  return bodyFn(*options.createRuntime(std::move(globalContextObjects)));
+  return bodyFn(*options.createRuntime());
 }
 
 } // namespace M::LLCL
