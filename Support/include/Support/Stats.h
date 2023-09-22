@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_BENCHMARK_STATS_H
-#define SUPPORT_BENCHMARK_STATS_H
+#ifndef SUPPORT_STATS_H
+#define SUPPORT_STATS_H
 
 #include "Support/ErrorOr.h"
 
@@ -114,4 +114,4 @@ double welchTTest(const Samples &lhsSamples, const Normal &lhsNormal,
 
 } // namespace M::Stats
 
-#endif // SUPPORT_BENCHMARK_STATS_H
+#endif // SUPPORT_STATS_H

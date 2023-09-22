@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Benchmark/Stats.h"
+#include "Support/Stats.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Format.h"

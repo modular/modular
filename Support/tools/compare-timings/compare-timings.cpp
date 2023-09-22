@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Benchmark/Stats.h"
 #include "Support/CommandLine.h"
+#include "Support/Stats.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 

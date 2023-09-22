@@ -25,6 +25,7 @@ add_modular_library(MSupport
   Process.cpp
   Random.cpp
     ReferenceCounted.cpp
+  Stats.cpp
   TimeProfiler.cpp
   URI.cpp
   Version.cpp
@@ -53,7 +54,6 @@ unset(LLVM_TARGETS_BUILT)
 
 add_subdirectory(ADT)
 add_subdirectory(ASN1)
-add_subdirectory(Benchmark)
 add_subdirectory(CrashReporting)
 add_subdirectory(Cryptography)
 add_subdirectory(Driver)
