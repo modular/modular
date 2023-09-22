@@ -171,3 +171,12 @@ module attributes {M.target_info = #M.target<triple="", cpu="", features="", dat
   // CHECK-NEXT: llvm.return [[UNDEF]]
   kgen.global export @exported : f32 [@noop, @noop](0)
 }
+
+// -----
+
+module attributes {M.build_info = #M.build_info<buildType = "relwithdebinfo", kernelsBuildType = "Release", lLCLMaxProfilingLevel = 0>, M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", cpu = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+// CHECK-LABEL: llvm.func weak @kernel() attributes {nvvm.kernel
+kgen.func export NVVM @kernel() {
+  kgen.return
+}
+}
