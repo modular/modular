@@ -115,11 +115,11 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
       return;
     }
   }
-  LITSignatureType signature;
-  if (auto func = dyn_cast<LIT::FuncOp>(parentOp))
-    signature = func.getSignature();
-  else
+
+  auto func = dyn_cast<LIT::FuncOp>(parentOp);
+  if (!func)
     return;
+  LITSignatureType signature = func.getSignature();
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getInputConvention(argIdx)) {
@@ -160,7 +160,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 
   ArrayRef<StringAttr> argNames = signature.getArgNames();
   name = argNames[argIdx];
-  if (!name.size()) {
+  if (name.empty()) {
     name = StringAttr::get(v.getContext(), "(positional-only argument # " +
                                                Twine(argIdx) + ")");
   }
@@ -175,7 +175,7 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
 
   // TODO(references): Eliminate pointer operations and be exclusively about
   // references.
-  while (1) {
+  while (true) {
     if (auto structGEP = value.getDefiningOp<StructGEPOp>()) {
       hadGEP = true;
       value = structGEP.getContainer();
