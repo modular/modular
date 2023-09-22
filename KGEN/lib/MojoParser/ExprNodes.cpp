@@ -1118,7 +1118,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         resultOp->erase();
         return PValue(attr);
       }
-      foldedType = val.getType();
+      foldedType = attr.getType();
     }
     emitter.emitError(call.getLoc())
         << unboundOp.getName() << " operation folded to result type "
