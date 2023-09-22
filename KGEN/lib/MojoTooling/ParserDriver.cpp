@@ -10,11 +10,11 @@
 
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"

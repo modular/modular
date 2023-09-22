@@ -10,9 +10,9 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/POPDialect/POPOps.h"

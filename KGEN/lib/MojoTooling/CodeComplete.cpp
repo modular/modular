@@ -6,10 +6,10 @@
 
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MojoLexer/Lexer.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ASTDeclView.h"

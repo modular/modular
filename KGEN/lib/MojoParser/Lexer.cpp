@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoLexer/Lexer.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringExtras.h"
@@ -48,7 +48,7 @@ bool Token::isKeyword() const {
 #define TOK_KEYWORD(SPELLING)                                                  \
   case kw_##SPELLING:                                                          \
     return true;
-#include "KGEN/MojoLexer/TokenKinds.def"
+#include "KGEN/MojoParser/TokenKinds.def"
   }
 }
 
@@ -360,7 +360,7 @@ void Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
   // Check to see if this identifier is a keyword.
   Token::Kind kind = llvm::StringSwitch<Token::Kind>(spelling)
 #define TOK_KEYWORD(SPELLING) .Case(#SPELLING, Token::kw_##SPELLING)
-#include "KGEN/MojoLexer/TokenKinds.def"
+#include "KGEN/MojoParser/TokenKinds.def"
                          .Default(Token::identifier);
 
   formToken(kind, tokStart, indentation);
