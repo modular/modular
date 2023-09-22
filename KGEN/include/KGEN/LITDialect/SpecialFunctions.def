@@ -19,7 +19,8 @@
 // Where:
 //   ENUM is the SpecialFunctionKind:: enumerator.
 //   NAME is the spelling of the special function method.
-//   NUMOPERANDS is the number of operands required (when not -1).
+//   MINOPERANDS is the minimum number of operands required.
+//   MAXOPERANDS is the maximum number of operands required (-1 if variadic).
 //   EXPRNODE is the normal ExprNode::Kind this corresponds to.
 //   FLAGS are various flags used to customize type checking behavior.
 //
@@ -27,96 +28,87 @@
 // prioritization in various situations, such as the relative ordering of
 // methods in documentation.
 
-SF(kNew,      "__new__"     ,-1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
+SF(kNew,      "__new__"     , 0, -1, kInvalid, kImplicitlyStaticMethod|kSelfResult)
 
 // These are memory style initializer that set up 'self' by assigning into it.
-SF(kInit,     "__init__"    ,-1, kInvalid, kMemInit)
-SF(kCopyInit, "__copyinit__", 2, kInvalid, kMemInit|kCannotRaise)
-SF(kMoveInit, "__moveinit__", 2, kInvalid, kMemInit|kCannotRaise)
-SF(kTakeInit, "__takeinit__", 2, kInvalid, kMemInit|kCannotRaise)
+SF(kInit,     "__init__"    , 0, -1, kInvalid, kMemInit)
+SF(kCopyInit, "__copyinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
+SF(kMoveInit, "__moveinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
+SF(kTakeInit, "__takeinit__", 2, 2, kInvalid, kMemInit|kCannotRaise)
 
 // These are the register-passable forms of init methods, these have the same
 // name (eg __init__) as normal init methods but are detected by semantic
 // analysis when they return Self instead of taking it byref.
-SF(kInitReg,     ""         , -1, kInvalid, kRegInit|kImplicitlyStaticMethod)
-SF(kCopyInitReg, ""         , 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)
-SF(kDel,      "__del__"     , 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
+SF(kInitReg,     ""         , 0, -1, kInvalid, kRegInit|kImplicitlyStaticMethod)
+SF(kCopyInitReg, ""         , 1, 1, kInvalid, kRegInit|kInstMethod|kCannotRaise)
+SF(kDel,      "__del__"     , 1, 1, kInvalid, kRequiresOwnedSelfInstMethod|kNoneResult)
 
-SF(kBool,    "__bool__"  ,   1, kInvalid, kInstMethod)
-SF(kMLIRI1,  "__mlir_i1__",  1, kInvalid, kInstMethod)
-SF(kAwait,   "__await__" ,   1, kAwait,   kAllowByRefSelfInstMethod)
+SF(kBool,    "__bool__"  ,  1, 1, kInvalid, kInstMethod)
+SF(kMLIRI1,  "__mlir_i1__", 1, 1, kInvalid, kInstMethod)
+SF(kAwait,   "__await__" ,  1, 1, kAwait,   kAllowByRefSelfInstMethod)
 
-SF(kGetItem, "__getitem__", -1, kInvalid,kAllowByRefSelfInstMethod)
-SF(kSetItem, "__setitem__", -1, kInvalid,kAllowByRefSelfInstMethod)
-
+SF(kGetItem, "__getitem__", 0, -1, kInvalid,kAllowByRefSelfInstMethod)
+SF(kSetItem, "__setitem__", 0, -1, kInvalid,kAllowByRefSelfInstMethod)
 
 // Unary arithmetic operators.
-SF(kNeg,     "__neg__"   ,  1, kNeg,    kInstMethod)
-SF(kPos,     "__pos__"   ,  1, kPos,    kInstMethod)
-SF(kInvert,  "__invert__",  1, kInvert, kInstMethod)
+SF(kNeg,     "__neg__"   , 1, 1, kNeg,    kInstMethod)
+SF(kPos,     "__pos__"   , 1, 1, kPos,    kInstMethod)
+SF(kInvert,  "__invert__", 1, 1, kInvert, kInstMethod)
 
 // Normal comparison operators.
-SF(kCmpLT, "__lt__", 2, kCmpLT, kInstMethod)
-SF(kCmpLE, "__le__", 2, kCmpLE, kInstMethod)
-SF(kCmpEQ, "__eq__", 2, kCmpEQ, kInstMethod)
-SF(kCmpNE, "__ne__", 2, kCmpNE, kInstMethod)
-SF(kCmpGT, "__gt__", 2, kCmpGT, kInstMethod)
-SF(kCmpGE, "__ge__", 2, kCmpGE, kInstMethod)
+SF(kCmpLT, "__lt__", 2, 2, kCmpLT, kInstMethod)
+SF(kCmpLE, "__le__", 2, 2, kCmpLE, kInstMethod)
+SF(kCmpEQ, "__eq__", 2, 2, kCmpEQ, kInstMethod)
+SF(kCmpNE, "__ne__", 2, 2, kCmpNE, kInstMethod)
+SF(kCmpGT, "__gt__", 2, 2, kCmpGT, kInstMethod)
+SF(kCmpGE, "__ge__", 2, 2, kCmpGE, kInstMethod)
 
 // Mojo extension: Reflect `is` and `is not` into named members.
-SF(kCmpIs,    "__is__", 2, kCmpIs, kInstMethod)
-SF(kCmpIsNot, "__isnot__", 2, kCmpIsNot, kInstMethod)
+SF(kCmpIs,    "__is__",    2, 2, kCmpIs, kInstMethod)
+SF(kCmpIsNot, "__isnot__", 2, 2, kCmpIsNot, kInstMethod)
 
 // Normal arithmetic operators.
-SF(kAdd     , "__add__"     , 2, kAdd,      kInstMethod)
-SF(kSub     , "__sub__"     , 2, kSub,      kInstMethod)
-SF(kMul     , "__mul__"     , 2, kMul,      kInstMethod)
-SF(kMatmul  , "__matmul__"  , 2, kMatMul,   kInstMethod)
-SF(kTrueDiv , "__truediv__" , 2, kTrueDiv,  kInstMethod)
-SF(kFloorDiv, "__floordiv__", 2, kFloorDiv, kInstMethod)
-SF(kMod     , "__mod__"     , 2, kMod,      kInstMethod)
-// TODO(#21428): pow has 3 arguments: __pow__(base, exp[, mod])
-// Only the two-argument form pow(base, exp) is equivalent
-// to using the power operator: base ** exp. Once we have default parameters
-// we can support mod=None, but for now we keep it as 2 arguments definition.
-SF(kPow     , "__pow__"     , 2, kPow,    kInstMethod)
-SF(kLShift  , "__lshift__"  , 2, kLShift, kInstMethod)
-SF(kRShift  , "__rshift__"  , 2, kRShift, kInstMethod)
-SF(kAnd     , "__and__"     , 2, kAnd,    kInstMethod)
-SF(kOr      , "__or__"      , 2, kOr,     kInstMethod)
-SF(kXor     , "__xor__"     , 2, kXor,    kInstMethod)
+SF(kAdd     , "__add__"     , 2, 2, kAdd,      kInstMethod)
+SF(kSub     , "__sub__"     , 2, 2, kSub,      kInstMethod)
+SF(kMul     , "__mul__"     , 2, 2, kMul,      kInstMethod)
+SF(kMatmul  , "__matmul__"  , 2, 2, kMatMul,   kInstMethod)
+SF(kTrueDiv , "__truediv__" , 2, 2, kTrueDiv,  kInstMethod)
+SF(kFloorDiv, "__floordiv__", 2, 2, kFloorDiv, kInstMethod)
+SF(kMod     , "__mod__"     , 2, 2, kMod,      kInstMethod)
+SF(kPow     , "__pow__"     , 2, 3, kPow,    kInstMethod)
+SF(kLShift  , "__lshift__"  , 2, 2, kLShift, kInstMethod)
+SF(kRShift  , "__rshift__"  , 2, 2, kRShift, kInstMethod)
+SF(kAnd     , "__and__"     , 2, 2, kAnd,    kInstMethod)
+SF(kOr      , "__or__"      , 2, 2, kOr,     kInstMethod)
+SF(kXor     , "__xor__"     , 2, 2, kXor,    kInstMethod)
 
 // Reversed arithmetic operators.
-SF(kRAdd     , "__radd__"     , 2, kAdd,      kInstMethod|kReversedOperator)
-SF(kRSub     , "__rsub__"     , 2, kSub,      kInstMethod|kReversedOperator)
-SF(kRMul     , "__rmul__"     , 2, kMul,      kInstMethod|kReversedOperator)
-SF(kRMatmul  , "__rmatmul__"  , 2, kMatMul,   kInstMethod|kReversedOperator)
-SF(kRTrueDiv , "__rtruediv__" , 2, kTrueDiv,  kInstMethod|kReversedOperator)
-SF(kRFloorDiv, "__rfloordiv__", 2, kFloorDiv, kInstMethod|kReversedOperator)
-SF(kRMod     , "__rmod__"     , 2, kMod,      kInstMethod|kReversedOperator)
-SF(kRPow     , "__rpow__"     , 2, kPow,      kInstMethod|kReversedOperator)
-SF(kRLShift  , "__rlshift__"  , 2, kLShift,   kInstMethod|kReversedOperator)
-SF(kRRShift  , "__rrshift__"  , 2, kRShift,   kInstMethod|kReversedOperator)
-SF(kRAnd     , "__rand__"     , 2, kAnd,      kInstMethod|kReversedOperator)
-SF(kROr      , "__ror__"      , 2, kOr,       kInstMethod|kReversedOperator)
-SF(kRXor     , "__rxor__"     , 2, kXor,      kInstMethod|kReversedOperator)
+SF(kRAdd     , "__radd__"     , 2, 2, kAdd,      kInstMethod|kReversedOperator)
+SF(kRSub     , "__rsub__"     , 2, 2, kSub,      kInstMethod|kReversedOperator)
+SF(kRMul     , "__rmul__"     , 2, 2, kMul,      kInstMethod|kReversedOperator)
+SF(kRMatmul  , "__rmatmul__"  , 2, 2, kMatMul,   kInstMethod|kReversedOperator)
+SF(kRTrueDiv , "__rtruediv__" , 2, 2, kTrueDiv,  kInstMethod|kReversedOperator)
+SF(kRFloorDiv, "__rfloordiv__", 2, 2, kFloorDiv, kInstMethod|kReversedOperator)
+SF(kRMod     , "__rmod__"     , 2, 2, kMod,      kInstMethod|kReversedOperator)
+SF(kRPow     , "__rpow__"     , 2, 2, kPow,      kInstMethod|kReversedOperator)
+SF(kRLShift  , "__rlshift__"  , 2, 2, kLShift,   kInstMethod|kReversedOperator)
+SF(kRRShift  , "__rrshift__"  , 2, 2, kRShift,   kInstMethod|kReversedOperator)
+SF(kRAnd     , "__rand__"     , 2, 2, kAnd,      kInstMethod|kReversedOperator)
+SF(kROr      , "__ror__"      , 2, 2, kOr,       kInstMethod|kReversedOperator)
+SF(kRXor     , "__rxor__"     , 2, 2, kXor,      kInstMethod|kReversedOperator)
 
 // In place operators like +=
-SF(kIAdd     , "__iadd__"     , 2, kIAdd,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kISub     , "__isub__"     , 2, kISub,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIMul     , "__imul__"     , 2, kIMul,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIMatmul  , "__imatmul__"  , 2, kIMatMul,   kAllowByRefSelfInstMethod|kNoneResult)
-SF(kITrueDiv , "__itruediv__" , 2, kITrueDiv,  kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIFloorDiv, "__ifloordiv__", 2, kIFloorDiv, kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIMod     , "__imod__"     , 2, kIMod,      kAllowByRefSelfInstMethod|kNoneResult)
-// TODO(#21428): ipow has 3 arguments: __ipow__(base, exp[, mod])
-// Only the two-argument form pow(base, exp) is equivalent
-// to using the power operator: base ** exp. Once we have default parameters
-// we can support mod=None, but for now we keep it as 2 arguments definition.
-SF(kIPow     , "__ipow__"     , 2, kIPow,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kILShift  , "__ilshift__"  , 2, kILShift,   kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIRShift  , "__irshift__"  , 2, kIRShift,   kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIAnd     , "__iand__"     , 2, kIAnd,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIXor     , "__ixor__"     , 2, kIXor,      kAllowByRefSelfInstMethod|kNoneResult)
-SF(kIOr      , "__ior__"      , 2, kIOr,       kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIAdd     , "__iadd__"     , 2, 2, kIAdd,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kISub     , "__isub__"     , 2, 2, kISub,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIMul     , "__imul__"     , 2, 2, kIMul,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIMatmul  , "__imatmul__"  , 2, 2, kIMatMul,   kAllowByRefSelfInstMethod|kNoneResult)
+SF(kITrueDiv , "__itruediv__" , 2, 2, kITrueDiv,  kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIFloorDiv, "__ifloordiv__", 2, 2, kIFloorDiv, kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIMod     , "__imod__"     , 2, 2, kIMod,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIPow     , "__ipow__"     , 2, 3, kIPow,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kILShift  , "__ilshift__"  , 2, 2, kILShift,   kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIRShift  , "__irshift__"  , 2, 2, kIRShift,   kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIAnd     , "__iand__"     , 2, 2, kIAnd,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIXor     , "__ixor__"     , 2, 2, kIXor,      kAllowByRefSelfInstMethod|kNoneResult)
+SF(kIOr      , "__ior__"      , 2, 2, kIOr,       kAllowByRefSelfInstMethod|kNoneResult)
 #undef SF

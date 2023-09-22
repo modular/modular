@@ -538,6 +538,16 @@ struct WrongSelfType[a: Int]:
   # expected-error @+1 {{special function '__add__' must have 2 operands}}
   fn __add__(self): pass
 
+  fn __pow__(self, exp: Int): pass
+
+  fn __pow__(self, exp: Int, mod: Int): pass
+
+  # expected-error @+1 {{special function '__pow__' must have at least 2 operands}}
+  fn __pow__(self): pass
+
+  # expected-error @+1 {{special function '__pow__' must have at most 3 operands}}
+  fn __pow__(self, exp: Int, mod: Int, extra: Int): pass
+
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[Int(1).value]):

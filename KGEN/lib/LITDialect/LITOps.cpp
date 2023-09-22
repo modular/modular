@@ -325,8 +325,8 @@ SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
   if (name.size() < 5 || !name.startswith("__") || !name.endswith("__"))
     return SpecialFunctionKind::kNormal;
 
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
-  if (name == NAME)                                                            \
+#define SF(ENUM, NAME, MINOPERANDS, MAXOPERANDS, EXPRNODE, FLAGS)              \
+  if (name == (NAME))                                                          \
     return SpecialFunctionKind::ENUM;
 #include "KGEN/LITDialect/SpecialFunctions.def"
 
@@ -338,9 +338,10 @@ SpecialFunctionKind SpecialFunctionInfo::getKind(StringRef name) {
 /// identifies it, otherwise return kNormal.
 const SpecialFunctionInfo &SpecialFunctionInfo::get(SpecialFunctionKind kind) {
   static const SpecialFunctionInfo infos[] = {
-      {nullptr, SpecialFunctionKind::kNormal, /*numOperands=*/-1, /*flags=*/0},
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
-  {NAME, SpecialFunctionKind::ENUM, (NUMOPERANDS), (FLAGS)},
+      {nullptr, SpecialFunctionKind::kNormal, /*minNumArguments=*/0,
+       /*maxNumArguments=*/-1, /*flags=*/0},
+#define SF(ENUM, NAME, MINOPERANDS, MAXOPERANDS, EXPRNODE, FLAGS)              \
+  {NAME, SpecialFunctionKind::ENUM, (MINOPERANDS), (MAXOPERANDS), (FLAGS)},
 #include "KGEN/LITDialect/SpecialFunctions.def"
   };
 

@@ -19,8 +19,8 @@ enum class SpecialFunctionKind : uint8_t {
   // zero so it can be used as a false condition in an if.
   kNormal = 0,
 
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS) ENUM,
-#include "SpecialFunctions.def"
+#define SF(ENUM, NAME, MINOPERANDS, MAXOPERANDS, EXPRNODE, FLAGS) ENUM,
+#include "KGEN/LITDialect/SpecialFunctions.def"
 };
 
 class SpecialFunctionInfo {
@@ -28,9 +28,13 @@ public:
   const char *name = nullptr;
   SpecialFunctionKind kind = SpecialFunctionKind::kNormal;
 
-  /// This is the number of arguments that this special function requires, or -1
+  /// The minimum number of arguments that this special function requires.
+  unsigned minNumArguments = 0;
+
+  /// The maximum number of arguments that this special function requires, or -1
   /// if variadic.
-  int numArguments = -1;
+  int maxNumArguments = -1;
+
   unsigned flags = 0;
 
   /// This is a bitmask of flags that describes requirements of the special

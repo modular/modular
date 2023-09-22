@@ -1840,7 +1840,7 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   // Use an if chain to find the right match.  We can't use switch here because
   // multiple special functions may implement the same kind, e.g. __add__ and
   // __radd__ special methods both implement kAdd.
-#define SF(ENUM, NAME, NUMOPERANDS, EXPRNODE, FLAGS)                           \
+#define SF(ENUM, NAME, MINOPERANDS, MAXOPERANDS, EXPRNODE, FLAGS)              \
   if (kind == ExprNode::Kind::EXPRNODE) {                                      \
     auto info = SpecialFunctionInfo::get(SpecialFunctionKind::ENUM);           \
     if (info.isReversed() == isReversed)                                       \
