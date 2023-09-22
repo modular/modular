@@ -118,6 +118,7 @@ private:
 class SharedGenericUniquePtrSet
     : public GenericUniquePtrSet,
       public ReferenceCounted<SharedGenericUniquePtrSet> {};
+using GenericUniquePtrSetRef = RCRef<SharedGenericUniquePtrSet>;
 
 } // namespace M::LLCL
 

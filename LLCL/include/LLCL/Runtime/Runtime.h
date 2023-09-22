@@ -44,13 +44,8 @@ public:
   ///
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON will be written to files with that prefix.
-  ///
-  /// If globalContextObjects is non-null then its objects may be retrieved
-  /// via the context object API of this runtime. However the set will never
-  /// be mutated.
   Runtime(std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
-          RCRef<SharedGenericUniquePtrSet> globalContextObjects = {});
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {});
   ~Runtime();
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.
@@ -109,61 +104,42 @@ public:
   // Context Objects
   //===--------------------------------------------------------------------===//
 
-  /// Transfers ptr into the local context object set.
+  /// Transfers ptr into the context object set.
   template <typename T>
   void setContext(std::unique_ptr<T> ptr) {
-    // We don't allow 'overriding' of the global by the local.
-    assert(!globalContextObjects || globalContextObjects->get<T>() == nullptr &&
-                                        "set already holds object of type");
-    localContextObjects.set<T>(std::move(ptr));
+    contextObjects.set<T>(std::move(ptr));
   }
 
-  /// Emplaces a new object of type T into the local context object set and
-  /// returns a reference to it.
+  /// Emplaces a new object of type T into the context object set and returns a
+  /// reference to it.
   template <typename T, typename... Args>
   T &emplaceContext(Args &&...args) {
-    // We don't allow 'overriding' of the global by the local.
-    assert(!globalContextObjects || globalContextObjects->get<T>() == nullptr &&
-                                        "set already holds object of type");
-    return localContextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
+    return contextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
   }
 
-  /// Returns a reference to the object of type T held by the local or global
-  /// context object sets. If neither contain such an object, emplaces a new
-  /// object into the local context object set and returns a reference to it.
+  /// Returns a reference to the object of type T held by the context object
+  /// set. If it does not contain such an object, emplaces a new object and
+  /// returns a reference to it.
   template <typename T, typename... Args>
   T &emplaceContextIfMissing(Args &&...args) {
-    if (globalContextObjects) {
-      if (auto *ptr = globalContextObjects->get<T>())
-        return *ptr;
-    }
-    return localContextObjects.emplaceIfMissing<T, Args...>(
+    return contextObjects.emplaceIfMissing<T, Args...>(
         std::forward<Args>(args)...);
   }
 
-  /// Returns a pointer to the object of type T held by the local or global
-  /// context object sets. If their contain such an object, calls the creator
-  /// function to create one and install it in the local context object set.
-  /// Returns any error the creator function returns.
+  /// Returns a pointer to the object of type T held by the context object set.
+  /// If it does not contain such an object, calls the creator function to
+  /// create one and install. Returns any error the creator function returns.
   template <typename T>
   ErrorOr<T *> createContextIfMissing(
       llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
-    if (globalContextObjects) {
-      if (auto *ptr = globalContextObjects->get<T>())
-        return ptr;
-    }
-    return localContextObjects.createIfMissing<T>(std::move(creator));
+    return contextObjects.createIfMissing<T>(std::move(creator));
   }
 
-  /// Returns a pointer to the context object of type T held by the local or
-  /// global context object sets, or nullptr if no such object exists.
+  /// Returns a pointer to the context object of type T held by the context
+  /// object set, or nullptr if no such object exists.
   template <typename T>
   T *getContext() {
-    if (globalContextObjects) {
-      if (auto *ptr = globalContextObjects->get<T>())
-        return ptr;
-    }
-    return localContextObjects.get<T>();
+    return contextObjects.get<T>();
   }
 
 private:
@@ -201,11 +177,8 @@ private:
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
 
-  /// Reference to a set of 'global context objects' which may be accessed.
-  RCRef<SharedGenericUniquePtrSet> globalContextObjects;
-
-  /// Set of 'local context objects' owned by this runtime.
-  GenericUniquePtrSet localContextObjects;
+  /// Set of 'context objects' owned by this runtime.
+  GenericUniquePtrSet contextObjects;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
   friend void checkKnownCallingThread(const Runtime &runtime);
