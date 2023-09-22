@@ -112,6 +112,11 @@ from Pad import pad_shape
 from Pool import avg_pool, max_pool, pool_shape
 from runtime.llcl import OutputChainPtr, OwningOutputChainPtr, Runtime
 from runtime.tracing import Trace, TraceLevel
+from Resize import (
+    resize_nearest_neighbor,
+    RoundMode,
+    CoordinateTransformationMode,
+)
 from Slice import slice_as_view, slice_shape
 from Softmax import logsoftmax as _logsoftmax
 from Softmax import softmax as _softmax
@@ -240,6 +245,8 @@ fn MOGGExport():
     alias _reduce_max = reduce_max
     alias _reduce_min = reduce_min
     alias _reduce_mul = reduce_mul
+    alias _resize_nearest = resize_nearest
+    alias _resize_shape = resize_shape
     alias _round = round
     alias _roundeven = roundeven
     alias _slice_shape = slice_shape
@@ -2235,6 +2242,45 @@ fn non_maximum_suppression_shape_func[
         iou_threshold_float,
         score_threshold_float,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# MOGG resize
+# ===----------------------------------------------------------------------===#
+
+
+fn resize_nearest[
+    coordinate_transform_mode: Int,
+    round_mode: Int,
+    rank: Int,
+    inpType: DType,
+    sizeType: DType,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    size: NDBuffer[1, DimList(rank), sizeType],
+    output: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    out_chain: OutputChainPtr,
+):
+    resize_nearest_neighbor[
+        coordinate_transform_mode, round_mode, rank, inpType
+    ](input, output, out_chain)
+
+
+fn resize_shape[
+    rank: Int,
+    inpType: DType,
+    sizeType: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[rank, DimList.create_unknown[rank](), inpType],
+    size: NDBuffer[1, DimList(rank), sizeType],
+) -> StaticIntTuple[rank]:
+    var shape = StaticIntTuple[rank]()
+
+    @unroll
+    for i in range(rank):
+        shape[i] = size[i].to_int()
+    return shape
 
 
 # ===----------------------------------------------------------------------===#
